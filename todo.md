@@ -41,3 +41,9 @@
 
 ## Tests
 - [x] 22 vitest tests passing (auth, sheet, row, certification, admin, audit log)
+
+## Export Feature
+- [x] Backend tRPC endpoint to return full sheet data (rows + members + certifications) for export
+- [x] CSV export: generate and download client-side
+- [x] PDF export: open print dialog with a styled HTML document (client-side)
+- [x] Export button with dropdown (PDF / CSV) on sheet detail page header

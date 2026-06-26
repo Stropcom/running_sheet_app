@@ -6,6 +6,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import DashboardLayout from "@/components/DashboardLayout";
 import {
   Lock,
@@ -18,8 +24,11 @@ import {
   ArrowLeft,
   ShieldCheck,
   Clock,
+  Download,
+  FileText,
+  Table2,
 } from "lucide-react";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useLocation, useParams } from "wouter";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -46,6 +55,135 @@ type SheetRow = {
   members: Member[];
   certifications: Certification[];
 };
+
+// ─── Export Helpers ─────────────────────────────────────────────────────────
+
+type ExportRow = {
+  id: number;
+  rowNumber: number;
+  time: string | null;
+  observation: string | null;
+  isLocked: boolean;
+  members: { id: number; memberName: string }[];
+  certifications: { memberId: number; certifiedByName: string; certifiedAt: number; isActive: boolean }[];
+};
+
+function exportToCSV(sheetTitle: string, rows: ExportRow[]) {
+  const escape = (v: string | null | undefined) => `"${(v ?? "").replace(/"/g, '""')}"`;
+  const header = ["Row Number", "Time", "Observation", "Member", "Certified", "Certified By", "Certified At"];
+  const dataRows: string[][] = [];
+  for (const row of rows) {
+    if (row.members.length === 0) {
+      dataRows.push([String(row.rowNumber), row.time ?? "", row.observation ?? "", "", "", "", ""]);
+    } else {
+      for (const member of row.members) {
+        const cert = row.certifications.find((c) => c.memberId === member.id && c.isActive);
+        dataRows.push([
+          String(row.rowNumber),
+          row.time ?? "",
+          row.observation ?? "",
+          member.memberName,
+          cert ? "Yes" : "No",
+          cert ? cert.certifiedByName : "",
+          cert ? format(new Date(cert.certifiedAt), "yyyy-MM-dd HH:mm:ss") : "",
+        ]);
+      }
+    }
+  }
+  const csv = [header, ...dataRows].map((r) => r.map(escape).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${sheetTitle.replace(/[^a-z0-9]/gi, "_")}_${format(new Date(), "yyyyMMdd_HHmm")}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportToPDF(sheetTitle: string, rows: ExportRow[]) {
+  const certColor = "#22c55e";
+  const lockedBg = "#0f2a1a";
+  const tableRows = rows
+    .map((row) => {
+      const memberBlocks = row.members.length === 0
+        ? `<td colspan="3" style="color:#6b7280;font-style:italic">No members</td>`
+        : row.members
+            .map((m) => {
+              const cert = row.certifications.find((c) => c.memberId === m.id && c.isActive);
+              return `<tr style="background:${row.isLocked ? lockedBg : "transparent"}">
+                <td></td><td></td><td></td>
+                <td style="padding:4px 8px;border-bottom:1px solid #1e293b">${m.memberName}</td>
+                <td style="padding:4px 8px;border-bottom:1px solid #1e293b;color:${cert ? certColor : "#ef4444"}">
+                  ${cert ? "&#10003; Certified" : "Pending"}
+                </td>
+                <td style="padding:4px 8px;border-bottom:1px solid #1e293b;font-size:11px;color:#94a3b8">
+                  ${cert ? `${cert.certifiedByName}<br/><span style="font-size:10px">${format(new Date(cert.certifiedAt), "yyyy-MM-dd HH:mm")}</span>` : ""}
+                </td>
+              </tr>`;
+            })
+            .join("");
+      const firstMember = row.members[0];
+      const firstCert = firstMember ? row.certifications.find((c) => c.memberId === firstMember.id && c.isActive) : undefined;
+      const rowBg = row.isLocked ? lockedBg : "transparent";
+      const firstRow = `<tr style="background:${rowBg}">
+        <td style="padding:6px 8px;border-bottom:1px solid #1e293b;text-align:center;font-weight:600">${row.rowNumber}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #1e293b;font-family:monospace;font-size:12px">${row.time ?? ""}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #1e293b;max-width:280px">${row.observation ?? ""}</td>
+        ${row.members.length === 0
+          ? `<td colspan="3" style="padding:6px 8px;border-bottom:1px solid #1e293b;color:#6b7280;font-style:italic">No members</td>`
+          : `<td style="padding:6px 8px;border-bottom:1px solid #1e293b">${firstMember?.memberName ?? ""}</td>
+             <td style="padding:6px 8px;border-bottom:1px solid #1e293b;color:${firstCert ? certColor : "#ef4444"}">${firstCert ? "&#10003; Certified" : "Pending"}</td>
+             <td style="padding:6px 8px;border-bottom:1px solid #1e293b;font-size:11px;color:#94a3b8">${firstCert ? `${firstCert.certifiedByName}<br/><span style="font-size:10px">${format(new Date(firstCert.certifiedAt), "yyyy-MM-dd HH:mm")}</span>` : ""}</td>`
+        }
+      </tr>`;
+      const extraRows = row.members.slice(1).map((m) => {
+        const cert = row.certifications.find((c) => c.memberId === m.id && c.isActive);
+        return `<tr style="background:${rowBg}">
+          <td style="padding:4px 8px;border-bottom:1px solid #1e293b"></td>
+          <td style="padding:4px 8px;border-bottom:1px solid #1e293b"></td>
+          <td style="padding:4px 8px;border-bottom:1px solid #1e293b"></td>
+          <td style="padding:4px 8px;border-bottom:1px solid #1e293b">${m.memberName}</td>
+          <td style="padding:4px 8px;border-bottom:1px solid #1e293b;color:${cert ? certColor : "#ef4444"}">${cert ? "&#10003; Certified" : "Pending"}</td>
+          <td style="padding:4px 8px;border-bottom:1px solid #1e293b;font-size:11px;color:#94a3b8">${cert ? `${cert.certifiedByName}<br/><span style="font-size:10px">${format(new Date(cert.certifiedAt), "yyyy-MM-dd HH:mm")}</span>` : ""}</td>
+        </tr>`;
+      }).join("");
+      return firstRow + extraRows;
+    })
+    .join("");
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
+  <title>${sheetTitle}</title>
+  <style>
+    body{font-family:system-ui,sans-serif;background:#0a0f1a;color:#e2e8f0;margin:0;padding:24px}
+    h1{font-size:20px;font-weight:700;margin-bottom:4px;color:#f8fafc}
+    .meta{font-size:12px;color:#64748b;margin-bottom:20px}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th{background:#1e293b;color:#94a3b8;font-weight:600;padding:8px;text-align:left;border-bottom:2px solid #334155}
+    td{vertical-align:top;word-break:break-word}
+    .locked-badge{display:inline-block;background:#0f2a1a;color:#22c55e;border:1px solid #166534;border-radius:4px;padding:1px 6px;font-size:11px;margin-left:8px}
+  </style></head><body>
+  <h1>${sheetTitle}</h1>
+  <div class="meta">Exported ${format(new Date(), "MMMM d, yyyy 'at' HH:mm")} &nbsp;&bull;&nbsp; ${rows.length} rows</div>
+  <table>
+    <thead><tr>
+      <th style="width:60px">Row #</th>
+      <th style="width:90px">Time</th>
+      <th>Observation</th>
+      <th style="width:140px">Member</th>
+      <th style="width:110px">Certify</th>
+      <th style="width:160px">Certified By / At</th>
+    </tr></thead>
+    <tbody>${tableRows}</tbody>
+  </table>
+</body></html>`;
+
+  const win = window.open("", "_blank");
+  if (!win) { toast.error("Pop-up blocked. Please allow pop-ups and try again."); return; }
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  setTimeout(() => { win.print(); }, 400);
+}
 
 // ─── Member Cell ──────────────────────────────────────────────────────────────
 
@@ -384,6 +522,37 @@ export default function SheetDetail() {
   const canEdit = user?.role === "certifier" || user?.role === "admin" || user?.role === "observer";
   const canCertify = user?.role === "certifier" || user?.role === "admin";
 
+  const [pendingExportType, setPendingExportType] = useState<"csv" | "pdf" | null>(null);
+  const [exportEnabled, setExportEnabled] = useState(false);
+  const { data: exportData, isFetching: exportFetching, refetch: refetchExport } = trpc.export.sheetData.useQuery(
+    { id: sheetId },
+    {
+      enabled: isAuthenticated && !!sheetId && exportEnabled,
+      staleTime: 0,
+    }
+  );
+
+  // When export data arrives and there is a pending type, trigger the download
+  useEffect(() => {
+    if (exportData && pendingExportType && sheet) {
+      if (pendingExportType === "csv") exportToCSV(sheet.title, exportData.rows);
+      else exportToPDF(sheet.title, exportData.rows);
+      setPendingExportType(null);
+    }
+  }, [exportData, pendingExportType, sheet]);
+
+  const handleExport = useCallback((type: "csv" | "pdf") => {
+    if (!sheet) return;
+    if (exportData && !exportFetching) {
+      // Data already cached — re-fetch to get latest then export
+      setPendingExportType(type);
+      refetchExport();
+      return;
+    }
+    setPendingExportType(type);
+    setExportEnabled(true);
+  }, [sheet, exportData, exportFetching, refetchExport]);
+
   if (!isAuthenticated) return null;
 
   const isLoading = sheetLoading || rowsLoading;
@@ -408,7 +577,39 @@ export default function SheetDetail() {
               </>
             )}
           </div>
-          <div className="ml-auto shrink-0">
+          <div className="ml-auto flex items-center gap-2 shrink-0">
+            {/* Export dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-2"
+                  disabled={exportFetching}
+                >
+                  <Download className="w-4 h-4" />
+                  {exportFetching ? "Preparing..." : "Export"}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuItem
+                  className="gap-2 cursor-pointer"
+                  onClick={() => handleExport("csv")}
+                >
+                  <Table2 className="w-4 h-4 text-emerald-400" />
+                  Download CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="gap-2 cursor-pointer"
+                  onClick={() => handleExport("pdf")}
+                >
+                  <FileText className="w-4 h-4 text-rose-400" />
+                  Print / Save PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Add row */}
             <Button
               size="sm"
               variant="outline"

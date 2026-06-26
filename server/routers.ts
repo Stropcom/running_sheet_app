@@ -360,6 +360,31 @@ export const appRouter = router({
     }),
   }),
 
+  // ─── Export ─────────────────────────────────────────────────────────────────
+
+  export: router({
+    sheetData: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const sheet = await getRunningSheetById(input.id);
+        if (!sheet) throw new TRPCError({ code: "NOT_FOUND", message: "Sheet not found." });
+        const rows = await getRowsBySheetId(input.id);
+        const rowIds = rows.map((r) => r.id);
+        const [members, certs] = await Promise.all([
+          getMembersByRowIds(rowIds),
+          getCertificationsByRowIds(rowIds),
+        ]);
+        return {
+          sheet,
+          rows: rows.map((row) => ({
+            ...row,
+            members: members.filter((m) => m.rowId === row.id),
+            certifications: certs.filter((c) => c.rowId === row.id),
+          })),
+        };
+      }),
+  }),
+
   // ─── Admin ──────────────────────────────────────────────────────────────────
 
   admin: router({

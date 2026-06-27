@@ -281,33 +281,37 @@ function MemberCell({
             </div>
             <div className="flex items-center gap-1 shrink-0">
               {cert ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div className="flex items-center gap-1">
-                      <CheckCircle2 className="w-4 h-4 text-[var(--certified-color)]" />
-                      {canCertify && (
+                <div className="flex items-center gap-1">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <CheckCircle2 className="w-4 h-4 text-[var(--certified-color)] cursor-default" />
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="text-xs">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="font-medium">Certified by {(cert as any).certifiedByCIN || cert.certifiedByName}</span>
+                        <span className="text-muted-foreground flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          {format(new Date(cert.certifiedAt), "MMM d, yyyy HH:mm:ss")}
+                        </span>
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                  {canCertify && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
                         <Button
                           variant="ghost"
                           size="icon"
                           className="w-6 h-6 opacity-0 group-hover/member:opacity-100 text-muted-foreground hover:text-amber-400"
-                          onClick={() => onUncertify(row.id, member.id)}
-                          title="Uncertify this member"
+                          onClick={(e) => { e.stopPropagation(); onUncertify(row.id, member.id); }}
                         >
                           <XCircle className="w-3.5 h-3.5" />
                         </Button>
-                      )}
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="font-medium">Certified by {(cert as any).certifiedByCIN || cert.certifiedByName}</span>
-                      <span className="text-muted-foreground flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {format(new Date(cert.certifiedAt), "MMM d, yyyy HH:mm:ss")}
-                      </span>
-                    </div>
-                  </TooltipContent>
-                </Tooltip>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">Uncertify this member</TooltipContent>
+                    </Tooltip>
+                  )}
+                </div>
               ) : (
                 <div className="flex items-center gap-1">
                   {canCertify && !row.isLocked && (
@@ -325,7 +329,7 @@ function MemberCell({
                       <TooltipContent side="top" className="text-xs">Certify this member</TooltipContent>
                     </Tooltip>
                   )}
-                  {canEdit && !row.isLocked && (
+                  {canEdit && (
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button
@@ -529,81 +533,6 @@ function minutesToTimeString(mins: number): string {
   return `${String(h12).padStart(2, "0")}:${String(min).padStart(2, "0")} ${period}`;
 }
 
-/** A single scroll-wheel column for the time picker */
-function WheelColumn({
-  items,
-  selected,
-  onSelect,
-  itemWidth = "w-12",
-}: {
-  items: string[];
-  selected: string;
-  onSelect: (val: string) => void;
-  itemWidth?: string;
-}) {
-  const ITEM_H = 36;
-  const VISIBLE = 5;
-  const containerRef = useRef<HTMLDivElement>(null);
-  const selectedIdx = items.indexOf(selected);
-
-  // Scroll to selected on mount and when selected changes
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const target = selectedIdx * ITEM_H - ITEM_H * Math.floor(VISIBLE / 2);
-    el.scrollTop = Math.max(0, target);
-  }, [selectedIdx]);
-
-  const handleScroll = useCallback(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const idx = Math.round(el.scrollTop / ITEM_H);
-    const clamped = Math.max(0, Math.min(items.length - 1, idx));
-    if (items[clamped] !== selected) onSelect(items[clamped]);
-  }, [items, selected, onSelect]);
-
-  return (
-    <div className="relative flex flex-col items-center" style={{ width: undefined }}>
-      {/* Selection highlight */}
-      <div
-        className="absolute pointer-events-none z-10 rounded-md bg-primary/15 border border-primary/30"
-        style={{ top: ITEM_H * Math.floor(VISIBLE / 2), height: ITEM_H, left: 0, right: 0 }}
-      />
-      <div
-        ref={containerRef}
-        onScroll={handleScroll}
-        className={`overflow-y-scroll scroll-smooth no-scrollbar ${itemWidth}`}
-        style={{
-          height: ITEM_H * VISIBLE,
-          scrollSnapType: "y mandatory",
-          WebkitOverflowScrolling: "touch",
-        }}
-      >
-        {/* Padding items top */}
-        {Array.from({ length: Math.floor(VISIBLE / 2) }).map((_, i) => (
-          <div key={`pad-t-${i}`} style={{ height: ITEM_H }} />
-        ))}
-        {items.map((item) => (
-          <div
-            key={item}
-            onClick={() => onSelect(item)}
-            style={{ height: ITEM_H, scrollSnapAlign: "center" }}
-            className={`flex items-center justify-center cursor-pointer text-sm font-mono select-none transition-colors ${
-              item === selected ? "text-foreground font-semibold" : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {item}
-          </div>
-        ))}
-        {/* Padding items bottom */}
-        {Array.from({ length: Math.floor(VISIBLE / 2) }).map((_, i) => (
-          <div key={`pad-b-${i}`} style={{ height: ITEM_H }} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function TimePickerCell({
   value,
   locked,
@@ -618,7 +547,7 @@ function TimePickerCell({
     if (!value) return { hour: "12", minute: "00", period: "AM" };
     const m = value.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
     if (!m) return { hour: "12", minute: "00", period: "AM" };
-    return { hour: String(parseInt(m[1], 10)).padStart(2, "0"), minute: m[2].padStart(2, "0"), period: m[3].toUpperCase() };
+    return { hour: String(parseInt(m[1], 10)), minute: m[2].padStart(2, "0"), period: m[3].toUpperCase() };
   }, [value]);
 
   const [open, setOpen] = useState(false);
@@ -647,14 +576,14 @@ function TimePickerCell({
   }, [open]);
 
   const commit = useCallback((h: string, m: string, p: string) => {
-    const display = `${h.padStart(2, "0")}:${m.padStart(2, "0")} ${p}`;
+    const display = `${String(parseInt(h, 10)).padStart(2, "0")}:${m.padStart(2, "0")} ${p}`;
     const mins = timeStringToMinutes(display);
     onSave(display, mins);
   }, [onSave]);
 
-  const hours = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, "0"));
+  const hours = Array.from({ length: 12 }, (_, i) => String(i + 1));
+  // All 60 minutes
   const minutes = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"));
-  const periods = ["AM", "PM"];
 
   if (locked) {
     return (
@@ -674,29 +603,37 @@ function TimePickerCell({
         {value || <span className="text-muted-foreground/50 italic text-xs">Set time</span>}
       </button>
       {open && (
-        <div className="absolute z-50 top-full left-0 mt-1 bg-popover border border-border rounded-xl shadow-2xl p-3">
-          <div className="flex items-center gap-1">
-            <WheelColumn
-              items={hours}
-              selected={hour}
-              itemWidth="w-12"
-              onSelect={(h) => { setHour(h); commit(h, minute, period); }}
-            />
-            <span className="text-muted-foreground font-mono text-lg pb-1">:</span>
-            <WheelColumn
-              items={minutes}
-              selected={minute}
-              itemWidth="w-12"
-              onSelect={(m) => { setMinute(m); commit(hour, m, period); }}
-            />
-            <WheelColumn
-              items={periods}
-              selected={period}
-              itemWidth="w-12"
-              onSelect={(p) => { setPeriod(p); commit(hour, minute, p); }}
-            />
-          </div>
-          <p className="text-xs text-muted-foreground text-center mt-2">Scroll or click to set time</p>
+        <div className="absolute z-50 top-full left-0 mt-1 bg-popover border border-border rounded-lg shadow-xl p-3 flex items-center gap-2">
+          <Select value={hour} onValueChange={(v) => { setHour(v); commit(v, minute, period); }}>
+            <SelectTrigger className="w-16 h-8 text-sm font-mono">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {hours.map((h) => (
+                <SelectItem key={h} value={h} className="font-mono">{String(parseInt(h, 10)).padStart(2, "0")}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span className="text-muted-foreground font-mono">:</span>
+          <Select value={minute} onValueChange={(v) => { setMinute(v); commit(hour, v, period); }}>
+            <SelectTrigger className="w-16 h-8 text-sm font-mono">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {minutes.map((m) => (
+                <SelectItem key={m} value={m} className="font-mono">{m}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={period} onValueChange={(v) => { setPeriod(v); commit(hour, minute, v); }}>
+            <SelectTrigger className="w-16 h-8 text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="AM">AM</SelectItem>
+              <SelectItem value="PM">PM</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       )}
     </div>
@@ -1138,7 +1075,17 @@ export default function SheetDetail() {
                           onCertify={(rowId, memberId) => certify.mutate({ rowId, memberId })}
                           onUncertify={(rowId, memberId) => uncertify.mutate({ rowId, memberId })}
                           onAddMember={(rowId, name) => addMember.mutate({ rowId, memberName: name })}
-                          onRemoveMember={(id, rowId) => removeMember.mutate({ id, rowId })}
+                          onRemoveMember={(id, rowId) => {
+                            const rowData = rows?.find((r) => r.id === rowId);
+                            if (rowData?.isLocked) {
+                              // Row is locked — uncertify all first, then remove
+                              uncertifyAll.mutate({ rowId }, {
+                                onSuccess: () => removeMember.mutate({ id, rowId }),
+                              });
+                            } else {
+                              removeMember.mutate({ id, rowId });
+                            }
+                          }}
                           rosterCins={rosterCinList}
                         />
                       </td>

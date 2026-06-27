@@ -3,6 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -29,11 +30,18 @@ import {
   Calendar,
   ArrowLeft,
   FolderOpen,
+  Hash,
+  Building2,
+  UserPlus,
+  X,
+  Camera,
 } from "lucide-react";
 import { useState } from "react";
 import { useLocation, useParams } from "wouter";
 import { format } from "date-fns";
 import { toast } from "sonner";
+
+type CinEntry = { cin: string; hasImages: boolean };
 
 export default function OperationDetail() {
   const { isAuthenticated, user } = useAuth();
@@ -43,7 +51,8 @@ export default function OperationDetail() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
-  const [newDesc, setNewDesc] = useState("");
+  const [cinList, setCinList] = useState<CinEntry[]>([]);
+  const [cinInput, setCinInput] = useState("");
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
   const utils = trpc.useUtils();
@@ -63,7 +72,8 @@ export default function OperationDetail() {
       utils.sheet.listByOperation.invalidate({ operationId });
       setCreateOpen(false);
       setNewTitle("");
-      setNewDesc("");
+      setCinList([]);
+      setCinInput("");
       toast.success("Running sheet created");
       navigate(`/sheet/${data.id}`);
     },
@@ -79,13 +89,43 @@ export default function OperationDetail() {
     onError: (e) => toast.error(e.message),
   });
 
+  const handleAddCin = () => {
+    const trimmed = cinInput.trim();
+    if (!trimmed) return;
+    if (cinList.some((c) => c.cin.toLowerCase() === trimmed.toLowerCase())) {
+      toast.error("CIN already added");
+      return;
+    }
+    setCinList((prev) => [...prev, { cin: trimmed, hasImages: false }]);
+    setCinInput("");
+  };
+
+  const handleRemoveCin = (cin: string) => {
+    setCinList((prev) => prev.filter((c) => c.cin !== cin));
+  };
+
+  const handleToggleImages = (cin: string) => {
+    setCinList((prev) =>
+      prev.map((c) => c.cin === cin ? { ...c, hasImages: !c.hasImages } : c)
+    );
+  };
+
   const handleCreate = () => {
     if (!newTitle.trim()) return;
     createSheet.mutate({
       operationId,
       title: newTitle.trim(),
-      description: newDesc.trim() || undefined,
+      sheetCins: cinList.length > 0 ? cinList : undefined,
     });
+  };
+
+  const handleDialogClose = (open: boolean) => {
+    if (!open) {
+      setNewTitle("");
+      setCinList([]);
+      setCinInput("");
+    }
+    setCreateOpen(open);
   };
 
   const isLoading = opLoading || sheetsLoading;
@@ -93,7 +133,7 @@ export default function OperationDetail() {
   return (
     <DashboardLayout>
       <div className="p-6 lg:p-8 max-w-4xl mx-auto">
-        {/* Breadcrumb + header */}
+        {/* Breadcrumb */}
         <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
           <button
             onClick={() => navigate("/")}
@@ -108,9 +148,10 @@ export default function OperationDetail() {
           </span>
         </div>
 
+        {/* Header */}
         <div className="flex items-start justify-between mb-6">
           <div>
-            <div className="flex items-center gap-3 mb-1">
+            <div className="flex items-center gap-3 mb-2">
               <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">
                 <FolderOpen className="w-5 h-5 text-primary" />
               </div>
@@ -118,8 +159,28 @@ export default function OperationDetail() {
                 {opLoading ? <Skeleton className="h-7 w-48" /> : (operation?.name ?? "Operation")}
               </h1>
             </div>
-            {operation?.description && (
-              <p className="text-muted-foreground text-sm mt-1 ml-11">{operation.description}</p>
+            {/* Operation metadata */}
+            {!opLoading && operation && (
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-1 ml-11">
+                {operation.promisNumber && (
+                  <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                    <Hash className="w-3.5 h-3.5" />
+                    PROMIS: <span className="text-foreground font-medium ml-0.5">{operation.promisNumber}</span>
+                  </span>
+                )}
+                {operation.imsNumber && (
+                  <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                    <Hash className="w-3.5 h-3.5" />
+                    IMS: <span className="text-foreground font-medium ml-0.5">{operation.imsNumber}</span>
+                  </span>
+                )}
+                {operation.investigationUnit && (
+                  <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                    <Building2 className="w-3.5 h-3.5" />
+                    <span className="text-foreground font-medium">{operation.investigationUnit}</span>
+                  </span>
+                )}
+              </div>
             )}
           </div>
           <Button
@@ -153,45 +214,65 @@ export default function OperationDetail() {
           </div>
         ) : (
           <div className="flex flex-col gap-2">
-            {sheets.map((sheet) => (
-              <div
-                key={sheet.id}
-                className="group relative flex items-center gap-4 p-4 rounded-xl border border-border bg-card hover:bg-accent/20 hover:border-primary/30 transition-all duration-150 cursor-pointer"
-                onClick={() => navigate(`/sheet/${sheet.id}`)}
-              >
-                <div className="p-2.5 rounded-lg bg-muted/60 border border-border shrink-0">
-                  <FileText className="w-5 h-5 text-muted-foreground" />
-                </div>
+            {sheets.map((sheet) => {
+              const parsedCins: CinEntry[] = (() => {
+                try { return sheet.sheetCins ? JSON.parse(sheet.sheetCins) : []; }
+                catch { return []; }
+              })();
+              return (
+                <div
+                  key={sheet.id}
+                  className="group relative flex items-center gap-4 p-4 rounded-xl border border-border bg-card hover:bg-accent/20 hover:border-primary/30 transition-all duration-150 cursor-pointer"
+                  onClick={() => navigate(`/sheet/${sheet.id}`)}
+                >
+                  <div className="p-2.5 rounded-lg bg-muted/60 border border-border shrink-0">
+                    <FileText className="w-5 h-5 text-muted-foreground" />
+                  </div>
 
-                <div className="flex-1 min-w-0">
-                  <span className="font-semibold text-foreground truncate block">{sheet.title}</span>
-                  {sheet.description && (
-                    <p className="text-sm text-muted-foreground truncate mt-0.5">{sheet.description}</p>
-                  )}
-                  <div className="flex items-center gap-1.5 mt-1.5 text-xs text-muted-foreground">
-                    <Calendar className="w-3 h-3" />
-                    <span>Created {format(new Date(sheet.createdAt), "d MMM yyyy, HH:mm")}</span>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-semibold text-foreground truncate block">{sheet.title}</span>
+                    {parsedCins.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1.5">
+                        {parsedCins.map((c) => (
+                          <span
+                            key={c.cin}
+                            className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${
+                              c.hasImages
+                                ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
+                                : "border-border bg-muted/40 text-muted-foreground"
+                            }`}
+                          >
+                            {c.cin}
+                            {c.hasImages && <Camera className="w-2.5 h-2.5" />}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-1.5 mt-1.5 text-xs text-muted-foreground">
+                      <Calendar className="w-3 h-3" />
+                      <span>Created {format(new Date(sheet.createdAt), "d MMM yyyy, HH:mm")}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    {user?.role === "admin" && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="w-8 h-8 opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive hover:bg-destructive/10 transition-opacity"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteId(sheet.id);
+                        }}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    )}
+                    <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
                   </div>
                 </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  {user?.role === "admin" && (
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="w-8 h-8 opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive hover:bg-destructive/10 transition-opacity"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDeleteId(sheet.id);
-                      }}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  )}
-                  <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -203,38 +284,93 @@ export default function OperationDetail() {
       </div>
 
       {/* Create Sheet Dialog */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-md">
+      <Dialog open={createOpen} onOpenChange={handleDialogClose}>
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>New Running Sheet</DialogTitle>
           </DialogHeader>
-          <div className="flex flex-col gap-3 py-2">
+          <div className="flex flex-col gap-4 py-2">
+            {/* Title */}
             <div>
               <label className="text-sm font-medium text-foreground mb-1.5 block">
                 Title <span className="text-destructive">*</span>
               </label>
               <Input
-                placeholder="e.g. Phase 1 Log"
+                placeholder="e.g. Day 1 — Morning Shift"
                 value={newTitle}
                 onChange={(e) => setNewTitle(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleCreate()}
                 autoFocus
               />
             </div>
+
+            {/* Daily CIN list */}
             <div>
-              <label className="text-sm font-medium text-foreground mb-1.5 block">
-                Description <span className="text-muted-foreground font-normal">(optional)</span>
+              <label className="text-sm font-medium text-foreground mb-1 block">
+                Daily CIN Roster <span className="text-muted-foreground font-normal">(optional)</span>
               </label>
-              <Input
-                placeholder="Brief description"
-                value={newDesc}
-                onChange={(e) => setNewDesc(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-              />
+              <p className="text-xs text-muted-foreground mb-2">
+                Add the CINs of all members on duty today. Tick the camera icon if images were taken by that member.
+              </p>
+
+              {/* CIN input row */}
+              <div className="flex gap-2 mb-3">
+                <Input
+                  placeholder="Enter CIN and press Add"
+                  value={cinInput}
+                  onChange={(e) => setCinInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddCin(); } }}
+                  className="flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAddCin}
+                  disabled={!cinInput.trim()}
+                  className="gap-1.5 shrink-0"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  Add
+                </Button>
+              </div>
+
+              {/* CIN list */}
+              {cinList.length > 0 && (
+                <div className="rounded-lg border border-border overflow-hidden">
+                  {/* Header */}
+                  <div className="grid grid-cols-[1fr_auto_auto] gap-3 px-3 py-2 bg-muted/40 border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    <span>CIN</span>
+                    <span className="flex items-center gap-1"><Camera className="w-3 h-3" /> Images</span>
+                    <span></span>
+                  </div>
+                  {cinList.map((entry) => (
+                    <div
+                      key={entry.cin}
+                      className="grid grid-cols-[1fr_auto_auto] gap-3 items-center px-3 py-2.5 border-b border-border/50 last:border-0 hover:bg-muted/20 transition-colors"
+                    >
+                      <span className="text-sm font-mono font-medium text-foreground">{entry.cin}</span>
+                      <div className="flex items-center justify-center">
+                        <Checkbox
+                          checked={entry.hasImages}
+                          onCheckedChange={() => handleToggleImages(entry.cin)}
+                          className="data-[state=checked]:bg-amber-500 data-[state=checked]:border-amber-500"
+                        />
+                      </div>
+                      <button
+                        onClick={() => handleRemoveCin(entry.cin)}
+                        className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => handleDialogClose(false)}>Cancel</Button>
             <Button
               onClick={handleCreate}
               disabled={!newTitle.trim() || createSheet.isPending}

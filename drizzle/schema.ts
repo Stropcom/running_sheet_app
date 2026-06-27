@@ -38,7 +38,9 @@ export type InsertUser = typeof users.$inferInsert;
 export const operations = mysqlTable("operations", {
   id: int("id").autoincrement().primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
-  description: text("description"),
+  promisNumber: varchar("promisNumber", { length: 128 }),
+  imsNumber: varchar("imsNumber", { length: 128 }),
+  investigationUnit: varchar("investigationUnit", { length: 255 }),
   createdBy: int("createdBy").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -53,7 +55,8 @@ export const runningSheets = mysqlTable("running_sheets", {
   id: int("id").autoincrement().primaryKey(),
   operationId: int("operationId").notNull(),
   title: varchar("title", { length: 255 }).notNull(),
-  description: text("description"),
+  // JSON array of { cin: string, hasImages: boolean } — daily CIN roster
+  sheetCins: text("sheetCins"),
   createdBy: int("createdBy").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

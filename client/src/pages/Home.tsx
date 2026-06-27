@@ -21,7 +21,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Plus, Search, FolderOpen, ChevronRight, Trash2, Calendar } from "lucide-react";
+import { Plus, Search, FolderOpen, ChevronRight, Trash2, Calendar, Hash, Building2 } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
@@ -33,7 +33,9 @@ export default function Home() {
   const [search, setSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newDesc, setNewDesc] = useState("");
+  const [newPromis, setNewPromis] = useState("");
+  const [newIms, setNewIms] = useState("");
+  const [newUnit, setNewUnit] = useState("");
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
   const utils = trpc.useUtils();
@@ -47,7 +49,9 @@ export default function Home() {
       utils.operation.list.invalidate();
       setCreateOpen(false);
       setNewName("");
-      setNewDesc("");
+      setNewPromis("");
+      setNewIms("");
+      setNewUnit("");
       toast.success("Operation created");
     },
     onError: (e) => toast.error(e.message),
@@ -64,12 +68,19 @@ export default function Home() {
 
   const filtered = operations?.filter((op) =>
     op.name.toLowerCase().includes(search.toLowerCase()) ||
-    (op.description ?? "").toLowerCase().includes(search.toLowerCase())
+    (op.promisNumber ?? "").toLowerCase().includes(search.toLowerCase()) ||
+    (op.imsNumber ?? "").toLowerCase().includes(search.toLowerCase()) ||
+    (op.investigationUnit ?? "").toLowerCase().includes(search.toLowerCase())
   );
 
   const handleCreate = () => {
     if (!newName.trim()) return;
-    createOp.mutate({ name: newName.trim(), description: newDesc.trim() || undefined });
+    createOp.mutate({
+      name: newName.trim(),
+      promisNumber: newPromis.trim() || undefined,
+      imsNumber: newIms.trim() || undefined,
+      investigationUnit: newUnit.trim() || undefined,
+    });
   };
 
   return (
@@ -97,7 +108,7 @@ export default function Home() {
         <div className="relative mb-5">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Search operations by name or description…"
+            placeholder="Search by operation name, PROMIS, IMS or unit…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
@@ -107,7 +118,7 @@ export default function Home() {
         {/* Operations list */}
         {isLoading ? (
           <div className="flex flex-col gap-3">
-            {[1, 2, 3].map((i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
+            {[1, 2, 3].map((i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
           </div>
         ) : !filtered || filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
@@ -145,9 +156,27 @@ export default function Home() {
                   <div className="flex items-center gap-2">
                     <span className="font-semibold text-foreground truncate">{op.name}</span>
                   </div>
-                  {op.description && (
-                    <p className="text-sm text-muted-foreground truncate mt-0.5">{op.description}</p>
-                  )}
+                  {/* Metadata badges */}
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5">
+                    {op.promisNumber && (
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Hash className="w-3 h-3" />
+                        PROMIS: <span className="text-foreground font-medium ml-0.5">{op.promisNumber}</span>
+                      </span>
+                    )}
+                    {op.imsNumber && (
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Hash className="w-3 h-3" />
+                        IMS: <span className="text-foreground font-medium ml-0.5">{op.imsNumber}</span>
+                      </span>
+                    )}
+                    {op.investigationUnit && (
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Building2 className="w-3 h-3" />
+                        <span className="text-foreground font-medium">{op.investigationUnit}</span>
+                      </span>
+                    )}
+                  </div>
                   <div className="flex items-center gap-1.5 mt-1.5 text-xs text-muted-foreground">
                     <Calendar className="w-3 h-3" />
                     <span>Created {format(new Date(op.createdAt), "d MMM yyyy")}</span>
@@ -204,12 +233,32 @@ export default function Home() {
             </div>
             <div>
               <label className="text-sm font-medium text-foreground mb-1.5 block">
-                Description <span className="text-muted-foreground font-normal">(optional)</span>
+                PROMIS Number <span className="text-muted-foreground font-normal">(optional)</span>
               </label>
               <Input
-                placeholder="Brief description of this operation"
-                value={newDesc}
-                onChange={(e) => setNewDesc(e.target.value)}
+                placeholder="e.g. PRO-2024-001"
+                value={newPromis}
+                onChange={(e) => setNewPromis(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-foreground mb-1.5 block">
+                IMS Number <span className="text-muted-foreground font-normal">(optional)</span>
+              </label>
+              <Input
+                placeholder="e.g. IMS-2024-042"
+                value={newIms}
+                onChange={(e) => setNewIms(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-foreground mb-1.5 block">
+                Investigation Unit <span className="text-muted-foreground font-normal">(optional)</span>
+              </label>
+              <Input
+                placeholder="e.g. Homicide Squad"
+                value={newUnit}
+                onChange={(e) => setNewUnit(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleCreate()}
               />
             </div>

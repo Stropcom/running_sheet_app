@@ -93,3 +93,13 @@
 - [x] Remove minimum length/complexity requirements from username and password fields
 - [x] Add light/dark theme toggle accessible from sidebar and profile page
 - [x] Fix AdminPage Add User form: inputs lose focus after each keystroke (unstable component key issue)
+
+## Operation & Sheet Form + PDF Cover Page (Round 7)
+- [x] DB: add promisNumber, imsNumber, investigationUnit to operations table
+- [x] DB: add sheetCins JSON column to running_sheets (array of {cin, hasImages})
+- [x] Backend: update operation create/update to accept new fields
+- [x] Backend: update sheet create/update to accept sheetCins
+- [x] Frontend: Operation dialog — remove description, add PROMIS number, IMS number, Investigation Unit
+- [x] Frontend: Running Sheet dialog — remove description, add daily CIN list with images checkbox per CIN
+- [x] Frontend: Operation detail page — display PROMIS/IMS/Unit fields
+- [x] PDF export: prepend a cover page with operation name, PROMIS, IMS, unit, sheet name, date, and daily CIN list with images indicator

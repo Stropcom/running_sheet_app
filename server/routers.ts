@@ -187,9 +187,20 @@ export const appRouter = router({
     }),
 
     create: protectedProcedure
-      .input(z.object({ name: z.string().min(1), description: z.string().optional() }))
+      .input(z.object({
+        name: z.string().min(1),
+        promisNumber: z.string().optional(),
+        imsNumber: z.string().optional(),
+        investigationUnit: z.string().optional(),
+      }))
       .mutation(async ({ input, ctx }) => {
-        const id = await createOperation({ name: input.name, description: input.description, createdBy: ctx.user.id });
+        const id = await createOperation({
+          name: input.name,
+          promisNumber: input.promisNumber ?? null,
+          imsNumber: input.imsNumber ?? null,
+          investigationUnit: input.investigationUnit ?? null,
+          createdBy: ctx.user.id,
+        });
         return { id };
       }),
 
@@ -221,17 +232,32 @@ export const appRouter = router({
     }),
 
     create: protectedProcedure
-      .input(z.object({ operationId: z.number(), title: z.string().min(1), description: z.string().optional() }))
+      .input(z.object({
+        operationId: z.number(),
+        title: z.string().min(1),
+        sheetCins: z.array(z.object({ cin: z.string(), hasImages: z.boolean() })).optional(),
+      }))
       .mutation(async ({ input, ctx }) => {
-        const id = await createRunningSheet({ operationId: input.operationId, title: input.title, description: input.description, createdBy: ctx.user.id });
+        const id = await createRunningSheet({
+          operationId: input.operationId,
+          title: input.title,
+          sheetCins: input.sheetCins ? JSON.stringify(input.sheetCins) : null,
+          createdBy: ctx.user.id,
+        });
         await createAuditLog({ sheetId: id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "sheet_created", details: `Sheet "${input.title}" created`, createdAt: Date.now() });
         return { id };
       }),
 
     update: protectedProcedure
-      .input(z.object({ id: z.number(), title: z.string().min(1).optional(), description: z.string().optional() }))
+      .input(z.object({
+        id: z.number(),
+        title: z.string().min(1).optional(),
+        sheetCins: z.array(z.object({ cin: z.string(), hasImages: z.boolean() })).optional(),
+      }))
       .mutation(async ({ input, ctx }) => {
-        const { id, ...data } = input;
+        const { id, sheetCins, ...rest } = input;
+        const data: Record<string, unknown> = { ...rest };
+        if (sheetCins !== undefined) data.sheetCins = JSON.stringify(sheetCins);
         await updateRunningSheet(id, data);
         await createAuditLog({ sheetId: id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "sheet_updated", details: `Sheet updated`, createdAt: Date.now() });
         return { success: true };
@@ -446,6 +472,7 @@ export const appRouter = router({
       .query(async ({ input }) => {
         const sheet = await getRunningSheetById(input.id);
         if (!sheet) throw new TRPCError({ code: "NOT_FOUND", message: "Sheet not found." });
+        const operation = sheet.operationId ? await getOperationById(sheet.operationId) : null;
         const rows = await getRowsBySheetId(input.id);
         const rowIds = rows.map((r) => r.id);
         const [members, certs] = await Promise.all([
@@ -454,6 +481,7 @@ export const appRouter = router({
         ]);
         return {
           sheet,
+          operation,
           rows: rows.map((row) => ({
             ...row,
             members: members.filter((m) => m.rowId === row.id),

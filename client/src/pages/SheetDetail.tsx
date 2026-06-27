@@ -67,31 +67,93 @@ type ExportRow = {
   certifications: { memberId: number; certifiedByName: string; certifiedAt: number; isActive: boolean }[];
 };
 
-function exportToPDF(sheetTitle: string, rows: ExportRow[]) {
+type OperationMeta = {
+  name: string;
+  promisNumber?: string | null;
+  imsNumber?: string | null;
+  investigationUnit?: string | null;
+  createdAt: Date;
+} | null;
+
+type CinEntry = { cin: string; hasImages: boolean };
+
+function exportToPDF(
+  sheetTitle: string,
+  rows: ExportRow[],
+  operation: OperationMeta,
+  sheetCinsRaw: string | null,
+  sheetCreatedAt: Date,
+) {
   const certColor = "#22c55e";
   const lockedBg = "#0f2a1a";
-  const cb = "border-right:1px solid #334155"; // column border
-  const bb = "border-bottom:1px solid #1e293b"; // row border
+  const cb = "border-right:1px solid #334155";
+  const bb = "border-bottom:1px solid #1e293b";
 
+  // Parse daily CIN roster
+  let cinRoster: CinEntry[] = [];
+  try { cinRoster = sheetCinsRaw ? JSON.parse(sheetCinsRaw) : []; } catch { cinRoster = []; }
+
+  // ── Cover page ──────────────────────────────────────────────────────────────
+  const metaRow = (label: string, value: string) =>
+    `<tr><td style="padding:5px 10px;font-weight:600;color:#94a3b8;white-space:nowrap;width:160px">${label}</td><td style="padding:5px 10px;color:#e2e8f0">${value}</td></tr>`;
+
+  const cinRosterHtml = cinRoster.length > 0
+    ? `<table style="border-collapse:collapse;margin-top:14px;width:auto;border:1px solid #334155">
+        <thead><tr>
+          <th style="padding:5px 10px;background:#1e293b;color:#94a3b8;font-weight:600;border-bottom:2px solid #334155;border-right:1px solid #334155;text-align:left">CIN</th>
+          <th style="padding:5px 10px;background:#1e293b;color:#94a3b8;font-weight:600;border-bottom:2px solid #334155;text-align:left">Images Taken</th>
+        </tr></thead>
+        <tbody>${cinRoster.map(c =>
+          `<tr><td style="padding:5px 10px;border-bottom:1px solid #1e293b;border-right:1px solid #334155;font-family:monospace">${c.cin}</td><td style="padding:5px 10px;border-bottom:1px solid #1e293b;color:${c.hasImages ? certColor : '#ef4444'}">${c.hasImages ? '&#10003; Yes' : '&#10007; No'}</td></tr>`
+        ).join('')}</tbody>
+      </table>`
+    : `<p style="color:#64748b;font-style:italic;margin-top:8px">No daily CIN roster recorded.</p>`;
+
+  const coverPage = `
+    <div style="page-break-after:always;padding-bottom:20px">
+      <div style="border-bottom:2px solid #334155;padding-bottom:12px;margin-bottom:16px">
+        <div style="font-size:10px;font-weight:600;letter-spacing:0.1em;color:#64748b;text-transform:uppercase;margin-bottom:4px">RUNNING SHEET</div>
+        <h1 style="font-size:22px;font-weight:700;margin:0 0 4px;color:#f8fafc">${sheetTitle}</h1>
+        <div style="font-size:11px;color:#64748b">Sheet Date: ${format(new Date(sheetCreatedAt), "EEEE d MMMM yyyy")}</div>
+      </div>
+
+      ${operation ? `
+      <div style="margin-bottom:20px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:#64748b;text-transform:uppercase;margin-bottom:8px">Operation Details</div>
+        <table style="border-collapse:collapse;width:100%;border:1px solid #334155">
+          <tbody>
+            ${metaRow("Operation Name", operation.name)}
+            ${operation.promisNumber ? metaRow("PROMIS Number", operation.promisNumber) : ""}
+            ${operation.imsNumber ? metaRow("IMS Number", operation.imsNumber) : ""}
+            ${operation.investigationUnit ? metaRow("Investigation Unit", operation.investigationUnit) : ""}
+          </tbody>
+        </table>
+      </div>` : ""}
+
+      <div>
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:#64748b;text-transform:uppercase;margin-bottom:8px">Daily CIN Roster</div>
+        ${cinRosterHtml}
+      </div>
+
+      <div style="margin-top:20px;font-size:10px;color:#475569">
+        Exported: ${format(new Date(), "d MMM yyyy, HH:mm")} &bull; ${rows.length} log entries
+      </div>
+    </div>`;
+
+  // ── Running sheet table ──────────────────────────────────────────────────────
   const tableRows = rows.map((row) => {
     const rowBg = row.isLocked ? lockedBg : "transparent";
-
-    // Build per-member combined cert cell: "Name — ✓ By / date" or "Name — Pending"
     const memberLines = row.members.length === 0
-      ? [
-          { time: row.time ?? "", member: "<em style='color:#6b7280'>No members</em>", cert: "" },
-        ]
+      ? [{ member: "<em style='color:#6b7280'>No members</em>", cert: "" }]
       : row.members.map((m) => {
           const cert = row.certifications.find((c) => c.memberId === m.id && c.isActive);
           const certCell = cert
             ? `<span style='color:${certColor};white-space:nowrap'>&#10003; ${'certifiedByCIN' in cert ? (cert as any).certifiedByCIN || cert.certifiedByName : cert.certifiedByName}</span><br/><span style='font-size:10px;color:#94a3b8;white-space:nowrap'>${format(new Date(cert.certifiedAt), "dd MMM yy HH:mm")}</span>`
             : `<span style='color:#ef4444'>Pending</span>`;
-          return { time: row.time ?? "", member: m.memberName, cert: certCell };
+          return { member: m.memberName, cert: certCell };
         });
-
     const stack = (items: string[]) =>
       items.map(s => `<div style='padding:1px 0;line-height:1.4'>${s}</div>`).join("");
-
     return `<tr style="background:${rowBg}">
       <td style="padding:5px 6px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap">${row.time ?? ""}</td>
       <td style="padding:5px 6px;${bb};${cb}">${row.observation ?? ""}</td>
@@ -105,8 +167,6 @@ function exportToPDF(sheetTitle: string, rows: ExportRow[]) {
   <style>
     @page{margin:15mm}
     body{font-family:system-ui,sans-serif;background:#0a0f1a;color:#e2e8f0;margin:0;padding:0;font-size:12px}
-    h1{font-size:16px;font-weight:700;margin:0 0 2px;color:#f8fafc}
-    .meta{font-size:11px;color:#64748b;margin-bottom:14px}
     table{width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #334155}
     col.c-time{width:70px}
     col.c-obs{width:auto}
@@ -117,8 +177,7 @@ function exportToPDF(sheetTitle: string, rows: ExportRow[]) {
     th:last-child,td:last-child{border-right:none}
     td{vertical-align:top;word-break:break-word;overflow:hidden}
   </style></head><body>
-  <h1>${sheetTitle}</h1>
-  <div class="meta">Exported ${format(new Date(), "d MMM yyyy, HH:mm")} &bull; ${rows.length} rows</div>
+  ${coverPage}
   <table>
     <colgroup>
       <col class="c-time"/>
@@ -517,7 +576,13 @@ export default function SheetDetail() {
   // When export data arrives and there is a pending type, trigger the download
   useEffect(() => {
     if (exportData && pendingExportType && sheet) {
-      exportToPDF(sheet.title, exportData.rows);
+      exportToPDF(
+        sheet.title,
+        exportData.rows,
+        exportData.operation ?? null,
+        exportData.sheet.sheetCins ?? null,
+        exportData.sheet.createdAt,
+      );
       setPendingExportType(null);
     }
   }, [exportData, pendingExportType, sheet]);
@@ -551,9 +616,6 @@ export default function SheetDetail() {
             ) : (
               <>
                 <h1 className="text-xl font-semibold text-foreground truncate">{sheet?.title}</h1>
-                {sheet?.description && (
-                  <p className="text-sm text-muted-foreground mt-0.5">{sheet.description}</p>
-                )}
               </>
             )}
           </div>

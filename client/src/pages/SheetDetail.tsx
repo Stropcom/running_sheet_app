@@ -299,7 +299,7 @@ function MemberCell({
   const ROW_H = "h-8";
 
   return (
-    <div className="flex flex-col min-w-[180px]">
+    <div className="flex flex-col min-w-[100px]">
       {row.members.map((member) => {
         const cert = row.certifications.find((c) => c.memberId === member.id && c.isActive);
         return (
@@ -317,7 +317,7 @@ function MemberCell({
                 <div className="flex items-center gap-1">
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <CheckCircle2 className="w-4 h-4 text-[var(--certified-color)] cursor-default" />
+                      <ShieldCheck className="w-4 h-4 text-emerald-500 cursor-default shrink-0" />
                     </TooltipTrigger>
                     <TooltipContent side="top" className="text-xs">
                       <div className="flex flex-col gap-0.5">
@@ -347,13 +347,13 @@ function MemberCell({
                 </div>
               ) : (
                 <div className="flex items-center gap-1">
-                  {canCertify && !row.isLocked && (
+                  {canCertify && !row.isLocked ? (
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="w-6 h-6 text-muted-foreground hover:text-[var(--certified-color)]"
+                          className="w-6 h-6 text-red-500 hover:text-emerald-500 hover:bg-emerald-500/10"
                           onClick={() => onCertify(row.id, member.id)}
                         >
                           <ShieldCheck className="w-3.5 h-3.5" />
@@ -361,6 +361,8 @@ function MemberCell({
                       </TooltipTrigger>
                       <TooltipContent side="top" className="text-xs">Certify this member</TooltipContent>
                     </Tooltip>
+                  ) : (
+                    <ShieldCheck className="w-3.5 h-3.5 text-red-500 shrink-0" />
                   )}
                   {canEdit && (
                     <Tooltip>
@@ -492,14 +494,13 @@ function CertifyCell({
   return (
     <div className="flex flex-col">
       {/* One row per member — same fixed height as MemberCell member rows */}
-      {row.members.map((m) => {
+          {row.members.map((m) => {
         const cert = row.certifications.find((c) => c.memberId === m.id && c.isActive);
         return (
-          <div key={m.id} className={`flex items-center gap-1 group/certrow ${ROW_H}`}>
+          <div key={m.id} className={`flex items-center gap-1.5 group/certrow ${ROW_H}`}>
             {cert ? (
               <>
-                <CheckCircle2 className="w-3 h-3 text-[var(--certified-color)] shrink-0" />
-                <span className="text-xs font-mono text-[var(--certified-color)] flex-1 truncate">
+                <span className="text-xs font-mono font-medium text-emerald-500 flex-1 truncate">
                   {(cert as any).certifiedByCIN || cert.certifiedByName}
                 </span>
                 {canCertify && (
@@ -519,10 +520,7 @@ function CertifyCell({
                 )}
               </>
             ) : (
-              <>
-                <XCircle className="w-3 h-3 text-muted-foreground shrink-0" />
-                <span className="text-xs text-muted-foreground">Pending</span>
-              </>
+              <XCircle className="w-3.5 h-3.5 text-red-500 shrink-0" />
             )}
           </div>
         );
@@ -1172,8 +1170,8 @@ export default function SheetDetail() {
                   <tr className="bg-muted/30">
                     <th className="w-32">Time</th>
                     <th>Observation</th>
-                    <th className="w-56">CIN</th>
-                    <th className="w-32">Certify</th>
+                    <th className="w-36">CIN</th>
+                    <th className="w-24 text-center">Certify</th>
                   </tr>
                 </thead>
                 <tbody>

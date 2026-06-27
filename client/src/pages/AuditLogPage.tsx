@@ -3,8 +3,27 @@ import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import DashboardLayout from "@/components/DashboardLayout";
-import { ScrollText, Search, ShieldCheck, Unlock, FilePen, UserPlus, UserMinus, FileText, Trash2 } from "lucide-react";
+import {
+  ScrollText,
+  Search,
+  ShieldCheck,
+  Unlock,
+  FilePen,
+  UserPlus,
+  UserMinus,
+  FileText,
+  Trash2,
+  Download,
+} from "lucide-react";
 import { useState } from "react";
 import { format } from "date-fns";
 
@@ -21,14 +40,114 @@ const ACTION_CONFIG: Record<string, { label: string; icon: React.ElementType; co
   sheet_deleted: { label: "Sheet Deleted", icon: Trash2, color: "text-red-400" },
 };
 
+type AuditLog = {
+  id: number;
+  sheetId: number | null;
+  userId: number;
+  userName: string;
+  action: string;
+  details: string | null;
+  createdAt: Date;
+};
+
+function exportAuditToPDF(sheetTitle: string, logs: AuditLog[]) {
+  const colBorder = "border-right:1px solid #334155";
+  const borderBottom = "border-bottom:1px solid #1e293b";
+
+  const tableRows = logs.map((log) => {
+    const config = ACTION_CONFIG[log.action];
+    const actionLabel = config?.label ?? log.action;
+    const actionColor = config?.color?.replace("text-", "") ?? "94a3b8";
+    // Convert tailwind color class to hex approximation for inline HTML
+    const colorMap: Record<string, string> = {
+      "emerald-400": "#34d399",
+      "amber-400": "#fbbf24",
+      "blue-400": "#60a5fa",
+      "blue-300": "#93c5fd",
+      "red-400": "#f87171",
+      "violet-400": "#a78bfa",
+      "orange-400": "#fb923c",
+      "sky-400": "#38bdf8",
+      "sky-300": "#7dd3fc",
+    };
+    const colorKey = config?.color?.replace("text-", "") ?? "";
+    const hexColor = colorMap[colorKey] ?? "#94a3b8";
+
+    return `<tr>
+      <td style="padding:5px 8px;${borderBottom};${colBorder};font-family:monospace;font-size:11px;color:#94a3b8">
+        ${format(new Date(log.createdAt), "yyyy-MM-dd HH:mm:ss")}
+      </td>
+      <td style="padding:5px 8px;${borderBottom};${colBorder};color:${hexColor};font-weight:500">
+        ${actionLabel}
+      </td>
+      <td style="padding:5px 8px;${borderBottom};${colBorder}">
+        ${log.userName}
+      </td>
+      <td style="padding:5px 8px;${borderBottom};color:#94a3b8;font-size:12px">
+        ${log.details ?? "—"}
+      </td>
+    </tr>`;
+  }).join("");
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
+  <title>Audit Log — ${sheetTitle}</title>
+  <style>
+    body{font-family:system-ui,sans-serif;background:#0a0f1a;color:#e2e8f0;margin:0;padding:24px}
+    h1{font-size:20px;font-weight:700;margin-bottom:2px;color:#f8fafc}
+    .meta{font-size:12px;color:#64748b;margin-bottom:20px}
+    table{width:100%;border-collapse:collapse;font-size:13px;border:1px solid #334155}
+    th{background:#1e293b;color:#94a3b8;font-weight:600;padding:8px;text-align:left;
+       border-bottom:2px solid #334155;border-right:1px solid #334155}
+    th:last-child{border-right:none}
+    td{vertical-align:top;word-break:break-word}
+  </style></head><body>
+  <h1>Audit Log — ${sheetTitle}</h1>
+  <div class="meta">Exported ${format(new Date(), "MMMM d, yyyy 'at' HH:mm")} &nbsp;&bull;&nbsp; ${logs.length} events</div>
+  <table>
+    <thead><tr>
+      <th style="width:160px">Timestamp</th>
+      <th style="width:140px">Action</th>
+      <th style="width:140px">User</th>
+      <th>Details</th>
+    </tr></thead>
+    <tbody>${tableRows}</tbody>
+  </table>
+</body></html>`;
+
+  const win = window.open("", "_blank");
+  if (!win) { alert("Pop-up blocked. Please allow pop-ups and try again."); return; }
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  setTimeout(() => { win.print(); }, 400);
+}
+
 export default function AuditLogPage() {
   const { isAuthenticated } = useAuth();
   const [search, setSearch] = useState("");
+  const [selectedSheetId, setSelectedSheetId] = useState<string>("all");
 
-  const { data: logs, isLoading } = trpc.auditLog.all.useQuery(undefined, {
-    enabled: isAuthenticated,
+  // Load all sheets for the selector
+  const { data: sheets } = trpc.sheet.list.useQuery(undefined, { enabled: isAuthenticated });
+
+  // Load logs — all or per-sheet depending on selection
+  const sheetIdNum = selectedSheetId !== "all" ? parseInt(selectedSheetId, 10) : null;
+
+  const { data: allLogs, isLoading: allLoading } = trpc.auditLog.all.useQuery(undefined, {
+    enabled: isAuthenticated && selectedSheetId === "all",
     refetchInterval: 15000,
   });
+
+  const { data: sheetLogs, isLoading: sheetLoading } = trpc.auditLog.bySheet.useQuery(
+    { sheetId: sheetIdNum! },
+    {
+      enabled: isAuthenticated && selectedSheetId !== "all" && sheetIdNum !== null,
+      refetchInterval: 15000,
+    }
+  );
+
+  const isLoading = selectedSheetId === "all" ? allLoading : sheetLoading;
+  const logs = (selectedSheetId === "all" ? allLogs : sheetLogs) as AuditLog[] | undefined;
 
   const filtered = logs?.filter((log) => {
     if (!search.trim()) return true;
@@ -39,6 +158,14 @@ export default function AuditLogPage() {
       (log.details ?? "").toLowerCase().includes(q)
     );
   });
+
+  const selectedSheet = sheets?.find((s) => s.id === sheetIdNum);
+
+  const handleExportPDF = () => {
+    if (!filtered || filtered.length === 0) return;
+    const title = selectedSheet?.title ?? "All Sheets";
+    exportAuditToPDF(title, filtered);
+  };
 
   return (
     <DashboardLayout>
@@ -51,17 +178,46 @@ export default function AuditLogPage() {
               Complete record of all certifications, edits, and system events
             </p>
           </div>
+          {filtered && filtered.length > 0 && selectedSheetId !== "all" && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-2"
+              onClick={handleExportPDF}
+            >
+              <Download className="w-4 h-4" />
+              Export PDF
+            </Button>
+          )}
         </div>
 
-        {/* Search */}
-        <div className="relative mb-5">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by user, action, or details…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
+        {/* Filters row */}
+        <div className="flex gap-3 mb-5">
+          {/* Sheet selector */}
+          <Select value={selectedSheetId} onValueChange={setSelectedSheetId}>
+            <SelectTrigger className="w-56 shrink-0">
+              <SelectValue placeholder="All running sheets" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All running sheets</SelectItem>
+              {sheets?.map((s) => (
+                <SelectItem key={s.id} value={String(s.id)}>
+                  {s.title}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Text search */}
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by user, action, or details…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
         </div>
 
         {/* Log table */}
@@ -91,7 +247,7 @@ export default function AuditLogPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((log, i) => {
+                  {filtered.map((log) => {
                     const config = ACTION_CONFIG[log.action] ?? { label: log.action, icon: ScrollText, color: "text-muted-foreground" };
                     const Icon = config.icon;
                     return (
@@ -125,6 +281,7 @@ export default function AuditLogPage() {
         {filtered && filtered.length > 0 && (
           <p className="text-xs text-muted-foreground mt-3 text-right">
             Showing {filtered.length} of {logs?.length ?? 0} events
+            {selectedSheet ? ` for "${selectedSheet.title}"` : ""}
           </p>
         )}
       </div>

@@ -47,3 +47,12 @@
 - [x] CSV export: generate and download client-side
 - [x] PDF export: open print dialog with a styled HTML document (client-side)
 - [x] Export button with dropdown (PDF / CSV) on sheet detail page header
+
+## UI & Export Refinements (Round 2)
+- [x] Remove Row Number column from the running sheet table
+- [x] PDF export: remove row dividers between members in the same row (stack cleanly)
+- [x] PDF export: add column dividers
+- [x] Narrow the Certify column width in the running sheet table
+- [x] Audit Log: add sheet selector (filter by running sheet name)
+- [x] Audit Log: add per-sheet PDF export
+- [x] Remove CSV export option (PDF only)

@@ -26,7 +26,6 @@ import {
   Clock,
   Download,
   FileText,
-  Table2,
 } from "lucide-react";
 import { useState, useCallback, useEffect } from "react";
 import { useLocation, useParams } from "wouter";
@@ -68,88 +67,41 @@ type ExportRow = {
   certifications: { memberId: number; certifiedByName: string; certifiedAt: number; isActive: boolean }[];
 };
 
-function exportToCSV(sheetTitle: string, rows: ExportRow[]) {
-  const escape = (v: string | null | undefined) => `"${(v ?? "").replace(/"/g, '""')}"`;
-  const header = ["Row Number", "Time", "Observation", "Member", "Certified", "Certified By", "Certified At"];
-  const dataRows: string[][] = [];
-  for (const row of rows) {
-    if (row.members.length === 0) {
-      dataRows.push([String(row.rowNumber), row.time ?? "", row.observation ?? "", "", "", "", ""]);
-    } else {
-      for (const member of row.members) {
-        const cert = row.certifications.find((c) => c.memberId === member.id && c.isActive);
-        dataRows.push([
-          String(row.rowNumber),
-          row.time ?? "",
-          row.observation ?? "",
-          member.memberName,
-          cert ? "Yes" : "No",
-          cert ? cert.certifiedByName : "",
-          cert ? format(new Date(cert.certifiedAt), "yyyy-MM-dd HH:mm:ss") : "",
-        ]);
-      }
-    }
-  }
-  const csv = [header, ...dataRows].map((r) => r.map(escape).join(",")).join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${sheetTitle.replace(/[^a-z0-9]/gi, "_")}_${format(new Date(), "yyyyMMdd_HHmm")}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 function exportToPDF(sheetTitle: string, rows: ExportRow[]) {
   const certColor = "#22c55e";
   const lockedBg = "#0f2a1a";
-  const tableRows = rows
-    .map((row) => {
-      const memberBlocks = row.members.length === 0
-        ? `<td colspan="3" style="color:#6b7280;font-style:italic">No members</td>`
-        : row.members
-            .map((m) => {
-              const cert = row.certifications.find((c) => c.memberId === m.id && c.isActive);
-              return `<tr style="background:${row.isLocked ? lockedBg : "transparent"}">
-                <td></td><td></td><td></td>
-                <td style="padding:4px 8px;border-bottom:1px solid #1e293b">${m.memberName}</td>
-                <td style="padding:4px 8px;border-bottom:1px solid #1e293b;color:${cert ? certColor : "#ef4444"}">
-                  ${cert ? "&#10003; Certified" : "Pending"}
-                </td>
-                <td style="padding:4px 8px;border-bottom:1px solid #1e293b;font-size:11px;color:#94a3b8">
-                  ${cert ? `${cert.certifiedByName}<br/><span style="font-size:10px">${format(new Date(cert.certifiedAt), "yyyy-MM-dd HH:mm")}</span>` : ""}
-                </td>
-              </tr>`;
-            })
-            .join("");
-      const firstMember = row.members[0];
-      const firstCert = firstMember ? row.certifications.find((c) => c.memberId === firstMember.id && c.isActive) : undefined;
-      const rowBg = row.isLocked ? lockedBg : "transparent";
-      const firstRow = `<tr style="background:${rowBg}">
-        <td style="padding:6px 8px;border-bottom:1px solid #1e293b;text-align:center;font-weight:600">${row.rowNumber}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid #1e293b;font-family:monospace;font-size:12px">${row.time ?? ""}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid #1e293b;max-width:280px">${row.observation ?? ""}</td>
-        ${row.members.length === 0
-          ? `<td colspan="3" style="padding:6px 8px;border-bottom:1px solid #1e293b;color:#6b7280;font-style:italic">No members</td>`
-          : `<td style="padding:6px 8px;border-bottom:1px solid #1e293b">${firstMember?.memberName ?? ""}</td>
-             <td style="padding:6px 8px;border-bottom:1px solid #1e293b;color:${firstCert ? certColor : "#ef4444"}">${firstCert ? "&#10003; Certified" : "Pending"}</td>
-             <td style="padding:6px 8px;border-bottom:1px solid #1e293b;font-size:11px;color:#94a3b8">${firstCert ? `${firstCert.certifiedByName}<br/><span style="font-size:10px">${format(new Date(firstCert.certifiedAt), "yyyy-MM-dd HH:mm")}</span>` : ""}</td>`
-        }
-      </tr>`;
-      const extraRows = row.members.slice(1).map((m) => {
-        const cert = row.certifications.find((c) => c.memberId === m.id && c.isActive);
-        return `<tr style="background:${rowBg}">
-          <td style="padding:4px 8px;border-bottom:1px solid #1e293b"></td>
-          <td style="padding:4px 8px;border-bottom:1px solid #1e293b"></td>
-          <td style="padding:4px 8px;border-bottom:1px solid #1e293b"></td>
-          <td style="padding:4px 8px;border-bottom:1px solid #1e293b">${m.memberName}</td>
-          <td style="padding:4px 8px;border-bottom:1px solid #1e293b;color:${cert ? certColor : "#ef4444"}">${cert ? "&#10003; Certified" : "Pending"}</td>
-          <td style="padding:4px 8px;border-bottom:1px solid #1e293b;font-size:11px;color:#94a3b8">${cert ? `${cert.certifiedByName}<br/><span style="font-size:10px">${format(new Date(cert.certifiedAt), "yyyy-MM-dd HH:mm")}</span>` : ""}</td>
-        </tr>`;
-      }).join("");
-      return firstRow + extraRows;
-    })
-    .join("");
+  const colBorder = "border-right:1px solid #334155";
+
+  const tableRows = rows.map((row) => {
+    const rowBg = row.isLocked ? lockedBg : "transparent";
+    const borderBottom = "border-bottom:1px solid #334155";
+
+    // Build member lines as stacked divs inside one <td> per column
+    const memberLines = row.members.length === 0
+      ? [{ name: "<em style='color:#6b7280'>No members</em>", certHtml: "", certByHtml: "" }]
+      : row.members.map((m) => {
+          const cert = row.certifications.find((c) => c.memberId === m.id && c.isActive);
+          return {
+            name: m.memberName,
+            certHtml: cert
+              ? `<span style='color:${certColor}'>&#10003; Certified</span>`
+              : `<span style='color:#ef4444'>Pending</span>`,
+            certByHtml: cert
+              ? `${cert.certifiedByName}<br/><span style='font-size:10px;color:#94a3b8'>${format(new Date(cert.certifiedAt), "yyyy-MM-dd HH:mm")}</span>`
+              : "",
+          };
+        });
+
+    const stack = (items: string[]) => items.map(s => `<div style='padding:2px 0'>${s}</div>`).join("");
+
+    return `<tr style="background:${rowBg}">
+      <td style="padding:6px 8px;${borderBottom};${colBorder};font-family:monospace;font-size:12px">${row.time ?? ""}</td>
+      <td style="padding:6px 8px;${borderBottom};${colBorder}">${row.observation ?? ""}</td>
+      <td style="padding:6px 8px;${borderBottom};${colBorder}">${stack(memberLines.map(l => l.name))}</td>
+      <td style="padding:6px 8px;${borderBottom};${colBorder}">${stack(memberLines.map(l => l.certHtml))}</td>
+      <td style="padding:6px 8px;${borderBottom};font-size:11px;color:#94a3b8">${stack(memberLines.map(l => l.certByHtml))}</td>
+    </tr>`;
+  }).join("");
 
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
   <title>${sheetTitle}</title>
@@ -157,19 +109,19 @@ function exportToPDF(sheetTitle: string, rows: ExportRow[]) {
     body{font-family:system-ui,sans-serif;background:#0a0f1a;color:#e2e8f0;margin:0;padding:24px}
     h1{font-size:20px;font-weight:700;margin-bottom:4px;color:#f8fafc}
     .meta{font-size:12px;color:#64748b;margin-bottom:20px}
-    table{width:100%;border-collapse:collapse;font-size:13px}
-    th{background:#1e293b;color:#94a3b8;font-weight:600;padding:8px;text-align:left;border-bottom:2px solid #334155}
+    table{width:100%;border-collapse:collapse;font-size:13px;border:1px solid #334155}
+    th{background:#1e293b;color:#94a3b8;font-weight:600;padding:8px;text-align:left;
+       border-bottom:2px solid #334155;border-right:1px solid #334155}
+    th:last-child{border-right:none}
     td{vertical-align:top;word-break:break-word}
-    .locked-badge{display:inline-block;background:#0f2a1a;color:#22c55e;border:1px solid #166534;border-radius:4px;padding:1px 6px;font-size:11px;margin-left:8px}
   </style></head><body>
   <h1>${sheetTitle}</h1>
   <div class="meta">Exported ${format(new Date(), "MMMM d, yyyy 'at' HH:mm")} &nbsp;&bull;&nbsp; ${rows.length} rows</div>
   <table>
     <thead><tr>
-      <th style="width:60px">Row #</th>
       <th style="width:90px">Time</th>
       <th>Observation</th>
-      <th style="width:140px">Member</th>
+      <th style="width:150px">Member</th>
       <th style="width:110px">Certify</th>
       <th style="width:160px">Certified By / At</th>
     </tr></thead>
@@ -522,7 +474,7 @@ export default function SheetDetail() {
   const canEdit = user?.role === "certifier" || user?.role === "admin" || user?.role === "observer";
   const canCertify = user?.role === "certifier" || user?.role === "admin";
 
-  const [pendingExportType, setPendingExportType] = useState<"csv" | "pdf" | null>(null);
+  const [pendingExportType, setPendingExportType] = useState<"pdf" | null>(null);
   const [exportEnabled, setExportEnabled] = useState(false);
   const { data: exportData, isFetching: exportFetching, refetch: refetchExport } = trpc.export.sheetData.useQuery(
     { id: sheetId },
@@ -535,21 +487,19 @@ export default function SheetDetail() {
   // When export data arrives and there is a pending type, trigger the download
   useEffect(() => {
     if (exportData && pendingExportType && sheet) {
-      if (pendingExportType === "csv") exportToCSV(sheet.title, exportData.rows);
-      else exportToPDF(sheet.title, exportData.rows);
+      exportToPDF(sheet.title, exportData.rows);
       setPendingExportType(null);
     }
   }, [exportData, pendingExportType, sheet]);
 
-  const handleExport = useCallback((type: "csv" | "pdf") => {
+  const handleExport = useCallback(() => {
     if (!sheet) return;
     if (exportData && !exportFetching) {
-      // Data already cached — re-fetch to get latest then export
-      setPendingExportType(type);
+      setPendingExportType("pdf");
       refetchExport();
       return;
     }
-    setPendingExportType(type);
+    setPendingExportType("pdf");
     setExportEnabled(true);
   }, [sheet, exportData, exportFetching, refetchExport]);
 
@@ -594,14 +544,7 @@ export default function SheetDetail() {
               <DropdownMenuContent align="end" className="w-44">
                 <DropdownMenuItem
                   className="gap-2 cursor-pointer"
-                  onClick={() => handleExport("csv")}
-                >
-                  <Table2 className="w-4 h-4 text-emerald-400" />
-                  Download CSV
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="gap-2 cursor-pointer"
-                  onClick={() => handleExport("pdf")}
+                  onClick={() => handleExport()}
                 >
                   <FileText className="w-4 h-4 text-rose-400" />
                   Print / Save PDF
@@ -638,11 +581,10 @@ export default function SheetDetail() {
               <table className="running-sheet-table w-full">
                 <thead>
                   <tr className="bg-muted/30">
-                    <th className="w-16 text-center">Row Number</th>
-                    <th className="w-36">Time</th>
+                    <th className="w-32">Time</th>
                     <th>Observation</th>
                     <th className="w-56">Member</th>
-                    <th className="w-44">Certify</th>
+                    <th className="w-32">Certify</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -651,14 +593,6 @@ export default function SheetDetail() {
                       key={row.id}
                       className={row.isLocked ? "row-locked" : "hover:bg-accent/20"}
                     >
-                      {/* Row Number */}
-                      <td className="text-center">
-                        <div className="flex items-center justify-center gap-1.5">
-                          {row.isLocked && <Lock className="w-3 h-3 text-[var(--certified-color)] shrink-0" />}
-                          <span className="font-mono text-sm font-medium">{row.rowNumber}</span>
-                        </div>
-                      </td>
-
                       {/* Time */}
                       <td>
                         <EditableCell

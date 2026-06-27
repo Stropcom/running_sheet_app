@@ -281,8 +281,6 @@ function MemberCell({
 
   return (
     <div className="flex flex-col min-w-[180px]">
-      {/* Spacer to align with CertifyCell's summary row */}
-      <div className={ROW_H} />
       {row.members.map((member) => {
         const cert = row.certifications.find((c) => c.memberId === member.id && c.isActive);
         return (
@@ -474,18 +472,6 @@ function CertifyCell({
 
   return (
     <div className="flex flex-col">
-      {/* Summary line — sits above the member rows */}
-      <div className={`flex items-center gap-1.5 ${ROW_H}`}>
-        {row.isLocked ? (
-          <Badge variant="outline" className="gap-1 text-[var(--certified-color)] border-[var(--locked-border)] bg-[var(--locked-bg)] text-xs py-0 px-1.5">
-            <Lock className="w-2.5 h-2.5" />
-            Locked
-          </Badge>
-        ) : (
-          <span className="text-xs text-muted-foreground">{certified}/{total} certified</span>
-        )}
-      </div>
-
       {/* One row per member — same fixed height as MemberCell member rows */}
       {row.members.map((m) => {
         const cert = row.certifications.find((c) => c.memberId === m.id && c.isActive);
@@ -522,6 +508,18 @@ function CertifyCell({
           </div>
         );
       })}
+
+      {/* Summary — at the bottom so the first CIN aligns with the first observation line */}
+      <div className="flex items-center gap-1.5 mt-1">
+        {row.isLocked ? (
+          <Badge variant="outline" className="gap-1 text-[var(--certified-color)] border-[var(--locked-border)] bg-[var(--locked-bg)] text-xs py-0 px-1.5">
+            <Lock className="w-2.5 h-2.5" />
+            Locked
+          </Badge>
+        ) : (
+          <span className="text-xs text-muted-foreground">{certified}/{total} certified</span>
+        )}
+      </div>
 
       {/* Footer actions */}
       {row.isLocked && canCertify && (

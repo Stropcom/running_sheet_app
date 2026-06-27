@@ -554,6 +554,8 @@ function TimePickerCell({
   const [hour, setHour] = useState(parsed.hour);
   const [minute, setMinute] = useState(parsed.minute);
   const [period, setPeriod] = useState(parsed.period);
+  // Track whether any Radix Select dropdown is currently open
+  const [selectOpen, setSelectOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
 
   // Sync local state when value prop changes (e.g. row refresh)
@@ -563,26 +565,33 @@ function TimePickerCell({
     setPeriod(parsed.period);
   }, [parsed.hour, parsed.minute, parsed.period]);
 
-  // Close on outside click
+  // Close picker on outside click — but only when no Radix Select is open
+  // (Radix portals render outside popoverRef, so we must ignore those clicks)
   useEffect(() => {
-    if (!open) return;
+    if (!open || selectOpen) return;
     const handler = (e: MouseEvent) => {
       if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
         setOpen(false);
       }
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
+    // Use capture phase with a small delay so Radix can finish its own close logic first
+    const timer = setTimeout(() => {
+      document.addEventListener("mousedown", handler);
+    }, 100);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("mousedown", handler);
+    };
+  }, [open, selectOpen]);
 
-  const commit = useCallback((h: string, m: string, p: string) => {
-    const display = `${String(parseInt(h, 10)).padStart(2, "0")}:${m.padStart(2, "0")} ${p}`;
+  const handleDone = useCallback(() => {
+    const display = `${String(parseInt(hour, 10)).padStart(2, "0")}:${minute.padStart(2, "0")} ${period}`;
     const mins = timeStringToMinutes(display);
     onSave(display, mins);
-  }, [onSave]);
+    setOpen(false);
+  }, [hour, minute, period, onSave]);
 
   const hours = Array.from({ length: 12 }, (_, i) => String(i + 1));
-  // All 60 minutes
   const minutes = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"));
 
   if (locked) {
@@ -603,37 +612,63 @@ function TimePickerCell({
         {value || <span className="text-muted-foreground/50 italic text-xs">Set time</span>}
       </button>
       {open && (
-        <div className="absolute z-50 top-full left-0 mt-1 bg-popover border border-border rounded-lg shadow-xl p-3 flex items-center gap-2">
-          <Select value={hour} onValueChange={(v) => { setHour(v); commit(v, minute, period); }}>
-            <SelectTrigger className="w-16 h-8 text-sm font-mono">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {hours.map((h) => (
-                <SelectItem key={h} value={h} className="font-mono">{String(parseInt(h, 10)).padStart(2, "0")}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <span className="text-muted-foreground font-mono">:</span>
-          <Select value={minute} onValueChange={(v) => { setMinute(v); commit(hour, v, period); }}>
-            <SelectTrigger className="w-16 h-8 text-sm font-mono">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {minutes.map((m) => (
-                <SelectItem key={m} value={m} className="font-mono">{m}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={period} onValueChange={(v) => { setPeriod(v); commit(hour, minute, v); }}>
-            <SelectTrigger className="w-16 h-8 text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="AM">AM</SelectItem>
-              <SelectItem value="PM">PM</SelectItem>
-            </SelectContent>
-          </Select>
+        <div className="absolute z-50 top-full left-0 mt-1 bg-popover border border-border rounded-lg shadow-xl p-3">
+          <div className="flex items-center gap-2 mb-3">
+            {/* Hour */}
+            <Select
+              value={hour}
+              onOpenChange={(o) => setSelectOpen(o)}
+              onValueChange={(v) => setHour(v)}
+            >
+              <SelectTrigger className="w-16 h-8 text-sm font-mono">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {hours.map((h) => (
+                  <SelectItem key={h} value={h} className="font-mono">
+                    {String(parseInt(h, 10)).padStart(2, "0")}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <span className="text-muted-foreground font-mono text-lg">:</span>
+            {/* Minute */}
+            <Select
+              value={minute}
+              onOpenChange={(o) => setSelectOpen(o)}
+              onValueChange={(v) => setMinute(v)}
+            >
+              <SelectTrigger className="w-16 h-8 text-sm font-mono">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {minutes.map((m) => (
+                  <SelectItem key={m} value={m} className="font-mono">{m}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {/* AM/PM */}
+            <Select
+              value={period}
+              onOpenChange={(o) => setSelectOpen(o)}
+              onValueChange={(v) => setPeriod(v)}
+            >
+              <SelectTrigger className="w-16 h-8 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="AM">AM</SelectItem>
+                <SelectItem value="PM">PM</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Button
+            size="sm"
+            className="w-full h-7 text-xs"
+            onClick={handleDone}
+          >
+            Done
+          </Button>
         </div>
       )}
     </div>

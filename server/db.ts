@@ -120,6 +120,12 @@ export async function createOperation(data: InsertOperation) {
   return result.insertId as number;
 }
 
+export async function updateOperation(id: number, data: Partial<InsertOperation>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(operations).set(data).where(eq(operations.id, id));
+}
+
 export async function deleteOperation(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");

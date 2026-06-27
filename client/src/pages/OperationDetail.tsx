@@ -35,8 +35,9 @@ import {
   UserPlus,
   X,
   Camera,
+  Pencil,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation, useParams } from "wouter";
 import { format } from "date-fns";
 import { toast } from "sonner";
@@ -49,11 +50,19 @@ export default function OperationDetail() {
   const operationId = parseInt(params.id ?? "0", 10);
   const [, navigate] = useLocation();
 
+  // Create sheet state
   const [createOpen, setCreateOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [cinList, setCinList] = useState<CinEntry[]>([]);
   const [cinInput, setCinInput] = useState("");
   const [deleteId, setDeleteId] = useState<number | null>(null);
+
+  // Edit operation state
+  const [editOpen, setEditOpen] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editPromis, setEditPromis] = useState("");
+  const [editIms, setEditIms] = useState("");
+  const [editUnit, setEditUnit] = useState("");
 
   const utils = trpc.useUtils();
 
@@ -67,6 +76,16 @@ export default function OperationDetail() {
     { enabled: isAuthenticated && !!operationId }
   );
 
+  // Populate edit form when operation loads
+  useEffect(() => {
+    if (operation) {
+      setEditName(operation.name ?? "");
+      setEditPromis(operation.promisNumber ?? "");
+      setEditIms(operation.imsNumber ?? "");
+      setEditUnit(operation.investigationUnit ?? "");
+    }
+  }, [operation]);
+
   const createSheet = trpc.sheet.create.useMutation({
     onSuccess: (data) => {
       utils.sheet.listByOperation.invalidate({ operationId });
@@ -76,6 +95,15 @@ export default function OperationDetail() {
       setCinInput("");
       toast.success("Running sheet created");
       navigate(`/sheet/${data.id}`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const updateOperation = trpc.operation.update.useMutation({
+    onSuccess: () => {
+      utils.operation.get.invalidate({ id: operationId });
+      setEditOpen(false);
+      toast.success("Operation updated");
     },
     onError: (e) => toast.error(e.message),
   });
@@ -128,6 +156,17 @@ export default function OperationDetail() {
     setCreateOpen(open);
   };
 
+  const handleEditSave = () => {
+    if (!editName.trim()) return;
+    updateOperation.mutate({
+      id: operationId,
+      name: editName.trim(),
+      promisNumber: editPromis.trim() || null,
+      imsNumber: editIms.trim() || null,
+      investigationUnit: editUnit.trim() || null,
+    });
+  };
+
   const isLoading = opLoading || sheetsLoading;
 
   return (
@@ -158,6 +197,17 @@ export default function OperationDetail() {
               <h1 className="text-2xl font-semibold text-foreground">
                 {opLoading ? <Skeleton className="h-7 w-48" /> : (operation?.name ?? "Operation")}
               </h1>
+              {!opLoading && operation && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="w-7 h-7 text-muted-foreground hover:text-foreground"
+                  onClick={() => setEditOpen(true)}
+                  title="Edit operation details"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                </Button>
+              )}
             </div>
             {/* Operation metadata */}
             {!opLoading && operation && (
@@ -283,6 +333,61 @@ export default function OperationDetail() {
         )}
       </div>
 
+      {/* Edit Operation Dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Operation</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-4 py-2">
+            <div>
+              <label className="text-sm font-medium text-foreground mb-1.5 block">
+                Operation Name <span className="text-destructive">*</span>
+              </label>
+              <Input
+                placeholder="Operation name"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-foreground mb-1.5 block">PROMIS Number</label>
+              <Input
+                placeholder="e.g. PROM-2024-001"
+                value={editPromis}
+                onChange={(e) => setEditPromis(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-foreground mb-1.5 block">IMS Number</label>
+              <Input
+                placeholder="e.g. IMS-2024-001"
+                value={editIms}
+                onChange={(e) => setEditIms(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-foreground mb-1.5 block">Investigation Unit</label>
+              <Input
+                placeholder="e.g. Major Crime Unit"
+                value={editUnit}
+                onChange={(e) => setEditUnit(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+            <Button
+              onClick={handleEditSave}
+              disabled={!editName.trim() || updateOperation.isPending}
+            >
+              {updateOperation.isPending ? "Saving…" : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Create Sheet Dialog */}
       <Dialog open={createOpen} onOpenChange={handleDialogClose}>
         <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
@@ -338,7 +443,6 @@ export default function OperationDetail() {
               {/* CIN list */}
               {cinList.length > 0 && (
                 <div className="rounded-lg border border-border overflow-hidden">
-                  {/* Header */}
                   <div className="grid grid-cols-[1fr_auto_auto] gap-3 px-3 py-2 bg-muted/40 border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wide">
                     <span>CIN</span>
                     <span className="flex items-center gap-1"><Camera className="w-3 h-3" /> Images</span>

@@ -103,3 +103,9 @@
 - [x] Frontend: Running Sheet dialog — remove description, add daily CIN list with images checkbox per CIN
 - [x] Frontend: Operation detail page — display PROMIS/IMS/Unit fields
 - [x] PDF export: prepend a cover page with operation name, PROMIS, IMS, unit, sheet name, date, and daily CIN list with images indicator
+
+## Edit Operation, Sheet & CIN Roster (Round 8)
+- [x] Backend: operation.update procedure (name, PROMIS, IMS, investigationUnit)
+- [x] Edit operation: Edit button on Operation Detail page to update name, PROMIS, IMS, Investigation Unit
+- [x] Edit running sheet: Edit button on Sheet Detail page to update the sheet title
+- [x] Edit daily CIN roster: "Edit Roster" button on Sheet Detail page to add/remove CINs and toggle images flag after sheet creation

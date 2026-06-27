@@ -17,6 +17,7 @@ import {
   deactivateAllCertificationsForRow,
   deactivateCertification,
   deleteOperation,
+  updateOperation,
   deleteRunningSheet,
   deleteSheetRow,
   deleteUser,
@@ -202,6 +203,20 @@ export const appRouter = router({
           createdBy: ctx.user.id,
         });
         return { id };
+      }),
+
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        name: z.string().min(1).optional(),
+        promisNumber: z.string().optional().nullable(),
+        imsNumber: z.string().optional().nullable(),
+        investigationUnit: z.string().optional().nullable(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...rest } = input;
+        await updateOperation(id, rest);
+        return { success: true };
       }),
 
     delete: adminProcedure

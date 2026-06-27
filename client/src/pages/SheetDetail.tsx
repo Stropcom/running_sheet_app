@@ -14,6 +14,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import DashboardLayout from "@/components/DashboardLayout";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
   Lock,
   Unlock,
   Plus,
@@ -26,6 +34,9 @@ import {
   Clock,
   Download,
   FileText,
+  Pencil,
+  Camera,
+  X,
 } from "lucide-react";
 import { useState, useCallback, useEffect } from "react";
 import { useLocation, useParams } from "wouter";
@@ -563,6 +574,25 @@ export default function SheetDetail() {
   const canEdit = user?.role === "certifier" || user?.role === "admin" || user?.role === "observer";
   const canCertify = user?.role === "certifier" || user?.role === "admin";
 
+  // Edit sheet state
+  const [editSheetOpen, setEditSheetOpen] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+
+  // Edit roster state
+  const [editRosterOpen, setEditRosterOpen] = useState(false);
+  const [rosterList, setRosterList] = useState<{ cin: string; hasImages: boolean }[]>([]);
+  const [rosterInput, setRosterInput] = useState("");
+
+  const updateSheet = trpc.sheet.update.useMutation({
+    onSuccess: () => {
+      utils.sheet.get.invalidate({ id: sheetId });
+      setEditSheetOpen(false);
+      setEditRosterOpen(false);
+      toast.success("Sheet updated");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const [pendingExportType, setPendingExportType] = useState<"pdf" | null>(null);
   const [exportEnabled, setExportEnabled] = useState(false);
   const { data: exportData, isFetching: exportFetching, refetch: refetchExport } = trpc.export.sheetData.useQuery(
@@ -587,6 +617,32 @@ export default function SheetDetail() {
     }
   }, [exportData, pendingExportType, sheet]);
 
+  const openEditSheet = () => {
+    setEditTitle(sheet?.title ?? "");
+    setEditSheetOpen(true);
+  };
+
+  const openEditRoster = () => {
+    const parsed: { cin: string; hasImages: boolean }[] = (() => {
+      try { return sheet?.sheetCins ? JSON.parse(sheet.sheetCins) : []; }
+      catch { return []; }
+    })();
+    setRosterList(parsed);
+    setRosterInput("");
+    setEditRosterOpen(true);
+  };
+
+  const handleAddRosterCin = () => {
+    const trimmed = rosterInput.trim();
+    if (!trimmed) return;
+    if (rosterList.some((c) => c.cin.toLowerCase() === trimmed.toLowerCase())) {
+      toast.error("CIN already in roster");
+      return;
+    }
+    setRosterList((prev) => [...prev, { cin: trimmed, hasImages: false }]);
+    setRosterInput("");
+  };
+
   const handleExport = useCallback(() => {
     if (!sheet) return;
     if (exportData && !exportFetching) {
@@ -610,12 +666,35 @@ export default function SheetDetail() {
           <Button variant="ghost" size="icon" className="shrink-0" onClick={() => sheet ? navigate(`/operation/${sheet.operationId}`) : navigate("/")}>
             <ArrowLeft className="w-4 h-4" />
           </Button>
-          <div className="min-w-0">
+          <div className="min-w-0 flex items-center gap-2">
             {sheetLoading ? (
               <Skeleton className="h-7 w-64" />
             ) : (
               <>
                 <h1 className="text-xl font-semibold text-foreground truncate">{sheet?.title}</h1>
+                {sheet && (
+                  <>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="w-7 h-7 shrink-0 text-muted-foreground hover:text-foreground"
+                      onClick={openEditSheet}
+                      title="Edit sheet title"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="shrink-0 gap-1.5 text-xs text-muted-foreground hover:text-foreground h-7 px-2"
+                      onClick={openEditRoster}
+                      title="Edit daily CIN roster"
+                    >
+                      <Camera className="w-3 h-3" />
+                      Edit Roster
+                    </Button>
+                  </>
+                )}
               </>
             )}
           </div>
@@ -758,6 +837,117 @@ export default function SheetDetail() {
           )}
         </div>
       </div>
+      {/* Edit Sheet Title Dialog */}
+      <Dialog open={editSheetOpen} onOpenChange={setEditSheetOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Edit Sheet Title</DialogTitle>
+          </DialogHeader>
+          <div className="py-2">
+            <label className="text-sm font-medium text-foreground mb-1.5 block">
+              Title <span className="text-destructive">*</span>
+            </label>
+            <Input
+              autoFocus
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && editTitle.trim()) {
+                  updateSheet.mutate({ id: sheetId, title: editTitle.trim() });
+                }
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditSheetOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => updateSheet.mutate({ id: sheetId, title: editTitle.trim() })}
+              disabled={!editTitle.trim() || updateSheet.isPending}
+            >
+              {updateSheet.isPending ? "Saving…" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Roster Dialog */}
+      <Dialog open={editRosterOpen} onOpenChange={setEditRosterOpen}>
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Daily CIN Roster</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-4 py-2">
+            <p className="text-xs text-muted-foreground">
+              Add or remove CINs from today's roster. Tick the camera checkbox if images were taken by that member.
+            </p>
+            <div className="flex gap-2">
+              <Input
+                placeholder="Enter CIN and press Add"
+                value={rosterInput}
+                onChange={(e) => setRosterInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddRosterCin(); } }}
+                className="flex-1"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleAddRosterCin}
+                disabled={!rosterInput.trim()}
+                className="gap-1.5 shrink-0"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                Add
+              </Button>
+            </div>
+            {rosterList.length > 0 ? (
+              <div className="rounded-lg border border-border overflow-hidden">
+                <div className="grid grid-cols-[1fr_auto_auto] gap-3 px-3 py-2 bg-muted/40 border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  <span>CIN</span>
+                  <span className="flex items-center gap-1"><Camera className="w-3 h-3" /> Images</span>
+                  <span></span>
+                </div>
+                {rosterList.map((entry) => (
+                  <div
+                    key={entry.cin}
+                    className="grid grid-cols-[1fr_auto_auto] gap-3 items-center px-3 py-2.5 border-b border-border/50 last:border-0 hover:bg-muted/20 transition-colors"
+                  >
+                    <span className="text-sm font-mono font-medium text-foreground">{entry.cin}</span>
+                    <div className="flex items-center justify-center">
+                      <Checkbox
+                        checked={entry.hasImages}
+                        onCheckedChange={() =>
+                          setRosterList((prev) =>
+                            prev.map((c) => c.cin === entry.cin ? { ...c, hasImages: !c.hasImages } : c)
+                          )
+                        }
+                        className="data-[state=checked]:bg-amber-500 data-[state=checked]:border-amber-500"
+                      />
+                    </div>
+                    <button
+                      onClick={() => setRosterList((prev) => prev.filter((c) => c.cin !== entry.cin))}
+                      className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-4">No CINs in roster yet.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditRosterOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => updateSheet.mutate({ id: sheetId, sheetCins: rosterList })}
+              disabled={updateSheet.isPending}
+            >
+              {updateSheet.isPending ? "Saving…" : "Save Roster"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

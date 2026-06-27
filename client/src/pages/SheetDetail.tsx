@@ -313,6 +313,29 @@ function CertifyCell({
           </span>
         )}
       </div>
+      {/* CIN list per member */}
+      <div className="flex flex-col gap-0.5">
+        {row.members.map((m) => {
+          const cert = row.certifications.find((c) => c.memberId === m.id && c.isActive);
+          return (
+            <div key={m.id} className="flex items-center gap-1">
+              {cert ? (
+                <>
+                  <CheckCircle2 className="w-3 h-3 text-[var(--certified-color)] shrink-0" />
+                  <span className="text-xs font-mono text-[var(--certified-color)]">
+                    {(cert as any).certifiedByCIN || cert.certifiedByName}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <XCircle className="w-3 h-3 text-muted-foreground shrink-0" />
+                  <span className="text-xs text-muted-foreground">Pending</span>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
       {row.isLocked && canCertify && (
         <Tooltip>
           <TooltipTrigger asChild>

@@ -69,14 +69,14 @@
 - [x] Update audit log sheet selector to show operation > sheet grouping
 
 ## Auth & User Profile Overhaul (Round 4)
-- [ ] Add CIN, unit, username, passwordHash fields to users table
-- [ ] Add local login endpoint (username + password, bcrypt, JWT session)
-- [ ] Replace Manus OAuth login page with local username/password login page
-- [ ] Admin: create user with name, CIN, unit, username, password, access level
-- [ ] Admin: edit user profile fields
-- [ ] Admin: delete user
-- [ ] Admin: reset user password
-- [ ] Rename "Member" column header to "CIN" in running sheet table
-- [ ] Rename "Member" column header to "CIN" in PDF export
-- [ ] Certify column shows CIN number of certifying user (not name)
-- [ ] CIN shown in audit log entries
+- [x] Add CIN, unit, username, passwordHash fields to users table
+- [x] Add local login endpoint (username + password, bcrypt, JWT session)
+- [x] Replace Manus OAuth login page with local username/password login page
+- [x] Admin: create user with name, CIN, unit, username, password, access level
+- [x] Admin: edit user profile fields
+- [x] Admin: delete user
+- [x] Admin: reset user password
+- [x] Rename "Member" column header to "CIN" in running sheet table
+- [x] Rename "Member" column header to "CIN" in PDF export
+- [x] Certify column shows CIN number of certifying user (not name)
+- [x] CIN shown in audit log entries

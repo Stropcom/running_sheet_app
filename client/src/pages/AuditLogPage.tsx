@@ -45,6 +45,7 @@ type AuditLog = {
   sheetId: number | null;
   userId: number;
   userName: string;
+  userCIN?: string | null;
   action: string;
   details: string | null;
   createdAt: Date;
@@ -81,7 +82,7 @@ function exportAuditToPDF(sheetTitle: string, logs: AuditLog[]) {
         ${actionLabel}
       </td>
       <td style="padding:5px 8px;${borderBottom};${colBorder}">
-        ${log.userName}
+        ${log.userName}${(log as any).userCIN ? `<br/><span style='font-family:monospace;font-size:10px;color:#64748b'>${(log as any).userCIN}</span>` : ''}
       </td>
       <td style="padding:5px 8px;${borderBottom};color:#94a3b8;font-size:12px">
         ${log.details ?? "—"}
@@ -260,7 +261,7 @@ export default function AuditLogPage() {
                   <tr className="bg-muted/30">
                     <th className="w-44">Timestamp</th>
                     <th className="w-36">Action</th>
-                    <th className="w-36">User</th>
+                    <th className="w-36">User / CIN</th>
                     <th>Details</th>
                   </tr>
                 </thead>
@@ -282,7 +283,12 @@ export default function AuditLogPage() {
                           </div>
                         </td>
                         <td>
-                          <span className="text-sm text-foreground">{log.userName}</span>
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-sm text-foreground">{log.userName}</span>
+                            {(log as any).userCIN && (
+                              <span className="text-xs font-mono text-muted-foreground">{(log as any).userCIN}</span>
+                            )}
+                          </div>
                         </td>
                         <td>
                           <span className="text-sm text-muted-foreground">{log.details ?? "—"}</span>

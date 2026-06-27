@@ -15,6 +15,13 @@
       "when": 1782516651133,
       "tag": "0001_charming_cerebro",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1782520119167,
+      "tag": "0002_married_venom",
+      "breakpoints": true
     }
   ]
 }

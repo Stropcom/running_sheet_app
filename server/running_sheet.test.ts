@@ -34,6 +34,10 @@ vi.mock("./db", () => ({
   updateUserRole: vi.fn().mockResolvedValue(undefined),
   upsertUser: vi.fn().mockResolvedValue(undefined),
   getUserByOpenId: vi.fn().mockResolvedValue(undefined),
+  getOperations: vi.fn().mockResolvedValue([]),
+  getOperationById: vi.fn().mockResolvedValue({ id: 1, name: "Test Op", description: null, createdBy: 1, createdAt: new Date(), updatedAt: new Date() }),
+  createOperation: vi.fn().mockResolvedValue(1),
+  deleteOperation: vi.fn().mockResolvedValue(undefined),
 }));
 
 // ─── Context factories ────────────────────────────────────────────────────────
@@ -101,7 +105,7 @@ describe("sheet.list", () => {
 describe("sheet.create", () => {
   it("allows observers to create sheets", async () => {
     const caller = appRouter.createCaller(makeCtx("observer"));
-    const result = await caller.sheet.create({ title: "New Sheet" });
+    const result = await caller.sheet.create({ operationId: 1, title: "New Sheet" });
     expect(result.id).toBe(1);
   });
 });

@@ -26,10 +26,25 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
+// ─── Operations ─────────────────────────────────────────────────────────────
+
+export const operations = mysqlTable("operations", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  createdBy: int("createdBy").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Operation = typeof operations.$inferSelect;
+export type InsertOperation = typeof operations.$inferInsert;
+
 // ─── Running Sheets ───────────────────────────────────────────────────────────
 
 export const runningSheets = mysqlTable("running_sheets", {
   id: int("id").autoincrement().primaryKey(),
+  operationId: int("operationId").notNull(),
   title: varchar("title", { length: 255 }).notNull(),
   description: text("description"),
   createdBy: int("createdBy").notNull(),

@@ -8,10 +8,12 @@ import {
   addRowMember,
   createAuditLog,
   createCertification,
+  createOperation,
   createRunningSheet,
   createSheetRow,
   deactivateAllCertificationsForRow,
   deactivateCertification,
+  deleteOperation,
   deleteRunningSheet,
   deleteSheetRow,
   getAllAuditLogs,
@@ -20,6 +22,8 @@ import {
   getCertificationByMember,
   getCertificationsByRowIds,
   getMembersByRowIds,
+  getOperationById,
+  getOperations,
   getRowById,
   getRowsBySheetId,
   getRunningSheetById,
@@ -51,14 +55,45 @@ const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
 
 export const appRouter = router({
   system: systemRouter,
-
   auth: router({
-    me: publicProcedure.query((opts) => opts.ctx.user),
+    me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
     }),
+  }),
+
+  // ─── Operations ─────────────────────────────────────────────────────────────
+
+  operation: router({
+    list: protectedProcedure.query(async () => {
+      return getOperations();
+    }),
+
+    get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      const op = await getOperationById(input.id);
+      if (!op) throw new TRPCError({ code: "NOT_FOUND", message: "Operation not found." });
+      return op;
+    }),
+
+    create: protectedProcedure
+      .input(z.object({ name: z.string().min(1), description: z.string().optional() }))
+      .mutation(async ({ input, ctx }) => {
+        const id = await createOperation({
+          name: input.name,
+          description: input.description ?? null,
+          createdBy: ctx.user.id,
+        });
+        return { id };
+      }),
+
+    delete: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await deleteOperation(input.id);
+        return { success: true };
+      }),
   }),
 
   // ─── Running Sheets ─────────────────────────────────────────────────────────
@@ -68,6 +103,13 @@ export const appRouter = router({
       return getRunningSheets();
     }),
 
+    listByOperation: protectedProcedure
+      .input(z.object({ operationId: z.number() }))
+      .query(async ({ input }) => {
+        const all = await getRunningSheets();
+        return all.filter((s) => s.operationId === input.operationId);
+      }),
+
     get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
       const sheet = await getRunningSheetById(input.id);
       if (!sheet) throw new TRPCError({ code: "NOT_FOUND", message: "Sheet not found." });
@@ -75,9 +117,10 @@ export const appRouter = router({
     }),
 
     create: protectedProcedure
-      .input(z.object({ title: z.string().min(1), description: z.string().optional() }))
+      .input(z.object({ operationId: z.number(), title: z.string().min(1), description: z.string().optional() }))
       .mutation(async ({ input, ctx }) => {
         const id = await createRunningSheet({
+          operationId: input.operationId,
           title: input.title,
           description: input.description ?? null,
           createdBy: ctx.user.id,
@@ -272,7 +315,6 @@ export const appRouter = router({
           isActive: true,
         });
 
-        // Check if all members in this row are now certified → lock the row
         const [members, certs] = await Promise.all([
           getMembersByRowIds([input.rowId]),
           getCertificationsByRowIds([input.rowId]),
@@ -281,9 +323,7 @@ export const appRouter = router({
         const activeCerts = certs.filter((c) => c.rowId === input.rowId && c.isActive);
         const allCertified = rowMembers.length > 0 && rowMembers.every((m) => activeCerts.some((c) => c.memberId === m.id));
 
-        if (allCertified) {
-          await setRowLocked(input.rowId, true);
-        }
+        if (allCertified) await setRowLocked(input.rowId, true);
 
         await createAuditLog({
           sheetId: row.sheetId,
@@ -306,7 +346,6 @@ export const appRouter = router({
         if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Row not found." });
 
         await deactivateCertification(input.rowId, input.memberId);
-        // Unlock the row when any certification is removed
         await setRowLocked(input.rowId, false);
 
         await createAuditLog({

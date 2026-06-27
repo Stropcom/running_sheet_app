@@ -56,3 +56,14 @@
 - [x] Audit Log: add sheet selector (filter by running sheet name)
 - [x] Audit Log: add per-sheet PDF export
 - [x] Remove CSV export option (PDF only)
+
+## PDF & Structure Refinements (Round 3)
+- [ ] PDF export: fix column widths — Time and Member as tight as data, Observation fills remaining space
+- [ ] PDF export: merge Certify + Certified By/At into one compact column
+- [ ] Add Operations table to DB schema (id, name, description, createdAt)
+- [ ] Link runningSheets to operations (operationId FK)
+- [ ] Backend: operations router (create, list, get, delete)
+- [ ] Home page: list operations with search, click to enter operation
+- [ ] Operation detail page: list running sheets for that operation, create new sheet within it
+- [ ] Update navigation and routes for operation hierarchy
+- [ ] Update audit log sheet selector to show operation > sheet grouping

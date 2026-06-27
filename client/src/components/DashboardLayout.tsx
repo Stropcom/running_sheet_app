@@ -99,7 +99,7 @@ function DashboardLayoutContent({
   const isMobile = useIsMobile();
 
   const menuItems = [
-    { icon: FileText, label: "Running Sheets", path: "/" },
+    { icon: FileText, label: "Operations", path: "/" },
     { icon: ScrollText, label: "Audit Log", path: "/audit" },
     ...(user?.role === "admin" ? [{ icon: Users, label: "User Management", path: "/admin" }] : []),
   ];
@@ -163,7 +163,10 @@ function DashboardLayoutContent({
           <SidebarContent className="gap-0 pt-2">
             <SidebarMenu className="px-2">
               {menuItems.map((item) => {
-                const isActive = location === item.path || (item.path !== "/" && location.startsWith(item.path));
+                const isActive =
+                  item.path === "/"
+                    ? location === "/" || location.startsWith("/operation/") || location.startsWith("/sheet/")
+                    : location === item.path || location.startsWith(item.path);
                 return (
                   <SidebarMenuItem key={item.path}>
                     <SidebarMenuButton

@@ -70,60 +70,67 @@ type ExportRow = {
 function exportToPDF(sheetTitle: string, rows: ExportRow[]) {
   const certColor = "#22c55e";
   const lockedBg = "#0f2a1a";
-  const colBorder = "border-right:1px solid #334155";
+  const cb = "border-right:1px solid #334155"; // column border
+  const bb = "border-bottom:1px solid #1e293b"; // row border
 
   const tableRows = rows.map((row) => {
     const rowBg = row.isLocked ? lockedBg : "transparent";
-    const borderBottom = "border-bottom:1px solid #334155";
 
-    // Build member lines as stacked divs inside one <td> per column
+    // Build per-member combined cert cell: "Name — ✓ By / date" or "Name — Pending"
     const memberLines = row.members.length === 0
-      ? [{ name: "<em style='color:#6b7280'>No members</em>", certHtml: "", certByHtml: "" }]
+      ? [
+          { time: row.time ?? "", member: "<em style='color:#6b7280'>No members</em>", cert: "" },
+        ]
       : row.members.map((m) => {
           const cert = row.certifications.find((c) => c.memberId === m.id && c.isActive);
-          return {
-            name: m.memberName,
-            certHtml: cert
-              ? `<span style='color:${certColor}'>&#10003; Certified</span>`
-              : `<span style='color:#ef4444'>Pending</span>`,
-            certByHtml: cert
-              ? `${cert.certifiedByName}<br/><span style='font-size:10px;color:#94a3b8'>${format(new Date(cert.certifiedAt), "yyyy-MM-dd HH:mm")}</span>`
-              : "",
-          };
+          const certCell = cert
+            ? `<span style='color:${certColor};white-space:nowrap'>&#10003; ${cert.certifiedByName}</span><br/><span style='font-size:10px;color:#94a3b8;white-space:nowrap'>${format(new Date(cert.certifiedAt), "dd MMM yy HH:mm")}</span>`
+            : `<span style='color:#ef4444'>Pending</span>`;
+          return { time: row.time ?? "", member: m.memberName, cert: certCell };
         });
 
-    const stack = (items: string[]) => items.map(s => `<div style='padding:2px 0'>${s}</div>`).join("");
+    const stack = (items: string[]) =>
+      items.map(s => `<div style='padding:1px 0;line-height:1.4'>${s}</div>`).join("");
 
     return `<tr style="background:${rowBg}">
-      <td style="padding:6px 8px;${borderBottom};${colBorder};font-family:monospace;font-size:12px">${row.time ?? ""}</td>
-      <td style="padding:6px 8px;${borderBottom};${colBorder}">${row.observation ?? ""}</td>
-      <td style="padding:6px 8px;${borderBottom};${colBorder}">${stack(memberLines.map(l => l.name))}</td>
-      <td style="padding:6px 8px;${borderBottom};${colBorder}">${stack(memberLines.map(l => l.certHtml))}</td>
-      <td style="padding:6px 8px;${borderBottom};font-size:11px;color:#94a3b8">${stack(memberLines.map(l => l.certByHtml))}</td>
+      <td style="padding:5px 6px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap">${row.time ?? ""}</td>
+      <td style="padding:5px 6px;${bb};${cb}">${row.observation ?? ""}</td>
+      <td style="padding:5px 6px;${bb};${cb};white-space:nowrap">${stack(memberLines.map(l => l.member))}</td>
+      <td style="padding:5px 6px;${bb};font-size:11px">${stack(memberLines.map(l => l.cert))}</td>
     </tr>`;
   }).join("");
 
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
   <title>${sheetTitle}</title>
   <style>
-    body{font-family:system-ui,sans-serif;background:#0a0f1a;color:#e2e8f0;margin:0;padding:24px}
-    h1{font-size:20px;font-weight:700;margin-bottom:4px;color:#f8fafc}
-    .meta{font-size:12px;color:#64748b;margin-bottom:20px}
-    table{width:100%;border-collapse:collapse;font-size:13px;border:1px solid #334155}
-    th{background:#1e293b;color:#94a3b8;font-weight:600;padding:8px;text-align:left;
-       border-bottom:2px solid #334155;border-right:1px solid #334155}
-    th:last-child{border-right:none}
-    td{vertical-align:top;word-break:break-word}
+    @page{margin:15mm}
+    body{font-family:system-ui,sans-serif;background:#0a0f1a;color:#e2e8f0;margin:0;padding:0;font-size:12px}
+    h1{font-size:16px;font-weight:700;margin:0 0 2px;color:#f8fafc}
+    .meta{font-size:11px;color:#64748b;margin-bottom:14px}
+    table{width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #334155}
+    col.c-time{width:70px}
+    col.c-obs{width:auto}
+    col.c-member{width:110px}
+    col.c-cert{width:140px}
+    th{background:#1e293b;color:#94a3b8;font-weight:600;padding:6px;text-align:left;
+       border-bottom:2px solid #334155;border-right:1px solid #334155;overflow:hidden}
+    th:last-child,td:last-child{border-right:none}
+    td{vertical-align:top;word-break:break-word;overflow:hidden}
   </style></head><body>
   <h1>${sheetTitle}</h1>
-  <div class="meta">Exported ${format(new Date(), "MMMM d, yyyy 'at' HH:mm")} &nbsp;&bull;&nbsp; ${rows.length} rows</div>
+  <div class="meta">Exported ${format(new Date(), "d MMM yyyy, HH:mm")} &bull; ${rows.length} rows</div>
   <table>
+    <colgroup>
+      <col class="c-time"/>
+      <col class="c-obs"/>
+      <col class="c-member"/>
+      <col class="c-cert"/>
+    </colgroup>
     <thead><tr>
-      <th style="width:90px">Time</th>
+      <th>Time</th>
       <th>Observation</th>
-      <th style="width:150px">Member</th>
-      <th style="width:110px">Certify</th>
-      <th style="width:160px">Certified By / At</th>
+      <th>Member</th>
+      <th>Certified</th>
     </tr></thead>
     <tbody>${tableRows}</tbody>
   </table>
@@ -512,7 +519,7 @@ export default function SheetDetail() {
       <div className="p-6 lg:p-8">
         {/* Header */}
         <div className="flex items-center gap-4 mb-6">
-          <Button variant="ghost" size="icon" className="shrink-0" onClick={() => navigate("/")}>
+          <Button variant="ghost" size="icon" className="shrink-0" onClick={() => sheet ? navigate(`/operation/${sheet.operationId}`) : navigate("/")}>
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div className="min-w-0">

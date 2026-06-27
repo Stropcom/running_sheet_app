@@ -5,10 +5,12 @@ import {
   certifications,
   InsertAuditLog,
   InsertCertification,
+  InsertOperation,
   InsertRowMember,
   InsertRunningSheet,
   InsertSheetRow,
   InsertUser,
+  operations,
   rowMembers,
   runningSheets,
   sheetRows,
@@ -86,6 +88,34 @@ export async function updateUserRole(userId: number, role: "observer" | "certifi
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(users).set({ role }).where(eq(users.id, userId));
+}
+
+// ─── Operations ─────────────────────────────────────────────────────────────
+
+export async function getOperations() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(operations).orderBy(desc(operations.createdAt));
+}
+
+export async function getOperationById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(operations).where(eq(operations.id, id)).limit(1);
+  return result[0];
+}
+
+export async function createOperation(data: InsertOperation) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(operations).values(data);
+  return result.insertId as number;
+}
+
+export async function deleteOperation(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(operations).where(eq(operations.id, id));
 }
 
 // ─── Running Sheets ───────────────────────────────────────────────────────────

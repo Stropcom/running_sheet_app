@@ -1280,20 +1280,21 @@ export default function SheetDetail() {
             </div>
             {rosterList.length > 0 ? (
               <div className="rounded-lg border border-border overflow-hidden">
-                <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-2 px-3 py-2 bg-muted/40 border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  <span>CIN</span>
-                  <span className="flex items-center gap-1 justify-center" title="Team Leader"><span className="text-yellow-400">★</span> TL</span>
-                  <span className="flex items-center gap-1 justify-center" title="Running Sheet Author"><span className="text-sky-400">✏</span> Author</span>
-                  <span className="flex items-center gap-1 justify-center"><Camera className="w-3 h-3" /></span>
+                {/* Header row */}
+                <div className="grid grid-cols-[1fr_40px_40px_40px_32px] px-3 py-2 bg-muted/40 border-b border-border text-xs font-medium text-muted-foreground">
+                  <span className="flex items-center">CIN</span>
+                  <span className="flex items-center justify-center" title="Team Leader"><span className="text-yellow-400 text-sm">★</span></span>
+                  <span className="flex items-center justify-center" title="Running Sheet Author"><span className="text-sky-400 text-sm">✏</span></span>
+                  <span className="flex items-center justify-center" title="Images taken"><Camera className="w-3.5 h-3.5" /></span>
                   <span></span>
                 </div>
                 {rosterList.map((entry) => (
                   <div
                     key={entry.cin}
-                    className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-2 items-center px-3 py-2.5 border-b border-border/50 last:border-0 hover:bg-muted/20 transition-colors"
+                    className="grid grid-cols-[1fr_40px_40px_40px_32px] px-3 py-2.5 border-b border-border/50 last:border-0 hover:bg-muted/20 transition-colors"
                   >
-                    <span className="text-sm font-mono font-medium text-foreground">{entry.cin}</span>
-                    {/* Team Leader checkbox */}
+                    <span className="flex items-center text-sm font-mono font-medium text-foreground">{entry.cin}</span>
+                    {/* Team Leader */}
                     <div className="flex items-center justify-center">
                       <Checkbox
                         checked={!!entry.isTeamLeader}
@@ -1305,7 +1306,7 @@ export default function SheetDetail() {
                         className="data-[state=checked]:bg-yellow-500 data-[state=checked]:border-yellow-500"
                       />
                     </div>
-                    {/* Author checkbox */}
+                    {/* Author */}
                     <div className="flex items-center justify-center">
                       <Checkbox
                         checked={!!entry.isAuthor}
@@ -1317,7 +1318,7 @@ export default function SheetDetail() {
                         className="data-[state=checked]:bg-sky-500 data-[state=checked]:border-sky-500"
                       />
                     </div>
-                    {/* Images checkbox */}
+                    {/* Images */}
                     <div className="flex items-center justify-center">
                       <Checkbox
                         checked={entry.hasImages}
@@ -1329,12 +1330,14 @@ export default function SheetDetail() {
                         className="data-[state=checked]:bg-amber-500 data-[state=checked]:border-amber-500"
                       />
                     </div>
-                    <button
-                      onClick={() => setRosterList((prev) => prev.filter((c) => c.cin !== entry.cin))}
-                      className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center justify-center">
+                      <button
+                        onClick={() => setRosterList((prev) => prev.filter((c) => c.cin !== entry.cin))}
+                        className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>

@@ -173,23 +173,37 @@ function exportToPDF(
   // ── Running sheet table ──────────────────────────────────────────────────────
   const tableRows = rows.map((row) => {
     const rowBg = row.isLocked ? lockedBg : "transparent";
-    const memberLines = row.members.length === 0
-      ? [{ member: "<em style='color:#6b7280'>No members</em>", cert: "" }]
-      : row.members.map((m) => {
-          const cert = row.certifications.find((c) => c.memberId === m.id && c.isActive);
-          const certCell = cert
-            ? `<span style='color:${certColor};white-space:nowrap'>&#10003; ${'certifiedByCIN' in cert ? (cert as any).certifiedByCIN || cert.certifiedByName : cert.certifiedByName}</span><br/><span style='font-size:10px;color:#94a3b8;white-space:nowrap'>${format(new Date(cert.certifiedAt), "dd MMM yy HH:mm")}</span>`
-            : `<span style='color:#ef4444'>Pending</span>`;
-          return { member: m.memberName, cert: certCell };
-        });
-    const stack = (items: string[]) =>
-      items.map(s => `<div style='padding:1px 0;line-height:1.4'>${s}</div>`).join("");
-    return `<tr style="background:${rowBg}">
-      <td style="padding:5px 6px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap">${row.time ?? ""}</td>
-      <td style="padding:5px 6px;${bb};${cb}">${row.observation ?? ""}</td>
-      <td style="padding:5px 6px;${bb};${cb};white-space:nowrap">${stack(memberLines.map(l => l.member))}</td>
-      <td style="padding:5px 6px;${bb};font-size:11px">${stack(memberLines.map(l => l.cert))}</td>
-    </tr>`;
+    if (row.members.length === 0) {
+      return `<tr style="background:${rowBg}">
+        <td style="padding:5px 6px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap" rowspan="1">${row.time ?? ""}</td>
+        <td style="padding:5px 6px;${bb};${cb}" rowspan="1">${row.observation ?? ""}</td>
+        <td style="padding:5px 6px;${bb};${cb};white-space:nowrap"><em style='color:#6b7280'>No members</em></td>
+        <td style="padding:5px 6px;${bb};font-size:11px"></td>
+      </tr>`;
+    }
+    // Render one <tr> per member so CIN and Certified columns align perfectly
+    return row.members.map((m, idx) => {
+      const cert = row.certifications.find((c) => c.memberId === m.id && c.isActive);
+      const certCell = cert
+        ? `<span style='color:${certColor};white-space:nowrap'>&#10003; ${'certifiedByCIN' in cert ? (cert as any).certifiedByCIN || cert.certifiedByName : cert.certifiedByName} &nbsp; <span style='color:#94a3b8;font-size:10px'>${format(new Date(cert.certifiedAt), "dd/MM/yy h:mmaaa")}</span></span>`
+        : `<span style='color:#ef4444'>Pending</span>`;
+      const isFirst = idx === 0;
+      const rowspan = row.members.length;
+      const timeTd = isFirst
+        ? `<td style="padding:5px 6px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap" rowspan="${rowspan}">${row.time ?? ""}</td>`
+        : "";
+      const obsTd = isFirst
+        ? `<td style="padding:5px 6px;${bb};${cb}" rowspan="${rowspan}">${row.observation ?? ""}</td>`
+        : "";
+      // Only draw bottom border on the last member row
+      const isLast = idx === row.members.length - 1;
+      const memberBb = isLast ? bb : "border-bottom:1px solid #1e293b";
+      return `<tr style="background:${rowBg}">
+        ${timeTd}${obsTd}
+        <td style="padding:4px 6px;${memberBb};${cb};white-space:nowrap;font-family:monospace;font-size:11px">${m.memberName}</td>
+        <td style="padding:4px 6px;${memberBb};font-size:11px">${certCell}</td>
+      </tr>`;
+    }).join("");
   }).join("");
 
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/>

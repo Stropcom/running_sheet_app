@@ -127,8 +127,9 @@ export default function AuditLogPage() {
   const [search, setSearch] = useState("");
   const [selectedSheetId, setSelectedSheetId] = useState<string>("all");
 
-  // Load all sheets for the selector
+  // Load all sheets and operations for the grouped selector
   const { data: sheets } = trpc.sheet.list.useQuery(undefined, { enabled: isAuthenticated });
+  const { data: operations } = trpc.operation.list.useQuery(undefined, { enabled: isAuthenticated });
 
   // Load logs — all or per-sheet depending on selection
   const sheetIdNum = selectedSheetId !== "all" ? parseInt(selectedSheetId, 10) : null;
@@ -200,7 +201,24 @@ export default function AuditLogPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All running sheets</SelectItem>
-              {sheets?.map((s) => (
+              {operations?.map((op) => {
+                const opSheets = sheets?.filter((s) => s.operationId === op.id) ?? [];
+                if (opSheets.length === 0) return null;
+                return (
+                  <div key={op.id}>
+                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                      {op.name}
+                    </div>
+                    {opSheets.map((s) => (
+                      <SelectItem key={s.id} value={String(s.id)} className="pl-5">
+                        {s.title}
+                      </SelectItem>
+                    ))}
+                  </div>
+                );
+              })}
+              {/* Sheets not linked to any known operation */}
+              {sheets?.filter((s) => !operations?.some((op) => op.id === s.operationId)).map((s) => (
                 <SelectItem key={s.id} value={String(s.id)}>
                   {s.title}
                 </SelectItem>

@@ -193,7 +193,7 @@ function exportToPDF(
         ? `<td style="padding:5px 6px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap" rowspan="${rowspan}">${row.time ?? ""}</td>`
         : "";
       const obsTd = isFirst
-        ? `<td style="padding:5px 6px;${bb};${cb}" rowspan="${rowspan}">${row.observation ?? ""}</td>`
+        ? `      <td style="padding:5px 6px;${bb};${cb}" rowspan="${rowspan}">${(row.observation ?? "").replace(/\n/g, "<br/>")}</td>`
         : "";
       // Only draw bottom border on the last member row; no inner lines between members
       const isLast = idx === row.members.length - 1;
@@ -759,7 +759,7 @@ function EditableCell({
 
   if (locked) {
     return (
-      <span className="text-sm text-muted-foreground">
+      <span className="text-sm text-muted-foreground whitespace-pre-wrap">
         {value || <span className="italic opacity-40">{placeholder}</span>}
       </span>
     );
@@ -794,7 +794,7 @@ function EditableCell({
 
   return (
     <div
-      className="text-sm cursor-text hover:bg-accent/50 rounded px-1 -mx-1 py-0.5 min-h-[1.75rem] transition-colors"
+      className="text-sm cursor-text hover:bg-accent/50 rounded px-1 -mx-1 py-0.5 min-h-[1.75rem] transition-colors whitespace-pre-wrap"
       onClick={() => setEditing(true)}
     >
       {value || <span className="text-muted-foreground/50 italic text-xs">{placeholder}</span>}

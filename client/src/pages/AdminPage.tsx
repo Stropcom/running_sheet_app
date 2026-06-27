@@ -1,161 +1,408 @@
-import { useAuth } from "@/_core/hooks/useAuth";
+import { useState } from "react";
 import { trpc } from "@/lib/trpc";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Users, ShieldAlert, Crown, Eye, ShieldCheck } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { toast } from "sonner";
-import { format } from "date-fns";
+import {
+  UserPlus,
+  Pencil,
+  Trash2,
+  Loader2,
+  ShieldCheck,
+  User,
+  Users,
+  ShieldAlert,
+  Crown,
+  Eye,
+} from "lucide-react";
 
-const ROLE_CONFIG = {
-  admin: { label: "Admin", icon: Crown, color: "text-amber-400", bg: "bg-amber-400/10 border-amber-400/30" },
-  certifier: { label: "Certifier", icon: ShieldCheck, color: "text-blue-400", bg: "bg-blue-400/10 border-blue-400/30" },
-  observer: { label: "Observer", icon: Eye, color: "text-muted-foreground", bg: "bg-muted/50 border-border" },
+type Role = "observer" | "certifier" | "admin";
+
+const ROLE_COLORS: Record<Role, string> = {
+  admin: "bg-red-500/15 text-red-400 border-red-500/30",
+  certifier: "bg-amber-500/15 text-amber-400 border-amber-500/30",
+  observer: "bg-sky-500/15 text-sky-400 border-sky-500/30",
 };
 
+const ROLE_ICONS: Record<Role, React.ReactNode> = {
+  admin: <Crown className="w-3 h-3" />,
+  certifier: <ShieldCheck className="w-3 h-3" />,
+  observer: <Eye className="w-3 h-3" />,
+};
+
+interface UserFormData {
+  name: string;
+  cin: string;
+  unit: string;
+  username: string;
+  password: string;
+  role: Role;
+}
+
+const emptyForm = (): UserFormData => ({
+  name: "",
+  cin: "",
+  unit: "",
+  username: "",
+  password: "",
+  role: "observer",
+});
+
 export default function AdminPage() {
-  const { user, isAuthenticated } = useAuth();
+  const { user: currentUser, isAuthenticated } = useAuth();
   const utils = trpc.useUtils();
 
   const { data: users, isLoading } = trpc.admin.listUsers.useQuery(undefined, {
-    enabled: isAuthenticated && user?.role === "admin",
+    enabled: isAuthenticated && currentUser?.role === "admin",
   });
 
-  const updateRole = trpc.admin.updateUserRole.useMutation({
-    onSuccess: () => { utils.admin.listUsers.invalidate(); toast.success("Role updated"); },
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<NonNullable<typeof users>[0] | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
+  const [form, setForm] = useState<UserFormData>(emptyForm());
+
+  const invalidate = () => utils.admin.listUsers.invalidate();
+
+  const createUser = trpc.admin.createUser.useMutation({
+    onSuccess: () => {
+      toast.success("User created successfully.");
+      setCreateOpen(false);
+      setForm(emptyForm());
+      invalidate();
+    },
     onError: (e) => toast.error(e.message),
   });
 
+  const updateUser = trpc.admin.updateUser.useMutation({
+    onSuccess: () => {
+      toast.success("User updated successfully.");
+      setEditTarget(null);
+      invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const deleteUser = trpc.admin.deleteUser.useMutation({
+    onSuccess: () => {
+      toast.success("User deleted.");
+      setDeleteTarget(null);
+      invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const handleCreate = () => {
+    if (!form.name || !form.cin || !form.username || !form.password) {
+      toast.error("Name, CIN, username, and password are required.");
+      return;
+    }
+    if (form.password.length < 6) {
+      toast.error("Password must be at least 6 characters.");
+      return;
+    }
+    createUser.mutate(form);
+  };
+
+  const handleUpdate = () => {
+    if (!editTarget) return;
+    const payload: Parameters<typeof updateUser.mutate>[0] = { id: editTarget.id };
+    if (form.name) payload.name = form.name;
+    if (form.cin) payload.cin = form.cin;
+    payload.unit = form.unit;
+    if (form.username) payload.username = form.username;
+    if (form.password) payload.password = form.password;
+    payload.role = form.role;
+    updateUser.mutate(payload);
+  };
+
+  const openEdit = (u: NonNullable<typeof users>[0]) => {
+    setEditTarget(u);
+    setForm({
+      name: u.name ?? "",
+      cin: u.cin ?? "",
+      unit: u.unit ?? "",
+      username: u.username ?? "",
+      password: "",
+      role: (u.role as Role) ?? "observer",
+    });
+  };
+
   if (!isAuthenticated) return null;
 
-  if (user?.role !== "admin") {
+  if (currentUser?.role !== "admin") {
     return (
       <DashboardLayout>
-        <div className="p-6 lg:p-8 flex flex-col items-center justify-center min-h-[60vh]">
+        <div className="p-6 flex flex-col items-center justify-center min-h-[60vh]">
           <div className="p-4 rounded-2xl bg-destructive/10 mb-4">
             <ShieldAlert className="w-8 h-8 text-destructive" />
           </div>
           <p className="text-foreground font-medium">Access Denied</p>
-          <p className="text-muted-foreground text-sm mt-1">Admin role required to access this page.</p>
+          <p className="text-muted-foreground text-sm mt-1">Admin role required.</p>
         </div>
       </DashboardLayout>
     );
   }
 
+  const UserFormFields = ({ isEdit = false }: { isEdit?: boolean }) => (
+    <div className="grid gap-4 py-2">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs uppercase tracking-wider text-muted-foreground">Full Name *</Label>
+          <Input
+            placeholder="John Smith"
+            value={form.name}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs uppercase tracking-wider text-muted-foreground">CIN *</Label>
+          <Input
+            placeholder="ABC123"
+            value={form.cin}
+            onChange={(e) => setForm((f) => ({ ...f, cin: e.target.value.toUpperCase() }))}
+          />
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs uppercase tracking-wider text-muted-foreground">Unit</Label>
+        <Input
+          placeholder="e.g. Alpha Company"
+          value={form.unit}
+          onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))}
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs uppercase tracking-wider text-muted-foreground">Username *</Label>
+          <Input
+            placeholder="jsmith"
+            value={form.username}
+            onChange={(e) => setForm((f) => ({ ...f, username: e.target.value.toLowerCase() }))}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+            {isEdit ? "New Password" : "Password *"}
+          </Label>
+          <Input
+            type="password"
+            placeholder={isEdit ? "Leave blank to keep" : "Min. 6 characters"}
+            value={form.password}
+            onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+          />
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs uppercase tracking-wider text-muted-foreground">Access Level *</Label>
+        <Select value={form.role} onValueChange={(v) => setForm((f) => ({ ...f, role: v as Role }))}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="observer">Observer — view only</SelectItem>
+            <SelectItem value="certifier">Certifier — can certify rows</SelectItem>
+            <SelectItem value="admin">Admin — full access</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  );
+
   return (
     <DashboardLayout>
-      <div className="p-6 lg:p-8 max-w-4xl mx-auto">
+      <div className="p-6 max-w-5xl mx-auto">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-2xl font-semibold text-foreground">User Management</h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            Assign roles to control access levels across the application
-          </p>
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
+              <Users className="w-4 h-4 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-xl font-semibold text-foreground">User Management</h1>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {users?.length ?? 0} registered user{(users?.length ?? 0) !== 1 ? "s" : ""}
+              </p>
+            </div>
+          </div>
+          <Button
+            onClick={() => { setForm(emptyForm()); setCreateOpen(true); }}
+            size="sm"
+            className="gap-2"
+          >
+            <UserPlus className="w-4 h-4" />
+            Add User
+          </Button>
         </div>
 
-        {/* Role descriptions */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8">
-          {Object.entries(ROLE_CONFIG).map(([role, config]) => {
-            const Icon = config.icon;
-            return (
-              <div key={role} className={`rounded-xl border p-4 ${config.bg}`}>
-                <div className={`flex items-center gap-2 mb-2 ${config.color}`}>
-                  <Icon className="w-4 h-4" />
-                  <span className="font-semibold text-sm">{config.label}</span>
-                </div>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  {role === "admin" && "Full access: manage sheets, certify, uncertify, and manage users."}
-                  {role === "certifier" && "Can certify and uncertify members, add rows and members."}
-                  {role === "observer" && "Read-only access to view running sheets and audit logs."}
-                </p>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Users table */}
-        <div className="rounded-xl border border-border overflow-hidden bg-card">
-          {isLoading ? (
-            <div className="p-6 flex flex-col gap-3">
-              {[1, 2, 3].map((i) => <Skeleton key={i} className="h-14 rounded-lg" />)}
-            </div>
-          ) : !users || users.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <div className="p-3 rounded-xl bg-muted/50 mb-3">
-                <Users className="w-6 h-6 text-muted-foreground" />
-              </div>
-              <p className="text-muted-foreground text-sm">No users found.</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="running-sheet-table w-full">
-                <thead>
-                  <tr className="bg-muted/30">
-                    <th>User</th>
-                    <th className="w-32">Current Role</th>
-                    <th className="w-44">Last Sign In</th>
-                    <th className="w-44">Change Role</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {users.map((u) => {
-                    const roleConf = ROLE_CONFIG[u.role as keyof typeof ROLE_CONFIG];
-                    const RoleIcon = roleConf?.icon ?? Eye;
-                    return (
-                      <tr key={u.id} className="hover:bg-accent/20">
-                        <td>
-                          <div>
-                            <p className="text-sm font-medium text-foreground">{u.name ?? "—"}</p>
-                            <p className="text-xs text-muted-foreground">{u.email ?? u.openId}</p>
-                          </div>
-                        </td>
-                        <td>
-                          <Badge
-                            variant="outline"
-                            className={`gap-1.5 text-xs ${roleConf?.color ?? ""} ${roleConf?.bg ?? ""}`}
+        {/* Table */}
+        <div className="rounded-xl border border-border/60 overflow-hidden bg-card/50">
+          <Table>
+            <TableHeader>
+              <TableRow className="border-border/60 bg-muted/30">
+                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Name</TableHead>
+                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium">CIN</TableHead>
+                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Unit</TableHead>
+                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Username</TableHead>
+                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Access Level</TableHead>
+                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Last Sign In</TableHead>
+                <TableHead className="w-20" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
+                    <Loader2 className="w-5 h-5 animate-spin mx-auto" />
+                  </TableCell>
+                </TableRow>
+              ) : !users?.length ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-12 text-muted-foreground text-sm">
+                    No users registered yet. Add the first user above.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                users.map((u) => (
+                  <TableRow key={u.id} className="border-border/40 hover:bg-accent/10 transition-colors">
+                    <TableCell className="font-medium text-foreground">
+                      {u.name}
+                      {u.id === currentUser?.id && (
+                        <span className="ml-2 text-xs text-muted-foreground">(you)</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="font-mono text-sm text-foreground/80">{u.cin || "—"}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{u.unit || "—"}</TableCell>
+                    <TableCell className="font-mono text-sm text-muted-foreground">{u.username}</TableCell>
+                    <TableCell>
+                      <span
+                        className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border ${ROLE_COLORS[u.role as Role]}`}
+                      >
+                        {ROLE_ICONS[u.role as Role]}
+                        {u.role}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {u.lastSignedIn ? new Date(u.lastSignedIn).toLocaleString() : "Never"}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1 justify-end">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                          onClick={() => openEdit(u)}
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+                        {u.id !== currentUser?.id && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                            onClick={() => setDeleteTarget(u.id)}
                           >
-                            <RoleIcon className="w-3 h-3" />
-                            {roleConf?.label ?? u.role}
-                          </Badge>
-                        </td>
-                        <td>
-                          <span className="text-xs text-muted-foreground font-mono">
-                            {u.lastSignedIn ? format(new Date(u.lastSignedIn), "MMM d, yyyy HH:mm") : "—"}
-                          </span>
-                        </td>
-                        <td>
-                          {u.id !== user?.id ? (
-                            <Select
-                              value={u.role}
-                              onValueChange={(val) =>
-                                updateRole.mutate({
-                                  userId: u.id,
-                                  role: val as "observer" | "certifier" | "admin",
-                                })
-                              }
-                            >
-                              <SelectTrigger className="h-8 text-xs w-36">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="observer">Observer</SelectItem>
-                                <SelectItem value="certifier">Certifier</SelectItem>
-                                <SelectItem value="admin">Admin</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          ) : (
-                            <span className="text-xs text-muted-foreground italic">You</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
         </div>
+
+        {/* Create Dialog */}
+        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <UserPlus className="w-4 h-4" />
+                Add New User
+              </DialogTitle>
+            </DialogHeader>
+            <UserFormFields />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
+              <Button onClick={handleCreate} disabled={createUser.isPending}>
+                {createUser.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                Create User
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Dialog */}
+        <Dialog open={!!editTarget} onOpenChange={(o) => !o && setEditTarget(null)}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Pencil className="w-4 h-4" />
+                Edit User — {editTarget?.name}
+              </DialogTitle>
+            </DialogHeader>
+            <UserFormFields isEdit />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditTarget(null)}>Cancel</Button>
+              <Button onClick={handleUpdate} disabled={updateUser.isPending}>
+                {updateUser.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                Save Changes
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Confirm Dialog */}
+        <Dialog open={deleteTarget !== null} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="text-destructive flex items-center gap-2">
+                <Trash2 className="w-4 h-4" />
+                Delete User
+              </DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground py-2">
+              This action cannot be undone. The user will lose all access immediately.
+            </p>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+              <Button
+                variant="destructive"
+                onClick={() => deleteTarget !== null && deleteUser.mutate({ id: deleteTarget })}
+                disabled={deleteUser.isPending}
+              >
+                {deleteUser.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                Delete User
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   );

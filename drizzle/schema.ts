@@ -13,11 +13,18 @@ import {
 
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
-  openId: varchar("openId", { length: 64 }).notNull().unique(),
-  name: text("name"),
+  // Local auth fields
+  username: varchar("username", { length: 64 }).notNull().unique(),
+  passwordHash: varchar("passwordHash", { length: 255 }).notNull(),
+  // Profile fields
+  name: varchar("name", { length: 255 }).notNull(),
+  cin: varchar("cin", { length: 64 }).notNull().unique(),
+  unit: varchar("unit", { length: 255 }),
   email: varchar("email", { length: 320 }),
-  loginMethod: varchar("loginMethod", { length: 64 }),
   role: mysqlEnum("role", ["observer", "certifier", "admin"]).default("observer").notNull(),
+  // Legacy OAuth field — kept nullable so existing rows are not broken
+  openId: varchar("openId", { length: 64 }),
+  loginMethod: varchar("loginMethod", { length: 64 }).default("local"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
@@ -72,11 +79,12 @@ export type SheetRow = typeof sheetRows.$inferSelect;
 export type InsertSheetRow = typeof sheetRows.$inferInsert;
 
 // ─── Row Members ──────────────────────────────────────────────────────────────
+// memberName stores the CIN of the member being observed in this row
 
 export const rowMembers = mysqlTable("row_members", {
   id: int("id").autoincrement().primaryKey(),
   rowId: int("rowId").notNull(),
-  memberName: varchar("memberName", { length: 255 }).notNull(),
+  memberName: varchar("memberName", { length: 255 }).notNull(), // stores CIN
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
@@ -91,6 +99,7 @@ export const certifications = mysqlTable("certifications", {
   memberId: int("memberId").notNull(),
   certifiedByUserId: int("certifiedByUserId").notNull(),
   certifiedByName: varchar("certifiedByName", { length: 255 }).notNull(),
+  certifiedByCIN: varchar("certifiedByCIN", { length: 64 }).notNull(),
   certifiedAt: bigint("certifiedAt", { mode: "number" }).notNull(),
   isActive: boolean("isActive").default(true).notNull(),
 });
@@ -107,6 +116,7 @@ export const auditLogs = mysqlTable("audit_logs", {
   memberId: int("memberId"),
   userId: int("userId").notNull(),
   userName: varchar("userName", { length: 255 }).notNull(),
+  userCIN: varchar("userCIN", { length: 64 }),
   action: mysqlEnum("action", [
     "row_created",
     "row_updated",
@@ -118,6 +128,11 @@ export const auditLogs = mysqlTable("audit_logs", {
     "sheet_created",
     "sheet_updated",
     "sheet_deleted",
+    "user_login",
+    "user_logout",
+    "user_created",
+    "user_updated",
+    "user_deleted",
   ]).notNull(),
   details: text("details"),
   createdAt: bigint("createdAt", { mode: "number" }).notNull(),

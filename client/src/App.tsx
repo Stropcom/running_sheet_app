@@ -9,10 +9,12 @@ import OperationDetail from "./pages/OperationDetail";
 import SheetDetail from "./pages/SheetDetail";
 import AuditLogPage from "./pages/AuditLogPage";
 import AdminPage from "./pages/AdminPage";
+import LoginPage from "./pages/LoginPage";
 
 function Router() {
   return (
     <Switch>
+      <Route path="/login" component={LoginPage} />
       <Route path="/" component={Home} />
       <Route path="/operation/:id" component={OperationDetail} />
       <Route path="/sheet/:id" component={SheetDetail} />

@@ -66,7 +66,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               Access requires authentication.
             </p>
           </div>
-          <Button onClick={() => { window.location.href = getLoginUrl(); }} size="lg" className="w-full">
+          <Button onClick={() => { window.location.href = "/login"; }} size="lg" className="w-full">
             Sign in
           </Button>
         </div>
@@ -212,7 +212,8 @@ function DashboardLayoutContent({
               <DropdownMenuContent align="end" className="w-52">
                 <div className="px-2 py-1.5">
                   <p className="text-sm font-medium">{user?.name}</p>
-                  <p className="text-xs text-muted-foreground">{user?.email}</p>
+                  <p className="text-xs text-muted-foreground font-mono">{(user as any)?.cin ? `CIN: ${(user as any).cin}` : (user as any)?.username ?? ""}</p>
+                  {(user as any)?.unit && <p className="text-xs text-muted-foreground">{(user as any).unit}</p>}
                   <Badge variant="outline" className={`mt-1.5 text-xs gap-1 ${roleConf?.badge}`}>
                     <RoleIcon className="w-3 h-3" />
                     {roleConf?.label}

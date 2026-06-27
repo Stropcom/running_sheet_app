@@ -84,7 +84,7 @@ function exportToPDF(sheetTitle: string, rows: ExportRow[]) {
       : row.members.map((m) => {
           const cert = row.certifications.find((c) => c.memberId === m.id && c.isActive);
           const certCell = cert
-            ? `<span style='color:${certColor};white-space:nowrap'>&#10003; ${cert.certifiedByName}</span><br/><span style='font-size:10px;color:#94a3b8;white-space:nowrap'>${format(new Date(cert.certifiedAt), "dd MMM yy HH:mm")}</span>`
+            ? `<span style='color:${certColor};white-space:nowrap'>&#10003; ${'certifiedByCIN' in cert ? (cert as any).certifiedByCIN || cert.certifiedByName : cert.certifiedByName}</span><br/><span style='font-size:10px;color:#94a3b8;white-space:nowrap'>${format(new Date(cert.certifiedAt), "dd MMM yy HH:mm")}</span>`
             : `<span style='color:#ef4444'>Pending</span>`;
           return { time: row.time ?? "", member: m.memberName, cert: certCell };
         });
@@ -129,8 +129,8 @@ function exportToPDF(sheetTitle: string, rows: ExportRow[]) {
     <thead><tr>
       <th>Time</th>
       <th>Observation</th>
-      <th>Member</th>
-      <th>Certified</th>
+      <th>CIN</th>
+      <th>Certified (CIN)</th>
     </tr></thead>
     <tbody>${tableRows}</tbody>
   </table>
@@ -207,7 +207,7 @@ function MemberCell({
                   </TooltipTrigger>
                   <TooltipContent side="top" className="text-xs">
                     <div className="flex flex-col gap-0.5">
-                      <span className="font-medium">Certified by {cert.certifiedByName}</span>
+                      <span className="font-medium">Certified by {(cert as any).certifiedByCIN || cert.certifiedByName}</span>
                       <span className="text-muted-foreground flex items-center gap-1">
                         <Clock className="w-3 h-3" />
                         {format(new Date(cert.certifiedAt), "MMM d, yyyy HH:mm:ss")}
@@ -255,7 +255,7 @@ function MemberCell({
           <div className="flex items-center gap-1.5 mt-1">
             <Input
               autoFocus
-              placeholder="Member name"
+                          placeholder="Enter CIN"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); if (e.key === "Escape") { setAdding(false); setNewName(""); } }}
@@ -266,12 +266,12 @@ function MemberCell({
             </Button>
           </div>
         ) : (
-          <button
+            <button
             onClick={() => setAdding(true)}
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors mt-0.5 w-fit"
           >
             <UserPlus className="w-3 h-3" />
-            Add member
+            Add CIN
           </button>
         )
       )}
@@ -427,12 +427,12 @@ export default function SheetDetail() {
     { enabled: isAuthenticated && !!sheetId }
   );
 
-  const { data: rows, isLoading: rowsLoading } = trpc.row.listBySheet.useQuery(
+  const { data: rows, isLoading: rowsLoading } = trpc.row.list.useQuery(
     { sheetId },
     { enabled: isAuthenticated && !!sheetId, refetchInterval: 10000 }
   );
 
-  const invalidateRows = useCallback(() => utils.row.listBySheet.invalidate({ sheetId }), [utils, sheetId]);
+  const invalidateRows = useCallback(() => utils.row.list.invalidate({ sheetId }), [utils, sheetId]);
 
   const addRow = trpc.row.create.useMutation({
     onSuccess: invalidateRows,
@@ -590,12 +590,12 @@ export default function SheetDetail() {
                   <tr className="bg-muted/30">
                     <th className="w-32">Time</th>
                     <th>Observation</th>
-                    <th className="w-56">Member</th>
+                    <th className="w-56">CIN</th>
                     <th className="w-32">Certify</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((row) => (
+                  {(rows ?? []).map((row: NonNullable<typeof rows>[0]) => (
                     <tr
                       key={row.id}
                       className={row.isLocked ? "row-locked" : "hover:bg-accent/20"}
@@ -630,7 +630,7 @@ export default function SheetDetail() {
                           onCertify={(rowId, memberId) => certify.mutate({ rowId, memberId })}
                           onUncertify={(rowId, memberId) => uncertify.mutate({ rowId, memberId })}
                           onAddMember={(rowId, name) => addMember.mutate({ rowId, memberName: name })}
-                          onRemoveMember={(memberId, rowId) => removeMember.mutate({ memberId, rowId })}
+                          onRemoveMember={(id, rowId) => removeMember.mutate({ id, rowId })}
                         />
                       </td>
 

@@ -1,9 +1,11 @@
+import bcrypt from "bcryptjs";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { sdk } from "./_core/sdk";
 import {
   addRowMember,
   createAuditLog,
@@ -11,11 +13,13 @@ import {
   createOperation,
   createRunningSheet,
   createSheetRow,
+  createUser,
   deactivateAllCertificationsForRow,
   deactivateCertification,
   deleteOperation,
   deleteRunningSheet,
   deleteSheetRow,
+  deleteUser,
   getAllAuditLogs,
   getAllUsers,
   getAuditLogsBySheet,
@@ -28,10 +32,13 @@ import {
   getRowsBySheetId,
   getRunningSheetById,
   getRunningSheets,
+  getRunningSheetsByOperation,
+  getUserByUsername,
   removeRowMember,
   setRowLocked,
   updateRunningSheet,
   updateSheetRow,
+  updateUser,
   updateUserRole,
 } from "./db";
 
@@ -55,9 +62,69 @@ const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
 
 export const appRouter = router({
   system: systemRouter,
+
+  // ─── Auth ────────────────────────────────────────────────────────────────────
+
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
-    logout: publicProcedure.mutation(({ ctx }) => {
+
+    login: publicProcedure
+      .input(z.object({ username: z.string().min(1), password: z.string().min(1) }))
+      .mutation(async ({ input, ctx }) => {
+        const user = await getUserByUsername(input.username.trim().toLowerCase());
+        if (!user) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid username or password." });
+
+        const valid = await bcrypt.compare(input.password, user.passwordHash);
+        if (!valid) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid username or password." });
+
+        // Create session token using the existing SDK (using username as openId-equivalent)
+        const sessionToken = await sdk.createSessionToken(user.username, {
+          name: user.name,
+          expiresInMs: 365 * 24 * 60 * 60 * 1000,
+        });
+
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.cookie(COOKIE_NAME, sessionToken, {
+          ...cookieOptions,
+          maxAge: 365 * 24 * 60 * 60 * 1000,
+        });
+
+        // Audit login
+        await createAuditLog({
+          sheetId: 0,
+          userId: user.id,
+          userName: user.name,
+          userCIN: user.cin,
+          action: "user_login",
+          details: `User ${user.name} (CIN: ${user.cin}) logged in`,
+          createdAt: Date.now(),
+        });
+
+        return {
+          success: true,
+          user: {
+            id: user.id,
+            name: user.name,
+            cin: user.cin,
+            unit: user.unit,
+            role: user.role,
+            username: user.username,
+          },
+        };
+      }),
+
+    logout: publicProcedure.mutation(async ({ ctx }) => {
+      if (ctx.user) {
+        await createAuditLog({
+          sheetId: 0,
+          userId: ctx.user.id,
+          userName: ctx.user.name ?? "Unknown",
+          userCIN: ctx.user.cin ?? undefined,
+          action: "user_logout",
+          details: `User ${ctx.user.name} logged out`,
+          createdAt: Date.now(),
+        });
+      }
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
@@ -80,11 +147,7 @@ export const appRouter = router({
     create: protectedProcedure
       .input(z.object({ name: z.string().min(1), description: z.string().optional() }))
       .mutation(async ({ input, ctx }) => {
-        const id = await createOperation({
-          name: input.name,
-          description: input.description ?? null,
-          createdBy: ctx.user.id,
-        });
+        const id = await createOperation({ name: input.name, description: input.description, createdBy: ctx.user.id });
         return { id };
       }),
 
@@ -96,7 +159,7 @@ export const appRouter = router({
       }),
   }),
 
-  // ─── Running Sheets ─────────────────────────────────────────────────────────
+  // ─── Running Sheets ──────────────────────────────────────────────────────────
 
   sheet: router({
     list: protectedProcedure.query(async () => {
@@ -106,8 +169,7 @@ export const appRouter = router({
     listByOperation: protectedProcedure
       .input(z.object({ operationId: z.number() }))
       .query(async ({ input }) => {
-        const all = await getRunningSheets();
-        return all.filter((s) => s.operationId === input.operationId);
+        return getRunningSheetsByOperation(input.operationId);
       }),
 
     get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
@@ -119,20 +181,8 @@ export const appRouter = router({
     create: protectedProcedure
       .input(z.object({ operationId: z.number(), title: z.string().min(1), description: z.string().optional() }))
       .mutation(async ({ input, ctx }) => {
-        const id = await createRunningSheet({
-          operationId: input.operationId,
-          title: input.title,
-          description: input.description ?? null,
-          createdBy: ctx.user.id,
-        });
-        await createAuditLog({
-          sheetId: id,
-          userId: ctx.user.id,
-          userName: ctx.user.name ?? "Unknown",
-          action: "sheet_created",
-          details: `Sheet "${input.title}" created`,
-          createdAt: Date.now(),
-        });
+        const id = await createRunningSheet({ operationId: input.operationId, title: input.title, description: input.description, createdBy: ctx.user.id });
+        await createAuditLog({ sheetId: id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "sheet_created", details: `Sheet "${input.title}" created`, createdAt: Date.now() });
         return { id };
       }),
 
@@ -141,14 +191,7 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         const { id, ...data } = input;
         await updateRunningSheet(id, data);
-        await createAuditLog({
-          sheetId: id,
-          userId: ctx.user.id,
-          userName: ctx.user.name ?? "Unknown",
-          action: "sheet_updated",
-          details: `Sheet updated`,
-          createdAt: Date.now(),
-        });
+        await createAuditLog({ sheetId: id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "sheet_updated", details: `Sheet updated`, createdAt: Date.now() });
         return { success: true };
       }),
 
@@ -156,22 +199,15 @@ export const appRouter = router({
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
         await deleteRunningSheet(input.id);
-        await createAuditLog({
-          sheetId: input.id,
-          userId: ctx.user.id,
-          userName: ctx.user.name ?? "Unknown",
-          action: "sheet_deleted",
-          details: `Sheet deleted`,
-          createdAt: Date.now(),
-        });
+        await createAuditLog({ sheetId: input.id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "sheet_deleted", details: `Sheet deleted`, createdAt: Date.now() });
         return { success: true };
       }),
   }),
 
-  // ─── Sheet Rows ─────────────────────────────────────────────────────────────
+  // ─── Sheet Rows ──────────────────────────────────────────────────────────────
 
   row: router({
-    listBySheet: protectedProcedure
+    list: protectedProcedure
       .input(z.object({ sheetId: z.number() }))
       .query(async ({ input }) => {
         const rows = await getRowsBySheetId(input.sheetId);
@@ -183,7 +219,7 @@ export const appRouter = router({
         return rows.map((row) => ({
           ...row,
           members: members.filter((m) => m.rowId === row.id),
-          certifications: certs.filter((c) => c.rowId === row.id),
+          certifications: certs.filter((c) => c.rowId === row.id && c.isActive),
         }));
       }),
 
@@ -191,24 +227,10 @@ export const appRouter = router({
       .input(z.object({ sheetId: z.number(), time: z.string().optional(), observation: z.string().optional() }))
       .mutation(async ({ input, ctx }) => {
         const existingRows = await getRowsBySheetId(input.sheetId);
-        const nextRowNumber = existingRows.length > 0 ? Math.max(...existingRows.map((r) => r.rowNumber)) + 1 : 1;
-        const id = await createSheetRow({
-          sheetId: input.sheetId,
-          rowNumber: nextRowNumber,
-          time: input.time ?? null,
-          observation: input.observation ?? null,
-          isLocked: false,
-        });
-        await createAuditLog({
-          sheetId: input.sheetId,
-          rowId: id,
-          userId: ctx.user.id,
-          userName: ctx.user.name ?? "Unknown",
-          action: "row_created",
-          details: `Row ${nextRowNumber} created`,
-          createdAt: Date.now(),
-        });
-        return { id, rowNumber: nextRowNumber };
+        const rowNumber = existingRows.length + 1;
+        const id = await createSheetRow({ sheetId: input.sheetId, rowNumber, time: input.time, observation: input.observation, isLocked: false });
+        await createAuditLog({ sheetId: input.sheetId, rowId: id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "row_created", details: `Row ${rowNumber} created`, createdAt: Date.now() });
+        return { id, rowNumber };
       }),
 
     update: protectedProcedure
@@ -219,15 +241,7 @@ export const appRouter = router({
         if (row.isLocked) throw new TRPCError({ code: "FORBIDDEN", message: "Row is locked. Uncertify to edit." });
         const { id, ...data } = input;
         await updateSheetRow(id, data);
-        await createAuditLog({
-          sheetId: row.sheetId,
-          rowId: id,
-          userId: ctx.user.id,
-          userName: ctx.user.name ?? "Unknown",
-          action: "row_updated",
-          details: `Row ${row.rowNumber} updated`,
-          createdAt: Date.now(),
-        });
+        await createAuditLog({ sheetId: row.sheetId, rowId: id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "row_updated", details: `Row updated`, createdAt: Date.now() });
         return { success: true };
       }),
 
@@ -236,22 +250,14 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         const row = await getRowById(input.id);
         if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Row not found." });
-        if (row.isLocked) throw new TRPCError({ code: "FORBIDDEN", message: "Row is locked. Uncertify to delete." });
+        if (row.isLocked) throw new TRPCError({ code: "FORBIDDEN", message: "Row is locked." });
         await deleteSheetRow(input.id);
-        await createAuditLog({
-          sheetId: row.sheetId,
-          rowId: input.id,
-          userId: ctx.user.id,
-          userName: ctx.user.name ?? "Unknown",
-          action: "row_deleted",
-          details: `Row ${row.rowNumber} deleted`,
-          createdAt: Date.now(),
-        });
+        await createAuditLog({ sheetId: row.sheetId, rowId: input.id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "row_deleted", details: `Row deleted`, createdAt: Date.now() });
         return { success: true };
       }),
   }),
 
-  // ─── Row Members ────────────────────────────────────────────────────────────
+  // ─── Row Members ─────────────────────────────────────────────────────────────
 
   member: router({
     add: protectedProcedure
@@ -261,34 +267,18 @@ export const appRouter = router({
         if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Row not found." });
         if (row.isLocked) throw new TRPCError({ code: "FORBIDDEN", message: "Row is locked." });
         const id = await addRowMember({ rowId: input.rowId, memberName: input.memberName });
-        await createAuditLog({
-          sheetId: row.sheetId,
-          rowId: input.rowId,
-          userId: ctx.user.id,
-          userName: ctx.user.name ?? "Unknown",
-          action: "member_added",
-          details: `Member "${input.memberName}" added to row ${row.rowNumber}`,
-          createdAt: Date.now(),
-        });
+        await createAuditLog({ sheetId: row.sheetId, rowId: input.rowId, memberId: id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "member_added", details: `CIN ${input.memberName} added to row`, createdAt: Date.now() });
         return { id };
       }),
 
     remove: protectedProcedure
-      .input(z.object({ memberId: z.number(), rowId: z.number() }))
+      .input(z.object({ id: z.number(), rowId: z.number() }))
       .mutation(async ({ input, ctx }) => {
         const row = await getRowById(input.rowId);
         if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Row not found." });
         if (row.isLocked) throw new TRPCError({ code: "FORBIDDEN", message: "Row is locked." });
-        await removeRowMember(input.memberId);
-        await createAuditLog({
-          sheetId: row.sheetId,
-          rowId: input.rowId,
-          userId: ctx.user.id,
-          userName: ctx.user.name ?? "Unknown",
-          action: "member_removed",
-          details: `Member removed from row ${row.rowNumber}`,
-          createdAt: Date.now(),
-        });
+        await removeRowMember(input.id);
+        await createAuditLog({ sheetId: row.sheetId, rowId: input.rowId, memberId: input.id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "member_removed", details: `CIN removed from row`, createdAt: Date.now() });
         return { success: true };
       }),
   }),
@@ -306,11 +296,13 @@ export const appRouter = router({
         if (existing) throw new TRPCError({ code: "CONFLICT", message: "Member already certified." });
 
         const now = Date.now();
+        const certifierCIN = ctx.user.cin ?? ctx.user.username ?? "Unknown";
         await createCertification({
           rowId: input.rowId,
           memberId: input.memberId,
           certifiedByUserId: ctx.user.id,
           certifiedByName: ctx.user.name ?? "Unknown",
+          certifiedByCIN: certifierCIN,
           certifiedAt: now,
           isActive: true,
         });
@@ -331,8 +323,9 @@ export const appRouter = router({
           memberId: input.memberId,
           userId: ctx.user.id,
           userName: ctx.user.name ?? "Unknown",
+          userCIN: certifierCIN,
           action: "certified",
-          details: `Member certified by ${ctx.user.name ?? "Unknown"} at ${new Date(now).toISOString()}${allCertified ? " — Row locked" : ""}`,
+          details: `Certified by ${ctx.user.name} (CIN: ${certifierCIN}) at ${new Date(now).toISOString()}${allCertified ? " — Row locked" : ""}`,
           createdAt: now,
         });
 
@@ -348,14 +341,16 @@ export const appRouter = router({
         await deactivateCertification(input.rowId, input.memberId);
         await setRowLocked(input.rowId, false);
 
+        const certifierCIN = ctx.user.cin ?? ctx.user.username ?? "Unknown";
         await createAuditLog({
           sheetId: row.sheetId,
           rowId: input.rowId,
           memberId: input.memberId,
           userId: ctx.user.id,
           userName: ctx.user.name ?? "Unknown",
+          userCIN: certifierCIN,
           action: "uncertified",
-          details: `Certification removed by ${ctx.user.name ?? "Unknown"} — Row unlocked`,
+          details: `Certification removed by ${ctx.user.name} (CIN: ${certifierCIN}) — Row unlocked`,
           createdAt: Date.now(),
         });
 
@@ -371,13 +366,15 @@ export const appRouter = router({
         await deactivateAllCertificationsForRow(input.rowId);
         await setRowLocked(input.rowId, false);
 
+        const certifierCIN = ctx.user.cin ?? ctx.user.username ?? "Unknown";
         await createAuditLog({
           sheetId: row.sheetId,
           rowId: input.rowId,
           userId: ctx.user.id,
           userName: ctx.user.name ?? "Unknown",
+          userCIN: certifierCIN,
           action: "uncertified",
-          details: `All certifications removed by ${ctx.user.name ?? "Unknown"} — Row unlocked`,
+          details: `All certifications removed by ${ctx.user.name} (CIN: ${certifierCIN}) — Row unlocked`,
           createdAt: Date.now(),
         });
 
@@ -430,6 +427,87 @@ export const appRouter = router({
     listUsers: adminProcedure.query(async () => {
       return getAllUsers();
     }),
+
+    createUser: adminProcedure
+      .input(z.object({
+        name: z.string().min(1),
+        cin: z.string().min(1),
+        unit: z.string().optional(),
+        username: z.string().min(3),
+        password: z.string().min(6),
+        role: z.enum(["observer", "certifier", "admin"]),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const passwordHash = await bcrypt.hash(input.password, 12);
+        const id = await createUser({
+          name: input.name,
+          cin: input.cin.toUpperCase(),
+          unit: input.unit,
+          username: input.username.trim().toLowerCase(),
+          passwordHash,
+          role: input.role,
+          loginMethod: "local",
+          lastSignedIn: new Date(),
+        });
+        await createAuditLog({
+          sheetId: 0,
+          userId: ctx.user.id,
+          userName: ctx.user.name ?? "Unknown",
+          userCIN: ctx.user.cin ?? undefined,
+          action: "user_created",
+          details: `User "${input.name}" (CIN: ${input.cin}) created with role "${input.role}"`,
+          createdAt: Date.now(),
+        });
+        return { id };
+      }),
+
+    updateUser: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        name: z.string().min(1).optional(),
+        cin: z.string().min(1).optional(),
+        unit: z.string().optional(),
+        username: z.string().min(3).optional(),
+        password: z.string().min(6).optional(),
+        role: z.enum(["observer", "certifier", "admin"]).optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { id, password, ...rest } = input;
+        const updateData: Record<string, unknown> = { ...rest };
+        if (password) {
+          updateData.passwordHash = await bcrypt.hash(password, 12);
+        }
+        if (rest.cin) updateData.cin = rest.cin.toUpperCase();
+        if (rest.username) updateData.username = rest.username.trim().toLowerCase();
+        await updateUser(id, updateData as Parameters<typeof updateUser>[1]);
+        await createAuditLog({
+          sheetId: 0,
+          userId: ctx.user.id,
+          userName: ctx.user.name ?? "Unknown",
+          userCIN: ctx.user.cin ?? undefined,
+          action: "user_updated",
+          details: `User ID ${id} profile updated`,
+          createdAt: Date.now(),
+        });
+        return { success: true };
+      }),
+
+    deleteUser: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        if (input.id === ctx.user.id) throw new TRPCError({ code: "FORBIDDEN", message: "Cannot delete your own account." });
+        await deleteUser(input.id);
+        await createAuditLog({
+          sheetId: 0,
+          userId: ctx.user.id,
+          userName: ctx.user.name ?? "Unknown",
+          userCIN: ctx.user.cin ?? undefined,
+          action: "user_deleted",
+          details: `User ID ${input.id} deleted`,
+          createdAt: Date.now(),
+        });
+        return { success: true };
+      }),
 
     updateUserRole: adminProcedure
       .input(z.object({ userId: z.number(), role: z.enum(["observer", "certifier", "admin"]) }))

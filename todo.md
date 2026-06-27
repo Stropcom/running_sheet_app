@@ -109,3 +109,10 @@
 - [x] Edit operation: Edit button on Operation Detail page to update name, PROMIS, IMS, Investigation Unit
 - [x] Edit running sheet: Edit button on Sheet Detail page to update the sheet title
 - [x] Edit daily CIN roster: "Edit Roster" button on Sheet Detail page to add/remove CINs and toggle images flag after sheet creation
+
+## PWA — iOS Installable (Round 9)
+- [x] Generate app icons (192x192, 512x512, 180x180 apple-touch-icon)
+- [x] Create manifest.json with name, icons, display, theme_color, start_url
+- [x] Add iOS-specific meta tags to index.html (apple-mobile-web-app-capable, status-bar-style, touch-icon)
+- [x] Register service worker for offline shell caching
+- [x] Vite PWA plugin (vite-plugin-pwa) with workbox NetworkFirst for API calls

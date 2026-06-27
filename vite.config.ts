@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { defineConfig, type Plugin, type ViteDevServer } from "vite";
 import { vitePluginManusRuntime } from "vite-plugin-manus-runtime";
+import { VitePWA } from "vite-plugin-pwa";
 
 // =============================================================================
 // Manus Debug Collector - Vite Plugin
@@ -150,7 +151,53 @@ function vitePluginManusDebugCollector(): Plugin {
   };
 }
 
-const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime(), vitePluginManusDebugCollector()];
+const pwaPlugin = VitePWA({
+  registerType: "autoUpdate",
+  includeAssets: ["favicon.ico", "apple-touch-icon.png"],
+  manifest: {
+    name: "Running Sheet Log",
+    short_name: "RunLog",
+    description: "Secure operational running sheet and log management",
+    theme_color: "#0f172a",
+    background_color: "#0f172a",
+    display: "standalone",
+    orientation: "portrait",
+    start_url: "/",
+    scope: "/",
+    icons: [
+      {
+        src: "/manus-storage/icon-512_b3606dcc.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "any maskable",
+      },
+      {
+        src: "/manus-storage/icon-192_73e1648c.png",
+        sizes: "192x192",
+        type: "image/png",
+        purpose: "any",
+      },
+    ],
+  },
+  workbox: {
+    globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+    runtimeCaching: [
+      {
+        urlPattern: /^\/api\/trpc\//,
+        handler: "NetworkFirst",
+        options: {
+          cacheName: "trpc-cache",
+          expiration: { maxEntries: 50, maxAgeSeconds: 300 },
+        },
+      },
+    ],
+  },
+  devOptions: {
+    enabled: false,
+  },
+});
+
+const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime(), vitePluginManusDebugCollector(), pwaPlugin];
 
 export default defineConfig({
   plugins,

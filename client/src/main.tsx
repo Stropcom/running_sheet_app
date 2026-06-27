@@ -1,5 +1,9 @@
 import { trpc } from "@/lib/trpc";
 import { COOKIE_NAME, UNAUTHED_ERR_MSG } from '@shared/const';
+import { registerSW } from "virtual:pwa-register";
+
+// Register service worker — auto-updates in the background
+registerSW({ immediate: true });
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";

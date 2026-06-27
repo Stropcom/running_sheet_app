@@ -1001,7 +1001,11 @@ export default function SheetDetail() {
       if (row.members?.some((m: { memberName: string }) => m.memberName.toLowerCase().includes(q))) return true;
       return false;
     });
-    return sortReversed ? [...filtered].reverse() : filtered;
+    // Rows with no time set always float to the top (being filled in)
+    const withTime = filtered.filter((row: NonNullable<typeof rows>[0]) => !!row.time);
+    const noTime = filtered.filter((row: NonNullable<typeof rows>[0]) => !row.time);
+    const sorted = sortReversed ? [...withTime].reverse() : withTime;
+    return [...noTime, ...sorted];
   }, [rows, searchQuery, sortReversed]);
 
   return (

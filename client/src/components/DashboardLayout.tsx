@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye } from "lucide-react";
+import { FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
@@ -101,6 +101,7 @@ function DashboardLayoutContent({
   const menuItems = [
     { icon: FileText, label: "Operations", path: "/" },
     { icon: ScrollText, label: "Audit Log", path: "/audit" },
+    { icon: User, label: "My Profile", path: "/profile" },
     ...(user?.role === "admin" ? [{ icon: Users, label: "User Management", path: "/admin" }] : []),
   ];
 
@@ -219,6 +220,11 @@ function DashboardLayoutContent({
                     {roleConf?.label}
                   </Badge>
                 </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setLocation("/profile")} className="cursor-pointer">
+                  <UserCircle className="mr-2 h-4 w-4" />
+                  My Profile
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={logout} className="cursor-pointer text-destructive focus:text-destructive">
                   <LogOut className="mr-2 h-4 w-4" />

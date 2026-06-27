@@ -33,6 +33,7 @@ import {
   getRunningSheetById,
   getRunningSheets,
   getRunningSheetsByOperation,
+  getUserById,
   getUserByUsername,
   removeRowMember,
   setRowLocked,
@@ -62,6 +63,47 @@ const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
 
 export const appRouter = router({
   system: systemRouter,
+
+  // ─── Profile ─────────────────────────────────────────────────────────────────
+
+  profile: router({
+    me: protectedProcedure.query(async ({ ctx }) => {
+      const user = await getUserById(ctx.user.id);
+      if (!user) throw new TRPCError({ code: "NOT_FOUND", message: "User not found." });
+      // Never return passwordHash to the client
+      const { passwordHash: _ph, ...safe } = user;
+      return safe;
+    }),
+
+    updatePassword: protectedProcedure
+      .input(z.object({
+        currentPassword: z.string().min(1),
+        newPassword: z.string().min(6, "New password must be at least 6 characters."),
+        confirmPassword: z.string().min(1),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        if (input.newPassword !== input.confirmPassword) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "New passwords do not match." });
+        }
+        const user = await getUserById(ctx.user.id);
+        if (!user) throw new TRPCError({ code: "NOT_FOUND", message: "User not found." });
+        const valid = await bcrypt.compare(input.currentPassword, user.passwordHash);
+        if (!valid) throw new TRPCError({ code: "UNAUTHORIZED", message: "Current password is incorrect." });
+        const newHash = await bcrypt.hash(input.newPassword, 12);
+        await updateUser(ctx.user.id, { passwordHash: newHash });
+        await createAuditLog({
+          sheetId: 0,
+          userId: ctx.user.id,
+          userName: ctx.user.name ?? "Unknown",
+          userCIN: ctx.user.cin ?? undefined,
+          action: "user_updated",
+          details: `User ${ctx.user.name} changed their password`,
+          createdAt: Date.now(),
+        });
+        return { success: true };
+      }),
+  }),
+
 
   // ─── Auth ────────────────────────────────────────────────────────────────────
 

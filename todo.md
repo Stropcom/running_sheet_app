@@ -80,3 +80,11 @@
 - [x] Rename "Member" column header to "CIN" in PDF export
 - [x] Certify column shows CIN number of certifying user (not name)
 - [x] CIN shown in audit log entries
+
+## My Profile Page (Round 5)
+- [x] Backend: profile.me query (return own user record)
+- [x] Backend: profile.updatePassword mutation (verify current password, hash new password)
+- [x] Frontend: MyProfilePage with read-only info panel (name, CIN, unit, username, role)
+- [x] Frontend: Change Password form with current password + new password + confirm fields
+- [x] Sidebar nav: add Profile link accessible to all roles
+- [x] Route /profile registered in App.tsx

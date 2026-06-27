@@ -195,13 +195,16 @@ function exportToPDF(
       const obsTd = isFirst
         ? `<td style="padding:5px 6px;${bb};${cb}" rowspan="${rowspan}">${row.observation ?? ""}</td>`
         : "";
-      // Only draw bottom border on the last member row
+      // Only draw bottom border on the last member row; no inner lines between members
       const isLast = idx === row.members.length - 1;
-      const memberBb = isLast ? bb : "border-bottom:1px solid #1e293b";
+      const memberBb = isLast ? bb : "border-bottom:none";
+      // Reduce top padding for non-first rows so members sit tight together
+      const pt = isFirst ? "5px" : "1px";
+      const pb = isLast ? "5px" : "1px";
       return `<tr style="background:${rowBg}">
         ${timeTd}${obsTd}
-        <td style="padding:4px 6px;${memberBb};${cb};white-space:nowrap;font-family:monospace;font-size:11px">${m.memberName}</td>
-        <td style="padding:4px 6px;${memberBb};font-size:11px">${certCell}</td>
+        <td style="padding:${pt} 6px ${pb} 6px;${memberBb};${cb};white-space:nowrap;font-family:monospace;font-size:11px">${m.memberName}</td>
+        <td style="padding:${pt} 6px ${pb} 6px;${memberBb};font-size:11px">${certCell}</td>
       </tr>`;
     }).join("");
   }).join("");
@@ -214,8 +217,8 @@ function exportToPDF(
     table{width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #334155}
     col.c-time{width:70px}
     col.c-obs{width:auto}
-    col.c-member{width:110px}
-    col.c-cert{width:140px}
+    col.c-member{width:50px}
+    col.c-cert{width:160px}
     th{background:#1e293b;color:#94a3b8;font-weight:600;padding:6px;text-align:left;
        border-bottom:2px solid #334155;border-right:1px solid #334155;overflow:hidden}
     th:last-child,td:last-child{border-right:none}

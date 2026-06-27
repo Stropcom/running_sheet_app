@@ -39,6 +39,7 @@ import {
   X,
   Search,
   Users,
+  ArrowUpDown,
 } from "lucide-react";
 import {
   Select,
@@ -899,6 +900,7 @@ export default function SheetDetail() {
 
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
+  const [sortReversed, setSortReversed] = useState(false);
 
   // Edit sheet state
   const [editSheetOpen, setEditSheetOpen] = useState(false);
@@ -987,15 +989,15 @@ export default function SheetDetail() {
   // Filter rows by search query (time, observation, member names)
   const filteredRows = useMemo(() => {
     if (!rows) return [];
-    if (!searchQuery.trim()) return rows;
-    const q = searchQuery.toLowerCase();
-    return rows.filter((row: NonNullable<typeof rows>[0]) => {
+    const filtered = !searchQuery.trim() ? rows : rows.filter((row: NonNullable<typeof rows>[0]) => {
+      const q = searchQuery.toLowerCase();
       if (row.time?.toLowerCase().includes(q)) return true;
       if (row.observation?.toLowerCase().includes(q)) return true;
       if (row.members?.some((m: { memberName: string }) => m.memberName.toLowerCase().includes(q))) return true;
       return false;
     });
-  }, [rows, searchQuery]);
+    return sortReversed ? [...filtered].reverse() : filtered;
+  }, [rows, searchQuery, sortReversed]);
 
   return (
     <DashboardLayout>
@@ -1104,8 +1106,22 @@ export default function SheetDetail() {
           </div>
         )}
 
-        {/* Search bar */}
-        <div className="mb-4 relative">
+        {/* Search bar + sort toggle */}
+        <div className="mb-4 flex items-center gap-2">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                className={`shrink-0 ${sortReversed ? "border-primary text-primary" : ""}`}
+                onClick={() => setSortReversed(v => !v)}
+              >
+                <ArrowUpDown className="w-4 h-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{sortReversed ? "Showing newest first — click to show oldest first" : "Showing oldest first — click to show newest first"}</TooltipContent>
+          </Tooltip>
+        <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
           <input
             type="text"
@@ -1122,6 +1138,7 @@ export default function SheetDetail() {
               <X className="w-3.5 h-3.5" />
             </button>
           )}
+        </div>
         </div>
 
         {/* Table */}

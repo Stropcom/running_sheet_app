@@ -26,6 +26,7 @@ import {
   getAuditLogsBySheet,
   getCertificationByMember,
   getCertificationsByRowIds,
+  getMembersByCINAndSheet,
   getMembersByRowIds,
   getOperationById,
   getOperations,
@@ -413,6 +414,63 @@ export const appRouter = router({
         });
 
         return { success: true, rowLocked: allCertified };
+      }),
+
+    certifyAllForCin: certifierOrAdminProcedure
+      .input(z.object({ sheetId: z.number(), cin: z.string() }))
+      .mutation(async ({ input, ctx }) => {
+        const members = await getMembersByCINAndSheet(input.sheetId, input.cin);
+        const uncertifiedMembers = [];
+        for (const member of members) {
+          if (member.rowIsLocked) continue; // skip already fully-locked rows
+          const existing = await getCertificationByMember(member.rowId, member.id);
+          if (existing) continue; // already certified
+          uncertifiedMembers.push(member);
+        }
+
+        const now = Date.now();
+        const certifierCIN = ctx.user.cin ?? ctx.user.username ?? "Unknown";
+        let certifiedCount = 0;
+
+        for (const member of uncertifiedMembers) {
+          await createCertification({
+            rowId: member.rowId,
+            memberId: member.id,
+            certifiedByUserId: ctx.user.id,
+            certifiedByName: ctx.user.name ?? "Unknown",
+            certifiedByCIN: certifierCIN,
+            certifiedAt: now,
+            isActive: true,
+          });
+          certifiedCount++;
+
+          // Check if this row is now fully certified and should be locked
+          const [rowMembers, rowCerts] = await Promise.all([
+            getMembersByRowIds([member.rowId]),
+            getCertificationsByRowIds([member.rowId]),
+          ]);
+          const allCertified = rowMembers.length > 0 && rowMembers.every((m) =>
+            rowCerts.some((c) => c.memberId === m.id && c.isActive)
+          );
+          if (allCertified) await setRowLocked(member.rowId, true);
+
+          const row = await getRowById(member.rowId);
+          if (row) {
+            await createAuditLog({
+              sheetId: input.sheetId,
+              rowId: member.rowId,
+              memberId: member.id,
+              userId: ctx.user.id,
+              userName: ctx.user.name ?? "Unknown",
+              userCIN: certifierCIN,
+              action: "certified",
+              details: `Bulk certified by ${ctx.user.name} (CIN: ${certifierCIN}) for CIN ${input.cin}${allCertified ? " — Row locked" : ""}`,
+              createdAt: now,
+            });
+          }
+        }
+
+        return { success: true, certifiedCount };
       }),
 
     uncertify: certifierOrAdminProcedure

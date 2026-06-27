@@ -38,6 +38,7 @@ import {
   Camera,
   X,
   Search,
+  Users,
 } from "lucide-react";
 import {
   Select,
@@ -232,6 +233,7 @@ function MemberCell({
   onUncertify,
   onAddMember,
   onRemoveMember,
+  rosterCins,
 }: {
   row: SheetRow;
   canCertify: boolean;
@@ -240,13 +242,25 @@ function MemberCell({
   onUncertify: (rowId: number, memberId: number) => void;
   onAddMember: (rowId: number, name: string) => void;
   onRemoveMember: (memberId: number, rowId: number) => void;
+  rosterCins?: string[];
 }) {
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
 
   const handleAdd = () => {
     if (!newName.trim()) return;
-    onAddMember(row.id, newName.trim());
+    const val = newName.trim();
+    // If user typed 'team' (case-insensitive), expand to all roster CINs
+    if (val.toLowerCase() === "team" && rosterCins && rosterCins.length > 0) {
+      const existingNames = new Set(row.members.map((m) => m.memberName.toLowerCase()));
+      rosterCins
+        .filter((cin) => !existingNames.has(cin.toLowerCase()))
+        .forEach((cin) => onAddMember(row.id, cin));
+      setNewName("");
+      setAdding(false);
+      return;
+    }
+    onAddMember(row.id, val);
     setNewName("");
     setAdding(false);
   };
@@ -339,6 +353,29 @@ function MemberCell({
               onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); if (e.key === "Escape") { setAdding(false); setNewName(""); } }}
               className="h-7 text-xs px-2"
             />
+            {rosterCins && rosterCins.length > 0 && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary"
+                    onClick={() => {
+                      const existingNames = new Set(row.members.map((m) => m.memberName.toLowerCase()));
+                      rosterCins
+                        .filter((cin) => !existingNames.has(cin.toLowerCase()))
+                        .forEach((cin) => onAddMember(row.id, cin));
+                      setNewName("");
+                      setAdding(false);
+                    }}
+                    title="Add all team CINs"
+                  >
+                    <Users className="w-3 h-3" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">Add all team CINs from roster</TooltipContent>
+              </Tooltip>
+            )}
             <Button size="icon" className="h-7 w-7 shrink-0" onClick={handleAdd} disabled={!newName.trim()}>
               <Plus className="w-3 h-3" />
             </Button>
@@ -358,6 +395,7 @@ function MemberCell({
 }
 
 // ─── Certify Column ───────────────────────────────────────────────────────────
+
 
 function CertifyCell({
   row,
@@ -696,8 +734,23 @@ export default function SheetDetail() {
     onError: (e) => toast.error(e.message),
   });
 
+  const certifyAllForCin = trpc.certification.certifyAllForCin.useMutation({
+    onSuccess: (data) => {
+      invalidateRows();
+      toast.success(`Certified ${data.certifiedCount} row(s) across the sheet`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const canEdit = user?.role === "certifier" || user?.role === "admin" || user?.role === "observer";
   const canCertify = user?.role === "certifier" || user?.role === "admin";
+
+  // Parse daily roster CINs for team expansion and Certify All
+  const parsedRoster = useMemo(() => {
+    try { return sheet?.sheetCins ? (JSON.parse(sheet.sheetCins) as { cin: string; hasImages: boolean }[]) : []; }
+    catch { return []; }
+  }, [sheet?.sheetCins]);
+  const rosterCinList = useMemo(() => parsedRoster.map((e) => e.cin), [parsedRoster]);
 
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
@@ -878,6 +931,32 @@ export default function SheetDetail() {
           </div>
         </div>
 
+        {/* Daily Roster Panel with Certify All */}
+        {parsedRoster.length > 0 && canCertify && (
+          <div className="mb-4 rounded-lg border border-border bg-card/60 px-4 py-3">
+            <div className="flex items-center gap-2 mb-2">
+              <Users className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Daily Roster — Certify All Rows</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {parsedRoster.map((entry) => (
+                <button
+                  key={entry.cin}
+                  onClick={() => certifyAllForCin.mutate({ sheetId, cin: entry.cin })}
+                  disabled={certifyAllForCin.isPending}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-border bg-muted/40 hover:bg-primary/10 hover:border-primary/40 text-xs font-mono font-medium text-foreground transition-colors disabled:opacity-50"
+                  title={`Certify all rows for CIN ${entry.cin}`}
+                >
+                  <ShieldCheck className="w-3 h-3 text-primary" />
+                  {entry.cin}
+                  {entry.hasImages && <Camera className="w-3 h-3 text-amber-400" />}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">Click a CIN to certify all uncertified rows for that member across this sheet.</p>
+          </div>
+        )}
+
         {/* Search bar */}
         <div className="mb-4 relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
@@ -957,6 +1036,7 @@ export default function SheetDetail() {
                           onUncertify={(rowId, memberId) => uncertify.mutate({ rowId, memberId })}
                           onAddMember={(rowId, name) => addMember.mutate({ rowId, memberName: name })}
                           onRemoveMember={(id, rowId) => removeMember.mutate({ id, rowId })}
+                          rosterCins={rosterCinList}
                         />
                       </td>
 

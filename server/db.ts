@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   auditLogs,
@@ -225,6 +225,25 @@ export async function getMembersByRowIds(rowIds: number[]) {
   if (rowIds.length === 0) return [];
   const results = await Promise.all(rowIds.map((rid) => getMembersByRowId(rid)));
   return results.flat();
+}
+
+// Returns all row_members whose memberName matches a given CIN across all rows in a sheet
+export async function getMembersByCINAndSheet(sheetId: number, cin: string) {
+  const db = await getDb();
+  if (!db) return [];
+  // Get all row IDs for this sheet first
+  const rows = await db.select({ id: sheetRows.id, isLocked: sheetRows.isLocked })
+    .from(sheetRows)
+    .where(eq(sheetRows.sheetId, sheetId));
+  if (rows.length === 0) return [];
+  const rowIds = rows.map((r) => r.id);
+  // Find members in those rows whose memberName matches the CIN
+  const members = await db.select().from(rowMembers)
+    .where(and(inArray(rowMembers.rowId, rowIds), eq(rowMembers.memberName, cin)));
+  return members.map((m) => {
+    const row = rows.find((r) => r.id === m.rowId);
+    return { ...m, rowIsLocked: row?.isLocked ?? false };
+  });
 }
 
 export async function addRowMember(data: InsertRowMember) {

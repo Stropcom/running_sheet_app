@@ -125,3 +125,9 @@
 - [x] Frontend: rows auto-reorder by time after any time update
 - [x] Frontend: search bar above table filters rows by time, observation, or CIN
 - [x] PDF export: rows exported in time order, search does not affect export
+
+## Bulk CIN Certification & Team Keyword (Round 11)
+- [x] Backend: certification.certifyAllForCin mutation — certify every unlocked row that has a given CIN member across the whole sheet
+- [x] Frontend: per-CIN "Certify All" button in the daily roster area of the sheet detail page
+- [x] Frontend: "team" keyword in CIN input auto-expands to all CINs on the daily roster for that row
+- [x] PDF export: "team" rows show all expanded CINs (auto-handled — expansion happens at add-member time, CINs stored individually), not the word "team"

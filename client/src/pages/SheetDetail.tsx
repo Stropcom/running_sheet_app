@@ -130,13 +130,12 @@ function exportToPDF(
     ? `<table style="border-collapse:collapse;margin-top:14px;width:auto;border:1px solid #334155">
         <thead><tr>
           <th style="padding:5px 10px;background:#1e293b;color:#94a3b8;font-weight:600;border-bottom:2px solid #334155;border-right:1px solid #334155;text-align:left">CIN</th>
-          <th style="padding:5px 10px;background:#1e293b;color:#94a3b8;font-weight:600;border-bottom:2px solid #334155;border-right:1px solid #334155;text-align:center">Team Leader</th>
-          <th style="padding:5px 10px;background:#1e293b;color:#94a3b8;font-weight:600;border-bottom:2px solid #334155;border-right:1px solid #334155;text-align:center">Author</th>
           <th style="padding:5px 10px;background:#1e293b;color:#94a3b8;font-weight:600;border-bottom:2px solid #334155;text-align:left">Images Taken</th>
         </tr></thead>
-        <tbody>${cinRoster.map(c =>
-          `<tr><td style="padding:5px 10px;border-bottom:1px solid #1e293b;border-right:1px solid #334155;font-family:monospace;font-weight:${c.isTeamLeader ? '700' : '400'}">${c.isTeamLeader ? '★ ' : ''}${c.cin}</td><td style="padding:5px 10px;border-bottom:1px solid #1e293b;border-right:1px solid #334155;text-align:center;color:${c.isTeamLeader ? '#eab308' : '#64748b'}">${c.isTeamLeader ? '★' : '—'}</td><td style="padding:5px 10px;border-bottom:1px solid #1e293b;border-right:1px solid #334155;text-align:center;color:${c.isAuthor ? '#38bdf8' : '#64748b'}">${c.isAuthor ? '✏' : '—'}</td><td style="padding:5px 10px;border-bottom:1px solid #1e293b;color:${c.hasImages ? certColor : '#ef4444'}">${c.hasImages ? '&#10003; Yes' : '&#10007; No'}</td></tr>`
-        ).join('')}</tbody>
+        <tbody>${cinRoster.map(c => {
+          const icons = (c.isTeamLeader ? '<span style="color:#eab308;margin-right:4px">★</span>' : '') + (c.isAuthor ? '<span style="color:#38bdf8;margin-right:4px">✏</span>' : '');
+          return `<tr><td style="padding:5px 10px;border-bottom:1px solid #1e293b;border-right:1px solid #334155;font-family:monospace;font-weight:${c.isTeamLeader ? '700' : '400'}">${icons}${c.cin}</td><td style="padding:5px 10px;border-bottom:1px solid #1e293b;color:${c.hasImages ? certColor : '#ef4444'}">${c.hasImages ? '&#10003; Yes' : '&#10007; No'}</td></tr>`;
+        }).join('')}</tbody>
       </table>`
     : `<p style="color:#64748b;font-style:italic;margin-top:8px">No TEAM recorded.</p>`;
 

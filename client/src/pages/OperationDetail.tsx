@@ -42,7 +42,7 @@ import { useLocation, useParams } from "wouter";
 import { format } from "date-fns";
 import { toast } from "sonner";
 
-type CinEntry = { cin: string; hasImages: boolean };
+type CinEntry = { cin: string; hasImages: boolean; isTeamLeader?: boolean; isAuthor?: boolean };
 
 export default function OperationDetail() {
   const { isAuthenticated, user } = useAuth();
@@ -124,7 +124,7 @@ export default function OperationDetail() {
       toast.error("CIN already added");
       return;
     }
-    setCinList((prev) => [...prev, { cin: trimmed, hasImages: false }]);
+    setCinList((prev) => [...prev, { cin: trimmed, hasImages: false, isTeamLeader: false, isAuthor: false }]);
     setCinInput("");
   };
 
@@ -266,7 +266,16 @@ export default function OperationDetail() {
           <div className="flex flex-col gap-2">
             {sheets.map((sheet) => {
               const parsedCins: CinEntry[] = (() => {
-                try { return sheet.sheetCins ? JSON.parse(sheet.sheetCins) : []; }
+                try {
+                  const raw: CinEntry[] = sheet.sheetCins ? JSON.parse(sheet.sheetCins) : [];
+                  return [...raw].sort((a, b) => {
+                    if (a.isTeamLeader && !b.isTeamLeader) return -1;
+                    if (!a.isTeamLeader && b.isTeamLeader) return 1;
+                    const aNum = parseInt(a.cin, 10); const bNum = parseInt(b.cin, 10);
+                    if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
+                    return a.cin.localeCompare(b.cin);
+                  });
+                }
                 catch { return []; }
               })();
               return (
@@ -287,11 +296,15 @@ export default function OperationDetail() {
                           <span
                             key={c.cin}
                             className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${
-                              c.hasImages
+                              c.isTeamLeader
+                                ? "border-yellow-500/40 bg-yellow-500/10 text-yellow-400"
+                                : c.hasImages
                                 ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
                                 : "border-border bg-muted/40 text-muted-foreground"
                             }`}
                           >
+                            {c.isTeamLeader && <span title="Team Leader">★</span>}
+                            {c.isAuthor && <span title="Author" className="text-sky-400">✏</span>}
                             {c.cin}
                             {c.hasImages && <Camera className="w-2.5 h-2.5" />}
                           </span>
@@ -409,13 +422,13 @@ export default function OperationDetail() {
               />
             </div>
 
-            {/* Daily CIN list */}
+            {/* TEAM */}
             <div>
               <label className="text-sm font-medium text-foreground mb-1 block">
-                Daily CIN Roster <span className="text-muted-foreground font-normal">(optional)</span>
+                TEAM <span className="text-muted-foreground font-normal">(optional)</span>
               </label>
               <p className="text-xs text-muted-foreground mb-2">
-                Add the CINs of all members on duty today. Tick the camera icon if images were taken by that member.
+                Add the CINs of all members on duty today. Mark the Team Leader and Running Sheet Author. Tick the camera icon if images were taken by that member.
               </p>
 
               {/* CIN input row */}
@@ -443,17 +456,41 @@ export default function OperationDetail() {
               {/* CIN list */}
               {cinList.length > 0 && (
                 <div className="rounded-lg border border-border overflow-hidden">
-                  <div className="grid grid-cols-[1fr_auto_auto] gap-3 px-3 py-2 bg-muted/40 border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-2 px-3 py-2 bg-muted/40 border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wide">
                     <span>CIN</span>
-                    <span className="flex items-center gap-1"><Camera className="w-3 h-3" /> Images</span>
+                    <span className="flex items-center gap-1 justify-center" title="Team Leader"><span className="text-yellow-400">★</span> TL</span>
+                    <span className="flex items-center gap-1 justify-center" title="Author"><span className="text-sky-400">✏</span> Author</span>
+                    <span className="flex items-center gap-1 justify-center"><Camera className="w-3 h-3" /></span>
                     <span></span>
                   </div>
                   {cinList.map((entry) => (
                     <div
                       key={entry.cin}
-                      className="grid grid-cols-[1fr_auto_auto] gap-3 items-center px-3 py-2.5 border-b border-border/50 last:border-0 hover:bg-muted/20 transition-colors"
+                      className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-2 items-center px-3 py-2.5 border-b border-border/50 last:border-0 hover:bg-muted/20 transition-colors"
                     >
                       <span className="text-sm font-mono font-medium text-foreground">{entry.cin}</span>
+                      <div className="flex items-center justify-center">
+                        <Checkbox
+                          checked={!!entry.isTeamLeader}
+                          onCheckedChange={() =>
+                            setCinList((prev) =>
+                              prev.map((c) => c.cin === entry.cin ? { ...c, isTeamLeader: !c.isTeamLeader } : c)
+                            )
+                          }
+                          className="data-[state=checked]:bg-yellow-500 data-[state=checked]:border-yellow-500"
+                        />
+                      </div>
+                      <div className="flex items-center justify-center">
+                        <Checkbox
+                          checked={!!entry.isAuthor}
+                          onCheckedChange={() =>
+                            setCinList((prev) =>
+                              prev.map((c) => c.cin === entry.cin ? { ...c, isAuthor: !c.isAuthor } : c)
+                            )
+                          }
+                          className="data-[state=checked]:bg-sky-500 data-[state=checked]:border-sky-500"
+                        />
+                      </div>
                       <div className="flex items-center justify-center">
                         <Checkbox
                           checked={entry.hasImages}

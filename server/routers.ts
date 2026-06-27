@@ -251,7 +251,7 @@ export const appRouter = router({
       .input(z.object({
         operationId: z.number(),
         title: z.string().min(1),
-        sheetCins: z.array(z.object({ cin: z.string(), hasImages: z.boolean() })).optional(),
+        sheetCins: z.array(z.object({ cin: z.string(), hasImages: z.boolean(), isTeamLeader: z.boolean().optional(), isAuthor: z.boolean().optional() })).optional(),
       }))
       .mutation(async ({ input, ctx }) => {
         const id = await createRunningSheet({
@@ -268,7 +268,7 @@ export const appRouter = router({
       .input(z.object({
         id: z.number(),
         title: z.string().min(1).optional(),
-        sheetCins: z.array(z.object({ cin: z.string(), hasImages: z.boolean() })).optional(),
+        sheetCins: z.array(z.object({ cin: z.string(), hasImages: z.boolean(), isTeamLeader: z.boolean().optional(), isAuthor: z.boolean().optional() })).optional(),
       }))
       .mutation(async ({ input, ctx }) => {
         const { id, sheetCins, ...rest } = input;

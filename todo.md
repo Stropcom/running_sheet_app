@@ -136,3 +136,14 @@
 - [x] CIN deletion: allow removing a CIN from a row even after it has been certified (show delete button on certified members too)
 - [x] Per-CIN uncertification in multi-CIN rows: add per-member uncertify (XCircle) button in the Certify column, visible on hover for each certified CIN regardless of row lock state
 - [x] Time picker: replace dropdown selects with a scroll-wheel picker covering all 60 minutes (1-minute granularity)
+
+## TEAM Roster Redesign (Round 13)
+- [x] Rename "Daily CIN Roster" to "TEAM" throughout (panel, dialogs, PDF, buttons)
+- [x] Add Team Leader (TL) checkbox per CIN in TEAM edit dialog — shown with gold star ★
+- [x] Add Running Sheet Author checkbox per CIN in TEAM edit dialog — shown with blue pen ✏
+- [x] Sort order: Team Leader first, then all CINs numerically/alphabetically
+- [x] CIN column in rows: replace free-text input with dropdown of TEAM CINs when TEAM is defined; free-text fallback when no TEAM
+- [x] "Add all team CINs" option at bottom of dropdown
+- [x] PDF export: TEAM table now includes Team Leader and Author columns
+- [x] Sheet cards in OperationDetail: show TL/Author badges with correct sort order
+- [x] Backend zod schema updated to include isTeamLeader and isAuthor optional fields

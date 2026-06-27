@@ -95,7 +95,7 @@ type OperationMeta = {
   createdAt: Date;
 } | null;
 
-type CinEntry = { cin: string; hasImages: boolean };
+type CinEntry = { cin: string; hasImages: boolean; isTeamLeader?: boolean; isAuthor?: boolean };
 
 function exportToPDF(
   sheetTitle: string,
@@ -109,11 +109,20 @@ function exportToPDF(
   const cb = "border-right:1px solid #334155";
   const bb = "border-bottom:1px solid #1e293b";
 
-  // Parse daily CIN roster
+  // Parse TEAM roster — sort: TL first, then numerically
   let cinRoster: CinEntry[] = [];
-  try { cinRoster = sheetCinsRaw ? JSON.parse(sheetCinsRaw) : []; } catch { cinRoster = []; }
+  try {
+    const raw: CinEntry[] = sheetCinsRaw ? JSON.parse(sheetCinsRaw) : [];
+    cinRoster = [...raw].sort((a, b) => {
+      if (a.isTeamLeader && !b.isTeamLeader) return -1;
+      if (!a.isTeamLeader && b.isTeamLeader) return 1;
+      const aNum = parseInt(a.cin, 10); const bNum = parseInt(b.cin, 10);
+      if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
+      return a.cin.localeCompare(b.cin);
+    });
+  } catch { cinRoster = []; }
 
-  // ── Cover page ──────────────────────────────────────────────────────────────
+  // ── Cover page ────────────────────────────────────────────────────────────────────────────
   const metaRow = (label: string, value: string) =>
     `<tr><td style="padding:5px 10px;font-weight:600;color:#94a3b8;white-space:nowrap;width:160px">${label}</td><td style="padding:5px 10px;color:#e2e8f0">${value}</td></tr>`;
 
@@ -121,13 +130,15 @@ function exportToPDF(
     ? `<table style="border-collapse:collapse;margin-top:14px;width:auto;border:1px solid #334155">
         <thead><tr>
           <th style="padding:5px 10px;background:#1e293b;color:#94a3b8;font-weight:600;border-bottom:2px solid #334155;border-right:1px solid #334155;text-align:left">CIN</th>
+          <th style="padding:5px 10px;background:#1e293b;color:#94a3b8;font-weight:600;border-bottom:2px solid #334155;border-right:1px solid #334155;text-align:center">Team Leader</th>
+          <th style="padding:5px 10px;background:#1e293b;color:#94a3b8;font-weight:600;border-bottom:2px solid #334155;border-right:1px solid #334155;text-align:center">Author</th>
           <th style="padding:5px 10px;background:#1e293b;color:#94a3b8;font-weight:600;border-bottom:2px solid #334155;text-align:left">Images Taken</th>
         </tr></thead>
         <tbody>${cinRoster.map(c =>
-          `<tr><td style="padding:5px 10px;border-bottom:1px solid #1e293b;border-right:1px solid #334155;font-family:monospace">${c.cin}</td><td style="padding:5px 10px;border-bottom:1px solid #1e293b;color:${c.hasImages ? certColor : '#ef4444'}">${c.hasImages ? '&#10003; Yes' : '&#10007; No'}</td></tr>`
+          `<tr><td style="padding:5px 10px;border-bottom:1px solid #1e293b;border-right:1px solid #334155;font-family:monospace;font-weight:${c.isTeamLeader ? '700' : '400'}">${c.isTeamLeader ? '★ ' : ''}${c.cin}</td><td style="padding:5px 10px;border-bottom:1px solid #1e293b;border-right:1px solid #334155;text-align:center;color:${c.isTeamLeader ? '#eab308' : '#64748b'}">${c.isTeamLeader ? '★' : '—'}</td><td style="padding:5px 10px;border-bottom:1px solid #1e293b;border-right:1px solid #334155;text-align:center;color:${c.isAuthor ? '#38bdf8' : '#64748b'}">${c.isAuthor ? '✏' : '—'}</td><td style="padding:5px 10px;border-bottom:1px solid #1e293b;color:${c.hasImages ? certColor : '#ef4444'}">${c.hasImages ? '&#10003; Yes' : '&#10007; No'}</td></tr>`
         ).join('')}</tbody>
       </table>`
-    : `<p style="color:#64748b;font-style:italic;margin-top:8px">No daily CIN roster recorded.</p>`;
+    : `<p style="color:#64748b;font-style:italic;margin-top:8px">No TEAM recorded.</p>`;
 
   const coverPage = `
     <div style="page-break-after:always;padding-bottom:20px">
@@ -151,7 +162,7 @@ function exportToPDF(
       </div>` : ""}
 
       <div>
-        <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:#64748b;text-transform:uppercase;margin-bottom:8px">Daily CIN Roster</div>
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:#64748b;text-transform:uppercase;margin-bottom:8px">TEAM</div>
         ${cinRosterHtml}
       </div>
 
@@ -354,44 +365,70 @@ function MemberCell({
       {/* Add member */}
       {canEdit && !row.isLocked && (
         adding ? (
-          <div className="flex items-center gap-1.5 mt-1">
-            <Input
-              autoFocus
-                          placeholder="Enter CIN"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); if (e.key === "Escape") { setAdding(false); setNewName(""); } }}
-              className="h-7 text-xs px-2"
-            />
-            {rosterCins && rosterCins.length > 0 && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary"
-                    onClick={() => {
+          <div className="flex flex-col gap-1.5 mt-1">
+            {rosterCins && rosterCins.length > 0 ? (
+              /* Dropdown mode: pick from team roster */
+              <div className="flex items-center gap-1.5">
+                <Select
+                  value={newName}
+                  onValueChange={(v) => {
+                    if (v === "__all__") {
                       const existingNames = new Set(row.members.map((m) => m.memberName.toLowerCase()));
                       rosterCins
                         .filter((cin) => !existingNames.has(cin.toLowerCase()))
                         .forEach((cin) => onAddMember(row.id, cin));
+                      setAdding(false);
+                    } else {
+                      onAddMember(row.id, v);
                       setNewName("");
                       setAdding(false);
-                    }}
-                    title="Add all team CINs"
-                  >
-                    <Users className="w-3 h-3" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">Add all team CINs from roster</TooltipContent>
-              </Tooltip>
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-7 text-xs flex-1 min-w-[120px]">
+                    <SelectValue placeholder="Pick a CIN…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {rosterCins
+                      .filter((cin) => !row.members.some((m) => m.memberName.toLowerCase() === cin.toLowerCase()))
+                      .map((cin) => (
+                        <SelectItem key={cin} value={cin} className="font-mono text-xs">{cin}</SelectItem>
+                      ))}
+                    {rosterCins.filter((cin) => !row.members.some((m) => m.memberName.toLowerCase() === cin.toLowerCase())).length > 1 && (
+                      <SelectItem value="__all__" className="text-xs font-medium text-primary">
+                        ★ Add all team CINs
+                      </SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                  onClick={() => { setAdding(false); setNewName(""); }}
+                >
+                  <X className="w-3 h-3" />
+                </Button>
+              </div>
+            ) : (
+              /* Free-text mode: no roster defined */
+              <div className="flex items-center gap-1.5">
+                <Input
+                  autoFocus
+                  placeholder="Enter CIN"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); if (e.key === "Escape") { setAdding(false); setNewName(""); } }}
+                  className="h-7 text-xs px-2"
+                />
+                <Button size="icon" className="h-7 w-7 shrink-0" onClick={handleAdd} disabled={!newName.trim()}>
+                  <Plus className="w-3 h-3" />
+                </Button>
+              </div>
             )}
-            <Button size="icon" className="h-7 w-7 shrink-0" onClick={handleAdd} disabled={!newName.trim()}>
-              <Plus className="w-3 h-3" />
-            </Button>
           </div>
         ) : (
-            <button
+          <button
             onClick={() => setAdding(true)}
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors mt-0.5 w-fit"
           >
@@ -821,9 +858,20 @@ export default function SheetDetail() {
   const canCertify = user?.role === "certifier" || user?.role === "admin";
 
   // Parse daily roster CINs for team expansion and Certify All
+  // Sort: Team Leader first, then all others in numeric/alphabetic order
   const parsedRoster = useMemo(() => {
-    try { return sheet?.sheetCins ? (JSON.parse(sheet.sheetCins) as { cin: string; hasImages: boolean }[]) : []; }
-    catch { return []; }
+    try {
+      const raw = sheet?.sheetCins ? (JSON.parse(sheet.sheetCins) as CinEntry[]) : [];
+      return [...raw].sort((a, b) => {
+        if (a.isTeamLeader && !b.isTeamLeader) return -1;
+        if (!a.isTeamLeader && b.isTeamLeader) return 1;
+        // Numeric sort: extract leading digits for comparison
+        const aNum = parseInt(a.cin, 10);
+        const bNum = parseInt(b.cin, 10);
+        if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
+        return a.cin.localeCompare(b.cin);
+      });
+    } catch { return []; }
   }, [sheet?.sheetCins]);
   const rosterCinList = useMemo(() => parsedRoster.map((e) => e.cin), [parsedRoster]);
 
@@ -836,7 +884,7 @@ export default function SheetDetail() {
 
   // Edit roster state
   const [editRosterOpen, setEditRosterOpen] = useState(false);
-  const [rosterList, setRosterList] = useState<{ cin: string; hasImages: boolean }[]>([]);
+  const [rosterList, setRosterList] = useState<CinEntry[]>([]);
   const [rosterInput, setRosterInput] = useState("");
 
   const updateSheet = trpc.sheet.update.useMutation({
@@ -879,7 +927,7 @@ export default function SheetDetail() {
   };
 
   const openEditRoster = () => {
-    const parsed: { cin: string; hasImages: boolean }[] = (() => {
+    const parsed: CinEntry[] = (() => {
       try { return sheet?.sheetCins ? JSON.parse(sheet.sheetCins) : []; }
       catch { return []; }
     })();
@@ -892,10 +940,10 @@ export default function SheetDetail() {
     const trimmed = rosterInput.trim();
     if (!trimmed) return;
     if (rosterList.some((c) => c.cin.toLowerCase() === trimmed.toLowerCase())) {
-      toast.error("CIN already in roster");
+      toast.error("CIN already in team");
       return;
     }
-    setRosterList((prev) => [...prev, { cin: trimmed, hasImages: false }]);
+    setRosterList((prev) => [...prev, { cin: trimmed, hasImages: false, isTeamLeader: false, isAuthor: false }]);
     setRosterInput("");
   };
 
@@ -957,10 +1005,10 @@ export default function SheetDetail() {
                       variant="ghost"
                       className="shrink-0 gap-1.5 text-xs text-muted-foreground hover:text-foreground h-7 px-2"
                       onClick={openEditRoster}
-                      title="Edit daily CIN roster"
+                      title="Edit TEAM"
                     >
-                      <Camera className="w-3 h-3" />
-                      Edit Roster
+                      <Users className="w-3 h-3" />
+                      Edit TEAM
                     </Button>
                   </>
                 )}
@@ -1011,7 +1059,7 @@ export default function SheetDetail() {
           <div className="mb-4 rounded-lg border border-border bg-card/60 px-4 py-3">
             <div className="flex items-center gap-2 mb-2">
               <Users className="w-3.5 h-3.5 text-muted-foreground" />
-              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Daily Roster — Certify All Rows</span>
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">TEAM — Certify All Rows</span>
             </div>
             <div className="flex flex-wrap gap-2">
               {parsedRoster.map((entry) => (
@@ -1020,15 +1068,17 @@ export default function SheetDetail() {
                   onClick={() => certifyAllForCin.mutate({ sheetId, cin: entry.cin })}
                   disabled={certifyAllForCin.isPending}
                   className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-border bg-muted/40 hover:bg-primary/10 hover:border-primary/40 text-xs font-mono font-medium text-foreground transition-colors disabled:opacity-50"
-                  title={`Certify all rows for CIN ${entry.cin}`}
+                  title={`Certify all rows for CIN ${entry.cin}${entry.isTeamLeader ? " (Team Leader)" : ""}${entry.isAuthor ? " (Author)" : ""}`}
                 >
                   <ShieldCheck className="w-3 h-3 text-primary" />
+                  {entry.isTeamLeader && <span className="text-yellow-400" title="Team Leader">★</span>}
+                  {entry.isAuthor && <span className="text-sky-400" title="Running Sheet Author">✏️</span>}
                   {entry.cin}
                   {entry.hasImages && <Camera className="w-3 h-3 text-amber-400" />}
                 </button>
               ))}
             </div>
-            <p className="text-xs text-muted-foreground mt-2">Click a CIN to certify all uncertified rows for that member across this sheet.</p>
+            <p className="text-xs text-muted-foreground mt-2">Click a CIN to certify all uncertified rows for that member across this sheet. ★ = Team Leader  ✏ = Author</p>
           </div>
         )}
 
@@ -1202,11 +1252,11 @@ export default function SheetDetail() {
       <Dialog open={editRosterOpen} onOpenChange={setEditRosterOpen}>
         <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Edit Daily CIN Roster</DialogTitle>
+            <DialogTitle>Edit TEAM</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-4 py-2">
             <p className="text-xs text-muted-foreground">
-              Add or remove CINs from today's roster. Tick the camera checkbox if images were taken by that member.
+              Add or remove CINs from today’s team. Mark the Team Leader and Running Sheet Author. Tick the camera icon if images were taken by that member.
             </p>
             <div className="flex gap-2">
               <Input
@@ -1230,17 +1280,44 @@ export default function SheetDetail() {
             </div>
             {rosterList.length > 0 ? (
               <div className="rounded-lg border border-border overflow-hidden">
-                <div className="grid grid-cols-[1fr_auto_auto] gap-3 px-3 py-2 bg-muted/40 border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-2 px-3 py-2 bg-muted/40 border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wide">
                   <span>CIN</span>
-                  <span className="flex items-center gap-1"><Camera className="w-3 h-3" /> Images</span>
+                  <span className="flex items-center gap-1 justify-center" title="Team Leader"><span className="text-yellow-400">★</span> TL</span>
+                  <span className="flex items-center gap-1 justify-center" title="Running Sheet Author"><span className="text-sky-400">✏</span> Author</span>
+                  <span className="flex items-center gap-1 justify-center"><Camera className="w-3 h-3" /></span>
                   <span></span>
                 </div>
                 {rosterList.map((entry) => (
                   <div
                     key={entry.cin}
-                    className="grid grid-cols-[1fr_auto_auto] gap-3 items-center px-3 py-2.5 border-b border-border/50 last:border-0 hover:bg-muted/20 transition-colors"
+                    className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-2 items-center px-3 py-2.5 border-b border-border/50 last:border-0 hover:bg-muted/20 transition-colors"
                   >
                     <span className="text-sm font-mono font-medium text-foreground">{entry.cin}</span>
+                    {/* Team Leader checkbox */}
+                    <div className="flex items-center justify-center">
+                      <Checkbox
+                        checked={!!entry.isTeamLeader}
+                        onCheckedChange={() =>
+                          setRosterList((prev) =>
+                            prev.map((c) => c.cin === entry.cin ? { ...c, isTeamLeader: !c.isTeamLeader } : c)
+                          )
+                        }
+                        className="data-[state=checked]:bg-yellow-500 data-[state=checked]:border-yellow-500"
+                      />
+                    </div>
+                    {/* Author checkbox */}
+                    <div className="flex items-center justify-center">
+                      <Checkbox
+                        checked={!!entry.isAuthor}
+                        onCheckedChange={() =>
+                          setRosterList((prev) =>
+                            prev.map((c) => c.cin === entry.cin ? { ...c, isAuthor: !c.isAuthor } : c)
+                          )
+                        }
+                        className="data-[state=checked]:bg-sky-500 data-[state=checked]:border-sky-500"
+                      />
+                    </div>
+                    {/* Images checkbox */}
                     <div className="flex items-center justify-center">
                       <Checkbox
                         checked={entry.hasImages}
@@ -1262,16 +1339,27 @@ export default function SheetDetail() {
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground text-center py-4">No CINs in roster yet.</p>
+              <p className="text-sm text-muted-foreground text-center py-4">No CINs in team yet.</p>
             )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditRosterOpen(false)}>Cancel</Button>
             <Button
-              onClick={() => updateSheet.mutate({ id: sheetId, sheetCins: rosterList })}
+              onClick={() => {
+                // Sort before saving: TL first, then numerically
+                const sorted = [...rosterList].sort((a, b) => {
+                  if (a.isTeamLeader && !b.isTeamLeader) return -1;
+                  if (!a.isTeamLeader && b.isTeamLeader) return 1;
+                  const aNum = parseInt(a.cin, 10);
+                  const bNum = parseInt(b.cin, 10);
+                  if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
+                  return a.cin.localeCompare(b.cin);
+                });
+                updateSheet.mutate({ id: sheetId, sheetCins: sorted });
+              }}
               disabled={updateSheet.isPending}
             >
-              {updateSheet.isPending ? "Saving…" : "Save Roster"}
+              {updateSheet.isPending ? "Saving…" : "Save TEAM"}
             </Button>
           </DialogFooter>
         </DialogContent>

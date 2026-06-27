@@ -34,7 +34,6 @@ import {
   Trash2,
   Loader2,
   ShieldCheck,
-  User,
   Users,
   ShieldAlert,
   Crown,
@@ -72,6 +71,85 @@ const emptyForm = (): UserFormData => ({
   password: "",
   role: "observer",
 });
+
+// ─── Form fields extracted OUTSIDE the parent component to prevent remounting ──
+// This is the fix for the "one letter at a time" focus-loss bug.
+// When defined inside the parent, React treats it as a new component type on every
+// render and unmounts/remounts all inputs, losing focus after each keystroke.
+interface UserFormFieldsProps {
+  form: UserFormData;
+  setForm: React.Dispatch<React.SetStateAction<UserFormData>>;
+  isEdit?: boolean;
+}
+
+function UserFormFields({ form, setForm, isEdit = false }: UserFormFieldsProps) {
+  return (
+    <div className="grid gap-4 py-2">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs uppercase tracking-wider text-muted-foreground">Full Name *</Label>
+          <Input
+            placeholder="John Smith"
+            value={form.name}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs uppercase tracking-wider text-muted-foreground">CIN *</Label>
+          <Input
+            placeholder="ABC123"
+            value={form.cin}
+            onChange={(e) => setForm((f) => ({ ...f, cin: e.target.value.toUpperCase() }))}
+          />
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs uppercase tracking-wider text-muted-foreground">Unit</Label>
+        <Input
+          placeholder="e.g. Alpha Company"
+          value={form.unit}
+          onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))}
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs uppercase tracking-wider text-muted-foreground">Username *</Label>
+          <Input
+            placeholder="jsmith"
+            value={form.username}
+            onChange={(e) => setForm((f) => ({ ...f, username: e.target.value.toLowerCase() }))}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+            {isEdit ? "New Password" : "Password *"}
+          </Label>
+          <Input
+            type="password"
+            placeholder={isEdit ? "Leave blank to keep" : "Enter password"}
+            value={form.password}
+            onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+          />
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs uppercase tracking-wider text-muted-foreground">Access Level *</Label>
+        <Select value={form.role} onValueChange={(v) => setForm((f) => ({ ...f, role: v as Role }))}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="observer">Observer — view only</SelectItem>
+            <SelectItem value="certifier">Certifier — can certify rows</SelectItem>
+            <SelectItem value="admin">Admin — full access</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main AdminPage component ──────────────────────────────────────────────────
 
 export default function AdminPage() {
   const { user: currentUser, isAuthenticated } = useAuth();
@@ -121,10 +199,6 @@ export default function AdminPage() {
       toast.error("Name, CIN, username, and password are required.");
       return;
     }
-    if (form.password.length < 6) {
-      toast.error("Password must be at least 6 characters.");
-      return;
-    }
     createUser.mutate(form);
   };
 
@@ -167,71 +241,6 @@ export default function AdminPage() {
       </DashboardLayout>
     );
   }
-
-  const UserFormFields = ({ isEdit = false }: { isEdit?: boolean }) => (
-    <div className="grid gap-4 py-2">
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1.5">
-          <Label className="text-xs uppercase tracking-wider text-muted-foreground">Full Name *</Label>
-          <Input
-            placeholder="John Smith"
-            value={form.name}
-            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs uppercase tracking-wider text-muted-foreground">CIN *</Label>
-          <Input
-            placeholder="ABC123"
-            value={form.cin}
-            onChange={(e) => setForm((f) => ({ ...f, cin: e.target.value.toUpperCase() }))}
-          />
-        </div>
-      </div>
-      <div className="space-y-1.5">
-        <Label className="text-xs uppercase tracking-wider text-muted-foreground">Unit</Label>
-        <Input
-          placeholder="e.g. Alpha Company"
-          value={form.unit}
-          onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))}
-        />
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1.5">
-          <Label className="text-xs uppercase tracking-wider text-muted-foreground">Username *</Label>
-          <Input
-            placeholder="jsmith"
-            value={form.username}
-            onChange={(e) => setForm((f) => ({ ...f, username: e.target.value.toLowerCase() }))}
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs uppercase tracking-wider text-muted-foreground">
-            {isEdit ? "New Password" : "Password *"}
-          </Label>
-          <Input
-            type="password"
-            placeholder={isEdit ? "Leave blank to keep" : "Min. 6 characters"}
-            value={form.password}
-            onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-          />
-        </div>
-      </div>
-      <div className="space-y-1.5">
-        <Label className="text-xs uppercase tracking-wider text-muted-foreground">Access Level *</Label>
-        <Select value={form.role} onValueChange={(v) => setForm((f) => ({ ...f, role: v as Role }))}>
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="observer">Observer — view only</SelectItem>
-            <SelectItem value="certifier">Certifier — can certify rows</SelectItem>
-            <SelectItem value="admin">Admin — full access</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-    </div>
-  );
 
   return (
     <DashboardLayout>
@@ -347,7 +356,7 @@ export default function AdminPage() {
                 Add New User
               </DialogTitle>
             </DialogHeader>
-            <UserFormFields />
+            <UserFormFields form={form} setForm={setForm} />
             <DialogFooter>
               <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
               <Button onClick={handleCreate} disabled={createUser.isPending}>
@@ -367,7 +376,7 @@ export default function AdminPage() {
                 Edit User — {editTarget?.name}
               </DialogTitle>
             </DialogHeader>
-            <UserFormFields isEdit />
+            <UserFormFields form={form} setForm={setForm} isEdit />
             <DialogFooter>
               <Button variant="outline" onClick={() => setEditTarget(null)}>Cancel</Button>
               <Button onClick={handleUpdate} disabled={updateUser.isPending}>

@@ -15,9 +15,12 @@ import {
   Eye,
   EyeOff,
   CheckCircle2,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { useTheme } from "@/contexts/ThemeContext";
 
 const ROLE_LABELS: Record<string, { label: string; color: string; badge: string }> = {
   admin:     { label: "Admin",     color: "text-violet-400", badge: "border-violet-400/30 text-violet-400 bg-violet-400/10" },
@@ -109,8 +112,6 @@ export default function MyProfilePage() {
         setFieldErrors({ currentPassword: msg });
       } else if (msg.includes("do not match")) {
         setFieldErrors({ confirmPassword: msg });
-      } else if (msg.includes("6 characters")) {
-        setFieldErrors({ newPassword: msg });
       } else {
         toast.error(msg);
       }
@@ -125,7 +126,6 @@ export default function MyProfilePage() {
     const errors: Record<string, string> = {};
     if (!currentPassword) errors.currentPassword = "Current password is required.";
     if (!newPassword) errors.newPassword = "New password is required.";
-    else if (newPassword.length < 6) errors.newPassword = "New password must be at least 6 characters.";
     if (!confirmPassword) errors.confirmPassword = "Please confirm your new password.";
     else if (newPassword && confirmPassword && newPassword !== confirmPassword)
       errors.confirmPassword = "Passwords do not match.";
@@ -139,6 +139,7 @@ export default function MyProfilePage() {
   };
 
   const roleConf = ROLE_LABELS[(profile?.role as string) ?? "observer"];
+  const { theme, toggleTheme } = useTheme();
 
   return (
     <DashboardLayout>
@@ -198,6 +199,41 @@ export default function MyProfilePage() {
           )}
         </div>
 
+        {/* Appearance Card */}
+        {toggleTheme && (
+          <div className="rounded-xl border border-border bg-card p-6 mb-6 shadow-sm">
+            <h2 className="text-sm font-semibold text-foreground mb-1 flex items-center gap-2">
+              {theme === "dark" ? <Moon className="w-4 h-4 text-primary" /> : <Sun className="w-4 h-4 text-primary" />}
+              Appearance
+            </h2>
+            <p className="text-xs text-muted-foreground mb-4">Choose your preferred colour theme.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => theme !== "light" && toggleTheme()}
+                className={`flex-1 flex items-center justify-center gap-2 rounded-lg border px-4 py-3 text-sm font-medium transition-all ${
+                  theme === "light"
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border text-muted-foreground hover:border-border/80 hover:text-foreground"
+                }`}
+              >
+                <Sun className="w-4 h-4" />
+                Light
+              </button>
+              <button
+                onClick={() => theme !== "dark" && toggleTheme()}
+                className={`flex-1 flex items-center justify-center gap-2 rounded-lg border px-4 py-3 text-sm font-medium transition-all ${
+                  theme === "dark"
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border text-muted-foreground hover:border-border/80 hover:text-foreground"
+                }`}
+              >
+                <Moon className="w-4 h-4" />
+                Dark
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Change Password Card */}
         <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
           <h2 className="text-sm font-semibold text-foreground mb-1 flex items-center gap-2">
@@ -205,7 +241,7 @@ export default function MyProfilePage() {
             Change Password
           </h2>
           <p className="text-xs text-muted-foreground mb-5">
-            Choose a strong password of at least 6 characters.
+            Enter your current password to set a new one.
           </p>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -220,7 +256,7 @@ export default function MyProfilePage() {
               label="New Password"
               value={newPassword}
               onChange={setNewPassword}
-              placeholder="At least 6 characters"
+              placeholder="Enter new password"
               error={fieldErrors.newPassword}
             />
             <PasswordField

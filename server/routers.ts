@@ -78,7 +78,7 @@ export const appRouter = router({
     updatePassword: protectedProcedure
       .input(z.object({
         currentPassword: z.string().min(1),
-        newPassword: z.string().min(6, "New password must be at least 6 characters."),
+        newPassword: z.string().min(1, "New password is required."),
         confirmPassword: z.string().min(1),
       }))
       .mutation(async ({ input, ctx }) => {
@@ -475,8 +475,8 @@ export const appRouter = router({
         name: z.string().min(1),
         cin: z.string().min(1),
         unit: z.string().optional(),
-        username: z.string().min(3),
-        password: z.string().min(6),
+        username: z.string().min(1),
+        password: z.string().min(1),
         role: z.enum(["observer", "certifier", "admin"]),
       }))
       .mutation(async ({ input, ctx }) => {
@@ -509,8 +509,8 @@ export const appRouter = router({
         name: z.string().min(1).optional(),
         cin: z.string().min(1).optional(),
         unit: z.string().optional(),
-        username: z.string().min(3).optional(),
-        password: z.string().min(6).optional(),
+        username: z.string().min(1).optional(),
+        password: z.string().min(1).optional(),
         role: z.enum(["observer", "certifier", "admin"]).optional(),
       }))
       .mutation(async ({ input, ctx }) => {

@@ -88,3 +88,8 @@
 - [x] Frontend: Change Password form with current password + new password + confirm fields
 - [x] Sidebar nav: add Profile link accessible to all roles
 - [x] Route /profile registered in App.tsx
+
+## Bug Fixes & UX (Round 6)
+- [x] Remove minimum length/complexity requirements from username and password fields
+- [x] Add light/dark theme toggle accessible from sidebar and profile page
+- [x] Fix AdminPage Add User form: inputs lose focus after each keystroke (unstable component key issue)

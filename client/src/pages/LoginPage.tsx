@@ -4,13 +4,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { ShieldCheck, Loader2, Eye, EyeOff } from "lucide-react";
+import { ShieldCheck, Loader2, Eye, EyeOff, Sun, Moon } from "lucide-react";
+import { useTheme } from "@/contexts/ThemeContext";
 import { toast } from "sonner";
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const { theme, toggleTheme } = useTheme();
 
   const utils = trpc.useUtils();
 
@@ -129,6 +131,18 @@ export default function LoginPage() {
         <p className="text-center text-xs text-muted-foreground/50 mt-6">
           Access restricted to authorised personnel only.
         </p>
+        {toggleTheme && (
+          <div className="flex justify-center mt-4">
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+            >
+              {theme === "dark" ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+              {theme === "dark" ? "Light mode" : "Dark mode"}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

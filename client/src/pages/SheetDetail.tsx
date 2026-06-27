@@ -47,7 +47,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useState, useCallback, useEffect, useMemo } from "react";
+import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useLocation, useParams } from "wouter";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -289,8 +289,9 @@ function MemberCell({
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="w-6 h-6 opacity-0 group-hover/member:opacity-100 text-muted-foreground hover:text-destructive"
+                          className="w-6 h-6 opacity-0 group-hover/member:opacity-100 text-muted-foreground hover:text-amber-400"
                           onClick={() => onUncertify(row.id, member.id)}
+                          title="Uncertify this member"
                         >
                           <XCircle className="w-3.5 h-3.5" />
                         </Button>
@@ -325,14 +326,19 @@ function MemberCell({
                     </Tooltip>
                   )}
                   {canEdit && !row.isLocked && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="w-6 h-6 opacity-0 group-hover/member:opacity-100 text-muted-foreground hover:text-destructive"
-                      onClick={() => onRemoveMember(member.id, row.id)}
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </Button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="w-6 h-6 opacity-0 group-hover/member:opacity-100 text-muted-foreground hover:text-destructive"
+                          onClick={() => onRemoveMember(member.id, row.id)}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">Remove this CIN</TooltipContent>
+                    </Tooltip>
                   )}
                 </div>
               )}
@@ -400,11 +406,13 @@ function MemberCell({
 function CertifyCell({
   row,
   canCertify,
+  onUncertify,
   onUncertifyAll,
   onDeleteRow,
 }: {
   row: SheetRow;
   canCertify: boolean;
+  onUncertify: (rowId: number, memberId: number) => void;
   onUncertifyAll: (rowId: number) => void;
   onDeleteRow?: (rowId: number) => void;
 }) {
@@ -429,18 +437,33 @@ function CertifyCell({
           </span>
         )}
       </div>
-      {/* CIN list per member */}
+      {/* CIN list per member with per-member uncertify */}
       <div className="flex flex-col gap-0.5">
         {row.members.map((m) => {
           const cert = row.certifications.find((c) => c.memberId === m.id && c.isActive);
           return (
-            <div key={m.id} className="flex items-center gap-1">
+            <div key={m.id} className="flex items-center gap-1 group/certrow">
               {cert ? (
                 <>
                   <CheckCircle2 className="w-3 h-3 text-[var(--certified-color)] shrink-0" />
-                  <span className="text-xs font-mono text-[var(--certified-color)]">
+                  <span className="text-xs font-mono text-[var(--certified-color)] flex-1">
                     {(cert as any).certifiedByCIN || cert.certifiedByName}
                   </span>
+                  {canCertify && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="w-5 h-5 opacity-0 group-hover/certrow:opacity-100 text-muted-foreground hover:text-amber-400 shrink-0"
+                          onClick={() => onUncertify(row.id, m.id)}
+                        >
+                          <XCircle className="w-3 h-3" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">Uncertify {m.memberName}</TooltipContent>
+                    </Tooltip>
+                  )}
                 </>
               ) : (
                 <>
@@ -462,7 +485,7 @@ function CertifyCell({
               onClick={() => onUncertifyAll(row.id)}
             >
               <Unlock className="w-3 h-3" />
-              Uncertify
+              Uncertify All
             </Button>
           </TooltipTrigger>
           <TooltipContent side="top" className="text-xs">Remove all certifications and unlock row</TooltipContent>
@@ -506,6 +529,81 @@ function minutesToTimeString(mins: number): string {
   return `${String(h12).padStart(2, "0")}:${String(min).padStart(2, "0")} ${period}`;
 }
 
+/** A single scroll-wheel column for the time picker */
+function WheelColumn({
+  items,
+  selected,
+  onSelect,
+  itemWidth = "w-12",
+}: {
+  items: string[];
+  selected: string;
+  onSelect: (val: string) => void;
+  itemWidth?: string;
+}) {
+  const ITEM_H = 36;
+  const VISIBLE = 5;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const selectedIdx = items.indexOf(selected);
+
+  // Scroll to selected on mount and when selected changes
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const target = selectedIdx * ITEM_H - ITEM_H * Math.floor(VISIBLE / 2);
+    el.scrollTop = Math.max(0, target);
+  }, [selectedIdx]);
+
+  const handleScroll = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const idx = Math.round(el.scrollTop / ITEM_H);
+    const clamped = Math.max(0, Math.min(items.length - 1, idx));
+    if (items[clamped] !== selected) onSelect(items[clamped]);
+  }, [items, selected, onSelect]);
+
+  return (
+    <div className="relative flex flex-col items-center" style={{ width: undefined }}>
+      {/* Selection highlight */}
+      <div
+        className="absolute pointer-events-none z-10 rounded-md bg-primary/15 border border-primary/30"
+        style={{ top: ITEM_H * Math.floor(VISIBLE / 2), height: ITEM_H, left: 0, right: 0 }}
+      />
+      <div
+        ref={containerRef}
+        onScroll={handleScroll}
+        className={`overflow-y-scroll scroll-smooth no-scrollbar ${itemWidth}`}
+        style={{
+          height: ITEM_H * VISIBLE,
+          scrollSnapType: "y mandatory",
+          WebkitOverflowScrolling: "touch",
+        }}
+      >
+        {/* Padding items top */}
+        {Array.from({ length: Math.floor(VISIBLE / 2) }).map((_, i) => (
+          <div key={`pad-t-${i}`} style={{ height: ITEM_H }} />
+        ))}
+        {items.map((item) => (
+          <div
+            key={item}
+            onClick={() => onSelect(item)}
+            style={{ height: ITEM_H, scrollSnapAlign: "center" }}
+            className={`flex items-center justify-center cursor-pointer text-sm font-mono select-none transition-colors ${
+              item === selected ? "text-foreground font-semibold" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {item}
+          </div>
+        ))}
+        {/* Padding items bottom */}
+        {Array.from({ length: Math.floor(VISIBLE / 2) }).map((_, i) => (
+          <div key={`pad-b-${i}`} style={{ height: ITEM_H }} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function TimePickerCell({
   value,
   locked,
@@ -520,13 +618,14 @@ function TimePickerCell({
     if (!value) return { hour: "12", minute: "00", period: "AM" };
     const m = value.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
     if (!m) return { hour: "12", minute: "00", period: "AM" };
-    return { hour: String(parseInt(m[1], 10)), minute: m[2], period: m[3].toUpperCase() };
+    return { hour: String(parseInt(m[1], 10)).padStart(2, "0"), minute: m[2].padStart(2, "0"), period: m[3].toUpperCase() };
   }, [value]);
 
   const [open, setOpen] = useState(false);
   const [hour, setHour] = useState(parsed.hour);
   const [minute, setMinute] = useState(parsed.minute);
   const [period, setPeriod] = useState(parsed.period);
+  const popoverRef = useRef<HTMLDivElement>(null);
 
   // Sync local state when value prop changes (e.g. row refresh)
   useEffect(() => {
@@ -535,15 +634,27 @@ function TimePickerCell({
     setPeriod(parsed.period);
   }, [parsed.hour, parsed.minute, parsed.period]);
 
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
   const commit = useCallback((h: string, m: string, p: string) => {
-    const display = `${String(parseInt(h, 10)).padStart(2, "0")}:${m} ${p}`;
+    const display = `${h.padStart(2, "0")}:${m.padStart(2, "0")} ${p}`;
     const mins = timeStringToMinutes(display);
     onSave(display, mins);
-    setOpen(false);
   }, [onSave]);
 
-  const hours = Array.from({ length: 12 }, (_, i) => String(i + 1));
-  const minutes = ["00", "05", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55"];
+  const hours = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, "0"));
+  const minutes = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"));
+  const periods = ["AM", "PM"];
 
   if (locked) {
     return (
@@ -554,7 +665,7 @@ function TimePickerCell({
   }
 
   return (
-    <div className="relative">
+    <div className="relative" ref={popoverRef}>
       <button
         className="flex items-center gap-1.5 text-sm font-mono hover:bg-accent/50 rounded px-1 py-0.5 transition-colors min-w-[90px]"
         onClick={() => setOpen((v) => !v)}
@@ -563,37 +674,29 @@ function TimePickerCell({
         {value || <span className="text-muted-foreground/50 italic text-xs">Set time</span>}
       </button>
       {open && (
-        <div className="absolute z-50 top-full left-0 mt-1 bg-popover border border-border rounded-lg shadow-xl p-3 flex items-center gap-2">
-          <Select value={hour} onValueChange={(v) => { setHour(v); commit(v, minute, period); }}>
-            <SelectTrigger className="w-16 h-8 text-sm font-mono">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {hours.map((h) => (
-                <SelectItem key={h} value={h} className="font-mono">{String(parseInt(h, 10)).padStart(2, "0")}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <span className="text-muted-foreground font-mono">:</span>
-          <Select value={minute} onValueChange={(v) => { setMinute(v); commit(hour, v, period); }}>
-            <SelectTrigger className="w-16 h-8 text-sm font-mono">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {minutes.map((m) => (
-                <SelectItem key={m} value={m} className="font-mono">{m}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={period} onValueChange={(v) => { setPeriod(v); commit(hour, minute, v); }}>
-            <SelectTrigger className="w-18 h-8 text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="AM">AM</SelectItem>
-              <SelectItem value="PM">PM</SelectItem>
-            </SelectContent>
-          </Select>
+        <div className="absolute z-50 top-full left-0 mt-1 bg-popover border border-border rounded-xl shadow-2xl p-3">
+          <div className="flex items-center gap-1">
+            <WheelColumn
+              items={hours}
+              selected={hour}
+              itemWidth="w-12"
+              onSelect={(h) => { setHour(h); commit(h, minute, period); }}
+            />
+            <span className="text-muted-foreground font-mono text-lg pb-1">:</span>
+            <WheelColumn
+              items={minutes}
+              selected={minute}
+              itemWidth="w-12"
+              onSelect={(m) => { setMinute(m); commit(hour, m, period); }}
+            />
+            <WheelColumn
+              items={periods}
+              selected={period}
+              itemWidth="w-12"
+              onSelect={(p) => { setPeriod(p); commit(hour, minute, p); }}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground text-center mt-2">Scroll or click to set time</p>
         </div>
       )}
     </div>
@@ -1045,6 +1148,7 @@ export default function SheetDetail() {
                         <CertifyCell
                           row={row}
                           canCertify={canCertify}
+                          onUncertify={(rowId, memberId) => uncertify.mutate({ rowId, memberId })}
                           onUncertifyAll={(rowId) => uncertifyAll.mutate({ rowId })}
                           onDeleteRow={canCertify ? (rowId) => {
                             if (confirm("Delete this row?")) deleteRow.mutate({ id: rowId });

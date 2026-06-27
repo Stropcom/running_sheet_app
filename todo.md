@@ -131,3 +131,8 @@
 - [x] Frontend: per-CIN "Certify All" button in the daily roster area of the sheet detail page
 - [x] Frontend: "team" keyword in CIN input auto-expands to all CINs on the daily roster for that row
 - [x] PDF export: "team" rows show all expanded CINs (auto-handled — expansion happens at add-member time, CINs stored individually), not the word "team"
+
+## Bug Fixes & UX (Round 12)
+- [x] CIN deletion: allow removing a CIN from a row even after it has been certified (show delete button on certified members too)
+- [x] Per-CIN uncertification in multi-CIN rows: add per-member uncertify (XCircle) button in the Certify column, visible on hover for each certified CIN regardless of row lock state
+- [x] Time picker: replace dropdown selects with a scroll-wheel picker covering all 60 minutes (1-minute granularity)

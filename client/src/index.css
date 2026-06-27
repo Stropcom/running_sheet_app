@@ -273,3 +273,12 @@ button:active:not(:disabled) {
   .stagger-item:nth-child(5) { animation-delay: 160ms; }
   .stagger-item:nth-child(n+6) { animation-delay: 200ms; }
 }
+
+/* Hide scrollbar for time wheel picker */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

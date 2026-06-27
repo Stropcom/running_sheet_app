@@ -276,14 +276,19 @@ function MemberCell({
     setAdding(false);
   };
 
+  // Fixed row height — must match CertifyCell's ROW_H
+  const ROW_H = "h-8";
+
   return (
-    <div className="flex flex-col gap-2 min-w-[200px]">
+    <div className="flex flex-col min-w-[180px]">
+      {/* Spacer to align with CertifyCell's summary row */}
+      <div className={ROW_H} />
       {row.members.map((member) => {
         const cert = row.certifications.find((c) => c.memberId === member.id && c.isActive);
         return (
           <div
             key={member.id}
-            className="flex items-center gap-2 group/member"
+            className={`flex items-center gap-2 group/member ${ROW_H}`}
           >
             <div className="flex-1 min-w-0">
               <span className={`text-sm font-medium ${cert ? "text-[var(--certified-color)]" : "text-foreground"}`}>
@@ -365,7 +370,7 @@ function MemberCell({
       {/* Add member */}
       {canEdit && !row.isLocked && (
         adding ? (
-          <div className="flex flex-col gap-1.5 mt-1">
+          <div className="flex flex-col gap-1.5">
             {rosterCins && rosterCins.length > 0 ? (
               /* Dropdown mode: pick from team roster */
               <div className="flex items-center gap-1.5">
@@ -464,65 +469,68 @@ function CertifyCell({
     return <span className="text-xs text-muted-foreground italic">No members</span>;
   }
 
+  // Height of each member sub-row — must match MemberCell's member row height
+  const ROW_H = "h-8";
+
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-2">
+    <div className="flex flex-col">
+      {/* Summary line — sits above the member rows */}
+      <div className={`flex items-center gap-1.5 ${ROW_H}`}>
         {row.isLocked ? (
-          <Badge variant="outline" className="gap-1.5 text-[var(--certified-color)] border-[var(--locked-border)] bg-[var(--locked-bg)] text-xs">
-            <Lock className="w-3 h-3" />
+          <Badge variant="outline" className="gap-1 text-[var(--certified-color)] border-[var(--locked-border)] bg-[var(--locked-bg)] text-xs py-0 px-1.5">
+            <Lock className="w-2.5 h-2.5" />
             Locked
           </Badge>
         ) : (
-          <span className="text-xs text-muted-foreground">
-            {certified}/{total} certified
-          </span>
+          <span className="text-xs text-muted-foreground">{certified}/{total} certified</span>
         )}
       </div>
-      {/* CIN list per member with per-member uncertify */}
-      <div className="flex flex-col gap-0.5">
-        {row.members.map((m) => {
-          const cert = row.certifications.find((c) => c.memberId === m.id && c.isActive);
-          return (
-            <div key={m.id} className="flex items-center gap-1 group/certrow">
-              {cert ? (
-                <>
-                  <CheckCircle2 className="w-3 h-3 text-[var(--certified-color)] shrink-0" />
-                  <span className="text-xs font-mono text-[var(--certified-color)] flex-1">
-                    {(cert as any).certifiedByCIN || cert.certifiedByName}
-                  </span>
-                  {canCertify && (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="w-5 h-5 opacity-0 group-hover/certrow:opacity-100 text-muted-foreground hover:text-amber-400 shrink-0"
-                          onClick={() => onUncertify(row.id, m.id)}
-                        >
-                          <XCircle className="w-3 h-3" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="text-xs">Uncertify {m.memberName}</TooltipContent>
-                    </Tooltip>
-                  )}
-                </>
-              ) : (
-                <>
-                  <XCircle className="w-3 h-3 text-muted-foreground shrink-0" />
-                  <span className="text-xs text-muted-foreground">Pending</span>
-                </>
-              )}
-            </div>
-          );
-        })}
-      </div>
+
+      {/* One row per member — same fixed height as MemberCell member rows */}
+      {row.members.map((m) => {
+        const cert = row.certifications.find((c) => c.memberId === m.id && c.isActive);
+        return (
+          <div key={m.id} className={`flex items-center gap-1 group/certrow ${ROW_H}`}>
+            {cert ? (
+              <>
+                <CheckCircle2 className="w-3 h-3 text-[var(--certified-color)] shrink-0" />
+                <span className="text-xs font-mono text-[var(--certified-color)] flex-1 truncate">
+                  {(cert as any).certifiedByCIN || cert.certifiedByName}
+                </span>
+                {canCertify && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="w-5 h-5 opacity-0 group-hover/certrow:opacity-100 text-muted-foreground hover:text-amber-400 shrink-0"
+                        onClick={() => onUncertify(row.id, m.id)}
+                      >
+                        <XCircle className="w-3 h-3" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="text-xs">Uncertify {m.memberName}</TooltipContent>
+                  </Tooltip>
+                )}
+              </>
+            ) : (
+              <>
+                <XCircle className="w-3 h-3 text-muted-foreground shrink-0" />
+                <span className="text-xs text-muted-foreground">Pending</span>
+              </>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Footer actions */}
       {row.isLocked && canCertify && (
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 px-2 text-xs gap-1.5 text-muted-foreground hover:text-amber-400 hover:bg-amber-400/10"
+              className="h-7 px-2 text-xs gap-1.5 text-muted-foreground hover:text-amber-400 hover:bg-amber-400/10 mt-1"
               onClick={() => onUncertifyAll(row.id)}
             >
               <Unlock className="w-3 h-3" />

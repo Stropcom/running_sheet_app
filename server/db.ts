@@ -177,7 +177,8 @@ export async function deleteRunningSheet(id: number) {
 export async function getRowsBySheetId(sheetId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(sheetRows).where(eq(sheetRows.sheetId, sheetId)).orderBy(sheetRows.rowNumber);
+  // Sort by timeMinutes when available, fall back to rowNumber for rows without a time set
+  return db.select().from(sheetRows).where(eq(sheetRows.sheetId, sheetId)).orderBy(sheetRows.timeMinutes, sheetRows.rowNumber);
 }
 
 export async function getRowById(id: number) {

@@ -37,8 +37,16 @@ import {
   Pencil,
   Camera,
   X,
+  Search,
 } from "lucide-react";
-import { useState, useCallback, useEffect } from "react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useLocation, useParams } from "wouter";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -437,6 +445,123 @@ function CertifyCell({
   );
 }
 
+// ─── Time Picker Cell ────────────────────────────────────────────────────────
+
+/** Converts "hh:mm AM/PM" display string to minutes-since-midnight (0-1439) */
+function timeStringToMinutes(t: string): number {
+  const m = t.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (!m) return -1;
+  let h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  const period = m[3].toUpperCase();
+  if (period === "AM" && h === 12) h = 0;
+  if (period === "PM" && h !== 12) h += 12;
+  return h * 60 + min;
+}
+
+/** Formats minutes-since-midnight to "hh:mm AM/PM" */
+function minutesToTimeString(mins: number): string {
+  const h24 = Math.floor(mins / 60) % 24;
+  const min = mins % 60;
+  const period = h24 < 12 ? "AM" : "PM";
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${String(h12).padStart(2, "0")}:${String(min).padStart(2, "0")} ${period}`;
+}
+
+function TimePickerCell({
+  value,
+  locked,
+  onSave,
+}: {
+  value: string | null;
+  locked: boolean;
+  onSave: (display: string, minutes: number) => void;
+}) {
+  // Parse existing value into hour/minute/period
+  const parsed = useMemo(() => {
+    if (!value) return { hour: "12", minute: "00", period: "AM" };
+    const m = value.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (!m) return { hour: "12", minute: "00", period: "AM" };
+    return { hour: String(parseInt(m[1], 10)), minute: m[2], period: m[3].toUpperCase() };
+  }, [value]);
+
+  const [open, setOpen] = useState(false);
+  const [hour, setHour] = useState(parsed.hour);
+  const [minute, setMinute] = useState(parsed.minute);
+  const [period, setPeriod] = useState(parsed.period);
+
+  // Sync local state when value prop changes (e.g. row refresh)
+  useEffect(() => {
+    setHour(parsed.hour);
+    setMinute(parsed.minute);
+    setPeriod(parsed.period);
+  }, [parsed.hour, parsed.minute, parsed.period]);
+
+  const commit = useCallback((h: string, m: string, p: string) => {
+    const display = `${String(parseInt(h, 10)).padStart(2, "0")}:${m} ${p}`;
+    const mins = timeStringToMinutes(display);
+    onSave(display, mins);
+    setOpen(false);
+  }, [onSave]);
+
+  const hours = Array.from({ length: 12 }, (_, i) => String(i + 1));
+  const minutes = ["00", "05", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55"];
+
+  if (locked) {
+    return (
+      <span className="text-sm font-mono text-muted-foreground">
+        {value || <span className="italic opacity-40">—</span>}
+      </span>
+    );
+  }
+
+  return (
+    <div className="relative">
+      <button
+        className="flex items-center gap-1.5 text-sm font-mono hover:bg-accent/50 rounded px-1 py-0.5 transition-colors min-w-[90px]"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <Clock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+        {value || <span className="text-muted-foreground/50 italic text-xs">Set time</span>}
+      </button>
+      {open && (
+        <div className="absolute z-50 top-full left-0 mt-1 bg-popover border border-border rounded-lg shadow-xl p-3 flex items-center gap-2">
+          <Select value={hour} onValueChange={(v) => { setHour(v); commit(v, minute, period); }}>
+            <SelectTrigger className="w-16 h-8 text-sm font-mono">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {hours.map((h) => (
+                <SelectItem key={h} value={h} className="font-mono">{String(parseInt(h, 10)).padStart(2, "0")}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span className="text-muted-foreground font-mono">:</span>
+          <Select value={minute} onValueChange={(v) => { setMinute(v); commit(hour, v, period); }}>
+            <SelectTrigger className="w-16 h-8 text-sm font-mono">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {minutes.map((m) => (
+                <SelectItem key={m} value={m} className="font-mono">{m}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={period} onValueChange={(v) => { setPeriod(v); commit(hour, minute, v); }}>
+            <SelectTrigger className="w-18 h-8 text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="AM">AM</SelectItem>
+              <SelectItem value="PM">PM</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Editable Cell ────────────────────────────────────────────────────────────
 
 function EditableCell({
@@ -574,6 +699,9 @@ export default function SheetDetail() {
   const canEdit = user?.role === "certifier" || user?.role === "admin" || user?.role === "observer";
   const canCertify = user?.role === "certifier" || user?.role === "admin";
 
+  // Search state
+  const [searchQuery, setSearchQuery] = useState("");
+
   // Edit sheet state
   const [editSheetOpen, setEditSheetOpen] = useState(false);
   const [editTitle, setEditTitle] = useState("");
@@ -658,6 +786,19 @@ export default function SheetDetail() {
 
   const isLoading = sheetLoading || rowsLoading;
 
+  // Filter rows by search query (time, observation, member names)
+  const filteredRows = useMemo(() => {
+    if (!rows) return [];
+    if (!searchQuery.trim()) return rows;
+    const q = searchQuery.toLowerCase();
+    return rows.filter((row: NonNullable<typeof rows>[0]) => {
+      if (row.time?.toLowerCase().includes(q)) return true;
+      if (row.observation?.toLowerCase().includes(q)) return true;
+      if (row.members?.some((m: { memberName: string }) => m.memberName.toLowerCase().includes(q))) return true;
+      return false;
+    });
+  }, [rows, searchQuery]);
+
   return (
     <DashboardLayout>
       <div className="p-6 lg:p-8">
@@ -737,6 +878,26 @@ export default function SheetDetail() {
           </div>
         </div>
 
+        {/* Search bar */}
+        <div className="mb-4 relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search by time, observation, or CIN…"
+            className="w-full pl-9 pr-4 py-2 text-sm bg-card border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40 text-foreground placeholder:text-muted-foreground"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
         {/* Table */}
         <div className="rounded-xl border border-border overflow-hidden bg-card">
           <div className="overflow-x-auto">
@@ -759,18 +920,19 @@ export default function SheetDetail() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(rows ?? []).map((row: NonNullable<typeof rows>[0]) => (
+                  {filteredRows.length === 0 && searchQuery ? (
+                    <tr><td colSpan={4} className="py-12 text-center text-sm text-muted-foreground italic">No rows match your search.</td></tr>
+                  ) : filteredRows.map((row: NonNullable<typeof rows>[0]) => (
                     <tr
                       key={row.id}
                       className={row.isLocked ? "row-locked" : "hover:bg-accent/20"}
                     >
                       {/* Time */}
                       <td>
-                        <EditableCell
+                        <TimePickerCell
                           value={row.time}
                           locked={row.isLocked}
-                          placeholder="HH:MM"
-                          onSave={(val) => updateRow.mutate({ id: row.id, time: val })}
+                          onSave={(display, mins) => updateRow.mutate({ id: row.id, time: display, timeMinutes: mins })}
                         />
                       </td>
 

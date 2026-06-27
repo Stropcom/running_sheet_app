@@ -317,7 +317,7 @@ export const appRouter = router({
       }),
 
     update: protectedProcedure
-      .input(z.object({ id: z.number(), time: z.string().optional(), observation: z.string().optional() }))
+      .input(z.object({ id: z.number(), time: z.string().optional(), timeMinutes: z.number().optional(), observation: z.string().optional() }))
       .mutation(async ({ input, ctx }) => {
         const row = await getRowById(input.id);
         if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Row not found." });

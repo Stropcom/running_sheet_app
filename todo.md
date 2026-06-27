@@ -116,3 +116,12 @@
 - [x] Add iOS-specific meta tags to index.html (apple-mobile-web-app-capable, status-bar-style, touch-icon)
 - [x] Register service worker for offline shell caching
 - [x] Vite PWA plugin (vite-plugin-pwa) with workbox NetworkFirst for API calls
+
+## Time Picker, Auto-sort & Search (Round 10)
+- [x] DB: add timeMinutes INT column to sheet_rows (minutes since midnight, for sorting)
+- [x] Backend: sheet.rows query returns rows sorted by timeMinutes ASC
+- [x] Backend: row.update accepts timeMinutes alongside time string
+- [x] Frontend: replace free-text Time cell with AM/PM time picker popover
+- [x] Frontend: rows auto-reorder by time after any time update
+- [x] Frontend: search bar above table filters rows by time, observation, or CIN
+- [x] PDF export: rows exported in time order, search does not affect export

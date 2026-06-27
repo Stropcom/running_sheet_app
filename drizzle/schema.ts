@@ -72,6 +72,7 @@ export const sheetRows = mysqlTable("sheet_rows", {
   sheetId: int("sheetId").notNull(),
   rowNumber: int("rowNumber").notNull(),
   time: varchar("time", { length: 64 }),
+  timeMinutes: int("timeMinutes"),
   observation: text("observation"),
   isLocked: boolean("isLocked").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

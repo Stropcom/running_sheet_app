@@ -55,6 +55,7 @@ export const runningSheets = mysqlTable("running_sheets", {
   id: int("id").autoincrement().primaryKey(),
   operationId: int("operationId").notNull(),
   title: varchar("title", { length: 255 }).notNull(),
+  targetName: varchar("targetName", { length: 255 }),
   // JSON array of { cin: string, hasImages: boolean } — daily CIN roster
   sheetCins: text("sheetCins"),
   createdBy: int("createdBy").notNull(),

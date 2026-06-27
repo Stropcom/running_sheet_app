@@ -104,6 +104,7 @@ function exportToPDF(
   operation: OperationMeta,
   sheetCinsRaw: string | null,
   sheetCreatedAt: Date,
+  targetName?: string | null,
 ) {
   const certColor = "#22c55e";
   const lockedBg = "#0f2a1a";
@@ -145,6 +146,7 @@ function exportToPDF(
       <div style="border-bottom:2px solid #334155;padding-bottom:12px;margin-bottom:16px">
         <div style="font-size:10px;font-weight:600;letter-spacing:0.1em;color:#64748b;text-transform:uppercase;margin-bottom:4px">RUNNING SHEET</div>
         <h1 style="font-size:22px;font-weight:700;margin:0 0 4px;color:#f8fafc">${sheetTitle}</h1>
+        ${targetName ? `<div style="font-size:13px;color:#94a3b8;margin-bottom:2px">Target: <span style="color:#e2e8f0;font-weight:600">${targetName}</span></div>` : ""}
         <div style="font-size:11px;color:#64748b">Sheet Date: ${format(new Date(sheetCreatedAt), "EEEE d MMMM yyyy")}</div>
       </div>
 
@@ -905,6 +907,7 @@ export default function SheetDetail() {
   // Edit sheet state
   const [editSheetOpen, setEditSheetOpen] = useState(false);
   const [editTitle, setEditTitle] = useState("");
+  const [editTargetName, setEditTargetName] = useState("");
 
   // Edit roster state
   const [editRosterOpen, setEditRosterOpen] = useState(false);
@@ -940,6 +943,7 @@ export default function SheetDetail() {
         exportData.operation ?? null,
         exportData.sheet.sheetCins ?? null,
         exportData.sheet.createdAt,
+        exportData.sheet.targetName ?? null,
       );
       setPendingExportType(null);
     }
@@ -947,6 +951,7 @@ export default function SheetDetail() {
 
   const openEditSheet = () => {
     setEditTitle(sheet?.title ?? "");
+    setEditTargetName(sheet?.targetName ?? "");
     setEditSheetOpen(true);
   };
 
@@ -1012,7 +1017,12 @@ export default function SheetDetail() {
               <Skeleton className="h-7 w-64" />
             ) : (
               <>
-                <h1 className="text-xl font-semibold text-foreground truncate">{sheet?.title}</h1>
+                <div className="min-w-0">
+                  <h1 className="text-xl font-semibold text-foreground truncate">{sheet?.title}</h1>
+                  {sheet?.targetName && (
+                    <p className="text-sm text-muted-foreground truncate">Target: <span className="font-medium text-foreground">{sheet.targetName}</span></p>
+                  )}
+                </div>
                 {sheet && (
                   <>
                     <Button
@@ -1258,27 +1268,32 @@ export default function SheetDetail() {
       <Dialog open={editSheetOpen} onOpenChange={setEditSheetOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Edit Sheet Title</DialogTitle>
+            <DialogTitle>Sheet Details</DialogTitle>
           </DialogHeader>
-          <div className="py-2">
-            <label className="text-sm font-medium text-foreground mb-1.5 block">
-              Title <span className="text-destructive">*</span>
-            </label>
-            <Input
-              autoFocus
-              value={editTitle}
-              onChange={(e) => setEditTitle(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && editTitle.trim()) {
-                  updateSheet.mutate({ id: sheetId, title: editTitle.trim() });
-                }
-              }}
-            />
+          <div className="py-2 flex flex-col gap-4">
+            <div>
+              <label className="text-sm font-medium text-foreground mb-1.5 block">
+                Title <span className="text-destructive">*</span>
+              </label>
+              <Input
+                autoFocus
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-foreground mb-1.5 block">Target Name</label>
+              <Input
+                value={editTargetName}
+                onChange={(e) => setEditTargetName(e.target.value)}
+                placeholder="e.g. John Smith"
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditSheetOpen(false)}>Cancel</Button>
             <Button
-              onClick={() => updateSheet.mutate({ id: sheetId, title: editTitle.trim() })}
+              onClick={() => updateSheet.mutate({ id: sheetId, title: editTitle.trim(), targetName: editTargetName.trim() || null })}
               disabled={!editTitle.trim() || updateSheet.isPending}
             >
               {updateSheet.isPending ? "Saving…" : "Save"}

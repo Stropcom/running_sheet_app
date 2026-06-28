@@ -1108,7 +1108,7 @@ export default function SheetDetail() {
                 <Target className="w-3.5 h-3.5 text-muted-foreground" />
                 <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">TARGET — {t.name}</span>
               </div>
-              {hasAnyField ? (
+              {hasAnyField && (
                 <div className="flex flex-wrap gap-x-6 gap-y-1">
                   {fields.filter((f) => f.value).map((f) => (
                     <div key={f.label} className="flex items-baseline gap-1.5 text-xs">
@@ -1117,8 +1117,6 @@ export default function SheetDetail() {
                     </div>
                   ))}
                 </div>
-              ) : (
-                <p className="text-xs text-muted-foreground italic">No target details recorded yet</p>
               )}
             </div>
           );

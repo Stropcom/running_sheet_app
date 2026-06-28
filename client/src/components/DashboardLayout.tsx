@@ -109,7 +109,7 @@ function DashboardLayoutContent({
 
   const menuItems = [
     { icon: FileText, label: "Operations", path: "/" },
-    { icon: ClipboardList, label: "To-Do", path: "/todo", badge: todoCount > 0 ? todoCount : undefined },
+    { icon: ClipboardList, label: "To-Do", path: "/todo", badge: todoCount, badgeLabel: todoCount > 0 ? `To-Do (${todoCount})` : "To-Do" },
     { icon: ScrollText, label: "Audit Log", path: "/audit" },
     { icon: User, label: "My Profile", path: "/profile" },
     ...(user?.role === "admin" ? [{ icon: Users, label: "User Management", path: "/admin" }] : []),
@@ -187,14 +187,14 @@ function DashboardLayoutContent({
                       className="h-10 font-normal transition-all"
                     >
                       <item.icon className={`h-4 w-4 ${
-                        (item as any).badge ? "text-amber-400" : isActive ? "text-sidebar-primary" : "text-sidebar-foreground/60"
+                        (item as any).badge > 0 ? "text-amber-400" : isActive ? "text-sidebar-primary" : "text-sidebar-foreground/60"
                       }`} />
                       <span className={`flex-1 ${
-                        (item as any).badge ? "text-amber-300 font-medium" : isActive ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"
+                        (item as any).badge > 0 ? "text-amber-300 font-medium" : isActive ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"
                       }`}>
-                        {item.label}
+                        {(item as any).badgeLabel ?? item.label}
                       </span>
-                      {(item as any).badge && !isCollapsed && (
+                      {(item as any).badge > 0 && !isCollapsed && (
                         <span className="ml-auto inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-[10px] font-bold bg-amber-500/20 border border-amber-500/40 text-amber-400">
                           {(item as any).badge}
                         </span>

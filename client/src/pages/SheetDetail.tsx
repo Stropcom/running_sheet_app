@@ -437,56 +437,71 @@ function CertifyCell({
       {row.members.map((m) => {
         const cert = row.certifications.find((c) => c.memberId === m.id && c.isActive);
         return (
-          <div key={m.id} className={`flex items-center justify-center gap-1.5 ${ROW_H} w-full`}>
-            {/* Shield: single certify/uncertify toggle */}
-            {canCertify && !row.isLocked ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className={`w-6 h-6 shrink-0 ${
-                      cert
-                        ? "text-emerald-500 hover:text-red-400 hover:bg-red-400/10"
-                        : "text-red-500 hover:text-emerald-500 hover:bg-emerald-500/10"
-                    }`}
-                    onClick={() => cert ? onUncertify(row.id, m.id) : onCertify(row.id, m.id)}
-                  >
-                    <ShieldCheck className="w-4 h-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">
-                  {cert ? `Uncertify ${m.memberName}` : `Certify ${m.memberName}`}
-                </TooltipContent>
-              </Tooltip>
-            ) : (
-              /* Read-only shield when user can't certify or row is locked */
-              <ShieldCheck
-                className={`w-4 h-4 shrink-0 ${
-                  cert ? "text-emerald-500" : "text-red-500"
-                }`}
-              />
-            )}
-            {/* Status: red ✕ when uncertified, green certifier CIN when certified */}
+          <div key={m.id} className={`flex flex-col items-center justify-center ${ROW_H} w-full`}>
+            {/* Shield: single certify/uncertify toggle — no cross, just the shield */}
             {cert ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="text-xs font-mono font-medium text-emerald-500 cursor-default">
-                    {(cert as any).certifiedByCIN || cert.certifiedByName}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">
-                  <div className="flex flex-col gap-0.5">
-                    <span className="font-medium">Certified by {(cert as any).certifiedByCIN || cert.certifiedByName}</span>
-                    <span className="text-muted-foreground flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      {format(new Date(cert.certifiedAt), "MMM d, yyyy HH:mm:ss")}
+              /* Certified: green shield + certifier CIN side by side */
+              <div className="flex items-center justify-center gap-1">
+                {canCertify && !row.isLocked ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="w-6 h-6 shrink-0 text-emerald-500 hover:text-red-400 hover:bg-red-400/10"
+                        onClick={() => onUncertify(row.id, m.id)}
+                      >
+                        <ShieldCheck className="w-4 h-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="text-xs">
+                      Uncertify {m.memberName}
+                    </TooltipContent>
+                  </Tooltip>
+                ) : (
+                  <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-500" />
+                )}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="text-xs font-mono font-medium text-emerald-500 cursor-default">
+                      {(cert as any).certifiedByCIN || cert.certifiedByName}
                     </span>
-                  </div>
-                </TooltipContent>
-              </Tooltip>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="font-medium">Certified by {(cert as any).certifiedByCIN || cert.certifiedByName}</span>
+                      <span className="text-muted-foreground flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {format(new Date(cert.certifiedAt), "MMM d, yyyy HH:mm:ss")}
+                      </span>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
             ) : (
-              <X className="w-3 h-3 text-red-500 shrink-0" />
+              /* Uncertified: red shield centred, "Certify" label below */
+              <div className="flex flex-col items-center justify-center gap-0">
+                {canCertify && !row.isLocked ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="w-6 h-6 shrink-0 text-red-500 hover:text-emerald-500 hover:bg-emerald-500/10"
+                        onClick={() => onCertify(row.id, m.id)}
+                      >
+                        <ShieldCheck className="w-4 h-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="text-xs">
+                      Certify {m.memberName}
+                    </TooltipContent>
+                  </Tooltip>
+                ) : (
+                  <ShieldCheck className="w-4 h-4 shrink-0 text-red-500" />
+                )}
+                <span className="text-[10px] leading-none text-red-500 font-medium">Certify</span>
+              </div>
             )}
           </div>
         );

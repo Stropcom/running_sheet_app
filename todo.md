@@ -172,3 +172,10 @@
 - [x] Add target_profiles table: operationId, type (TGT/HB/V1/V2/WB), and free-text fields per type
 - [x] Backend db helpers and tRPC procedures for target profile CRUD
 - [x] Add Target tab/section on OperationDetail page with TGT, HB, V1, V2, WB entry forms
+
+## Target Redesign (Round 21)
+- [x] Redesign targets table: one row per target, with name + tgt/hb/v1/v2/wb text fields
+- [x] Add targetId FK column to runningSheets table
+- [x] Update backend procedures: list/create/update/delete targets; setSheetTarget
+- [x] Rebuild Add Target tab: list of targets per operation, each with 5 type fields, + Add Target button
+- [x] Add target selector dropdown to SheetDetail page header

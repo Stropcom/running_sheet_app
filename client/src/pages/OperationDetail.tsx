@@ -48,153 +48,146 @@ import { toast } from "sonner";
 
 type CinEntry = { cin: string; hasImages: boolean; isTeamLeader?: boolean; isAuthor?: boolean };
 
-type ProfileType = "TGT" | "HB" | "V1" | "V2" | "WB";
-
-const PROFILE_LABELS: Record<ProfileType, string> = {
-  TGT: "Target (TGT)",
-  HB: "Home (HB)",
-  V1: "Vehicle (V1)",
-  V2: "Vehicle (V2)",
-  WB: "Work (WB)",
-};
-
-/** Default field labels per profile type */
-const DEFAULT_FIELDS: Record<ProfileType, string[]> = {
-  TGT: ["Full Name", "DOB", "Description", "Known Associates", "Other"],
-  HB: ["Address", "Suburb", "State", "Postcode", "Other"],
-  V1: ["Registration", "Make", "Model", "Colour", "Other"],
-  V2: ["Registration", "Make", "Model", "Colour", "Other"],
-  WB: ["Address", "Suburb", "State", "Postcode", "Other"],
-};
-
-type ProfileFormState = {
-  id?: number;
-  field1Label: string; field1Value: string;
-  field2Label: string; field2Value: string;
-  field3Label: string; field3Value: string;
-  field4Label: string; field4Value: string;
-  field5Label: string; field5Value: string;
-  notes: string;
-};
-
-function emptyForm(type: ProfileType): ProfileFormState {
-  const [l1, l2, l3, l4, l5] = DEFAULT_FIELDS[type];
-  return {
-    field1Label: l1, field1Value: "",
-    field2Label: l2, field2Value: "",
-    field3Label: l3, field3Value: "",
-    field4Label: l4, field4Value: "",
-    field5Label: l5, field5Value: "",
-    notes: "",
-  };
-}
-
-/** Target profile form for one type */
-function TargetTypeForm({
+/** Single target card — shows name + 5 type fields, inline edit, delete */
+function TargetCard({
+  target,
   operationId,
-  type,
+  onDeleted,
 }: {
+  target: { id: number; name: string; tgt: string | null; hb: string | null; v1: string | null; v2: string | null; wb: string | null };
   operationId: number;
-  type: ProfileType;
+  onDeleted: () => void;
 }) {
   const utils = trpc.useUtils();
-  const { data: profiles, isLoading: profilesLoading } = trpc.target.list.useQuery({ operationId });
-  const existing = profiles?.find((p) => p.type === type);
-
-  const [form, setForm] = useState<ProfileFormState>(() => emptyForm(type));
+  const [expanded, setExpanded] = useState(false);
+  const [name, setName] = useState(target.name);
+  const [tgt, setTgt] = useState(target.tgt ?? "");
+  const [hb, setHb] = useState(target.hb ?? "");
+  const [v1, setV1] = useState(target.v1 ?? "");
+  const [v2, setV2] = useState(target.v2 ?? "");
+  const [wb, setWb] = useState(target.wb ?? "");
   const [dirty, setDirty] = useState(false);
 
-  // Populate or reset form whenever profiles load or operationId/type changes
-  useEffect(() => {
-    if (profilesLoading) return; // wait for data
-    if (existing) {
-      setForm({
-        id: existing.id,
-        field1Label: existing.field1Label ?? DEFAULT_FIELDS[type][0],
-        field1Value: existing.field1Value ?? "",
-        field2Label: existing.field2Label ?? DEFAULT_FIELDS[type][1],
-        field2Value: existing.field2Value ?? "",
-        field3Label: existing.field3Label ?? DEFAULT_FIELDS[type][2],
-        field3Value: existing.field3Value ?? "",
-        field4Label: existing.field4Label ?? DEFAULT_FIELDS[type][3],
-        field4Value: existing.field4Value ?? "",
-        field5Label: existing.field5Label ?? DEFAULT_FIELDS[type][4],
-        field5Value: existing.field5Value ?? "",
-        notes: existing.notes ?? "",
-      });
-    } else {
-      // No saved profile for this type — reset to defaults
-      setForm(emptyForm(type));
-    }
-    setDirty(false);
-  }, [profilesLoading, existing?.id, operationId, type]);
-
-  const upsert = trpc.target.upsert.useMutation({
-    onSuccess: () => {
-      utils.target.list.invalidate({ operationId });
-      setDirty(false);
-      toast.success(`${PROFILE_LABELS[type]} saved`);
-    },
-    onError: (e) => toast.error(e.message),
+  const update = trpc.target.update.useMutation({
+    onSuccess: () => { utils.target.list.invalidate({ operationId }); setDirty(false); toast.success("Target saved"); },
+    onError: (e: { message: string }) => toast.error(e.message),
+  });
+  const del = trpc.target.delete.useMutation({
+    onSuccess: () => { utils.target.list.invalidate({ operationId }); onDeleted(); toast.success("Target deleted"); },
+    onError: (e: { message: string }) => toast.error(e.message),
   });
 
-  const handleSave = () => {
-    upsert.mutate({ ...form, operationId, type });
-  };
-
-  const setField = (key: keyof ProfileFormState, value: string) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
-    setDirty(true);
-  };
-
-  const fields: Array<{ labelKey: keyof ProfileFormState; valueKey: keyof ProfileFormState }> = [
-    { labelKey: "field1Label", valueKey: "field1Value" },
-    { labelKey: "field2Label", valueKey: "field2Value" },
-    { labelKey: "field3Label", valueKey: "field3Value" },
-    { labelKey: "field4Label", valueKey: "field4Value" },
-    { labelKey: "field5Label", valueKey: "field5Value" },
-  ];
-
-  if (profilesLoading) {
-    return (
-      <div className="flex flex-col gap-3">
-        {[1,2,3,4,5].map((i) => <Skeleton key={i} className="h-9 rounded-lg" />)}
-      </div>
-    );
-  }
+  const mark = (fn: () => void) => { fn(); setDirty(true); };
 
   return (
-    <div className="flex flex-col gap-4">
-      {fields.map(({ labelKey, valueKey }) => (
-        <div key={labelKey} className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-            {form[labelKey] as string}
-          </label>
-          <Input
-            value={form[valueKey] as string}
-            onChange={(e) => setField(valueKey, e.target.value)}
-          />
-        </div>
-      ))}
-      <div className="flex flex-col gap-1.5">
-        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Notes</label>
-        <Textarea
-          value={form.notes}
-          onChange={(e) => setField("notes", e.target.value)}
-          rows={3}
-        />
-      </div>
-      <div className="flex justify-end">
-        <Button
-          size="sm"
-          className="gap-2"
-          onClick={handleSave}
-          disabled={upsert.isPending || !dirty}
+    <div className="rounded-xl border border-border bg-card overflow-hidden">
+      {/* Header row */}
+      <div
+        className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-accent/20 transition-colors"
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <Target className="w-4 h-4 text-primary shrink-0" />
+        <span className="flex-1 font-semibold text-sm text-foreground truncate">{target.name}</span>
+        <button
+          className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+          onClick={(e) => { e.stopPropagation(); del.mutate({ id: target.id }); }}
+          title="Delete target"
         >
-          <Save className="w-3.5 h-3.5" />
-          {upsert.isPending ? "Saving…" : "Save"}
-        </Button>
+          <X className="w-3.5 h-3.5" />
+        </button>
+        <ChevronRight className={`w-4 h-4 text-muted-foreground transition-transform ${expanded ? "rotate-90" : ""}`} />
       </div>
+
+      {/* Expanded fields */}
+      {expanded && (
+        <div className="px-4 pb-4 pt-1 flex flex-col gap-3 border-t border-border/50">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Name / Codename</label>
+            <Input value={name} onChange={(e) => { setName(e.target.value); setDirty(true); }} />
+          </div>
+          {([
+            { label: "Target (TGT)", val: tgt, set: (v: string) => mark(() => setTgt(v)) },
+            { label: "Home (HB)",    val: hb,  set: (v: string) => mark(() => setHb(v)) },
+            { label: "Vehicle (V1)", val: v1,  set: (v: string) => mark(() => setV1(v)) },
+            { label: "Vehicle (V2)", val: v2,  set: (v: string) => mark(() => setV2(v)) },
+            { label: "Work (WB)",    val: wb,  set: (v: string) => mark(() => setWb(v)) },
+          ] as { label: string; val: string; set: (v: string) => void }[]).map(({ label, val, set }) => (
+            <div key={label} className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{label}</label>
+              <Textarea value={val} onChange={(e) => set(e.target.value)} rows={2} />
+            </div>
+          ))}
+          <div className="flex justify-end">
+            <Button size="sm" className="gap-2" onClick={() => update.mutate({ id: target.id, name, tgt, hb, v1, v2, wb })} disabled={update.isPending || !dirty}>
+              <Save className="w-3.5 h-3.5" />
+              {update.isPending ? "Saving…" : "Save"}
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Add Target tab panel — lists all targets for the operation, allows adding more */
+function TargetPanel({ operationId }: { operationId: number }) {
+  const utils = trpc.useUtils();
+  const { data: targets, isLoading } = trpc.target.list.useQuery({ operationId });
+  const [newName, setNewName] = useState("");
+  const [adding, setAdding] = useState(false);
+
+  const create = trpc.target.create.useMutation({
+    onSuccess: () => {
+      utils.target.list.invalidate({ operationId });
+      setNewName("");
+      setAdding(false);
+      toast.success("Target added");
+    },
+    onError: (e: { message: string }) => toast.error(e.message),
+  });
+
+  if (isLoading) return (
+    <div className="flex flex-col gap-3">
+      {[1,2,3].map((i) => <Skeleton key={i} className="h-12 rounded-xl" />)}
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col gap-3">
+      {targets && targets.length > 0 ? (
+        targets.map((t) => (
+          <TargetCard key={t.id} target={t} operationId={operationId} onDeleted={() => {}} />
+        ))
+      ) : (
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <div className="p-3 rounded-xl bg-muted/40 mb-3">
+            <Target className="w-6 h-6 text-muted-foreground" />
+          </div>
+          <p className="text-sm text-muted-foreground">No targets added yet</p>
+        </div>
+      )}
+
+      {/* Add target inline form */}
+      {adding ? (
+        <div className="flex gap-2 mt-1">
+          <Input
+            autoFocus
+            placeholder="Target name or codename"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && newName.trim()) create.mutate({ operationId, name: newName.trim() }); if (e.key === "Escape") setAdding(false); }}
+          />
+          <Button size="sm" onClick={() => newName.trim() && create.mutate({ operationId, name: newName.trim() })} disabled={!newName.trim() || create.isPending}>
+            {create.isPending ? "Adding…" : "Add"}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setAdding(false)}>Cancel</Button>
+        </div>
+      ) : (
+        <Button size="sm" variant="outline" className="gap-2 self-start" onClick={() => setAdding(true)}>
+          <Plus className="w-3.5 h-3.5" />
+          Add Target
+        </Button>
+      )}
     </div>
   );
 }
@@ -561,17 +554,7 @@ export default function OperationDetail() {
 
           {/* ── Add Target tab ── */}
           <TabsContent value="target">
-            <div className="flex flex-col gap-6">
-              {(["TGT", "HB", "V1", "V2", "WB"] as ProfileType[]).map((type) => (
-                <div key={type} className="rounded-xl border border-border bg-card p-5">
-                  <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
-                    <Target className="w-4 h-4 text-primary" />
-                    {PROFILE_LABELS[type]}
-                  </h3>
-                  <TargetTypeForm operationId={operationId} type={type} />
-                </div>
-              ))}
-            </div>
+            <TargetPanel operationId={operationId} />
           </TabsContent>
         </Tabs>
       </div>

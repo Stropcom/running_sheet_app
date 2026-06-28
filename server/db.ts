@@ -14,8 +14,8 @@ import {
   rowMembers,
   runningSheets,
   sheetRows,
-  targetProfiles,
-  InsertTargetProfile,
+  targets,
+  InsertTarget,
   users,
 } from "../drizzle/schema";
 
@@ -446,47 +446,49 @@ export async function getAllAuditLogs(limit = 500) {
   return db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt)).limit(limit);
 }
 
-// ─── Target Profiles ─────────────────────────────────────────────────────────
+// ─── Targets ─────────────────────────────────────────────────────────────────
 
-export async function getTargetProfilesByOperation(operationId: number) {
+export async function getTargetsByOperation(operationId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db
-    .select()
-    .from(targetProfiles)
-    .where(eq(targetProfiles.operationId, operationId));
+  return db.select().from(targets).where(eq(targets.operationId, operationId));
 }
 
-export async function upsertTargetProfile(
-  data: InsertTargetProfile & { id?: number }
-) {
+export async function createTarget(data: InsertTarget) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  if (data.id) {
-    await db
-      .update(targetProfiles)
-      .set({
-        field1Label: data.field1Label,
-        field1Value: data.field1Value,
-        field2Label: data.field2Label,
-        field2Value: data.field2Value,
-        field3Label: data.field3Label,
-        field3Value: data.field3Value,
-        field4Label: data.field4Label,
-        field4Value: data.field4Value,
-        field5Label: data.field5Label,
-        field5Value: data.field5Value,
-        notes: data.notes,
-      })
-      .where(eq(targetProfiles.id, data.id));
-    return { id: data.id };
-  }
-  const [result] = await db.insert(targetProfiles).values(data);
+  const [result] = await db.insert(targets).values(data);
   return { id: (result as any).insertId as number };
 }
 
-export async function deleteTargetProfile(id: number) {
+export async function updateTarget(
+  id: number,
+  data: Partial<Pick<InsertTarget, "name" | "tgt" | "hb" | "v1" | "v2" | "wb">>
+) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  await db.delete(targetProfiles).where(eq(targetProfiles.id, id));
+  await db.update(targets).set(data).where(eq(targets.id, id));
+  return { id };
+}
+
+export async function deleteTarget(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  // Clear any running sheets that reference this target before deleting
+  await db.update(runningSheets).set({ targetId: null }).where(eq(runningSheets.targetId, id));
+  await db.delete(targets).where(eq(targets.id, id));
+}
+
+export async function setSheetTarget(sheetId: number, targetId: number | null) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  if (targetId !== null) {
+    // Verify the target belongs to the same operation as the sheet
+    const [sheet] = await db.select({ operationId: runningSheets.operationId }).from(runningSheets).where(eq(runningSheets.id, sheetId)).limit(1);
+    if (!sheet) throw new Error("Sheet not found");
+    const [target] = await db.select({ operationId: targets.operationId }).from(targets).where(eq(targets.id, targetId)).limit(1);
+    if (!target) throw new Error("Target not found");
+    if (target.operationId !== sheet.operationId) throw new Error("Target does not belong to this operation");
+  }
+  await db.update(runningSheets).set({ targetId }).where(eq(runningSheets.id, sheetId));
 }

@@ -45,9 +45,11 @@ import {
   updateUserRole,
   getCinCertStatusForSheet,
   getOutstandingSheetsForCin,
-  getTargetProfilesByOperation,
-  upsertTargetProfile,
-  deleteTargetProfile,
+  getTargetsByOperation,
+  createTarget,
+  updateTarget,
+  deleteTarget,
+  setSheetTarget,
 } from "./db";
 
 // ─── Role Guards ──────────────────────────────────────────────────────────────
@@ -684,45 +686,60 @@ export const appRouter = router({
         return { success: true };
       }),
   }),
-  // ─── Target Profiles ────────────────────────────────────────────────────────────
+  // ─── Targets ─────────────────────────────────────────────────────────────────
 
   target: router({
-    /** List all target profiles for an operation */
+    /** List all targets for an operation */
     list: protectedProcedure
       .input(z.object({ operationId: z.number() }))
       .query(async ({ input }) => {
-        return getTargetProfilesByOperation(input.operationId);
+        return getTargetsByOperation(input.operationId);
       }),
 
-    /** Create or update a target profile (upsert by id) */
-    upsert: protectedProcedure
-      .input(
-        z.object({
-          id: z.number().optional(),
-          operationId: z.number(),
-          type: z.enum(["TGT", "HB", "V1", "V2", "WB"]),
-          field1Label: z.string().max(128).optional(),
-          field1Value: z.string().optional(),
-          field2Label: z.string().max(128).optional(),
-          field2Value: z.string().optional(),
-          field3Label: z.string().max(128).optional(),
-          field3Value: z.string().optional(),
-          field4Label: z.string().max(128).optional(),
-          field4Value: z.string().optional(),
-          field5Label: z.string().max(128).optional(),
-          field5Value: z.string().optional(),
-          notes: z.string().optional(),
-        })
-      )
+    /** Create a new target */
+    create: protectedProcedure
+      .input(z.object({
+        operationId: z.number(),
+        name: z.string().min(1).max(255),
+        tgt: z.string().optional(),
+        hb: z.string().optional(),
+        v1: z.string().optional(),
+        v2: z.string().optional(),
+        wb: z.string().optional(),
+      }))
       .mutation(async ({ ctx, input }) => {
-        return upsertTargetProfile({ ...input, createdBy: ctx.user.id });
+        return createTarget({ ...input, createdBy: ctx.user.id });
       }),
 
-    /** Delete a target profile */
+    /** Update an existing target */
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        name: z.string().min(1).max(255).optional(),
+        tgt: z.string().optional(),
+        hb: z.string().optional(),
+        v1: z.string().optional(),
+        v2: z.string().optional(),
+        wb: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        return updateTarget(id, data);
+      }),
+
+    /** Delete a target */
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
-        await deleteTargetProfile(input.id);
+        await deleteTarget(input.id);
+        return { success: true };
+      }),
+
+    /** Set the target for a running sheet */
+    setSheetTarget: protectedProcedure
+      .input(z.object({ sheetId: z.number(), targetId: z.number().nullable() }))
+      .mutation(async ({ input }) => {
+        await setSheetTarget(input.sheetId, input.targetId);
         return { success: true };
       }),
   }),

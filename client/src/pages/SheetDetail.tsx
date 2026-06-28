@@ -872,6 +872,16 @@ export default function SheetDetail() {
   const [editTitle, setEditTitle] = useState("");
   const [editTargetName, setEditTargetName] = useState("");
 
+  // Target selector
+  const { data: operationTargets } = trpc.target.list.useQuery(
+    { operationId: sheet?.operationId ?? 0 },
+    { enabled: !!sheet?.operationId }
+  );
+  const setSheetTarget = trpc.target.setSheetTarget.useMutation({
+    onSuccess: () => { utils.sheet.get.invalidate({ id: sheetId }); toast.success("Target updated"); },
+    onError: (e) => toast.error(e.message),
+  });
+
   // Edit roster state
   const [editRosterOpen, setEditRosterOpen] = useState(false);
   const [rosterList, setRosterList] = useState<CinEntry[]>([]);
@@ -986,8 +996,24 @@ export default function SheetDetail() {
               <>
                 <div className="min-w-0">
                   <h1 className="text-xl font-semibold text-foreground truncate">{sheet?.title}</h1>
-                  {sheet?.targetName && (
-                    <p className="text-sm text-muted-foreground truncate">Target: <span className="font-medium text-foreground">{sheet.targetName}</span></p>
+                  {/* Target selector — shown when operation has targets */}
+                  {operationTargets && operationTargets.length > 0 && (
+                    <div className="mt-1">
+                      <Select
+                        value={sheet?.targetId ? String(sheet.targetId) : "none"}
+                        onValueChange={(val) => setSheetTarget.mutate({ sheetId, targetId: val === "none" ? null : Number(val) })}
+                      >
+                        <SelectTrigger className="h-7 text-xs w-48 border-dashed">
+                          <SelectValue placeholder="Assign target…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">No target assigned</SelectItem>
+                          {operationTargets.map((t) => (
+                            <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   )}
                 </div>
                 {sheet && (
@@ -1245,14 +1271,25 @@ export default function SheetDetail() {
                 onChange={(e) => setEditTitle(e.target.value)}
               />
             </div>
-            <div>
-              <label className="text-sm font-medium text-foreground mb-1.5 block">Target Name</label>
-              <Input
-                value={editTargetName}
-                onChange={(e) => setEditTargetName(e.target.value)}
-                placeholder="e.g. John Smith"
-              />
-            </div>
+            {operationTargets && operationTargets.length > 0 && (
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1.5 block">Target</label>
+                <Select
+                  value={sheet?.targetId ? String(sheet.targetId) : "none"}
+                  onValueChange={(val) => setSheetTarget.mutate({ sheetId, targetId: val === "none" ? null : Number(val) })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Assign target…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No target assigned</SelectItem>
+                    {operationTargets.map((t) => (
+                      <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditSheetOpen(false)}>Cancel</Button>

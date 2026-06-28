@@ -58,6 +58,7 @@ export const runningSheets = mysqlTable("running_sheets", {
   targetName: varchar("targetName", { length: 255 }),
   // JSON array of { cin: string, hasImages: boolean } — daily CIN roster
   sheetCins: text("sheetCins"),
+  targetId: int("targetId"),
   createdBy: int("createdBy").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -112,32 +113,26 @@ export const certifications = mysqlTable("certifications", {
 export type Certification = typeof certifications.$inferSelect;
 export type InsertCertification = typeof certifications.$inferInsert;
 
-// ─── Target Profiles ────────────────────────────────────────────────────────
-// One row per location type per operation. Types: TGT, HB, V1, V2, WB
+// ─── Targets ────────────────────────────────────────────────────────────────
+// One row per target per operation. Each target has a display name and five
+// type-specific free-text fields: TGT, HB, V1, V2, WB.
 
-export const targetProfiles = mysqlTable("target_profiles", {
+export const targets = mysqlTable("targets", {
   id: int("id").autoincrement().primaryKey(),
   operationId: int("operationId").notNull(),
-  type: mysqlEnum("type", ["TGT", "HB", "V1", "V2", "WB"]).notNull(),
-  // Generic free-text fields — label is shown in the UI, value is user input
-  field1Label: varchar("field1Label", { length: 128 }),
-  field1Value: text("field1Value"),
-  field2Label: varchar("field2Label", { length: 128 }),
-  field2Value: text("field2Value"),
-  field3Label: varchar("field3Label", { length: 128 }),
-  field3Value: text("field3Value"),
-  field4Label: varchar("field4Label", { length: 128 }),
-  field4Value: text("field4Value"),
-  field5Label: varchar("field5Label", { length: 128 }),
-  field5Value: text("field5Value"),
-  notes: text("notes"),
+  name: varchar("name", { length: 255 }).notNull(), // e.g. "Target 1" or a codename
+  tgt: text("tgt"),   // Target (person) details
+  hb:  text("hb"),    // Home Base details
+  v1:  text("v1"),    // Vehicle 1 details
+  v2:  text("v2"),    // Vehicle 2 details
+  wb:  text("wb"),    // Work Base details
   createdBy: int("createdBy").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
-export type TargetProfile = typeof targetProfiles.$inferSelect;
-export type InsertTargetProfile = typeof targetProfiles.$inferInsert;
+export type Target = typeof targets.$inferSelect;
+export type InsertTarget = typeof targets.$inferInsert;
 
 // ─── Audit Logs ───────────────────────────────────────────────────────────────
 

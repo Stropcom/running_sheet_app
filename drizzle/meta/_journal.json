@@ -36,6 +36,13 @@
       "when": 1782609432153,
       "tag": "0004_bent_marvel_boy",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1782616547920,
+      "tag": "0005_add_targets_table",
+      "breakpoints": true
     }
   ]
 }

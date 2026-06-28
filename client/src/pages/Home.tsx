@@ -44,6 +44,11 @@ export default function Home() {
     enabled: isAuthenticated,
   });
 
+  const { data: deepResults, isFetching: deepFetching } = trpc.operation.deepSearch.useQuery(
+    { query: search },
+    { enabled: isAuthenticated && search.trim().length > 0 }
+  );
+
   const createOp = trpc.operation.create.useMutation({
     onSuccess: () => {
       utils.operation.list.invalidate();
@@ -66,12 +71,19 @@ export default function Home() {
     onError: (e) => toast.error(e.message),
   });
 
-  const filtered = operations?.filter((op) =>
-    op.name.toLowerCase().includes(search.toLowerCase()) ||
-    (op.promisNumber ?? "").toLowerCase().includes(search.toLowerCase()) ||
-    (op.imsNumber ?? "").toLowerCase().includes(search.toLowerCase()) ||
-    (op.investigationUnit ?? "").toLowerCase().includes(search.toLowerCase())
-  );
+  // When a search query is active, use deep search results; otherwise show all operations
+  const isSearching = search.trim().length > 0;
+  const filtered = isSearching
+    ? (deepResults ?? []).map((r) => ({
+        id: r.operationId,
+        name: r.operationName,
+        promisNumber: r.promisNumber,
+        imsNumber: r.imsNumber,
+        investigationUnit: r.investigationUnit,
+        matchContexts: r.matchContexts,
+        createdAt: new Date(),
+      }))
+    : (operations ?? []).map((op) => ({ ...op, matchContexts: [] as string[] }));
 
   const handleCreate = () => {
     if (!newName.trim()) return;
@@ -105,15 +117,18 @@ export default function Home() {
         <div className="relative mb-5">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Search by operation name, PROMIS, IMS or unit…"
+            placeholder="Search operations, sheets, targets, CINs, observations…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
           />
+          {deepFetching && (
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground animate-pulse">Searching…</span>
+          )}
         </div>
 
         {/* Operations list */}
-        {isLoading ? (
+        {isLoading || (isSearching && deepFetching && !deepResults) ? (
           <div className="flex flex-col gap-3">
             {[1, 2, 3].map((i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
           </div>
@@ -174,6 +189,18 @@ export default function Home() {
                       </span>
                     )}
                   </div>
+                  {(op as { matchContexts?: string[] }).matchContexts && (op as { matchContexts?: string[] }).matchContexts!.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {(op as { matchContexts?: string[] }).matchContexts!.slice(0, 3).map((ctx, i) => (
+                        <span key={i} className="inline-flex items-center text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                          {ctx}
+                        </span>
+                      ))}
+                      {(op as { matchContexts?: string[] }).matchContexts!.length > 3 && (
+                        <span className="text-xs text-muted-foreground">+{(op as { matchContexts?: string[] }).matchContexts!.length - 3} more</span>
+                      )}
+                    </div>
+                  )}
                   <div className="flex items-center gap-1.5 mt-1.5 text-xs text-muted-foreground">
                     <Calendar className="w-3 h-3" />
                     <span>Created {format(new Date(op.createdAt), "d MMM yyyy")}</span>
@@ -204,7 +231,9 @@ export default function Home() {
 
         {filtered && filtered.length > 0 && (
           <p className="text-xs text-muted-foreground mt-3 text-right">
-            {filtered.length} of {operations?.length ?? 0} operations
+            {isSearching
+              ? `${filtered.length} operation${filtered.length !== 1 ? "s" : ""} matched`
+              : `${filtered.length} of ${operations?.length ?? 0} operations`}
           </p>
         )}
       </div>

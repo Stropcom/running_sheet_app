@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, like, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   auditLogs,
@@ -567,4 +567,158 @@ export async function ensureDefaultShortcuts(systemUserId: number) {
     }
   }
   console.log(`[Shortcuts] ensureDefaultShortcuts complete. Existing: [${Array.from(existingTriggers).join(', ')}]`);
+}
+
+// ─── Deep Search ─────────────────────────────────────────────────────────────
+// Returns operations that match the query across: operation fields, sheet titles,
+// sheet CINs (JSON text), target fields, and observation row text.
+// Each matched operation includes a list of match contexts for display.
+
+export type DeepSearchMatch = {
+  operationId: number;
+  operationName: string;
+  promisNumber: string | null;
+  imsNumber: string | null;
+  investigationUnit: string | null;
+  matchContexts: string[];
+};
+
+export async function deepSearchOperations(query: string): Promise<DeepSearchMatch[]> {
+  const db = await getDb();
+  if (!db || !query.trim()) return [];
+
+  const q = `%${query.trim()}%`;
+
+  // 1. Operations that match on their own fields
+  const opMatches = await db
+    .select()
+    .from(operations)
+    .where(
+      or(
+        like(operations.name, q),
+        like(sql`COALESCE(${operations.promisNumber}, '')`, q),
+        like(sql`COALESCE(${operations.imsNumber}, '')`, q),
+        like(sql`COALESCE(${operations.investigationUnit}, '')`, q),
+      )
+    );
+
+  // 2. Sheets that match on title or sheetCins JSON text
+  const sheetMatches = await db
+    .select({ operationId: runningSheets.operationId, title: runningSheets.title, sheetCins: runningSheets.sheetCins })
+    .from(runningSheets)
+    .where(
+      or(
+        like(runningSheets.title, q),
+        like(sql`COALESCE(${runningSheets.sheetCins}, '')`, q),
+      )
+    );
+
+  // 3. Targets that match on any field
+  const targetMatches = await db
+    .select({ operationId: targets.operationId, name: targets.name, tgt: targets.tgt, hb: targets.hb, v1: targets.v1, v2: targets.v2, wb: targets.wb, dep: targets.dep, arr: targets.arr })
+    .from(targets)
+    .where(
+      or(
+        like(targets.name, q),
+        like(sql`COALESCE(${targets.tgt}, '')`, q),
+        like(sql`COALESCE(${targets.hb}, '')`, q),
+        like(sql`COALESCE(${targets.v1}, '')`, q),
+        like(sql`COALESCE(${targets.v2}, '')`, q),
+        like(sql`COALESCE(${targets.wb}, '')`, q),
+        like(sql`COALESCE(${targets.dep}, '')`, q),
+        like(sql`COALESCE(${targets.arr}, '')`, q),
+      )
+    );
+
+  // 4. Observation rows that match
+  const rowMatches = await db
+    .select({ sheetId: sheetRows.sheetId, observation: sheetRows.observation, time: sheetRows.time })
+    .from(sheetRows)
+    .where(like(sql`COALESCE(${sheetRows.observation}, '')`, q));
+
+  // 5. Row members (CIN in row) that match
+  const memberMatches = await db
+    .select({ rowId: rowMembers.rowId, memberName: rowMembers.memberName })
+    .from(rowMembers)
+    .where(like(rowMembers.memberName, q));
+
+  // Resolve sheetId → operationId for row/member matches
+  const rowSheetIds = Array.from(new Set(rowMatches.map((r) => r.sheetId)));
+  const memberRowIds = Array.from(new Set(memberMatches.map((m) => m.rowId)));
+  let memberSheetIds: number[] = [];
+  const memberRowToSheetMap: Record<number, number> = {}; // rowId -> sheetId
+  if (memberRowIds.length > 0) {
+    const memberRows = await db
+      .select({ id: sheetRows.id, sheetId: sheetRows.sheetId })
+      .from(sheetRows)
+      .where(inArray(sheetRows.id, memberRowIds));
+    memberRows.forEach((r) => { memberRowToSheetMap[r.id] = r.sheetId; });
+    memberSheetIds = Array.from(new Set(memberRows.map((r) => r.sheetId)));
+  }
+  const allSheetIds = Array.from(new Set([...rowSheetIds, ...memberSheetIds]));
+  let sheetOpMap: Record<number, number> = {};
+  if (allSheetIds.length > 0) {
+    const sheetRows2 = await db
+      .select({ id: runningSheets.id, operationId: runningSheets.operationId })
+      .from(runningSheets)
+      .where(inArray(runningSheets.id, allSheetIds));
+    sheetRows2.forEach((s) => { sheetOpMap[s.id] = s.operationId; });
+  }
+
+  // Collect all matching operationIds with context labels
+  const matchMap = new Map<number, Set<string>>();
+
+  const ensure = (id: number) => { if (!matchMap.has(id)) matchMap.set(id, new Set()); };
+
+  opMatches.forEach((op) => {
+    ensure(op.id);
+    matchMap.get(op.id)!.add("Operation details");
+  });
+
+  sheetMatches.forEach((s) => {
+    // s.operationId IS the operationId directly from runningSheets.operationId
+    const opId = s.operationId;
+    ensure(opId);
+    matchMap.get(opId)!.add(`Sheet: ${s.title}`);
+  });
+
+  targetMatches.forEach((t) => {
+    ensure(t.operationId);
+    matchMap.get(t.operationId)!.add(`Target: ${t.name}`);
+  });
+
+  rowMatches.forEach((r) => {
+    const opId = sheetOpMap[r.sheetId];
+    if (!opId) return;
+    ensure(opId);
+    const snippet = (r.observation ?? "").slice(0, 60);
+    matchMap.get(opId)!.add(`Observation: "${snippet}${snippet.length === 60 ? "…" : ""}"`);
+  });
+
+  memberMatches.forEach((m) => {
+    const sheetId = memberRowToSheetMap[m.rowId];
+    if (!sheetId) return;
+    const opId = sheetOpMap[sheetId];
+    if (!opId) return;
+    ensure(opId);
+    matchMap.get(opId)!.add(`CIN: ${m.memberName}`);
+  });
+
+  // Fetch full operation records for all matched ids
+  const matchedIds = Array.from(matchMap.keys());
+  if (matchedIds.length === 0) return [];
+
+  const matchedOps = await db
+    .select()
+    .from(operations)
+    .where(inArray(operations.id, matchedIds));
+
+  return matchedOps.map((op) => ({
+    operationId: op.id,
+    operationName: op.name,
+    promisNumber: op.promisNumber ?? null,
+    imsNumber: op.imsNumber ?? null,
+    investigationUnit: op.investigationUnit ?? null,
+    matchContexts: Array.from(matchMap.get(op.id) ?? []),
+  }));
 }

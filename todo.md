@@ -198,3 +198,7 @@
 - [x] Frontend: add Depart (DEP) and Arrive (ARR) form fields on Add Target page
 - [x] Frontend: show DEP/ARR in TARGET panel on sheet detail
 - [x] Frontend: add DEP/ARR to target-aware shortcuts in observation textarea
+
+## Deep Operations Search (Round 31)
+- [x] Backend: tRPC operation.deepSearch procedure — searches operation fields + sheet titles + CINs + target names + observation text
+- [x] Frontend: Home page uses deepSearch when query is non-empty, shows match context under each result

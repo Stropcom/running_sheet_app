@@ -50,6 +50,7 @@ import {
   updateTarget,
   deleteTarget,
   setSheetTarget,
+  deepSearchOperations,
   listShortcuts,
   createShortcut,
   updateShortcut,
@@ -236,6 +237,12 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         await deleteOperation(input.id);
         return { success: true };
+      }),
+
+    deepSearch: protectedProcedure
+      .input(z.object({ query: z.string() }))
+      .query(async ({ input }) => {
+        return deepSearchOperations(input.query);
       }),
   }),
 

@@ -14,6 +14,8 @@ import {
   rowMembers,
   runningSheets,
   sheetRows,
+  targetProfiles,
+  InsertTargetProfile,
   users,
 } from "../drizzle/schema";
 
@@ -442,4 +444,49 @@ export async function getAllAuditLogs(limit = 500) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt)).limit(limit);
+}
+
+// ─── Target Profiles ─────────────────────────────────────────────────────────
+
+export async function getTargetProfilesByOperation(operationId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(targetProfiles)
+    .where(eq(targetProfiles.operationId, operationId));
+}
+
+export async function upsertTargetProfile(
+  data: InsertTargetProfile & { id?: number }
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  if (data.id) {
+    await db
+      .update(targetProfiles)
+      .set({
+        field1Label: data.field1Label,
+        field1Value: data.field1Value,
+        field2Label: data.field2Label,
+        field2Value: data.field2Value,
+        field3Label: data.field3Label,
+        field3Value: data.field3Value,
+        field4Label: data.field4Label,
+        field4Value: data.field4Value,
+        field5Label: data.field5Label,
+        field5Value: data.field5Value,
+        notes: data.notes,
+      })
+      .where(eq(targetProfiles.id, data.id));
+    return { id: data.id };
+  }
+  const [result] = await db.insert(targetProfiles).values(data);
+  return { id: (result as any).insertId as number };
+}
+
+export async function deleteTargetProfile(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.delete(targetProfiles).where(eq(targetProfiles.id, id));
 }

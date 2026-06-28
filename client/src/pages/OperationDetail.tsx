@@ -36,13 +36,168 @@ import {
   X,
   Camera,
   Pencil,
+  Target,
+  Save,
 } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { useState, useEffect } from "react";
 import { useLocation, useParams } from "wouter";
 import { format } from "date-fns";
 import { toast } from "sonner";
 
 type CinEntry = { cin: string; hasImages: boolean; isTeamLeader?: boolean; isAuthor?: boolean };
+
+type ProfileType = "TGT" | "HB" | "V1" | "V2" | "WB";
+
+const PROFILE_LABELS: Record<ProfileType, string> = {
+  TGT: "Target (TGT)",
+  HB: "Home (HB)",
+  V1: "Vehicle (V1)",
+  V2: "Vehicle (V2)",
+  WB: "Work (WB)",
+};
+
+/** Default field labels per profile type */
+const DEFAULT_FIELDS: Record<ProfileType, string[]> = {
+  TGT: ["Full Name", "DOB", "Description", "Known Associates", "Other"],
+  HB: ["Address", "Suburb", "State", "Postcode", "Other"],
+  V1: ["Registration", "Make", "Model", "Colour", "Other"],
+  V2: ["Registration", "Make", "Model", "Colour", "Other"],
+  WB: ["Address", "Suburb", "State", "Postcode", "Other"],
+};
+
+type ProfileFormState = {
+  id?: number;
+  field1Label: string; field1Value: string;
+  field2Label: string; field2Value: string;
+  field3Label: string; field3Value: string;
+  field4Label: string; field4Value: string;
+  field5Label: string; field5Value: string;
+  notes: string;
+};
+
+function emptyForm(type: ProfileType): ProfileFormState {
+  const [l1, l2, l3, l4, l5] = DEFAULT_FIELDS[type];
+  return {
+    field1Label: l1, field1Value: "",
+    field2Label: l2, field2Value: "",
+    field3Label: l3, field3Value: "",
+    field4Label: l4, field4Value: "",
+    field5Label: l5, field5Value: "",
+    notes: "",
+  };
+}
+
+/** Target profile form for one type */
+function TargetTypeForm({
+  operationId,
+  type,
+}: {
+  operationId: number;
+  type: ProfileType;
+}) {
+  const utils = trpc.useUtils();
+  const { data: profiles, isLoading: profilesLoading } = trpc.target.list.useQuery({ operationId });
+  const existing = profiles?.find((p) => p.type === type);
+
+  const [form, setForm] = useState<ProfileFormState>(() => emptyForm(type));
+  const [dirty, setDirty] = useState(false);
+
+  // Populate or reset form whenever profiles load or operationId/type changes
+  useEffect(() => {
+    if (profilesLoading) return; // wait for data
+    if (existing) {
+      setForm({
+        id: existing.id,
+        field1Label: existing.field1Label ?? DEFAULT_FIELDS[type][0],
+        field1Value: existing.field1Value ?? "",
+        field2Label: existing.field2Label ?? DEFAULT_FIELDS[type][1],
+        field2Value: existing.field2Value ?? "",
+        field3Label: existing.field3Label ?? DEFAULT_FIELDS[type][2],
+        field3Value: existing.field3Value ?? "",
+        field4Label: existing.field4Label ?? DEFAULT_FIELDS[type][3],
+        field4Value: existing.field4Value ?? "",
+        field5Label: existing.field5Label ?? DEFAULT_FIELDS[type][4],
+        field5Value: existing.field5Value ?? "",
+        notes: existing.notes ?? "",
+      });
+    } else {
+      // No saved profile for this type — reset to defaults
+      setForm(emptyForm(type));
+    }
+    setDirty(false);
+  }, [profilesLoading, existing?.id, operationId, type]);
+
+  const upsert = trpc.target.upsert.useMutation({
+    onSuccess: () => {
+      utils.target.list.invalidate({ operationId });
+      setDirty(false);
+      toast.success(`${PROFILE_LABELS[type]} saved`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const handleSave = () => {
+    upsert.mutate({ ...form, operationId, type });
+  };
+
+  const setField = (key: keyof ProfileFormState, value: string) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    setDirty(true);
+  };
+
+  const fields: Array<{ labelKey: keyof ProfileFormState; valueKey: keyof ProfileFormState }> = [
+    { labelKey: "field1Label", valueKey: "field1Value" },
+    { labelKey: "field2Label", valueKey: "field2Value" },
+    { labelKey: "field3Label", valueKey: "field3Value" },
+    { labelKey: "field4Label", valueKey: "field4Value" },
+    { labelKey: "field5Label", valueKey: "field5Value" },
+  ];
+
+  if (profilesLoading) {
+    return (
+      <div className="flex flex-col gap-3">
+        {[1,2,3,4,5].map((i) => <Skeleton key={i} className="h-9 rounded-lg" />)}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      {fields.map(({ labelKey, valueKey }) => (
+        <div key={labelKey} className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            {form[labelKey] as string}
+          </label>
+          <Input
+            value={form[valueKey] as string}
+            onChange={(e) => setField(valueKey, e.target.value)}
+          />
+        </div>
+      ))}
+      <div className="flex flex-col gap-1.5">
+        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Notes</label>
+        <Textarea
+          value={form.notes}
+          onChange={(e) => setField("notes", e.target.value)}
+          rows={3}
+        />
+      </div>
+      <div className="flex justify-end">
+        <Button
+          size="sm"
+          className="gap-2"
+          onClick={handleSave}
+          disabled={upsert.isPending || !dirty}
+        >
+          <Save className="w-3.5 h-3.5" />
+          {upsert.isPending ? "Saving…" : "Save"}
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 
 /** Individual sheet card — fetches cert status and highlights green when all CINs certified */
@@ -333,7 +488,21 @@ export default function OperationDetail() {
           </Button>
         </div>
 
-        {/* Sheets list */}
+        {/* Main tabs: Running Sheets | Add Target */}
+        <Tabs defaultValue="sheets" className="mt-2">
+          <TabsList className="mb-4">
+            <TabsTrigger value="sheets">
+              <FileText className="w-3.5 h-3.5 mr-1.5" />
+              Running Sheets
+            </TabsTrigger>
+            <TabsTrigger value="target">
+              <Target className="w-3.5 h-3.5 mr-1.5" />
+              Add Target
+            </TabsTrigger>
+          </TabsList>
+
+          {/* ── Running Sheets tab ── */}
+          <TabsContent value="sheets">
         {isLoading ? (
           <div className="flex flex-col gap-3">
             {[1, 2, 3].map((i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
@@ -388,6 +557,23 @@ export default function OperationDetail() {
             {sheets.length} running sheet{sheets.length !== 1 ? "s" : ""}
           </p>
         )}
+          </TabsContent>
+
+          {/* ── Add Target tab ── */}
+          <TabsContent value="target">
+            <div className="flex flex-col gap-6">
+              {(["TGT", "HB", "V1", "V2", "WB"] as ProfileType[]).map((type) => (
+                <div key={type} className="rounded-xl border border-border bg-card p-5">
+                  <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
+                    <Target className="w-4 h-4 text-primary" />
+                    {PROFILE_LABELS[type]}
+                  </h3>
+                  <TargetTypeForm operationId={operationId} type={type} />
+                </div>
+              ))}
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
 
       {/* Edit Operation Dialog */}

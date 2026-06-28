@@ -166,3 +166,9 @@
 - [x] Frontend: TodoPage listing uncertified rows grouped by operation > sheet, with time + observation preview and link to sheet
 - [x] Sidebar nav: add "To-Do" item between Operations and Audit Log with a badge count
 - [x] Route /todo registered in App.tsx
+
+## New Operation Dialog & Target Profiles (Round 20)
+- [x] Remove placeholder/helper text from all New Operation dialog input fields
+- [x] Add target_profiles table: operationId, type (TGT/HB/V1/V2/WB), and free-text fields per type
+- [x] Backend db helpers and tRPC procedures for target profile CRUD
+- [x] Add Target tab/section on OperationDetail page with TGT, HB, V1, V2, WB entry forms

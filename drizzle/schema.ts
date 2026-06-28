@@ -112,6 +112,33 @@ export const certifications = mysqlTable("certifications", {
 export type Certification = typeof certifications.$inferSelect;
 export type InsertCertification = typeof certifications.$inferInsert;
 
+// ─── Target Profiles ────────────────────────────────────────────────────────
+// One row per location type per operation. Types: TGT, HB, V1, V2, WB
+
+export const targetProfiles = mysqlTable("target_profiles", {
+  id: int("id").autoincrement().primaryKey(),
+  operationId: int("operationId").notNull(),
+  type: mysqlEnum("type", ["TGT", "HB", "V1", "V2", "WB"]).notNull(),
+  // Generic free-text fields — label is shown in the UI, value is user input
+  field1Label: varchar("field1Label", { length: 128 }),
+  field1Value: text("field1Value"),
+  field2Label: varchar("field2Label", { length: 128 }),
+  field2Value: text("field2Value"),
+  field3Label: varchar("field3Label", { length: 128 }),
+  field3Value: text("field3Value"),
+  field4Label: varchar("field4Label", { length: 128 }),
+  field4Value: text("field4Value"),
+  field5Label: varchar("field5Label", { length: 128 }),
+  field5Value: text("field5Value"),
+  notes: text("notes"),
+  createdBy: int("createdBy").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type TargetProfile = typeof targetProfiles.$inferSelect;
+export type InsertTargetProfile = typeof targetProfiles.$inferInsert;
+
 // ─── Audit Logs ───────────────────────────────────────────────────────────────
 
 export const auditLogs = mysqlTable("audit_logs", {

@@ -221,7 +221,7 @@ export default function Home() {
                 Operation Name <span className="text-destructive">*</span>
               </label>
               <Input
-                placeholder="e.g. Operation Nightwatch"
+
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleCreate()}
@@ -233,7 +233,7 @@ export default function Home() {
                 PROMIS Number <span className="text-muted-foreground font-normal">(optional)</span>
               </label>
               <Input
-                placeholder="e.g. PRO-2024-001"
+
                 value={newPromis}
                 onChange={(e) => setNewPromis(e.target.value)}
               />
@@ -243,7 +243,7 @@ export default function Home() {
                 IMS Number <span className="text-muted-foreground font-normal">(optional)</span>
               </label>
               <Input
-                placeholder="e.g. IMS-2024-042"
+
                 value={newIms}
                 onChange={(e) => setNewIms(e.target.value)}
               />
@@ -253,7 +253,7 @@ export default function Home() {
                 Investigation Unit <span className="text-muted-foreground font-normal">(optional)</span>
               </label>
               <Input
-                placeholder="e.g. Homicide Squad"
+
                 value={newUnit}
                 onChange={(e) => setNewUnit(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleCreate()}

@@ -205,12 +205,14 @@ function SheetCard({
   sheet,
   cinNames,
   isAdmin,
+  targetName,
   onNavigate,
   onDelete,
 }: {
   sheet: { id: number; title: string; createdAt: Date; sheetCins?: string | null };
   cinNames: string[];
   isAdmin: boolean;
+  targetName?: string | null;
   onNavigate: () => void;
   onDelete: () => void;
 }) {
@@ -264,7 +266,13 @@ function SheetCard({
             })}
           </div>
         )}
-        <div className="flex items-center gap-1.5 mt-1.5 text-xs text-muted-foreground">
+        {targetName && (
+          <div className="flex items-center gap-1 mt-1.5 text-xs text-muted-foreground">
+            <Target className="w-3 h-3 shrink-0" />
+            <span className="truncate">{targetName}</span>
+          </div>
+        )}
+        <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground">
           <Calendar className="w-3 h-3" />
           <span>Created {format(new Date(sheet.createdAt), "d MMM yyyy, HH:mm")}</span>
         </div>
@@ -547,12 +555,14 @@ export default function OperationDetail() {
                 catch { return []; }
               })();
               const cinNames = parsedCins.map((c) => c.cin);
+              const assignedTarget = operationTargets?.find((t) => t.id === (sheet as { targetId?: number | null }).targetId);
               return (
                 <SheetCard
                   key={sheet.id}
                   sheet={sheet}
                   cinNames={cinNames}
                   isAdmin={user?.role === "admin"}
+                  targetName={assignedTarget?.name ?? null}
                   onNavigate={() => navigate(`/sheet/${sheet.id}`)}
                   onDelete={() => setDeleteId(sheet.id)}
                 />

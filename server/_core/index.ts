@@ -8,7 +8,7 @@ import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
-import { seedShortcutsIfEmpty } from "../db";
+import { seedShortcutsIfEmpty, ensureDefaultShortcuts } from "../db";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -65,5 +65,5 @@ async function startServer() {
 }
 
 startServer()
-  .then(() => seedShortcutsIfEmpty(1).catch(() => {}))
+  .then(() => ensureDefaultShortcuts(1).catch(() => {}))
   .catch(console.error);

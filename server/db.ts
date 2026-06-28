@@ -532,8 +532,38 @@ export async function seedShortcutsIfEmpty(systemUserId: number) {
     { trigger: 'rack', expansion: 'Surveillance ceased in the vicinity of' },
     { trigger: 'oos',  expansion: 'Out of sight' },
     { trigger: 'coos', expansion: 'Continued out of sight' },
+    { trigger: 'pt',   expansion: 'PHOTOGRAPH/S TAKEN' },
   ];
   for (const s of defaults) {
     await db.insert(shortcuts).values({ ...s, createdBy: systemUserId }).catch(() => {/* ignore duplicate */});
   }
+}
+
+/**
+ * Ensure specific default shortcuts exist — inserts each if its trigger is not already present.
+ * Safe to call on every startup even when the table already has rows.
+ */
+export async function ensureDefaultShortcuts(systemUserId: number) {
+  const db = await getDb();
+  if (!db) { console.warn('[Shortcuts] DB unavailable, skipping ensureDefaultShortcuts'); return; }
+  const required = [
+    { trigger: 'sc',   expansion: 'Surveillance commenced in the vicinity of' },
+    { trigger: 'rack', expansion: 'Surveillance ceased in the vicinity of' },
+    { trigger: 'oos',  expansion: 'Out of sight' },
+    { trigger: 'coos', expansion: 'Continued out of sight' },
+    { trigger: 'pt',   expansion: 'PHOTOGRAPH/S TAKEN' },
+  ];
+  const existing = await db.select({ trigger: shortcuts.trigger }).from(shortcuts);
+  const existingTriggers = new Set(existing.map((s) => s.trigger.toLowerCase()));
+  for (const s of required) {
+    if (!existingTriggers.has(s.trigger.toLowerCase())) {
+      try {
+        await db.insert(shortcuts).values({ ...s, createdBy: systemUserId });
+        console.log(`[Shortcuts] Inserted default shortcut: ${s.trigger}`);
+      } catch (err) {
+        console.error(`[Shortcuts] Failed to insert shortcut '${s.trigger}':`, err);
+      }
+    }
+  }
+  console.log(`[Shortcuts] ensureDefaultShortcuts complete. Existing: [${Array.from(existingTriggers).join(', ')}]`);
 }

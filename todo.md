@@ -181,9 +181,13 @@
 - [x] Add target selector dropdown to SheetDetail page header
 
 ## Observation Shortcuts (Round 26)
-- [ ] DB: shortcuts table (id, trigger, expansion, createdBy, createdAt)
-- [ ] Seed 4 initial shortcuts: sc, rack, oos, coos
-- [ ] Backend: tRPC procedures for list/create/update/delete shortcuts
-- [ ] Auto-expand logic in observation textarea (replace trigger + space with expansion)
-- [ ] Shortcuts management page (list, add, edit, delete)
-- [ ] Sidebar nav entry for Shortcuts management
+- [x] DB: shortcuts table (id, trigger, expansion, createdBy, createdAt)
+- [x] Seed 4 initial shortcuts: sc, rack, oos, coos
+- [x] Backend: tRPC procedures for list/create/update/delete shortcuts
+- [x] Auto-expand logic in observation textarea (replace trigger + space with expansion)
+- [x] Shortcuts management page (list, add, edit, delete)
+- [x] Sidebar nav entry for Shortcuts management
+
+## New Shortcuts (Round 28)
+- [x] Add global shortcut: pt → PHOTOGRAPH/S TAKEN (seed into DB)
+- [x] Target-aware shortcuts: when a sheet has an assigned target, TGT/HB/V1/V2/WB typed in observation + Space/Tab expand to that target's corresponding field value (only if the field is non-empty)

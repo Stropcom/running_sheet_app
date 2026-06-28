@@ -931,9 +931,21 @@ export default function SheetDetail() {
   const { data: shortcutsData } = trpc.shortcuts.list.useQuery(undefined, { enabled: isAuthenticated });
   const shortcutMap = useMemo(() => {
     const map: Record<string, string> = {};
+    // Global shortcuts from DB
     for (const s of shortcutsData ?? []) map[s.trigger.toLowerCase()] = s.expansion;
+    // Target-aware shortcuts: if this sheet has an assigned target, overlay TGT/HB/V1/V2/WB
+    if (sheet?.targetId && operationTargets) {
+      const t = operationTargets.find((t) => t.id === sheet.targetId);
+      if (t) {
+        if (t.tgt) map['tgt'] = t.tgt;
+        if (t.hb)  map['hb']  = t.hb;
+        if (t.v1)  map['v1']  = t.v1;
+        if (t.v2)  map['v2']  = t.v2;
+        if (t.wb)  map['wb']  = t.wb;
+      }
+    }
     return map;
-  }, [shortcutsData]);
+  }, [shortcutsData, sheet?.targetId, operationTargets]);
 
   // Edit roster state
   const [editRosterOpen, setEditRosterOpen] = useState(false);

@@ -1182,7 +1182,7 @@ export default function SheetDetail() {
                   size="sm"
                   variant="ghost"
                   className="gap-1.5 text-xs text-muted-foreground hover:text-foreground h-7 px-2 ml-auto"
-                  onClick={() => navigate(`/operation/${sheet!.operationId}?tab=target`)}
+                  onClick={() => navigate(`/operation/${sheet!.operationId}?tab=target&targetId=${t.id}`)}
                   title="Edit Target"
                 >
                   <Pencil className="w-3 h-3" />

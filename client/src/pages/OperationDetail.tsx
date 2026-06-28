@@ -60,13 +60,15 @@ function TargetCard({
   target,
   operationId,
   onDeleted,
+  initialExpanded,
 }: {
   target: { id: number; name: string; tgt: string | null; hb: string | null; v1: string | null; v2: string | null; wb: string | null; dep: string | null; arr: string | null };
   operationId: number;
   onDeleted: () => void;
+  initialExpanded?: boolean;
 }) {
   const utils = trpc.useUtils();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(initialExpanded ?? false);
   const [name, setName] = useState(target.name);
   const [tgt, setTgt] = useState(target.tgt ?? "");
   const [hb, setHb] = useState(target.hb ?? "");
@@ -141,7 +143,7 @@ function TargetCard({
 }
 
 /** Add Target tab panel — lists all targets for the operation, allows adding more */
-function TargetPanel({ operationId }: { operationId: number }) {
+function TargetPanel({ operationId, autoExpandId }: { operationId: number; autoExpandId?: number }) {
   const utils = trpc.useUtils();
   const { data: targets, isLoading } = trpc.target.list.useQuery({ operationId });
   const [newName, setNewName] = useState("");
@@ -167,7 +169,7 @@ function TargetPanel({ operationId }: { operationId: number }) {
     <div className="flex flex-col gap-3">
       {targets && targets.length > 0 ? (
         targets.map((t) => (
-          <TargetCard key={t.id} target={t} operationId={operationId} onDeleted={() => {}} />
+          <TargetCard key={t.id} target={t} operationId={operationId} onDeleted={() => {}} initialExpanded={autoExpandId === t.id} />
         ))
       ) : (
         <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -305,7 +307,12 @@ export default function OperationDetail() {
   const { isAuthenticated, user } = useAuth();
   const params = useParams<{ id: string }>();
   const operationId = parseInt(params.id ?? "0", 10);
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
+
+  // Derive active tab and target to auto-expand from URL search params
+  const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+  const activeTab = searchParams.get('tab') === 'target' ? 'target' : 'sheets';
+  const autoExpandTargetId = searchParams.get('targetId') ? parseInt(searchParams.get('targetId')!, 10) : undefined;
 
   // Create sheet state
   const [createOpen, setCreateOpen] = useState(false);
@@ -510,7 +517,12 @@ export default function OperationDetail() {
         </div>
 
         {/* Main tabs: Running Sheets | Add Target */}
-        <Tabs defaultValue="sheets" className="mt-2">
+        <Tabs value={activeTab} onValueChange={(v) => {
+            const sp = new URLSearchParams(window.location.search);
+            sp.set("tab", v);
+            if (v !== "target") sp.delete("targetId");
+            navigate(`/operation/${operationId}?${sp.toString()}`);
+          }} className="mt-2">
           <TabsList className="mb-4">
             <TabsTrigger value="sheets">
               <FileText className="w-3.5 h-3.5 mr-1.5" />
@@ -584,7 +596,7 @@ export default function OperationDetail() {
 
           {/* ── Add Target tab ── */}
           <TabsContent value="target">
-            <TargetPanel operationId={operationId} />
+            <TargetPanel operationId={operationId} autoExpandId={autoExpandTargetId} />
           </TabsContent>
         </Tabs>
       </div>

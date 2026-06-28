@@ -49,7 +49,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useState, useEffect } from "react";
-import { useLocation, useParams } from "wouter";
+import { useLocation, useParams, useSearch } from "wouter";
 import { format } from "date-fns";
 import { toast } from "sonner";
 
@@ -333,10 +333,11 @@ export default function OperationDetail() {
   const { isAuthenticated, user } = useAuth();
   const params = useParams<{ id: string }>();
   const operationId = parseInt(params.id ?? "0", 10);
-  const [location, navigate] = useLocation();
+  const [, navigate] = useLocation();
+  const search = useSearch();
 
   // Derive active tab and target to auto-expand from URL search params
-  const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+  const searchParams = new URLSearchParams(search);
   const activeTab = searchParams.get('tab') === 'target' ? 'target' : 'sheets';
   const autoExpandTargetId = searchParams.get('targetId') ? parseInt(searchParams.get('targetId')!, 10) : undefined;
 

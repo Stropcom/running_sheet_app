@@ -1075,16 +1075,7 @@ export default function SheetDetail() {
                     >
                       <Pencil className="w-3.5 h-3.5" />
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="shrink-0 gap-1.5 text-xs text-muted-foreground hover:text-foreground h-7 px-2"
-                      onClick={openEditRoster}
-                      title="Edit TEAM"
-                    >
-                      <Users className="w-3 h-3" />
-                      Edit TEAM
-                    </Button>
+
                   </>
                 )}
               </>
@@ -1134,7 +1125,19 @@ export default function SheetDetail() {
           <div className="mb-4 rounded-lg border border-border bg-card/60 px-4 py-3">
             <div className="flex items-center gap-2 mb-2">
               <Users className="w-3.5 h-3.5 text-muted-foreground" />
-              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">TEAM — Certify All Rows</span>
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex-1">TEAM — Certify All Rows</span>
+              {sheet && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="gap-1.5 text-xs text-muted-foreground hover:text-foreground h-7 px-2 ml-auto"
+                  onClick={openEditRoster}
+                  title="Edit TEAM"
+                >
+                  <Users className="w-3 h-3" />
+                  Edit TEAM
+                </Button>
+              )}
             </div>
             <div className="flex flex-wrap gap-2">
               {parsedRoster.map((entry) => (
@@ -1174,7 +1177,17 @@ export default function SheetDetail() {
             <div className="mb-4 rounded-lg border border-border bg-card/60 px-4 py-3">
               <div className="flex items-center gap-2 mb-2">
                 <Target className="w-3.5 h-3.5 text-muted-foreground" />
-                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">TARGET — {t.name}</span>
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex-1">TARGET — {t.name}</span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="gap-1.5 text-xs text-muted-foreground hover:text-foreground h-7 px-2 ml-auto"
+                  onClick={() => navigate(`/operation/${sheet!.operationId}?tab=target`)}
+                  title="Edit Target"
+                >
+                  <Pencil className="w-3 h-3" />
+                  Edit Target
+                </Button>
               </div>
               {hasAnyField && (
                 <div className="flex flex-wrap gap-x-6 gap-y-1">

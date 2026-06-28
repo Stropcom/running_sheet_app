@@ -175,18 +175,21 @@ function exportToPDF(
     </div>`;
 
   // ── Running sheet table ──────────────────────────────────────────────────────
+  // Spacer row inserted after each log entry for breathing room
+  const spacerRow = `<tr><td colspan="4" style="padding:0;height:8px;border:none;background:transparent"></td></tr>`;
+
   const tableRows = rows.map((row) => {
     const rowBg = row.isLocked ? lockedBg : "transparent";
     if (row.members.length === 0) {
       return `<tr style="background:${rowBg}">
-        <td style="padding:5px 6px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap" rowspan="1">${row.time ?? ""}</td>
-        <td style="padding:5px 6px;${bb};${cb}" rowspan="1">${row.observation ?? ""}</td>
-        <td style="padding:5px 6px;${bb};${cb};white-space:nowrap"><em style='color:#6b7280'>No members</em></td>
-        <td style="padding:5px 6px;${bb};font-size:11px"></td>
-      </tr>`;
+        <td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap" rowspan="1">${row.time ?? ""}</td>
+        <td style="padding:6px 6px 8px;${bb};${cb}" rowspan="1">${row.observation ?? ""}</td>
+        <td style="padding:6px 6px 8px;${bb};${cb};white-space:nowrap"><em style='color:#6b7280'>No members</em></td>
+        <td style="padding:6px 6px 8px;${bb};font-size:11px"></td>
+      </tr>${spacerRow}`;
     }
     // Render one <tr> per member so CIN and Certified columns align perfectly
-    return row.members.map((m, idx) => {
+    const memberRows = row.members.map((m, idx) => {
       const cert = row.certifications.find((c) => c.memberId === m.id && c.isActive);
       const certCell = cert
         ? `<span style='color:${certColor};white-space:nowrap'>&#10003; ${'certifiedByCIN' in cert ? (cert as any).certifiedByCIN || cert.certifiedByName : cert.certifiedByName} &nbsp; <span style='color:#94a3b8;font-size:10px'>${format(new Date(cert.certifiedAt), "dd/MM/yy h:mmaaa")}</span></span>`
@@ -194,23 +197,24 @@ function exportToPDF(
       const isFirst = idx === 0;
       const rowspan = row.members.length;
       const timeTd = isFirst
-        ? `<td style="padding:5px 6px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap" rowspan="${rowspan}">${row.time ?? ""}</td>`
+        ? `<td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap" rowspan="${rowspan}">${row.time ?? ""}</td>`
         : "";
       const obsTd = isFirst
-        ? `      <td style="padding:5px 6px;${bb};${cb}" rowspan="${rowspan}">${(row.observation ?? "").replace(/\n/g, "<br/>")}</td>`
+        ? `<td style="padding:6px 6px 8px;${bb};${cb}" rowspan="${rowspan}">${(row.observation ?? "").replace(/\n/g, "<br/>")}</td>`
         : "";
       // Only draw bottom border on the last member row; no inner lines between members
       const isLast = idx === row.members.length - 1;
       const memberBb = isLast ? bb : "border-bottom:none";
-      // Reduce top padding for non-first rows so members sit tight together
-      const pt = isFirst ? "5px" : "1px";
-      const pb = isLast ? "5px" : "1px";
+      // Top/bottom padding: generous on first/last, tight on inner member rows
+      const pt = isFirst ? "6px" : "2px";
+      const pb = isLast ? "8px" : "2px";
       return `<tr style="background:${rowBg}">
         ${timeTd}${obsTd}
         <td style="padding:${pt} 6px ${pb} 6px;${memberBb};${cb};white-space:nowrap;font-family:monospace;font-size:11px">${m.memberName}</td>
         <td style="padding:${pt} 6px ${pb} 6px;${memberBb};font-size:11px">${certCell}</td>
       </tr>`;
     }).join("");
+    return memberRows + spacerRow;
   }).join("");
 
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/>

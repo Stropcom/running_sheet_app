@@ -942,6 +942,8 @@ export default function SheetDetail() {
         if (t.v1)  map['v1']  = t.v1;
         if (t.v2)  map['v2']  = t.v2;
         if (t.wb)  map['wb']  = t.wb;
+        if (t.dep) map['dep'] = t.dep;
+        if (t.arr) map['arr'] = t.arr;
       }
     }
     return map;
@@ -1164,6 +1166,8 @@ export default function SheetDetail() {
             { label: "V1",  value: t.v1  },
             { label: "V2",  value: t.v2  },
             { label: "WB",  value: t.wb  },
+            { label: "DEP", value: t.dep },
+            { label: "ARR", value: t.arr },
           ];
           const hasAnyField = fields.some((f) => f.value);
           return (

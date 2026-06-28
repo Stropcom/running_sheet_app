@@ -61,7 +61,7 @@ function TargetCard({
   operationId,
   onDeleted,
 }: {
-  target: { id: number; name: string; tgt: string | null; hb: string | null; v1: string | null; v2: string | null; wb: string | null };
+  target: { id: number; name: string; tgt: string | null; hb: string | null; v1: string | null; v2: string | null; wb: string | null; dep: string | null; arr: string | null };
   operationId: number;
   onDeleted: () => void;
 }) {
@@ -73,6 +73,8 @@ function TargetCard({
   const [v1, setV1] = useState(target.v1 ?? "");
   const [v2, setV2] = useState(target.v2 ?? "");
   const [wb, setWb] = useState(target.wb ?? "");
+  const [dep, setDep] = useState(target.dep ?? "");
+  const [arr, setArr] = useState(target.arr ?? "");
   const [dirty, setDirty] = useState(false);
 
   const update = trpc.target.update.useMutation({
@@ -118,6 +120,8 @@ function TargetCard({
             { label: "Vehicle (V1)", val: v1,  set: (v: string) => mark(() => setV1(v)) },
             { label: "Vehicle (V2)", val: v2,  set: (v: string) => mark(() => setV2(v)) },
             { label: "Work (WB)",    val: wb,  set: (v: string) => mark(() => setWb(v)) },
+            { label: "Depart (DEP)", val: dep, set: (v: string) => mark(() => setDep(v)) },
+            { label: "Arrive (ARR)", val: arr, set: (v: string) => mark(() => setArr(v)) },
           ] as { label: string; val: string; set: (v: string) => void }[]).map(({ label, val, set }) => (
             <div key={label} className="flex flex-col gap-1.5">
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{label}</label>
@@ -125,7 +129,7 @@ function TargetCard({
             </div>
           ))}
           <div className="flex justify-end">
-            <Button size="sm" className="gap-2" onClick={() => update.mutate({ id: target.id, name, tgt, hb, v1, v2, wb })} disabled={update.isPending || !dirty}>
+            <Button size="sm" className="gap-2" onClick={() => update.mutate({ id: target.id, name, tgt, hb, v1, v2, wb, dep, arr })} disabled={update.isPending || !dirty}>
               <Save className="w-3.5 h-3.5" />
               {update.isPending ? "Saving…" : "Save"}
             </Button>

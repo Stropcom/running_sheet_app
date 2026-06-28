@@ -191,3 +191,10 @@
 ## New Shortcuts (Round 28)
 - [x] Add global shortcut: pt → PHOTOGRAPH/S TAKEN (seed into DB)
 - [x] Target-aware shortcuts: when a sheet has an assigned target, TGT/HB/V1/V2/WB typed in observation + Space/Tab expand to that target's corresponding field value (only if the field is non-empty)
+
+## Target DEP/ARR Fields (Round 29)
+- [x] DB: add dep and arr columns to targets table (migration)
+- [x] Backend: include dep/arr in target create/update/list procedures
+- [x] Frontend: add Depart (DEP) and Arrive (ARR) form fields on Add Target page
+- [x] Frontend: show DEP/ARR in TARGET panel on sheet detail
+- [x] Frontend: add DEP/ARR to target-aware shortcuts in observation textarea

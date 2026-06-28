@@ -114,8 +114,8 @@ export type Certification = typeof certifications.$inferSelect;
 export type InsertCertification = typeof certifications.$inferInsert;
 
 // ─── Targets ────────────────────────────────────────────────────────────────
-// One row per target per operation. Each target has a display name and five
-// type-specific free-text fields: TGT, HB, V1, V2, WB.
+// One row per target per operation. Each target has a display name and seven
+// type-specific free-text fields: TGT, HB, V1, V2, WB, DEP, ARR.
 
 export const targets = mysqlTable("targets", {
   id: int("id").autoincrement().primaryKey(),
@@ -126,6 +126,8 @@ export const targets = mysqlTable("targets", {
   v1:  text("v1"),    // Vehicle 1 details
   v2:  text("v2"),    // Vehicle 2 details
   wb:  text("wb"),    // Work Base details
+  dep: text("dep"),   // Depart address/location
+  arr: text("arr"),   // Arrive address/location
   createdBy: int("createdBy").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

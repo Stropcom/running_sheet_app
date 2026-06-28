@@ -710,6 +710,8 @@ export const appRouter = router({
         v1: z.string().optional(),
         v2: z.string().optional(),
         wb: z.string().optional(),
+        dep: z.string().optional(),
+        arr: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         return createTarget({ ...input, createdBy: ctx.user.id });
@@ -725,6 +727,8 @@ export const appRouter = router({
         v1: z.string().optional(),
         v2: z.string().optional(),
         wb: z.string().optional(),
+        dep: z.string().optional(),
+        arr: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
         const { id, ...data } = input;

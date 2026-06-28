@@ -465,7 +465,7 @@ export async function createTarget(data: InsertTarget) {
 
 export async function updateTarget(
   id: number,
-  data: Partial<Pick<InsertTarget, "name" | "tgt" | "hb" | "v1" | "v2" | "wb">>
+  data: Partial<Pick<InsertTarget, "name" | "tgt" | "hb" | "v1" | "v2" | "wb" | "dep" | "arr">>
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");

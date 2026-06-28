@@ -997,16 +997,6 @@ export default function SheetDetail() {
               <>
                 <div className="min-w-0">
                   <h1 className="text-xl font-semibold text-foreground truncate">{sheet?.title}</h1>
-                  {/* Show assigned target name as read-only label */}
-                  {sheet?.targetId && operationTargets && (() => {
-                    const t = operationTargets.find((t) => t.id === sheet.targetId);
-                    return t ? (
-                      <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
-                        <Target className="w-3 h-3" />
-                        {t.name}
-                      </p>
-                    ) : null;
-                  })()}
                 </div>
                 {sheet && (
                   <>
@@ -1099,6 +1089,40 @@ export default function SheetDetail() {
             </div>
           </div>
         )}
+
+        {/* TARGET Panel — shown when a target is assigned to this sheet */}
+        {sheet?.targetId && operationTargets && (() => {
+          const t = operationTargets.find((t) => t.id === sheet.targetId);
+          if (!t) return null;
+          const fields: { label: string; value: string | null }[] = [
+            { label: "TGT", value: t.tgt },
+            { label: "HB",  value: t.hb  },
+            { label: "V1",  value: t.v1  },
+            { label: "V2",  value: t.v2  },
+            { label: "WB",  value: t.wb  },
+          ];
+          const hasAnyField = fields.some((f) => f.value);
+          return (
+            <div className="mb-4 rounded-lg border border-border bg-card/60 px-4 py-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Target className="w-3.5 h-3.5 text-muted-foreground" />
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">TARGET — {t.name}</span>
+              </div>
+              {hasAnyField ? (
+                <div className="flex flex-wrap gap-x-6 gap-y-1">
+                  {fields.filter((f) => f.value).map((f) => (
+                    <div key={f.label} className="flex items-baseline gap-1.5 text-xs">
+                      <span className="font-semibold text-muted-foreground uppercase tracking-wide">{f.label}:</span>
+                      <span className="font-mono text-foreground">{f.value}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground italic">No target details recorded yet</p>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Search bar + sort toggle */}
         <div className="mb-4 flex items-center gap-2">

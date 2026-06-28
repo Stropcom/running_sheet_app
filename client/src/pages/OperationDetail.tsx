@@ -271,13 +271,13 @@ function SheetCard({
         allCertified ? "bg-emerald-500/20 border-emerald-500/40" : "bg-muted/60 border-border"
       }`}>
         <FileText className={`w-5 h-5 ${
-          allCertified ? "text-emerald-400" : "text-muted-foreground"
+          allCertified ? "text-black dark:text-emerald-400" : "text-muted-foreground"
         }`} />
       </div>
 
       <div className="flex-1 min-w-0">
         <span className={`font-semibold truncate block ${
-          allCertified ? "text-emerald-300" : "text-foreground"
+          allCertified ? "text-black dark:text-emerald-300" : "text-foreground"
         }`}>{sheet.title}</span>
         {cinNames.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-1.5">
@@ -288,7 +288,7 @@ function SheetCard({
                   key={cin}
                   className={`inline-flex items-center text-xs px-2 py-0.5 rounded-full border font-mono ${
                     certified
-                      ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-400"
+                      ? "border-emerald-500/50 bg-emerald-500/15 text-black dark:text-emerald-400"
                       : "border-red-500/40 bg-red-500/10 text-red-400"
                   }`}
                 >
@@ -322,7 +322,7 @@ function SheetCard({
           </Button>
         )}
         <ChevronRight className={`w-4 h-4 transition-colors ${
-          allCertified ? "text-emerald-400" : "text-muted-foreground group-hover:text-foreground"
+          allCertified ? "text-black dark:text-emerald-400" : "text-muted-foreground group-hover:text-foreground"
         }`} />
       </div>
     </div>

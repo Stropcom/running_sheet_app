@@ -147,3 +147,10 @@
 - [x] PDF export: TEAM table now includes Team Leader and Author columns
 - [x] Sheet cards in OperationDetail: show TL/Author badges with correct sort order
 - [x] Backend zod schema updated to include isTeamLeader and isAuthor optional fields
+
+## Shield & Certify Column Redesign (Round 14)
+- [x] Shield icon: red = uncertified, green = certified (single toggle button)
+- [x] Move shield from CIN column into Certify column
+- [x] Shield is the sole certify/uncertify button — tap to certify, tap again to uncertify
+- [x] Shield + status (✕ or certifier CIN) centred within the Certify column
+- [x] CIN column (MemberCell) shows only CIN text + hover delete button — no shield

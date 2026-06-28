@@ -1079,7 +1079,6 @@ export default function SheetDetail() {
                 </button>
               ))}
             </div>
-            <p className="text-xs text-muted-foreground mt-2">Click a CIN to certify all uncertified rows for that member across this sheet. ★ = Team Leader  ✏ = Author</p>
           </div>
         )}
 

@@ -38,6 +38,7 @@ import {
   Pencil,
   Target,
   Save,
+  Search,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -348,6 +349,7 @@ export default function OperationDetail() {
   const [cinList, setCinList] = useState<CinEntry[]>([]);
   const [cinInput, setCinInput] = useState("");
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [sheetSearch, setSheetSearch] = useState("");
 
   // Edit operation state
   const [editOpen, setEditOpen] = useState(false);
@@ -583,7 +585,26 @@ export default function OperationDetail() {
           </div>
         ) : (
           <div className="flex flex-col gap-2">
-            {sheets.map((sheet) => {
+            {/* Search bar */}
+            <div className="relative mb-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+              <Input
+                placeholder="Search by title, CIN or target…"
+                value={sheetSearch}
+                onChange={(e) => setSheetSearch(e.target.value)}
+                className="pl-8 h-9 text-sm"
+              />
+            </div>
+            {sheets.filter((sheet) => {
+              if (!sheetSearch.trim()) return true;
+              const q = sheetSearch.trim().toLowerCase();
+              if (sheet.title.toLowerCase().includes(q)) return true;
+              const cins: CinEntry[] = (() => { try { return sheet.sheetCins ? JSON.parse(sheet.sheetCins) : []; } catch { return []; } })();
+              if (cins.some((c) => c.cin.toLowerCase().includes(q))) return true;
+              const tgt = operationTargets?.find((t) => t.id === (sheet as { targetId?: number | null }).targetId);
+              if (tgt && tgt.name.toLowerCase().includes(q)) return true;
+              return false;
+            }).map((sheet) => {
               const parsedCins: CinEntry[] = (() => {
                 try {
                   const raw: CinEntry[] = sheet.sheetCins ? JSON.parse(sheet.sheetCins) : [];

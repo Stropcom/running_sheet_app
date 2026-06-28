@@ -88,9 +88,11 @@ function TargetCard({
     onError: (e: { message: string }) => toast.error(e.message),
   });
 
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const mark = (fn: () => void) => { fn(); setDirty(true); };
 
   return (
+    <>
     <div className="rounded-xl border border-border bg-card overflow-hidden">
       {/* Header row */}
       <div
@@ -99,13 +101,6 @@ function TargetCard({
       >
         <Target className="w-4 h-4 text-primary shrink-0" />
         <span className="flex-1 font-semibold text-sm text-foreground truncate">{target.name}</span>
-        <button
-          className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
-          onClick={(e) => { e.stopPropagation(); del.mutate({ id: target.id }); }}
-          title="Delete target"
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
         <ChevronRight className={`w-4 h-4 text-muted-foreground transition-transform ${expanded ? "rotate-90" : ""}`} />
       </div>
 
@@ -130,7 +125,17 @@ function TargetCard({
               <Textarea value={val} onChange={(e) => set(e.target.value)} rows={2} />
             </div>
           ))}
-          <div className="flex justify-end">
+          <div className="flex items-center justify-between">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="gap-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+              onClick={() => setConfirmDelete(true)}
+              disabled={del.isPending}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              {del.isPending ? "Deleting…" : "Delete"}
+            </Button>
             <Button size="sm" className="gap-2" onClick={() => update.mutate({ id: target.id, name, tgt, hb, v1, v2, wb, dep, arr })} disabled={update.isPending || !dirty}>
               <Save className="w-3.5 h-3.5" />
               {update.isPending ? "Saving…" : "Save"}
@@ -139,6 +144,27 @@ function TargetCard({
         </div>
       )}
     </div>
+
+    <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete target?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Are you sure you want to delete <strong>{target.name}</strong>? This cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            onClick={() => { setConfirmDelete(false); del.mutate({ id: target.id }); }}
+          >
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }
 

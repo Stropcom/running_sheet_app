@@ -307,6 +307,83 @@ export async function deactivateAllCertificationsForRow(rowId: number) {
 }
 
 /**
+ * Returns all running sheets that have at least one row where the given CIN
+ * is a member but has NOT yet been certified (active certification missing).
+ * Result is enriched with operationName and uncertifiedRowCount.
+ */
+export async function getOutstandingSheetsForCin(cin: string): Promise<
+  {
+    sheetId: number;
+    sheetTitle: string;
+    targetName: string | null;
+    operationId: number;
+    operationName: string;
+    uncertifiedRowCount: number;
+    createdAt: Date;
+  }[]
+> {
+  const db = await getDb();
+  if (!db) return [];
+
+  // Find all row_members whose memberName matches the CIN
+  const members = await db.select().from(rowMembers).where(eq(rowMembers.memberName, cin));
+  if (members.length === 0) return [];
+
+  const memberIds = members.map((m) => m.id);
+  const rowIds = Array.from(new Set(members.map((m) => m.rowId)));
+
+  // Get active certifications for those members
+  const certs = await db
+    .select()
+    .from(certifications)
+    .where(and(inArray(certifications.memberId, memberIds), eq(certifications.isActive, true)));
+
+  // Determine which members are uncertified
+  const uncertifiedMembers = members.filter(
+    (m) => !certs.some((c) => c.memberId === m.id),
+  );
+  if (uncertifiedMembers.length === 0) return [];
+
+  // Get the rows for uncertified members
+  const uncertifiedRowIds = Array.from(new Set(uncertifiedMembers.map((m) => m.rowId)));
+  const rows = await db
+    .select()
+    .from(sheetRows)
+    .where(inArray(sheetRows.id, uncertifiedRowIds));
+
+  // Get distinct sheet IDs
+  const sheetIds = Array.from(new Set(rows.map((r) => r.sheetId)));
+  if (sheetIds.length === 0) return [];
+
+  // Fetch sheets
+  const sheets = await db
+    .select()
+    .from(runningSheets)
+    .where(inArray(runningSheets.id, sheetIds));
+
+  // Fetch operations for those sheets
+  const opIds = Array.from(new Set(sheets.map((s) => s.operationId)));
+  const ops = await db
+    .select()
+    .from(operations)
+    .where(inArray(operations.id, opIds));
+
+  return sheets.map((sheet) => {
+    const op = ops.find((o) => o.id === sheet.operationId);
+    const uncertifiedRowCount = rows.filter((r) => r.sheetId === sheet.id).length;
+    return {
+      sheetId: sheet.id,
+      sheetTitle: sheet.title,
+      targetName: sheet.targetName ?? null,
+      operationId: sheet.operationId,
+      operationName: op?.name ?? "Unknown Operation",
+      uncertifiedRowCount,
+      createdAt: sheet.createdAt,
+    };
+  }).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+}
+
+/**
  * For a given sheet, return per-CIN certification status.
  * A CIN is "certified" when every row_member row with that memberName
  * has an active certification.

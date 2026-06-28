@@ -160,3 +160,9 @@
 - [x] CIN badges: red when that CIN has uncertified rows, green when all rows certified
 - [x] Sheet card highlights green (border, background, icon, title) when every CIN is fully certified
 - [x] New backend procedure: sheet.cinCertStatus — returns per-CIN certified boolean for a sheet
+
+## To-Do Page (Round 16)
+- [x] Backend: procedure to return all uncertified rows for the current user's CIN (rows where user is a member but has no active certification)
+- [x] Frontend: TodoPage listing uncertified rows grouped by operation > sheet, with time + observation preview and link to sheet
+- [x] Sidebar nav: add "To-Do" item between Operations and Audit Log with a badge count
+- [x] Route /todo registered in App.tsx

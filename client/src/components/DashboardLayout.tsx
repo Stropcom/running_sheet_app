@@ -1,4 +1,5 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import { trpc } from "@/lib/trpc";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -24,7 +25,7 @@ import {
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useTheme } from "@/contexts/ThemeContext";
-import { FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon } from "lucide-react";
+import { FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
@@ -100,8 +101,15 @@ function DashboardLayoutContent({
   const sidebarRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
 
+  const { data: outstanding } = trpc.sheet.outstandingForMe.useQuery(undefined, {
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
+  });
+  const todoCount = outstanding?.length ?? 0;
+
   const menuItems = [
     { icon: FileText, label: "Operations", path: "/" },
+    { icon: ClipboardList, label: "To-Do", path: "/todo", badge: todoCount > 0 ? todoCount : undefined },
     { icon: ScrollText, label: "Audit Log", path: "/audit" },
     { icon: User, label: "My Profile", path: "/profile" },
     ...(user?.role === "admin" ? [{ icon: Users, label: "User Management", path: "/admin" }] : []),
@@ -178,10 +186,19 @@ function DashboardLayoutContent({
                       tooltip={item.label}
                       className="h-10 font-normal transition-all"
                     >
-                      <item.icon className={`h-4 w-4 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/60"}`} />
-                      <span className={isActive ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}>
+                      <item.icon className={`h-4 w-4 ${
+                        (item as any).badge ? "text-amber-400" : isActive ? "text-sidebar-primary" : "text-sidebar-foreground/60"
+                      }`} />
+                      <span className={`flex-1 ${
+                        (item as any).badge ? "text-amber-300 font-medium" : isActive ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"
+                      }`}>
                         {item.label}
                       </span>
+                      {(item as any).badge && !isCollapsed && (
+                        <span className="ml-auto inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-[10px] font-bold bg-amber-500/20 border border-amber-500/40 text-amber-400">
+                          {(item as any).badge}
+                        </span>
+                      )}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );

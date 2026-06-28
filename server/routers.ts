@@ -44,6 +44,7 @@ import {
   updateUser,
   updateUserRole,
   getCinCertStatusForSheet,
+  getOutstandingSheetsForCin,
 } from "./db";
 
 // ─── Role Guards ──────────────────────────────────────────────────────────────
@@ -297,6 +298,16 @@ export const appRouter = router({
       .query(async ({ input }) => {
         return getCinCertStatusForSheet(input.sheetId, input.cins);
       }),
+
+    /**
+     * Returns all sheets that have uncertified rows for the current user's CIN.
+     * Used by the To-Do page.
+     */
+    outstandingForMe: protectedProcedure.query(async ({ ctx }) => {
+      const cin = ctx.user.cin;
+      if (!cin) return [];
+      return getOutstandingSheetsForCin(cin);
+    }),
   }),
 
   // ─── Sheet Rows ──────────────────────────────────────────────────────────────

@@ -11,6 +11,7 @@ import AuditLogPage from "./pages/AuditLogPage";
 import AdminPage from "./pages/AdminPage";
 import LoginPage from "./pages/LoginPage";
 import MyProfilePage from "./pages/MyProfilePage";
+import TodoPage from "./pages/TodoPage";
 
 function Router() {
   return (
@@ -20,6 +21,7 @@ function Router() {
       <Route path="/" component={Home} />
       <Route path="/operation/:id" component={OperationDetail} />
       <Route path="/sheet/:id" component={SheetDetail} />
+      <Route path="/todo" component={TodoPage} />
       <Route path="/audit" component={AuditLogPage} />
       <Route path="/admin" component={AdminPage} />
       <Route path="/404" component={NotFound} />

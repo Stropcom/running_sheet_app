@@ -179,3 +179,11 @@
 - [x] Update backend procedures: list/create/update/delete targets; setSheetTarget
 - [x] Rebuild Add Target tab: list of targets per operation, each with 5 type fields, + Add Target button
 - [x] Add target selector dropdown to SheetDetail page header
+
+## Observation Shortcuts (Round 26)
+- [ ] DB: shortcuts table (id, trigger, expansion, createdBy, createdAt)
+- [ ] Seed 4 initial shortcuts: sc, rack, oos, coos
+- [ ] Backend: tRPC procedures for list/create/update/delete shortcuts
+- [ ] Auto-expand logic in observation textarea (replace trigger + space with expansion)
+- [ ] Shortcuts management page (list, add, edit, delete)
+- [ ] Sidebar nav entry for Shortcuts management

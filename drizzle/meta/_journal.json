@@ -43,6 +43,13 @@
       "when": 1782616547920,
       "tag": "0005_add_targets_table",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1782637116304,
+      "tag": "0006_add_shortcuts",
+      "breakpoints": true
     }
   ]
 }

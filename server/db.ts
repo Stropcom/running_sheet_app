@@ -14,6 +14,8 @@ import {
   rowMembers,
   runningSheets,
   sheetRows,
+  shortcuts,
+  InsertShortcut,
   targets,
   InsertTarget,
   users,
@@ -491,4 +493,47 @@ export async function setSheetTarget(sheetId: number, targetId: number | null) {
     if (target.operationId !== sheet.operationId) throw new Error("Target does not belong to this operation");
   }
   await db.update(runningSheets).set({ targetId }).where(eq(runningSheets.id, sheetId));
+}
+
+// ─── Shortcuts ───────────────────────────────────────────────────────────────
+
+export async function listShortcuts() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(shortcuts).orderBy(shortcuts.trigger);
+}
+
+export async function createShortcut(data: Omit<InsertShortcut, 'id' | 'createdAt' | 'updatedAt'>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.insert(shortcuts).values(data);
+}
+
+export async function updateShortcut(id: number, data: { trigger?: string; expansion?: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(shortcuts).set(data).where(eq(shortcuts.id, id));
+}
+
+export async function deleteShortcut(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.delete(shortcuts).where(eq(shortcuts.id, id));
+}
+
+/** Seed the default shortcuts if the table is empty. Called at server startup. */
+export async function seedShortcutsIfEmpty(systemUserId: number) {
+  const db = await getDb();
+  if (!db) return;
+  const existing = await db.select({ id: shortcuts.id }).from(shortcuts).limit(1);
+  if (existing.length > 0) return;
+  const defaults = [
+    { trigger: 'sc',   expansion: 'Surveillance commenced in the vicinity of' },
+    { trigger: 'rack', expansion: 'Surveillance ceased in the vicinity of' },
+    { trigger: 'oos',  expansion: 'Out of sight' },
+    { trigger: 'coos', expansion: 'Continued out of sight' },
+  ];
+  for (const s of defaults) {
+    await db.insert(shortcuts).values({ ...s, createdBy: systemUserId }).catch(() => {/* ignore duplicate */});
+  }
 }

@@ -134,6 +134,22 @@ export const targets = mysqlTable("targets", {
 export type Target = typeof targets.$inferSelect;
 export type InsertTarget = typeof targets.$inferInsert;
 
+// ─── Observation Shortcuts ──────────────────────────────────────────────────
+// Global list of text shortcuts for the observation field.
+// When a user types the trigger word followed by a space, it auto-expands.
+
+export const shortcuts = mysqlTable("shortcuts", {
+  id: int("id").autoincrement().primaryKey(),
+  trigger: varchar("trigger", { length: 64 }).notNull().unique(), // e.g. "sc"
+  expansion: text("expansion").notNull(),                         // e.g. "Surveillance commenced in the vicinity of"
+  createdBy: int("createdBy").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Shortcut = typeof shortcuts.$inferSelect;
+export type InsertShortcut = typeof shortcuts.$inferInsert;
+
 // ─── Audit Logs ───────────────────────────────────────────────────────────────
 
 export const auditLogs = mysqlTable("audit_logs", {

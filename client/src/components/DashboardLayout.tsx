@@ -25,7 +25,7 @@ import {
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useTheme } from "@/contexts/ThemeContext";
-import { FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList } from "lucide-react";
+import { FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
@@ -112,7 +112,10 @@ function DashboardLayoutContent({
     { icon: ClipboardList, label: "To-Do", path: "/todo", badge: todoCount, badgeLabel: todoCount > 0 ? `To-Do (${todoCount})` : "To-Do" },
     { icon: ScrollText, label: "Audit Log", path: "/audit" },
     { icon: User, label: "My Profile", path: "/profile" },
-    ...(user?.role === "admin" ? [{ icon: Users, label: "User Management", path: "/admin" }] : []),
+    ...(user?.role === "admin" ? [
+      { icon: Zap, label: "Shortcuts", path: "/shortcuts" },
+      { icon: Users, label: "User Management", path: "/admin" },
+    ] : []),
   ];
 
   const activeMenuItem = menuItems.find((item) => item.path === location);

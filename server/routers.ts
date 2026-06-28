@@ -50,6 +50,10 @@ import {
   updateTarget,
   deleteTarget,
   setSheetTarget,
+  listShortcuts,
+  createShortcut,
+  updateShortcut,
+  deleteShortcut,
 } from "./db";
 
 // ─── Role Guards ──────────────────────────────────────────────────────────────
@@ -740,6 +744,44 @@ export const appRouter = router({
       .input(z.object({ sheetId: z.number(), targetId: z.number().nullable() }))
       .mutation(async ({ input }) => {
         await setSheetTarget(input.sheetId, input.targetId);
+        return { success: true };
+      }),
+  }),
+  // ─── Shortcuts ───────────────────────────────────────────────────────────────
+
+  shortcuts: router({
+    /** List all shortcuts — available to all authenticated users */
+    list: protectedProcedure.query(async () => {
+      return listShortcuts();
+    }),
+    /** Create a new shortcut — admin only */
+    create: adminProcedure
+      .input(z.object({
+        trigger: z.string().min(1).max(64).toLowerCase(),
+        expansion: z.string().min(1),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await createShortcut({ trigger: input.trigger.toLowerCase(), expansion: input.expansion, createdBy: ctx.user.id });
+        return { success: true };
+      }),
+    /** Update a shortcut — admin only */
+    update: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        trigger: z.string().min(1).max(64).optional(),
+        expansion: z.string().min(1).optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        if (data.trigger) data.trigger = data.trigger.toLowerCase();
+        await updateShortcut(id, data);
+        return { success: true };
+      }),
+    /** Delete a shortcut — admin only */
+    delete: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await deleteShortcut(input.id);
         return { success: true };
       }),
   }),

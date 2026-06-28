@@ -12,6 +12,7 @@ import AdminPage from "./pages/AdminPage";
 import LoginPage from "./pages/LoginPage";
 import MyProfilePage from "./pages/MyProfilePage";
 import TodoPage from "./pages/TodoPage";
+import ShortcutsPage from "./pages/ShortcutsPage";
 
 function Router() {
   return (
@@ -22,6 +23,7 @@ function Router() {
       <Route path="/operation/:id" component={OperationDetail} />
       <Route path="/sheet/:id" component={SheetDetail} />
       <Route path="/todo" component={TodoPage} />
+      <Route path="/shortcuts" component={ShortcutsPage} />
       <Route path="/audit" component={AuditLogPage} />
       <Route path="/admin" component={AdminPage} />
       <Route path="/404" component={NotFound} />

@@ -709,12 +709,14 @@ function EditableCell({
   multiline,
   placeholder,
   onSave,
+  shortcuts,
 }: {
   value: string | null;
   locked: boolean;
   multiline?: boolean;
   placeholder?: string;
   onSave: (val: string) => void;
+  shortcuts?: Record<string, string>;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value ?? "");
@@ -722,6 +724,30 @@ function EditableCell({
   const commit = () => {
     if (draft !== (value ?? "")) onSave(draft);
     setEditing(false);
+  };
+
+  /** Auto-expand shortcut triggers on Space or Tab */
+  const handleShortcutKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!shortcuts || (e.key !== " " && e.key !== "Tab")) return;
+    const textarea = e.currentTarget;
+    const pos = textarea.selectionStart ?? 0;
+    const textBefore = draft.slice(0, pos);
+    // Find the last word before the cursor
+    const match = textBefore.match(/(\S+)$/);
+    if (!match) return;
+    const word = match[1].toLowerCase();
+    const expansion = shortcuts[word];
+    if (!expansion) return;
+    e.preventDefault();
+    const before = textBefore.slice(0, textBefore.length - match[1].length);
+    const after = draft.slice(pos);
+    const newText = before + expansion + " " + after;
+    setDraft(newText);
+    // Restore cursor position after the expansion
+    requestAnimationFrame(() => {
+      const newPos = before.length + expansion.length + 1;
+      textarea.setSelectionRange(newPos, newPos);
+    });
   };
 
   if (locked) {
@@ -740,7 +766,10 @@ function EditableCell({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
-          onKeyDown={(e) => { if (e.key === "Escape") { setDraft(value ?? ""); setEditing(false); } }}
+          onKeyDown={(e) => {
+            handleShortcutKeyDown(e as React.KeyboardEvent<HTMLTextAreaElement>);
+            if (e.key === "Escape") { setDraft(value ?? ""); setEditing(false); }
+          }}
           className="text-sm min-h-[60px] resize-none"
           placeholder={placeholder}
         />
@@ -882,6 +911,14 @@ export default function SheetDetail() {
     onSuccess: () => { utils.sheet.get.invalidate({ id: sheetId }); toast.success("Target updated"); },
     onError: (e) => toast.error(e.message),
   });
+
+  // Shortcuts: fetch once and build a trigger→expansion map
+  const { data: shortcutsData } = trpc.shortcuts.list.useQuery(undefined, { enabled: isAuthenticated });
+  const shortcutMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const s of shortcutsData ?? []) map[s.trigger.toLowerCase()] = s.expansion;
+    return map;
+  }, [shortcutsData]);
 
   // Edit roster state
   const [editRosterOpen, setEditRosterOpen] = useState(false);
@@ -1203,6 +1240,7 @@ export default function SheetDetail() {
                           multiline
                           placeholder="Enter observation…"
                           onSave={(val) => updateRow.mutate({ id: row.id, observation: val })}
+                          shortcuts={shortcutMap}
                         />
                       </td>
 

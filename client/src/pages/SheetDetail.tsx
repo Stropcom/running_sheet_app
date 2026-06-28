@@ -40,6 +40,7 @@ import {
   Search,
   Users,
   ArrowUpDown,
+  Target,
 } from "lucide-react";
 import {
   Select,
@@ -996,25 +997,16 @@ export default function SheetDetail() {
               <>
                 <div className="min-w-0">
                   <h1 className="text-xl font-semibold text-foreground truncate">{sheet?.title}</h1>
-                  {/* Target selector — shown when operation has targets */}
-                  {operationTargets && operationTargets.length > 0 && (
-                    <div className="mt-1">
-                      <Select
-                        value={sheet?.targetId ? String(sheet.targetId) : "none"}
-                        onValueChange={(val) => setSheetTarget.mutate({ sheetId, targetId: val === "none" ? null : Number(val) })}
-                      >
-                        <SelectTrigger className="h-7 text-xs w-48 border-dashed">
-                          <SelectValue placeholder="Assign target…" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">No target assigned</SelectItem>
-                          {operationTargets.map((t) => (
-                            <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
+                  {/* Show assigned target name as read-only label */}
+                  {sheet?.targetId && operationTargets && (() => {
+                    const t = operationTargets.find((t) => t.id === sheet.targetId);
+                    return t ? (
+                      <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                        <Target className="w-3 h-3" />
+                        {t.name}
+                      </p>
+                    ) : null;
+                  })()}
                 </div>
                 {sheet && (
                   <>

@@ -41,6 +41,13 @@ import {
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useState, useEffect } from "react";
 import { useLocation, useParams } from "wouter";
 import { format } from "date-fns";
@@ -291,6 +298,7 @@ export default function OperationDetail() {
   // Create sheet state
   const [createOpen, setCreateOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
+  const [newTargetId, setNewTargetId] = useState<number | null>(null);
   const [cinList, setCinList] = useState<CinEntry[]>([]);
   const [cinInput, setCinInput] = useState("");
   const [deleteId, setDeleteId] = useState<number | null>(null);
@@ -310,6 +318,12 @@ export default function OperationDetail() {
   );
 
   const { data: sheets, isLoading: sheetsLoading } = trpc.sheet.listByOperation.useQuery(
+    { operationId },
+    { enabled: isAuthenticated && !!operationId }
+  );
+
+  // Fetch targets for this operation (used in create sheet dialog)
+  const { data: operationTargets } = trpc.target.list.useQuery(
     { operationId },
     { enabled: isAuthenticated && !!operationId }
   );
@@ -381,6 +395,7 @@ export default function OperationDetail() {
     createSheet.mutate({
       operationId,
       title: newTitle.trim(),
+      targetId: newTargetId ?? undefined,
       sheetCins: cinList.length > 0 ? cinList : undefined,
     });
   };
@@ -388,6 +403,7 @@ export default function OperationDetail() {
   const handleDialogClose = (open: boolean) => {
     if (!open) {
       setNewTitle("");
+      setNewTargetId(null);
       setCinList([]);
       setCinInput("");
     }
@@ -634,6 +650,29 @@ export default function OperationDetail() {
                 autoFocus
               />
             </div>
+
+            {/* Target selector — only shown when operation has targets */}
+            {operationTargets && operationTargets.length > 0 && (
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1.5 block">
+                  Target <span className="text-muted-foreground font-normal">(optional)</span>
+                </label>
+                <Select
+                  value={newTargetId ? String(newTargetId) : "none"}
+                  onValueChange={(val) => setNewTargetId(val === "none" ? null : Number(val))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select target…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No target</SelectItem>
+                    {operationTargets.map((t) => (
+                      <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             {/* TEAM */}
             <div>

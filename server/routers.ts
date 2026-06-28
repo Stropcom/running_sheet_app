@@ -43,6 +43,7 @@ import {
   updateSheetRow,
   updateUser,
   updateUserRole,
+  getCinCertStatusForSheet,
 } from "./db";
 
 // ─── Role Guards ──────────────────────────────────────────────────────────────
@@ -288,6 +289,13 @@ export const appRouter = router({
         await deleteRunningSheet(input.id);
         await createAuditLog({ sheetId: input.id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "sheet_deleted", details: `Sheet deleted`, createdAt: Date.now() });
         return { success: true };
+      }),
+
+    /** Returns per-CIN certification status for a sheet's TEAM roster. */
+    cinCertStatus: protectedProcedure
+      .input(z.object({ sheetId: z.number(), cins: z.array(z.string()) }))
+      .query(async ({ input }) => {
+        return getCinCertStatusForSheet(input.sheetId, input.cins);
       }),
   }),
 

@@ -154,3 +154,9 @@
 - [x] Shield is the sole certify/uncertify button — tap to certify, tap again to uncertify
 - [x] Shield + status (✕ or certifier CIN) centred within the Certify column
 - [x] CIN column (MemberCell) shows only CIN text + hover delete button — no shield
+
+## Sheet Card CIN Cert Status (Round 15)
+- [x] Remove star/pen/camera icons from CIN badges on sheet cards
+- [x] CIN badges: red when that CIN has uncertified rows, green when all rows certified
+- [x] Sheet card highlights green (border, background, icon, title) when every CIN is fully certified
+- [x] New backend procedure: sheet.cinCertStatus — returns per-CIN certified boolean for a sheet

@@ -306,6 +306,42 @@ export async function deactivateAllCertificationsForRow(rowId: number) {
   await db.update(certifications).set({ isActive: false }).where(eq(certifications.rowId, rowId));
 }
 
+/**
+ * For a given sheet, return per-CIN certification status.
+ * A CIN is "certified" when every row_member row with that memberName
+ * has an active certification.
+ * Returns: { cin: string; certified: boolean }[]
+ */
+export async function getCinCertStatusForSheet(
+  sheetId: number,
+  cinList: string[],
+): Promise<{ cin: string; certified: boolean }[]> {
+  if (cinList.length === 0) return [];
+  const db = await getDb();
+  if (!db) return cinList.map((cin) => ({ cin, certified: false }));
+
+  // Get all rows for this sheet
+  const rows = await db.select({ id: sheetRows.id }).from(sheetRows).where(eq(sheetRows.sheetId, sheetId));
+  if (rows.length === 0) return cinList.map((cin) => ({ cin, certified: false }));
+
+  const rowIds = rows.map((r) => r.id);
+
+  // Get all row_members for these rows
+  const members = await db.select().from(rowMembers).where(inArray(rowMembers.rowId, rowIds));
+
+  // Get all active certifications for these rows
+  const certs = await getCertificationsByRowIds(rowIds);
+
+  return cinList.map((cin) => {
+    const cinMembers = members.filter((m) => m.memberName.toLowerCase() === cin.toLowerCase());
+    if (cinMembers.length === 0) return { cin, certified: false };
+    const allCertified = cinMembers.every((m) =>
+      certs.some((c) => c.memberId === m.id && c.isActive),
+    );
+    return { cin, certified: allCertified };
+  });
+}
+
 // ─── Audit Logs ───────────────────────────────────────────────────────────────
 
 export async function createAuditLog(data: InsertAuditLog) {

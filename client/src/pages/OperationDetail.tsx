@@ -44,6 +44,96 @@ import { toast } from "sonner";
 
 type CinEntry = { cin: string; hasImages: boolean; isTeamLeader?: boolean; isAuthor?: boolean };
 
+
+/** Individual sheet card — fetches cert status and highlights green when all CINs certified */
+function SheetCard({
+  sheet,
+  cinNames,
+  isAdmin,
+  onNavigate,
+  onDelete,
+}: {
+  sheet: { id: number; title: string; createdAt: Date; sheetCins?: string | null };
+  cinNames: string[];
+  isAdmin: boolean;
+  onNavigate: () => void;
+  onDelete: () => void;
+}) {
+  const { data: certStatus } = trpc.sheet.cinCertStatus.useQuery(
+    { sheetId: sheet.id, cins: cinNames },
+    { enabled: cinNames.length > 0, staleTime: 30_000 },
+  );
+
+  const allCertified =
+    cinNames.length > 0 &&
+    certStatus !== undefined &&
+    certStatus.every((s) => s.certified);
+
+  return (
+    <div
+      className={`group relative flex items-center gap-4 p-4 rounded-xl border transition-all duration-150 cursor-pointer ${
+        allCertified
+          ? "border-emerald-500/60 bg-emerald-500/10 hover:bg-emerald-500/15 hover:border-emerald-500/80"
+          : "border-border bg-card hover:bg-accent/20 hover:border-primary/30"
+      }`}
+      onClick={onNavigate}
+    >
+      <div className={`p-2.5 rounded-lg border shrink-0 ${
+        allCertified ? "bg-emerald-500/20 border-emerald-500/40" : "bg-muted/60 border-border"
+      }`}>
+        <FileText className={`w-5 h-5 ${
+          allCertified ? "text-emerald-400" : "text-muted-foreground"
+        }`} />
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <span className={`font-semibold truncate block ${
+          allCertified ? "text-emerald-300" : "text-foreground"
+        }`}>{sheet.title}</span>
+        {cinNames.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-1.5">
+            {cinNames.map((cin) => {
+              const certified = certStatus?.find((s) => s.cin === cin)?.certified ?? false;
+              return (
+                <span
+                  key={cin}
+                  className={`inline-flex items-center text-xs px-2 py-0.5 rounded-full border font-mono ${
+                    certified
+                      ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-400"
+                      : "border-red-500/40 bg-red-500/10 text-red-400"
+                  }`}
+                >
+                  {cin}
+                </span>
+              );
+            })}
+          </div>
+        )}
+        <div className="flex items-center gap-1.5 mt-1.5 text-xs text-muted-foreground">
+          <Calendar className="w-3 h-3" />
+          <span>Created {format(new Date(sheet.createdAt), "d MMM yyyy, HH:mm")}</span>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 shrink-0">
+        {isAdmin && (
+          <Button
+            size="icon"
+            variant="ghost"
+            className="w-8 h-8 opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive hover:bg-destructive/10 transition-opacity"
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          >
+            <Trash2 className="w-4 h-4" />
+          </Button>
+        )}
+        <ChevronRight className={`w-4 h-4 transition-colors ${
+          allCertified ? "text-emerald-400" : "text-muted-foreground group-hover:text-foreground"
+        }`} />
+      </div>
+    </div>
+  );
+}
+
 export default function OperationDetail() {
   const { isAuthenticated, user } = useAuth();
   const params = useParams<{ id: string }>();
@@ -278,62 +368,16 @@ export default function OperationDetail() {
                 }
                 catch { return []; }
               })();
+              const cinNames = parsedCins.map((c) => c.cin);
               return (
-                <div
+                <SheetCard
                   key={sheet.id}
-                  className="group relative flex items-center gap-4 p-4 rounded-xl border border-border bg-card hover:bg-accent/20 hover:border-primary/30 transition-all duration-150 cursor-pointer"
-                  onClick={() => navigate(`/sheet/${sheet.id}`)}
-                >
-                  <div className="p-2.5 rounded-lg bg-muted/60 border border-border shrink-0">
-                    <FileText className="w-5 h-5 text-muted-foreground" />
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <span className="font-semibold text-foreground truncate block">{sheet.title}</span>
-                    {parsedCins.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-1.5">
-                        {parsedCins.map((c) => (
-                          <span
-                            key={c.cin}
-                            className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${
-                              c.isTeamLeader
-                                ? "border-yellow-500/40 bg-yellow-500/10 text-yellow-400"
-                                : c.hasImages
-                                ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
-                                : "border-border bg-muted/40 text-muted-foreground"
-                            }`}
-                          >
-                            {c.isTeamLeader && <span title="Team Leader">★</span>}
-                            {c.isAuthor && <span title="Author" className="text-sky-400">✏</span>}
-                            {c.cin}
-                            {c.hasImages && <Camera className="w-2.5 h-2.5" />}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    <div className="flex items-center gap-1.5 mt-1.5 text-xs text-muted-foreground">
-                      <Calendar className="w-3 h-3" />
-                      <span>Created {format(new Date(sheet.createdAt), "d MMM yyyy, HH:mm")}</span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    {user?.role === "admin" && (
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="w-8 h-8 opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive hover:bg-destructive/10 transition-opacity"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDeleteId(sheet.id);
-                        }}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    )}
-                    <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-                  </div>
-                </div>
+                  sheet={sheet}
+                  cinNames={cinNames}
+                  isAdmin={user?.role === "admin"}
+                  onNavigate={() => navigate(`/sheet/${sheet.id}`)}
+                  onDelete={() => setDeleteId(sheet.id)}
+                />
               );
             })}
           </div>

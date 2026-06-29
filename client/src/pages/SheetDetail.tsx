@@ -912,6 +912,25 @@ export default function SheetDetail() {
   }, [sheet?.sheetCins]);
   const rosterCinList = useMemo(() => parsedRoster.map((e) => e.cin), [parsedRoster]);
 
+  // Compute which CINs have ALL their rows certified
+  const cinFullyCertified = useMemo(() => {
+    if (!rows || rows.length === 0) return new Set<string>();
+    const certified = new Set<string>();
+    for (const entry of parsedRoster) {
+      const cin = entry.cin;
+      // Find all rows where this CIN is a member
+      const relevantRows = rows.filter((r) => r.members.some((m) => m.memberName === cin));
+      if (relevantRows.length === 0) continue; // not in any row yet
+      const allCertified = relevantRows.every((r) =>
+        r.members
+          .filter((m) => m.memberName === cin)
+          .every((m) => r.certifications.some((c) => c.memberId === m.id && c.isActive))
+      );
+      if (allCertified) certified.add(cin);
+    }
+    return certified;
+  }, [rows, parsedRoster]);
+
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
   const [sortReversed, setSortReversed] = useState(false);
@@ -1149,10 +1168,14 @@ export default function SheetDetail() {
                   key={entry.cin}
                   onClick={() => certifyAllForCin.mutate({ sheetId, cin: entry.cin })}
                   disabled={certifyAllForCin.isPending}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-border bg-muted/40 hover:bg-primary/10 hover:border-primary/40 text-xs font-mono font-medium text-foreground transition-colors disabled:opacity-50"
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-mono font-medium transition-colors disabled:opacity-50 ${
+                    cinFullyCertified.has(entry.cin)
+                      ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/25"
+                      : "border-border bg-muted/40 hover:bg-primary/10 hover:border-primary/40 text-foreground"
+                  }`}
                   title={`Certify all rows for CIN ${entry.cin}${entry.isTeamLeader ? " (Team Leader)" : ""}${entry.isAuthor ? " (Author)" : ""}`}
                 >
-                  <ShieldCheck className="w-3 h-3 text-primary" />
+                  <ShieldCheck className={`w-3 h-3 ${cinFullyCertified.has(entry.cin) ? "text-emerald-500" : "text-primary"}`} />
                   {entry.isTeamLeader && <span className="text-yellow-400" title="Team Leader">★</span>}
                   {entry.isAuthor && <span className="text-sky-400" title="Running Sheet Author">✏️</span>}
                   {entry.cin}

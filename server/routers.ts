@@ -51,6 +51,7 @@ import {
   deleteTarget,
   setSheetTarget,
   deepSearchOperations,
+  getAllIntelligenceEntities,
   listShortcuts,
   createShortcut,
   updateShortcut,
@@ -797,6 +798,14 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         await deleteShortcut(input.id);
         return { success: true };
+      }),
+  }),
+  /** Intelligence Folder */
+  intelligence: router({
+    /** List all extracted entities from all observation rows */
+    getEntities: protectedProcedure
+      .query(async () => {
+        return getAllIntelligenceEntities();
       }),
   }),
 });

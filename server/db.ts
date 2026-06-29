@@ -722,3 +722,129 @@ export async function deepSearchOperations(query: string): Promise<DeepSearchMat
     matchContexts: Array.from(matchMap.get(op.id) ?? []),
   }));
 }
+
+// ─── Intelligence ─────────────────────────────────────────────────────────────
+
+/**
+ * Extract bracketed entities from a single observation string.
+ * Pattern: any text followed by (ShortForm) — the short form is the entity identifier.
+ * We classify by heuristics on the preceding context words.
+ */
+export function extractEntitiesFromText(text: string): Array<{
+  shortForm: string;
+  fullDescription: string;
+  type: "person" | "vehicle" | "address" | "business" | "unknown";
+}> {
+  const results: Array<{
+    shortForm: string;
+    fullDescription: string;
+    type: "person" | "vehicle" | "address" | "business" | "unknown";
+  }> = [];
+
+  // Match: some preceding text (fullDescription) immediately followed by (ShortForm)
+  const pattern = /([^()]{3,120}?)\s*\(([^()]{1,80})\)/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(text)) !== null) {
+    const fullDescription = match[1].trim();
+    const shortForm = match[2].trim();
+
+    // Skip empty or very short short-forms
+    if (shortForm.length < 2) continue;
+    // Skip if shortForm looks like a time (e.g. "08:00")
+    if (/^\d{1,2}:\d{2}$/.test(shortForm)) continue;
+
+    const lowerFull = fullDescription.toLowerCase();
+    const lowerShort = shortForm.toLowerCase();
+
+    let type: "person" | "vehicle" | "address" | "business" | "unknown" = "unknown";
+
+    // Vehicle: preceding text mentions vehicle/car/truck/van/ute/sedan/hatchback/SUV/registration/bearing/reg
+    if (
+      /\b(vehicle|car|truck|van|ute|sedan|hatchback|suv|wagon|coupe|bearing|registration|reg|plate)\b/.test(lowerFull)
+    ) {
+      type = "vehicle";
+    }
+    // Person: shortForm is all-caps word(s) with no digits, no street number pattern
+    else if (/^[A-Z][A-Z\s'-]{1,40}$/.test(shortForm) && !/\d/.test(shortForm) && !/street|road|ave|drive|way|court|place|close|crescent/i.test(shortForm)) {
+      type = "person";
+    }
+    // Address: shortForm starts with a number or contains street/road/ave/drive etc.
+    else if (
+      /^\d/.test(shortForm) ||
+      /\b(street|road|ave|avenue|drive|way|court|place|close|crescent|boulevard|highway|freeway)\b/i.test(shortForm)
+    ) {
+      type = "address";
+    }
+    // Business: shortForm contains a proper noun (mixed case or known business words)
+    else if (/[A-Z][a-z]/.test(shortForm) || /\b(hotel|motel|cafe|restaurant|shop|store|centre|center|gym|club|bar|pub)\b/i.test(lowerShort)) {
+      type = "business";
+    }
+
+    results.push({ shortForm, fullDescription, type });
+  }
+
+  return results;
+}
+
+export interface IntelligenceEntity {
+  shortForm: string;
+  type: "person" | "vehicle" | "address" | "business" | "unknown";
+  occurrences: Array<{
+    sheetId: number;
+    sheetTitle: string;
+    operationId: number;
+    operationName: string;
+    rowId: number;
+    observationSnippet: string;
+    timeMinutes: number | null;
+    fullDescription: string;
+  }>;
+}
+
+export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  // Fetch all rows with their sheet and operation info
+  const rows = await db
+    .select({
+      rowId: sheetRows.id,
+      observation: sheetRows.observation,
+      timeMinutes: sheetRows.timeMinutes,
+      sheetId: sheetRows.sheetId,
+      sheetTitle: runningSheets.title,
+      operationId: runningSheets.operationId,
+      operationName: operations.name,
+    })
+    .from(sheetRows)
+    .innerJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
+    .innerJoin(operations, eq(runningSheets.operationId, operations.id))
+    .orderBy(sheetRows.timeMinutes);
+
+  const entityMap = new Map<string, IntelligenceEntity>();
+
+  for (const row of rows) {
+    if (!row.observation) continue;
+    const entities = extractEntitiesFromText(row.observation);
+    for (const e of entities) {
+      const key = `${e.type}::${e.shortForm}`;
+      if (!entityMap.has(key)) {
+        entityMap.set(key, { shortForm: e.shortForm, type: e.type, occurrences: [] });
+      }
+      const snippet = row.observation.slice(0, 80) + (row.observation.length > 80 ? "…" : "");
+      entityMap.get(key)!.occurrences.push({
+        sheetId: row.sheetId,
+        sheetTitle: row.sheetTitle,
+        operationId: row.operationId,
+        operationName: row.operationName,
+        rowId: row.rowId,
+        observationSnippet: snippet,
+        timeMinutes: row.timeMinutes ?? null,
+        fullDescription: e.fullDescription,
+      });
+    }
+  }
+
+  return Array.from(entityMap.values());
+}

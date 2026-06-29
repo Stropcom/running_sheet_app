@@ -210,3 +210,13 @@
 - [x] Frontend: Show TEAM column in User Management table
 - [x] Frontend: Add TEAM 1 / TEAM 2 / PTT group options to CIN add dropdown on running sheet row — expands to all members of that team
 - [x] Frontend: Add TEAM 1 / TEAM 2 / PTT group options to New Running Sheet roster — expands to all members of that team
+
+## Intelligence Folder (Round 33)
+- [x] Backend: entity extraction utility — parse bracketed entities (persons, vehicles, addresses, businesses) from observation text
+- [x] Backend: tRPC intelligence.getEntities procedure — returns all unique entities with occurrence counts, first/last seen, linked sheets
+- [x] Backend: tRPC intelligence.getPersonProfile procedure — returns full profile for a named entity (all linked vehicles, addresses, businesses, persons, running sheets)
+- [x] Frontend: Intelligence page — list of all persons with search/filter
+- [x] Frontend: Person profile view — shows linked vehicles, addresses, businesses, associated persons, running sheets
+- [x] Frontend: Selectable sections before PDF export (Running Sheets, Vehicles, Addresses, Persons, Businesses)
+- [x] Frontend: PDF export for person profile with only selected sections
+- [x] Sidebar nav entry for Intelligence

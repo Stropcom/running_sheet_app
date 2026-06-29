@@ -125,53 +125,25 @@ function exportToPDF(
     });
   } catch { cinRoster = []; }
 
-  // ── Cover page ────────────────────────────────────────────────────────────────────────────
-  const metaRow = (label: string, value: string) =>
-    `<tr><td style="padding:5px 10px;font-weight:600;color:#94a3b8;white-space:nowrap;width:160px">${label}</td><td style="padding:5px 10px;color:#e2e8f0">${value}</td></tr>`;
+  // ── Page header (repeats on every page) ─────────────────────────────────────
+  const operationName = operation?.name ?? "";
+  const dateStr = format(new Date(sheetCreatedAt), "d MMMM yyyy");
 
-  const cinRosterHtml = cinRoster.length > 0
-    ? `<table style="border-collapse:collapse;margin-top:14px;width:auto;border:1px solid #334155">
-        <thead><tr>
-          <th style="padding:5px 10px;background:#1e293b;color:#94a3b8;font-weight:600;border-bottom:2px solid #334155;border-right:1px solid #334155;text-align:left">CIN</th>
-          <th style="padding:5px 10px;background:#1e293b;color:#94a3b8;font-weight:600;border-bottom:2px solid #334155;text-align:left">Images Taken</th>
-        </tr></thead>
-        <tbody>${cinRoster.map(c => {
-          const icons = (c.isTeamLeader ? '<span style="color:#eab308;margin-right:4px">★</span>' : '') + (c.isAuthor ? '<span style="color:#38bdf8;margin-right:4px">✏</span>' : '');
-          return `<tr><td style="padding:5px 10px;border-bottom:1px solid #1e293b;border-right:1px solid #334155;font-family:monospace;font-weight:${c.isTeamLeader ? '700' : '400'}">${icons}${c.cin}</td><td style="padding:5px 10px;border-bottom:1px solid #1e293b;color:${c.hasImages ? certColor : '#ef4444'}">${c.hasImages ? '&#10003; Yes' : '&#10007; No'}</td></tr>`;
-        }).join('')}</tbody>
-      </table>`
-    : `<p style="color:#64748b;font-style:italic;margin-top:8px">No TEAM recorded.</p>`;
-
-  const coverPage = `
-    <div style="page-break-after:always;padding-bottom:20px">
-      <div style="border-bottom:2px solid #334155;padding-bottom:12px;margin-bottom:16px">
-        <div style="font-size:10px;font-weight:600;letter-spacing:0.1em;color:#64748b;text-transform:uppercase;margin-bottom:4px">RUNNING SHEET</div>
-        <h1 style="font-size:22px;font-weight:700;margin:0 0 4px;color:#f8fafc">${sheetTitle}</h1>
-        ${targetName ? `<div style="font-size:13px;color:#94a3b8;margin-bottom:2px">Target: <span style="color:#e2e8f0;font-weight:600">${targetName}</span></div>` : ""}
-        <div style="font-size:11px;color:#64748b">Sheet Date: ${format(new Date(sheetCreatedAt), "EEEE d MMMM yyyy")}</div>
-      </div>
-
-      ${operation ? `
-      <div style="margin-bottom:20px">
-        <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:#64748b;text-transform:uppercase;margin-bottom:8px">Operation Details</div>
-        <table style="border-collapse:collapse;width:100%;border:1px solid #334155">
-          <tbody>
-            ${metaRow("Operation Name", operation.name)}
-            ${operation.promisNumber ? metaRow("PROMIS Number", operation.promisNumber) : ""}
-            ${operation.imsNumber ? metaRow("IMS Number", operation.imsNumber) : ""}
-            ${operation.investigationUnit ? metaRow("Investigation Unit", operation.investigationUnit) : ""}
-          </tbody>
-        </table>
-      </div>` : ""}
-
-      <div>
-        <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:#64748b;text-transform:uppercase;margin-bottom:8px">TEAM</div>
-        ${cinRosterHtml}
-      </div>
-
-      <div style="margin-top:20px;font-size:10px;color:#475569">
-        Exported: ${format(new Date(), "d MMM yyyy, HH:mm")} &bull; ${rows.length} log entries
-      </div>
+  const pageHeader = `
+    <div class="page-header">
+      <div class="page-title">WC SURVEILLANCE RUNNING SHEET</div>
+      <table class="meta-table">
+        <tbody>
+          <tr>
+            <td class="meta-label">OPERATION:</td>
+            <td class="meta-value">${operationName}</td>
+            <td class="meta-label">TARGET:</td>
+            <td class="meta-value">${targetName ?? ""}</td>
+            <td class="meta-label">DATE:</td>
+            <td class="meta-value">${dateStr}</td>
+          </tr>
+        </tbody>
+      </table>
     </div>`;
 
   // ── Running sheet table ──────────────────────────────────────────────────────
@@ -220,20 +192,28 @@ function exportToPDF(
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
   <title>${sheetTitle}</title>
   <style>
-    @page{margin:15mm}
-    body{font-family:system-ui,sans-serif;background:#0a0f1a;color:#e2e8f0;margin:0;padding:0;font-size:12px}
-    table{width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #334155}
+    @page{
+      margin:15mm;
+      @bottom-center{content:counter(page);font-family:system-ui,sans-serif;font-size:10px;color:#64748b}
+    }
+    body{font-family:system-ui,sans-serif;background:#fff;color:#000;margin:0;padding:0;font-size:12px}
+    .page-header{text-align:center;margin-bottom:10px}
+    .page-title{font-size:16px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:8px}
+    .meta-table{width:100%;border-collapse:collapse;border:1px solid #334155;margin-bottom:12px;table-layout:auto}
+    .meta-label{padding:5px 8px;font-weight:700;font-size:11px;white-space:nowrap;background:#f1f5f9;border:1px solid #cbd5e1;text-transform:uppercase;width:1%;color:#000}
+    .meta-value{padding:5px 8px;font-size:11px;border:1px solid #cbd5e1;color:#000}
+    table.log-table{width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #334155}
     col.c-time{width:70px}
     col.c-obs{width:auto}
     col.c-member{width:50px}
     col.c-cert{width:160px}
-    th{background:#1e293b;color:#94a3b8;font-weight:600;padding:6px;text-align:left;
+    .log-table th{background:#f1f5f9;color:#000;font-weight:700;padding:6px;text-align:left;
        border-bottom:2px solid #334155;border-right:1px solid #334155;overflow:hidden}
-    th:last-child,td:last-child{border-right:none}
-    td{vertical-align:top;word-break:break-word;overflow:hidden}
+    .log-table th:last-child,.log-table td:last-child{border-right:none}
+    .log-table td{vertical-align:top;word-break:break-word;overflow:hidden;color:#000}
   </style></head><body>
-  ${coverPage}
-  <table>
+  ${pageHeader}
+  <table class="log-table">
     <colgroup>
       <col class="c-time"/>
       <col class="c-obs"/>

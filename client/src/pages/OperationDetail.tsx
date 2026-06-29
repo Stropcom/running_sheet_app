@@ -109,7 +109,7 @@ function TargetCard({
       {expanded && (
         <div className="px-4 pb-4 pt-1 flex flex-col gap-3 border-t border-border/50">
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Name / Codename</label>
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Full Name, Born</label>
             <Input value={name} onChange={(e) => { setName(e.target.value); setDirty(true); }} />
           </div>
           {([
@@ -212,7 +212,7 @@ function TargetPanel({ operationId, autoExpandId }: { operationId: number; autoE
         <div className="flex gap-2 mt-1">
           <Input
             autoFocus
-            placeholder="Target name or codename"
+            placeholder="Full name, born (e.g. John SMITH, born 1 Jan 1980)"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && newName.trim()) create.mutate({ operationId, name: newName.trim() }); if (e.key === "Escape") setAdding(false); }}

@@ -152,15 +152,14 @@ function exportToPDF(
 
   // ── Running sheet table ──────────────────────────────────────────────────────
   // Spacer row inserted after each log entry for breathing room
-  const spacerRow = `<tr><td colspan="4" style="padding:0;height:8px;border:none;background:transparent"></td></tr>`;
+  const spacerRow = `<tr><td colspan="3" style="padding:0;height:8px;border:none;background:transparent"></td></tr>`;
 
   const tableRows = rows.map((row) => {
     const rowBg = row.isLocked ? lockedBg : "transparent";
     if (row.members.length === 0) {
       return `<tr style="background:${rowBg}">
-        <td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap" rowspan="1">${row.time ?? ""}</td>
-        <td style="padding:6px 6px 8px;${bb};${cb}" rowspan="1">${row.observation ?? ""}</td>
-        <td style="padding:6px 6px 8px;${bb};${cb};white-space:nowrap"><em style='color:#6b7280'>No members</em></td>
+        <td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap">${row.time ?? ""}</td>
+        <td style="padding:6px 6px 8px;${bb};${cb}">${row.observation ?? ""}</td>
         <td style="padding:6px 6px 8px;${bb};font-size:11px"></td>
       </tr>${spacerRow}`;
     }
@@ -184,10 +183,14 @@ function exportToPDF(
       // Top/bottom padding: generous on first/last, tight on inner member rows
       const pt = isFirst ? "6px" : "2px";
       const pb = isLast ? "8px" : "2px";
+      // Build CIN Certified cell: show CIN + cert info
+      const cinLabel = m.memberName;
+      const cinCertCell = cert
+        ? `${cinLabel} &mdash; <span style='color:${certColor};white-space:nowrap'>&#10003; ${'certifiedByCIN' in cert ? (cert as any).certifiedByCIN || cert.certifiedByName : cert.certifiedByName} <span style='color:#555;font-size:10px'>${format(new Date(cert.certifiedAt), "dd/MM/yy h:mmaaa")}</span></span>`
+        : `${cinLabel} &mdash; <span style='color:#ef4444'>Pending</span>`;
       return `<tr style="background:${rowBg}">
         ${timeTd}${obsTd}
-        <td style="padding:${pt} 6px ${pb} 6px;${memberBb};${cb};white-space:nowrap;font-family:monospace;font-size:11px">${m.memberName}</td>
-        <td style="padding:${pt} 6px ${pb} 6px;${memberBb};font-size:11px">${certCell}</td>
+        <td style="padding:${pt} 6px ${pb} 6px;${memberBb};font-size:11px">${cinCertCell}</td>
       </tr>`;
     }).join("");
     return memberRows + spacerRow;
@@ -207,10 +210,9 @@ function exportToPDF(
     .meta-label{padding:5px 8px;font-weight:700;font-size:11px;white-space:nowrap;background:#f1f5f9;border:1px solid #cbd5e1;text-transform:uppercase;width:1%;color:#000}
     .meta-value{padding:5px 8px;font-size:11px;border:1px solid #cbd5e1;color:#000}
     table.log-table{width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #334155}
-    col.c-time{width:70px}
+    col.c-time{width:80px}
     col.c-obs{width:auto}
-    col.c-member{width:50px}
-    col.c-cert{width:160px}
+    col.c-cert{width:220px}
     .log-table th{background:#f1f5f9;color:#000;font-weight:700;padding:6px;text-align:left;
        border-bottom:2px solid #334155;border-right:1px solid #334155;overflow:hidden}
     .log-table th:last-child,.log-table td:last-child{border-right:none}
@@ -221,14 +223,12 @@ function exportToPDF(
     <colgroup>
       <col class="c-time"/>
       <col class="c-obs"/>
-      <col class="c-member"/>
       <col class="c-cert"/>
     </colgroup>
     <thead><tr>
       <th>Time</th>
       <th>Observation</th>
-      <th>CIN</th>
-      <th>Certified (CIN)</th>
+      <th>CIN Certified</th>
     </tr></thead>
     <tbody>${tableRows}</tbody>
   </table>

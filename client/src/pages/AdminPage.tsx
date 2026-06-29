@@ -54,10 +54,13 @@ const ROLE_ICONS: Record<Role, React.ReactNode> = {
   observer: <Eye className="w-3 h-3" />,
 };
 
+type TeamValue = "TEAM1" | "TEAM2" | "PTT" | undefined;
+
 interface UserFormData {
   name: string;
   cin: string;
   unit: string;
+  team: TeamValue;
   username: string;
   password: string;
   role: Role;
@@ -67,6 +70,7 @@ const emptyForm = (): UserFormData => ({
   name: "",
   cin: "",
   unit: "",
+  team: undefined,
   username: "",
   password: "",
   role: "observer",
@@ -110,6 +114,20 @@ function UserFormFields({ form, setForm, isEdit = false }: UserFormFieldsProps) 
           value={form.unit}
           onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))}
         />
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs uppercase tracking-wider text-muted-foreground">Team</Label>
+        <Select value={form.team ?? "__none__"} onValueChange={(v) => setForm((f) => ({ ...f, team: v === "__none__" ? undefined : v as TeamValue }))}>
+          <SelectTrigger>
+            <SelectValue placeholder="Select team (optional)" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">— None —</SelectItem>
+            <SelectItem value="TEAM1">TEAM 1</SelectItem>
+            <SelectItem value="TEAM2">TEAM 2</SelectItem>
+            <SelectItem value="PTT">PTT</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
@@ -208,6 +226,7 @@ export default function AdminPage() {
     if (form.name) payload.name = form.name;
     if (form.cin) payload.cin = form.cin;
     payload.unit = form.unit;
+    payload.team = form.team ?? null;
     if (form.username) payload.username = form.username;
     if (form.password) payload.password = form.password;
     payload.role = form.role;
@@ -220,6 +239,7 @@ export default function AdminPage() {
       name: u.name ?? "",
       cin: u.cin ?? "",
       unit: u.unit ?? "",
+      team: (u.team as TeamValue) ?? undefined,
       username: u.username ?? "",
       password: "",
       role: (u.role as Role) ?? "observer",
@@ -276,6 +296,7 @@ export default function AdminPage() {
                 <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Name</TableHead>
                 <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium">CIN</TableHead>
                 <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Unit</TableHead>
+                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Team</TableHead>
                 <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Username</TableHead>
                 <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Access Level</TableHead>
                 <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Last Sign In</TableHead>
@@ -285,13 +306,13 @@ export default function AdminPage() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
                     <Loader2 className="w-5 h-5 animate-spin mx-auto" />
                   </TableCell>
                 </TableRow>
               ) : !users?.length ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-12 text-muted-foreground text-sm">
+                  <TableCell colSpan={8} className="text-center py-12 text-muted-foreground text-sm">
                     No users registered yet. Add the first user above.
                   </TableCell>
                 </TableRow>
@@ -306,6 +327,7 @@ export default function AdminPage() {
                     </TableCell>
                     <TableCell className="font-mono text-sm text-foreground/80">{u.cin || "—"}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{u.unit || "—"}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{u.team ? u.team.replace("TEAM", "TEAM ") : "—"}</TableCell>
                     <TableCell className="font-mono text-sm text-muted-foreground">{u.username}</TableCell>
                     <TableCell>
                       <span

@@ -57,6 +57,13 @@
       "when": 1782660394175,
       "tag": "0007_workable_luke_cage",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1782694444116,
+      "tag": "0008_talented_ulik",
+      "breakpoints": true
     }
   ]
 }

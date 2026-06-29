@@ -381,6 +381,11 @@ export default function OperationDetail() {
     { enabled: isAuthenticated && !!operationId }
   );
 
+  // Fetch all users so we can add a whole team at once
+  const { data: allUsers } = trpc.admin.listUsers.useQuery(undefined, {
+    enabled: isAuthenticated && user?.role === "admin",
+  });
+
   // Populate edit form when operation loads
   useEffect(() => {
     if (operation) {
@@ -421,6 +426,25 @@ export default function OperationDetail() {
     },
     onError: (e) => toast.error(e.message),
   });
+
+  const handleAddTeam = (teamKey: "TEAM1" | "TEAM2" | "PTT") => {
+    if (!allUsers) { toast.error("User list not available"); return; }
+    const members = allUsers.filter((u) => u.team === teamKey);
+    if (members.length === 0) { toast.error("No members found in that team"); return; }
+    let added = 0;
+    setCinList((prev) => {
+      let updated = [...prev];
+      for (const m of members) {
+        if (!updated.some((c) => c.cin.toLowerCase() === m.cin.toLowerCase())) {
+          updated = [...updated, { cin: m.cin, hasImages: false, isTeamLeader: false, isAuthor: false }];
+          added++;
+        }
+      }
+      return updated;
+    });
+    if (added === 0) toast.info("All team members already added");
+    else toast.success(`Added ${added} member${added !== 1 ? "s" : ""} from ${teamKey.replace("TEAM", "TEAM ")}`); 
+  };
 
   const handleAddCin = () => {
     const trimmed = cinInput.trim();
@@ -764,7 +788,7 @@ export default function OperationDetail() {
               </p>
 
               {/* CIN input row */}
-              <div className="flex gap-2 mb-3">
+              <div className="flex gap-2 mb-2">
                 <Input
                   placeholder="Enter CIN and press Add"
                   value={cinInput}
@@ -784,6 +808,24 @@ export default function OperationDetail() {
                   Add
                 </Button>
               </div>
+              {/* Team group buttons — only shown to admins who have allUsers loaded */}
+              {user?.role === "admin" && (
+                <div className="flex gap-1.5 mb-3">
+                  <span className="text-xs text-muted-foreground self-center mr-1">Add team:</span>
+                  {(["TEAM1", "TEAM2", "PTT"] as const).map((t) => (
+                    <Button
+                      key={t}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleAddTeam(t)}
+                      className="text-xs h-7 px-2.5"
+                    >
+                      {t === "TEAM1" ? "TEAM 1" : t === "TEAM2" ? "TEAM 2" : "PTT"}
+                    </Button>
+                  ))}
+                </div>
+              )}
 
               {/* CIN list */}
               {cinList.length > 0 && (

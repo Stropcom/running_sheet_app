@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `team` enum('TEAM1','TEAM2','PTT');

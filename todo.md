@@ -202,3 +202,11 @@
 ## Deep Operations Search (Round 31)
 - [x] Backend: tRPC operation.deepSearch procedure — searches operation fields + sheet titles + CINs + target names + observation text
 - [x] Frontend: Home page uses deepSearch when query is non-empty, shows match context under each result
+
+## User TEAM Field + Group CIN Selection (Round 32)
+- [x] DB: add team column (enum: TEAM1, TEAM2, PTT, nullable) to users table
+- [x] Backend: include team in user create/update/list procedures
+- [x] Frontend: Add TEAM dropdown to Add New User form (below UNIT)
+- [x] Frontend: Show TEAM column in User Management table
+- [x] Frontend: Add TEAM 1 / TEAM 2 / PTT group options to CIN add dropdown on running sheet row — expands to all members of that team
+- [x] Frontend: Add TEAM 1 / TEAM 2 / PTT group options to New Running Sheet roster — expands to all members of that team

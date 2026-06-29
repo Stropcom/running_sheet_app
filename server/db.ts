@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, like, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, like, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   auditLogs,
@@ -806,7 +806,9 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
   const db = await getDb();
   if (!db) return [];
 
-  // Fetch all rows with their sheet and operation info
+  const entityMap = new Map<string, IntelligenceEntity>();
+
+  // ── 1. Extract from observation rows ──────────────────────────────────────
   const rows = await db
     .select({
       rowId: sheetRows.id,
@@ -821,8 +823,6 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
     .innerJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
     .innerJoin(operations, eq(runningSheets.operationId, operations.id))
     .orderBy(sheetRows.timeMinutes);
-
-  const entityMap = new Map<string, IntelligenceEntity>();
 
   for (const row of rows) {
     if (!row.observation) continue;
@@ -842,6 +842,93 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
         observationSnippet: snippet,
         timeMinutes: row.timeMinutes ?? null,
         fullDescription: e.fullDescription,
+      });
+    }
+  }
+
+  // ── 2. Extract from target cards (TGT, HB, V1, V2, WB — NOT DEP/ARR) ─────
+  const targetRows = await db
+    .select({
+      targetId: targets.id,
+      targetName: targets.name,
+      tgt: targets.tgt,
+      hb: targets.hb,
+      v1: targets.v1,
+      v2: targets.v2,
+      wb: targets.wb,
+      operationId: targets.operationId,
+      operationName: operations.name,
+    })
+    .from(targets)
+    .innerJoin(operations, eq(targets.operationId, operations.id));
+
+  // Find sheets linked to each target so we can populate sheetId/sheetTitle
+  const sheetsByTarget = await db
+    .select({
+      targetId: runningSheets.targetId,
+      sheetId: runningSheets.id,
+      sheetTitle: runningSheets.title,
+    })
+    .from(runningSheets)
+    .where(isNotNull(runningSheets.targetId));
+
+  const targetSheetMap = new Map<number, Array<{ sheetId: number; sheetTitle: string }>>();
+  for (const s of sheetsByTarget) {
+    if (s.targetId === null) continue;
+    if (!targetSheetMap.has(s.targetId)) targetSheetMap.set(s.targetId, []);
+    targetSheetMap.get(s.targetId)!.push({ sheetId: s.sheetId, sheetTitle: s.sheetTitle });
+  }
+
+  for (const t of targetRows) {
+    // Fields to include: TGT (person), HB (address), V1 (vehicle), V2 (vehicle), WB (address)
+    const fields: Array<{ label: string; value: string | null; type: IntelligenceEntity["type"] }> = [
+      { label: "TGT", value: t.tgt, type: "person" },
+      { label: "HB",  value: t.hb,  type: "address" },
+      { label: "V1",  value: t.v1,  type: "vehicle" },
+      { label: "V2",  value: t.v2,  type: "vehicle" },
+      { label: "WB",  value: t.wb,  type: "address" },
+    ];
+
+    const linkedSheets = targetSheetMap.get(t.targetId) ?? [];
+    // Use a synthetic sheetId of 0 if no sheets are linked yet
+    const sheetEntries = linkedSheets.length > 0 ? linkedSheets : [{ sheetId: 0, sheetTitle: "(no sheet linked)" }];
+
+    for (const field of fields) {
+      if (!field.value || field.value.trim() === "") continue;
+      const shortForm = field.value.trim();
+      const key = `${field.type}::${shortForm}`;
+      if (!entityMap.has(key)) {
+        entityMap.set(key, { shortForm, type: field.type, occurrences: [] });
+      }
+      for (const sheet of sheetEntries) {
+        entityMap.get(key)!.occurrences.push({
+          sheetId: sheet.sheetId,
+          sheetTitle: sheet.sheetTitle,
+          operationId: t.operationId,
+          operationName: t.operationName,
+          rowId: 0,
+          observationSnippet: `Target card — ${t.targetName} [${field.label}]`,
+          timeMinutes: null,
+          fullDescription: `${field.label}: ${shortForm} (from target: ${t.targetName}, operation: ${t.operationName})`,
+        });
+      }
+    }
+
+    // Also add the target name itself as a person entity
+    const nameKey = `person::${t.targetName}`;
+    if (!entityMap.has(nameKey)) {
+      entityMap.set(nameKey, { shortForm: t.targetName, type: "person", occurrences: [] });
+    }
+    for (const sheet of sheetEntries) {
+      entityMap.get(nameKey)!.occurrences.push({
+        sheetId: sheet.sheetId,
+        sheetTitle: sheet.sheetTitle,
+        operationId: t.operationId,
+        operationName: t.operationName,
+        rowId: 0,
+        observationSnippet: `Target card — ${t.targetName}`,
+        timeMinutes: null,
+        fullDescription: `Target: ${t.targetName} (operation: ${t.operationName})`,
       });
     }
   }

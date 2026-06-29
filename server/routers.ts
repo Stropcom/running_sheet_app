@@ -49,6 +49,7 @@ import {
   createTarget,
   updateTarget,
   deleteTarget,
+  getTargetById,
   setSheetTarget,
   deepSearchOperations,
   getAllIntelligenceEntities,
@@ -585,6 +586,7 @@ export const appRouter = router({
         const sheet = await getRunningSheetById(input.id);
         if (!sheet) throw new TRPCError({ code: "NOT_FOUND", message: "Sheet not found." });
         const operation = sheet.operationId ? await getOperationById(sheet.operationId) : null;
+        const target = sheet.targetId ? await getTargetById(sheet.targetId) : null;
         const rows = await getRowsBySheetId(input.id);
         const rowIds = rows.map((r) => r.id);
         const [members, certs] = await Promise.all([
@@ -594,6 +596,7 @@ export const appRouter = router({
         return {
           sheet,
           operation,
+          targetFullName: target?.name ?? sheet.targetName ?? null,
           rows: rows.map((row) => ({
             ...row,
             members: members.filter((m) => m.rowId === row.id),

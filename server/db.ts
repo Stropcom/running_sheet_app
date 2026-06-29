@@ -473,6 +473,13 @@ export async function updateTarget(
   return { id };
 }
 
+export async function getTargetById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const [result] = await db.select().from(targets).where(eq(targets.id, id)).limit(1);
+  return result;
+}
+
 export async function deleteTarget(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");

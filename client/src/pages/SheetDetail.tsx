@@ -105,7 +105,7 @@ function exportToPDF(
   operation: OperationMeta,
   sheetCinsRaw: string | null,
   sheetCreatedAt: Date,
-  targetName?: string | null,
+  targetFullName?: string | null,
 ) {
   const certColor = "#22c55e";
   const lockedBg = "#0f2a1a";
@@ -137,8 +137,12 @@ function exportToPDF(
           <tr>
             <td class="meta-label">OPERATION:</td>
             <td class="meta-value">${operationName}</td>
+          </tr>
+          <tr>
             <td class="meta-label">TARGET:</td>
-            <td class="meta-value">${targetName ?? ""}</td>
+            <td class="meta-value">${targetFullName ?? ""}</td>
+          </tr>
+          <tr>
             <td class="meta-label">DATE:</td>
             <td class="meta-value">${dateStr}</td>
           </tr>
@@ -198,7 +202,7 @@ function exportToPDF(
     }
     body{font-family:system-ui,sans-serif;background:#fff;color:#000;margin:0;padding:0;font-size:12px}
     .page-header{text-align:center;margin-bottom:10px}
-    .page-title{font-size:16px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:8px}
+    .page-title{font-size:20px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:8px}
     .meta-table{width:100%;border-collapse:collapse;border:1px solid #334155;margin-bottom:12px;table-layout:auto}
     .meta-label{padding:5px 8px;font-weight:700;font-size:11px;white-space:nowrap;background:#f1f5f9;border:1px solid #cbd5e1;text-transform:uppercase;width:1%;color:#000}
     .meta-value{padding:5px 8px;font-size:11px;border:1px solid #cbd5e1;color:#000}
@@ -986,7 +990,7 @@ export default function SheetDetail() {
         exportData.operation ?? null,
         exportData.sheet.sheetCins ?? null,
         exportData.sheet.createdAt,
-        exportData.sheet.targetName ?? null,
+        exportData.targetFullName ?? null,
       );
       setPendingExportType(null);
     }

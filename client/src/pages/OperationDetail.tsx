@@ -237,6 +237,7 @@ function TargetPanel({ operationId, autoExpandId }: { operationId: number; autoE
 function SheetCard({
   sheet,
   cinNames,
+  cinEntries,
   isAdmin,
   targetName,
   onNavigate,
@@ -244,6 +245,7 @@ function SheetCard({
 }: {
   sheet: { id: number; title: string; createdAt: Date; sheetCins?: string | null };
   cinNames: string[];
+  cinEntries?: CinEntry[];
   isAdmin: boolean;
   targetName?: string | null;
   onNavigate: () => void;
@@ -284,15 +286,18 @@ function SheetCard({
           <div className="flex flex-wrap gap-1 mt-1.5">
             {cinNames.map((cin) => {
               const certified = certStatus?.find((s) => s.cin === cin)?.certified ?? false;
+              const entry = cinEntries?.find((e) => e.cin === cin);
               return (
                 <span
                   key={cin}
-                  className={`inline-flex items-center text-xs px-2 py-0.5 rounded-full border font-mono ${
+                  className={`inline-flex items-center gap-0.5 text-xs px-2 py-0.5 rounded-full border font-mono ${
                     certified
                       ? "border-emerald-500/50 bg-emerald-500/15 text-black dark:text-emerald-400"
                       : "border-red-500/40 bg-red-500/10 text-red-400"
                   }`}
                 >
+                  {entry?.isTeamLeader && <span className="text-yellow-400" title="Team Leader">★</span>}
+                  {entry?.isAuthor && <span className="text-sky-400" title="Author">✏</span>}
                   {cin}
                 </span>
               );
@@ -625,6 +630,7 @@ export default function OperationDetail() {
                   key={sheet.id}
                   sheet={sheet}
                   cinNames={cinNames}
+                  cinEntries={parsedCins}
                   isAdmin={user?.role === "admin"}
                   targetName={assignedTarget?.name ?? null}
                   onNavigate={() => navigate(`/sheet/${sheet.id}`)}

@@ -183,11 +183,11 @@ function exportToPDF(
       // Top/bottom padding: generous on first/last, tight on inner member rows
       const pt = isFirst ? "6px" : "2px";
       const pb = isLast ? "8px" : "2px";
-      // Build CIN Certified cell: show CIN + cert info
-      const cinLabel = m.memberName;
+      // Build CIN Certified cell: tick + certifier CIN + date only
+      const certifierCIN = cert ? ('certifiedByCIN' in cert ? (cert as any).certifiedByCIN || cert.certifiedByName : cert.certifiedByName) : null;
       const cinCertCell = cert
-        ? `${cinLabel} &mdash; <span style='color:${certColor};white-space:nowrap'>&#10003; ${'certifiedByCIN' in cert ? (cert as any).certifiedByCIN || cert.certifiedByName : cert.certifiedByName} <span style='color:#555;font-size:10px'>${format(new Date(cert.certifiedAt), "dd/MM/yy h:mmaaa")}</span></span>`
-        : `${cinLabel} &mdash; <span style='color:#ef4444'>Pending</span>`;
+        ? `<span style='color:${certColor};white-space:nowrap'>&#10003; ${certifierCIN} <span style='color:#555;font-size:10px'>${format(new Date(cert.certifiedAt), "dd/MM/yy h:mmaaa")}</span></span>`
+        : `<span style='color:#ef4444'>Pending</span>`;
       return `<tr style="background:${rowBg}">
         ${timeTd}${obsTd}
         <td style="padding:${pt} 6px ${pb} 6px;${memberBb};font-size:11px">${cinCertCell}</td>
@@ -209,14 +209,15 @@ function exportToPDF(
     .meta-table{width:100%;border-collapse:collapse;border:1px solid #334155;margin-bottom:12px;table-layout:auto}
     .meta-label{padding:5px 8px;font-weight:700;font-size:11px;white-space:nowrap;background:#f1f5f9;border:1px solid #cbd5e1;text-transform:uppercase;width:1%;color:#000}
     .meta-value{padding:5px 8px;font-size:11px;border:1px solid #cbd5e1;color:#000}
-    table.log-table{width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #334155}
+    table.log-table{width:100%;border-collapse:collapse;table-layout:auto;border:1px solid #334155}
     col.c-time{width:80px}
     col.c-obs{width:auto}
-    col.c-cert{width:220px}
+    col.c-cert{width:1%;white-space:nowrap}
     .log-table th{background:#f1f5f9;color:#000;font-weight:700;padding:6px;text-align:left;
        border-bottom:2px solid #334155;border-right:1px solid #334155;overflow:hidden}
     .log-table th:last-child,.log-table td:last-child{border-right:none}
     .log-table td{vertical-align:top;word-break:break-word;overflow:hidden;color:#000}
+    .log-table td:last-child{white-space:nowrap;word-break:normal}
   </style></head><body>
   ${pageHeader}
   <table class="log-table">

@@ -21,11 +21,14 @@ import {
   FileDown,
   ChevronRight,
   Calendar,
+  Folder,
+  FileText,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type EntityType = "person" | "vehicle" | "address" | "business" | "unknown";
+type TabView = "operations" | EntityType | "all";
 
 interface Occurrence {
   sheetId: number;
@@ -42,6 +45,14 @@ interface Entity {
   shortForm: string;
   type: EntityType;
   occurrences: Occurrence[];
+}
+
+interface OperationSummary {
+  operationId: number;
+  operationName: string;
+  entityCount: number;
+  sheetCount: number;
+  entities: Entity[];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -63,11 +74,11 @@ const TYPE_ICONS: Record<EntityType, React.ReactNode> = {
 };
 
 const TYPE_COLORS: Record<EntityType, string> = {
-  person: "bg-blue-500/10 text-blue-600 border-blue-500/30 dark:text-blue-400",
-  vehicle: "bg-amber-500/10 text-amber-600 border-amber-500/30 dark:text-amber-400",
-  address: "bg-emerald-500/10 text-emerald-600 border-emerald-500/30 dark:text-emerald-400",
+  person:   "bg-blue-500/10 text-blue-600 border-blue-500/30 dark:text-blue-400",
+  vehicle:  "bg-amber-500/10 text-amber-600 border-amber-500/30 dark:text-amber-400",
+  address:  "bg-emerald-500/10 text-emerald-600 border-emerald-500/30 dark:text-emerald-400",
   business: "bg-purple-500/10 text-purple-600 border-purple-500/30 dark:text-purple-400",
-  unknown: "bg-muted text-muted-foreground border-border",
+  unknown:  "bg-muted text-muted-foreground border-border",
 };
 
 function formatTime(minutes: number | null): string {
@@ -91,25 +102,14 @@ function uniqueSheets(occurrences: Occurrence[]) {
 function buildProfileHtml(entity: Entity, allEntities: Entity[]) {
   const mySheetIds = new Set(entity.occurrences.map((o) => o.sheetId));
 
-  const relatedVehicles = allEntities.filter(
-    (e) => e.type === "vehicle" && e.occurrences.some((o) => mySheetIds.has(o.sheetId))
-  );
-  const relatedAddresses = allEntities.filter(
-    (e) => e.type === "address" && e.occurrences.some((o) => mySheetIds.has(o.sheetId))
-  );
-  const relatedBusinesses = allEntities.filter(
-    (e) => e.type === "business" && e.occurrences.some((o) => mySheetIds.has(o.sheetId))
-  );
-  const relatedPersons = allEntities.filter(
-    (e) =>
-      e.type === "person" &&
-      e.shortForm !== entity.shortForm &&
-      e.occurrences.some((o) => mySheetIds.has(o.sheetId))
-  );
+  const relatedVehicles   = allEntities.filter((e) => e.type === "vehicle"  && e.occurrences.some((o) => mySheetIds.has(o.sheetId)));
+  const relatedAddresses  = allEntities.filter((e) => e.type === "address"  && e.occurrences.some((o) => mySheetIds.has(o.sheetId)));
+  const relatedBusinesses = allEntities.filter((e) => e.type === "business" && e.occurrences.some((o) => mySheetIds.has(o.sheetId)));
+  const relatedPersons    = allEntities.filter((e) => e.type === "person"   && e.shortForm !== entity.shortForm && e.occurrences.some((o) => mySheetIds.has(o.sheetId)));
 
-  const sheets = uniqueSheets(entity.occurrences);
+  const sheets    = uniqueSheets(entity.occurrences);
   const firstSeen = entity.occurrences[0];
-  const lastSeen = entity.occurrences[entity.occurrences.length - 1];
+  const lastSeen  = entity.occurrences[entity.occurrences.length - 1];
 
   const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
@@ -141,7 +141,6 @@ function buildProfileHtml(entity: Entity, allEntities: Entity[]) {
   ${entity.occurrences[0]?.fullDescription ? `<p><strong>DESCRIPTION:</strong> ${esc(entity.occurrences[0].fullDescription)}</p>` : ""}
 </div>`;
 
-  // Running Sheets
   html += `<h2>Running Sheets</h2>`;
   for (const sheet of sheets) {
     const sheetOccs = entity.occurrences.filter((o) => o.sheetId === sheet.sheetId);
@@ -153,7 +152,6 @@ function buildProfileHtml(entity: Entity, allEntities: Entity[]) {
     html += `</div>`;
   }
 
-  // Vehicles
   if (relatedVehicles.length > 0) {
     html += `<h2>Associated Vehicles</h2>`;
     for (const v of relatedVehicles) {
@@ -162,7 +160,6 @@ function buildProfileHtml(entity: Entity, allEntities: Entity[]) {
     }
   }
 
-  // Addresses
   if (relatedAddresses.length > 0) {
     html += `<h2>Associated Addresses</h2>`;
     for (const a of relatedAddresses) {
@@ -171,7 +168,6 @@ function buildProfileHtml(entity: Entity, allEntities: Entity[]) {
     }
   }
 
-  // Associated Persons
   if (relatedPersons.length > 0) {
     html += `<h2>Associated Persons</h2>`;
     for (const p of relatedPersons) {
@@ -180,7 +176,6 @@ function buildProfileHtml(entity: Entity, allEntities: Entity[]) {
     }
   }
 
-  // Businesses
   if (relatedBusinesses.length > 0) {
     html += `<h2>Associated Businesses</h2>`;
     for (const b of relatedBusinesses) {
@@ -196,8 +191,8 @@ function buildProfileHtml(entity: Entity, allEntities: Entity[]) {
 function printProfilePdf(entity: Entity, allEntities: Entity[]) {
   const html = buildProfileHtml(entity, allEntities);
   const blob = new Blob([html], { type: "text/html" });
-  const url = URL.createObjectURL(blob);
-  const win = window.open(url, "_blank");
+  const url  = URL.createObjectURL(blob);
+  const win  = window.open(url, "_blank");
   if (win) {
     win.onload = () => {
       win.print();
@@ -217,27 +212,12 @@ function ProfileDialog({
   allEntities: Entity[];
   onClose: () => void;
 }) {
-  const mySheetIds = useMemo(
-    () => new Set(entity.occurrences.map((o) => o.sheetId)),
-    [entity]
-  );
+  const mySheetIds = useMemo(() => new Set(entity.occurrences.map((o) => o.sheetId)), [entity]);
 
-  const relatedVehicles = useMemo(
-    () => allEntities.filter((e) => e.type === "vehicle" && e.occurrences.some((o) => mySheetIds.has(o.sheetId))),
-    [allEntities, mySheetIds]
-  );
-  const relatedAddresses = useMemo(
-    () => allEntities.filter((e) => e.type === "address" && e.occurrences.some((o) => mySheetIds.has(o.sheetId))),
-    [allEntities, mySheetIds]
-  );
-  const relatedBusinesses = useMemo(
-    () => allEntities.filter((e) => e.type === "business" && e.occurrences.some((o) => mySheetIds.has(o.sheetId))),
-    [allEntities, mySheetIds]
-  );
-  const relatedPersons = useMemo(
-    () => allEntities.filter((e) => e.type === "person" && e.shortForm !== entity.shortForm && e.occurrences.some((o) => mySheetIds.has(o.sheetId))),
-    [allEntities, mySheetIds, entity.shortForm]
-  );
+  const relatedVehicles   = useMemo(() => allEntities.filter((e) => e.type === "vehicle"  && e.occurrences.some((o) => mySheetIds.has(o.sheetId))), [allEntities, mySheetIds]);
+  const relatedAddresses  = useMemo(() => allEntities.filter((e) => e.type === "address"  && e.occurrences.some((o) => mySheetIds.has(o.sheetId))), [allEntities, mySheetIds]);
+  const relatedBusinesses = useMemo(() => allEntities.filter((e) => e.type === "business" && e.occurrences.some((o) => mySheetIds.has(o.sheetId))), [allEntities, mySheetIds]);
+  const relatedPersons    = useMemo(() => allEntities.filter((e) => e.type === "person"   && e.shortForm !== entity.shortForm && e.occurrences.some((o) => mySheetIds.has(o.sheetId))), [allEntities, mySheetIds, entity.shortForm]);
 
   const sheets = useMemo(() => uniqueSheets(entity.occurrences), [entity]);
 
@@ -312,9 +292,7 @@ function ProfileDialog({
             <div className="flex flex-wrap gap-2">
               {relatedVehicles.map((v) => (
                 <span key={v.shortForm} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${TYPE_COLORS.vehicle}`}>
-                  <Car className="w-3 h-3" />
-                  {v.shortForm}
-                  <span className="opacity-60">×{v.occurrences.length}</span>
+                  <Car className="w-3 h-3" />{v.shortForm}<span className="opacity-60">×{v.occurrences.length}</span>
                 </span>
               ))}
             </div>
@@ -328,9 +306,7 @@ function ProfileDialog({
             <div className="flex flex-wrap gap-2">
               {relatedAddresses.map((a) => (
                 <span key={a.shortForm} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${TYPE_COLORS.address}`}>
-                  <MapPin className="w-3 h-3" />
-                  {a.shortForm}
-                  <span className="opacity-60">×{a.occurrences.length}</span>
+                  <MapPin className="w-3 h-3" />{a.shortForm}<span className="opacity-60">×{a.occurrences.length}</span>
                 </span>
               ))}
             </div>
@@ -344,9 +320,7 @@ function ProfileDialog({
             <div className="flex flex-wrap gap-2">
               {relatedPersons.map((p) => (
                 <span key={p.shortForm} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${TYPE_COLORS.person}`}>
-                  <User className="w-3 h-3" />
-                  {p.shortForm}
-                  <span className="opacity-60">×{p.occurrences.length}</span>
+                  <User className="w-3 h-3" />{p.shortForm}<span className="opacity-60">×{p.occurrences.length}</span>
                 </span>
               ))}
             </div>
@@ -360,9 +334,7 @@ function ProfileDialog({
             <div className="flex flex-wrap gap-2">
               {relatedBusinesses.map((b) => (
                 <span key={b.shortForm} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${TYPE_COLORS.business}`}>
-                  <Building2 className="w-3 h-3" />
-                  {b.shortForm}
-                  <span className="opacity-60">×{b.occurrences.length}</span>
+                  <Building2 className="w-3 h-3" />{b.shortForm}<span className="opacity-60">×{b.occurrences.length}</span>
                 </span>
               ))}
             </div>
@@ -372,15 +344,161 @@ function ProfileDialog({
         <Separator />
 
         {/* Single export button at the bottom */}
-        <Button
-          onClick={() => printProfilePdf(entity, allEntities)}
-          className="w-full gap-2"
-        >
+        <Button onClick={() => printProfilePdf(entity, allEntities)} className="w-full gap-2">
           <FileDown className="w-4 h-4" />
           Export Profile to PDF
         </Button>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ─── Operations Tab ───────────────────────────────────────────────────────────
+
+function OperationsTab({
+  entities,
+  search,
+}: {
+  entities: Entity[];
+  search: string;
+}) {
+  const [expandedOpId, setExpandedOpId] = useState<number | null>(null);
+
+  const operations = useMemo<OperationSummary[]>(() => {
+    const opMap = new Map<number, OperationSummary>();
+    for (const entity of entities) {
+      for (const occ of entity.occurrences) {
+        if (!opMap.has(occ.operationId)) {
+          opMap.set(occ.operationId, {
+            operationId: occ.operationId,
+            operationName: occ.operationName,
+            entityCount: 0,
+            sheetCount: 0,
+            entities: [],
+          });
+        }
+        const op = opMap.get(occ.operationId)!;
+        // Add entity to this op if not already present
+        if (!op.entities.find((e) => e.type === entity.type && e.shortForm === entity.shortForm)) {
+          op.entities.push(entity);
+          op.entityCount += 1;
+        }
+      }
+    }
+    // Compute unique sheet count per operation
+    const opList: OperationSummary[] = [];
+    opMap.forEach((op) => {
+      const sheetIds = new Set<number>();
+      for (const e of op.entities) {
+        for (const occ of e.occurrences) {
+          if (occ.operationId === op.operationId) sheetIds.add(occ.sheetId);
+        }
+      }
+      op.sheetCount = sheetIds.size;
+      opList.push(op);
+    });
+    return opList.sort((a, b) => a.operationName.localeCompare(b.operationName));
+  }, [entities]);
+
+  const filtered = useMemo(() => {
+    if (!search) return operations;
+    const q = search.toLowerCase();
+    return operations.filter(
+      (op) =>
+        op.operationName.toLowerCase().includes(q) ||
+        op.entities.some((e) => e.shortForm.toLowerCase().includes(q))
+    );
+  }, [operations, search]);
+
+  if (filtered.length === 0) {
+    return (
+      <div className="text-center py-12 text-muted-foreground">
+        <Folder className="w-8 h-8 mx-auto mb-3 opacity-30" />
+        <p className="text-sm">No operations found.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {filtered.map((op) => {
+        const isExpanded = expandedOpId === op.operationId;
+        // Group entities by type for display
+        const byType: Partial<Record<EntityType, Entity[]>> = {};
+        for (const e of op.entities) {
+          if (!byType[e.type]) byType[e.type] = [];
+          byType[e.type]!.push(e);
+        }
+
+        return (
+          <div key={op.operationId} className="rounded-xl border border-border/60 overflow-hidden bg-card/50">
+            <button
+              onClick={() => setExpandedOpId(isExpanded ? null : op.operationId)}
+              className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-accent/10 transition-colors"
+            >
+              <span className="inline-flex items-center justify-center w-7 h-7 rounded-full border bg-muted/30 text-muted-foreground shrink-0">
+                <Folder className="w-3.5 h-3.5" />
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-foreground truncate">{op.operationName}</p>
+                <p className="text-xs text-muted-foreground">
+                  {op.entityCount} {op.entityCount === 1 ? "entity" : "entities"} · {op.sheetCount} {op.sheetCount === 1 ? "sheet" : "sheets"}
+                </p>
+              </div>
+              <ChevronRight
+                className={`w-4 h-4 text-muted-foreground shrink-0 transition-transform duration-200 ${isExpanded ? "rotate-90" : ""}`}
+              />
+            </button>
+
+            {isExpanded && (
+              <div className="border-t border-border/40 px-4 pb-4 pt-3 space-y-3">
+                {(["person", "vehicle", "address", "business", "unknown"] as EntityType[]).map((type) => {
+                  const group = byType[type];
+                  if (!group || group.length === 0) return null;
+                  return (
+                    <div key={type}>
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${TYPE_COLORS[type]}`}>
+                          {TYPE_ICONS[type]}
+                          {TYPE_LABELS[type]}s
+                        </span>
+                        <span className="text-xs text-muted-foreground">{group.length}</span>
+                      </div>
+                      <div className="rounded-lg border border-border/40 overflow-hidden">
+                        {group.map((entity, idx) => {
+                          const opOccs = entity.occurrences.filter((o) => o.operationId === op.operationId);
+                          const opSheets = uniqueSheets(opOccs);
+                          return (
+                            <div
+                              key={`${entity.type}::${entity.shortForm}`}
+                              className={`flex items-center gap-3 px-3 py-2.5 ${idx < group.length - 1 ? "border-b border-border/30" : ""}`}
+                            >
+                              <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full border ${TYPE_COLORS[type]} shrink-0`}>
+                                {TYPE_ICONS[type]}
+                              </span>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-mono text-xs font-medium text-foreground truncate">{entity.shortForm}</p>
+                                {entity.occurrences[0]?.fullDescription && (
+                                  <p className="text-xs text-muted-foreground truncate">{entity.occurrences[0].fullDescription}</p>
+                                )}
+                              </div>
+                              <div className="text-right shrink-0">
+                                <p className="text-xs font-medium text-foreground">{opOccs.length}×</p>
+                                <p className="text-xs text-muted-foreground">{opSheets.length} sheet{opSheets.length !== 1 ? "s" : ""}</p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -407,83 +525,91 @@ function presetToRange(preset: DatePreset, customFrom: string, customTo: string)
   if (preset === "custom") {
     return {
       from: customFrom ? new Date(customFrom) : null,
-      to: customTo ? new Date(customTo + "T23:59:59") : null,
+      to:   customTo   ? new Date(customTo + "T23:59:59") : null,
     };
   }
   return { from: null, to: null };
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
+// ─── Tab nav config ───────────────────────────────────────────────────────────
 
-const TYPE_FILTER_OPTIONS: Array<{ value: EntityType | "all"; label: string }> = [
-  { value: "all",      label: "All" },
-  { value: "person",   label: "Persons" },
-  { value: "vehicle",  label: "Vehicles" },
-  { value: "address",  label: "Addresses" },
-  { value: "business", label: "Businesses" },
+const TAB_OPTIONS: Array<{ value: TabView; label: string; icon: React.ReactNode }> = [
+  { value: "operations", label: "Operations", icon: <Folder className="w-3.5 h-3.5" /> },
+  { value: "person",     label: "Persons",    icon: <User className="w-3.5 h-3.5" /> },
+  { value: "vehicle",    label: "Vehicles",   icon: <Car className="w-3.5 h-3.5" /> },
+  { value: "address",    label: "Addresses",  icon: <MapPin className="w-3.5 h-3.5" /> },
+  { value: "business",   label: "Businesses", icon: <Building2 className="w-3.5 h-3.5" /> },
 ];
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function IntelligencePage() {
   const { data: entities, isLoading } = trpc.intelligence.getEntities.useQuery();
-  const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState<EntityType | "all">("all");
-  const [selected, setSelected] = useState<Entity | null>(null);
+  const [search, setSearch]         = useState("");
+  const [activeTab, setActiveTab]   = useState<TabView>("operations");
+  const [selected, setSelected]     = useState<Entity | null>(null);
 
   // Date filter state
   const [datePreset, setDatePreset] = useState<DatePreset>("all");
   const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
+  const [customTo, setCustomTo]     = useState("");
 
   const dateRange = useMemo(
     () => presetToRange(datePreset, customFrom, customTo),
     [datePreset, customFrom, customTo]
   );
 
-  const filtered = useMemo(() => {
+  // Apply date + search filtering to entities
+  const filteredEntities = useMemo(() => {
     if (!entities) return [];
     return entities
       .map((e) => {
-        // Filter occurrences by date range if active
         let occs = e.occurrences;
         if (dateRange.from || dateRange.to) {
-          // We use the sheet title date prefix (YYYYMMDD) as a proxy for date
-          // since we don't have a dedicated sheet date field in occurrences
           occs = occs.filter((o) => {
             const match = o.sheetTitle.match(/^(\d{4})(\d{2})(\d{2})/);
-            if (!match) return true; // can't parse, include
+            if (!match) return true;
             const sheetDate = new Date(`${match[1]}-${match[2]}-${match[3]}`);
             if (dateRange.from && sheetDate < dateRange.from) return false;
-            if (dateRange.to && sheetDate > dateRange.to) return false;
+            if (dateRange.to   && sheetDate > dateRange.to)   return false;
             return true;
           });
         }
         return { ...e, occurrences: occs };
       })
-      .filter((e) => {
-        if (e.occurrences.length === 0) return false;
-        const matchesType = typeFilter === "all" || e.type === typeFilter;
-        const matchesSearch =
-          !search ||
-          e.shortForm.toLowerCase().includes(search.toLowerCase()) ||
-          e.occurrences.some((o) =>
-            o.observationSnippet.toLowerCase().includes(search.toLowerCase()) ||
-            o.fullDescription.toLowerCase().includes(search.toLowerCase())
-          );
-        return matchesType && matchesSearch;
-      });
-  }, [entities, search, typeFilter, dateRange]);
+      .filter((e) => e.occurrences.length > 0);
+  }, [entities, dateRange]);
 
-  const grouped = useMemo(() => {
-    const groups: Partial<Record<EntityType, Entity[]>> = {};
-    for (const e of filtered) {
-      if (!groups[e.type]) groups[e.type] = [];
-      groups[e.type]!.push(e);
+  // For entity-type tabs: also apply search + type filter
+  const filteredByTab = useMemo(() => {
+    if (activeTab === "operations") return filteredEntities;
+    return filteredEntities.filter((e) => {
+      const matchesType = e.type === activeTab;
+      const matchesSearch =
+        !search ||
+        e.shortForm.toLowerCase().includes(search.toLowerCase()) ||
+        e.occurrences.some((o) =>
+          o.observationSnippet.toLowerCase().includes(search.toLowerCase()) ||
+          o.fullDescription.toLowerCase().includes(search.toLowerCase())
+        );
+      return matchesType && matchesSearch;
+    });
+  }, [filteredEntities, activeTab, search]);
+
+  // Counts per tab for badges
+  const tabCounts = useMemo(() => {
+    const counts: Partial<Record<TabView, number>> = {};
+    if (!filteredEntities) return counts;
+    // Operations: unique operation IDs
+    const opIds = new Set<number>();
+    for (const e of filteredEntities) for (const o of e.occurrences) opIds.add(o.operationId);
+    counts["operations"] = opIds.size;
+    // Entity types
+    for (const type of ["person", "vehicle", "address", "business"] as EntityType[]) {
+      counts[type] = filteredEntities.filter((e) => e.type === type).length;
     }
-    for (const g of Object.values(groups)) {
-      g!.sort((a, b) => b.occurrences.length - a.occurrences.length);
-    }
-    return groups;
-  }, [filtered]);
+    return counts;
+  }, [filteredEntities]);
 
   const totalEntities = entities?.length ?? 0;
 
@@ -493,7 +619,7 @@ export default function IntelligencePage() {
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
           <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
-            <Search className="w-4 h-4 text-primary" />
+            <FileText className="w-4 h-4 text-primary" />
           </div>
           <div>
             <h1 className="text-xl font-semibold text-foreground">Intelligence Folder</h1>
@@ -540,9 +666,38 @@ export default function IntelligencePage() {
           )}
         </div>
 
-        {/* Search + type filter */}
-        <div className="flex flex-col sm:flex-row gap-3 mb-5">
-          <div className="relative flex-1">
+        {/* Tab nav */}
+        <div className="flex gap-1 flex-wrap mb-5 border-b border-border/40 pb-0">
+          {TAB_OPTIONS.map((tab) => {
+            const count = tabCounts[tab.value];
+            const isActive = activeTab === tab.value;
+            return (
+              <button
+                key={tab.value}
+                onClick={() => setActiveTab(tab.value)}
+                className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors -mb-px ${
+                  isActive
+                    ? "border-primary text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+                }`}
+              >
+                {tab.icon}
+                {tab.label}
+                {count !== undefined && count > 0 && (
+                  <span className={`ml-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
+                    isActive ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
+                  }`}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Search bar (shown for entity tabs, not operations) */}
+        {activeTab !== "operations" && (
+          <div className="relative mb-5">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               className="pl-9"
@@ -551,22 +706,7 @@ export default function IntelligencePage() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <div className="flex gap-1.5 flex-wrap">
-            {TYPE_FILTER_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => setTypeFilter(opt.value as EntityType | "all")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                  typeFilter === opt.value
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-muted/40 text-muted-foreground border-border/60 hover:bg-muted/70"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
+        )}
 
         {/* Loading */}
         {isLoading && (
@@ -577,63 +717,61 @@ export default function IntelligencePage() {
           </div>
         )}
 
-        {/* Empty */}
-        {!isLoading && filtered.length === 0 && (
-          <div className="text-center py-16 text-muted-foreground">
-            <Search className="w-8 h-8 mx-auto mb-3 opacity-30" />
-            <p className="text-sm">
-              {search || typeFilter !== "all" || datePreset !== "all"
-                ? "No entities match your filters."
-                : "No entities found. Entities are extracted automatically from observation text using the (ShortForm) convention."}
-            </p>
+        {/* Operations tab content */}
+        {!isLoading && activeTab === "operations" && (
+          <OperationsTab entities={filteredEntities} search={search} />
+        )}
+
+        {/* Search bar for operations tab (inline, above results) */}
+        {!isLoading && activeTab === "operations" && (
+          <div className="relative mt-4 hidden">
+            {/* search is handled inside OperationsTab via prop */}
           </div>
         )}
 
-        {/* Entity groups */}
-        {!isLoading && (
-          <div className="space-y-6">
-            {(["person", "vehicle", "address", "business", "unknown"] as EntityType[]).map((type) => {
-              const group = grouped[type];
-              if (!group || group.length === 0) return null;
-              return (
-                <div key={type}>
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border ${TYPE_COLORS[type]}`}>
-                      {TYPE_ICONS[type]}
-                      {TYPE_LABELS[type]}s
-                    </span>
-                    <span className="text-xs text-muted-foreground">{group.length} unique</span>
-                  </div>
-                  <div className="rounded-xl border border-border/60 overflow-hidden bg-card/50">
-                    {group.map((entity, idx) => (
-                      <button
-                        key={`${entity.type}::${entity.shortForm}`}
-                        onClick={() => setSelected(entity)}
-                        className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-accent/10 transition-colors ${
-                          idx < group.length - 1 ? "border-b border-border/40" : ""
-                        }`}
-                      >
-                        <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full border ${TYPE_COLORS[type]} shrink-0`}>
-                          {TYPE_ICONS[type]}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-mono text-sm font-medium text-foreground truncate">{entity.shortForm}</p>
-                          <p className="text-xs text-muted-foreground truncate">
-                            {entity.occurrences[0]?.fullDescription ?? ""}
-                          </p>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <p className="text-xs font-medium text-foreground">{entity.occurrences.length}×</p>
-                          <p className="text-xs text-muted-foreground">{uniqueSheets(entity.occurrences).length} sheet{uniqueSheets(entity.occurrences).length !== 1 ? "s" : ""}</p>
-                        </div>
-                        <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+        {/* Entity type tab content */}
+        {!isLoading && activeTab !== "operations" && (
+          <>
+            {filteredByTab.length === 0 ? (
+              <div className="text-center py-16 text-muted-foreground">
+                <Search className="w-8 h-8 mx-auto mb-3 opacity-30" />
+                <p className="text-sm">
+                  {search || datePreset !== "all"
+                    ? "No entities match your filters."
+                    : "No entities found. Entities are extracted automatically from observation text using the (ShortForm) convention."}
+                </p>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-border/60 overflow-hidden bg-card/50">
+                {filteredByTab
+                  .sort((a, b) => b.occurrences.length - a.occurrences.length)
+                  .map((entity, idx) => (
+                    <button
+                      key={`${entity.type}::${entity.shortForm}`}
+                      onClick={() => setSelected(entity)}
+                      className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-accent/10 transition-colors ${
+                        idx < filteredByTab.length - 1 ? "border-b border-border/40" : ""
+                      }`}
+                    >
+                      <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full border ${TYPE_COLORS[entity.type]} shrink-0`}>
+                        {TYPE_ICONS[entity.type]}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-mono text-sm font-medium text-foreground truncate">{entity.shortForm}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {entity.occurrences[0]?.fullDescription ?? ""}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-xs font-medium text-foreground">{entity.occurrences.length}×</p>
+                        <p className="text-xs text-muted-foreground">{uniqueSheets(entity.occurrences).length} sheet{uniqueSheets(entity.occurrences).length !== 1 ? "s" : ""}</p>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                    </button>
+                  ))}
+              </div>
+            )}
+          </>
         )}
       </div>
 

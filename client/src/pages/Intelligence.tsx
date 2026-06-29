@@ -2,11 +2,9 @@ import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -23,7 +21,6 @@ import {
   FileDown,
   ChevronRight,
   Calendar,
-  FileText,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -91,12 +88,7 @@ function uniqueSheets(occurrences: Occurrence[]) {
 
 // ─── PDF Export ───────────────────────────────────────────────────────────────
 
-function buildProfilePdf(
-  entity: Entity,
-  allEntities: Entity[],
-  sections: Record<string, boolean>
-) {
-  // Find related entities from the same sheets
+function buildProfileHtml(entity: Entity, allEntities: Entity[]) {
   const mySheetIds = new Set(entity.occurrences.map((o) => o.sheetId));
 
   const relatedVehicles = allEntities.filter(
@@ -119,104 +111,90 @@ function buildProfilePdf(
   const firstSeen = entity.occurrences[0];
   const lastSeen = entity.occurrences[entity.occurrences.length - 1];
 
-  const lines: string[] = [];
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-  // Header
-  lines.push("INTELLIGENCE PROFILE");
-  lines.push("=".repeat(60));
-  lines.push(`SUBJECT: ${entity.shortForm}`);
-  lines.push(`TYPE: ${TYPE_LABELS[entity.type]}`);
-  lines.push(`GENERATED: ${new Date().toLocaleString()}`);
-  lines.push(`TOTAL APPEARANCES: ${entity.occurrences.length} observation(s) across ${sheets.length} running sheet(s)`);
-  if (firstSeen) lines.push(`FIRST SEEN: ${firstSeen.operationName} — ${firstSeen.sheetTitle}`);
-  if (lastSeen && lastSeen.sheetId !== firstSeen?.sheetId) lines.push(`LAST SEEN: ${lastSeen.operationName} — ${lastSeen.sheetTitle}`);
-  lines.push("");
+  let html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Intel Profile — ${esc(entity.shortForm)}</title>
+<style>
+  body { font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.7; margin: 20mm; color: #000; }
+  h1 { font-size: 15px; border-bottom: 2px solid #000; padding-bottom: 4px; margin-bottom: 12px; }
+  h2 { font-size: 12px; border-bottom: 1px solid #666; padding-bottom: 2px; margin: 16px 0 8px; text-transform: uppercase; }
+  .meta { margin-bottom: 12px; }
+  .meta p { margin: 2px 0; }
+  .entry { margin-bottom: 8px; padding-left: 12px; border-left: 2px solid #ccc; }
+  .tag { display: inline-block; border: 1px solid #999; padding: 1px 6px; border-radius: 10px; font-size: 10px; margin-right: 4px; }
+  @page { margin: 20mm; }
+  @media print { body { margin: 0; } }
+</style>
+</head>
+<body>
+<h1>INTELLIGENCE PROFILE — ${esc(entity.shortForm)}</h1>
+<div class="meta">
+  <p><strong>TYPE:</strong> ${esc(TYPE_LABELS[entity.type])}</p>
+  <p><strong>GENERATED:</strong> ${new Date().toLocaleString()}</p>
+  <p><strong>TOTAL APPEARANCES:</strong> ${entity.occurrences.length} observation(s) across ${sheets.length} running sheet(s)</p>
+  ${firstSeen ? `<p><strong>FIRST SEEN:</strong> ${esc(firstSeen.operationName)} — ${esc(firstSeen.sheetTitle)}</p>` : ""}
+  ${lastSeen && lastSeen.sheetId !== firstSeen?.sheetId ? `<p><strong>LAST SEEN:</strong> ${esc(lastSeen.operationName)} — ${esc(lastSeen.sheetTitle)}</p>` : ""}
+  ${entity.occurrences[0]?.fullDescription ? `<p><strong>DESCRIPTION:</strong> ${esc(entity.occurrences[0].fullDescription)}</p>` : ""}
+</div>`;
 
   // Running Sheets
-  if (sections.sheets) {
-    lines.push("RUNNING SHEETS");
-    lines.push("-".repeat(60));
-    for (const sheet of sheets) {
-      const sheetOccurrences = entity.occurrences.filter((o) => o.sheetId === sheet.sheetId);
-      lines.push(`  Operation: ${sheet.operationName}`);
-      lines.push(`  Sheet: ${sheet.sheetTitle}`);
-      for (const occ of sheetOccurrences) {
-        const t = formatTime(occ.timeMinutes);
-        lines.push(`    ${t ? `[${t}] ` : ""}${occ.observationSnippet}`);
-      }
-      lines.push("");
+  html += `<h2>Running Sheets</h2>`;
+  for (const sheet of sheets) {
+    const sheetOccs = entity.occurrences.filter((o) => o.sheetId === sheet.sheetId);
+    html += `<div class="entry"><p><strong>${esc(sheet.sheetTitle)}</strong> — ${esc(sheet.operationName)}</p>`;
+    for (const occ of sheetOccs) {
+      const t = formatTime(occ.timeMinutes);
+      html += `<p>${t ? `[${esc(t)}] ` : ""}${esc(occ.observationSnippet)}</p>`;
     }
+    html += `</div>`;
   }
 
   // Vehicles
-  if (sections.vehicles && relatedVehicles.length > 0) {
-    lines.push("ASSOCIATED VEHICLES");
-    lines.push("-".repeat(60));
+  if (relatedVehicles.length > 0) {
+    html += `<h2>Associated Vehicles</h2>`;
     for (const v of relatedVehicles) {
       const desc = v.occurrences[0]?.fullDescription ?? "";
-      lines.push(`  ${v.shortForm}${desc ? ` — ${desc}` : ""}`);
-      lines.push(`  Appearances: ${v.occurrences.length}`);
-      lines.push("");
+      html += `<div class="entry"><p><strong>${esc(v.shortForm)}</strong>${desc ? ` — ${esc(desc)}` : ""} <span class="tag">×${v.occurrences.length}</span></p></div>`;
     }
   }
 
   // Addresses
-  if (sections.addresses && relatedAddresses.length > 0) {
-    lines.push("ASSOCIATED ADDRESSES");
-    lines.push("-".repeat(60));
+  if (relatedAddresses.length > 0) {
+    html += `<h2>Associated Addresses</h2>`;
     for (const a of relatedAddresses) {
       const desc = a.occurrences[0]?.fullDescription ?? "";
-      lines.push(`  ${a.shortForm}${desc ? ` — ${desc}` : ""}`);
-      lines.push(`  Appearances: ${a.occurrences.length}`);
-      lines.push("");
+      html += `<div class="entry"><p><strong>${esc(a.shortForm)}</strong>${desc ? ` — ${esc(desc)}` : ""} <span class="tag">×${a.occurrences.length}</span></p></div>`;
     }
   }
 
   // Associated Persons
-  if (sections.persons && relatedPersons.length > 0) {
-    lines.push("ASSOCIATED PERSONS");
-    lines.push("-".repeat(60));
+  if (relatedPersons.length > 0) {
+    html += `<h2>Associated Persons</h2>`;
     for (const p of relatedPersons) {
       const desc = p.occurrences[0]?.fullDescription ?? "";
-      lines.push(`  ${p.shortForm}${desc ? ` — ${desc}` : ""}`);
-      lines.push(`  Appearances: ${p.occurrences.length}`);
-      lines.push("");
+      html += `<div class="entry"><p><strong>${esc(p.shortForm)}</strong>${desc ? ` — ${esc(desc)}` : ""} <span class="tag">×${p.occurrences.length}</span></p></div>`;
     }
   }
 
   // Businesses
-  if (sections.businesses && relatedBusinesses.length > 0) {
-    lines.push("ASSOCIATED BUSINESSES");
-    lines.push("-".repeat(60));
+  if (relatedBusinesses.length > 0) {
+    html += `<h2>Associated Businesses</h2>`;
     for (const b of relatedBusinesses) {
       const desc = b.occurrences[0]?.fullDescription ?? "";
-      lines.push(`  ${b.shortForm}${desc ? ` — ${desc}` : ""}`);
-      lines.push(`  Appearances: ${b.occurrences.length}`);
-      lines.push("");
+      html += `<div class="entry"><p><strong>${esc(b.shortForm)}</strong>${desc ? ` — ${esc(desc)}` : ""} <span class="tag">×${b.occurrences.length}</span></p></div>`;
     }
   }
 
-  lines.push("=".repeat(60));
-  lines.push("END OF PROFILE");
-
-  return lines.join("\n");
+  html += `<hr style="margin-top:20px"><p style="font-size:10px;color:#666">END OF PROFILE</p></body></html>`;
+  return html;
 }
 
-function downloadTextAsPdf(text: string, filename: string) {
-  // Build a simple HTML page and print it as PDF via the browser's print dialog
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>${filename}</title>
-<style>
-  body { font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.6; margin: 20mm; color: #000; }
-  pre { white-space: pre-wrap; word-wrap: break-word; }
-  @page { margin: 20mm; }
-</style>
-</head>
-<body><pre>${text.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre></body>
-</html>`;
+function printProfilePdf(entity: Entity, allEntities: Entity[]) {
+  const html = buildProfileHtml(entity, allEntities);
   const blob = new Blob([html], { type: "text/html" });
   const url = URL.createObjectURL(blob);
   const win = window.open(url, "_blank");
@@ -239,14 +217,6 @@ function ProfileDialog({
   allEntities: Entity[];
   onClose: () => void;
 }) {
-  const [sections, setSections] = useState({
-    sheets: true,
-    vehicles: true,
-    addresses: true,
-    persons: true,
-    businesses: true,
-  });
-
   const mySheetIds = useMemo(
     () => new Set(entity.occurrences.map((o) => o.sheetId)),
     [entity]
@@ -271,14 +241,6 @@ function ProfileDialog({
 
   const sheets = useMemo(() => uniqueSheets(entity.occurrences), [entity]);
 
-  const toggle = (key: keyof typeof sections) =>
-    setSections((s) => ({ ...s, [key]: !s[key] }));
-
-  const handleExport = () => {
-    const text = buildProfilePdf(entity, allEntities, sections);
-    downloadTextAsPdf(text, `Intel_${entity.shortForm.replace(/\s+/g, "_")}.pdf`);
-  };
-
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
@@ -292,7 +254,7 @@ function ProfileDialog({
           </DialogTitle>
         </DialogHeader>
 
-        {/* Summary */}
+        {/* Summary stats */}
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
             <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Appearances</p>
@@ -304,7 +266,7 @@ function ProfileDialog({
           </div>
         </div>
 
-        {/* First full description */}
+        {/* Full description */}
         {entity.occurrences[0]?.fullDescription && (
           <div className="rounded-lg border border-border/60 bg-muted/20 p-3 text-sm">
             <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Full Description (first occurrence)</p>
@@ -314,77 +276,37 @@ function ProfileDialog({
 
         <Separator />
 
-        {/* Export section selector */}
+        {/* Running sheets detail */}
         <div>
-          <p className="text-sm font-medium text-foreground mb-3">Select sections to include in PDF export:</p>
-          <div className="grid grid-cols-2 gap-2">
-            {[
-              { key: "sheets" as const, label: "Running Sheets", icon: <FileText className="w-3.5 h-3.5" />, count: sheets.length },
-              { key: "vehicles" as const, label: "Vehicles", icon: <Car className="w-3.5 h-3.5" />, count: relatedVehicles.length },
-              { key: "addresses" as const, label: "Addresses", icon: <MapPin className="w-3.5 h-3.5" />, count: relatedAddresses.length },
-              { key: "persons" as const, label: "Associated Persons", icon: <User className="w-3.5 h-3.5" />, count: relatedPersons.length },
-              { key: "businesses" as const, label: "Businesses", icon: <Building2 className="w-3.5 h-3.5" />, count: relatedBusinesses.length },
-            ].map(({ key, label, icon, count }) => (
-              <label
-                key={key}
-                className={`flex items-center gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-colors ${
-                  sections[key]
-                    ? "border-primary/40 bg-primary/5"
-                    : "border-border/60 bg-muted/20 opacity-60"
-                }`}
-              >
-                <Checkbox
-                  checked={sections[key]}
-                  onCheckedChange={() => toggle(key)}
-                />
-                <span className="text-muted-foreground">{icon}</span>
-                <span className="text-sm text-foreground flex-1">{label}</span>
-                <span className="text-xs text-muted-foreground">{count}</span>
-              </label>
-            ))}
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Running Sheets</p>
+          <div className="space-y-2">
+            {sheets.map((sheet) => {
+              const sheetOccs = entity.occurrences.filter((o) => o.sheetId === sheet.sheetId);
+              return (
+                <div key={sheet.sheetId} className="rounded-lg border border-border/60 bg-muted/20 p-3">
+                  <div className="flex items-start gap-2 mb-1">
+                    <Calendar className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-xs font-medium text-foreground">{sheet.sheetTitle}</p>
+                      <p className="text-xs text-muted-foreground">{sheet.operationName}</p>
+                    </div>
+                  </div>
+                  {sheetOccs.map((occ, i) => (
+                    <p key={i} className="text-xs text-muted-foreground mt-1 pl-5">
+                      {occ.timeMinutes !== null && (
+                        <span className="font-mono mr-1">[{formatTime(occ.timeMinutes)}]</span>
+                      )}
+                      {occ.observationSnippet}
+                    </p>
+                  ))}
+                </div>
+              );
+            })}
           </div>
         </div>
 
-        <Button onClick={handleExport} className="w-full gap-2">
-          <FileDown className="w-4 h-4" />
-          Export Profile to PDF
-        </Button>
-
-        <Separator />
-
-        {/* Running sheets detail */}
-        {sections.sheets && (
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Running Sheets</p>
-            <div className="space-y-2">
-              {sheets.map((sheet) => {
-                const sheetOccs = entity.occurrences.filter((o) => o.sheetId === sheet.sheetId);
-                return (
-                  <div key={sheet.sheetId} className="rounded-lg border border-border/60 bg-muted/20 p-3">
-                    <div className="flex items-start gap-2 mb-1">
-                      <Calendar className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
-                      <div>
-                        <p className="text-xs font-medium text-foreground">{sheet.sheetTitle}</p>
-                        <p className="text-xs text-muted-foreground">{sheet.operationName}</p>
-                      </div>
-                    </div>
-                    {sheetOccs.map((occ, i) => (
-                      <p key={i} className="text-xs text-muted-foreground mt-1 pl-5">
-                        {occ.timeMinutes !== null && (
-                          <span className="font-mono mr-1">[{formatTime(occ.timeMinutes)}]</span>
-                        )}
-                        {occ.observationSnippet}
-                      </p>
-                    ))}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
         {/* Vehicles */}
-        {sections.vehicles && relatedVehicles.length > 0 && (
+        {relatedVehicles.length > 0 && (
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Associated Vehicles</p>
             <div className="flex flex-wrap gap-2">
@@ -400,7 +322,7 @@ function ProfileDialog({
         )}
 
         {/* Addresses */}
-        {sections.addresses && relatedAddresses.length > 0 && (
+        {relatedAddresses.length > 0 && (
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Associated Addresses</p>
             <div className="flex flex-wrap gap-2">
@@ -416,7 +338,7 @@ function ProfileDialog({
         )}
 
         {/* Associated Persons */}
-        {sections.persons && relatedPersons.length > 0 && (
+        {relatedPersons.length > 0 && (
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Associated Persons</p>
             <div className="flex flex-wrap gap-2">
@@ -432,7 +354,7 @@ function ProfileDialog({
         )}
 
         {/* Businesses */}
-        {sections.businesses && relatedBusinesses.length > 0 && (
+        {relatedBusinesses.length > 0 && (
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Associated Businesses</p>
             <div className="flex flex-wrap gap-2">
@@ -446,18 +368,58 @@ function ProfileDialog({
             </div>
           </div>
         )}
+
+        <Separator />
+
+        {/* Single export button at the bottom */}
+        <Button
+          onClick={() => printProfilePdf(entity, allEntities)}
+          className="w-full gap-2"
+        >
+          <FileDown className="w-4 h-4" />
+          Export Profile to PDF
+        </Button>
       </DialogContent>
     </Dialog>
   );
 }
 
+// ─── Date filter helpers ──────────────────────────────────────────────────────
+
+type DatePreset = "all" | "1w" | "1m" | "3m" | "6m" | "custom";
+
+const DATE_PRESETS: Array<{ value: DatePreset; label: string }> = [
+  { value: "all",    label: "All time" },
+  { value: "1w",     label: "1 week" },
+  { value: "1m",     label: "1 month" },
+  { value: "3m",     label: "3 months" },
+  { value: "6m",     label: "6 months" },
+  { value: "custom", label: "Custom range" },
+];
+
+function presetToRange(preset: DatePreset, customFrom: string, customTo: string): { from: Date | null; to: Date | null } {
+  const now = new Date();
+  if (preset === "all") return { from: null, to: null };
+  if (preset === "1w") { const d = new Date(now); d.setDate(d.getDate() - 7); return { from: d, to: now }; }
+  if (preset === "1m") { const d = new Date(now); d.setMonth(d.getMonth() - 1); return { from: d, to: now }; }
+  if (preset === "3m") { const d = new Date(now); d.setMonth(d.getMonth() - 3); return { from: d, to: now }; }
+  if (preset === "6m") { const d = new Date(now); d.setMonth(d.getMonth() - 6); return { from: d, to: now }; }
+  if (preset === "custom") {
+    return {
+      from: customFrom ? new Date(customFrom) : null,
+      to: customTo ? new Date(customTo + "T23:59:59") : null,
+    };
+  }
+  return { from: null, to: null };
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 const TYPE_FILTER_OPTIONS: Array<{ value: EntityType | "all"; label: string }> = [
-  { value: "all", label: "All" },
-  { value: "person", label: "Persons" },
-  { value: "vehicle", label: "Vehicles" },
-  { value: "address", label: "Addresses" },
+  { value: "all",      label: "All" },
+  { value: "person",   label: "Persons" },
+  { value: "vehicle",  label: "Vehicles" },
+  { value: "address",  label: "Addresses" },
   { value: "business", label: "Businesses" },
 ];
 
@@ -467,29 +429,56 @@ export default function IntelligencePage() {
   const [typeFilter, setTypeFilter] = useState<EntityType | "all">("all");
   const [selected, setSelected] = useState<Entity | null>(null);
 
+  // Date filter state
+  const [datePreset, setDatePreset] = useState<DatePreset>("all");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+
+  const dateRange = useMemo(
+    () => presetToRange(datePreset, customFrom, customTo),
+    [datePreset, customFrom, customTo]
+  );
+
   const filtered = useMemo(() => {
     if (!entities) return [];
-    return entities.filter((e) => {
-      const matchesType = typeFilter === "all" || e.type === typeFilter;
-      const matchesSearch =
-        !search ||
-        e.shortForm.toLowerCase().includes(search.toLowerCase()) ||
-        e.occurrences.some((o) =>
-          o.observationSnippet.toLowerCase().includes(search.toLowerCase()) ||
-          o.fullDescription.toLowerCase().includes(search.toLowerCase())
-        );
-      return matchesType && matchesSearch;
-    });
-  }, [entities, search, typeFilter]);
+    return entities
+      .map((e) => {
+        // Filter occurrences by date range if active
+        let occs = e.occurrences;
+        if (dateRange.from || dateRange.to) {
+          // We use the sheet title date prefix (YYYYMMDD) as a proxy for date
+          // since we don't have a dedicated sheet date field in occurrences
+          occs = occs.filter((o) => {
+            const match = o.sheetTitle.match(/^(\d{4})(\d{2})(\d{2})/);
+            if (!match) return true; // can't parse, include
+            const sheetDate = new Date(`${match[1]}-${match[2]}-${match[3]}`);
+            if (dateRange.from && sheetDate < dateRange.from) return false;
+            if (dateRange.to && sheetDate > dateRange.to) return false;
+            return true;
+          });
+        }
+        return { ...e, occurrences: occs };
+      })
+      .filter((e) => {
+        if (e.occurrences.length === 0) return false;
+        const matchesType = typeFilter === "all" || e.type === typeFilter;
+        const matchesSearch =
+          !search ||
+          e.shortForm.toLowerCase().includes(search.toLowerCase()) ||
+          e.occurrences.some((o) =>
+            o.observationSnippet.toLowerCase().includes(search.toLowerCase()) ||
+            o.fullDescription.toLowerCase().includes(search.toLowerCase())
+          );
+        return matchesType && matchesSearch;
+      });
+  }, [entities, search, typeFilter, dateRange]);
 
-  // Group by type for display
   const grouped = useMemo(() => {
     const groups: Partial<Record<EntityType, Entity[]>> = {};
     for (const e of filtered) {
       if (!groups[e.type]) groups[e.type] = [];
       groups[e.type]!.push(e);
     }
-    // Sort each group by occurrence count desc
     for (const g of Object.values(groups)) {
       g!.sort((a, b) => b.occurrences.length - a.occurrences.length);
     }
@@ -514,7 +503,44 @@ export default function IntelligencePage() {
           </div>
         </div>
 
-        {/* Search + filter */}
+        {/* Date filter */}
+        <div className="mb-4">
+          <div className="flex gap-1.5 flex-wrap mb-2">
+            {DATE_PRESETS.map((p) => (
+              <button
+                key={p.value}
+                onClick={() => setDatePreset(p.value)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  datePreset === p.value
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-muted/40 text-muted-foreground border-border/60 hover:bg-muted/70"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          {datePreset === "custom" && (
+            <div className="flex gap-2 items-center mt-2">
+              <Calendar className="w-4 h-4 text-muted-foreground shrink-0" />
+              <input
+                type="date"
+                value={customFrom}
+                onChange={(e) => setCustomFrom(e.target.value)}
+                className="border border-border/60 rounded-md px-2 py-1 text-xs bg-background text-foreground"
+              />
+              <span className="text-xs text-muted-foreground">to</span>
+              <input
+                type="date"
+                value={customTo}
+                onChange={(e) => setCustomTo(e.target.value)}
+                className="border border-border/60 rounded-md px-2 py-1 text-xs bg-background text-foreground"
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Search + type filter */}
         <div className="flex flex-col sm:flex-row gap-3 mb-5">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -556,8 +582,8 @@ export default function IntelligencePage() {
           <div className="text-center py-16 text-muted-foreground">
             <Search className="w-8 h-8 mx-auto mb-3 opacity-30" />
             <p className="text-sm">
-              {search || typeFilter !== "all"
-                ? "No entities match your search."
+              {search || typeFilter !== "all" || datePreset !== "all"
+                ? "No entities match your filters."
                 : "No entities found. Entities are extracted automatically from observation text using the (ShortForm) convention."}
             </p>
           </div>

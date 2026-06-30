@@ -925,6 +925,8 @@ export default function SheetDetail() {
   const [editSheetOpen, setEditSheetOpen] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editTargetName, setEditTargetName] = useState("");
+  const [editTargetMode, setEditTargetMode] = useState<"none" | "new" | "link">("none");
+  const [editNewTargetName, setEditNewTargetName] = useState("");
 
   // Target selector
   const { data: operationTargets } = trpc.target.list.useQuery(
@@ -1007,6 +1009,9 @@ export default function SheetDetail() {
   const openEditSheet = () => {
     setEditTitle(sheet?.title ?? "");
     setEditTargetName(sheet?.targetName ?? "");
+    setEditTargetMode("none");
+    setEditNewTargetName("");
+    setEditTargetSearch("");
     setEditSheetOpen(true);
   };
 
@@ -1406,70 +1411,88 @@ export default function SheetDetail() {
             </div>
             <div>
               <label className="text-sm font-medium text-foreground mb-1.5 block">Target</label>
-              {/* Searchable cross-operation target picker */}
-              <div className="relative">
-                <div className="flex items-center border border-input rounded-md bg-background px-3 h-9 gap-2">
-                  <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                  <input
-                    className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                    placeholder={sheet?.targetId
-                      ? (allTargetsForSheet ?? []).find(t => t.id === sheet.targetId)?.name ?? "Search targets…"
-                      : "Search targets…"}
-                    value={editTargetSearch}
-                    onChange={(e) => setEditTargetSearch(e.target.value)}
-                    onFocus={() => { if (sheet?.targetId) setEditTargetSearch(""); }}
+              {/* Current target display */}
+              {sheet?.targetId && editTargetMode === "none" && (
+                <div className="flex items-center gap-2 mb-2 px-3 py-2 rounded-md bg-muted/40 border border-border">
+                  <span className="text-sm flex-1 font-medium">{(allTargetsForSheet ?? []).find(t => t.id === sheet.targetId)?.name ?? sheet.targetName ?? "Target"}</span>
+                  <button type="button" onClick={() => { setSheetTarget.mutate({ sheetId, targetId: null }); }} className="text-muted-foreground hover:text-destructive" title="Remove target"><X className="w-3.5 h-3.5" /></button>
+                </div>
+              )}
+              {/* 3-state picker */}
+              {editTargetMode === "none" && (
+                <div className="flex gap-2">
+                  <Button type="button" size="sm" variant="outline" className="flex-1" onClick={() => setEditTargetMode("new")}>
+                    <Plus className="w-3.5 h-3.5 mr-1.5" /> New Target
+                  </Button>
+                  <Button type="button" size="sm" variant="outline" className="flex-1" onClick={() => setEditTargetMode("link")}>
+                    <Search className="w-3.5 h-3.5 mr-1.5" /> Link Existing
+                  </Button>
+                </div>
+              )}
+              {editTargetMode === "new" && (
+                <div className="flex gap-2 items-center">
+                  <Input
+                    placeholder="Target name (e.g. John SMITH, born 1 Jan 1980)"
+                    value={editNewTargetName}
+                    onChange={(e) => setEditNewTargetName(e.target.value)}
+                    autoFocus
+                    className="flex-1"
                   />
-                  {sheet?.targetId && (
-                    <button
-                      type="button"
-                      onClick={() => { setSheetTarget.mutate({ sheetId, targetId: null }); setEditTargetSearch(""); }}
-                      className="text-muted-foreground hover:text-foreground"
-                      title="Remove target"
-                    >
+                  <Button type="button" size="sm" variant="ghost" onClick={() => { setEditTargetMode("none"); setEditNewTargetName(""); }}>
+                    <X className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              )}
+              {editTargetMode === "link" && (
+                <div className="relative">
+                  <div className="flex items-center border border-input rounded-md bg-background px-3 h-9 gap-2">
+                    <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    <input
+                      className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                      placeholder="Search targets…"
+                      value={editTargetSearch}
+                      onChange={(e) => setEditTargetSearch(e.target.value)}
+                      autoFocus
+                    />
+                    <button type="button" onClick={() => { setEditTargetMode("none"); setEditTargetSearch(""); }} className="text-muted-foreground hover:text-foreground">
                       <X className="w-3.5 h-3.5" />
                     </button>
-                  )}
-                </div>
-                {editTargetSearch && (
-                  <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-md max-h-52 overflow-y-auto">
-                    <div
-                      className="px-3 py-2 text-sm cursor-pointer hover:bg-muted/50 text-muted-foreground"
-                      onClick={() => { setSheetTarget.mutate({ sheetId, targetId: null }); setEditTargetSearch(""); }}
-                    >
-                      No target
-                    </div>
-                    {(allTargetsForSheet ?? [])
-                      .filter(t => {
+                  </div>
+                  {editTargetSearch && (
+                    <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-md max-h-52 overflow-y-auto">
+                      {(allTargetsForSheet ?? [])
+                        .filter(t => {
+                          const q = editTargetSearch.toLowerCase();
+                          return t.name.toLowerCase().includes(q) || (t.tgt ?? "").toLowerCase().includes(q) || (t.operationName ?? "").toLowerCase().includes(q);
+                        })
+                        .map(t => (
+                          <div
+                            key={t.id}
+                            className="px-3 py-2 text-sm cursor-pointer hover:bg-muted/50 flex items-center justify-between gap-2"
+                            onClick={() => { setSheetTarget.mutate({ sheetId, targetId: t.id }); setEditTargetSearch(""); setEditTargetMode("none"); }}
+                          >
+                            <span className="font-medium">{t.name}</span>
+                            {t.tgt && <span className="text-xs text-muted-foreground font-mono">{t.tgt}</span>}
+                            {t.operationName && <span className="text-xs text-muted-foreground ml-auto">{t.operationName}</span>}
+                          </div>
+                        ))
+                      }
+                      {(allTargetsForSheet ?? []).filter(t => {
                         const q = editTargetSearch.toLowerCase();
                         return t.name.toLowerCase().includes(q) || (t.tgt ?? "").toLowerCase().includes(q) || (t.operationName ?? "").toLowerCase().includes(q);
-                      })
-                      .map(t => (
-                        <div
-                          key={t.id}
-                          className="px-3 py-2 text-sm cursor-pointer hover:bg-muted/50 flex items-center justify-between gap-2"
-                          onClick={() => { setSheetTarget.mutate({ sheetId, targetId: t.id }); setEditTargetSearch(""); }}
-                        >
-                          <span className="font-medium">{t.name}</span>
-                          {t.tgt && <span className="text-xs text-muted-foreground font-mono">{t.tgt}</span>}
-                          {t.operationName && <span className="text-xs text-muted-foreground ml-auto">{t.operationName}</span>}
-                        </div>
-                      ))
-                    }
-                    {(allTargetsForSheet ?? []).filter(t => {
-                      const q = editTargetSearch.toLowerCase();
-                      return t.name.toLowerCase().includes(q) || (t.tgt ?? "").toLowerCase().includes(q) || (t.operationName ?? "").toLowerCase().includes(q);
-                    }).length === 0 && (
-                      <div className="px-3 py-2 text-sm text-muted-foreground">No targets found</div>
-                    )}
-                  </div>
-                )}
-              </div>
+                      }).length === 0 && (
+                        <div className="px-3 py-2 text-sm text-muted-foreground">No targets found</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditSheetOpen(false)}>Cancel</Button>
             <Button
-              onClick={() => updateSheet.mutate({ id: sheetId, title: editTitle.trim(), targetName: editTargetName.trim() || null })}
+              onClick={() => updateSheet.mutate({ id: sheetId, title: editTitle.trim(), targetName: editTargetMode === "new" ? (editNewTargetName.trim() || null) : (editTargetName.trim() || null) })}
               disabled={!editTitle.trim() || updateSheet.isPending}
             >
               {updateSheet.isPending ? "Saving…" : "Save"}

@@ -13,6 +13,7 @@ import {
   Lock,
   ChevronDown,
   ChevronUp,
+  FileText,
 } from "lucide-react";
 import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useLocation } from "wouter";
@@ -394,6 +395,23 @@ export default function GovernancePage() {
           <ArrowLeft className="w-3.5 h-3.5" />
           Back to Governance
         </button>
+
+        {/* Tab switcher */}
+        <div className="flex gap-1 mb-5 border-b border-border">
+          <button
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+            onClick={() => navigate(`/sheet/${sheetId}`)}
+          >
+            <FileText className="w-4 h-4" />
+            Running Sheet
+          </button>
+          <button
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground border-b-2 border-primary -mb-px transition-colors"
+          >
+            <ClipboardCheck className="w-4 h-4" />
+            Governance
+          </button>
+        </div>
 
         {/* Header */}
         <div className="flex items-start justify-between gap-4 mb-6">

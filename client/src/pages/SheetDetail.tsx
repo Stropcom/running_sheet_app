@@ -1091,16 +1091,6 @@ export default function SheetDetail() {
             )}
           </div>
           <div className="ml-auto flex items-center gap-2 shrink-0">
-            {/* Governance button */}
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-2"
-              onClick={() => navigate(`/governance/${sheetId}`)}
-            >
-              <ClipboardCheck className="w-4 h-4" />
-              Governance
-            </Button>
             {/* Export dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -1137,6 +1127,23 @@ export default function SheetDetail() {
               Add Row
             </Button>
           </div>
+        </div>
+
+        {/* Tab switcher */}
+        <div className="flex gap-1 mb-5 border-b border-border">
+          <button
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground border-b-2 border-primary -mb-px transition-colors"
+          >
+            <FileText className="w-4 h-4" />
+            Running Sheet
+          </button>
+          <button
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+            onClick={() => navigate(`/governance/${sheetId}`)}
+          >
+            <ClipboardCheck className="w-4 h-4" />
+            Governance
+          </button>
         </div>
 
         {/* Daily Roster Panel with Certify All */}

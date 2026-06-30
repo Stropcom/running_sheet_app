@@ -61,6 +61,7 @@ import {
   upsertGovernanceRecord,
   getGovernanceRecordsBySheetIds,
   computeGovernancePercent,
+  getGovernanceTodoForCin,
 } from "./db";
 
 // ─── Role Guards ──────────────────────────────────────────────────────────────
@@ -329,6 +330,12 @@ export const appRouter = router({
       const cin = ctx.user.cin;
       if (!cin) return [];
       return getOutstandingSheetsForCin(cin);
+    }),
+
+    governanceTodo: protectedProcedure.query(async ({ ctx }) => {
+      const cin = ctx.user.cin;
+      if (!cin) return [];
+      return getGovernanceTodoForCin(cin);
     }),
   }),
 

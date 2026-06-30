@@ -1119,3 +1119,111 @@ export async function getGovernanceRecordsBySheetIds(
     .from(governanceRecords)
     .where(inArray(governanceRecords.sheetId, sheetIds));
 }
+
+/**
+ * Returns outstanding governance to-do items for a given CIN.
+ * - If the CIN is the Team Leader on a sheet: returns TL items (summaryNotification, sentToIO) that are incomplete.
+ * - If the CIN is the Author on a sheet: returns Operative items (savedAsWord, savedAsPdf, uploadedToPromis, savedInOpFolder)
+ *   that are incomplete AND the sheet is fully certified.
+ * allSigned is computed inline per sheet.
+ */
+export async function getGovernanceTodoForCin(cin: string): Promise<
+  {
+    sheetId: number;
+    sheetTitle: string;
+    operationId: number;
+    operationName: string;
+    role: "teamLeader" | "author";
+    outstanding: string[];
+    allSigned: boolean;
+  }[]
+> {
+  const db = await getDb();
+  if (!db) return [];
+
+  // Find all sheets where this CIN is TL or Author (stored in sheetCins JSON)
+  const allSheets = await db.select().from(runningSheets);
+  const relevantSheets = allSheets.filter((s) => {
+    try {
+      const cins: { cin: string; isTeamLeader?: boolean; isAuthor?: boolean }[] = JSON.parse(s.sheetCins ?? "[]");
+      return cins.some((c) => c.cin === cin && (c.isTeamLeader || c.isAuthor));
+    } catch { return false; }
+  });
+  if (relevantSheets.length === 0) return [];
+
+  const sheetIds = relevantSheets.map((s) => s.id);
+  const opIds = Array.from(new Set(relevantSheets.map((s) => s.operationId)));
+
+  const [ops, govRecords] = await Promise.all([
+    db.select().from(operations).where(inArray(operations.id, opIds)),
+    getGovernanceRecordsBySheetIds(sheetIds),
+  ]);
+
+  // Compute allSigned per sheet
+  const results: Awaited<ReturnType<typeof getGovernanceTodoForCin>> = [];
+
+  for (const sheet of relevantSheets) {
+    const rows = await getRowsBySheetId(sheet.id);
+    const rowIds = rows.map((r) => r.id);
+    const [members, certs] = await Promise.all([
+      getMembersByRowIds(rowIds),
+      getCertificationsByRowIds(rowIds),
+    ]);
+    const allSigned = rows.length > 0 && rows.every((r) => {
+      const rowMems = members.filter((m) => m.rowId === r.id);
+      return rowMems.length > 0 && rowMems.every((m) =>
+        certs.some((c) => c.rowId === r.id && c.memberId === m.id && c.isActive)
+      );
+    });
+
+    const rec = govRecords.find((g) => g.sheetId === sheet.id);
+    const op = ops.find((o) => o.id === sheet.operationId);
+    const cinList: { cin: string; isTeamLeader?: boolean; isAuthor?: boolean }[] =
+      (() => { try { return JSON.parse(sheet.sheetCins ?? "[]"); } catch { return []; } })();
+    const cinEntry = cinList.find((c) => c.cin === cin);
+
+    if (cinEntry?.isTeamLeader) {
+      const outstanding: string[] = [];
+      if (!rec?.isurv) outstanding.push("Summary complete");
+      if (!rec?.sentToIO) outstanding.push("Sent to IO");
+      if (outstanding.length > 0) {
+        results.push({
+          sheetId: sheet.id,
+          sheetTitle: sheet.title,
+          operationId: sheet.operationId,
+          operationName: op?.name ?? "Unknown",
+          role: "teamLeader",
+          outstanding,
+          allSigned,
+        });
+      }
+    }
+
+    if (cinEntry?.isAuthor) {
+      // Operative items only actionable once sheet is fully certified
+      const outstanding: string[] = [];
+      if (allSigned) {
+        if (!rec?.savedAsWord) outstanding.push("Saved as Word document");
+        if (!rec?.savedAsPdf) outstanding.push("Saved as PDF");
+        if (!rec?.uploadedToPromis) outstanding.push("Uploaded to PROMIS");
+        if (!rec?.savedInOpFolder) outstanding.push("Saved in Operation folder");
+      } else {
+        // Sheet not yet fully certified — flag it as pending certification
+        outstanding.push("Sheet not fully certified");
+      }
+      if (outstanding.length > 0) {
+        results.push({
+          sheetId: sheet.id,
+          sheetTitle: sheet.title,
+          operationId: sheet.operationId,
+          operationName: op?.name ?? "Unknown",
+          role: "author",
+          outstanding,
+          allSigned,
+        });
+      }
+    }
+  }
+
+  return results;
+}

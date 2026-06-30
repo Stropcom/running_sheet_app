@@ -192,38 +192,64 @@ export default function GovernancePage() {
     });
   }, [exportData]);
 
-  // Auto-derive imagery entries from:
-  //   1. sheetCins with hasImages === true
-  //   2. rows whose observation contains a photo phrase
+  // Auto-derive imagery entries:
+  //   Start with all CINs that have hasImages=true from team details.
+  //   Then enrich each CIN with rowTime + type from rows containing PHOTOGRAPH phrases.
+  //   Sort by rowTime ascending.
   const autoImagery = useMemo<ImageryEntry[]>(() => {
-    const entries: ImageryEntry[] = [];
     const rows = exportData?.rows ?? [];
 
-    // From rows: find photo-phrase rows and extract CIN + time
+    // Build a map: cin -> { rowTime, type } from photo-phrase rows
+    const photoRowMap = new Map<string, { rowTime: string; type: "photo" | "video" | "" }>();
     for (const row of rows) {
       const obs = (row.observation ?? "").toUpperCase();
       const hasPhrase = PHOTO_PHRASES.some((p) => obs.includes(p));
       if (!hasPhrase) continue;
-      // CINs on this row
       const rowCins = (row.members ?? []).map((m: { memberName: string }) => m.memberName);
       const time = row.time ?? "";
+      // Detect video vs photo
+      const isVideo = obs.includes("VIDEO");
+      const type: "photo" | "video" = isVideo ? "video" : "photo";
       if (rowCins.length === 0) {
-        entries.push({ cin: "Unknown", rowTime: time, type: "photo", saved: false });
+        // No CIN on row — store under "Unknown"
+        if (!photoRowMap.has("Unknown")) {
+          photoRowMap.set("Unknown", { rowTime: time, type });
+        }
       } else {
         for (const cin of rowCins) {
-          entries.push({ cin, rowTime: time, type: "photo", saved: false });
+          if (!photoRowMap.has(cin)) {
+            photoRowMap.set(cin, { rowTime: time, type });
+          }
         }
       }
     }
 
-    // Also add any CINs with hasImages flag not already covered
-    for (const c of sheetCins) {
-      if (!c.hasImages) continue;
-      const alreadyCovered = entries.some((e) => e.cin === c.cin);
-      if (!alreadyCovered) {
-        entries.push({ cin: c.cin, rowTime: "", type: "", saved: false });
-      }
+    // Start with all hasImages CINs from team details
+    const imageCins = sheetCins.filter((c) => c.hasImages).map((c) => c.cin);
+
+    // Also include any CINs found in photo rows not already in the list
+    for (const cin of Array.from(photoRowMap.keys())) {
+      if (!imageCins.includes(cin)) imageCins.push(cin);
     }
+
+    // Build entries, enriching with row data where available
+    const entries: ImageryEntry[] = imageCins.map((cin) => {
+      const rowData = photoRowMap.get(cin);
+      return {
+        cin,
+        rowTime: rowData?.rowTime ?? "",
+        type: rowData?.type ?? "",
+        saved: false,
+      };
+    });
+
+    // Sort by rowTime ascending (empty times go to end)
+    entries.sort((a, b) => {
+      if (!a.rowTime && !b.rowTime) return 0;
+      if (!a.rowTime) return 1;
+      if (!b.rowTime) return -1;
+      return a.rowTime.localeCompare(b.rowTime);
+    });
 
     return entries;
   }, [exportData, sheetCins]);
@@ -303,7 +329,6 @@ export default function GovernancePage() {
   const imgPercent = gov
     ? completionPercent([
         gov.imageryTaken,
-        gov.coverPage,
         ...imagery.map((e) => e.saved),
       ])
     : 0;
@@ -313,12 +338,12 @@ export default function GovernancePage() {
         (gov as Record<string, unknown>).summaryNotification as boolean ?? false,
         gov.sentToIO,
         allSigned,
-        gov.savedAsWord,
-        gov.savedAsPdf,
-        gov.uploadedToPromis,
-        gov.savedInOpFolder,
+        allSigned && gov.savedAsWord,
+        allSigned && gov.savedAsPdf,
+        allSigned && gov.uploadedToPromis,
+        allSigned && gov.savedInOpFolder,
         gov.imageryTaken,
-        gov.coverPage,
+        ...imagery.map((e) => e.saved),
       ])
     : 0;
 
@@ -430,7 +455,7 @@ export default function GovernancePage() {
           {tlExpanded && gov && (
             <div className="mt-2 space-y-2">
               <CheckRow
-                label="Summary and Notification completed"
+                label="Summary complete"
                 checked={(gov as Record<string, unknown>).summaryNotification as boolean ?? false}
                 onToggle={() => toggle("summaryNotification")}
               />
@@ -491,25 +516,25 @@ export default function GovernancePage() {
 
               <CheckRow
                 label="Saved as Word document"
-                checked={gov.savedAsWord}
+                checked={allSigned && gov.savedAsWord}
                 onToggle={() => toggle("savedAsWord")}
                 disabled={!allSigned}
               />
               <CheckRow
                 label="Saved as PDF"
-                checked={gov.savedAsPdf}
+                checked={allSigned && gov.savedAsPdf}
                 onToggle={() => toggle("savedAsPdf")}
                 disabled={!allSigned}
               />
               <CheckRow
                 label="Uploaded to PROMIS"
-                checked={gov.uploadedToPromis}
+                checked={allSigned && gov.uploadedToPromis}
                 onToggle={() => toggle("uploadedToPromis")}
                 disabled={!allSigned}
               />
               <CheckRow
                 label="Saved in Operation folder"
-                checked={gov.savedInOpFolder}
+                checked={allSigned && gov.savedInOpFolder}
                 onToggle={() => toggle("savedInOpFolder")}
                 disabled={!allSigned}
               />
@@ -532,11 +557,6 @@ export default function GovernancePage() {
                 label="Imagery taken during surveillance"
                 checked={gov.imageryTaken}
                 onToggle={() => toggle("imageryTaken")}
-              />
-              <CheckRow
-                label="Cover page attached"
-                checked={gov.coverPage}
-                onToggle={() => toggle("coverPage")}
               />
 
               {/* Imagery entries table — auto-populated from rows */}

@@ -162,7 +162,7 @@ export default function TodoPage() {
               icon={<ShieldCheck className="w-4 h-4 text-amber-400" />}
               count={certify?.length ?? 0}
               accentClass="bg-amber-500/15 text-amber-400"
-              defaultOpen={true}
+              defaultOpen={false}
             >
               {(certify?.length ?? 0) === 0 ? (
                 <div className="flex items-center gap-2 px-4 py-3 text-sm text-muted-foreground">
@@ -216,7 +216,7 @@ export default function TodoPage() {
               icon={<ClipboardCheck className="w-4 h-4 text-violet-400" />}
               count={govTodo?.length ?? 0}
               accentClass="bg-violet-500/15 text-violet-400"
-              defaultOpen={true}
+              defaultOpen={false}
             >
               {(govTodo?.length ?? 0) === 0 ? (
                 <div className="flex items-center gap-2 px-4 py-3 text-sm text-muted-foreground">

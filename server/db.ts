@@ -1137,11 +1137,13 @@ export function computeGovernancePercent(
   let imageryFields: boolean[] = [];
   let entries: { cin?: string; saved?: boolean }[] = [];
   try { entries = JSON.parse(rec.imageryEntries ?? "[]"); } catch { entries = []; }
-  const hasImagery = entries.length > 0;
+  // Only count imagery if at least one entry has a real CIN (blank placeholder rows are ignored)
+  const realEntries = entries.filter((e) => e.cin && e.cin.trim() !== "");
+  const hasImagery = realEntries.length > 0;
   if (hasImagery) {
-    imageryFields = entries.map((e) => !!e.saved);
+    imageryFields = realEntries.map((e) => !!e.saved);
   }
-  // If no imagery at all, imagery section is N/A — not counted
+  // If no real imagery entries, imagery section is N/A — not counted
 
   const allFields = [...tlFields, ...opFields, ...imageryFields];
   if (allFields.length === 0) return 0;

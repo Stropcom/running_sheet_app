@@ -998,8 +998,8 @@ export async function getGovernanceRecord(sheetId: number): Promise<GovernanceRe
 }
 
 export interface ImageryEntry {
-  name: string;
-  cellTime: string;
+  cin: string;
+  rowTime: string;
   type: "photo" | "video" | "";
   saved: boolean;
 }
@@ -1007,12 +1007,11 @@ export interface ImageryEntry {
 export interface GovernanceUpsertInput {
   sheetId: number;
   dueDate?: number | null;
-  isurv?: boolean;
+  summaryNotification?: boolean;
   sentToIO?: boolean;
   savedAsWord?: boolean;
   savedAsPdf?: boolean;
   uploadedToPromis?: boolean;
-  linked?: boolean;
   savedInOpFolder?: boolean;
   imageryTaken?: boolean;
   coverPage?: boolean;
@@ -1035,12 +1034,11 @@ export async function upsertGovernanceRecord(input: GovernanceUpsertInput): Prom
       .update(governanceRecords)
       .set({
         ...(input.dueDate !== undefined && { dueDate: input.dueDate }),
-        ...(input.isurv !== undefined && { isurv: input.isurv }),
+        ...(input.summaryNotification !== undefined && { isurv: input.summaryNotification }),
         ...(input.sentToIO !== undefined && { sentToIO: input.sentToIO }),
         ...(input.savedAsWord !== undefined && { savedAsWord: input.savedAsWord }),
         ...(input.savedAsPdf !== undefined && { savedAsPdf: input.savedAsPdf }),
         ...(input.uploadedToPromis !== undefined && { uploadedToPromis: input.uploadedToPromis }),
-        ...(input.linked !== undefined && { linked: input.linked }),
         ...(input.savedInOpFolder !== undefined && { savedInOpFolder: input.savedInOpFolder }),
         ...(input.imageryTaken !== undefined && { imageryTaken: input.imageryTaken }),
         ...(input.coverPage !== undefined && { coverPage: input.coverPage }),
@@ -1054,12 +1052,12 @@ export async function upsertGovernanceRecord(input: GovernanceUpsertInput): Prom
     await db.insert(governanceRecords).values({
       sheetId: input.sheetId,
       dueDate: input.dueDate ?? null,
-      isurv: input.isurv ?? false,
+      isurv: input.summaryNotification ?? false,
       sentToIO: input.sentToIO ?? false,
       savedAsWord: input.savedAsWord ?? false,
       savedAsPdf: input.savedAsPdf ?? false,
       uploadedToPromis: input.uploadedToPromis ?? false,
-      linked: input.linked ?? false,
+      linked: false,
       savedInOpFolder: input.savedInOpFolder ?? false,
       imageryTaken: input.imageryTaken ?? false,
       coverPage: input.coverPage ?? false,
@@ -1069,4 +1067,55 @@ export async function upsertGovernanceRecord(input: GovernanceUpsertInput): Prom
     });
   }
   return getGovernanceRecord(input.sheetId);
+}
+
+// ─── Governance Summary Helpers ───────────────────────────────────────────────
+
+/** Lightweight summary of a governance record for the list view */
+export interface GovernanceSummary {
+  sheetId: number;
+  overallPercent: number;
+  isComplete: boolean;
+  isOverdue: boolean;
+  dueDate: number | null;
+}
+
+/**
+ * Compute a governance completion % for a sheet.
+ * allSigned must be passed in from the caller (it requires row/cert queries).
+ */
+export function computeGovernancePercent(
+  rec: GovernanceRecord | null | undefined,
+  allSigned: boolean
+): number {
+  if (!rec) return 0;
+  let entries: { saved: boolean }[] = [];
+  try { entries = JSON.parse(rec.imageryEntries ?? "[]"); } catch { entries = []; }
+  const fields = [
+    rec.sentToIO,
+    allSigned,
+    rec.savedAsWord,
+    rec.savedAsPdf,
+    rec.uploadedToPromis,
+    rec.savedInOpFolder,
+    rec.imageryTaken,
+    rec.coverPage,
+    ...entries.map((e) => e.saved),
+  ];
+  if (fields.length === 0) return 0;
+  return Math.round((fields.filter(Boolean).length / fields.length) * 100);
+}
+
+/** Returns all governance records for a list of sheet IDs */
+export async function getGovernanceRecordsBySheetIds(
+  sheetIds: number[]
+): Promise<GovernanceRecord[]> {
+  if (sheetIds.length === 0) return [];
+  const db = await getDb();
+  if (!db) return [];
+  const { inArray } = await import("drizzle-orm");
+  return db
+    .select()
+    .from(governanceRecords)
+    .where(inArray(governanceRecords.sheetId, sheetIds));
 }

@@ -3,7 +3,6 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
 import DashboardLayout from "@/components/DashboardLayout";
 import {
   CheckCircle2,
@@ -11,9 +10,7 @@ import {
   ArrowLeft,
   ClipboardCheck,
   AlertTriangle,
-  Camera,
-  Plus,
-  Trash2,
+  Lock,
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
@@ -25,8 +22,8 @@ import { format } from "date-fns";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface ImageryEntry {
-  name: string;
-  cellTime: string;
+  cin: string;
+  rowTime: string;
   type: "photo" | "video" | "";
   saved: boolean;
 }
@@ -60,11 +57,11 @@ function CheckRow({
 }) {
   return (
     <div
-      className={`flex items-center gap-3 px-4 py-3 rounded-lg border transition-colors cursor-pointer select-none ${
+      className={`flex items-center gap-3 px-4 py-3 rounded-lg border transition-colors select-none ${
         checked
           ? "bg-emerald-500/10 border-emerald-500/30 text-foreground"
-          : "bg-muted/20 border-border/40 text-muted-foreground hover:bg-muted/40"
-      } ${disabled ? "opacity-50 pointer-events-none" : ""}`}
+          : "bg-muted/20 border-border/40 text-muted-foreground"
+      } ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:bg-muted/40"}`}
       onClick={disabled ? undefined : onToggle}
     >
       {checked ? (
@@ -76,6 +73,7 @@ function CheckRow({
         <p className="text-sm font-medium">{label}</p>
         {info && <p className="text-xs text-muted-foreground mt-0.5">{info}</p>}
       </div>
+      {disabled && !checked && <Lock className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />}
     </div>
   );
 }
@@ -96,11 +94,7 @@ function SectionHeader({
   onToggle: () => void;
 }) {
   const color =
-    percent === 100
-      ? "text-emerald-500"
-      : percent >= 50
-      ? "text-amber-500"
-      : "text-rose-500";
+    percent === 100 ? "text-emerald-500" : percent >= 50 ? "text-amber-500" : "text-rose-500";
   return (
     <button
       onClick={onToggle}
@@ -122,13 +116,19 @@ function SectionHeader({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
+// Photo-trigger phrases
+const PHOTO_PHRASES = ["PHOTOGRAPHS TAKEN", "PHOTOGRAPH TAKEN", "PHOTOGRAPH/S TAKEN"];
+
 export default function GovernancePage() {
   const params = useParams<{ sheetId: string }>();
   const sheetId = parseInt(params.sheetId ?? "0", 10);
   const [, navigate] = useLocation();
 
-  // Fetch sheet info (for header display)
-  const { data: exportData } = trpc.export.sheetData.useQuery({ id: sheetId }, { enabled: !!sheetId });
+  // Fetch full sheet/rows data
+  const { data: exportData } = trpc.export.sheetData.useQuery(
+    { id: sheetId },
+    { enabled: !!sheetId }
+  );
 
   // Fetch governance record (auto-created on first load)
   const { data: gov, isLoading } = trpc.governance.getBySheet.useQuery(
@@ -144,7 +144,7 @@ export default function GovernancePage() {
     onError: () => toast.error("Failed to save change"),
   });
 
-  // Local imagery state (managed separately for add/remove/edit)
+  // Local state
   const [imagery, setImagery] = useState<ImageryEntry[]>([]);
   const [notes, setNotes] = useState("");
   const [dueDate, setDueDate] = useState("");
@@ -167,27 +167,91 @@ export default function GovernancePage() {
 
   // ── Derived data from sheet ──
   const sheet = exportData?.sheet;
-  const sheetCins: Array<{ cin: string; isTeamLeader?: boolean; isAuthor?: boolean }> =
+
+  const sheetCins: Array<{ cin: string; isTeamLeader?: boolean; isAuthor?: boolean; hasImages?: boolean }> =
     useMemo(() => {
       try { return JSON.parse(sheet?.sheetCins ?? "[]"); } catch { return []; }
     }, [sheet?.sheetCins]);
+
   const teamLeader = sheetCins.find((c) => c.isTeamLeader);
   const author = sheetCins.find((c) => c.isAuthor);
+
+  // Determine if all CINs in every row are certified
   const allSigned = useMemo(() => {
     if (!exportData) return false;
     const rows = exportData.rows ?? [];
-    return rows.every((r) =>
-      (r.members ?? []).every((m: { id: number }) =>
-        (r.certifications ?? []).some((c: { memberId: number; isActive: boolean }) => c.memberId === m.id && c.isActive)
-      )
-    );
+    if (rows.length === 0) return false;
+    return rows.every((r) => {
+      const members = r.members ?? [];
+      if (members.length === 0) return true; // row with no members is not blocking
+      return members.every((m: { id: number }) =>
+        (r.certifications ?? []).some(
+          (c: { memberId: number; isActive: boolean }) => c.memberId === m.id && c.isActive
+        )
+      );
+    });
   }, [exportData]);
 
+  // Auto-derive imagery entries from:
+  //   1. sheetCins with hasImages === true
+  //   2. rows whose observation contains a photo phrase
+  const autoImagery = useMemo<ImageryEntry[]>(() => {
+    const entries: ImageryEntry[] = [];
+    const rows = exportData?.rows ?? [];
+
+    // From rows: find photo-phrase rows and extract CIN + time
+    for (const row of rows) {
+      const obs = (row.observation ?? "").toUpperCase();
+      const hasPhrase = PHOTO_PHRASES.some((p) => obs.includes(p));
+      if (!hasPhrase) continue;
+      // CINs on this row
+      const rowCins = (row.members ?? []).map((m: { memberName: string }) => m.memberName);
+      const time = row.time ?? "";
+      if (rowCins.length === 0) {
+        entries.push({ cin: "Unknown", rowTime: time, type: "photo", saved: false });
+      } else {
+        for (const cin of rowCins) {
+          entries.push({ cin, rowTime: time, type: "photo", saved: false });
+        }
+      }
+    }
+
+    // Also add any CINs with hasImages flag not already covered
+    for (const c of sheetCins) {
+      if (!c.hasImages) continue;
+      const alreadyCovered = entries.some((e) => e.cin === c.cin);
+      if (!alreadyCovered) {
+        entries.push({ cin: c.cin, rowTime: "", type: "", saved: false });
+      }
+    }
+
+    return entries;
+  }, [exportData, sheetCins]);
+
+  // On first load: if gov has no imagery entries but autoImagery has some, seed them
+  useEffect(() => {
+    if (!gov) return;
+    const existing = parseImagery(gov.imageryEntries);
+    if (existing.length === 0 && autoImagery.length > 0) {
+      saveImagery(autoImagery);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gov?.id, autoImagery.length]);
+
   // ── Toggle helper ──
-  type BoolField = "isurv" | "sentToIO" | "savedAsWord" | "savedAsPdf" | "uploadedToPromis" | "linked" | "savedInOpFolder" | "imageryTaken" | "coverPage";
+  type BoolField =
+    | "sentToIO"
+    | "summaryNotification"
+    | "savedAsWord"
+    | "savedAsPdf"
+    | "uploadedToPromis"
+    | "savedInOpFolder"
+    | "imageryTaken"
+    | "coverPage";
+
   function toggle(field: BoolField) {
     if (!gov) return;
-    updateMutation.mutate({ sheetId, [field]: !gov[field] });
+    updateMutation.mutate({ sheetId, [field]: !(gov as Record<string, unknown>)[field] });
   }
 
   // ── Save notes (debounced) ──
@@ -213,12 +277,6 @@ export default function GovernancePage() {
     setImagery(entries);
     updateMutation.mutate({ sheetId, imageryEntries: entries });
   }
-  function addImageryRow() {
-    saveImagery([...imagery, { name: "", cellTime: "", type: "", saved: false }]);
-  }
-  function removeImageryRow(idx: number) {
-    saveImagery(imagery.filter((_, i) => i !== idx));
-  }
   function updateImageryRow(idx: number, patch: Partial<ImageryEntry>) {
     const next = imagery.map((e, i) => (i === idx ? { ...e, ...patch } : e));
     saveImagery(next);
@@ -226,34 +284,38 @@ export default function GovernancePage() {
 
   // ── Completion percentages ──
   const tlPercent = gov
-    ? completionPercent([gov.isurv, gov.sentToIO])
+    ? completionPercent([
+        (gov as Record<string, unknown>).summaryNotification as boolean ?? false,
+        gov.sentToIO,
+      ])
     : 0;
+
   const opPercent = gov
     ? completionPercent([
         allSigned,
         gov.savedAsWord,
         gov.savedAsPdf,
         gov.uploadedToPromis,
-        gov.linked,
         gov.savedInOpFolder,
       ])
     : 0;
+
   const imgPercent = gov
     ? completionPercent([
         gov.imageryTaken,
         gov.coverPage,
-        ...(imagery.map((e) => e.saved)),
+        ...imagery.map((e) => e.saved),
       ])
     : 0;
+
   const overallPercent = gov
     ? completionPercent([
-        gov.isurv,
+        (gov as Record<string, unknown>).summaryNotification as boolean ?? false,
         gov.sentToIO,
         allSigned,
         gov.savedAsWord,
         gov.savedAsPdf,
         gov.uploadedToPromis,
-        gov.linked,
         gov.savedInOpFolder,
         gov.imageryTaken,
         gov.coverPage,
@@ -280,11 +342,11 @@ export default function GovernancePage() {
       <div className="p-6 max-w-3xl mx-auto">
         {/* Back nav */}
         <button
-          onClick={() => navigate(`/operation/${sheet?.operationId ?? ""}`)}
+          onClick={() => navigate("/governance")}
           className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-5 transition-colors"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
-          Back to Operation
+          Back to Governance
         </button>
 
         {/* Header */}
@@ -295,9 +357,7 @@ export default function GovernancePage() {
             </div>
             <div>
               <h1 className="text-lg font-semibold text-foreground">RS Governance</h1>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {sheet?.title ?? "Loading…"}
-              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">{sheet?.title ?? "Loading…"}</p>
             </div>
           </div>
           <div className="flex flex-col items-end gap-1.5">
@@ -362,7 +422,7 @@ export default function GovernancePage() {
         <div className="mb-3">
           <SectionHeader
             title="Team Leader"
-            subtitle="iSurv summary and IO notification"
+            subtitle="Summary notification and IO sign-off"
             percent={tlPercent}
             expanded={tlExpanded}
             onToggle={() => setTlExpanded((v) => !v)}
@@ -370,9 +430,9 @@ export default function GovernancePage() {
           {tlExpanded && gov && (
             <div className="mt-2 space-y-2">
               <CheckRow
-                label="iSurv summary completed"
-                checked={gov.isurv}
-                onToggle={() => toggle("isurv")}
+                label="Summary and Notification completed"
+                checked={(gov as Record<string, unknown>).summaryNotification as boolean ?? false}
+                onToggle={() => toggle("summaryNotification")}
               />
               <CheckRow
                 label="Sent to IO"
@@ -394,41 +454,64 @@ export default function GovernancePage() {
           />
           {opExpanded && gov && (
             <div className="mt-2 space-y-2">
-              <CheckRow
-                label="Signed by all team members"
-                checked={allSigned}
-                onToggle={() => {}}
-                info={
+              {/* Certification status — always shown, not toggleable */}
+              <div
+                className={`flex items-center gap-3 px-4 py-3 rounded-lg border ${
                   allSigned
-                    ? "All CINs have certified their rows"
-                    : "Some rows still have uncertified CINs"
-                }
-                disabled
-              />
+                    ? "bg-emerald-500/10 border-emerald-500/30"
+                    : "bg-rose-500/10 border-rose-500/30"
+                }`}
+              >
+                {allSigned ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-5 h-5 text-rose-500 shrink-0" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className={`text-sm font-medium ${allSigned ? "text-foreground" : "text-rose-400"}`}>
+                    Signed by all team members
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {allSigned
+                      ? "All CINs have certified their rows"
+                      : "Sheet must be fully certified before the rest of this section can be completed"}
+                  </p>
+                </div>
+              </div>
+
+              {/* Remaining operative checks — locked until allSigned */}
+              {!allSigned && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/30 border border-border/30">
+                  <Lock className="w-3.5 h-3.5 text-muted-foreground" />
+                  <p className="text-xs text-muted-foreground">
+                    Complete certification of all rows to unlock the remaining checks
+                  </p>
+                </div>
+              )}
+
               <CheckRow
                 label="Saved as Word document"
                 checked={gov.savedAsWord}
                 onToggle={() => toggle("savedAsWord")}
+                disabled={!allSigned}
               />
               <CheckRow
                 label="Saved as PDF"
                 checked={gov.savedAsPdf}
                 onToggle={() => toggle("savedAsPdf")}
+                disabled={!allSigned}
               />
               <CheckRow
                 label="Uploaded to PROMIS"
                 checked={gov.uploadedToPromis}
                 onToggle={() => toggle("uploadedToPromis")}
-              />
-              <CheckRow
-                label="Linked in PROMIS"
-                checked={gov.linked}
-                onToggle={() => toggle("linked")}
+                disabled={!allSigned}
               />
               <CheckRow
                 label="Saved in Operation folder"
                 checked={gov.savedInOpFolder}
                 onToggle={() => toggle("savedInOpFolder")}
+                disabled={!allSigned}
               />
             </div>
           )}
@@ -456,48 +539,28 @@ export default function GovernancePage() {
                 onToggle={() => toggle("coverPage")}
               />
 
-              {/* Sheet cell reference */}
-              <div className="rounded-lg border border-border/40 bg-muted/20 px-4 py-3">
-                <p className="text-xs font-medium text-muted-foreground mb-1.5">Sheet cell reference</p>
-                <Input
-                  value={gov.sheetCell ?? ""}
-                  onChange={(e) =>
-                    updateMutation.mutate({ sheetId, sheetCell: e.target.value || null })
-                  }
-                  placeholder="e.g. Row 14"
-                  className="h-8 text-xs"
-                />
-              </div>
-
-              {/* Imagery entries table */}
+              {/* Imagery entries table — auto-populated from rows */}
               {imagery.length > 0 && (
                 <div className="rounded-lg border border-border/40 overflow-hidden">
-                  <div className="grid grid-cols-[1fr_100px_90px_60px_32px] gap-0 text-[10px] font-semibold text-muted-foreground bg-muted/30 px-3 py-2 border-b border-border/30">
-                    <span>NAME / DESCRIPTION</span>
-                    <span>CELL TIME</span>
+                  <div className="grid grid-cols-[80px_80px_90px_60px] gap-0 text-[10px] font-semibold text-muted-foreground bg-muted/30 px-3 py-2 border-b border-border/30">
+                    <span>CIN</span>
+                    <span>ROW TIME</span>
                     <span>TYPE</span>
                     <span>SAVED</span>
-                    <span />
                   </div>
                   {imagery.map((entry, idx) => (
                     <div
                       key={idx}
-                      className={`grid grid-cols-[1fr_100px_90px_60px_32px] gap-0 items-center px-3 py-2 ${
+                      className={`grid grid-cols-[80px_80px_90px_60px] gap-0 items-center px-3 py-2 ${
                         idx < imagery.length - 1 ? "border-b border-border/20" : ""
                       }`}
                     >
-                      <input
-                        value={entry.name}
-                        onChange={(e) => updateImageryRow(idx, { name: e.target.value })}
-                        placeholder="Description"
-                        className="bg-transparent text-xs text-foreground outline-none w-full pr-2"
-                      />
-                      <input
-                        value={entry.cellTime}
-                        onChange={(e) => updateImageryRow(idx, { cellTime: e.target.value })}
-                        placeholder="e.g. 14:32"
-                        className="bg-transparent text-xs text-foreground outline-none w-full pr-2"
-                      />
+                      <span className="text-xs text-foreground font-medium truncate pr-2">
+                        {entry.cin || "—"}
+                      </span>
+                      <span className="text-xs text-muted-foreground pr-2">
+                        {entry.rowTime || "—"}
+                      </span>
                       <select
                         value={entry.type}
                         onChange={(e) =>
@@ -519,27 +582,17 @@ export default function GovernancePage() {
                           <Circle className="w-4 h-4 text-muted-foreground" />
                         )}
                       </button>
-                      <button
-                        onClick={() => removeImageryRow(idx)}
-                        className="flex items-center justify-center text-muted-foreground hover:text-destructive transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
                     </div>
                   ))}
                 </div>
               )}
 
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={addImageryRow}
-                disabled={imagery.length >= 10}
-                className="w-full text-xs gap-1.5"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                {imagery.length >= 10 ? "Maximum 10 entries reached" : "Add Imagery Entry"}
-              </Button>
+              {imagery.length === 0 && (
+                <p className="text-xs text-muted-foreground px-1 py-2">
+                  No imagery entries detected. Rows containing "PHOTOGRAPH/S TAKEN" or team members
+                  with imagery flagged will appear here automatically.
+                </p>
+              )}
             </div>
           )}
         </div>

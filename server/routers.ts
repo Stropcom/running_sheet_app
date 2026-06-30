@@ -59,6 +59,8 @@ import {
   deleteShortcut,
   getGovernanceRecord,
   upsertGovernanceRecord,
+  getGovernanceRecordsBySheetIds,
+  computeGovernancePercent,
 } from "./db";
 
 // ─── Role Guards ──────────────────────────────────────────────────────────────
@@ -831,31 +833,72 @@ export const appRouter = router({
         return record;
       }),
 
+    /** Governance completion summary for all sheets in an operation */
+    summaryByOperation: protectedProcedure
+      .input(z.object({ operationId: z.number() }))
+      .query(async ({ input }) => {
+        const sheets = await getRunningSheetsByOperation(input.operationId);
+        if (!sheets.length) return [];
+        const sheetIds = sheets.map((s) => s.id);
+        const rowIds: number[] = [];
+        const rowsBySheet: Record<number, { id: number }[]> = {};
+        for (const s of sheets) {
+          const rows = await getRowsBySheetId(s.id);
+          rowsBySheet[s.id] = rows;
+          rows.forEach((r) => rowIds.push(r.id));
+        }
+        const [allMembers, allCerts, govRecords] = await Promise.all([
+          getMembersByRowIds(rowIds),
+          getCertificationsByRowIds(rowIds),
+          getGovernanceRecordsBySheetIds(sheetIds),
+        ]);
+        return sheets.map((sheet) => {
+          const rows = rowsBySheet[sheet.id] ?? [];
+          const allSigned = rows.length > 0 && rows.every((r) => {
+            const members = allMembers.filter((m) => m.rowId === r.id);
+            return members.length > 0 && members.every((m) =>
+              allCerts.some((c) => c.rowId === r.id && c.memberId === m.id && c.isActive)
+            );
+          });
+          const rec = govRecords.find((g) => g.sheetId === sheet.id) ?? null;
+          const percent = computeGovernancePercent(rec, allSigned);
+          const isOverdue = rec?.dueDate != null && Date.now() > rec.dueDate && percent < 100;
+          return {
+            sheetId: sheet.id,
+            sheetTitle: sheet.title,
+            sheetCreatedAt: sheet.createdAt,
+            overallPercent: percent,
+            isComplete: percent === 100,
+            isOverdue,
+            dueDate: rec?.dueDate ?? null,
+          };
+        });
+      }),
+
     /** Update governance record fields */
     update: protectedProcedure
       .input(z.object({
         sheetId: z.number(),
         dueDate: z.number().nullable().optional(),
-        isurv: z.boolean().optional(),
         sentToIO: z.boolean().optional(),
+        summaryNotification: z.boolean().optional(),
         savedAsWord: z.boolean().optional(),
         savedAsPdf: z.boolean().optional(),
         uploadedToPromis: z.boolean().optional(),
-        linked: z.boolean().optional(),
         savedInOpFolder: z.boolean().optional(),
         imageryTaken: z.boolean().optional(),
         coverPage: z.boolean().optional(),
         sheetCell: z.string().nullable().optional(),
         imageryEntries: z.array(z.object({
-          name: z.string(),
-          cellTime: z.string(),
+          cin: z.string(),
+          rowTime: z.string(),
           type: z.enum(["photo", "video", ""]),
           saved: z.boolean(),
         })).optional(),
         notes: z.string().nullable().optional(),
       }))
       .mutation(async ({ input }) => {
-        const record = await upsertGovernanceRecord(input);
+        const record = await upsertGovernanceRecord(input as Parameters<typeof upsertGovernanceRecord>[0]);
         return record;
       }),
   }),

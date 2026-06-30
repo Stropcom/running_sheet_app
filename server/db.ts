@@ -135,6 +135,14 @@ export async function updateOperation(id: number, data: Partial<InsertOperation>
 export async function deleteOperation(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+
+  // Cascade: delete all child records before deleting the operation
+  const sheets = await db.select({ id: runningSheets.id }).from(runningSheets).where(eq(runningSheets.operationId, id));
+  for (const sheet of sheets) {
+    await deleteRunningSheet(sheet.id);
+  }
+  // Delete targets belonging to this operation
+  await db.delete(targets).where(eq(targets.operationId, id));
   await db.delete(operations).where(eq(operations.id, id));
 }
 
@@ -175,6 +183,18 @@ export async function updateRunningSheet(id: number, data: Partial<InsertRunning
 export async function deleteRunningSheet(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+
+  // Cascade: delete all child records before deleting the sheet
+  const rows = await db.select({ id: sheetRows.id }).from(sheetRows).where(eq(sheetRows.sheetId, id));
+  if (rows.length > 0) {
+    const rowIds = rows.map((r) => r.id);
+    // Delete certifications and row_members for these rows
+    await db.delete(certifications).where(inArray(certifications.rowId, rowIds));
+    await db.delete(rowMembers).where(inArray(rowMembers.rowId, rowIds));
+    await db.delete(sheetRows).where(eq(sheetRows.sheetId, id));
+  }
+  // Delete governance record for this sheet
+  await db.delete(governanceRecords).where(eq(governanceRecords.sheetId, id));
   await db.delete(runningSheets).where(eq(runningSheets.id, id));
 }
 
@@ -361,28 +381,33 @@ export async function getOutstandingSheetsForCin(cin: string): Promise<
   const sheetIds = Array.from(new Set(rows.map((r) => r.sheetId)));
   if (sheetIds.length === 0) return [];
 
-  // Fetch sheets
+  // Fetch sheets — only those that still exist
   const sheets = await db
     .select()
     .from(runningSheets)
     .where(inArray(runningSheets.id, sheetIds));
 
-  // Fetch operations for those sheets
+  // Fetch operations for those sheets — only those that still exist
   const opIds = Array.from(new Set(sheets.map((s) => s.operationId)));
+  if (opIds.length === 0) return [];
   const ops = await db
     .select()
     .from(operations)
     .where(inArray(operations.id, opIds));
 
-  return sheets.map((sheet) => {
-    const op = ops.find((o) => o.id === sheet.operationId);
+  // Only include sheets whose operation still exists
+  const validOpIds = new Set(ops.map((o) => o.id));
+  const validSheets = sheets.filter((s) => validOpIds.has(s.operationId));
+
+  return validSheets.map((sheet) => {
+    const op = ops.find((o) => o.id === sheet.operationId)!;
     const uncertifiedRowCount = rows.filter((r) => r.sheetId === sheet.id).length;
     return {
       sheetId: sheet.id,
       sheetTitle: sheet.title,
       targetName: sheet.targetName ?? null,
       operationId: sheet.operationId,
-      operationName: op?.name ?? "Unknown Operation",
+      operationName: op.name,
       uncertifiedRowCount,
       createdAt: sheet.createdAt,
     };
@@ -1168,18 +1193,22 @@ export async function getGovernanceTodoForCin(cin: string): Promise<
   });
   if (relevantSheets.length === 0) return [];
 
-  const sheetIds = relevantSheets.map((s) => s.id);
   const opIds = Array.from(new Set(relevantSheets.map((s) => s.operationId)));
 
   const [ops, govRecords] = await Promise.all([
     db.select().from(operations).where(inArray(operations.id, opIds)),
-    getGovernanceRecordsBySheetIds(sheetIds),
+    getGovernanceRecordsBySheetIds(relevantSheets.map((s) => s.id)),
   ]);
+
+  // Only process sheets whose operation still exists
+  const validOpIds = new Set(ops.map((o) => o.id));
+  const validSheets = relevantSheets.filter((s) => validOpIds.has(s.operationId));
+  if (validSheets.length === 0) return [];
 
   // Compute allSigned per sheet
   const results: Awaited<ReturnType<typeof getGovernanceTodoForCin>> = [];
 
-  for (const sheet of relevantSheets) {
+  for (const sheet of validSheets) {
     const rows = await getRowsBySheetId(sheet.id);
     const rowIds = rows.map((r) => r.id);
     const [members, certs] = await Promise.all([

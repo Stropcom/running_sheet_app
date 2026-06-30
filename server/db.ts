@@ -483,6 +483,24 @@ export async function getTargetsByOperation(operationId: number) {
   return db.select().from(targets).where(eq(targets.operationId, operationId));
 }
 
+/** Return all targets across all operations, joined with operation name */
+export async function getAllTargets() {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({
+      id: targets.id,
+      name: targets.name,
+      tgt: targets.tgt,
+      operationId: targets.operationId,
+      operationName: operations.name,
+    })
+    .from(targets)
+    .leftJoin(operations, eq(targets.operationId, operations.id))
+    .orderBy(targets.name);
+  return rows;
+}
+
 export async function createTarget(data: InsertTarget) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");

@@ -173,17 +173,45 @@ function TargetCard({
 function TargetPanel({ operationId, autoExpandId }: { operationId: number; autoExpandId?: number }) {
   const utils = trpc.useUtils();
   const { data: targets, isLoading } = trpc.target.list.useQuery({ operationId });
+  const { data: allTargets } = trpc.target.listAll.useQuery();
   const [newName, setNewName] = useState("");
-  const [adding, setAdding] = useState(false);
+  const [mode, setMode] = useState<"idle" | "new" | "link">("idle");
+  const [linkSearch, setLinkSearch] = useState("");
 
   const create = trpc.target.create.useMutation({
     onSuccess: () => {
       utils.target.list.invalidate({ operationId });
       setNewName("");
-      setAdding(false);
+      setMode("idle");
       toast.success("Target added");
     },
     onError: (e: { message: string }) => toast.error(e.message),
+  });
+
+  // Link = copy the selected target's data into this operation as a new target record
+  const linkTarget = trpc.target.create.useMutation({
+    onSuccess: () => {
+      utils.target.list.invalidate({ operationId });
+      setMode("idle");
+      setLinkSearch("");
+      toast.success("Target linked to operation");
+    },
+    onError: (e: { message: string }) => toast.error(e.message),
+  });
+
+  // Targets already in this operation (to avoid duplicates in link list)
+  const existingIds = new Set((targets ?? []).map((t) => t.id));
+
+  // Filter allTargets for the link picker — exclude already-added ones, apply search
+  const linkOptions = (allTargets ?? []).filter((t) => {
+    if (existingIds.has(t.id)) return false;
+    const q = linkSearch.toLowerCase();
+    if (!q) return true;
+    return (
+      t.name.toLowerCase().includes(q) ||
+      (t.tgt ?? "").toLowerCase().includes(q) ||
+      (t.operationName ?? "").toLowerCase().includes(q)
+    );
   });
 
   if (isLoading) return (
@@ -207,26 +235,82 @@ function TargetPanel({ operationId, autoExpandId }: { operationId: number; autoE
         </div>
       )}
 
-      {/* Add target inline form */}
-      {adding ? (
+      {/* Add / Link target forms */}
+      {mode === "new" && (
         <div className="flex gap-2 mt-1">
           <Input
             autoFocus
             placeholder="Full name, born (e.g. John SMITH, born 1 Jan 1980)"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && newName.trim()) create.mutate({ operationId, name: newName.trim() }); if (e.key === "Escape") setAdding(false); }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && newName.trim()) create.mutate({ operationId, name: newName.trim() });
+              if (e.key === "Escape") setMode("idle");
+            }}
           />
           <Button size="sm" onClick={() => newName.trim() && create.mutate({ operationId, name: newName.trim() })} disabled={!newName.trim() || create.isPending}>
             {create.isPending ? "Adding…" : "Add"}
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => setAdding(false)}>Cancel</Button>
+          <Button size="sm" variant="ghost" onClick={() => setMode("idle")}>Cancel</Button>
         </div>
-      ) : (
-        <Button size="sm" variant="outline" className="gap-2 self-start" onClick={() => setAdding(true)}>
-          <Plus className="w-3.5 h-3.5" />
-          Add Target
-        </Button>
+      )}
+
+      {mode === "link" && (
+        <div className="rounded-xl border border-border bg-card p-3 flex flex-col gap-2 mt-1">
+          <div className="flex items-center gap-2">
+            <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+            <Input
+              autoFocus
+              className="h-8 text-sm"
+              placeholder="Search by name, TGT code or operation…"
+              value={linkSearch}
+              onChange={(e) => setLinkSearch(e.target.value)}
+            />
+            <Button size="sm" variant="ghost" className="shrink-0" onClick={() => { setMode("idle"); setLinkSearch(""); }}>Cancel</Button>
+          </div>
+          <div className="max-h-64 overflow-y-auto flex flex-col gap-1">
+            {linkOptions.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-4">
+                {linkSearch ? "No matching targets" : "All existing targets are already in this operation"}
+              </p>
+            ) : (
+              linkOptions.map((t) => (
+                <button
+                  key={t.id}
+                  className="flex items-start gap-3 px-3 py-2 rounded-lg hover:bg-muted/60 text-left transition-colors w-full"
+                  onClick={() => linkTarget.mutate({
+                    operationId,
+                    name: t.name,
+                    tgt: t.tgt ?? undefined,
+                  })}
+                  disabled={linkTarget.isPending}
+                >
+                  <Target className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">{t.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {t.tgt ? <span className="font-mono mr-2">TGT: {t.tgt}</span> : null}
+                      {t.operationName ? <span>Op: {t.operationName}</span> : null}
+                    </p>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {mode === "idle" && (
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" className="gap-2" onClick={() => setMode("new")}>
+            <Plus className="w-3.5 h-3.5" />
+            New Target
+          </Button>
+          <Button size="sm" variant="outline" className="gap-2" onClick={() => setMode("link")}>
+            <Search className="w-3.5 h-3.5" />
+            Link Existing
+          </Button>
+        </div>
       )}
     </div>
   );

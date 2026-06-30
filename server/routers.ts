@@ -45,6 +45,7 @@ import {
   updateUserRole,
   getCinCertStatusForSheet,
   getOutstandingSheetsForCin,
+  getAllTargets,
   getTargetsByOperation,
   createTarget,
   updateTarget,
@@ -767,6 +768,11 @@ export const appRouter = router({
         await deleteTarget(input.id);
         return { success: true };
       }),
+
+    /** List all targets across all operations (for cross-op linking) */
+    listAll: protectedProcedure.query(async () => {
+      return getAllTargets();
+    }),
 
     /** Set the target for a running sheet */
     setSheetTarget: protectedProcedure

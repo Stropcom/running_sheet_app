@@ -109,13 +109,13 @@ function DashboardLayoutContent({
 
   const menuItems = [
     { icon: FileText, label: "Operations", path: "/" },
-    { icon: ClipboardList, label: "To-Do", path: "/todo", badge: todoCount, badgeLabel: todoCount > 0 ? `To-Do (${todoCount})` : "To-Do" },
-    { icon: ScrollText, label: "Audit Log", path: "/audit" },
-    { icon: FolderSearch, label: "Intelligence", path: "/intelligence" },
     { icon: ClipboardCheck, label: "Governance", path: "/governance" },
+    { icon: ClipboardList, label: "To-Do", path: "/todo", badge: todoCount, badgeLabel: todoCount > 0 ? `To-Do (${todoCount})` : "To-Do" },
+    { icon: Zap, label: "Shortcuts", path: "/shortcuts" },
+    { icon: FolderSearch, label: "Intelligence", path: "/intelligence" },
+    { icon: ScrollText, label: "Audit Log", path: "/audit" },
     { icon: User, label: "My Profile", path: "/profile" },
     ...(user?.role === "admin" ? [
-      { icon: Zap, label: "Shortcuts", path: "/shortcuts" },
       { icon: Users, label: "User Management", path: "/admin" },
     ] : []),
   ];

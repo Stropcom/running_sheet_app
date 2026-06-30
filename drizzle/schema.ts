@@ -186,3 +186,35 @@ export const auditLogs = mysqlTable("audit_logs", {
 
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type InsertAuditLog = typeof auditLogs.$inferInsert;
+
+// ─── Governance Records ──────────────────────────────────────────────────────────────────────────
+// One row per running sheet. Tracks write-off checklist completion.
+
+export const governanceRecords = mysqlTable("governance_records", {
+  id: int("id").autoincrement().primaryKey(),
+  sheetId: int("sheetId").notNull().unique(),
+  // Due date (ms epoch) — defaults to sheet date + 7 days, editable
+  dueDate: bigint("dueDate", { mode: "number" }),
+  // ─ Team Leader section ─
+  isurv: boolean("isurv").default(false).notNull(),
+  sentToIO: boolean("sentToIO").default(false).notNull(),
+  // ─ Operative / RS Author section ─
+  savedAsWord: boolean("savedAsWord").default(false).notNull(),
+  savedAsPdf: boolean("savedAsPdf").default(false).notNull(),
+  uploadedToPromis: boolean("uploadedToPromis").default(false).notNull(),
+  linked: boolean("linked").default(false).notNull(),
+  savedInOpFolder: boolean("savedInOpFolder").default(false).notNull(),
+  // ─ Imagery section ─
+  imageryTaken: boolean("imageryTaken").default(false).notNull(),
+  coverPage: boolean("coverPage").default(false).notNull(),
+  sheetCell: varchar("sheetCell", { length: 255 }),
+  // JSON array of imagery entries: [{name,cellTime,type,saved}]
+  imageryEntries: text("imageryEntries"),
+  // General notes
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type GovernanceRecord = typeof governanceRecords.$inferSelect;
+export type InsertGovernanceRecord = typeof governanceRecords.$inferInsert;

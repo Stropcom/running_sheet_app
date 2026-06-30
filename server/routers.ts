@@ -57,6 +57,8 @@ import {
   createShortcut,
   updateShortcut,
   deleteShortcut,
+  getGovernanceRecord,
+  upsertGovernanceRecord,
 } from "./db";
 
 // ─── Role Guards ──────────────────────────────────────────────────────────────
@@ -809,6 +811,52 @@ export const appRouter = router({
     getEntities: protectedProcedure
       .query(async () => {
         return getAllIntelligenceEntities();
+      }),
+  }),
+
+  /** RS Governance Folder */
+  governance: router({
+    /** Get (or auto-create) governance record for a sheet */
+    getBySheet: protectedProcedure
+      .input(z.object({ sheetId: z.number() }))
+      .query(async ({ input }) => {
+        const sheet = await getRunningSheetById(input.sheetId);
+        if (!sheet) throw new TRPCError({ code: "NOT_FOUND" });
+        let record = await getGovernanceRecord(input.sheetId);
+        if (!record) {
+          // Auto-create with due date = sheet createdAt + 7 days
+          const dueDate = new Date(sheet.createdAt).getTime() + 7 * 24 * 60 * 60 * 1000;
+          record = await upsertGovernanceRecord({ sheetId: input.sheetId, dueDate });
+        }
+        return record;
+      }),
+
+    /** Update governance record fields */
+    update: protectedProcedure
+      .input(z.object({
+        sheetId: z.number(),
+        dueDate: z.number().nullable().optional(),
+        isurv: z.boolean().optional(),
+        sentToIO: z.boolean().optional(),
+        savedAsWord: z.boolean().optional(),
+        savedAsPdf: z.boolean().optional(),
+        uploadedToPromis: z.boolean().optional(),
+        linked: z.boolean().optional(),
+        savedInOpFolder: z.boolean().optional(),
+        imageryTaken: z.boolean().optional(),
+        coverPage: z.boolean().optional(),
+        sheetCell: z.string().nullable().optional(),
+        imageryEntries: z.array(z.object({
+          name: z.string(),
+          cellTime: z.string(),
+          type: z.enum(["photo", "video", ""]),
+          saved: z.boolean(),
+        })).optional(),
+        notes: z.string().nullable().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const record = await upsertGovernanceRecord(input);
+        return record;
       }),
   }),
 });

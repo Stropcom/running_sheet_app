@@ -14,6 +14,8 @@ import MyProfilePage from "./pages/MyProfilePage";
 import TodoPage from "./pages/TodoPage";
 import ShortcutsPage from "./pages/ShortcutsPage";
 import IntelligencePage from "./pages/Intelligence";
+import GovernancePage from "./pages/Governance";
+import GovernanceListPage from "./pages/GovernanceList";
 
 function Router() {
   return (
@@ -26,6 +28,8 @@ function Router() {
       <Route path="/todo" component={TodoPage} />
       <Route path="/shortcuts" component={ShortcutsPage} />
       <Route path="/intelligence" component={IntelligencePage} />
+      <Route path="/governance" component={GovernanceListPage} />
+      <Route path="/governance/:sheetId" component={GovernancePage} />
       <Route path="/audit" component={AuditLogPage} />
       <Route path="/admin" component={AdminPage} />
       <Route path="/404" component={NotFound} />

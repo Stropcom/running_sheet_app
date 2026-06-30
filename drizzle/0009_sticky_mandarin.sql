@@ -1,0 +1,21 @@
+CREATE TABLE `governance_records` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`sheetId` int NOT NULL,
+	`dueDate` bigint,
+	`isurv` boolean NOT NULL DEFAULT false,
+	`sentToIO` boolean NOT NULL DEFAULT false,
+	`savedAsWord` boolean NOT NULL DEFAULT false,
+	`savedAsPdf` boolean NOT NULL DEFAULT false,
+	`uploadedToPromis` boolean NOT NULL DEFAULT false,
+	`linked` boolean NOT NULL DEFAULT false,
+	`savedInOpFolder` boolean NOT NULL DEFAULT false,
+	`imageryTaken` boolean NOT NULL DEFAULT false,
+	`coverPage` boolean NOT NULL DEFAULT false,
+	`sheetCell` varchar(255),
+	`imageryEntries` text,
+	`notes` text,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `governance_records_id` PRIMARY KEY(`id`),
+	CONSTRAINT `governance_records_sheetId_unique` UNIQUE(`sheetId`)
+);

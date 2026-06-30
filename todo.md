@@ -220,3 +220,17 @@
 - [x] Frontend: Selectable sections before PDF export (Running Sheets, Vehicles, Addresses, Persons, Businesses)
 - [x] Frontend: PDF export for person profile with only selected sections
 - [x] Sidebar nav entry for Intelligence
+
+## RS Governance Folder (Round 34)
+- [x] DB: governance_records table (id, sheetId, dueDate, isurv, sentToIO, savedAsWord, savedAsPdf, uploadedToPromis, linked, savedInOpFolder, imageryTaken, coverPage, sheetCell, imageryEntries JSON, notes, createdAt, updatedAt) — no sample data seeded
+- [x] DB: migration SQL applied via webdev_execute_sql
+- [x] Backend: db helpers for governance CRUD (getBySheetId, upsert)
+- [x] Backend: tRPC governance router (get, upsert) — auto-populate from sheet data on first load
+- [x] Frontend: GovernancePage — per-sheet checklist with Team Leader and Operative sections
+- [x] Frontend: Auto-populate date, operation, team leader, author, target from existing sheet data
+- [x] Frontend: Manual tick fields: iSurv, Sent to IO, Saved as Word, Saved as PDF, PROMIS upload, Linked, Saved in Op Folder
+- [x] Frontend: Imagery section — imagery entries (name, cell time, photo/vid type, saved)
+- [x] Frontend: Due date field (auto-set to sheet date + 7 days, editable)
+- [x] Frontend: Governance button on sheet header, Governance sidebar nav item
+- [x] Sidebar nav: add Governance link (or accessible from each running sheet)
+- [x] Route /governance/:sheetId registered in App.tsx

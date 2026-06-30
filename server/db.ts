@@ -19,6 +19,8 @@ import {
   targets,
   InsertTarget,
   users,
+  governanceRecords,
+  GovernanceRecord,
 } from "../drizzle/schema";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -980,4 +982,91 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
   }
 
   return Array.from(entityMap.values());
+}
+
+// ─── Governance Records ───────────────────────────────────────────────────────
+
+export async function getGovernanceRecord(sheetId: number): Promise<GovernanceRecord | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select()
+    .from(governanceRecords)
+    .where(eq(governanceRecords.sheetId, sheetId))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export interface ImageryEntry {
+  name: string;
+  cellTime: string;
+  type: "photo" | "video" | "";
+  saved: boolean;
+}
+
+export interface GovernanceUpsertInput {
+  sheetId: number;
+  dueDate?: number | null;
+  isurv?: boolean;
+  sentToIO?: boolean;
+  savedAsWord?: boolean;
+  savedAsPdf?: boolean;
+  uploadedToPromis?: boolean;
+  linked?: boolean;
+  savedInOpFolder?: boolean;
+  imageryTaken?: boolean;
+  coverPage?: boolean;
+  sheetCell?: string | null;
+  imageryEntries?: ImageryEntry[];
+  notes?: string | null;
+}
+
+export async function upsertGovernanceRecord(input: GovernanceUpsertInput): Promise<GovernanceRecord | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const existing = await getGovernanceRecord(input.sheetId);
+  const imageryJson = input.imageryEntries !== undefined
+    ? JSON.stringify(input.imageryEntries)
+    : undefined;
+
+  if (existing) {
+    await db
+      .update(governanceRecords)
+      .set({
+        ...(input.dueDate !== undefined && { dueDate: input.dueDate }),
+        ...(input.isurv !== undefined && { isurv: input.isurv }),
+        ...(input.sentToIO !== undefined && { sentToIO: input.sentToIO }),
+        ...(input.savedAsWord !== undefined && { savedAsWord: input.savedAsWord }),
+        ...(input.savedAsPdf !== undefined && { savedAsPdf: input.savedAsPdf }),
+        ...(input.uploadedToPromis !== undefined && { uploadedToPromis: input.uploadedToPromis }),
+        ...(input.linked !== undefined && { linked: input.linked }),
+        ...(input.savedInOpFolder !== undefined && { savedInOpFolder: input.savedInOpFolder }),
+        ...(input.imageryTaken !== undefined && { imageryTaken: input.imageryTaken }),
+        ...(input.coverPage !== undefined && { coverPage: input.coverPage }),
+        ...(input.sheetCell !== undefined && { sheetCell: input.sheetCell }),
+        ...(imageryJson !== undefined && { imageryEntries: imageryJson }),
+        ...(input.notes !== undefined && { notes: input.notes }),
+      })
+      .where(eq(governanceRecords.sheetId, input.sheetId));
+  } else {
+    // Default due date: sheet createdAt + 7 days (resolved at call site if not provided)
+    await db.insert(governanceRecords).values({
+      sheetId: input.sheetId,
+      dueDate: input.dueDate ?? null,
+      isurv: input.isurv ?? false,
+      sentToIO: input.sentToIO ?? false,
+      savedAsWord: input.savedAsWord ?? false,
+      savedAsPdf: input.savedAsPdf ?? false,
+      uploadedToPromis: input.uploadedToPromis ?? false,
+      linked: input.linked ?? false,
+      savedInOpFolder: input.savedInOpFolder ?? false,
+      imageryTaken: input.imageryTaken ?? false,
+      coverPage: input.coverPage ?? false,
+      sheetCell: input.sheetCell ?? null,
+      imageryEntries: imageryJson ?? null,
+      notes: input.notes ?? null,
+    });
+  }
+  return getGovernanceRecord(input.sheetId);
 }

@@ -25,7 +25,7 @@ import {
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useTheme } from "@/contexts/ThemeContext";
-import { FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch } from "lucide-react";
+import { FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
@@ -112,6 +112,7 @@ function DashboardLayoutContent({
     { icon: ClipboardList, label: "To-Do", path: "/todo", badge: todoCount, badgeLabel: todoCount > 0 ? `To-Do (${todoCount})` : "To-Do" },
     { icon: ScrollText, label: "Audit Log", path: "/audit" },
     { icon: FolderSearch, label: "Intelligence", path: "/intelligence" },
+    { icon: ClipboardCheck, label: "Governance", path: "/governance" },
     { icon: User, label: "My Profile", path: "/profile" },
     ...(user?.role === "admin" ? [
       { icon: Zap, label: "Shortcuts", path: "/shortcuts" },
@@ -119,7 +120,9 @@ function DashboardLayoutContent({
     ] : []),
   ];
 
-  const activeMenuItem = menuItems.find((item) => item.path === location);
+  const activeMenuItem = menuItems.find((item) =>
+    item.path === location || (item.path !== "/" && location.startsWith(item.path))
+  );
   const roleConf = ROLE_CONFIG[(user?.role as keyof typeof ROLE_CONFIG) ?? "observer"];
   const RoleIcon = roleConf?.icon ?? Eye;
 

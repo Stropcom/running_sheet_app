@@ -41,6 +41,7 @@ import {
   Users,
   ArrowUpDown,
   Target,
+  ClipboardCheck,
 } from "lucide-react";
 import {
   Select,
@@ -1090,6 +1091,16 @@ export default function SheetDetail() {
             )}
           </div>
           <div className="ml-auto flex items-center gap-2 shrink-0">
+            {/* Governance button */}
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-2"
+              onClick={() => navigate(`/governance/${sheetId}`)}
+            >
+              <ClipboardCheck className="w-4 h-4" />
+              Governance
+            </Button>
             {/* Export dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

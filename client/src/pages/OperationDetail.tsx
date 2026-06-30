@@ -465,6 +465,13 @@ export default function OperationDetail() {
     { enabled: isAuthenticated && !!operationId }
   );
 
+  // Fetch ALL targets across all operations for the create-sheet target picker
+  const { data: allTargetsForSheet } = trpc.target.listAll.useQuery(
+    undefined,
+    { enabled: isAuthenticated }
+  );
+  const [targetSearch, setTargetSearch] = useState("");
+
   // Fetch all users so we can add a whole team at once
   const { data: allUsers } = trpc.admin.listUsers.useQuery(undefined, {
     enabled: isAuthenticated && user?.role === "admin",
@@ -565,6 +572,7 @@ export default function OperationDetail() {
     if (!open) {
       setNewTitle("");
       setNewTargetId(null);
+      setTargetSearch("");
       setCinList([]);
       setCinInput("");
     }
@@ -839,37 +847,80 @@ export default function OperationDetail() {
               />
             </div>
 
-            {/* Target selector — only shown when operation has targets */}
-            {operationTargets && operationTargets.length > 0 && (
-              <div>
-                <label className="text-sm font-medium text-foreground mb-1.5 block">
-                  Target <span className="text-muted-foreground font-normal">(optional)</span>
-                </label>
-                <Select
-                  value={newTargetId ? String(newTargetId) : "none"}
-                  onValueChange={(val) => setNewTargetId(val === "none" ? null : Number(val))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select target…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No target</SelectItem>
-                    {operationTargets.map((t) => (
-                      <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+            {/* Target selector — searchable, all targets across all operations */}
+            <div>
+              <label className="text-sm font-medium text-foreground mb-1.5 block">
+                Target <span className="text-muted-foreground font-normal">(optional)</span>
+              </label>
+              {/* Searchable combobox */}
+              <div className="relative">
+                <div className="flex items-center border border-input rounded-md bg-background px-3 h-9 gap-2">
+                  <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  <input
+                    className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                    placeholder={newTargetId ? (allTargetsForSheet ?? []).find(t => t.id === newTargetId)?.name ?? "Search targets…" : "Search targets…"}
+                    value={targetSearch}
+                    onChange={(e) => setTargetSearch(e.target.value)}
+                    onFocus={() => { if (newTargetId) setTargetSearch(""); }}
+                  />
+                  {newTargetId && (
+                    <button
+                      type="button"
+                      onClick={() => { setNewTargetId(null); setTargetSearch(""); }}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+                {targetSearch && (
+                  <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-md max-h-52 overflow-y-auto">
+                    <div
+                      className="px-3 py-2 text-sm cursor-pointer hover:bg-muted/50 text-muted-foreground"
+                      onClick={() => { setNewTargetId(null); setTargetSearch(""); }}
+                    >
+                      No target
+                    </div>
+                    {(allTargetsForSheet ?? [])
+                      .filter(t => {
+                        const q = targetSearch.toLowerCase();
+                        return t.name.toLowerCase().includes(q) || (t.tgt ?? "").toLowerCase().includes(q) || (t.operationName ?? "").toLowerCase().includes(q);
+                      })
+                      .map(t => (
+                        <div
+                          key={t.id}
+                          className="px-3 py-2 text-sm cursor-pointer hover:bg-muted/50 flex items-center justify-between gap-2"
+                          onClick={() => { setNewTargetId(t.id); setTargetSearch(""); }}
+                        >
+                          <span className="font-medium">{t.name}</span>
+                          {t.tgt && <span className="text-xs text-muted-foreground font-mono">{t.tgt}</span>}
+                          {t.operationName && <span className="text-xs text-muted-foreground ml-auto">{t.operationName}</span>}
+                        </div>
+                      ))
+                    }
+                    {(allTargetsForSheet ?? []).filter(t => {
+                      const q = targetSearch.toLowerCase();
+                      return t.name.toLowerCase().includes(q) || (t.tgt ?? "").toLowerCase().includes(q) || (t.operationName ?? "").toLowerCase().includes(q);
+                    }).length === 0 && (
+                      <div className="px-3 py-2 text-sm text-muted-foreground">No targets found</div>
+                    )}
+                  </div>
+                )}
+                {newTargetId && !targetSearch && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {(allTargetsForSheet ?? []).find(t => t.id === newTargetId)?.operationName && (
+                      <span>From: {(allTargetsForSheet ?? []).find(t => t.id === newTargetId)?.operationName}</span>
+                    )}
+                  </p>
+                )}
               </div>
-            )}
+            </div>
 
             {/* TEAM */}
             <div>
               <label className="text-sm font-medium text-foreground mb-1 block">
                 TEAM <span className="text-muted-foreground font-normal">(optional)</span>
               </label>
-              <p className="text-xs text-muted-foreground mb-2">
-                Add the CINs of all members on duty today. Mark the Team Leader and Running Sheet Author. Tick the camera icon if images were taken by that member.
-              </p>
 
               {/* CIN input row */}
               <div className="flex gap-2 mb-2">

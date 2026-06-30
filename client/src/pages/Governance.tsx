@@ -332,6 +332,7 @@ export default function GovernancePage() {
   const hasAnyImagery = sheetCins.some((c) => c.hasImages);
 
   // ── Completion percentages ──
+  // TL section: 2 items
   const tlPercent = gov
     ? completionPercent([
         (gov as Record<string, unknown>).summaryNotification as boolean ?? false,
@@ -339,9 +340,9 @@ export default function GovernancePage() {
       ])
     : 0;
 
+  // Operative section: 4 items — all blocked (false) until allSigned
   const opPercent = gov
     ? completionPercent([
-        allSigned,
         allSigned && gov.savedAsWord,
         allSigned && gov.savedAsPdf,
         allSigned && gov.uploadedToPromis,
@@ -349,22 +350,21 @@ export default function GovernancePage() {
       ])
     : 0;
 
-  const imgPercent = completionPercent([
-    hasAnyImagery, // auto-derived
-    ...imagery.map((e) => e.saved),
-  ]);
+  // Imagery section: only count if there is imagery; otherwise N/A (100%)
+  const imgPercent = hasAnyImagery
+    ? completionPercent(imagery.map((e) => e.saved))
+    : 100;
 
+  // Overall: TL (2) + Operative (4) + Imagery entries (only if any imagery)
   const overallPercent = gov
     ? completionPercent([
         (gov as Record<string, unknown>).summaryNotification as boolean ?? false,
         gov.sentToIO,
-        allSigned,
         allSigned && gov.savedAsWord,
         allSigned && gov.savedAsPdf,
         allSigned && gov.uploadedToPromis,
         allSigned && gov.savedInOpFolder,
-        hasAnyImagery,
-        ...imagery.map((e) => e.saved),
+        ...(hasAnyImagery ? imagery.map((e) => e.saved) : []),
       ])
     : 0;
 

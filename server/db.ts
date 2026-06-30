@@ -1089,21 +1089,38 @@ export function computeGovernancePercent(
   allSigned: boolean
 ): number {
   if (!rec) return 0;
-  let entries: { saved: boolean }[] = [];
-  try { entries = JSON.parse(rec.imageryEntries ?? "[]"); } catch { entries = []; }
-  const fields = [
-    rec.sentToIO,
-    allSigned,
-    rec.savedAsWord,
-    rec.savedAsPdf,
-    rec.uploadedToPromis,
-    rec.savedInOpFolder,
-    rec.imageryTaken,
-    rec.coverPage,
-    ...entries.map((e) => e.saved),
+
+  // ── Team Leader section (2 items) ──────────────────────────────────────────
+  // isurv column stores the summaryNotification value
+  const tlFields: boolean[] = [
+    !!rec.isurv,      // Summary complete
+    !!rec.sentToIO,   // Sent to IO
   ];
-  if (fields.length === 0) return 0;
-  return Math.round((fields.filter(Boolean).length / fields.length) * 100);
+
+  // ── Operative section (4 items, only countable when allSigned) ─────────────
+  // If not all signed, these are all blocked — count them as incomplete
+  const opFields: boolean[] = [
+    allSigned && !!rec.savedAsWord,
+    allSigned && !!rec.savedAsPdf,
+    allSigned && !!rec.uploadedToPromis,
+    allSigned && !!rec.savedInOpFolder,
+  ];
+
+  // ── Imagery section ────────────────────────────────────────────────────────
+  // Derive imageryTaken from sheetCins (client-side) — server stores it in imageryEntries JSON
+  // If no imagery was taken (no entries with a CIN), exclude imagery from the total
+  let imageryFields: boolean[] = [];
+  let entries: { cin?: string; saved?: boolean }[] = [];
+  try { entries = JSON.parse(rec.imageryEntries ?? "[]"); } catch { entries = []; }
+  const hasImagery = entries.length > 0;
+  if (hasImagery) {
+    imageryFields = entries.map((e) => !!e.saved);
+  }
+  // If no imagery at all, imagery section is N/A — not counted
+
+  const allFields = [...tlFields, ...opFields, ...imageryFields];
+  if (allFields.length === 0) return 0;
+  return Math.round((allFields.filter(Boolean).length / allFields.length) * 100);
 }
 
 /** Returns all governance records for a list of sheet IDs */

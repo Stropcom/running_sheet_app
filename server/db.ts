@@ -639,18 +639,18 @@ export async function deepSearchOperations(query: string): Promise<DeepSearchMat
   const db = await getDb();
   if (!db || !query.trim()) return [];
 
-  const q = `%${query.trim()}%`;
+  const q = `%${query.trim().toLowerCase()}%`;
 
-  // 1. Operations that match on their own fields
+  // 1. Operations that match on their own fields (case-insensitive via LOWER)
   const opMatches = await db
     .select()
     .from(operations)
     .where(
       or(
-        like(operations.name, q),
-        like(sql`COALESCE(${operations.promisNumber}, '')`, q),
-        like(sql`COALESCE(${operations.imsNumber}, '')`, q),
-        like(sql`COALESCE(${operations.investigationUnit}, '')`, q),
+        like(sql`LOWER(${operations.name})`, q),
+        like(sql`LOWER(COALESCE(${operations.promisNumber}, ''))`, q),
+        like(sql`LOWER(COALESCE(${operations.imsNumber}, ''))`, q),
+        like(sql`LOWER(COALESCE(${operations.investigationUnit}, ''))`, q),
       )
     );
 
@@ -660,8 +660,8 @@ export async function deepSearchOperations(query: string): Promise<DeepSearchMat
     .from(runningSheets)
     .where(
       or(
-        like(runningSheets.title, q),
-        like(sql`COALESCE(${runningSheets.sheetCins}, '')`, q),
+        like(sql`LOWER(${runningSheets.title})`, q),
+        like(sql`LOWER(COALESCE(${runningSheets.sheetCins}, ''))`, q),
       )
     );
 
@@ -671,14 +671,14 @@ export async function deepSearchOperations(query: string): Promise<DeepSearchMat
     .from(targets)
     .where(
       or(
-        like(targets.name, q),
-        like(sql`COALESCE(${targets.tgt}, '')`, q),
-        like(sql`COALESCE(${targets.hb}, '')`, q),
-        like(sql`COALESCE(${targets.v1}, '')`, q),
-        like(sql`COALESCE(${targets.v2}, '')`, q),
-        like(sql`COALESCE(${targets.wb}, '')`, q),
-        like(sql`COALESCE(${targets.dep}, '')`, q),
-        like(sql`COALESCE(${targets.arr}, '')`, q),
+        like(sql`LOWER(${targets.name})`, q),
+        like(sql`LOWER(COALESCE(${targets.tgt}, ''))`, q),
+        like(sql`LOWER(COALESCE(${targets.hb}, ''))`, q),
+        like(sql`LOWER(COALESCE(${targets.v1}, ''))`, q),
+        like(sql`LOWER(COALESCE(${targets.v2}, ''))`, q),
+        like(sql`LOWER(COALESCE(${targets.wb}, ''))`, q),
+        like(sql`LOWER(COALESCE(${targets.dep}, ''))`, q),
+        like(sql`LOWER(COALESCE(${targets.arr}, ''))`, q),
       )
     );
 
@@ -686,13 +686,13 @@ export async function deepSearchOperations(query: string): Promise<DeepSearchMat
   const rowMatches = await db
     .select({ sheetId: sheetRows.sheetId, observation: sheetRows.observation, time: sheetRows.time })
     .from(sheetRows)
-    .where(like(sql`COALESCE(${sheetRows.observation}, '')`, q));
+    .where(like(sql`LOWER(COALESCE(${sheetRows.observation}, ''))`, q));
 
   // 5. Row members (CIN in row) that match
   const memberMatches = await db
     .select({ rowId: rowMembers.rowId, memberName: rowMembers.memberName })
     .from(rowMembers)
-    .where(like(rowMembers.memberName, q));
+    .where(like(sql`LOWER(${rowMembers.memberName})`, q));
 
   // Resolve sheetId → operationId for row/member matches
   const rowSheetIds = Array.from(new Set(rowMatches.map((r) => r.sheetId)));

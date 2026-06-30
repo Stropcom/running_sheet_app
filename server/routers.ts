@@ -830,7 +830,9 @@ export const appRouter = router({
           const dueDate = new Date(sheet.createdAt).getTime() + 7 * 24 * 60 * 60 * 1000;
           record = await upsertGovernanceRecord({ sheetId: input.sheetId, dueDate });
         }
-        return record;
+        if (!record) return null;
+        // Map legacy DB column isurv → summaryNotification for the client
+        return { ...record, summaryNotification: record.isurv };
       }),
 
     /** Governance completion summary for all sheets in an operation */

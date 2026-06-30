@@ -155,6 +155,9 @@ export default function GovernancePage() {
   const [opExpanded, setOpExpanded] = useState(true);
   const [imgExpanded, setImgExpanded] = useState(true);
 
+  // Track previous allSigned value to detect transitions
+  const prevAllSignedRef = React.useRef<boolean | null>(null);
+
   // Sync local state from server record
   useEffect(() => {
     if (!gov) return;
@@ -191,6 +194,23 @@ export default function GovernancePage() {
       );
     });
   }, [exportData]);
+
+  // When allSigned transitions true → false, reset operative fields in DB
+  useEffect(() => {
+    if (!gov) return;
+    const prev = prevAllSignedRef.current;
+    prevAllSignedRef.current = allSigned;
+    if (prev === true && allSigned === false) {
+      updateMutation.mutate({
+        sheetId,
+        savedAsWord: false,
+        savedAsPdf: false,
+        uploadedToPromis: false,
+        savedInOpFolder: false,
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allSigned]);
 
   // Auto-derive imagery entries:
   //   Start with all CINs that have hasImages=true from team details.
@@ -308,6 +328,9 @@ export default function GovernancePage() {
     saveImagery(next);
   }
 
+  // Derive imageryTaken from team details (hasImages flag) — not a stored boolean
+  const hasAnyImagery = sheetCins.some((c) => c.hasImages);
+
   // ── Completion percentages ──
   const tlPercent = gov
     ? completionPercent([
@@ -319,19 +342,17 @@ export default function GovernancePage() {
   const opPercent = gov
     ? completionPercent([
         allSigned,
-        gov.savedAsWord,
-        gov.savedAsPdf,
-        gov.uploadedToPromis,
-        gov.savedInOpFolder,
+        allSigned && gov.savedAsWord,
+        allSigned && gov.savedAsPdf,
+        allSigned && gov.uploadedToPromis,
+        allSigned && gov.savedInOpFolder,
       ])
     : 0;
 
-  const imgPercent = gov
-    ? completionPercent([
-        gov.imageryTaken,
-        ...imagery.map((e) => e.saved),
-      ])
-    : 0;
+  const imgPercent = completionPercent([
+    hasAnyImagery, // auto-derived
+    ...imagery.map((e) => e.saved),
+  ]);
 
   const overallPercent = gov
     ? completionPercent([
@@ -342,7 +363,7 @@ export default function GovernancePage() {
         allSigned && gov.savedAsPdf,
         allSigned && gov.uploadedToPromis,
         allSigned && gov.savedInOpFolder,
-        gov.imageryTaken,
+        hasAnyImagery,
         ...imagery.map((e) => e.saved),
       ])
     : 0;
@@ -553,11 +574,30 @@ export default function GovernancePage() {
           />
           {imgExpanded && gov && (
             <div className="mt-2 space-y-2">
-              <CheckRow
-                label="Imagery taken during surveillance"
-                checked={gov.imageryTaken}
-                onToggle={() => toggle("imageryTaken")}
-              />
+              {/* Imagery taken — auto-derived from team details hasImages flag */}
+              <div
+                className={`flex items-center gap-3 px-4 py-3 rounded-lg border ${
+                  hasAnyImagery
+                    ? "bg-emerald-500/10 border-emerald-500/30"
+                    : "bg-rose-500/10 border-rose-500/30"
+                }`}
+              >
+                {hasAnyImagery ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
+                ) : (
+                  <span className="text-rose-500 text-lg shrink-0 leading-none">✗</span>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className={`text-sm font-medium ${hasAnyImagery ? "text-foreground" : "text-rose-400"}`}>
+                    Imagery taken during surveillance
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {hasAnyImagery
+                      ? "One or more team members have imagery flagged"
+                      : "No imagery flagged on team details — no imagery taken"}
+                  </p>
+                </div>
+              </div>
 
               {/* Imagery entries table — auto-populated from rows */}
               {imagery.length > 0 && (

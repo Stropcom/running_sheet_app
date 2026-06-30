@@ -62,13 +62,16 @@ function TargetCard({
   operationId,
   onDeleted,
   initialExpanded,
+  fromSheetId,
 }: {
   target: { id: number; name: string; tgt: string | null; hb: string | null; v1: string | null; v2: string | null; wb: string | null; dep: string | null; arr: string | null };
   operationId: number;
   onDeleted: () => void;
   initialExpanded?: boolean;
+  fromSheetId?: number;
 }) {
   const utils = trpc.useUtils();
+  const [, navigate] = useLocation();
   const [expanded, setExpanded] = useState(initialExpanded ?? false);
   const [name, setName] = useState(target.name);
   const [tgt, setTgt] = useState(target.tgt ?? "");
@@ -86,6 +89,13 @@ function TargetCard({
   });
   const del = trpc.target.delete.useMutation({
     onSuccess: () => { utils.target.list.invalidate({ operationId }); onDeleted(); toast.success("Target deleted"); },
+    onError: (e: { message: string }) => toast.error(e.message),
+  });
+  const removeFromSheet = trpc.target.setSheetTarget.useMutation({
+    onSuccess: () => {
+      toast.success("Target removed from sheet");
+      if (fromSheetId) navigate(`/sheet/${fromSheetId}`);
+    },
     onError: (e: { message: string }) => toast.error(e.message),
   });
 
@@ -127,16 +137,29 @@ function TargetCard({
             </div>
           ))}
           <div className="flex items-center justify-between">
-            <Button
-              size="sm"
-              variant="ghost"
-              className="gap-2 text-destructive hover:text-destructive hover:bg-destructive/10"
-              onClick={() => setConfirmDelete(true)}
-              disabled={del.isPending}
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              {del.isPending ? "Deleting…" : "Delete"}
-            </Button>
+            {fromSheetId ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="gap-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+                onClick={() => removeFromSheet.mutate({ sheetId: fromSheetId, targetId: null })}
+                disabled={removeFromSheet.isPending}
+              >
+                <X className="w-3.5 h-3.5" />
+                {removeFromSheet.isPending ? "Removing…" : "Remove from sheet"}
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="gap-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+                onClick={() => setConfirmDelete(true)}
+                disabled={del.isPending}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                {del.isPending ? "Deleting…" : "Delete"}
+              </Button>
+            )}
             <Button size="sm" className="gap-2" onClick={() => update.mutate({ id: target.id, name, tgt, hb, v1, v2, wb, dep, arr })} disabled={update.isPending || !dirty}>
               <Save className="w-3.5 h-3.5" />
               {update.isPending ? "Saving…" : "Save"}
@@ -170,7 +193,7 @@ function TargetCard({
 }
 
 /** Add Target tab panel — lists all targets for the operation, allows adding more */
-function TargetPanel({ operationId, autoExpandId }: { operationId: number; autoExpandId?: number }) {
+function TargetPanel({ operationId, autoExpandId, fromSheetId }: { operationId: number; autoExpandId?: number; fromSheetId?: number }) {
   const utils = trpc.useUtils();
   const { data: targets, isLoading } = trpc.target.list.useQuery({ operationId });
   const { data: allTargets } = trpc.target.listAll.useQuery();
@@ -224,7 +247,7 @@ function TargetPanel({ operationId, autoExpandId }: { operationId: number; autoE
     <div className="flex flex-col gap-3">
       {targets && targets.length > 0 ? (
         targets.map((t) => (
-          <TargetCard key={t.id} target={t} operationId={operationId} onDeleted={() => {}} initialExpanded={autoExpandId === t.id} />
+          <TargetCard key={t.id} target={t} operationId={operationId} onDeleted={() => {}} initialExpanded={autoExpandId === t.id} fromSheetId={fromSheetId} />
         ))
       ) : (
         <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -430,11 +453,14 @@ export default function OperationDetail() {
   const searchParams = new URLSearchParams(search);
   const activeTab = searchParams.get('tab') === 'target' ? 'target' : 'sheets';
   const autoExpandTargetId = searchParams.get('targetId') ? parseInt(searchParams.get('targetId')!, 10) : undefined;
+  const fromSheetId = searchParams.get('fromSheet') ? parseInt(searchParams.get('fromSheet')!, 10) : undefined;
 
   // Create sheet state
   const [createOpen, setCreateOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newTargetId, setNewTargetId] = useState<number | null>(null);
+  const [newTargetName, setNewTargetName] = useState("");
+  const [targetMode, setTargetMode] = useState<"none" | "new" | "link">("none");
   const [cinList, setCinList] = useState<CinEntry[]>([]);
   const [cinInput, setCinInput] = useState("");
   const [deleteId, setDeleteId] = useState<number | null>(null);
@@ -563,7 +589,8 @@ export default function OperationDetail() {
     createSheet.mutate({
       operationId,
       title: newTitle.trim(),
-      targetId: newTargetId ?? undefined,
+      targetId: targetMode === "link" ? (newTargetId ?? undefined) : undefined,
+      targetName: targetMode === "new" ? (newTargetName.trim() || undefined) : undefined,
       sheetCins: cinList.length > 0 ? cinList : undefined,
     });
   };
@@ -572,6 +599,8 @@ export default function OperationDetail() {
     if (!open) {
       setNewTitle("");
       setNewTargetId(null);
+      setNewTargetName("");
+      setTargetMode("none");
       setTargetSearch("");
       setCinList([]);
       setCinInput("");
@@ -766,7 +795,7 @@ export default function OperationDetail() {
 
           {/* ── Add Target tab ── */}
           <TabsContent value="target">
-            <TargetPanel operationId={operationId} autoExpandId={autoExpandTargetId} />
+            <TargetPanel operationId={operationId} autoExpandId={autoExpandTargetId} fromSheetId={fromSheetId} />
           </TabsContent>
         </Tabs>
       </div>
@@ -847,73 +876,92 @@ export default function OperationDetail() {
               />
             </div>
 
-            {/* Target selector — searchable, all targets across all operations */}
+            {/* Target selector — New / Link Existing / None */}
             <div>
               <label className="text-sm font-medium text-foreground mb-1.5 block">
                 Target <span className="text-muted-foreground font-normal">(optional)</span>
               </label>
-              {/* Searchable combobox */}
-              <div className="relative">
-                <div className="flex items-center border border-input rounded-md bg-background px-3 h-9 gap-2">
-                  <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                  <input
-                    className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                    placeholder={newTargetId ? (allTargetsForSheet ?? []).find(t => t.id === newTargetId)?.name ?? "Search targets…" : "Search targets…"}
-                    value={targetSearch}
-                    onChange={(e) => setTargetSearch(e.target.value)}
-                    onFocus={() => { if (newTargetId) setTargetSearch(""); }}
+              {targetMode === "none" && (
+                <div className="flex gap-2">
+                  <Button type="button" size="sm" variant="outline" className="flex-1" onClick={() => setTargetMode("new")}>
+                    <Plus className="w-3.5 h-3.5 mr-1.5" /> New Target
+                  </Button>
+                  <Button type="button" size="sm" variant="outline" className="flex-1" onClick={() => setTargetMode("link")}>
+                    <Search className="w-3.5 h-3.5 mr-1.5" /> Link Existing
+                  </Button>
+                </div>
+              )}
+              {targetMode === "new" && (
+                <div className="flex gap-2 items-center">
+                  <Input
+                    placeholder="Target name (e.g. John SMITH, born 1 Jan 1980)"
+                    value={newTargetName}
+                    onChange={(e) => setNewTargetName(e.target.value)}
+                    autoFocus
+                    className="flex-1"
                   />
-                  {newTargetId && (
+                  <Button type="button" size="sm" variant="ghost" onClick={() => { setTargetMode("none"); setNewTargetName(""); }}>
+                    <X className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              )}
+              {targetMode === "link" && (
+                <div className="relative">
+                  <div className="flex items-center border border-input rounded-md bg-background px-3 h-9 gap-2">
+                    <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    <input
+                      className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                      placeholder={newTargetId ? (allTargetsForSheet ?? []).find(t => t.id === newTargetId)?.name ?? "Search targets…" : "Search targets…"}
+                      value={targetSearch}
+                      onChange={(e) => setTargetSearch(e.target.value)}
+                      onFocus={() => { if (newTargetId) setTargetSearch(""); }}
+                      autoFocus
+                    />
                     <button
                       type="button"
-                      onClick={() => { setNewTargetId(null); setTargetSearch(""); }}
+                      onClick={() => { setTargetMode("none"); setNewTargetId(null); setTargetSearch(""); }}
                       className="text-muted-foreground hover:text-foreground"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
-                  )}
-                </div>
-                {targetSearch && (
-                  <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-md max-h-52 overflow-y-auto">
-                    <div
-                      className="px-3 py-2 text-sm cursor-pointer hover:bg-muted/50 text-muted-foreground"
-                      onClick={() => { setNewTargetId(null); setTargetSearch(""); }}
-                    >
-                      No target
-                    </div>
-                    {(allTargetsForSheet ?? [])
-                      .filter(t => {
+                  </div>
+                  {(targetSearch || !newTargetId) && targetSearch && (
+                    <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-md max-h-52 overflow-y-auto">
+                      {(allTargetsForSheet ?? [])
+                        .filter(t => {
+                          const q = targetSearch.toLowerCase();
+                          return t.name.toLowerCase().includes(q) || (t.tgt ?? "").toLowerCase().includes(q) || (t.operationName ?? "").toLowerCase().includes(q);
+                        })
+                        .map(t => (
+                          <div
+                            key={t.id}
+                            className="px-3 py-2 text-sm cursor-pointer hover:bg-muted/50 flex items-center justify-between gap-2"
+                            onClick={() => { setNewTargetId(t.id); setTargetSearch(""); }}
+                          >
+                            <span className="font-medium">{t.name}</span>
+                            {t.tgt && <span className="text-xs text-muted-foreground font-mono">{t.tgt}</span>}
+                            {t.operationName && <span className="text-xs text-muted-foreground ml-auto">{t.operationName}</span>}
+                          </div>
+                        ))
+                      }
+                      {(allTargetsForSheet ?? []).filter(t => {
                         const q = targetSearch.toLowerCase();
                         return t.name.toLowerCase().includes(q) || (t.tgt ?? "").toLowerCase().includes(q) || (t.operationName ?? "").toLowerCase().includes(q);
-                      })
-                      .map(t => (
-                        <div
-                          key={t.id}
-                          className="px-3 py-2 text-sm cursor-pointer hover:bg-muted/50 flex items-center justify-between gap-2"
-                          onClick={() => { setNewTargetId(t.id); setTargetSearch(""); }}
-                        >
-                          <span className="font-medium">{t.name}</span>
-                          {t.tgt && <span className="text-xs text-muted-foreground font-mono">{t.tgt}</span>}
-                          {t.operationName && <span className="text-xs text-muted-foreground ml-auto">{t.operationName}</span>}
-                        </div>
-                      ))
-                    }
-                    {(allTargetsForSheet ?? []).filter(t => {
-                      const q = targetSearch.toLowerCase();
-                      return t.name.toLowerCase().includes(q) || (t.tgt ?? "").toLowerCase().includes(q) || (t.operationName ?? "").toLowerCase().includes(q);
-                    }).length === 0 && (
-                      <div className="px-3 py-2 text-sm text-muted-foreground">No targets found</div>
-                    )}
-                  </div>
-                )}
-                {newTargetId && !targetSearch && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {(allTargetsForSheet ?? []).find(t => t.id === newTargetId)?.operationName && (
-                      <span>From: {(allTargetsForSheet ?? []).find(t => t.id === newTargetId)?.operationName}</span>
-                    )}
-                  </p>
-                )}
-              </div>
+                      }).length === 0 && (
+                        <div className="px-3 py-2 text-sm text-muted-foreground">No targets found</div>
+                      )}
+                    </div>
+                  )}
+                  {newTargetId && !targetSearch && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Selected: <span className="font-medium">{(allTargetsForSheet ?? []).find(t => t.id === newTargetId)?.name}</span>
+                      {(allTargetsForSheet ?? []).find(t => t.id === newTargetId)?.operationName && (
+                        <span className="ml-1">({(allTargetsForSheet ?? []).find(t => t.id === newTargetId)?.operationName})</span>
+                      )}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* TEAM */}

@@ -278,6 +278,7 @@ export const appRouter = router({
         operationId: z.number(),
         title: z.string().min(1),
         targetId: z.number().optional().nullable(),
+        targetName: z.string().optional().nullable(),
         sheetCins: z.array(z.object({ cin: z.string(), hasImages: z.boolean(), isTeamLeader: z.boolean().optional(), isAuthor: z.boolean().optional() })).optional(),
       }))
       .mutation(async ({ input, ctx }) => {
@@ -285,6 +286,7 @@ export const appRouter = router({
           operationId: input.operationId,
           title: input.title,
           targetId: input.targetId ?? null,
+          targetName: input.targetName ?? null,
           sheetCins: input.sheetCins ? JSON.stringify(input.sheetCins) : null,
           createdBy: ctx.user.id,
         });

@@ -1218,23 +1218,13 @@ export default function SheetDetail() {
                   size="sm"
                   variant="ghost"
                   className="gap-1.5 text-xs text-muted-foreground hover:text-foreground h-7 px-2"
-                  onClick={() => navigate(`/operation/${sheet!.operationId}?tab=target&targetId=${t.id}`)}
+                  onClick={() => navigate(`/operation/${sheet!.operationId}?tab=target&targetId=${t.id}&fromSheet=${sheetId}`)}
                   title="Edit Target"
                 >
                   <Pencil className="w-3 h-3" />
                   Edit
                 </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="gap-1.5 text-xs text-destructive hover:text-destructive hover:bg-destructive/10 h-7 px-2"
-                  onClick={() => setSheetTarget.mutate({ sheetId, targetId: null })}
-                  disabled={setSheetTarget.isPending}
-                  title="Remove target from this sheet"
-                >
-                  <X className="w-3 h-3" />
-                  Remove
-                </Button>
+
               </div>
               {hasAnyField && (
                 <div className="flex flex-wrap gap-x-6 gap-y-1">

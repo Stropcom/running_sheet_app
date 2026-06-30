@@ -40,7 +40,7 @@ function OperationGroup({
   operationName: string;
   onNavigate: (path: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
 
   const { data: summaries, isLoading } = trpc.governance.summaryByOperation.useQuery(
     { operationId },

@@ -811,8 +811,21 @@ export function extractEntitiesFromText(text: string): Array<{
 
     let type: "person" | "vehicle" | "address" | "business" | "unknown" = "unknown";
 
+    // ── Address-format detection (highest priority) ──────────────────────────
+    // If the full description (before the parenthesis) contains a street address
+    // pattern — e.g. "1200 Leach Highway, MYAREE" — classify as address regardless
+    // of whether the word "vehicle" appears elsewhere in the sentence.
+    const addressInFull =
+      /\b\d{1,5}\s+\w[\w\s]*(street|road|ave|avenue|drive|way|court|place|close|crescent|boulevard|highway|freeway|lane|terrace|parade|circuit)\b/i.test(fullDescription) ||
+      /\b(street|road|ave|avenue|drive|way|court|place|close|crescent|boulevard|highway|freeway|lane|terrace|parade|circuit)\b/i.test(shortForm) ||
+      /^\d{1,5}\s/.test(shortForm);
+
+    if (addressInFull) {
+      type = "address";
+    }
     // Vehicle: preceding text mentions vehicle/car/truck/van/ute/sedan/hatchback/SUV/registration/bearing/reg
-    if (
+    // BUT only when the full description does NOT look like an address
+    else if (
       /\b(vehicle|car|truck|van|ute|sedan|hatchback|suv|wagon|coupe|bearing|registration|reg|plate)\b/.test(lowerFull)
     ) {
       type = "vehicle";

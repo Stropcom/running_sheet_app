@@ -931,6 +931,12 @@ export default function SheetDetail() {
     { operationId: sheet?.operationId ?? 0 },
     { enabled: !!sheet?.operationId }
   );
+  // All targets across all operations for the cross-op picker
+  const { data: allTargetsForSheet } = trpc.target.listAll.useQuery(
+    undefined,
+    { enabled: isAuthenticated }
+  );
+  const [editTargetSearch, setEditTargetSearch] = useState("");
   const setSheetTarget = trpc.target.setSheetTarget.useMutation({
     onSuccess: () => { utils.sheet.get.invalidate({ id: sheetId }); toast.success("Target updated"); },
     onError: (e) => toast.error(e.message),
@@ -1211,12 +1217,23 @@ export default function SheetDetail() {
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="gap-1.5 text-xs text-muted-foreground hover:text-foreground h-7 px-2 ml-auto"
+                  className="gap-1.5 text-xs text-muted-foreground hover:text-foreground h-7 px-2"
                   onClick={() => navigate(`/operation/${sheet!.operationId}?tab=target&targetId=${t.id}`)}
                   title="Edit Target"
                 >
                   <Pencil className="w-3 h-3" />
-                  Edit Target
+                  Edit
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="gap-1.5 text-xs text-destructive hover:text-destructive hover:bg-destructive/10 h-7 px-2"
+                  onClick={() => setSheetTarget.mutate({ sheetId, targetId: null })}
+                  disabled={setSheetTarget.isPending}
+                  title="Remove target from this sheet"
+                >
+                  <X className="w-3 h-3" />
+                  Remove
                 </Button>
               </div>
               {hasAnyField && (
@@ -1397,25 +1414,67 @@ export default function SheetDetail() {
                 onChange={(e) => setEditTitle(e.target.value)}
               />
             </div>
-            {operationTargets && operationTargets.length > 0 && (
-              <div>
-                <label className="text-sm font-medium text-foreground mb-1.5 block">Target</label>
-                <Select
-                  value={sheet?.targetId ? String(sheet.targetId) : "none"}
-                  onValueChange={(val) => setSheetTarget.mutate({ sheetId, targetId: val === "none" ? null : Number(val) })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Assign target…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No target assigned</SelectItem>
-                    {operationTargets.map((t) => (
-                      <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+            <div>
+              <label className="text-sm font-medium text-foreground mb-1.5 block">Target</label>
+              {/* Searchable cross-operation target picker */}
+              <div className="relative">
+                <div className="flex items-center border border-input rounded-md bg-background px-3 h-9 gap-2">
+                  <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  <input
+                    className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                    placeholder={sheet?.targetId
+                      ? (allTargetsForSheet ?? []).find(t => t.id === sheet.targetId)?.name ?? "Search targets…"
+                      : "Search targets…"}
+                    value={editTargetSearch}
+                    onChange={(e) => setEditTargetSearch(e.target.value)}
+                    onFocus={() => { if (sheet?.targetId) setEditTargetSearch(""); }}
+                  />
+                  {sheet?.targetId && (
+                    <button
+                      type="button"
+                      onClick={() => { setSheetTarget.mutate({ sheetId, targetId: null }); setEditTargetSearch(""); }}
+                      className="text-muted-foreground hover:text-foreground"
+                      title="Remove target"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+                {editTargetSearch && (
+                  <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-md max-h-52 overflow-y-auto">
+                    <div
+                      className="px-3 py-2 text-sm cursor-pointer hover:bg-muted/50 text-muted-foreground"
+                      onClick={() => { setSheetTarget.mutate({ sheetId, targetId: null }); setEditTargetSearch(""); }}
+                    >
+                      No target
+                    </div>
+                    {(allTargetsForSheet ?? [])
+                      .filter(t => {
+                        const q = editTargetSearch.toLowerCase();
+                        return t.name.toLowerCase().includes(q) || (t.tgt ?? "").toLowerCase().includes(q) || (t.operationName ?? "").toLowerCase().includes(q);
+                      })
+                      .map(t => (
+                        <div
+                          key={t.id}
+                          className="px-3 py-2 text-sm cursor-pointer hover:bg-muted/50 flex items-center justify-between gap-2"
+                          onClick={() => { setSheetTarget.mutate({ sheetId, targetId: t.id }); setEditTargetSearch(""); }}
+                        >
+                          <span className="font-medium">{t.name}</span>
+                          {t.tgt && <span className="text-xs text-muted-foreground font-mono">{t.tgt}</span>}
+                          {t.operationName && <span className="text-xs text-muted-foreground ml-auto">{t.operationName}</span>}
+                        </div>
+                      ))
+                    }
+                    {(allTargetsForSheet ?? []).filter(t => {
+                      const q = editTargetSearch.toLowerCase();
+                      return t.name.toLowerCase().includes(q) || (t.tgt ?? "").toLowerCase().includes(q) || (t.operationName ?? "").toLowerCase().includes(q);
+                    }).length === 0 && (
+                      <div className="px-3 py-2 text-sm text-muted-foreground">No targets found</div>
+                    )}
+                  </div>
+                )}
               </div>
-            )}
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditSheetOpen(false)}>Cancel</Button>

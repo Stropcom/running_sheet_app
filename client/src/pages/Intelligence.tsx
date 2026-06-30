@@ -28,7 +28,7 @@ import {
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type EntityType = "person" | "vehicle" | "address" | "business" | "unknown";
-type TabView = "operations" | EntityType | "all";
+type TabView = "operations" | "targets" | "associates" | "vehicle" | "locations" | "all";
 
 interface Occurrence {
   sheetId: number;
@@ -44,6 +44,8 @@ interface Occurrence {
 interface Entity {
   shortForm: string;
   type: EntityType;
+  isTarget?: boolean;
+  tgtAlias?: string | null;
   occurrences: Occurrence[];
 }
 
@@ -60,8 +62,8 @@ interface OperationSummary {
 const TYPE_LABELS: Record<EntityType, string> = {
   person: "Person",
   vehicle: "Vehicle",
-  address: "Address",
-  business: "Business",
+  address: "Location",
+  business: "Location",
   unknown: "Other",
 };
 
@@ -535,10 +537,10 @@ function presetToRange(preset: DatePreset, customFrom: string, customTo: string)
 
 const TAB_OPTIONS: Array<{ value: TabView; label: string; icon: React.ReactNode }> = [
   { value: "operations", label: "Operations", icon: <Folder className="w-3.5 h-3.5" /> },
-  { value: "person",     label: "Persons",    icon: <User className="w-3.5 h-3.5" /> },
+  { value: "targets",    label: "Targets",    icon: <User className="w-3.5 h-3.5" /> },
+  { value: "associates", label: "Associates", icon: <User className="w-3.5 h-3.5" /> },
   { value: "vehicle",    label: "Vehicles",   icon: <Car className="w-3.5 h-3.5" /> },
-  { value: "address",    label: "Addresses",  icon: <MapPin className="w-3.5 h-3.5" /> },
-  { value: "business",   label: "Businesses", icon: <Building2 className="w-3.5 h-3.5" /> },
+  { value: "locations",  label: "Locations",  icon: <MapPin className="w-3.5 h-3.5" /> },
 ];
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
@@ -583,31 +585,33 @@ export default function IntelligencePage() {
   // For entity-type tabs: also apply search + type filter
   const filteredByTab = useMemo(() => {
     if (activeTab === "operations") return filteredEntities;
-    return filteredEntities.filter((e) => {
-      const matchesType = e.type === activeTab;
-      const matchesSearch =
-        !search ||
-        e.shortForm.toLowerCase().includes(search.toLowerCase()) ||
-        e.occurrences.some((o) =>
-          o.observationSnippet.toLowerCase().includes(search.toLowerCase()) ||
-          o.fullDescription.toLowerCase().includes(search.toLowerCase())
-        );
-      return matchesType && matchesSearch;
-    });
+    const q = search.toLowerCase();
+    const matchesSearch = (e: Entity) =>
+      !search ||
+      e.shortForm.toLowerCase().includes(q) ||
+      (e.tgtAlias ?? "").toLowerCase().includes(q) ||
+      e.occurrences.some((o) =>
+        o.observationSnippet.toLowerCase().includes(q) ||
+        o.fullDescription.toLowerCase().includes(q)
+      );
+    if (activeTab === "targets")    return filteredEntities.filter((e) => e.isTarget === true && matchesSearch(e));
+    if (activeTab === "associates") return filteredEntities.filter((e) => e.type === "person" && !e.isTarget && matchesSearch(e));
+    if (activeTab === "vehicle")    return filteredEntities.filter((e) => e.type === "vehicle" && matchesSearch(e));
+    if (activeTab === "locations")  return filteredEntities.filter((e) => (e.type === "address" || e.type === "business") && matchesSearch(e));
+    return filteredEntities.filter(matchesSearch);
   }, [filteredEntities, activeTab, search]);
 
   // Counts per tab for badges
   const tabCounts = useMemo(() => {
     const counts: Partial<Record<TabView, number>> = {};
     if (!filteredEntities) return counts;
-    // Operations: unique operation IDs
     const opIds = new Set<number>();
     for (const e of filteredEntities) for (const o of e.occurrences) opIds.add(o.operationId);
-    counts["operations"] = opIds.size;
-    // Entity types
-    for (const type of ["person", "vehicle", "address", "business"] as EntityType[]) {
-      counts[type] = filteredEntities.filter((e) => e.type === type).length;
-    }
+    counts["operations"]  = opIds.size;
+    counts["targets"]     = filteredEntities.filter((e) => e.isTarget === true).length;
+    counts["associates"]  = filteredEntities.filter((e) => e.type === "person" && !e.isTarget).length;
+    counts["vehicle"]     = filteredEntities.filter((e) => e.type === "vehicle").length;
+    counts["locations"]   = filteredEntities.filter((e) => e.type === "address" || e.type === "business").length;
     return counts;
   }, [filteredEntities]);
 
@@ -745,30 +749,43 @@ export default function IntelligencePage() {
               <div className="rounded-xl border border-border/60 overflow-hidden bg-card/50">
                 {filteredByTab
                   .sort((a, b) => b.occurrences.length - a.occurrences.length)
-                  .map((entity, idx) => (
-                    <button
-                      key={`${entity.type}::${entity.shortForm}`}
-                      onClick={() => setSelected(entity)}
-                      className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-accent/10 transition-colors ${
-                        idx < filteredByTab.length - 1 ? "border-b border-border/40" : ""
-                      }`}
-                    >
-                      <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full border ${TYPE_COLORS[entity.type]} shrink-0`}>
-                        {TYPE_ICONS[entity.type]}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-mono text-sm font-medium text-foreground truncate">{entity.shortForm}</p>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {entity.occurrences[0]?.fullDescription ?? ""}
-                        </p>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-xs font-medium text-foreground">{entity.occurrences.length}×</p>
-                        <p className="text-xs text-muted-foreground">{uniqueSheets(entity.occurrences).length} sheet{uniqueSheets(entity.occurrences).length !== 1 ? "s" : ""}</p>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-                    </button>
-                  ))}
+                  .map((entity, idx) => {
+                    const iconColor = entity.isTarget ? TYPE_COLORS.person : TYPE_COLORS[entity.type];
+                    const icon = entity.type === "address" || entity.type === "business"
+                      ? <MapPin className="w-3.5 h-3.5" />
+                      : TYPE_ICONS[entity.type];
+                    return (
+                      <button
+                        key={`${entity.isTarget ? "target" : entity.type}::${entity.shortForm}`}
+                        onClick={() => setSelected(entity)}
+                        className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-accent/10 transition-colors ${
+                          idx < filteredByTab.length - 1 ? "border-b border-border/40" : ""
+                        }`}
+                      >
+                        <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full border ${iconColor} shrink-0`}>
+                          {icon}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="font-mono text-sm font-medium text-foreground truncate">{entity.shortForm}</p>
+                            {entity.tgtAlias && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 shrink-0">
+                                TGT: {entity.tgtAlias}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {entity.occurrences[0]?.fullDescription ?? ""}
+                          </p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-xs font-medium text-foreground">{entity.occurrences.length}×</p>
+                          <p className="text-xs text-muted-foreground">{uniqueSheets(entity.occurrences).length} sheet{uniqueSheets(entity.occurrences).length !== 1 ? "s" : ""}</p>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                      </button>
+                    );
+                  })}
               </div>
             )}
           </>

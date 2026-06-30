@@ -797,6 +797,10 @@ export function extractEntitiesFromText(text: string): Array<{
 export interface IntelligenceEntity {
   shortForm: string;
   type: "person" | "vehicle" | "address" | "business" | "unknown";
+  /** True when this entity comes from a formal target card (not just observation text) */
+  isTarget?: boolean;
+  /** For target entities: the TGT code alias (e.g. "TANG") if set on the target card */
+  tgtAlias?: string | null;
   occurrences: Array<{
     sheetId: number;
     sheetTitle: string;
@@ -813,47 +817,7 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
   const db = await getDb();
   if (!db) return [];
 
-  const entityMap = new Map<string, IntelligenceEntity>();
-
-  // ── 1. Extract from observation rows ──────────────────────────────────────
-  const rows = await db
-    .select({
-      rowId: sheetRows.id,
-      observation: sheetRows.observation,
-      timeMinutes: sheetRows.timeMinutes,
-      sheetId: sheetRows.sheetId,
-      sheetTitle: runningSheets.title,
-      operationId: runningSheets.operationId,
-      operationName: operations.name,
-    })
-    .from(sheetRows)
-    .innerJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
-    .innerJoin(operations, eq(runningSheets.operationId, operations.id))
-    .orderBy(sheetRows.timeMinutes);
-
-  for (const row of rows) {
-    if (!row.observation) continue;
-    const entities = extractEntitiesFromText(row.observation);
-    for (const e of entities) {
-      const key = `${e.type}::${e.shortForm}`;
-      if (!entityMap.has(key)) {
-        entityMap.set(key, { shortForm: e.shortForm, type: e.type, occurrences: [] });
-      }
-      const snippet = row.observation.slice(0, 80) + (row.observation.length > 80 ? "…" : "");
-      entityMap.get(key)!.occurrences.push({
-        sheetId: row.sheetId,
-        sheetTitle: row.sheetTitle,
-        operationId: row.operationId,
-        operationName: row.operationName,
-        rowId: row.rowId,
-        observationSnippet: snippet,
-        timeMinutes: row.timeMinutes ?? null,
-        fullDescription: e.fullDescription,
-      });
-    }
-  }
-
-  // ── 2. Extract from target cards (TGT, HB, V1, V2, WB — NOT DEP/ARR) ─────
+  // ── 1. Load formal target cards first ─────────────────────────────────────
   const targetRows = await db
     .select({
       targetId: targets.id,
@@ -869,7 +833,7 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
     .from(targets)
     .innerJoin(operations, eq(targets.operationId, operations.id));
 
-  // Find sheets linked to each target so we can populate sheetId/sheetTitle
+  // Find sheets linked to each target
   const sheetsByTarget = await db
     .select({
       targetId: runningSheets.targetId,
@@ -886,21 +850,54 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
     targetSheetMap.get(s.targetId)!.push({ sheetId: s.sheetId, sheetTitle: s.sheetTitle });
   }
 
+  // Build a set of TGT aliases so we can suppress them from observation-derived persons
+  // Maps tgtAlias (uppercased) -> canonical full name
+  const tgtAliasToFullName = new Map<string, string>();
   for (const t of targetRows) {
-    // Fields to include: TGT (person), HB (address), V1 (vehicle), V2 (vehicle), WB (address)
-    const fields: Array<{ label: string; value: string | null; type: IntelligenceEntity["type"] }> = [
-      { label: "TGT", value: t.tgt, type: "person" },
-      { label: "HB",  value: t.hb,  type: "address" },
-      { label: "V1",  value: t.v1,  type: "vehicle" },
-      { label: "V2",  value: t.v2,  type: "vehicle" },
-      { label: "WB",  value: t.wb,  type: "address" },
-    ];
+    if (t.tgt && t.tgt.trim()) {
+      tgtAliasToFullName.set(t.tgt.trim().toUpperCase(), t.targetName);
+    }
+  }
 
+  const entityMap = new Map<string, IntelligenceEntity>();
+
+  // ── 2. Add formal target cards as person entities (isTarget = true) ────────
+  for (const t of targetRows) {
     const linkedSheets = targetSheetMap.get(t.targetId) ?? [];
-    // Use a synthetic sheetId of 0 if no sheets are linked yet
     const sheetEntries = linkedSheets.length > 0 ? linkedSheets : [{ sheetId: 0, sheetTitle: "(no sheet linked)" }];
 
-    for (const field of fields) {
+    // Target person entity — keyed by full name, carries tgtAlias
+    const nameKey = `target::${t.targetName}`;
+    if (!entityMap.has(nameKey)) {
+      entityMap.set(nameKey, {
+        shortForm: t.targetName,
+        type: "person",
+        isTarget: true,
+        tgtAlias: t.tgt?.trim() || null,
+        occurrences: [],
+      });
+    }
+    for (const sheet of sheetEntries) {
+      entityMap.get(nameKey)!.occurrences.push({
+        sheetId: sheet.sheetId,
+        sheetTitle: sheet.sheetTitle,
+        operationId: t.operationId,
+        operationName: t.operationName,
+        rowId: 0,
+        observationSnippet: `Target card — ${t.targetName}${t.tgt ? ` (TGT: ${t.tgt})` : ""}`,
+        timeMinutes: null,
+        fullDescription: `Target: ${t.targetName}${t.tgt ? `, TGT: ${t.tgt}` : ""} (operation: ${t.operationName})`,
+      });
+    }
+
+    // Location fields from target card: HB (address), WB (address), V1/V2 (vehicle)
+    const locationFields: Array<{ label: string; value: string | null; type: IntelligenceEntity["type"] }> = [
+      { label: "HB", value: t.hb, type: "address" },
+      { label: "WB", value: t.wb, type: "address" },
+      { label: "V1", value: t.v1, type: "vehicle" },
+      { label: "V2", value: t.v2, type: "vehicle" },
+    ];
+    for (const field of locationFields) {
       if (!field.value || field.value.trim() === "") continue;
       const shortForm = field.value.trim();
       const key = `${field.type}::${shortForm}`;
@@ -920,22 +917,64 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
         });
       }
     }
+  }
 
-    // Also add the target name itself as a person entity
-    const nameKey = `person::${t.targetName}`;
-    if (!entityMap.has(nameKey)) {
-      entityMap.set(nameKey, { shortForm: t.targetName, type: "person", occurrences: [] });
-    }
-    for (const sheet of sheetEntries) {
-      entityMap.get(nameKey)!.occurrences.push({
-        sheetId: sheet.sheetId,
-        sheetTitle: sheet.sheetTitle,
-        operationId: t.operationId,
-        operationName: t.operationName,
-        rowId: 0,
-        observationSnippet: `Target card — ${t.targetName}`,
-        timeMinutes: null,
-        fullDescription: `Target: ${t.targetName} (operation: ${t.operationName})`,
+  // ── 3. Extract from observation rows ──────────────────────────────────────
+  const rows = await db
+    .select({
+      rowId: sheetRows.id,
+      observation: sheetRows.observation,
+      timeMinutes: sheetRows.timeMinutes,
+      sheetId: sheetRows.sheetId,
+      sheetTitle: runningSheets.title,
+      operationId: runningSheets.operationId,
+      operationName: operations.name,
+    })
+    .from(sheetRows)
+    .innerJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
+    .innerJoin(operations, eq(runningSheets.operationId, operations.id))
+    .orderBy(sheetRows.timeMinutes);
+
+  for (const row of rows) {
+    if (!row.observation) continue;
+    const entities = extractEntitiesFromText(row.observation);
+    for (const e of entities) {
+      // If this person shortForm is a known TGT alias, merge its occurrences
+      // into the canonical target entity instead of creating a duplicate
+      if (e.type === "person") {
+        const canonicalName = tgtAliasToFullName.get(e.shortForm.toUpperCase());
+        if (canonicalName) {
+          const targetKey = `target::${canonicalName}`;
+          if (entityMap.has(targetKey)) {
+            const snippet = row.observation.slice(0, 80) + (row.observation.length > 80 ? "…" : "");
+            entityMap.get(targetKey)!.occurrences.push({
+              sheetId: row.sheetId,
+              sheetTitle: row.sheetTitle,
+              operationId: row.operationId,
+              operationName: row.operationName,
+              rowId: row.rowId,
+              observationSnippet: snippet,
+              timeMinutes: row.timeMinutes ?? null,
+              fullDescription: e.fullDescription,
+            });
+            continue; // skip adding as a separate entity
+          }
+        }
+      }
+      const key = `${e.type}::${e.shortForm}`;
+      if (!entityMap.has(key)) {
+        entityMap.set(key, { shortForm: e.shortForm, type: e.type, isTarget: false, occurrences: [] });
+      }
+      const snippet = row.observation.slice(0, 80) + (row.observation.length > 80 ? "…" : "");
+      entityMap.get(key)!.occurrences.push({
+        sheetId: row.sheetId,
+        sheetTitle: row.sheetTitle,
+        operationId: row.operationId,
+        operationName: row.operationName,
+        rowId: row.rowId,
+        observationSnippet: snippet,
+        timeMinutes: row.timeMinutes ?? null,
+        fullDescription: e.fullDescription,
       });
     }
   }

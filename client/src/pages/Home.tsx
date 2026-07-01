@@ -37,6 +37,10 @@ export default function Home() {
   const [newIms, setNewIms] = useState("");
   const [newUnit, setNewUnit] = useState("");
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const { data: deleteStats } = trpc.operation.deleteStats.useQuery(
+    { id: deleteId! },
+    { enabled: deleteId !== null }
+  );
 
   const utils = trpc.useUtils();
 
@@ -306,8 +310,28 @@ export default function Home() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Operation?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete the operation. All running sheets and data within it will also be deleted. This action cannot be undone.
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>This action <strong>cannot be undone</strong>. The following will be permanently deleted:</p>
+                {deleteStats ? (
+                  <ul className="text-sm space-y-1 pl-1">
+                    <li className="flex items-center gap-2">
+                      <span className="inline-block w-2 h-2 rounded-full bg-destructive/70" />
+                      <span><strong>{deleteStats.sheetCount}</strong> running sheet{deleteStats.sheetCount !== 1 ? "s" : ""}</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="inline-block w-2 h-2 rounded-full bg-destructive/70" />
+                      <span><strong>{deleteStats.rowCount}</strong> observation row{deleteStats.rowCount !== 1 ? "s" : ""}</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="inline-block w-2 h-2 rounded-full bg-destructive/70" />
+                      <span><strong>{deleteStats.targetCount}</strong> target{deleteStats.targetCount !== 1 ? "s" : ""}</span>
+                    </li>
+                  </ul>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Loading details…</p>
+                )}
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -316,7 +340,7 @@ export default function Home() {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => deleteId !== null && deleteOp.mutate({ id: deleteId })}
             >
-              Delete
+              Delete Operation
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

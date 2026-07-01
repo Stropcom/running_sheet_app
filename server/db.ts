@@ -146,6 +146,21 @@ export async function deleteOperation(id: number) {
   await db.delete(operations).where(eq(operations.id, id));
 }
 
+export async function getOperationDeleteStats(id: number) {
+  const db = await getDb();
+  if (!db) return { sheetCount: 0, rowCount: 0, targetCount: 0 };
+  const sheets = await db.select({ id: runningSheets.id }).from(runningSheets).where(eq(runningSheets.operationId, id));
+  const sheetIds = sheets.map((s) => s.id);
+  let rowCount = 0;
+  if (sheetIds.length > 0) {
+    const rowResult = await db.select({ count: sql<number>`count(*)` }).from(sheetRows).where(inArray(sheetRows.sheetId, sheetIds));
+    rowCount = Number(rowResult[0]?.count ?? 0);
+  }
+  const targetResult = await db.select({ count: sql<number>`count(*)` }).from(targets).where(eq(targets.operationId, id));
+  const targetCount = Number(targetResult[0]?.count ?? 0);
+  return { sheetCount: sheets.length, rowCount, targetCount };
+}
+
 // ─── Running Sheets ───────────────────────────────────────────────────────────
 
 export async function getRunningSheets() {

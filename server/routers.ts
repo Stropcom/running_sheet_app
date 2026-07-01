@@ -63,6 +63,7 @@ import {
   getGovernanceRecordsBySheetIds,
   computeGovernancePercent,
   getGovernanceTodoForCin,
+  getOperationDeleteStats,
 } from "./db";
 
 // ─── Role Guards ──────────────────────────────────────────────────────────────
@@ -238,6 +239,12 @@ export const appRouter = router({
         const { id, ...rest } = input;
         await updateOperation(id, rest);
         return { success: true };
+      }),
+
+    deleteStats: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        return getOperationDeleteStats(input.id);
       }),
 
     delete: adminProcedure

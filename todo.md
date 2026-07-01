@@ -256,3 +256,13 @@
 - [x] Build TargetRegistry.tsx page — list all targets, add/edit/delete, show linked operations
 - [x] Add "Target Registry" nav item under Intelligence in DashboardLayout sidebar
 - [x] Route /target-registry in App.tsx
+
+## To-Do Badge & Access Levels (Round 37)
+- [x] Add server procedure: todo.governanceCount — count sheets with incomplete governance for current user
+- [x] Update To-Do badge in sidebar to sum certify-outstanding + governance-outstanding counts
+- [x] Add 'member' to user role enum in schema (observer | member | admin), run migration
+- [x] Backend: enforce Member can only certify their own CIN (block certifying other CINs in certification router)
+- [x] Backend: allow Member to bulk uncertify a full row (bulk uncertify stays permitted)
+- [x] Frontend: hide User Management nav item and block /admin route for Member role
+- [x] Frontend: Member role badge shown in sidebar (green)
+- [x] Admin: Member option added to role dropdown in User Management

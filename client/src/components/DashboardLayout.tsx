@@ -39,6 +39,7 @@ const MAX_WIDTH = 400;
 const ROLE_CONFIG = {
   admin: { label: "Admin", icon: Crown, color: "text-amber-400", badge: "border-amber-400/30 bg-amber-400/10 text-amber-400" },
   certifier: { label: "Certifier", icon: ShieldCheck, color: "text-blue-400", badge: "border-blue-400/30 bg-blue-400/10 text-blue-400" },
+  member: { label: "Member", icon: ShieldCheck, color: "text-emerald-400", badge: "border-emerald-400/30 bg-emerald-400/10 text-emerald-400" },
   observer: { label: "Observer", icon: Eye, color: "text-muted-foreground", badge: "border-border bg-muted/50 text-muted-foreground" },
 };
 
@@ -105,7 +106,13 @@ function DashboardLayoutContent({
     staleTime: 30_000,
     refetchOnWindowFocus: true,
   });
-  const todoCount = outstanding?.length ?? 0;
+  const { data: governanceTodo } = trpc.sheet.governanceTodo.useQuery(undefined, {
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
+  });
+  const certifyCount = outstanding?.length ?? 0;
+  const govCount = governanceTodo?.filter(g => !g.allSigned).length ?? 0;
+  const todoCount = certifyCount + govCount;
 
   const menuItems = [
     { icon: FileText, label: "Operations", path: "/" },
@@ -118,7 +125,7 @@ function DashboardLayoutContent({
     { icon: User, label: "My Profile", path: "/profile" },
     ...(user?.role === "admin" ? [
       { icon: Users, label: "User Management", path: "/admin" },
-    ] : []),
+    ] : []), // member and observer do not see User Management
   ];
 
   const activeMenuItem = menuItems.find((item) =>

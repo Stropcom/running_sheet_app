@@ -40,17 +40,19 @@ import {
   Eye,
 } from "lucide-react";
 
-type Role = "observer" | "certifier" | "admin";
+type Role = "observer" | "member" | "certifier" | "admin";
 
 const ROLE_COLORS: Record<Role, string> = {
   admin: "bg-red-500/15 text-red-400 border-red-500/30",
   certifier: "bg-amber-500/15 text-amber-400 border-amber-500/30",
+  member: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
   observer: "bg-sky-500/15 text-sky-400 border-sky-500/30",
 };
 
 const ROLE_ICONS: Record<Role, React.ReactNode> = {
   admin: <Crown className="w-3 h-3" />,
   certifier: <ShieldCheck className="w-3 h-3" />,
+  member: <ShieldCheck className="w-3 h-3" />,
   observer: <Eye className="w-3 h-3" />,
 };
 
@@ -158,7 +160,8 @@ function UserFormFields({ form, setForm, isEdit = false }: UserFormFieldsProps) 
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="observer">Observer — view only</SelectItem>
-            <SelectItem value="certifier">Certifier — can certify rows</SelectItem>
+            <SelectItem value="member">Member — full access, own CIN certify only</SelectItem>
+            <SelectItem value="certifier">Certifier — can certify any CIN</SelectItem>
             <SelectItem value="admin">Admin — full access</SelectItem>
           </SelectContent>
         </Select>

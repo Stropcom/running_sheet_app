@@ -22,7 +22,7 @@ export const users = mysqlTable("users", {
   unit: varchar("unit", { length: 255 }),
   team: mysqlEnum("team", ["TEAM1", "TEAM2", "PTT"]),
   email: varchar("email", { length: 320 }),
-  role: mysqlEnum("role", ["observer", "certifier", "admin"]).default("observer").notNull(),
+  role: mysqlEnum("role", ["observer", "member", "certifier", "admin"]).default("observer").notNull(),
   // Legacy OAuth field — kept nullable so existing rows are not broken
   openId: varchar("openId", { length: 64 }),
   loginMethod: varchar("loginMethod", { length: 64 }).default("local"),

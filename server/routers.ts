@@ -78,9 +78,10 @@ import {
 
 // ─── Role Guards ──────────────────────────────────────────────────────────────
 
+/** Member, Certifier, or Admin can certify/uncertify */
 const certifierOrAdminProcedure = protectedProcedure.use(({ ctx, next }) => {
-  if (ctx.user.role !== "certifier" && ctx.user.role !== "admin") {
-    throw new TRPCError({ code: "FORBIDDEN", message: "Certifier or Admin role required." });
+  if (ctx.user.role !== "member" && ctx.user.role !== "certifier" && ctx.user.role !== "admin") {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Member, Certifier or Admin role required." });
   }
   return next({ ctx });
 });
@@ -466,6 +467,17 @@ export const appRouter = router({
         const row = await getRowById(input.rowId);
         if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Row not found." });
 
+        // Member role: can only certify their own CIN
+        if (ctx.user.role === "member") {
+          const members = await getMembersByRowIds([input.rowId]);
+          const member = members.find((m) => m.id === input.memberId);
+          if (!member) throw new TRPCError({ code: "NOT_FOUND", message: "Member not found." });
+          const userCIN = ctx.user.cin ?? ctx.user.username ?? "";
+          if (member.memberName.toLowerCase() !== userCIN.toLowerCase()) {
+            throw new TRPCError({ code: "FORBIDDEN", message: "You can only certify your own CIN." });
+          }
+        }
+
         const existing = await getCertificationByMember(input.rowId, input.memberId);
         if (existing) throw new TRPCError({ code: "CONFLICT", message: "Member already certified." });
 
@@ -509,6 +521,13 @@ export const appRouter = router({
     certifyAllForCin: certifierOrAdminProcedure
       .input(z.object({ sheetId: z.number(), cin: z.string() }))
       .mutation(async ({ input, ctx }) => {
+        // Member role: can only certify their own CIN
+        if (ctx.user.role === "member") {
+          const userCIN = ctx.user.cin ?? ctx.user.username ?? "";
+          if (input.cin.toLowerCase() !== userCIN.toLowerCase()) {
+            throw new TRPCError({ code: "FORBIDDEN", message: "You can only certify your own CIN." });
+          }
+        }
         const members = await getMembersByCINAndSheet(input.sheetId, input.cin);
         const uncertifiedMembers = [];
         for (const member of members) {
@@ -671,7 +690,7 @@ export const appRouter = router({
         team: z.enum(["TEAM1", "TEAM2", "PTT"]).optional(),
         username: z.string().min(1),
         password: z.string().min(1),
-        role: z.enum(["observer", "certifier", "admin"]),
+        role: z.enum(["observer", "member", "certifier", "admin"]),
       }))
       .mutation(async ({ input, ctx }) => {
         const passwordHash = await bcrypt.hash(input.password, 12);
@@ -707,7 +726,7 @@ export const appRouter = router({
         team: z.enum(["TEAM1", "TEAM2", "PTT"]).nullable().optional(),
         username: z.string().min(1).optional(),
         password: z.string().min(1).optional(),
-        role: z.enum(["observer", "certifier", "admin"]).optional(),
+        role: z.enum(["observer", "member", "certifier", "admin"]).optional(),
       }))
       .mutation(async ({ input, ctx }) => {
         const { id, password, ...rest } = input;
@@ -748,7 +767,7 @@ export const appRouter = router({
       }),
 
     updateUserRole: adminProcedure
-      .input(z.object({ userId: z.number(), role: z.enum(["observer", "certifier", "admin"]) }))
+      .input(z.object({ userId: z.number(), role: z.enum(["observer", "member", "certifier", "admin"]) }))
       .mutation(async ({ input }) => {
         await updateUserRole(input.userId, input.role);
         return { success: true };

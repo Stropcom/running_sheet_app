@@ -88,7 +88,7 @@ export async function deleteUser(id: number) {
   await db.delete(users).where(eq(users.id, id));
 }
 
-export async function updateUserRole(userId: number, role: "observer" | "member" | "certifier" | "admin") {
+export async function updateUserRole(userId: number, role: "observer" | "member" | "admin") {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(users).set({ role }).where(eq(users.id, userId));

@@ -23,9 +23,9 @@ import { toast } from "sonner";
 import { useTheme } from "@/contexts/ThemeContext";
 
 const ROLE_LABELS: Record<string, { label: string; color: string; badge: string }> = {
-  admin:     { label: "Admin",     color: "text-violet-400", badge: "border-violet-400/30 text-violet-400 bg-violet-400/10" },
-  certifier: { label: "Certifier", color: "text-amber-400",  badge: "border-amber-400/30 text-amber-400 bg-amber-400/10"   },
-  observer:  { label: "Observer",  color: "text-sky-400",    badge: "border-sky-400/30 text-sky-400 bg-sky-400/10"         },
+  admin:    { label: "Full Access + User Management", color: "text-amber-400", badge: "border-amber-400/30 text-amber-400 bg-amber-400/10" },
+  member:   { label: "Full Access",                   color: "text-emerald-400", badge: "border-emerald-400/30 text-emerald-400 bg-emerald-400/10" },
+  observer: { label: "Observer",                      color: "text-sky-400",    badge: "border-sky-400/30 text-sky-400 bg-sky-400/10"         },
 };
 
 function InfoRow({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value?: string | null }) {

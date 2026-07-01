@@ -78,10 +78,10 @@ import {
 
 // ─── Role Guards ──────────────────────────────────────────────────────────────
 
-/** Member, Certifier, or Admin can certify/uncertify */
+/** Member or Admin can certify/uncertify */
 const certifierOrAdminProcedure = protectedProcedure.use(({ ctx, next }) => {
-  if (ctx.user.role !== "member" && ctx.user.role !== "certifier" && ctx.user.role !== "admin") {
-    throw new TRPCError({ code: "FORBIDDEN", message: "Member, Certifier or Admin role required." });
+  if (ctx.user.role !== "member" && ctx.user.role !== "admin") {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Member or Admin role required." });
   }
   return next({ ctx });
 });
@@ -588,6 +588,14 @@ export const appRouter = router({
         const row = await getRowById(input.rowId);
         if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Row not found." });
 
+        // Member role: can only unlock rows that contain their own CIN
+        if (ctx.user.role === "member") {
+          const rowMembers = await getMembersByRowIds([input.rowId]);
+          const userCIN = (ctx.user.cin ?? ctx.user.username ?? "").toLowerCase();
+          const hasCIN = rowMembers.some((m) => m.memberName.toLowerCase() === userCIN);
+          if (!hasCIN) throw new TRPCError({ code: "FORBIDDEN", message: "You can only unlock rows that contain your CIN." });
+        }
+
         await deactivateCertification(input.rowId, input.memberId);
         await setRowLocked(input.rowId, false);
 
@@ -612,6 +620,14 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         const row = await getRowById(input.rowId);
         if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Row not found." });
+
+        // Member role: can only bulk-unlock rows that contain their own CIN
+        if (ctx.user.role === "member") {
+          const rowMembers = await getMembersByRowIds([input.rowId]);
+          const userCIN = (ctx.user.cin ?? ctx.user.username ?? "").toLowerCase();
+          const hasCIN = rowMembers.some((m) => m.memberName.toLowerCase() === userCIN);
+          if (!hasCIN) throw new TRPCError({ code: "FORBIDDEN", message: "You can only unlock rows that contain your CIN." });
+        }
 
         await deactivateAllCertificationsForRow(input.rowId);
         await setRowLocked(input.rowId, false);
@@ -690,7 +706,7 @@ export const appRouter = router({
         team: z.enum(["TEAM1", "TEAM2", "PTT"]).optional(),
         username: z.string().min(1),
         password: z.string().min(1),
-        role: z.enum(["observer", "member", "certifier", "admin"]),
+        role: z.enum(["observer", "member", "admin"]),
       }))
       .mutation(async ({ input, ctx }) => {
         const passwordHash = await bcrypt.hash(input.password, 12);
@@ -726,7 +742,7 @@ export const appRouter = router({
         team: z.enum(["TEAM1", "TEAM2", "PTT"]).nullable().optional(),
         username: z.string().min(1).optional(),
         password: z.string().min(1).optional(),
-        role: z.enum(["observer", "member", "certifier", "admin"]).optional(),
+        role: z.enum(["observer", "member", "admin"]).optional(),
       }))
       .mutation(async ({ input, ctx }) => {
         const { id, password, ...rest } = input;
@@ -767,7 +783,7 @@ export const appRouter = router({
       }),
 
     updateUserRole: adminProcedure
-      .input(z.object({ userId: z.number(), role: z.enum(["observer", "member", "certifier", "admin"]) }))
+      .input(z.object({ userId: z.number(), role: z.enum(["observer", "member", "admin"]) }))
       .mutation(async ({ input }) => {
         await updateUserRole(input.userId, input.role);
         return { success: true };

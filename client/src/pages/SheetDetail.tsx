@@ -877,8 +877,8 @@ export default function SheetDetail() {
     onError: (e) => toast.error(e.message),
   });
 
-  const canEdit = user?.role === "certifier" || user?.role === "admin" || user?.role === "observer";
-  const canCertify = user?.role === "certifier" || user?.role === "admin";
+  const canEdit = user?.role === "member" || user?.role === "admin" || user?.role === "observer";
+  const canCertify = user?.role === "member" || user?.role === "admin";
 
   // Parse daily roster CINs for team expansion and Certify All
   // Sort: Team Leader first, then all others in numeric/alphabetic order

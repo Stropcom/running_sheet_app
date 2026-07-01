@@ -266,3 +266,10 @@
 - [x] Frontend: hide User Management nav item and block /admin route for Member role
 - [x] Frontend: Member role badge shown in sidebar (green)
 - [x] Admin: Member option added to role dropdown in User Management
+
+## Role Cleanup (Round 38)
+- [x] Remove 'certifier' role from schema enum, migration, db.ts, routers.ts
+- [x] Rename 'member' display label to "Full Access" throughout UI
+- [x] Rename 'admin' display label to "Full Access + User Management" throughout UI
+- [x] Allow member role to uncertify (unlock) rows their own CIN appears in, even if other CINs are in the row
+- [x] Update role dropdown descriptions in User Management

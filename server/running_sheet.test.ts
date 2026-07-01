@@ -42,7 +42,7 @@ vi.mock("./db", () => ({
 
 // ─── Context factories ────────────────────────────────────────────────────────
 
-function makeCtx(role: "observer" | "certifier" | "admin"): TrpcContext {
+function makeCtx(role: "observer" | "member" | "admin"): TrpcContext {
   return {
     user: {
       id: 1,
@@ -118,7 +118,7 @@ describe("sheet.delete", () => {
   });
 
   it("throws FORBIDDEN for non-admin users", async () => {
-    const caller = appRouter.createCaller(makeCtx("certifier"));
+    const caller = appRouter.createCaller(makeCtx("member"));
     await expect(caller.sheet.delete({ id: 1 })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
@@ -137,12 +137,12 @@ describe("row.update", () => {
       id: 1, sheetId: 1, rowNumber: 1, time: null, observation: null,
       isLocked: true, createdAt: new Date(), updatedAt: new Date(),
     });
-    const caller = appRouter.createCaller(makeCtx("certifier"));
+    const caller = appRouter.createCaller(makeCtx("member"));
     await expect(caller.row.update({ id: 1, observation: "test" })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
   it("allows update when row is unlocked", async () => {
-    const caller = appRouter.createCaller(makeCtx("certifier"));
+    const caller = appRouter.createCaller(makeCtx("member"));
     const result = await caller.row.update({ id: 1, observation: "updated" });
     expect(result.success).toBe(true);
   });
@@ -152,7 +152,7 @@ describe("row.update", () => {
 
 describe("certification.certify", () => {
   it("allows certifier to certify a member", async () => {
-    const caller = appRouter.createCaller(makeCtx("certifier"));
+    const caller = appRouter.createCaller(makeCtx("member"));
     const result = await caller.certification.certify({ rowId: 1, memberId: 1 });
     expect(result.success).toBe(true);
   });
@@ -168,14 +168,14 @@ describe("certification.certify", () => {
       id: 1, rowId: 1, memberId: 1, certifiedByUserId: 1,
       certifiedByName: "Test", certifiedAt: Date.now(), isActive: true,
     });
-    const caller = appRouter.createCaller(makeCtx("certifier"));
+    const caller = appRouter.createCaller(makeCtx("member"));
     await expect(caller.certification.certify({ rowId: 1, memberId: 1 })).rejects.toMatchObject({ code: "CONFLICT" });
   });
 });
 
 describe("certification.uncertify", () => {
   it("allows certifier to uncertify", async () => {
-    const caller = appRouter.createCaller(makeCtx("certifier"));
+    const caller = appRouter.createCaller(makeCtx("member"));
     const result = await caller.certification.uncertify({ rowId: 1, memberId: 1 });
     expect(result.success).toBe(true);
   });
@@ -196,7 +196,7 @@ describe("admin.listUsers", () => {
   });
 
   it("throws FORBIDDEN for certifier", async () => {
-    const caller = appRouter.createCaller(makeCtx("certifier"));
+    const caller = appRouter.createCaller(makeCtx("member"));
     await expect(caller.admin.listUsers()).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
@@ -209,12 +209,12 @@ describe("admin.listUsers", () => {
 describe("admin.updateUserRole", () => {
   it("allows admin to update user role", async () => {
     const caller = appRouter.createCaller(makeCtx("admin"));
-    const result = await caller.admin.updateUserRole({ userId: 2, role: "certifier" });
+    const result = await caller.admin.updateUserRole({ userId: 2, role: "member" });
     expect(result.success).toBe(true);
   });
 
   it("throws FORBIDDEN for non-admin", async () => {
-    const caller = appRouter.createCaller(makeCtx("certifier"));
+    const caller = appRouter.createCaller(makeCtx("member"));
     await expect(caller.admin.updateUserRole({ userId: 2, role: "observer" })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });

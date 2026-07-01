@@ -40,6 +40,7 @@ import {
   Save,
   Search,
   CheckCircle2,
+  LockKeyhole,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -465,7 +466,7 @@ function SheetCard({
   onNavigate,
   onDelete,
 }: {
-  sheet: { id: number; title: string; createdAt: Date; sheetCins?: string | null };
+  sheet: { id: number; title: string; createdAt: Date; sheetCins?: string | null; closedAt?: number | null; closedByCIN?: string | null };
   cinNames: string[];
   cinEntries?: CinEntry[];
   isAdmin: boolean;
@@ -483,27 +484,43 @@ function SheetCard({
     certStatus !== undefined &&
     certStatus.every((s) => s.certified);
 
+  const isClosed = !!sheet.closedAt;
+
   return (
     <div
       className={`group relative flex items-center gap-4 p-4 rounded-xl border transition-all duration-150 cursor-pointer ${
-        allCertified
-          ? "border-emerald-500/60 bg-emerald-500/10 hover:bg-emerald-500/15 hover:border-emerald-500/80"
-          : "border-border bg-card hover:bg-accent/20 hover:border-primary/30"
+        isClosed
+          ? "border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800/60 opacity-70"
+          : allCertified
+            ? "border-emerald-500/60 bg-emerald-500/10 hover:bg-emerald-500/15 hover:border-emerald-500/80"
+            : "border-border bg-card hover:bg-accent/20 hover:border-primary/30"
       }`}
       onClick={onNavigate}
     >
       <div className={`p-2.5 rounded-lg border shrink-0 ${
+        isClosed ? "bg-slate-200/60 dark:bg-slate-700/40 border-slate-300 dark:border-slate-600" :
         allCertified ? "bg-emerald-500/20 border-emerald-500/40" : "bg-muted/60 border-border"
       }`}>
-        <FileText className={`w-5 h-5 ${
-          allCertified ? "text-black dark:text-emerald-400" : "text-muted-foreground"
-        }`} />
+        {isClosed
+          ? <LockKeyhole className="w-5 h-5 text-slate-400" />
+          : <FileText className={`w-5 h-5 ${
+              allCertified ? "text-black dark:text-emerald-400" : "text-muted-foreground"
+            }`} />}
       </div>
 
       <div className="flex-1 min-w-0">
-        <span className={`font-semibold truncate block ${
-          allCertified ? "text-black dark:text-emerald-300" : "text-foreground"
-        }`}>{sheet.title}</span>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={`font-semibold truncate ${
+            isClosed ? "text-slate-500 dark:text-slate-400" :
+            allCertified ? "text-black dark:text-emerald-300" : "text-foreground"
+          }`}>{sheet.title}</span>
+          {isClosed && (
+            <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border border-slate-400/50 bg-slate-200/60 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 font-medium shrink-0">
+              <LockKeyhole className="w-2.5 h-2.5" />
+              CLOSED
+            </span>
+          )}
+        </div>
         {cinNames.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-1.5">
             {cinNames.map((cin) => {
@@ -536,6 +553,12 @@ function SheetCard({
           <Calendar className="w-3 h-3" />
           <span>Created {format(new Date(sheet.createdAt), "d MMM yyyy, HH:mm")}</span>
         </div>
+        {isClosed && sheet.closedByCIN && sheet.closedAt && (
+          <div className="flex items-center gap-1.5 mt-1 text-xs text-slate-400 dark:text-slate-500">
+            <LockKeyhole className="w-3 h-3 shrink-0" />
+            <span>Closed by <span className="font-mono font-semibold">{sheet.closedByCIN}</span> on {format(new Date(sheet.closedAt), "d MMM yyyy, HH:mm")}</span>
+          </div>
+        )}
       </div>
 
       <div className="flex items-center gap-2 shrink-0">
@@ -550,6 +573,7 @@ function SheetCard({
           </Button>
         )}
         <ChevronRight className={`w-4 h-4 transition-colors ${
+          isClosed ? "text-slate-400" :
           allCertified ? "text-black dark:text-emerald-400" : "text-muted-foreground group-hover:text-foreground"
         }`} />
       </div>

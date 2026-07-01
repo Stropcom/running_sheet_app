@@ -280,3 +280,14 @@
 - [ ] Update db.ts: update setGovernanceItemChecked to accept and store tickedByCIN/tickedByName
 - [ ] Update routers.ts: pass ctx.user CIN and name when toggling governance checkbox
 - [ ] Update GovernancePage.tsx / governance UI to display CIN next to each ticked checkbox
+
+## Close/Reopen Running Sheet (Round 40)
+- [x] Add closedAt (bigint, nullable) and closedByCIN (varchar 50, nullable) columns to running_sheets table in schema.ts
+- [x] Run pnpm drizzle-kit generate and apply migration via webdev_execute_sql
+- [x] Add closeSheet(sheetId, cin) and reopenSheet(sheetId) db helpers in db.ts
+- [x] Add sheet.close and sheet.reopen tRPC procedures in routers.ts (admin or member only)
+- [x] Update getRunningSheetById and getRunningSheets to return closedAt and closedByCIN
+- [x] SheetDetail: add Close/Reopen button — Close active only when allSigned && governanceComplete; Reopen always available to admin/member
+- [x] SheetDetail: when closed, lock all editing (rows, observations, governance, target)
+- [x] OperationDetail sheet cards: show faded/muted style + Closed badge with CIN and timestamp when closedAt is set
+- [x] Governance page: show locked banner when sheet is closed

@@ -218,6 +218,22 @@ export async function deleteRunningSheet(id: number) {
   await db.delete(runningSheets).where(eq(runningSheets.id, id));
 }
 
+export async function closeSheet(id: number, cin: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(runningSheets)
+    .set({ closedAt: Date.now(), closedByCIN: cin })
+    .where(eq(runningSheets.id, id));
+}
+
+export async function reopenSheet(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(runningSheets)
+    .set({ closedAt: null, closedByCIN: null })
+    .where(eq(runningSheets.id, id));
+}
+
 // ─── Sheet Rows ───────────────────────────────────────────────────────────────
 
 export async function getRowsBySheetId(sheetId: number) {

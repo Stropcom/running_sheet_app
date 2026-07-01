@@ -75,6 +75,8 @@ import {
   linkTargetToOperation,
   unlinkTargetFromOperation,
   getLinkedOperationsForTarget,
+  closeSheet,
+  reopenSheet,
 } from "./db";
 
 // ─── Role Guards ──────────────────────────────────────────────────────────────
@@ -378,6 +380,30 @@ export const appRouter = router({
       if (!cin) return [];
       return getGovernanceTodoForCin(cin);
     }),
+
+    close: certifierOrAdminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const sheet = await getRunningSheetById(input.id);
+        if (!sheet) throw new TRPCError({ code: "NOT_FOUND", message: "Sheet not found." });
+        if (sheet.closedAt) throw new TRPCError({ code: "BAD_REQUEST", message: "Sheet is already closed." });
+        const cin = ctx.user.cin ?? ctx.user.name ?? "Unknown";
+        await closeSheet(input.id, cin);
+        await createAuditLog({ sheetId: input.id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "sheet_closed", details: `Sheet closed by ${cin}`, createdAt: Date.now() });
+        return { success: true };
+      }),
+
+    reopen: certifierOrAdminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const sheet = await getRunningSheetById(input.id);
+        if (!sheet) throw new TRPCError({ code: "NOT_FOUND", message: "Sheet not found." });
+        if (!sheet.closedAt) throw new TRPCError({ code: "BAD_REQUEST", message: "Sheet is not closed." });
+        await reopenSheet(input.id);
+        const cin = ctx.user.cin ?? ctx.user.name ?? "Unknown";
+        await createAuditLog({ sheetId: input.id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "sheet_reopened", details: `Sheet reopened by ${cin}`, createdAt: Date.now() });
+        return { success: true };
+      }),
   }),
 
   // ─── Sheet Rows ──────────────────────────────────────────────────────────────

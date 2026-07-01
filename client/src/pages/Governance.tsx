@@ -138,6 +138,13 @@ export default function GovernancePage() {
     { enabled: !!sheetId }
   );
 
+  // Fetch sheet to check closed state
+  const { data: sheetData } = trpc.sheet.get.useQuery(
+    { id: sheetId },
+    { enabled: !!sheetId }
+  );
+  const isClosed = !!(sheetData as { closedAt?: number | null } | undefined)?.closedAt;
+
   // Fetch governance record (auto-created on first load)
   const { data: gov, isLoading } = trpc.governance.getBySheet.useQuery(
     { sheetId },
@@ -304,7 +311,7 @@ export default function GovernancePage() {
     | "coverPage";
 
   function toggle(field: BoolField) {
-    if (!gov) return;
+    if (!gov || isClosed) return;
     const newValue = !(gov as Record<string, unknown>)[field];
     updateMutation.mutate({
       sheetId,
@@ -316,6 +323,7 @@ export default function GovernancePage() {
 
   // ── Save notes (debounced) ──
   function handleNotesChange(val: string) {
+    if (isClosed) return;
     setNotes(val);
     if (notesTimeout) clearTimeout(notesTimeout);
     setNotesTimeout(
@@ -327,6 +335,7 @@ export default function GovernancePage() {
 
   // ── Save due date ──
   function handleDueDateChange(val: string) {
+    if (isClosed) return;
     setDueDate(val);
     const ms = val ? new Date(val).getTime() : null;
     updateMutation.mutate({ sheetId, dueDate: ms });
@@ -334,6 +343,7 @@ export default function GovernancePage() {
 
   // ── Imagery helpers ──
   function saveImagery(entries: ImageryEntry[]) {
+    if (isClosed) return;
     setImagery(entries);
     updateMutation.mutate({ sheetId, imageryEntries: entries });
   }
@@ -490,7 +500,8 @@ export default function GovernancePage() {
               type="date"
               value={dueDate}
               onChange={(e) => handleDueDateChange(e.target.value)}
-              className="w-full bg-transparent text-foreground font-medium text-xs outline-none"
+              disabled={isClosed}
+              className="w-full bg-transparent text-foreground font-medium text-xs outline-none disabled:opacity-50 disabled:cursor-not-allowed"
             />
           </div>
         </div>
@@ -702,6 +713,7 @@ export default function GovernancePage() {
             onChange={(e) => handleNotesChange(e.target.value)}
             placeholder="Any additional notes for this running sheet write-off…"
             rows={3}
+            disabled={isClosed}
             className="text-sm resize-none"
           />
         </div>

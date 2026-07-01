@@ -42,6 +42,8 @@ import {
   ArrowUpDown,
   Target,
   ClipboardCheck,
+  LockKeyhole,
+  LockKeyholeOpen,
 } from "lucide-react";
 import {
   Select,
@@ -877,8 +879,50 @@ export default function SheetDetail() {
     onError: (e) => toast.error(e.message),
   });
 
-  const canEdit = user?.role === "member" || user?.role === "admin" || user?.role === "observer";
-  const canCertify = user?.role === "member" || user?.role === "admin";
+  // Fetch governance record to check completion for Close button
+  const { data: govRecord } = trpc.governance.getBySheet.useQuery(
+    { sheetId },
+    { enabled: isAuthenticated && !!sheetId }
+  );
+
+  // Close / Reopen mutations
+  const closeSheet = trpc.sheet.close.useMutation({
+    onSuccess: () => { utils.sheet.get.invalidate({ id: sheetId }); toast.success("Running sheet closed and locked."); },
+    onError: (e) => toast.error(e.message),
+  });
+  const reopenSheet = trpc.sheet.reopen.useMutation({
+    onSuccess: () => { utils.sheet.get.invalidate({ id: sheetId }); toast.success("Running sheet reopened."); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const isClosed = !!sheet?.closedAt;
+  const canManageClose = user?.role === "member" || user?.role === "admin";
+
+  // All rows certified check (same logic as Governance.tsx allSigned)
+  const allRowsCertified = useMemo(() => {
+    if (!rows || rows.length === 0) return false;
+    return rows.every((r) => {
+      const members = r.members ?? [];
+      if (members.length === 0) return true;
+      return members.every((m) =>
+        (r.certifications ?? []).some((c) => c.memberId === m.id && c.isActive)
+      );
+    });
+  }, [rows]);
+
+  // Governance complete check
+  const govComplete = useMemo(() => {
+    if (!govRecord) return false;
+    const g = govRecord as Record<string, unknown>;
+    const tlDone = !!(g.summaryNotification) && !!(g.sentToIO);
+    const opDone = !!(g.savedAsWord) && !!(g.savedAsPdf) && !!(g.uploadedToPromis) && !!(g.savedInOpFolder);
+    return tlDone && opDone;
+  }, [govRecord]);
+
+  const canCloseSheet = canManageClose && allRowsCertified && govComplete && !isClosed;
+
+  const canEdit = !isClosed && (user?.role === "member" || user?.role === "admin" || user?.role === "observer");
+  const canCertify = !isClosed && (user?.role === "member" || user?.role === "admin");
 
   // Parse daily roster CINs for team expansion and Certify All
   // Sort: Team Leader first, then all others in numeric/alphabetic order
@@ -1121,22 +1165,78 @@ export default function SheetDetail() {
                 </div>
                 {sheet && (
                   <>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="w-7 h-7 shrink-0 text-muted-foreground hover:text-foreground"
-                      onClick={openEditSheet}
-                      title="Edit sheet title"
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                    </Button>
-
+                    {!isClosed && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="w-7 h-7 shrink-0 text-muted-foreground hover:text-foreground"
+                        onClick={openEditSheet}
+                        title="Edit sheet title"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                    )}
+                    {isClosed && (
+                      <Badge variant="secondary" className="gap-1.5 bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300 shrink-0">
+                        <LockKeyhole className="w-3 h-3" />
+                        CLOSED
+                      </Badge>
+                    )}
                   </>
                 )}
               </>
             )}
           </div>
           <div className="ml-auto flex items-center gap-2 shrink-0">
+            {/* Close / Reopen button */}
+            {canManageClose && (
+              isClosed ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-2 border-amber-400 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950"
+                      onClick={() => reopenSheet.mutate({ id: sheetId })}
+                      disabled={reopenSheet.isPending}
+                    >
+                      <LockKeyholeOpen className="w-4 h-4" />
+                      Reopen
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Reopen this running sheet for editing</TooltipContent>
+                </Tooltip>
+              ) : (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className={`gap-2 ${
+                        canCloseSheet
+                          ? "border-emerald-500 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950"
+                          : "opacity-40 cursor-not-allowed"
+                      }`}
+                      onClick={() => canCloseSheet && closeSheet.mutate({ id: sheetId })}
+                      disabled={!canCloseSheet || closeSheet.isPending}
+                    >
+                      <LockKeyhole className="w-4 h-4" />
+                      Close Sheet
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {canCloseSheet
+                      ? "Close and lock this running sheet"
+                      : !allRowsCertified
+                        ? "All rows must be certified before closing"
+                        : !govComplete
+                          ? "Governance must be 100% complete before closing"
+                          : "Close sheet"}
+                  </TooltipContent>
+                </Tooltip>
+              )
+            )}
+
             {/* Export dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -1161,17 +1261,19 @@ export default function SheetDetail() {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            {/* Add row */}
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-2"
-              onClick={() => addRow.mutate({ sheetId })}
-              disabled={addRow.isPending}
-            >
-              <Plus className="w-4 h-4" />
-              Add Row
-            </Button>
+            {/* Add row — hidden when sheet is closed */}
+            {!isClosed && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-2"
+                onClick={() => addRow.mutate({ sheetId })}
+                disabled={addRow.isPending}
+              >
+                <Plus className="w-4 h-4" />
+                Add Row
+              </Button>
+            )}
           </div>
         </div>
 
@@ -1191,6 +1293,33 @@ export default function SheetDetail() {
             Governance
           </button>
         </div>
+
+        {/* Closed banner */}
+        {isClosed && sheet && (
+          <div className="mb-4 flex items-center gap-3 rounded-lg border border-slate-300 bg-slate-100 dark:border-slate-600 dark:bg-slate-800/60 px-4 py-3">
+            <LockKeyhole className="w-4 h-4 text-slate-500 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">This running sheet is closed and locked</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Closed by <span className="font-mono font-semibold">{sheet.closedByCIN}</span>
+                {" on "}
+                {new Date(sheet.closedAt!).toLocaleString()}
+              </p>
+            </div>
+            {canManageClose && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 border-amber-400 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950 shrink-0"
+                onClick={() => reopenSheet.mutate({ id: sheetId })}
+                disabled={reopenSheet.isPending}
+              >
+                <LockKeyholeOpen className="w-3.5 h-3.5" />
+                Reopen
+              </Button>
+            )}
+          </div>
+        )}
 
         {/* Daily Roster Panel with Certify All — always visible so team can be added */}
         {(parsedRoster.length > 0 || true) && (

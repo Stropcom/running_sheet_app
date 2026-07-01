@@ -63,6 +63,9 @@ export const runningSheets = mysqlTable("running_sheets", {
   createdBy: int("createdBy").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  // Close/Reopen
+  closedAt: bigint("closedAt", { mode: "number" }),
+  closedByCIN: varchar("closedByCIN", { length: 64 }),
 });
 
 export type RunningSheet = typeof runningSheets.$inferSelect;
@@ -209,6 +212,8 @@ export const auditLogs = mysqlTable("audit_logs", {
     "sheet_created",
     "sheet_updated",
     "sheet_deleted",
+    "sheet_closed",
+    "sheet_reopened",
     "user_login",
     "user_logout",
     "user_created",

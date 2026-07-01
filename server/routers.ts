@@ -69,6 +69,11 @@ import {
   updateTargetShortcut,
   deleteTargetShortcut,
   getTargetShortcutsForSheet,
+  getAllTargetsForRegistry,
+  createRegistryTarget,
+  linkTargetToOperation,
+  unlinkTargetFromOperation,
+  getLinkedOperationsForTarget,
 } from "./db";
 
 // ─── Role Guards ──────────────────────────────────────────────────────────────
@@ -799,6 +804,89 @@ export const appRouter = router({
         await setSheetTarget(input.sheetId, input.targetId);
         return { success: true };
       }),
+
+    // ─── Target Registry sub-router ─────────────────────────────────────────────────────────────────────────
+    registry: router({
+      /** List all targets in the global registry with linked operations */
+      list: protectedProcedure.query(async () => {
+        return getAllTargetsForRegistry();
+      }),
+
+      /** Create a new target in the global registry */
+      create: protectedProcedure
+        .input(z.object({
+          name: z.string().min(1).max(255),
+          tgt: z.string().optional().nullable(),
+          hbf: z.string().optional().nullable(),
+          hb: z.string().optional().nullable(),
+          v1f: z.string().optional().nullable(),
+          v1: z.string().optional().nullable(),
+          v2f: z.string().optional().nullable(),
+          v2: z.string().optional().nullable(),
+          dep: z.string().optional().nullable(),
+          arr: z.string().optional().nullable(),
+          linkToOperationId: z.number().optional().nullable(),
+        }))
+        .mutation(async ({ input, ctx }) => {
+          const { linkToOperationId, ...data } = input;
+          const result = await createRegistryTarget({ ...data, createdBy: ctx.user.id });
+          if (linkToOperationId) {
+            await linkTargetToOperation(result.id, linkToOperationId);
+          }
+          return result;
+        }),
+
+      /** Update a target in the registry */
+      update: protectedProcedure
+        .input(z.object({
+          id: z.number(),
+          name: z.string().min(1).max(255).optional(),
+          tgt: z.string().optional().nullable(),
+          hbf: z.string().optional().nullable(),
+          hb: z.string().optional().nullable(),
+          v1f: z.string().optional().nullable(),
+          v1: z.string().optional().nullable(),
+          v2f: z.string().optional().nullable(),
+          v2: z.string().optional().nullable(),
+          dep: z.string().optional().nullable(),
+          arr: z.string().optional().nullable(),
+        }))
+        .mutation(async ({ input }) => {
+          const { id, ...data } = input;
+          return updateTarget(id, data);
+        }),
+
+      /** Delete a target from the registry (removes all operation links too) */
+      delete: protectedProcedure
+        .input(z.object({ id: z.number() }))
+        .mutation(async ({ input }) => {
+          await deleteTarget(input.id);
+          return { success: true };
+        }),
+
+      /** Link a target to an operation */
+      linkToOperation: protectedProcedure
+        .input(z.object({ targetId: z.number(), operationId: z.number() }))
+        .mutation(async ({ input }) => {
+          await linkTargetToOperation(input.targetId, input.operationId);
+          return { success: true };
+        }),
+
+      /** Unlink a target from an operation */
+      unlinkFromOperation: protectedProcedure
+        .input(z.object({ targetId: z.number(), operationId: z.number() }))
+        .mutation(async ({ input }) => {
+          await unlinkTargetFromOperation(input.targetId, input.operationId);
+          return { success: true };
+        }),
+
+      /** Get all operations linked to a target */
+      getLinkedOperations: protectedProcedure
+        .input(z.object({ targetId: z.number() }))
+        .query(async ({ input }) => {
+          return getLinkedOperationsForTarget(input.targetId);
+        }),
+    }),
   }),
   // ─── Shortcuts ───────────────────────────────────────────────────────────────
 

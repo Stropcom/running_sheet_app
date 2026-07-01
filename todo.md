@@ -245,3 +245,14 @@
 - [ ] New fields (HBF, V1F, V2F) appear as shortcuts in observation row form
 - [ ] New fields (HBF, V1F, V2F) appear in target panel on running sheet
 - [ ] Add per-target shortcuts section at bottom of target details form
+
+## Target Registry (Round 36)
+- [x] Make targets.operationId nullable in schema (targets can exist without an operation)
+- [x] Add operation_target_links join table (operationId, targetId) for many-to-many linking
+- [x] Update db.ts: add getAllTargetsForRegistry, linkTargetToOperation, getLinkedOperationsForTarget helpers
+- [x] Update routers.ts: add target.registry.list, target.registry.create, target.registry.update, target.registry.delete, target.registry.linkToOperation, target.registry.unlinkFromOperation procedures
+- [x] Update setSheetTarget to remove same-operation constraint (registry targets can link to any sheet)
+- [x] Update deleteOperation to NOT cascade-delete targets (only remove links)
+- [x] Build TargetRegistry.tsx page — list all targets, add/edit/delete, show linked operations
+- [x] Add "Target Registry" nav item under Intelligence in DashboardLayout sidebar
+- [x] Route /target-registry in App.tsx

@@ -23,6 +23,7 @@ import {
   GovernanceRecord,
   targetShortcuts,
   InsertTargetShortcut,
+  operationTargetLinks,
 } from "../drizzle/schema";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -143,8 +144,10 @@ export async function deleteOperation(id: number) {
   for (const sheet of sheets) {
     await deleteRunningSheet(sheet.id);
   }
-  // Delete targets belonging to this operation
-  await db.delete(targets).where(eq(targets.operationId, id));
+  // Remove operation-target links (targets themselves stay in the registry)
+  await db.delete(operationTargetLinks).where(eq(operationTargetLinks.operationId, id));
+  // Clear legacy operationId FK on targets (nullable, so set to null rather than delete)
+  await db.update(targets).set({ operationId: null }).where(eq(targets.operationId, id));
   await db.delete(operations).where(eq(operations.id, id));
 }
 
@@ -547,6 +550,8 @@ export async function deleteTarget(id: number) {
   if (!db) throw new Error("DB unavailable");
   // Clear any running sheets that reference this target before deleting
   await db.update(runningSheets).set({ targetId: null }).where(eq(runningSheets.targetId, id));
+  // Remove all operation links for this target
+  await db.delete(operationTargetLinks).where(eq(operationTargetLinks.targetId, id));
   await db.delete(targets).where(eq(targets.id, id));
 }
 
@@ -559,9 +564,81 @@ export async function setSheetTarget(sheetId: number, targetId: number | null) {
     if (!sheet) throw new Error("Sheet not found");
     const [target] = await db.select({ operationId: targets.operationId }).from(targets).where(eq(targets.id, targetId)).limit(1);
     if (!target) throw new Error("Target not found");
-    if (target.operationId !== sheet.operationId) throw new Error("Target does not belong to this operation");
+    // Target Registry: targets are no longer operation-scoped, allow any target on any sheet
   }
   await db.update(runningSheets).set({ targetId }).where(eq(runningSheets.id, sheetId));
+}
+
+// ─── Target Registry ────────────────────────────────────────────────────────
+
+/** Return all targets in the global registry, with their linked operations */
+export async function getAllTargetsForRegistry() {
+  const db = await getDb();
+  if (!db) return [];
+  const allTargets = await db.select().from(targets).orderBy(targets.name);
+  const links = await db
+    .select({
+      targetId: operationTargetLinks.targetId,
+      operationId: operationTargetLinks.operationId,
+      operationName: operations.name,
+    })
+    .from(operationTargetLinks)
+    .leftJoin(operations, eq(operationTargetLinks.operationId, operations.id));
+
+  const linkMap = new Map<number, Array<{ operationId: number; operationName: string | null }>>();
+  for (const l of links) {
+    if (!linkMap.has(l.targetId)) linkMap.set(l.targetId, []);
+    linkMap.get(l.targetId)!.push({ operationId: l.operationId, operationName: l.operationName });
+  }
+
+  return allTargets.map(t => ({
+    ...t,
+    linkedOperations: linkMap.get(t.id) ?? [],
+  }));
+}
+
+/** Create a target in the global registry (no operationId required) */
+export async function createRegistryTarget(data: Omit<InsertTarget, 'operationId'> & { operationId?: number | null }) {
+  const db = await getDb();
+  if (!db) throw new Error('DB unavailable');
+  const [result] = await db.insert(targets).values({ ...data, operationId: data.operationId ?? null });
+  return { id: (result as any).insertId as number };
+}
+
+/** Link a target to an operation (idempotent) */
+export async function linkTargetToOperation(targetId: number, operationId: number) {
+  const db = await getDb();
+  if (!db) throw new Error('DB unavailable');
+  const [existing] = await db
+    .select({ id: operationTargetLinks.id })
+    .from(operationTargetLinks)
+    .where(and(eq(operationTargetLinks.targetId, targetId), eq(operationTargetLinks.operationId, operationId)))
+    .limit(1);
+  if (!existing) {
+    await db.insert(operationTargetLinks).values({ targetId, operationId });
+  }
+}
+
+/** Unlink a target from an operation */
+export async function unlinkTargetFromOperation(targetId: number, operationId: number) {
+  const db = await getDb();
+  if (!db) throw new Error('DB unavailable');
+  await db.delete(operationTargetLinks)
+    .where(and(eq(operationTargetLinks.targetId, targetId), eq(operationTargetLinks.operationId, operationId)));
+}
+
+/** Get all operations linked to a target */
+export async function getLinkedOperationsForTarget(targetId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({
+      operationId: operationTargetLinks.operationId,
+      operationName: operations.name,
+    })
+    .from(operationTargetLinks)
+    .leftJoin(operations, eq(operationTargetLinks.operationId, operations.id))
+    .where(eq(operationTargetLinks.targetId, targetId));
 }
 
 // ─── Shortcuts ───────────────────────────────────────────────────────────────
@@ -754,6 +831,7 @@ export async function deepSearchOperations(query: string): Promise<DeepSearchMat
   });
 
   targetMatches.forEach((t) => {
+    if (t.operationId === null) return;
     ensure(t.operationId);
     matchMap.get(t.operationId)!.add(`Target: ${t.name}`);
   });
@@ -910,7 +988,7 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
       operationName: operations.name,
     })
     .from(targets)
-    .innerJoin(operations, eq(targets.operationId, operations.id));
+    .innerJoin(operations, eq(targets.operationId!, operations.id));
 
   // Find sheets linked to each target
   const sheetsByTarget = await db
@@ -960,7 +1038,7 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
       entityMap.get(nameKey)!.occurrences.push({
         sheetId: sheet.sheetId,
         sheetTitle: sheet.sheetTitle,
-        operationId: t.operationId,
+        operationId: t.operationId ?? 0,
         operationName: t.operationName,
         rowId: 0,
         observationSnippet: `Target card — ${t.targetName}${t.tgt ? ` (TGT: ${t.tgt})` : ""}`,
@@ -989,7 +1067,7 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
         entityMap.get(key)!.occurrences.push({
           sheetId: sheet.sheetId,
           sheetTitle: sheet.sheetTitle,
-          operationId: t.operationId,
+          operationId: t.operationId ?? 0,
           operationName: t.operationName,
           rowId: 0,
           observationSnippet: `Target card — ${t.targetName} [${field.label}]`,

@@ -115,12 +115,13 @@ export type Certification = typeof certifications.$inferSelect;
 export type InsertCertification = typeof certifications.$inferInsert;
 
 // ─── Targets ────────────────────────────────────────────────────────────────
-// One row per target per operation. Each target has a display name and seven
-// type-specific free-text fields: TGT, HB, V1, V2, WB, DEP, ARR.
+// One row per target in the global registry. Targets are independent of
+// operations — they are linked via the operation_target_links join table.
+// operationId is kept nullable for backward-compat with legacy rows.
 
 export const targets = mysqlTable("targets", {
   id: int("id").autoincrement().primaryKey(),
-  operationId: int("operationId").notNull(),
+  operationId: int("operationId"),  // nullable — legacy field, use join table instead
   name: varchar("name", { length: 255 }).notNull(), // e.g. "Target 1" or a codename
   tgt: text("tgt"),   // Target (person) details
   hbf: text("hbf"),   // Home Address Full
@@ -138,6 +139,21 @@ export const targets = mysqlTable("targets", {
 
 export type Target = typeof targets.$inferSelect;
 export type InsertTarget = typeof targets.$inferInsert;
+
+// ─── Operation-Target Links ──────────────────────────────────────────────────
+// Many-to-many join: a target can be linked to multiple operations, and an
+// operation can have multiple targets. Deleting an operation removes its links
+// but NOT the target itself.
+
+export const operationTargetLinks = mysqlTable("operation_target_links", {
+  id: int("id").autoincrement().primaryKey(),
+  operationId: int("operationId").notNull(),
+  targetId: int("targetId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type OperationTargetLink = typeof operationTargetLinks.$inferSelect;
+export type InsertOperationTargetLink = typeof operationTargetLinks.$inferInsert;
 
 // ─── Observation Shortcuts ──────────────────────────────────────────────────
 // Global list of text shortcuts for the observation field.

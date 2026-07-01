@@ -935,6 +935,8 @@ export default function SheetDetail() {
     { enabled: !!sheet?.operationId }
   );
   // All targets across all operations for the cross-op picker
+  const { data: allUsers } = trpc.admin.listUsers.useQuery(undefined, { enabled: isAuthenticated });
+
   const { data: allTargetsForSheet } = trpc.target.listAll.useQuery(
     undefined,
     { enabled: isAuthenticated }
@@ -1025,6 +1027,25 @@ export default function SheetDetail() {
     setRosterList(parsed);
     setRosterInput("");
     setEditRosterOpen(true);
+  };
+
+  const handleAddRosterTeam = (teamKey: "TEAM1" | "TEAM2" | "PTT") => {
+    if (!allUsers) { toast.error("User list not available"); return; }
+    const members = allUsers.filter((u) => u.team === teamKey);
+    if (members.length === 0) { toast.error("No members found in that team"); return; }
+    let added = 0;
+    setRosterList((prev) => {
+      let updated = [...prev];
+      for (const m of members) {
+        if (!updated.some((c) => c.cin.toLowerCase() === m.cin.toLowerCase())) {
+          updated = [...updated, { cin: m.cin, hasImages: false, isTeamLeader: false, isAuthor: false }];
+          added++;
+        }
+      }
+      return updated;
+    });
+    if (added === 0) toast.info("All team members already added");
+    else toast.success(`Added ${added} member${added !== 1 ? "s" : ""} from ${teamKey.replace("TEAM", "TEAM ")}`);
   };
 
   const handleAddRosterCin = () => {
@@ -1580,6 +1601,23 @@ export default function SheetDetail() {
                 Add
               </Button>
             </div>
+            {allUsers && allUsers.some((u) => u.team) && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-muted-foreground">Add team:</span>
+                {(["TEAM1", "TEAM2", "PTT"] as const).map((t) => (
+                  <Button
+                    key={t}
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-3 text-xs font-semibold"
+                    onClick={() => handleAddRosterTeam(t)}
+                  >
+                    {t === "TEAM1" ? "TEAM 1" : t === "TEAM2" ? "TEAM 2" : "PTT"}
+                  </Button>
+                ))}
+              </div>
+            )}
             {rosterList.length > 0 ? (
               <div className="rounded-lg border border-border overflow-hidden">
                 {/* Header row */}

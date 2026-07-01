@@ -1002,7 +1002,9 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
   if (!db) return [];
 
   // ── 1. Load formal target cards first ─────────────────────────────────────
-  const targetRows = await db
+  // Use leftJoin so registry targets with null operationId are included.
+  // Also pull in linked operations via operation_target_links for registry targets.
+  const directTargetRows = await db
     .select({
       targetId: targets.id,
       targetName: targets.name,
@@ -1017,7 +1019,47 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
       operationName: operations.name,
     })
     .from(targets)
-    .innerJoin(operations, eq(targets.operationId!, operations.id));
+    .leftJoin(operations, eq(targets.operationId!, operations.id));
+
+  // Also load registry-linked targets (via operation_target_links)
+  const linkedTargetRows = await db
+    .select({
+      targetId: targets.id,
+      targetName: targets.name,
+      tgt: targets.tgt,
+      hb: targets.hb,
+      v1: targets.v1,
+      v2: targets.v2,
+      hbf: targets.hbf,
+      v1f: targets.v1f,
+      v2f: targets.v2f,
+      operationId: operationTargetLinks.operationId,
+      operationName: operations.name,
+    })
+    .from(targets)
+    .innerJoin(operationTargetLinks, eq(operationTargetLinks.targetId, targets.id))
+    .innerJoin(operations, eq(operationTargetLinks.operationId, operations.id));
+
+  // Merge: for each target, prefer linked operation rows; fall back to direct row
+  const seenTargetOpPairs = new Set<string>();
+  const targetRows: Array<{
+    targetId: number; targetName: string; tgt: string | null;
+    hb: string | null; v1: string | null; v2: string | null;
+    hbf: string | null; v1f: string | null; v2f: string | null;
+    operationId: number | null; operationName: string | null;
+  }> = [];
+
+  for (const row of linkedTargetRows) {
+    const pairKey = `${row.targetId}::${row.operationId}`;
+    seenTargetOpPairs.add(pairKey);
+    targetRows.push(row);
+  }
+  for (const row of directTargetRows) {
+    const pairKey = `${row.targetId}::${row.operationId}`;
+    if (!seenTargetOpPairs.has(pairKey)) {
+      targetRows.push(row);
+    }
+  }
 
   // Find sheets linked to each target
   const sheetsByTarget = await db
@@ -1068,11 +1110,11 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
         sheetId: sheet.sheetId,
         sheetTitle: sheet.sheetTitle,
         operationId: t.operationId ?? 0,
-        operationName: t.operationName,
+        operationName: t.operationName ?? "(Registry)",
         rowId: 0,
         observationSnippet: `Target card — ${t.targetName}${t.tgt ? ` (TGT: ${t.tgt})` : ""}`,
         timeMinutes: null,
-        fullDescription: `Target: ${t.targetName}${t.tgt ? `, TGT: ${t.tgt}` : ""} (operation: ${t.operationName})`,
+        fullDescription: `Target: ${t.targetName}${t.tgt ? `, TGT: ${t.tgt}` : ""} (operation: ${t.operationName ?? "Registry"})`,
       });
     }
 
@@ -1097,11 +1139,11 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
           sheetId: sheet.sheetId,
           sheetTitle: sheet.sheetTitle,
           operationId: t.operationId ?? 0,
-          operationName: t.operationName,
+          operationName: t.operationName ?? "(Registry)",
           rowId: 0,
           observationSnippet: `Target card — ${t.targetName} [${field.label}]`,
           timeMinutes: null,
-          fullDescription: `${field.label}: ${shortForm} (from target: ${t.targetName}, operation: ${t.operationName})`,
+          fullDescription: `${field.label}: ${shortForm} (from target: ${t.targetName}, operation: ${t.operationName ?? "Registry"})`,
         });
       }
     }

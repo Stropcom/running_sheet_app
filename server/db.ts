@@ -21,6 +21,8 @@ import {
   users,
   governanceRecords,
   GovernanceRecord,
+  targetShortcuts,
+  InsertTargetShortcut,
 } from "../drizzle/schema";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -525,7 +527,7 @@ export async function createTarget(data: InsertTarget) {
 
 export async function updateTarget(
   id: number,
-  data: Partial<Pick<InsertTarget, "name" | "tgt" | "hb" | "v1" | "v2" | "wb" | "dep" | "arr">>
+  data: Partial<Pick<InsertTarget, "name" | "tgt" | "hbf" | "hb" | "v1f" | "v1" | "v2f" | "v2" | "dep" | "arr">>
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -682,7 +684,7 @@ export async function deepSearchOperations(query: string): Promise<DeepSearchMat
 
   // 3. Targets that match on any field
   const targetMatches = await db
-    .select({ operationId: targets.operationId, name: targets.name, tgt: targets.tgt, hb: targets.hb, v1: targets.v1, v2: targets.v2, wb: targets.wb, dep: targets.dep, arr: targets.arr })
+    .select({ operationId: targets.operationId, name: targets.name, tgt: targets.tgt, hbf: targets.hbf, hb: targets.hb, v1f: targets.v1f, v1: targets.v1, v2f: targets.v2f, v2: targets.v2, dep: targets.dep, arr: targets.arr })
     .from(targets)
     .where(
       or(
@@ -691,7 +693,9 @@ export async function deepSearchOperations(query: string): Promise<DeepSearchMat
         like(sql`LOWER(COALESCE(${targets.hb}, ''))`, q),
         like(sql`LOWER(COALESCE(${targets.v1}, ''))`, q),
         like(sql`LOWER(COALESCE(${targets.v2}, ''))`, q),
-        like(sql`LOWER(COALESCE(${targets.wb}, ''))`, q),
+        like(sql`LOWER(COALESCE(${targets.hbf}, ''))`, q),
+        like(sql`LOWER(COALESCE(${targets.v1f}, ''))`, q),
+        like(sql`LOWER(COALESCE(${targets.v2f}, ''))`, q),
         like(sql`LOWER(COALESCE(${targets.dep}, ''))`, q),
         like(sql`LOWER(COALESCE(${targets.arr}, ''))`, q),
       )
@@ -899,7 +903,9 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
       hb: targets.hb,
       v1: targets.v1,
       v2: targets.v2,
-      wb: targets.wb,
+      hbf: targets.hbf,
+      v1f: targets.v1f,
+      v2f: targets.v2f,
       operationId: targets.operationId,
       operationName: operations.name,
     })
@@ -963,11 +969,13 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
       });
     }
 
-    // Location fields from target card: HB (address), WB (address), V1/V2 (vehicle)
+    // Location fields from target card: HBF/HB (address), V1F/V1/V2F/V2 (vehicle)
     const locationFields: Array<{ label: string; value: string | null; type: IntelligenceEntity["type"] }> = [
+      { label: "HBF", value: t.hbf, type: "address" },
       { label: "HB", value: t.hb, type: "address" },
-      { label: "WB", value: t.wb, type: "address" },
+      { label: "V1F", value: t.v1f, type: "vehicle" },
       { label: "V1", value: t.v1, type: "vehicle" },
+      { label: "V2F", value: t.v2f, type: "vehicle" },
       { label: "V2", value: t.v2, type: "vehicle" },
     ];
     for (const field of locationFields) {
@@ -1320,4 +1328,41 @@ export async function getGovernanceTodoForCin(cin: string): Promise<
   }
 
   return results;
+}
+
+// ─── Target Shortcuts ─────────────────────────────────────────────────────────
+
+export async function getTargetShortcuts(targetId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(targetShortcuts).where(eq(targetShortcuts.targetId, targetId));
+}
+
+export async function createTargetShortcut(data: InsertTargetShortcut) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const [result] = await db.insert(targetShortcuts).values(data);
+  return { id: (result as { insertId: number }).insertId };
+}
+
+export async function updateTargetShortcut(id: number, data: Partial<Pick<InsertTargetShortcut, "trigger" | "expansion">>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(targetShortcuts).set(data).where(eq(targetShortcuts.id, id));
+  return { id };
+}
+
+export async function deleteTargetShortcut(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.delete(targetShortcuts).where(eq(targetShortcuts.id, id));
+}
+
+export async function getTargetShortcutsForSheet(sheetId: number) {
+  // Returns target shortcuts for the target assigned to the given sheet
+  const db = await getDb();
+  if (!db) return [];
+  const sheet = await db.select({ targetId: runningSheets.targetId }).from(runningSheets).where(eq(runningSheets.id, sheetId)).limit(1);
+  if (!sheet[0]?.targetId) return [];
+  return db.select().from(targetShortcuts).where(eq(targetShortcuts.targetId, sheet[0].targetId));
 }

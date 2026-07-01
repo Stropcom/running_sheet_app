@@ -234,3 +234,14 @@
 - [x] Frontend: Governance button on sheet header, Governance sidebar nav item
 - [x] Sidebar nav: add Governance link (or accessible from each running sheet)
 - [x] Route /governance/:sheetId registered in App.tsx
+
+## Target Form Overhaul (Round 35)
+- [ ] Add HBF (Home Address Full), V1F (Vehicle 1 Full), V2F (Vehicle 2 Full) columns to targets table schema
+- [ ] Remove WB (Work) column from targets table schema
+- [ ] Update db.ts helpers and routers.ts for new/removed target fields
+- [ ] Make all target form text inputs single-line
+- [ ] Add HBF above HB, V1F above V1, V2F above V2 in target edit form
+- [ ] Remove WB field from target edit form
+- [ ] New fields (HBF, V1F, V2F) appear as shortcuts in observation row form
+- [ ] New fields (HBF, V1F, V2F) appear in target panel on running sheet
+- [ ] Add per-target shortcuts section at bottom of target details form

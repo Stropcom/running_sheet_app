@@ -123,10 +123,12 @@ export const targets = mysqlTable("targets", {
   operationId: int("operationId").notNull(),
   name: varchar("name", { length: 255 }).notNull(), // e.g. "Target 1" or a codename
   tgt: text("tgt"),   // Target (person) details
-  hb:  text("hb"),    // Home Base details
-  v1:  text("v1"),    // Vehicle 1 details
-  v2:  text("v2"),    // Vehicle 2 details
-  wb:  text("wb"),    // Work Base details
+  hbf: text("hbf"),   // Home Address Full
+  hb:  text("hb"),    // Home Base (short)
+  v1f: text("v1f"),   // Vehicle 1 Full description
+  v1:  text("v1"),    // Vehicle 1 (short)
+  v2f: text("v2f"),   // Vehicle 2 Full description
+  v2:  text("v2"),    // Vehicle 2 (short)
   dep: text("dep"),   // Depart address/location
   arr: text("arr"),   // Arrive address/location
   createdBy: int("createdBy").notNull(),
@@ -152,6 +154,23 @@ export const shortcuts = mysqlTable("shortcuts", {
 
 export type Shortcut = typeof shortcuts.$inferSelect;
 export type InsertShortcut = typeof shortcuts.$inferInsert;
+
+// ─── Target Shortcuts ────────────────────────────────────────────────────────
+// Per-target shortcuts that are merged into the observation form when that
+// target is assigned to the running sheet.
+
+export const targetShortcuts = mysqlTable("target_shortcuts", {
+  id: int("id").autoincrement().primaryKey(),
+  targetId: int("targetId").notNull(),
+  trigger: varchar("trigger", { length: 64 }).notNull(),
+  expansion: text("expansion").notNull(),
+  createdBy: int("createdBy").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type TargetShortcut = typeof targetShortcuts.$inferSelect;
+export type InsertTargetShortcut = typeof targetShortcuts.$inferInsert;
 
 // ─── Audit Logs ───────────────────────────────────────────────────────────────
 

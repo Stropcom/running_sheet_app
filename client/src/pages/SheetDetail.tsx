@@ -949,25 +949,34 @@ export default function SheetDetail() {
 
   // Shortcuts: fetch once and build a trigger→expansion map
   const { data: shortcutsData } = trpc.shortcuts.list.useQuery(undefined, { enabled: isAuthenticated });
+  // Per-target shortcuts for the sheet's assigned target
+  const { data: targetShortcutsData } = trpc.targetShortcuts.listForSheet.useQuery(
+    { sheetId: sheetId! },
+    { enabled: !!sheetId && isAuthenticated }
+  );
   const shortcutMap = useMemo(() => {
     const map: Record<string, string> = {};
     // Global shortcuts from DB
     for (const s of shortcutsData ?? []) map[s.trigger.toLowerCase()] = s.expansion;
-    // Target-aware shortcuts: if this sheet has an assigned target, overlay TGT/HB/V1/V2/WB
+    // Target-aware shortcuts: if this sheet has an assigned target, overlay TGT/HBF/HB/V1F/V1/V2F/V2/DEP/ARR
     if (sheet?.targetId && operationTargets) {
       const t = operationTargets.find((t) => t.id === sheet.targetId);
       if (t) {
         if (t.tgt) map['tgt'] = t.tgt;
+        if (t.hbf) map['hbf'] = t.hbf;
         if (t.hb)  map['hb']  = t.hb;
+        if (t.v1f) map['v1f'] = t.v1f;
         if (t.v1)  map['v1']  = t.v1;
+        if (t.v2f) map['v2f'] = t.v2f;
         if (t.v2)  map['v2']  = t.v2;
-        if (t.wb)  map['wb']  = t.wb;
         if (t.dep) map['dep'] = t.dep;
         if (t.arr) map['arr'] = t.arr;
       }
     }
+    // Per-target custom shortcuts (override global if same trigger)
+    for (const s of targetShortcutsData ?? []) map[s.trigger.toLowerCase()] = s.expansion;
     return map;
-  }, [shortcutsData, sheet?.targetId, operationTargets]);
+  }, [shortcutsData, targetShortcutsData, sheet?.targetId, operationTargets]);
 
   // Edit roster state
   const [editRosterOpen, setEditRosterOpen] = useState(false);
@@ -1233,10 +1242,12 @@ export default function SheetDetail() {
           if (!t) return null;
           const fields: { label: string; value: string | null }[] = [
             { label: "TGT", value: t.tgt },
+            { label: "HBF", value: t.hbf },
             { label: "HB",  value: t.hb  },
+            { label: "V1F", value: t.v1f },
             { label: "V1",  value: t.v1  },
+            { label: "V2F", value: t.v2f },
             { label: "V2",  value: t.v2  },
-            { label: "WB",  value: t.wb  },
             { label: "DEP", value: t.dep },
             { label: "ARR", value: t.arr },
           ];

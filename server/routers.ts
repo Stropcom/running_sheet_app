@@ -60,6 +60,7 @@ import {
   deleteShortcut,
   getGovernanceRecord,
   upsertGovernanceRecord,
+  type GovernanceUpsertInput,
   getGovernanceRecordsBySheetIds,
   computeGovernancePercent,
   getGovernanceTodoForCin,
@@ -1062,14 +1063,22 @@ export const appRouter = router({
       .input(z.object({
         sheetId: z.number(),
         dueDate: z.number().nullable().optional(),
-        sentToIO: z.boolean().optional(),
         summaryNotification: z.boolean().optional(),
+        sentToIO: z.boolean().optional(),
         savedAsWord: z.boolean().optional(),
         savedAsPdf: z.boolean().optional(),
         uploadedToPromis: z.boolean().optional(),
+        linked: z.boolean().optional(),
         savedInOpFolder: z.boolean().optional(),
         imageryTaken: z.boolean().optional(),
         coverPage: z.boolean().optional(),
+        // Which field was toggled (so server can attach CIN automatically)
+        toggledField: z.enum([
+          "summaryNotification", "sentToIO", "savedAsWord", "savedAsPdf",
+          "uploadedToPromis", "linked", "savedInOpFolder", "imageryTaken", "coverPage"
+        ]).optional(),
+        // New value of the toggled field (true = ticked, false = unticked)
+        toggledValue: z.boolean().optional(),
         sheetCell: z.string().nullable().optional(),
         imageryEntries: z.array(z.object({
           cin: z.string(),
@@ -1079,8 +1088,27 @@ export const appRouter = router({
         })).optional(),
         notes: z.string().nullable().optional(),
       }))
-      .mutation(async ({ input }) => {
-        const record = await upsertGovernanceRecord(input as Parameters<typeof upsertGovernanceRecord>[0]);
+      .mutation(async ({ input, ctx }) => {
+        const userCIN = ctx.user.cin ?? ctx.user.username ?? "Unknown";
+        // Build CIN update: set CIN when ticking, clear when unticking
+        const cinUpdate: Partial<GovernanceUpsertInput> = {};
+        if (input.toggledField && input.toggledValue !== undefined) {
+          const cinValue = input.toggledValue ? userCIN : null;
+          const cinFieldMap: Record<string, keyof GovernanceUpsertInput> = {
+            summaryNotification: "isurvCIN",
+            sentToIO: "sentToIOCIN",
+            savedAsWord: "savedAsWordCIN",
+            savedAsPdf: "savedAsPdfCIN",
+            uploadedToPromis: "uploadedToPromisCIN",
+            linked: "linkedCIN",
+            savedInOpFolder: "savedInOpFolderCIN",
+            imageryTaken: "imageryTakenCIN",
+            coverPage: "coverPageCIN",
+          };
+          const cinField = cinFieldMap[input.toggledField];
+          if (cinField) (cinUpdate as Record<string, string | null>)[cinField] = cinValue;
+        }
+        const record = await upsertGovernanceRecord({ ...input, ...cinUpdate } as Parameters<typeof upsertGovernanceRecord>[0]);
         return record;
       }),
   }),

@@ -1178,13 +1178,23 @@ export interface GovernanceUpsertInput {
   sheetId: number;
   dueDate?: number | null;
   summaryNotification?: boolean;
+  isurvCIN?: string | null;
   sentToIO?: boolean;
+  sentToIOCIN?: string | null;
   savedAsWord?: boolean;
+  savedAsWordCIN?: string | null;
   savedAsPdf?: boolean;
+  savedAsPdfCIN?: string | null;
   uploadedToPromis?: boolean;
+  uploadedToPromisCIN?: string | null;
+  linked?: boolean;
+  linkedCIN?: string | null;
   savedInOpFolder?: boolean;
+  savedInOpFolderCIN?: string | null;
   imageryTaken?: boolean;
+  imageryTakenCIN?: string | null;
   coverPage?: boolean;
+  coverPageCIN?: string | null;
   sheetCell?: string | null;
   imageryEntries?: ImageryEntry[];
   notes?: string | null;
@@ -1205,13 +1215,23 @@ export async function upsertGovernanceRecord(input: GovernanceUpsertInput): Prom
       .set({
         ...(input.dueDate !== undefined && { dueDate: input.dueDate }),
         ...(input.summaryNotification !== undefined && { isurv: input.summaryNotification }),
+        ...(input.isurvCIN !== undefined && { isurvCIN: input.isurvCIN }),
         ...(input.sentToIO !== undefined && { sentToIO: input.sentToIO }),
+        ...(input.sentToIOCIN !== undefined && { sentToIOCIN: input.sentToIOCIN }),
         ...(input.savedAsWord !== undefined && { savedAsWord: input.savedAsWord }),
+        ...(input.savedAsWordCIN !== undefined && { savedAsWordCIN: input.savedAsWordCIN }),
         ...(input.savedAsPdf !== undefined && { savedAsPdf: input.savedAsPdf }),
+        ...(input.savedAsPdfCIN !== undefined && { savedAsPdfCIN: input.savedAsPdfCIN }),
         ...(input.uploadedToPromis !== undefined && { uploadedToPromis: input.uploadedToPromis }),
+        ...(input.uploadedToPromisCIN !== undefined && { uploadedToPromisCIN: input.uploadedToPromisCIN }),
+        ...(input.linked !== undefined && { linked: input.linked }),
+        ...(input.linkedCIN !== undefined && { linkedCIN: input.linkedCIN }),
         ...(input.savedInOpFolder !== undefined && { savedInOpFolder: input.savedInOpFolder }),
+        ...(input.savedInOpFolderCIN !== undefined && { savedInOpFolderCIN: input.savedInOpFolderCIN }),
         ...(input.imageryTaken !== undefined && { imageryTaken: input.imageryTaken }),
+        ...(input.imageryTakenCIN !== undefined && { imageryTakenCIN: input.imageryTakenCIN }),
         ...(input.coverPage !== undefined && { coverPage: input.coverPage }),
+        ...(input.coverPageCIN !== undefined && { coverPageCIN: input.coverPageCIN }),
         ...(input.sheetCell !== undefined && { sheetCell: input.sheetCell }),
         ...(imageryJson !== undefined && { imageryEntries: imageryJson }),
         ...(input.notes !== undefined && { notes: input.notes }),
@@ -1223,14 +1243,23 @@ export async function upsertGovernanceRecord(input: GovernanceUpsertInput): Prom
       sheetId: input.sheetId,
       dueDate: input.dueDate ?? null,
       isurv: input.summaryNotification ?? false,
+      isurvCIN: input.isurvCIN ?? null,
       sentToIO: input.sentToIO ?? false,
+      sentToIOCIN: input.sentToIOCIN ?? null,
       savedAsWord: input.savedAsWord ?? false,
+      savedAsWordCIN: input.savedAsWordCIN ?? null,
       savedAsPdf: input.savedAsPdf ?? false,
+      savedAsPdfCIN: input.savedAsPdfCIN ?? null,
       uploadedToPromis: input.uploadedToPromis ?? false,
-      linked: false,
+      uploadedToPromisCIN: input.uploadedToPromisCIN ?? null,
+      linked: input.linked ?? false,
+      linkedCIN: input.linkedCIN ?? null,
       savedInOpFolder: input.savedInOpFolder ?? false,
+      savedInOpFolderCIN: input.savedInOpFolderCIN ?? null,
       imageryTaken: input.imageryTaken ?? false,
+      imageryTakenCIN: input.imageryTakenCIN ?? null,
       coverPage: input.coverPage ?? false,
+      coverPageCIN: input.coverPageCIN ?? null,
       sheetCell: input.sheetCell ?? null,
       imageryEntries: imageryJson ?? null,
       notes: input.notes ?? null,

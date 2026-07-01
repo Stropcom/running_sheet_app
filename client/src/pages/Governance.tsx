@@ -49,12 +49,14 @@ function CheckRow({
   onToggle,
   info,
   disabled,
+  cin,
 }: {
   label: string;
   checked: boolean;
   onToggle: () => void;
   info?: string;
   disabled?: boolean;
+  cin?: string | null;
 }) {
   return (
     <div
@@ -74,6 +76,11 @@ function CheckRow({
         <p className="text-sm font-medium">{label}</p>
         {info && <p className="text-xs text-muted-foreground mt-0.5">{info}</p>}
       </div>
+      {checked && cin && (
+        <span className="text-xs font-mono font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded shrink-0">
+          {cin}
+        </span>
+      )}
       {disabled && !checked && <Lock className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />}
     </div>
   );
@@ -298,7 +305,13 @@ export default function GovernancePage() {
 
   function toggle(field: BoolField) {
     if (!gov) return;
-    updateMutation.mutate({ sheetId, [field]: !(gov as Record<string, unknown>)[field] });
+    const newValue = !(gov as Record<string, unknown>)[field];
+    updateMutation.mutate({
+      sheetId,
+      [field]: newValue,
+      toggledField: field,
+      toggledValue: newValue,
+    });
   }
 
   // ── Save notes (debounced) ──
@@ -497,11 +510,13 @@ export default function GovernancePage() {
                 label="Summary complete"
                 checked={(gov as Record<string, unknown>).summaryNotification as boolean ?? false}
                 onToggle={() => toggle("summaryNotification")}
+                cin={(gov as Record<string, unknown>).isurvCIN as string | null}
               />
               <CheckRow
                 label="Sent to IO"
                 checked={gov.sentToIO}
                 onToggle={() => toggle("sentToIO")}
+                cin={(gov as Record<string, unknown>).sentToIOCIN as string | null}
               />
             </div>
           )}
@@ -558,24 +573,28 @@ export default function GovernancePage() {
                 checked={allSigned && gov.savedAsWord}
                 onToggle={() => toggle("savedAsWord")}
                 disabled={!allSigned}
+                cin={(gov as Record<string, unknown>).savedAsWordCIN as string | null}
               />
               <CheckRow
                 label="Saved as PDF"
                 checked={allSigned && gov.savedAsPdf}
                 onToggle={() => toggle("savedAsPdf")}
                 disabled={!allSigned}
+                cin={(gov as Record<string, unknown>).savedAsPdfCIN as string | null}
               />
               <CheckRow
                 label="Uploaded to PROMIS"
                 checked={allSigned && gov.uploadedToPromis}
                 onToggle={() => toggle("uploadedToPromis")}
                 disabled={!allSigned}
+                cin={(gov as Record<string, unknown>).uploadedToPromisCIN as string | null}
               />
               <CheckRow
                 label="Saved in Operation folder"
                 checked={allSigned && gov.savedInOpFolder}
                 onToggle={() => toggle("savedInOpFolder")}
                 disabled={!allSigned}
+                cin={(gov as Record<string, unknown>).savedInOpFolderCIN as string | null}
               />
             </div>
           )}

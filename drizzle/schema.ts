@@ -232,16 +232,25 @@ export const governanceRecords = mysqlTable("governance_records", {
   dueDate: bigint("dueDate", { mode: "number" }),
   // ─ Team Leader section ─
   isurv: boolean("isurv").default(false).notNull(),
+  isurvCIN: varchar("isurvCIN", { length: 50 }),
   sentToIO: boolean("sentToIO").default(false).notNull(),
+  sentToIOCIN: varchar("sentToIOCIN", { length: 50 }),
   // ─ Operative / RS Author section ─
   savedAsWord: boolean("savedAsWord").default(false).notNull(),
+  savedAsWordCIN: varchar("savedAsWordCIN", { length: 50 }),
   savedAsPdf: boolean("savedAsPdf").default(false).notNull(),
+  savedAsPdfCIN: varchar("savedAsPdfCIN", { length: 50 }),
   uploadedToPromis: boolean("uploadedToPromis").default(false).notNull(),
+  uploadedToPromisCIN: varchar("uploadedToPromisCIN", { length: 50 }),
   linked: boolean("linked").default(false).notNull(),
+  linkedCIN: varchar("linkedCIN", { length: 50 }),
   savedInOpFolder: boolean("savedInOpFolder").default(false).notNull(),
+  savedInOpFolderCIN: varchar("savedInOpFolderCIN", { length: 50 }),
   // ─ Imagery section ─
   imageryTaken: boolean("imageryTaken").default(false).notNull(),
+  imageryTakenCIN: varchar("imageryTakenCIN", { length: 50 }),
   coverPage: boolean("coverPage").default(false).notNull(),
+  coverPageCIN: varchar("coverPageCIN", { length: 50 }),
   sheetCell: varchar("sheetCell", { length: 255 }),
   // JSON array of imagery entries: [{name,cellTime,type,saved}]
   imageryEntries: text("imageryEntries"),

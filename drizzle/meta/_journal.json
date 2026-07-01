@@ -92,6 +92,13 @@
       "when": 1782903525185,
       "tag": "0012_light_grim_reaper",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "5",
+      "when": 1782913558190,
+      "tag": "0013_illegal_killmonger",
+      "breakpoints": true
     }
   ]
 }

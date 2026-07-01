@@ -273,3 +273,10 @@
 - [x] Rename 'admin' display label to "Full Access + User Management" throughout UI
 - [x] Allow member role to uncertify (unlock) rows their own CIN appears in, even if other CINs are in the row
 - [x] Update role dropdown descriptions in User Management
+
+## Governance CIN Tracking (Round 39)
+- [ ] Add tickedByCIN and tickedByName columns to governance_items table in schema.ts
+- [ ] Run migration and apply SQL
+- [ ] Update db.ts: update setGovernanceItemChecked to accept and store tickedByCIN/tickedByName
+- [ ] Update routers.ts: pass ctx.user CIN and name when toggling governance checkbox
+- [ ] Update GovernancePage.tsx / governance UI to display CIN next to each ticked checkbox

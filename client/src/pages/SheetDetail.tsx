@@ -954,29 +954,32 @@ export default function SheetDetail() {
     { sheetId: sheetId! },
     { enabled: !!sheetId && isAuthenticated }
   );
+  // Fetch the assigned target directly by ID (works for both legacy and registry targets)
+  const { data: assignedTarget } = trpc.target.getById.useQuery(
+    { id: sheet?.targetId ?? 0 },
+    { enabled: !!sheet?.targetId }
+  );
   const shortcutMap = useMemo(() => {
     const map: Record<string, string> = {};
     // Global shortcuts from DB
     for (const s of shortcutsData ?? []) map[s.trigger.toLowerCase()] = s.expansion;
-    // Target-aware shortcuts: if this sheet has an assigned target, overlay TGT/HBF/HB/V1F/V1/V2F/V2/DEP/ARR
-    if (sheet?.targetId && operationTargets) {
-      const t = operationTargets.find((t) => t.id === sheet.targetId);
-      if (t) {
-        if (t.tgt) map['tgt'] = t.tgt;
-        if (t.hbf) map['hbf'] = t.hbf;
-        if (t.hb)  map['hb']  = t.hb;
-        if (t.v1f) map['v1f'] = t.v1f;
-        if (t.v1)  map['v1']  = t.v1;
-        if (t.v2f) map['v2f'] = t.v2f;
-        if (t.v2)  map['v2']  = t.v2;
-        if (t.dep) map['dep'] = t.dep;
-        if (t.arr) map['arr'] = t.arr;
-      }
+    // Target-aware shortcuts: overlay TGT/HBF/HB/V1F/V1/V2F/V2/DEP/ARR from the assigned target
+    if (assignedTarget) {
+      const t = assignedTarget;
+      if (t.tgt) map['tgt'] = t.tgt;
+      if (t.hbf) map['hbf'] = t.hbf;
+      if (t.hb)  map['hb']  = t.hb;
+      if (t.v1f) map['v1f'] = t.v1f;
+      if (t.v1)  map['v1']  = t.v1;
+      if (t.v2f) map['v2f'] = t.v2f;
+      if (t.v2)  map['v2']  = t.v2;
+      if (t.dep) map['dep'] = t.dep;
+      if (t.arr) map['arr'] = t.arr;
     }
     // Per-target custom shortcuts (override global if same trigger)
     for (const s of targetShortcutsData ?? []) map[s.trigger.toLowerCase()] = s.expansion;
     return map;
-  }, [shortcutsData, targetShortcutsData, sheet?.targetId, operationTargets]);
+  }, [shortcutsData, targetShortcutsData, assignedTarget]);
 
   // Edit roster state
   const [editRosterOpen, setEditRosterOpen] = useState(false);
@@ -1237,9 +1240,8 @@ export default function SheetDetail() {
         )}
 
         {/* TARGET Panel — shown when a target is assigned to this sheet */}
-        {sheet?.targetId && operationTargets && (() => {
-          const t = operationTargets.find((t) => t.id === sheet.targetId);
-          if (!t) return null;
+        {sheet?.targetId && assignedTarget && (() => {
+          const t = assignedTarget;
           const fields: { label: string; value: string | null }[] = [
             { label: "TGT", value: t.tgt },
             { label: "HBF", value: t.hbf },

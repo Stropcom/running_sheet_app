@@ -299,11 +299,18 @@ export const appRouter = router({
         sheetCins: z.array(z.object({ cin: z.string(), hasImages: z.boolean(), isTeamLeader: z.boolean().optional(), isAuthor: z.boolean().optional() })).optional(),
       }))
       .mutation(async ({ input, ctx }) => {
+        // If a new target name is provided, create a real registry target and link it to the operation
+        let resolvedTargetId = input.targetId ?? null;
+        if (!resolvedTargetId && input.targetName?.trim()) {
+          const newTarget = await createRegistryTarget({ name: input.targetName.trim(), createdBy: ctx.user.id });
+          await linkTargetToOperation(newTarget.id, input.operationId);
+          resolvedTargetId = newTarget.id;
+        }
         const id = await createRunningSheet({
           operationId: input.operationId,
           title: input.title,
-          targetId: input.targetId ?? null,
-          targetName: input.targetName ?? null,
+          targetId: resolvedTargetId,
+          targetName: null,
           sheetCins: input.sheetCins ? JSON.stringify(input.sheetCins) : null,
           createdBy: ctx.user.id,
         });
@@ -319,9 +326,21 @@ export const appRouter = router({
         sheetCins: z.array(z.object({ cin: z.string(), hasImages: z.boolean(), isTeamLeader: z.boolean().optional(), isAuthor: z.boolean().optional() })).optional(),
       }))
       .mutation(async ({ input, ctx }) => {
-        const { id, sheetCins, ...rest } = input;
+        const { id, sheetCins, targetName, ...rest } = input;
         const data: Record<string, unknown> = { ...rest };
         if (sheetCins !== undefined) data.sheetCins = JSON.stringify(sheetCins);
+        // If a new target name is provided, create a real registry target and link it to the sheet's operation
+        if (targetName?.trim()) {
+          const sheet = await getRunningSheetById(id);
+          if (sheet?.operationId) {
+            const newTarget = await createRegistryTarget({ name: targetName.trim(), createdBy: ctx.user.id });
+            await linkTargetToOperation(newTarget.id, sheet.operationId);
+            data.targetId = newTarget.id;
+          }
+          data.targetName = null;
+        } else if (targetName === null) {
+          data.targetName = null;
+        }
         await updateRunningSheet(id, data);
         await createAuditLog({ sheetId: id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "sheet_updated", details: `Sheet updated`, createdAt: Date.now() });
         return { success: true };
@@ -796,6 +815,13 @@ export const appRouter = router({
     listAll: protectedProcedure.query(async () => {
       return getAllTargets();
     }),
+
+    /** Get a single target by ID */
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        return getTargetById(input.id) ?? null;
+      }),
 
     /** Set the target for a running sheet */
     setSheetTarget: protectedProcedure

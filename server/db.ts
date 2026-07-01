@@ -500,7 +500,20 @@ export async function getAllAuditLogs(limit = 500) {
 export async function getTargetsByOperation(operationId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(targets).where(eq(targets.operationId, operationId));
+  // Get targets by legacy operationId FK AND by operation_target_links (registry-linked)
+  const byFk = await db.select().from(targets).where(eq(targets.operationId, operationId));
+  const linked = await db
+    .select({ id: targets.id, name: targets.name, tgt: targets.tgt, hbf: targets.hbf, hb: targets.hb, v1f: targets.v1f, v1: targets.v1, v2f: targets.v2f, v2: targets.v2, dep: targets.dep, arr: targets.arr, operationId: targets.operationId, createdBy: targets.createdBy, createdAt: targets.createdAt, updatedAt: targets.updatedAt })
+    .from(operationTargetLinks)
+    .innerJoin(targets, eq(operationTargetLinks.targetId, targets.id))
+    .where(eq(operationTargetLinks.operationId, operationId));
+  // Merge, deduplicate by id
+  const seen = new Set<number>();
+  const all = [];
+  for (const t of [...byFk, ...linked]) {
+    if (!seen.has(t.id)) { seen.add(t.id); all.push(t); }
+  }
+  return all;
 }
 
 /** Return all targets across all operations, joined with operation name */

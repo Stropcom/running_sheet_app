@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,11 +15,20 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const { theme, toggleTheme } = useTheme();
 
+  const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
 
+  // If already logged in, redirect to home
+  const meQuery = trpc.auth.me.useQuery(undefined, { retry: false, refetchOnWindowFocus: false });
+  useEffect(() => {
+    if (meQuery.data) setLocation("/");
+  }, [meQuery.data, setLocation]);
+
   const login = trpc.auth.login.useMutation({
-    onSuccess: () => {
-      utils.auth.me.invalidate();
+    onSuccess: (result) => {
+      // Set auth cache immediately so DashboardLayout sees the user
+      utils.auth.me.setData(undefined, result.user as any);
+      setLocation("/");
     },
     onError: (e) => {
       toast.error(e.message || "Login failed. Please check your credentials.");

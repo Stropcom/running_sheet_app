@@ -1159,8 +1159,8 @@ export default function SheetDetail() {
           </button>
         </div>
 
-        {/* Daily Roster Panel with Certify All */}
-        {parsedRoster.length > 0 && canCertify && (
+        {/* Daily Roster Panel with Certify All — always visible so team can be added */}
+        {(parsedRoster.length > 0 || true) && (
           <div className="mb-4 rounded-lg border border-border bg-card/60 px-4 py-3">
             <div className="flex items-center gap-2 mb-2">
               <Users className="w-3.5 h-3.5 text-muted-foreground" />
@@ -1178,27 +1178,31 @@ export default function SheetDetail() {
                 </Button>
               )}
             </div>
-            <div className="flex flex-wrap gap-2">
-              {parsedRoster.map((entry) => (
-                <button
-                  key={entry.cin}
-                  onClick={() => certifyAllForCin.mutate({ sheetId, cin: entry.cin })}
-                  disabled={certifyAllForCin.isPending}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-mono font-medium transition-colors disabled:opacity-50 ${
-                    cinFullyCertified.has(entry.cin)
-                      ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/25"
-                      : "border-border bg-muted/40 hover:bg-primary/10 hover:border-primary/40 text-foreground"
-                  }`}
-                  title={`Certify all rows for CIN ${entry.cin}${entry.isTeamLeader ? " (Team Leader)" : ""}${entry.isAuthor ? " (Author)" : ""}`}
-                >
-                  <ShieldCheck className={`w-3 h-3 ${cinFullyCertified.has(entry.cin) ? "text-emerald-500" : "text-primary"}`} />
-                  {entry.isTeamLeader && <span className="text-yellow-400" title="Team Leader">★</span>}
-                  {entry.isAuthor && <span className="text-sky-400" title="Running Sheet Author">✏️</span>}
-                  {entry.cin}
-                  {entry.hasImages && <Camera className="w-3 h-3 text-amber-400" />}
-                </button>
-              ))}
-            </div>
+            {parsedRoster.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {parsedRoster.map((entry) => (
+                  <button
+                    key={entry.cin}
+                    onClick={() => canCertify ? certifyAllForCin.mutate({ sheetId, cin: entry.cin }) : undefined}
+                    disabled={certifyAllForCin.isPending || !canCertify}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-mono font-medium transition-colors disabled:opacity-50 ${
+                      cinFullyCertified.has(entry.cin)
+                        ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/25"
+                        : canCertify ? "border-border bg-muted/40 hover:bg-primary/10 hover:border-primary/40 text-foreground" : "border-border bg-muted/40 text-foreground cursor-default"
+                    }`}
+                    title={`${canCertify ? "Certify all rows for " : ""}CIN ${entry.cin}${entry.isTeamLeader ? " (Team Leader)" : ""}${entry.isAuthor ? " (Author)" : ""}`}
+                  >
+                    <ShieldCheck className={`w-3 h-3 ${cinFullyCertified.has(entry.cin) ? "text-emerald-500" : "text-primary"}`} />
+                    {entry.isTeamLeader && <span className="text-yellow-400" title="Team Leader">★</span>}
+                    {entry.isAuthor && <span className="text-sky-400" title="Running Sheet Author">✏️</span>}
+                    {entry.cin}
+                    {entry.hasImages && <Camera className="w-3 h-3 text-amber-400" />}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground italic">No team members added — click Edit TEAM to add CINs.</p>
+            )}
           </div>
         )}
 

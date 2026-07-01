@@ -927,6 +927,7 @@ export default function SheetDetail() {
   const [editTargetName, setEditTargetName] = useState("");
   const [editTargetMode, setEditTargetMode] = useState<"none" | "new" | "link">("none");
   const [editNewTargetName, setEditNewTargetName] = useState("");
+  const [editSelectedTargetId, setEditSelectedTargetId] = useState<number | null>(null);
 
   // Target selector
   const { data: operationTargets } = trpc.target.list.useQuery(
@@ -1012,6 +1013,7 @@ export default function SheetDetail() {
     setEditTargetMode("none");
     setEditNewTargetName("");
     setEditTargetSearch("");
+    setEditSelectedTargetId(sheet?.targetId ?? null);
     setEditSheetOpen(true);
   };
 
@@ -1411,88 +1413,131 @@ export default function SheetDetail() {
             </div>
             <div>
               <label className="text-sm font-medium text-foreground mb-1.5 block">Target</label>
-              {/* Current target display */}
-              {sheet?.targetId && editTargetMode === "none" && (
-                <div className="flex items-center gap-2 mb-2 px-3 py-2 rounded-md bg-muted/40 border border-border">
-                  <span className="text-sm flex-1 font-medium">{(allTargetsForSheet ?? []).find(t => t.id === sheet.targetId)?.name ?? sheet.targetName ?? "Target"}</span>
-                  <button type="button" onClick={() => { setSheetTarget.mutate({ sheetId, targetId: null }); }} className="text-muted-foreground hover:text-destructive" title="Remove target"><X className="w-3.5 h-3.5" /></button>
-                </div>
-              )}
-              {/* 3-state picker */}
-              {editTargetMode === "none" && (
-                <div className="flex gap-2">
-                  <Button type="button" size="sm" variant="outline" className="flex-1" onClick={() => setEditTargetMode("new")}>
-                    <Plus className="w-3.5 h-3.5 mr-1.5" /> New Target
-                  </Button>
-                  <Button type="button" size="sm" variant="outline" className="flex-1" onClick={() => setEditTargetMode("link")}>
-                    <Search className="w-3.5 h-3.5 mr-1.5" /> Link Existing
-                  </Button>
-                </div>
-              )}
-              {editTargetMode === "new" && (
-                <div className="flex gap-2 items-center">
-                  <Input
-                    placeholder="Target name (e.g. John SMITH, born 1 Jan 1980)"
-                    value={editNewTargetName}
-                    onChange={(e) => setEditNewTargetName(e.target.value)}
-                    autoFocus
-                    className="flex-1"
-                  />
-                  <Button type="button" size="sm" variant="ghost" onClick={() => { setEditTargetMode("none"); setEditNewTargetName(""); }}>
-                    <X className="w-3.5 h-3.5" />
-                  </Button>
-                </div>
-              )}
-              {editTargetMode === "link" && (
-                <div className="relative">
-                  <div className="flex items-center border border-input rounded-md bg-background px-3 h-9 gap-2">
-                    <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                    <input
-                      className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                      placeholder="Search targets…"
-                      value={editTargetSearch}
-                      onChange={(e) => setEditTargetSearch(e.target.value)}
+              <div className="flex flex-col gap-2">
+                {/* Operation's existing targets — selectable */}
+                {(operationTargets ?? []).map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => {
+                      if (editSelectedTargetId === t.id) { setEditSelectedTargetId(null); setEditTargetMode("none"); }
+                      else { setEditSelectedTargetId(t.id); setEditTargetMode("link"); setEditNewTargetName(""); }
+                    }}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-colors w-full ${
+                      editSelectedTargetId === t.id
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border bg-card hover:bg-muted/50 text-foreground"
+                    }`}
+                  >
+                    <Target className="w-4 h-4 shrink-0" />
+                    <span className="text-sm font-medium flex-1 truncate">{t.name}</span>
+                    {editSelectedTargetId === t.id && <CheckCircle2 className="w-4 h-4 shrink-0" />}
+                  </button>
+                ))}
+
+                {/* New Target inline input */}
+                {editTargetMode === "new" && (
+                  <div className="flex gap-2 items-center">
+                    <Input
+                      placeholder="Full name, born (e.g. John SMITH, born 1 Jan 1980)"
+                      value={editNewTargetName}
+                      onChange={(e) => setEditNewTargetName(e.target.value)}
                       autoFocus
+                      className="flex-1"
                     />
-                    <button type="button" onClick={() => { setEditTargetMode("none"); setEditTargetSearch(""); }} className="text-muted-foreground hover:text-foreground">
+                    <Button type="button" size="sm" variant="ghost" onClick={() => { setEditTargetMode("none"); setEditNewTargetName(""); }}>
                       <X className="w-3.5 h-3.5" />
-                    </button>
+                    </Button>
                   </div>
-                  {editTargetSearch && (
-                    <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-md max-h-52 overflow-y-auto">
-                      {(allTargetsForSheet ?? [])
-                        .filter(t => {
-                          const q = editTargetSearch.toLowerCase();
-                          return t.name.toLowerCase().includes(q) || (t.tgt ?? "").toLowerCase().includes(q) || (t.operationName ?? "").toLowerCase().includes(q);
-                        })
-                        .map(t => (
-                          <div
-                            key={t.id}
-                            className="px-3 py-2 text-sm cursor-pointer hover:bg-muted/50 flex items-center justify-between gap-2"
-                            onClick={() => { setSheetTarget.mutate({ sheetId, targetId: t.id }); setEditTargetSearch(""); setEditTargetMode("none"); }}
-                          >
-                            <span className="font-medium">{t.name}</span>
-                            {t.tgt && <span className="text-xs text-muted-foreground font-mono">{t.tgt}</span>}
-                            {t.operationName && <span className="text-xs text-muted-foreground ml-auto">{t.operationName}</span>}
-                          </div>
-                        ))
-                      }
+                )}
+
+                {/* Link Existing search panel */}
+                {editTargetMode === "link" && editSelectedTargetId === null && (
+                  <div className="rounded-xl border border-border bg-card p-3 flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      <Input
+                        autoFocus
+                        className="h-8 text-sm"
+                        placeholder="Search by name, TGT code or operation…"
+                        value={editTargetSearch}
+                        onChange={(e) => setEditTargetSearch(e.target.value)}
+                      />
+                      <Button size="sm" variant="ghost" className="shrink-0" onClick={() => { setEditTargetMode("none"); setEditTargetSearch(""); }}>Cancel</Button>
+                    </div>
+                    <div className="max-h-52 overflow-y-auto flex flex-col gap-1">
                       {(allTargetsForSheet ?? []).filter(t => {
                         const q = editTargetSearch.toLowerCase();
                         return t.name.toLowerCase().includes(q) || (t.tgt ?? "").toLowerCase().includes(q) || (t.operationName ?? "").toLowerCase().includes(q);
-                      }).length === 0 && (
-                        <div className="px-3 py-2 text-sm text-muted-foreground">No targets found</div>
+                      }).length === 0 ? (
+                        <p className="text-xs text-muted-foreground text-center py-4">{editTargetSearch ? "No matching targets" : "Start typing to search"}</p>
+                      ) : (
+                        (allTargetsForSheet ?? []).filter(t => {
+                          const q = editTargetSearch.toLowerCase();
+                          return t.name.toLowerCase().includes(q) || (t.tgt ?? "").toLowerCase().includes(q) || (t.operationName ?? "").toLowerCase().includes(q);
+                        }).map(t => (
+                          <button
+                            key={t.id}
+                            type="button"
+                            className="flex items-start gap-3 px-3 py-2 rounded-lg hover:bg-muted/60 text-left transition-colors w-full"
+                            onClick={() => { setEditSelectedTargetId(t.id); setEditTargetSearch(""); setEditTargetMode("link"); }}
+                          >
+                            <Target className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-foreground truncate">{t.name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {t.tgt ? <span className="font-mono mr-2">TGT: {t.tgt}</span> : null}
+                                {t.operationName ? <span>Op: {t.operationName}</span> : null}
+                              </p>
+                            </div>
+                          </button>
+                        ))
                       )}
                     </div>
-                  )}
-                </div>
-              )}
+                  </div>
+                )}
+
+                {/* Selected linked target chip (not from operation) */}
+                {editTargetMode === "link" && editSelectedTargetId !== null && !(operationTargets ?? []).find(t => t.id === editSelectedTargetId) && (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-primary bg-primary/10 text-primary">
+                    <Target className="w-4 h-4 shrink-0" />
+                    <span className="text-sm font-medium flex-1 truncate">{(allTargetsForSheet ?? []).find(t => t.id === editSelectedTargetId)?.name}</span>
+                    <button type="button" onClick={() => { setEditSelectedTargetId(null); setEditTargetMode("none"); }} className="hover:text-destructive"><X className="w-3.5 h-3.5" /></button>
+                  </div>
+                )}
+
+                {/* Action buttons */}
+                {editTargetMode !== "new" && !(editTargetMode === "link" && editSelectedTargetId === null) && (
+                  <div className="flex gap-2">
+                    <Button type="button" size="sm" variant="outline" className="gap-2" onClick={() => { setEditTargetMode("new"); setEditSelectedTargetId(null); }}>
+                      <Plus className="w-3.5 h-3.5" /> New Target
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" className="gap-2" onClick={() => { setEditTargetMode("link"); setEditSelectedTargetId(null); setEditTargetSearch(""); }}>
+                      <Search className="w-3.5 h-3.5" /> Link Existing
+                    </Button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditSheetOpen(false)}>Cancel</Button>
             <Button
-              onClick={() => updateSheet.mutate({ id: sheetId, title: editTitle.trim(), targetName: editTargetMode === "new" ? (editNewTargetName.trim() || null) : (editTargetName.trim() || null) })}
+              onClick={async () => {
+                // Apply target change first if needed
+                const currentTargetId = sheet?.targetId ?? null;
+                const newTargetId = editTargetMode === "link" ? editSelectedTargetId : null;
+                if (editTargetMode === "link" && newTargetId !== currentTargetId) {
+                  setSheetTarget.mutate({ sheetId, targetId: newTargetId });
+                } else if (editTargetMode === "none" && editSelectedTargetId === null && currentTargetId !== null) {
+                  setSheetTarget.mutate({ sheetId, targetId: null });
+                }
+                updateSheet.mutate({
+                  id: sheetId,
+                  title: editTitle.trim(),
+                  targetName: editTargetMode === "new" ? (editNewTargetName.trim() || null) : null,
+                });
+              }}
               disabled={!editTitle.trim() || updateSheet.isPending}
             >
               {updateSheet.isPending ? "Saving…" : "Save"}

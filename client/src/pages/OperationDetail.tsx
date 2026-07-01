@@ -39,6 +39,7 @@ import {
   Target,
   Save,
   Search,
+  CheckCircle2,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -881,87 +882,111 @@ export default function OperationDetail() {
               <label className="text-sm font-medium text-foreground mb-1.5 block">
                 Target <span className="text-muted-foreground font-normal">(optional)</span>
               </label>
-              {targetMode === "none" && (
-                <div className="flex gap-2">
-                  <Button type="button" size="sm" variant="outline" className="flex-1" onClick={() => setTargetMode("new")}>
-                    <Plus className="w-3.5 h-3.5 mr-1.5" /> New Target
-                  </Button>
-                  <Button type="button" size="sm" variant="outline" className="flex-1" onClick={() => setTargetMode("link")}>
-                    <Search className="w-3.5 h-3.5 mr-1.5" /> Link Existing
-                  </Button>
-                </div>
-              )}
-              {targetMode === "new" && (
-                <div className="flex gap-2 items-center">
-                  <Input
-                    placeholder="Target name (e.g. John SMITH, born 1 Jan 1980)"
-                    value={newTargetName}
-                    onChange={(e) => setNewTargetName(e.target.value)}
-                    autoFocus
-                    className="flex-1"
-                  />
-                  <Button type="button" size="sm" variant="ghost" onClick={() => { setTargetMode("none"); setNewTargetName(""); }}>
-                    <X className="w-3.5 h-3.5" />
-                  </Button>
-                </div>
-              )}
-              {targetMode === "link" && (
-                <div className="relative">
-                  <div className="flex items-center border border-input rounded-md bg-background px-3 h-9 gap-2">
-                    <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                    <input
-                      className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                      placeholder={newTargetId ? (allTargetsForSheet ?? []).find(t => t.id === newTargetId)?.name ?? "Search targets…" : "Search targets…"}
-                      value={targetSearch}
-                      onChange={(e) => setTargetSearch(e.target.value)}
-                      onFocus={() => { if (newTargetId) setTargetSearch(""); }}
+              <div className="flex flex-col gap-2">
+                {/* Operation's existing targets — selectable */}
+                {(operationTargets ?? []).map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => {
+                      if (newTargetId === t.id) { setNewTargetId(null); setTargetMode("none"); }
+                      else { setNewTargetId(t.id); setTargetMode("link"); setNewTargetName(""); }
+                    }}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-colors w-full ${
+                      newTargetId === t.id
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border bg-card hover:bg-muted/50 text-foreground"
+                    }`}
+                  >
+                    <Target className="w-4 h-4 shrink-0" />
+                    <span className="text-sm font-medium flex-1 truncate">{t.name}</span>
+                    {newTargetId === t.id && <CheckCircle2 className="w-4 h-4 shrink-0" />}
+                  </button>
+                ))}
+
+                {/* New Target inline input */}
+                {targetMode === "new" && (
+                  <div className="flex gap-2 items-center">
+                    <Input
+                      placeholder="Full name, born (e.g. John SMITH, born 1 Jan 1980)"
+                      value={newTargetName}
+                      onChange={(e) => setNewTargetName(e.target.value)}
                       autoFocus
+                      className="flex-1"
                     />
-                    <button
-                      type="button"
-                      onClick={() => { setTargetMode("none"); setNewTargetId(null); setTargetSearch(""); }}
-                      className="text-muted-foreground hover:text-foreground"
-                    >
+                    <Button type="button" size="sm" variant="ghost" onClick={() => { setTargetMode("none"); setNewTargetName(""); }}>
                       <X className="w-3.5 h-3.5" />
-                    </button>
+                    </Button>
                   </div>
-                  {(targetSearch || !newTargetId) && targetSearch && (
-                    <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-md max-h-52 overflow-y-auto">
-                      {(allTargetsForSheet ?? [])
-                        .filter(t => {
-                          const q = targetSearch.toLowerCase();
-                          return t.name.toLowerCase().includes(q) || (t.tgt ?? "").toLowerCase().includes(q) || (t.operationName ?? "").toLowerCase().includes(q);
-                        })
-                        .map(t => (
-                          <div
-                            key={t.id}
-                            className="px-3 py-2 text-sm cursor-pointer hover:bg-muted/50 flex items-center justify-between gap-2"
-                            onClick={() => { setNewTargetId(t.id); setTargetSearch(""); }}
-                          >
-                            <span className="font-medium">{t.name}</span>
-                            {t.tgt && <span className="text-xs text-muted-foreground font-mono">{t.tgt}</span>}
-                            {t.operationName && <span className="text-xs text-muted-foreground ml-auto">{t.operationName}</span>}
-                          </div>
-                        ))
-                      }
+                )}
+
+                {/* Link Existing search panel */}
+                {targetMode === "link" && newTargetId === null && (
+                  <div className="rounded-xl border border-border bg-card p-3 flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      <Input
+                        autoFocus
+                        className="h-8 text-sm"
+                        placeholder="Search by name, TGT code or operation…"
+                        value={targetSearch}
+                        onChange={(e) => setTargetSearch(e.target.value)}
+                      />
+                      <Button size="sm" variant="ghost" className="shrink-0" onClick={() => { setTargetMode("none"); setTargetSearch(""); }}>Cancel</Button>
+                    </div>
+                    <div className="max-h-52 overflow-y-auto flex flex-col gap-1">
                       {(allTargetsForSheet ?? []).filter(t => {
                         const q = targetSearch.toLowerCase();
                         return t.name.toLowerCase().includes(q) || (t.tgt ?? "").toLowerCase().includes(q) || (t.operationName ?? "").toLowerCase().includes(q);
-                      }).length === 0 && (
-                        <div className="px-3 py-2 text-sm text-muted-foreground">No targets found</div>
+                      }).length === 0 ? (
+                        <p className="text-xs text-muted-foreground text-center py-4">{targetSearch ? "No matching targets" : "Start typing to search"}</p>
+                      ) : (
+                        (allTargetsForSheet ?? []).filter(t => {
+                          const q = targetSearch.toLowerCase();
+                          return t.name.toLowerCase().includes(q) || (t.tgt ?? "").toLowerCase().includes(q) || (t.operationName ?? "").toLowerCase().includes(q);
+                        }).map(t => (
+                          <button
+                            key={t.id}
+                            type="button"
+                            className="flex items-start gap-3 px-3 py-2 rounded-lg hover:bg-muted/60 text-left transition-colors w-full"
+                            onClick={() => { setNewTargetId(t.id); setTargetSearch(""); setTargetMode("link"); }}
+                          >
+                            <Target className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-foreground truncate">{t.name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {t.tgt ? <span className="font-mono mr-2">TGT: {t.tgt}</span> : null}
+                                {t.operationName ? <span>Op: {t.operationName}</span> : null}
+                              </p>
+                            </div>
+                          </button>
+                        ))
                       )}
                     </div>
-                  )}
-                  {newTargetId && !targetSearch && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Selected: <span className="font-medium">{(allTargetsForSheet ?? []).find(t => t.id === newTargetId)?.name}</span>
-                      {(allTargetsForSheet ?? []).find(t => t.id === newTargetId)?.operationName && (
-                        <span className="ml-1">({(allTargetsForSheet ?? []).find(t => t.id === newTargetId)?.operationName})</span>
-                      )}
-                    </p>
-                  )}
-                </div>
-              )}
+                  </div>
+                )}
+
+                {/* Selected linked target chip */}
+                {targetMode === "link" && newTargetId !== null && !(operationTargets ?? []).find(t => t.id === newTargetId) && (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-primary bg-primary/10 text-primary">
+                    <Target className="w-4 h-4 shrink-0" />
+                    <span className="text-sm font-medium flex-1 truncate">{(allTargetsForSheet ?? []).find(t => t.id === newTargetId)?.name}</span>
+                    <button type="button" onClick={() => { setNewTargetId(null); setTargetMode("none"); }} className="hover:text-destructive"><X className="w-3.5 h-3.5" /></button>
+                  </div>
+                )}
+
+                {/* Action buttons */}
+                {targetMode !== "new" && !(targetMode === "link" && newTargetId === null) && (
+                  <div className="flex gap-2">
+                    <Button type="button" size="sm" variant="outline" className="gap-2" onClick={() => { setTargetMode("new"); setNewTargetId(null); }}>
+                      <Plus className="w-3.5 h-3.5" /> New Target
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" className="gap-2" onClick={() => { setTargetMode("link"); setNewTargetId(null); setTargetSearch(""); }}>
+                      <Search className="w-3.5 h-3.5" /> Link Existing
+                    </Button>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* TEAM */}

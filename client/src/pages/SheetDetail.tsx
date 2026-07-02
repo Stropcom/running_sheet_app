@@ -132,6 +132,35 @@ function exportToPDF(
   const operationName = operation?.name ?? "";
   const dateStr = format(new Date(sheetCreatedAt), "d MMMM yyyy");
 
+  // Derive the author CIN from the roster (isAuthor flag)
+  const authorEntry = cinRoster.find((c) => c.isAuthor);
+  const authorCin = authorEntry?.cin ?? null;
+
+  // Find the most recent active certification belonging to the author CIN
+  let preparedByCell = "";
+  if (authorCin) {
+    let latestCert: { certifiedByCIN?: string; certifiedByName: string; certifiedAt: number } | null = null;
+    for (const row of rows) {
+      for (const cert of row.certifications) {
+        if (!cert.isActive) continue;
+        const certCin = ('certifiedByCIN' in cert ? (cert as any).certifiedByCIN : null) || cert.certifiedByName;
+        if (certCin === authorCin) {
+          if (!latestCert || cert.certifiedAt > latestCert.certifiedAt) {
+            latestCert = cert as any;
+          }
+        }
+      }
+    }
+    if (latestCert) {
+      const certCin = ('certifiedByCIN' in latestCert ? (latestCert as any).certifiedByCIN : null) || latestCert.certifiedByName;
+      const certTime = format(new Date(latestCert.certifiedAt), "d MMMM yyyy h:mmaaa");
+      preparedByCell = `<span style='color:#22c55e;white-space:nowrap'>&#10003; ${certCin} &nbsp;<span style='color:#555;font-size:10px'>${certTime}</span></span>`;
+    } else {
+      // Author exists but hasn't certified yet — show CIN without tick
+      preparedByCell = `<span style='color:#000'>${authorCin}</span>`;
+    }
+  }
+
   const pageHeader = `
     <div class="page-header">
       <div class="page-title">WC SURVEILLANCE RUNNING SHEET</div>
@@ -149,6 +178,10 @@ function exportToPDF(
             <td class="meta-label">DATE:</td>
             <td class="meta-value">${dateStr}</td>
           </tr>
+          ${authorCin ? `<tr>
+            <td class="meta-label">PREPARED BY:</td>
+            <td class="meta-value">${preparedByCell}</td>
+          </tr>` : ""}
         </tbody>
       </table>
     </div>`;
@@ -203,8 +236,9 @@ function exportToPDF(
   <title>${sheetTitle}</title>
   <style>
     @page{
-      margin:15mm;
-      @bottom-center{content:counter(page);font-family:system-ui,sans-serif;font-size:10px;color:#64748b}
+      margin:20mm 15mm;
+      @top-center{content:'PROTECTED';font-family:system-ui,sans-serif;font-size:12px;font-weight:700;color:#dc2626;letter-spacing:0.08em}
+      @bottom-center{content:'PROTECTED';font-family:system-ui,sans-serif;font-size:12px;font-weight:700;color:#dc2626;letter-spacing:0.08em}
     }
     body{font-family:system-ui,sans-serif;background:#fff;color:#000;margin:0;padding:0;font-size:12px}
     .page-header{text-align:left;margin-bottom:10px}

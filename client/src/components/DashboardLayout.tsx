@@ -25,7 +25,7 @@ import {
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useTheme } from "@/contexts/ThemeContext";
-import { FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen } from "lucide-react";
+import { FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen, Scale, FolderOpen, ChevronDown, ChevronRight } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
@@ -113,6 +113,10 @@ function DashboardLayoutContent({
   const govCount = governanceTodo?.filter(g => !g.allSigned).length ?? 0;
   const todoCount = certifyCount + govCount;
 
+  const [courtExpanded, setCourtExpanded] = useState(() => {
+    return location.startsWith("/court");
+  });
+
   const menuItems = [
     { icon: FileText, label: "Operations", path: "/" },
     { icon: ClipboardCheck, label: "Governance", path: "/governance" },
@@ -192,29 +196,79 @@ function DashboardLayoutContent({
                   item.path === "/"
                     ? location === "/" || location.startsWith("/operation/") || location.startsWith("/sheet/")
                     : location === item.path || location.startsWith(item.path);
+                // Insert Court folder after Target Registry
+                const isAfterTargetRegistry = item.path === "/audit";
                 return (
-                  <SidebarMenuItem key={item.path}>
-                    <SidebarMenuButton
-                      isActive={isActive}
-                      onClick={() => setLocation(item.path)}
-                      tooltip={item.label}
-                      className="h-10 font-normal transition-all"
-                    >
-                      <item.icon className={`h-4 w-4 ${
-                        (item as any).badge > 0 ? "text-amber-400" : isActive ? "text-sidebar-primary" : "text-sidebar-foreground/60"
-                      }`} />
-                      <span className={`flex-1 ${
-                        (item as any).badge > 0 ? "text-amber-300 font-medium" : isActive ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"
-                      }`}>
-                        {(item as any).badgeLabel ?? item.label}
-                      </span>
-                      {(item as any).badge > 0 && !isCollapsed && (
-                        <span className="ml-auto inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-[10px] font-bold bg-amber-500/20 border border-amber-500/40 text-amber-400">
-                          {(item as any).badge}
+                  <>
+                    {isAfterTargetRegistry && (
+                      <SidebarMenuItem key="court-folder">
+                        <SidebarMenuButton
+                          isActive={location.startsWith("/court")}
+                          onClick={() => setCourtExpanded((v) => !v)}
+                          tooltip="Court"
+                          className="h-10 font-normal transition-all"
+                        >
+                          <Scale className={`h-4 w-4 ${location.startsWith("/court") ? "text-sidebar-primary" : "text-sidebar-foreground/60"}`} />
+                          <span className={`flex-1 ${location.startsWith("/court") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
+                            Court
+                          </span>
+                          {!isCollapsed && (
+                            courtExpanded
+                              ? <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40" />
+                              : <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40" />
+                          )}
+                        </SidebarMenuButton>
+                        {courtExpanded && !isCollapsed && (
+                          <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
+                            <button
+                              onClick={() => setLocation("/court/disclosure")}
+                              className={`flex items-center gap-2 h-8 px-2 rounded-md text-sm transition-colors w-full text-left ${
+                                location === "/court/disclosure"
+                                  ? "bg-sidebar-accent text-sidebar-foreground font-medium"
+                                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+                              }`}
+                            >
+                              <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                              Disclosure
+                            </button>
+                            <button
+                              onClick={() => setLocation("/court/statements")}
+                              className={`flex items-center gap-2 h-8 px-2 rounded-md text-sm transition-colors w-full text-left ${
+                                location === "/court/statements"
+                                  ? "bg-sidebar-accent text-sidebar-foreground font-medium"
+                                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+                              }`}
+                            >
+                              <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                              Statements
+                            </button>
+                          </div>
+                        )}
+                      </SidebarMenuItem>
+                    )}
+                    <SidebarMenuItem key={item.path}>
+                      <SidebarMenuButton
+                        isActive={isActive}
+                        onClick={() => setLocation(item.path)}
+                        tooltip={item.label}
+                        className="h-10 font-normal transition-all"
+                      >
+                        <item.icon className={`h-4 w-4 ${
+                          (item as any).badge > 0 ? "text-amber-400" : isActive ? "text-sidebar-primary" : "text-sidebar-foreground/60"
+                        }`} />
+                        <span className={`flex-1 ${
+                          (item as any).badge > 0 ? "text-amber-300 font-medium" : isActive ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"
+                        }`}>
+                          {(item as any).badgeLabel ?? item.label}
                         </span>
-                      )}
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
+                        {(item as any).badge > 0 && !isCollapsed && (
+                          <span className="ml-auto inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-[10px] font-bold bg-amber-500/20 border border-amber-500/40 text-amber-400">
+                            {(item as any).badge}
+                          </span>
+                        )}
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  </>
                 );
               })}
             </SidebarMenu>

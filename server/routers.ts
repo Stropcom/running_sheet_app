@@ -409,6 +409,18 @@ export const appRouter = router({
         if (!sheet) throw new TRPCError({ code: "NOT_FOUND", message: "Sheet not found." });
         if (!sheet.closedAt) throw new TRPCError({ code: "BAD_REQUEST", message: "Sheet is not closed." });
         await reopenSheet(input.id);
+        // Reset operative section checkboxes — sheet has changed so they must be re-verified
+        await upsertGovernanceRecord({
+          sheetId: input.id,
+          savedAsWord: false,
+          savedAsPdf: false,
+          uploadedToPromis: false,
+          savedInOpFolder: false,
+          savedAsWordCIN: null,
+          savedAsPdfCIN: null,
+          uploadedToPromisCIN: null,
+          savedInOpFolderCIN: null,
+        });
         const cin = ctx.user.cin ?? ctx.user.name ?? "Unknown";
         await createAuditLog({ sheetId: input.id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "sheet_reopened", details: `Sheet reopened by ${cin}`, createdAt: Date.now() });
         return { success: true };

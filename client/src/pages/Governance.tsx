@@ -374,12 +374,15 @@ export default function GovernancePage() {
       ])
     : 0;
 
-  // Imagery section: only count if there is imagery; otherwise N/A (100%)
+  // Imagery section:
+  // - If no imagery at all: 100% (N/A)
+  // - If imagery exists: requires imageryTaken checkbox AND all rows saved
+  const imageryTakenChecked = !!(gov as Record<string, unknown> | undefined)?.imageryTaken;
   const imgPercent = hasAnyImagery
-    ? completionPercent(imagery.map((e) => e.saved))
+    ? completionPercent([imageryTakenChecked, ...imagery.map((e) => e.saved)])
     : 100;
 
-  // Overall: TL (2) + Operative (4) + Imagery entries (only if any imagery)
+  // Overall: TL (2) + Operative (4) + Imagery (imageryTaken + rows, only if any imagery)
   const overallPercent = gov
     ? completionPercent([
         (gov as Record<string, unknown>).summaryNotification as boolean ?? false,
@@ -388,7 +391,7 @@ export default function GovernancePage() {
         allSigned && gov.savedAsPdf,
         allSigned && gov.uploadedToPromis,
         allSigned && gov.savedInOpFolder,
-        ...(hasAnyImagery ? imagery.map((e) => e.saved) : []),
+        ...(hasAnyImagery ? [imageryTakenChecked, ...imagery.map((e) => e.saved)] : []),
       ])
     : 0;
 

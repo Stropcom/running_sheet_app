@@ -191,53 +191,6 @@ export const targetShortcuts = mysqlTable("target_shortcuts", {
 export type TargetShortcut = typeof targetShortcuts.$inferSelect;
 export type InsertTargetShortcut = typeof targetShortcuts.$inferInsert;
 
-// ─── Sub-Observations ────────────────────────────────────────────────────────
-// Each row can have zero or more sub-observations beneath the main observation.
-// A sub-observation has its own text and its own set of CINs (row_members-style),
-// each of which can be certified independently.
-
-export const subObservations = mysqlTable("sub_observations", {
-  id: int("id").autoincrement().primaryKey(),
-  rowId: int("rowId").notNull(),
-  sortOrder: int("sortOrder").default(0).notNull(),
-  observation: text("observation"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
-
-export type SubObservation = typeof subObservations.$inferSelect;
-export type InsertSubObservation = typeof subObservations.$inferInsert;
-
-// ─── Sub-Observation Members ──────────────────────────────────────────────────
-// CINs attached to a sub-observation (mirrors row_members).
-
-export const subObservationMembers = mysqlTable("sub_observation_members", {
-  id: int("id").autoincrement().primaryKey(),
-  subObsId: int("subObsId").notNull(),
-  memberName: varchar("memberName", { length: 255 }).notNull(), // stores CIN
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
-
-export type SubObservationMember = typeof subObservationMembers.$inferSelect;
-export type InsertSubObservationMember = typeof subObservationMembers.$inferInsert;
-
-// ─── Sub-Observation Certifications ───────────────────────────────────────────
-// Each CIN on a sub-observation can be certified independently.
-
-export const subObservationCertifications = mysqlTable("sub_observation_certifications", {
-  id: int("id").autoincrement().primaryKey(),
-  subObsId: int("subObsId").notNull(),
-  memberId: int("memberId").notNull(), // references sub_observation_members.id
-  certifiedByUserId: int("certifiedByUserId").notNull(),
-  certifiedByName: varchar("certifiedByName", { length: 255 }).notNull(),
-  certifiedByCIN: varchar("certifiedByCIN", { length: 64 }).notNull(),
-  certifiedAt: bigint("certifiedAt", { mode: "number" }).notNull(),
-  isActive: boolean("isActive").default(true).notNull(),
-});
-
-export type SubObservationCertification = typeof subObservationCertifications.$inferSelect;
-export type InsertSubObservationCertification = typeof subObservationCertifications.$inferInsert;
-
 // ─── Audit Logs ───────────────────────────────────────────────────────────────
 
 export const auditLogs = mysqlTable("audit_logs", {

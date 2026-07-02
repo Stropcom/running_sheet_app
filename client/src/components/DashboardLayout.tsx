@@ -26,7 +26,7 @@ import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useTheme } from "@/contexts/ThemeContext";
 import { FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen, Scale, FolderOpen, ChevronDown, ChevronRight } from "lucide-react";
-import { CSSProperties, useEffect, useRef, useState } from "react";
+import React, { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { Button } from "./ui/button";
@@ -199,7 +199,7 @@ function DashboardLayoutContent({
                 // Insert Court folder after Target Registry
                 const isAfterTargetRegistry = item.path === "/audit";
                 return (
-                  <>
+                  <React.Fragment key={item.path}>
                     {isAfterTargetRegistry && (
                       <SidebarMenuItem key="court-folder">
                         <SidebarMenuButton
@@ -268,7 +268,7 @@ function DashboardLayoutContent({
                         )}
                       </SidebarMenuButton>
                     </SidebarMenuItem>
-                  </>
+                  </React.Fragment>
                 );
               })}
             </SidebarMenu>

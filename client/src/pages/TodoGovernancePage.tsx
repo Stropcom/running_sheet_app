@@ -7,18 +7,18 @@ import {
   FileText,
   ChevronRight,
   CheckCircle2,
-  Shield,
-  Calendar,
+  ClipboardCheck,
   Building2,
+  AlertTriangle,
+  Lock,
 } from "lucide-react";
 import { useLocation } from "wouter";
-import { format } from "date-fns";
 
-export default function TodoPage() {
+export default function TodoGovernancePage() {
   const { isAuthenticated } = useAuth();
   const [, navigate] = useLocation();
 
-  const { data: certify, isLoading } = trpc.sheet.outstandingForMe.useQuery(undefined, {
+  const { data: govTodo, isLoading } = trpc.sheet.governanceTodo.useQuery(undefined, {
     enabled: isAuthenticated,
     refetchOnWindowFocus: true,
     staleTime: 15_000,
@@ -26,15 +26,16 @@ export default function TodoPage() {
 
   if (!isAuthenticated) return null;
 
-  const count = certify?.length ?? 0;
+  const outstanding = govTodo?.filter((g) => !g.allSigned) ?? [];
+  const count = outstanding.length;
 
   // Group by operation
-  const certByOp: Record<number, { operationName: string; sheets: NonNullable<typeof certify> }> = {};
-  for (const item of certify ?? []) {
-    if (!certByOp[item.operationId]) {
-      certByOp[item.operationId] = { operationName: item.operationName, sheets: [] };
+  const govByOp: Record<number, { operationName: string; items: typeof outstanding }> = {};
+  for (const item of outstanding) {
+    if (!govByOp[item.operationId]) {
+      govByOp[item.operationId] = { operationName: item.operationName, items: [] };
     }
-    certByOp[item.operationId].sheets.push(item);
+    govByOp[item.operationId].items.push(item);
   }
 
   return (
@@ -42,19 +43,19 @@ export default function TodoPage() {
       <div className="max-w-2xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
-          <div className="p-2.5 rounded-xl bg-red-500/15 border border-red-500/30">
-            <Shield className="w-5 h-5 text-red-400" />
+          <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30">
+            <ClipboardCheck className="w-5 h-5 text-amber-400" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-foreground">Certify</h1>
+            <h1 className="text-xl font-bold text-foreground">RS Governance</h1>
             <p className="text-sm text-muted-foreground">
-              Running sheet rows awaiting your certification
+              Running sheets with outstanding governance tasks
             </p>
           </div>
           {count > 0 && (
             <Badge
               variant="outline"
-              className="ml-auto border-red-500/40 bg-red-500/10 text-red-400 font-semibold"
+              className="ml-auto border-amber-500/40 bg-amber-500/10 text-amber-400 font-semibold"
             >
               {count} sheet{count !== 1 ? "s" : ""}
             </Badge>
@@ -76,9 +77,9 @@ export default function TodoPage() {
             <div className="p-4 rounded-full bg-emerald-500/10 border border-emerald-500/20">
               <CheckCircle2 className="w-8 h-8 text-emerald-400" />
             </div>
-            <p className="text-base font-semibold text-foreground">All certified!</p>
+            <p className="text-base font-semibold text-foreground">All governance tasks complete!</p>
             <p className="text-sm text-muted-foreground">
-              No outstanding certifications for your CIN.
+              No outstanding governance tasks for your CIN.
             </p>
           </div>
         )}
@@ -86,7 +87,7 @@ export default function TodoPage() {
         {/* List */}
         {!isLoading && count > 0 && (
           <div className="rounded-xl border border-border/50 overflow-hidden">
-            {Object.entries(certByOp).map(([opId, group]) => (
+            {Object.entries(govByOp).map(([opId, group]) => (
               <div key={opId}>
                 <div className="flex items-center gap-2 px-4 py-2 bg-muted/20 border-b border-border/20">
                   <Building2 className="w-3 h-3 text-muted-foreground shrink-0" />
@@ -94,30 +95,40 @@ export default function TodoPage() {
                     {group.operationName}
                   </span>
                 </div>
-                {group.sheets.map((item) => (
+                {group.items.map((item, idx) => (
                   <div
-                    key={item.sheetId}
-                    className="group flex items-center gap-4 px-4 py-3 hover:bg-red-500/5 transition-colors cursor-pointer border-b border-border/20 last:border-0"
-                    onClick={() => navigate(`/sheet/${item.sheetId}`)}
+                    key={`${item.sheetId}-${idx}`}
+                    className="group flex items-start gap-4 px-4 py-3 hover:bg-amber-500/5 transition-colors cursor-pointer border-b border-border/20 last:border-0"
+                    onClick={() => navigate(`/governance/${item.sheetId}`)}
                   >
-                    <div className="p-2 rounded-lg bg-red-500/10 border border-red-500/20 shrink-0">
-                      <FileText className="w-4 h-4 text-red-400" />
+                    <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 shrink-0 mt-0.5">
+                      <FileText className="w-4 h-4 text-amber-400" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <span className="font-medium text-sm text-foreground truncate block">
                         {item.sheetTitle}
                       </span>
-                      <div className="flex items-center gap-3 mt-0.5">
-                        <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full border border-red-500/40 bg-red-500/10 text-red-400 font-medium">
-                          {item.uncertifiedRowCount} row{item.uncertifiedRowCount !== 1 ? "s" : ""} to certify
-                        </span>
-                        <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <Calendar className="w-3 h-3" />
-                          {format(new Date(item.createdAt), "d MMM yyyy")}
-                        </span>
+                      <div className="mt-1 flex flex-col gap-0.5">
+                        {item.outstanding.map((task, ti) => (
+                          <span
+                            key={ti}
+                            className={`flex items-center gap-1.5 text-xs ${
+                              task === "Sheet not fully certified"
+                                ? "text-amber-400"
+                                : "text-rose-400"
+                            }`}
+                          >
+                            {task === "Sheet not fully certified" ? (
+                              <Lock className="w-3 h-3 shrink-0" />
+                            ) : (
+                              <AlertTriangle className="w-3 h-3 shrink-0" />
+                            )}
+                            {task}
+                          </span>
+                        ))}
                       </div>
                     </div>
-                    <ChevronRight className="w-4 h-4 text-red-400/50 group-hover:text-red-400 transition-colors shrink-0" />
+                    <ChevronRight className="w-4 h-4 text-amber-400/50 group-hover:text-amber-400 transition-colors shrink-0 mt-1" />
                   </div>
                 ))}
               </div>

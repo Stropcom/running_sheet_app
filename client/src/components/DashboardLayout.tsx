@@ -25,7 +25,7 @@ import {
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useTheme } from "@/contexts/ThemeContext";
-import { FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen, Scale, FolderOpen, ChevronDown, ChevronRight, CalendarDays } from "lucide-react";
+import { FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen, Scale, FolderOpen, ChevronDown, ChevronRight, CalendarDays, Shield, ClipboardCheck as GovIcon } from "lucide-react";
 import React, { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
@@ -116,11 +116,13 @@ function DashboardLayoutContent({
   const [courtExpanded, setCourtExpanded] = useState(() => {
     return location.startsWith("/court");
   });
+  const [todoExpanded, setTodoExpanded] = useState(() => {
+    return location === "/todo" || location === "/todo/governance";
+  });
 
   const menuItems = [
     { icon: FileText, label: "Operations", path: "/" },
     { icon: ClipboardCheck, label: "Governance", path: "/governance" },
-    { icon: ClipboardList, label: "To-Do", path: "/todo", badge: todoCount, badgeLabel: todoCount > 0 ? `To-Do (${todoCount})` : "To-Do" },
     { icon: CalendarDays, label: "Calendar", path: "/calendar" },
     { icon: Zap, label: "Shortcuts", path: "/shortcuts" },
     { icon: FolderSearch, label: "Intelligence", path: "/intelligence" },
@@ -197,10 +199,77 @@ function DashboardLayoutContent({
                   item.path === "/"
                     ? location === "/" || location.startsWith("/operation/") || location.startsWith("/sheet/")
                     : location === item.path || location.startsWith(item.path);
+                // Insert To-Do folder before Calendar
+                const isBeforeCalendar = item.path === "/calendar";
                 // Insert Court folder after Target Registry
                 const isAfterTargetRegistry = item.path === "/audit";
                 return (
                   <React.Fragment key={item.path}>
+                    {isBeforeCalendar && (
+                      <SidebarMenuItem key="todo-folder">
+                        <SidebarMenuButton
+                          isActive={location === "/todo" || location === "/todo/governance"}
+                          onClick={() => setTodoExpanded((v) => !v)}
+                          tooltip="To-Do"
+                          className="h-10 font-normal transition-all"
+                        >
+                          <ClipboardList className={`h-4 w-4 ${todoCount > 0 ? "text-amber-400" : location === "/todo" || location === "/todo/governance" ? "text-sidebar-primary" : "text-sidebar-foreground/60"}`} />
+                          <span className={`flex-1 ${
+                            todoCount > 0 ? "text-amber-300 font-medium" : location === "/todo" || location === "/todo/governance" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"
+                          }`}>
+                            To-Do
+                          </span>
+                          {todoCount > 0 && !isCollapsed && (
+                            <span className="inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-[10px] font-bold bg-amber-500/20 border border-amber-500/40 text-amber-400">
+                              {todoCount}
+                            </span>
+                          )}
+                          {!isCollapsed && (
+                            todoExpanded
+                              ? <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />
+                              : <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />
+                          )}
+                        </SidebarMenuButton>
+                        {todoExpanded && !isCollapsed && (
+                          <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
+                            {/* Certify subfolder */}
+                            <button
+                              onClick={() => setLocation("/todo")}
+                              className={`flex items-center gap-2 h-8 px-2 rounded-md text-sm transition-colors w-full text-left ${
+                                location === "/todo"
+                                  ? "bg-sidebar-accent text-sidebar-foreground font-medium"
+                                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+                              }`}
+                            >
+                              <Shield className={`h-3.5 w-3.5 shrink-0 ${certifyCount > 0 ? "text-red-400" : "text-emerald-400"}`} />
+                              <span className="flex-1">Certify</span>
+                              {certifyCount > 0 && (
+                                <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[9px] font-bold bg-red-500/20 border border-red-500/40 text-red-400">
+                                  {certifyCount}
+                                </span>
+                              )}
+                            </button>
+                            {/* RS Governance subfolder */}
+                            <button
+                              onClick={() => setLocation("/todo/governance")}
+                              className={`flex items-center gap-2 h-8 px-2 rounded-md text-sm transition-colors w-full text-left ${
+                                location === "/todo/governance"
+                                  ? "bg-sidebar-accent text-sidebar-foreground font-medium"
+                                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+                              }`}
+                            >
+                              <GovIcon className={`h-3.5 w-3.5 shrink-0 ${govCount > 0 ? "text-amber-400" : "text-emerald-400"}`} />
+                              <span className="flex-1">RS Governance</span>
+                              {govCount > 0 && (
+                                <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[9px] font-bold bg-amber-500/20 border border-amber-500/40 text-amber-400">
+                                  {govCount}
+                                </span>
+                              )}
+                            </button>
+                          </div>
+                        )}
+                      </SidebarMenuItem>
+                    )}
                     {isAfterTargetRegistry && (
                       <SidebarMenuItem key="court-folder">
                         <SidebarMenuButton

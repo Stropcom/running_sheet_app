@@ -1264,5 +1264,136 @@ export const appRouter = router({
       return events;
     }),
   }),
+
+  // ─── Court Statements ────────────────────────────────────────────────────────
+
+  statement: router({
+    /**
+     * Returns the data needed to generate statements for the given sheets.
+     * For each CIN found in the selected sheets, returns surveillance dates,
+     * author dates, and image dates.
+     */
+    previewData: protectedProcedure
+      .input(z.object({ sheetIds: z.array(z.number()).min(1) }))
+      .query(async ({ input }) => {
+        const sheets = await Promise.all(input.sheetIds.map((id) => getRunningSheetById(id)));
+        const validSheets = sheets.filter(Boolean) as NonNullable<Awaited<ReturnType<typeof getRunningSheetById>>>[];
+
+        // Build per-CIN data
+        const cinMap = new Map<string, { surveillanceDates: number[]; authorDates: number[]; imageDates: number[] }>();
+
+        for (const sheet of validSheets) {
+          const sheetDate = new Date(sheet.createdAt).setHours(0, 0, 0, 0);
+          let roster: { cin: string; hasImages?: boolean; isAuthor?: boolean }[] = [];
+          try { roster = sheet.sheetCins ? JSON.parse(sheet.sheetCins) : []; } catch { roster = []; }
+
+          for (const entry of roster) {
+            const cinUpper = entry.cin.toUpperCase();
+            if (!cinMap.has(cinUpper)) cinMap.set(cinUpper, { surveillanceDates: [], authorDates: [], imageDates: [] });
+            const data = cinMap.get(cinUpper)!;
+            data.surveillanceDates.push(sheetDate);
+            if (entry.isAuthor) data.authorDates.push(sheetDate);
+            if (entry.hasImages) data.imageDates.push(sheetDate);
+          }
+        }
+
+        // Resolve CIN → name from users table
+        const allUsers = await getAllUsers();
+        const userByCin = new Map(allUsers.map((u) => [u.cin.toUpperCase(), u]));
+
+        return Array.from(cinMap.entries()).map(([cin, data]) => {
+          const user = userByCin.get(cin);
+          return {
+            cin,
+            name: user?.name ?? cin,
+            surveillanceDates: data.surveillanceDates,
+            authorDates: data.authorDates,
+            imageDates: data.imageDates,
+          };
+        }).sort((a, b) => a.cin.localeCompare(b.cin));
+      }),
+
+    /**
+     * Generates a Base64-encoded .docx for the given CIN across the selected sheets.
+     * Returns { filename, base64 } for each requested CIN.
+     */
+    generate: protectedProcedure
+      .input(z.object({
+        sheetIds: z.array(z.number()).min(1),
+        cins: z.array(z.string()).min(1),
+        operationName: z.string(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { generateStatementDocx } = await import("./statementGenerator");
+        const JSZip = (await import("jszip")).default;
+
+        const sheets = await Promise.all(input.sheetIds.map((id) => getRunningSheetById(id)));
+        const validSheets = sheets.filter(Boolean) as NonNullable<Awaited<ReturnType<typeof getRunningSheetById>>>[];
+
+        const allUsers = await getAllUsers();
+        const userByCin = new Map(allUsers.map((u) => [u.cin.toUpperCase(), u]));
+
+        // Build per-CIN data from sheets
+        const cinMap = new Map<string, { surveillanceDates: number[]; authorDates: number[]; imageDates: number[] }>();
+        for (const sheet of validSheets) {
+          const sheetDate = new Date(sheet.createdAt).setHours(0, 0, 0, 0);
+          let roster: { cin: string; hasImages?: boolean; isAuthor?: boolean }[] = [];
+          try { roster = sheet.sheetCins ? JSON.parse(sheet.sheetCins) : []; } catch { roster = []; }
+          for (const entry of roster) {
+            const cinUpper = entry.cin.toUpperCase();
+            if (!cinMap.has(cinUpper)) cinMap.set(cinUpper, { surveillanceDates: [], authorDates: [], imageDates: [] });
+            const data = cinMap.get(cinUpper)!;
+            data.surveillanceDates.push(sheetDate);
+            if (entry.isAuthor) data.authorDates.push(sheetDate);
+            if (entry.hasImages) data.imageDates.push(sheetDate);
+          }
+        }
+
+        const certifierUser = userByCin.get(ctx.user.cin?.toUpperCase() ?? "");
+        const certifierCin = ctx.user.cin ?? "UNKNOWN";
+        const certifierName = certifierUser?.name ?? ctx.user.name ?? "Unknown";
+        const producedAt = Date.now();
+
+        const requestedCins = input.cins.map((c) => c.toUpperCase());
+        const results: { cin: string; filename: string; base64: string }[] = [];
+
+        for (const cin of requestedCins) {
+          const data = cinMap.get(cin);
+          if (!data) continue;
+          const user = userByCin.get(cin);
+          const name = user?.name ?? cin;
+          const buf = await generateStatementDocx({
+            cin,
+            name,
+            operationName: input.operationName,
+            surveillanceDates: data.surveillanceDates,
+            authorDates: data.authorDates,
+            imageDates: data.imageDates,
+            certifierCin,
+            certifierName,
+            producedAt,
+          });
+          const filename = `Statement_${cin}_${input.operationName.replace(/[^a-zA-Z0-9]/g, "_")}.docx`;
+          results.push({ cin, filename, base64: buf.toString("base64") });
+        }
+
+        if (results.length === 0) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "No matching CINs found in the selected sheets." });
+        }
+
+        // If multiple, also produce a ZIP
+        let zipBase64: string | null = null;
+        if (results.length > 1) {
+          const zip = new JSZip();
+          for (const r of results) {
+            zip.file(r.filename, Buffer.from(r.base64, "base64"));
+          }
+          const zipBuf = await zip.generateAsync({ type: "nodebuffer" });
+          zipBase64 = zipBuf.toString("base64");
+        }
+
+        return { results, zipBase64, operationName: input.operationName, producedAt };
+      }),
+  }),
 });
 export type AppRouter = typeof appRouter;

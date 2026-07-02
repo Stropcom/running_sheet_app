@@ -19,6 +19,7 @@ import GovernancePage from "./pages/Governance";
 import GovernanceListPage from "./pages/GovernanceList";
 import TargetRegistryPage from "./pages/TargetRegistry";
 import CalendarPage from "./pages/CalendarPage";
+import StatementsPage from "./pages/StatementsPage";
 
 function Router() {
   return (
@@ -36,6 +37,7 @@ function Router() {
       <Route path="/governance/:sheetId" component={GovernancePage} />
       <Route path="/target-registry" component={TargetRegistryPage} />
       <Route path="/calendar" component={CalendarPage} />
+      <Route path="/court/statements" component={StatementsPage} />
       <Route path="/audit" component={AuditLogPage} />
       <Route path="/admin" component={AdminPage} />
       <Route path="/404" component={NotFound} />

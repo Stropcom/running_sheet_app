@@ -375,14 +375,25 @@ export default function GovernancePage() {
     : 0;
 
   // Imagery section:
-  // - If no imagery at all: 100% (N/A)
-  // - If imagery exists: requires imageryTaken checkbox AND all rows saved
+  // - If no imagery flagged AND no autoImagery rows AND no stored rows: 100% (N/A)
+  // - Otherwise: percentage of rows marked as saved
+  //   Use autoImagery as the source of truth for CINs; merge saved flags from stored imagery.
   const imageryTakenChecked = !!(gov as Record<string, unknown> | undefined)?.imageryTaken;
-  const imgPercent = hasAnyImagery
-    ? completionPercent([imageryTakenChecked, ...imagery.map((e) => e.saved)])
+  // Build display imagery: autoImagery CINs merged with saved flags from stored imagery
+  const displayImagery = useMemo<ImageryEntry[]>(() => {
+    if (autoImagery.length === 0) return imagery;
+    const savedMap = new Map(imagery.map((e) => [e.cin + e.rowTime, e.saved]));
+    return autoImagery.map((e) => ({
+      ...e,
+      saved: savedMap.get(e.cin + e.rowTime) ?? false,
+    }));
+  }, [autoImagery, imagery]);
+  const hasAnyImageryData = hasAnyImagery || autoImagery.length > 0 || imagery.length > 0;
+  const imgPercent = hasAnyImageryData
+    ? completionPercent(displayImagery.map((e) => e.saved))
     : 100;
 
-  // Overall: TL (2) + Operative (4) + Imagery (imageryTaken + rows, only if any imagery)
+  // Overall: TL (2) + Operative (4) + Imagery rows (only if any imagery data)
   const overallPercent = gov
     ? completionPercent([
         (gov as Record<string, unknown>).summaryNotification as boolean ?? false,
@@ -391,7 +402,7 @@ export default function GovernancePage() {
         allSigned && gov.savedAsPdf,
         allSigned && gov.uploadedToPromis,
         allSigned && gov.savedInOpFolder,
-        ...(hasAnyImagery ? [imageryTakenChecked, ...imagery.map((e) => e.saved)] : []),
+        ...(hasAnyImageryData ? displayImagery.map((e) => e.saved) : []),
       ])
     : 0;
 
@@ -651,7 +662,7 @@ export default function GovernancePage() {
               </div>
 
               {/* Imagery entries table — auto-populated from rows */}
-              {imagery.length > 0 && (
+              {displayImagery.length > 0 && (
                 <div className="rounded-lg border border-border/40 overflow-hidden">
                   <div className="grid grid-cols-[80px_80px_90px_60px] gap-0 text-[10px] font-semibold text-muted-foreground bg-muted/30 px-3 py-2 border-b border-border/30">
                     <span>CIN</span>
@@ -659,11 +670,11 @@ export default function GovernancePage() {
                     <span>TYPE</span>
                     <span>SAVED</span>
                   </div>
-                  {imagery.map((entry, idx) => (
+                  {displayImagery.map((entry, idx) => (
                     <div
                       key={idx}
                       className={`grid grid-cols-[80px_80px_90px_60px] gap-0 items-center px-3 py-2 ${
-                        idx < imagery.length - 1 ? "border-b border-border/20" : ""
+                        idx < displayImagery.length - 1 ? "border-b border-border/20" : ""
                       }`}
                     >
                       <span className="text-xs text-foreground font-medium truncate pr-2">

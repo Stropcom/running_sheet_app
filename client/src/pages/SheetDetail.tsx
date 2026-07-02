@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import DashboardLayout from "@/components/DashboardLayout";
+import CinInput from "@/components/CinInput";
 import {
   Dialog,
   DialogContent,
@@ -297,6 +298,7 @@ function MemberCell({
 }) {
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
+  const [newNameValid, setNewNameValid] = useState(false);
 
   const handleAdd = () => {
     if (!newName.trim()) return;
@@ -399,17 +401,19 @@ function MemberCell({
                 </Button>
               </div>
             ) : (
-              /* Free-text mode: no roster defined */
+              /* Free-text mode: validated against registered users */
               <div className="flex items-center gap-1.5">
-                <Input
+                <CinInput
                   autoFocus
                   placeholder="Enter CIN"
                   value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); if (e.key === "Escape") { setAdding(false); setNewName(""); } }}
+                  onChange={setNewName}
+                  onValidCin={(cin) => { setNewName(cin); setNewNameValid(true); }}
+                  onInvalidCin={() => setNewNameValid(false)}
+                  showValidation
                   className="h-7 text-xs px-2"
                 />
-                <Button size="icon" className="h-7 w-7 shrink-0" onClick={handleAdd} disabled={!newName.trim()}>
+                <Button size="icon" className="h-7 w-7 shrink-0" onClick={handleAdd} disabled={!newNameValid}>
                   <Plus className="w-3 h-3" />
                 </Button>
               </div>
@@ -1013,7 +1017,7 @@ export default function SheetDetail() {
     { enabled: !!sheet?.operationId }
   );
   // All targets across all operations for the cross-op picker
-  const { data: allUsers } = trpc.admin.listUsers.useQuery(undefined, { enabled: isAuthenticated });
+  const { data: allUsers } = trpc.users.listForCin.useQuery(undefined, { enabled: isAuthenticated });
 
   const { data: allTargetsForSheet } = trpc.target.listAll.useQuery(
     undefined,
@@ -1063,6 +1067,7 @@ export default function SheetDetail() {
   const [editRosterOpen, setEditRosterOpen] = useState(false);
   const [rosterList, setRosterList] = useState<CinEntry[]>([]);
   const [rosterInput, setRosterInput] = useState("");
+  const [rosterInputValid, setRosterInputValid] = useState(false);
 
   const updateSheet = trpc.sheet.update.useMutation({
     onSuccess: () => {
@@ -1139,14 +1144,21 @@ export default function SheetDetail() {
   };
 
   const handleAddRosterCin = () => {
-    const trimmed = rosterInput.trim();
+    const trimmed = rosterInput.trim().toUpperCase();
     if (!trimmed) return;
-    if (rosterList.some((c) => c.cin.toLowerCase() === trimmed.toLowerCase())) {
+    // Must be a registered user
+    const registeredCins = new Set((allUsers ?? []).map((u) => u.cin.toUpperCase()));
+    if (!registeredCins.has(trimmed)) {
+      toast.error(`CIN "${trimmed}" is not a registered user`);
+      return;
+    }
+    if (rosterList.some((c) => c.cin.toUpperCase() === trimmed)) {
       toast.error("CIN already in team");
       return;
     }
     setRosterList((prev) => [...prev, { cin: trimmed, hasImages: false, isTeamLeader: false, isAuthor: false }]);
     setRosterInput("");
+    setRosterInputValid(false);
   };
 
   const handleExport = useCallback(() => {
@@ -1757,21 +1769,24 @@ export default function SheetDetail() {
             <p className="text-xs text-muted-foreground">
               Add or remove CINs from today’s team. Mark the Team Leader and Running Sheet Author. Tick the camera icon if images were taken by that member.
             </p>
-            <div className="flex gap-2">
-              <Input
-                placeholder="Enter CIN and press Add"
-                value={rosterInput}
-                onChange={(e) => setRosterInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddRosterCin(); } }}
-                className="flex-1"
-              />
+            <div className="flex gap-2 items-start">
+              <div className="flex-1">
+                <CinInput
+                  value={rosterInput}
+                  onChange={setRosterInput}
+                  onValidCin={(cin) => { setRosterInput(cin); setRosterInputValid(true); }}
+                  onInvalidCin={() => setRosterInputValid(false)}
+                  placeholder="Enter CIN and press Add"
+                  showValidation
+                />
+              </div>
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 onClick={handleAddRosterCin}
-                disabled={!rosterInput.trim()}
-                className="gap-1.5 shrink-0"
+                disabled={!rosterInputValid}
+                className="gap-1.5 shrink-0 mt-0.5"
               >
                 <UserPlus className="w-3.5 h-3.5" />
                 Add

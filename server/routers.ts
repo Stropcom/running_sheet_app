@@ -332,6 +332,15 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         const { id, sheetCins, targetName, ...rest } = input;
         const data: Record<string, unknown> = { ...rest };
+        // Validate roster CINs against registered users
+        if (sheetCins && sheetCins.length > 0) {
+          const allRegisteredUsers = await getAllUsers();
+          const registeredCins = new Set(allRegisteredUsers.map((u) => u.cin.toUpperCase()));
+          const invalid = sheetCins.filter((e) => !registeredCins.has(e.cin.toUpperCase()));
+          if (invalid.length > 0) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: `The following CINs are not registered users: ${invalid.map((e) => e.cin).join(", ")}` });
+          }
+        }
         if (sheetCins !== undefined) data.sheetCins = JSON.stringify(sheetCins);
         // If a new target name is provided, create a real registry target and link it to the sheet's operation
         if (targetName?.trim()) {
@@ -468,7 +477,14 @@ export const appRouter = router({
         const row = await getRowById(input.rowId);
         if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Row not found." });
         if (row.isLocked) throw new TRPCError({ code: "FORBIDDEN", message: "Row is locked." });
-        const id = await addRowMember({ rowId: input.rowId, memberName: input.memberName });
+        // Validate CIN against registered users
+        const allRegisteredUsers = await getAllUsers();
+        const cinUpper = input.memberName.trim().toUpperCase();
+        const registeredCins = new Set(allRegisteredUsers.map((u) => u.cin.toUpperCase()));
+        if (!registeredCins.has(cinUpper)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `CIN "${cinUpper}" is not a registered user. Only registered CINs can be added.` });
+        }
+        const id = await addRowMember({ rowId: input.rowId, memberName: cinUpper });
         await createAuditLog({ sheetId: row.sheetId, rowId: input.rowId, memberId: id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "member_added", details: `CIN ${input.memberName} added to row`, createdAt: Date.now() });
         return { id };
       }),
@@ -816,6 +832,21 @@ export const appRouter = router({
         return { success: true };
       }),
   }),
+  // ─── Users (public list for CIN validation) ────────────────────────────────
+
+  users: router({
+    /** Returns all registered users as {cin, name, unit} for CIN autocomplete/validation */
+    listForCin: protectedProcedure.query(async () => {
+      const all = await getAllUsers();
+      return all.map((u) => ({
+        cin: u.cin,
+        name: u.name,
+        unit: u.unit ?? "",
+        team: u.team ?? "",
+      }));
+    }),
+  }),
+
   // ─── Targets ─────────────────────────────────────────────────────────────────
 
   target: router({

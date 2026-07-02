@@ -280,7 +280,18 @@ export async function setRowLocked(id: number, isLocked: boolean) {
 export async function getMembersByRowId(rowId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(rowMembers).where(eq(rowMembers.rowId, rowId)).orderBy(rowMembers.createdAt);
+  return db.select().from(rowMembers).where(eq(rowMembers.rowId, rowId)).orderBy(rowMembers.sortOrder, rowMembers.createdAt);
+}
+
+export async function reorderRowMembers(rowId: number, orderedIds: number[]) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Update each member's sortOrder to match the position in orderedIds
+  await Promise.all(
+    orderedIds.map((id, index) =>
+      db.update(rowMembers).set({ sortOrder: index }).where(and(eq(rowMembers.id, id), eq(rowMembers.rowId, rowId)))
+    )
+  );
 }
 
 export async function getMembersByRowIds(rowIds: number[]) {

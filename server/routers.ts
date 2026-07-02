@@ -38,6 +38,7 @@ import {
   getUserById,
   getUserByUsername,
   removeRowMember,
+  reorderRowMembers,
   setRowLocked,
   updateRunningSheet,
   updateSheetRow,
@@ -496,9 +497,22 @@ export const appRouter = router({
         if (!registeredCins.has(cinUpper)) {
           throw new TRPCError({ code: "BAD_REQUEST", message: `CIN "${cinUpper}" is not a registered user. Only registered CINs can be added.` });
         }
-        const id = await addRowMember({ rowId: input.rowId, memberName: cinUpper });
+        // Assign sortOrder = current max + 1 so new CINs go to the bottom
+        const existingMembers = await getMembersByRowIds([input.rowId]);
+        const maxOrder = existingMembers.reduce((m, e) => Math.max(m, (e as any).sortOrder ?? 0), 0);
+        const id = await addRowMember({ rowId: input.rowId, memberName: cinUpper, sortOrder: maxOrder + 1 });
         await createAuditLog({ sheetId: row.sheetId, rowId: input.rowId, memberId: id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "member_added", details: `CIN ${input.memberName} added to row`, createdAt: Date.now() });
         return { id };
+      }),
+
+    reorder: protectedProcedure
+      .input(z.object({ rowId: z.number(), orderedIds: z.array(z.number()) }))
+      .mutation(async ({ input, ctx }) => {
+        const row = await getRowById(input.rowId);
+        if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Row not found." });
+        if (row.isLocked) throw new TRPCError({ code: "FORBIDDEN", message: "Row is locked." });
+        await reorderRowMembers(input.rowId, input.orderedIds);
+        return { success: true };
       }),
 
     remove: protectedProcedure

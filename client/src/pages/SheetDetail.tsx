@@ -54,11 +54,28 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { GripVertical } from "lucide-react";
 import { useLocation, useParams } from "wouter";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
-type Member = { id: number; rowId: number; memberName: string; createdAt: Date };
+type Member = { id: number; rowId: number; memberName: string; sortOrder: number; createdAt: Date };
 type Certification = {
   id: number;
   rowId: number;
@@ -281,6 +298,69 @@ function exportToPDF(
   setTimeout(() => { win.print(); }, 400);
 }
 
+// ─── Sortable CIN item ────────────────────────────────────────────────────────
+
+function SortableCinItem({
+  member,
+  cert,
+  canEdit,
+  isLocked,
+  onRemove,
+}: {
+  member: Member;
+  cert: boolean;
+  canEdit: boolean;
+  isLocked: boolean;
+  onRemove: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: member.id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 10 : undefined,
+  };
+  const ROW_H = "h-8";
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-center gap-1 group/member ${ROW_H}`}
+    >
+      {/* Drag handle — only shown when editable and row not locked */}
+      {canEdit && !isLocked && (
+        <button
+          {...attributes}
+          {...listeners}
+          className="touch-none cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground shrink-0 p-0.5 -ml-1"
+          tabIndex={-1}
+          aria-label="Drag to reorder"
+        >
+          <GripVertical className="w-3 h-3" />
+        </button>
+      )}
+      <span className={`text-sm font-mono font-medium flex-1 min-w-0 ${cert ? "text-[var(--certified-color)]" : "text-foreground"}`}>
+        {member.memberName}
+      </span>
+      {canEdit && !isLocked && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="w-6 h-6 opacity-0 group-hover/member:opacity-100 text-muted-foreground hover:text-destructive shrink-0"
+              onClick={onRemove}
+            >
+              <Trash2 className="w-3 h-3" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-xs">Remove this CIN</TooltipContent>
+        </Tooltip>
+      )}
+    </div>
+  );
+}
+
 // ─── Member Cell ──────────────────────────────────────────────────────────────
 
 function MemberCell({
@@ -288,12 +368,14 @@ function MemberCell({
   canEdit,
   onAddMember,
   onRemoveMember,
+  onReorderMembers,
   rosterCins,
 }: {
   row: SheetRow;
   canEdit: boolean;
   onAddMember: (rowId: number, name: string) => void;
   onRemoveMember: (memberId: number, rowId: number) => void;
+  onReorderMembers: (rowId: number, orderedIds: number[]) => void;
   rosterCins?: string[];
 }) {
   const [adding, setAdding] = useState(false);
@@ -305,10 +387,7 @@ function MemberCell({
     const val = newName.trim();
     // If user typed 'team' (case-insensitive), expand to all roster CINs
     if (val.toLowerCase() === "team" && rosterCins && rosterCins.length > 0) {
-      const existingNames = new Set(row.members.map((m) => m.memberName.toLowerCase()));
-      rosterCins
-        .filter((cin) => !existingNames.has(cin.toLowerCase()))
-        .forEach((cin) => onAddMember(row.id, cin));
+      rosterCins.forEach((cin) => onAddMember(row.id, cin));
       setNewName("");
       setAdding(false);
       return;
@@ -318,55 +397,54 @@ function MemberCell({
     setAdding(false);
   };
 
-  // Fixed row height — must match CertifyCell's ROW_H
-  const ROW_H = "h-8";
+  // dnd-kit sensors — pointer (desktop) + touch with 250ms delay (mobile tap-hold)
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } })
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = row.members.findIndex((m) => m.id === active.id);
+    const newIndex = row.members.findIndex((m) => m.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    const reordered = arrayMove(row.members, oldIndex, newIndex);
+    onReorderMembers(row.id, reordered.map((m) => m.id));
+  };
 
   return (
     <div className="flex flex-col min-w-[40px]">
-      {row.members.map((member) => {
-        const cert = row.certifications.find((c) => c.memberId === member.id && c.isActive);
-        return (
-          <div
-            key={member.id}
-            className={`flex items-center gap-1 group/member ${ROW_H}`}
-          >
-            <span className={`text-sm font-mono font-medium flex-1 min-w-0 ${cert ? "text-[var(--certified-color)]" : "text-foreground"}`}>
-              {member.memberName}
-            </span>
-            {canEdit && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="w-6 h-6 opacity-0 group-hover/member:opacity-100 text-muted-foreground hover:text-destructive shrink-0"
-                    onClick={() => onRemoveMember(member.id, row.id)}
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">Remove this CIN</TooltipContent>
-              </Tooltip>
-            )}
-          </div>
-        );
-      })}
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={row.members.map((m) => m.id)} strategy={verticalListSortingStrategy}>
+          {row.members.map((member) => {
+            const cert = !!row.certifications.find((c) => c.memberId === member.id && c.isActive);
+            return (
+              <SortableCinItem
+                key={member.id}
+                member={member}
+                cert={cert}
+                canEdit={canEdit}
+                isLocked={row.isLocked}
+                onRemove={() => onRemoveMember(member.id, row.id)}
+              />
+            );
+          })}
+        </SortableContext>
+      </DndContext>
 
       {/* Add member */}
       {canEdit && !row.isLocked && (
         adding ? (
           <div className="flex flex-col gap-1.5">
             {rosterCins && rosterCins.length > 0 ? (
-              /* Dropdown mode: pick from team roster */
+              /* Dropdown mode: pick from team roster — duplicates allowed */
               <div className="flex items-center gap-1.5">
                 <Select
                   value={newName}
                   onValueChange={(v) => {
                     if (v === "__all__") {
-                      const existingNames = new Set(row.members.map((m) => m.memberName.toLowerCase()));
-                      rosterCins
-                        .filter((cin) => !existingNames.has(cin.toLowerCase()))
-                        .forEach((cin) => onAddMember(row.id, cin));
+                      rosterCins.forEach((cin) => onAddMember(row.id, cin));
                       setAdding(false);
                     } else {
                       onAddMember(row.id, v);
@@ -379,12 +457,10 @@ function MemberCell({
                     <SelectValue placeholder="Pick a CIN…" />
                   </SelectTrigger>
                   <SelectContent>
-                    {rosterCins
-                      .filter((cin) => !row.members.some((m) => m.memberName.toLowerCase() === cin.toLowerCase()))
-                      .map((cin) => (
-                        <SelectItem key={cin} value={cin} className="font-mono text-xs">{cin}</SelectItem>
-                      ))}
-                    {rosterCins.filter((cin) => !row.members.some((m) => m.memberName.toLowerCase() === cin.toLowerCase())).length > 1 && (
+                    {rosterCins.map((cin) => (
+                      <SelectItem key={cin} value={cin} className="font-mono text-xs">{cin}</SelectItem>
+                    ))}
+                    {rosterCins.length > 1 && (
                       <SelectItem value="__all__" className="text-xs font-medium text-primary">
                         ★ Add all team CINs
                       </SelectItem>
@@ -401,7 +477,7 @@ function MemberCell({
                 </Button>
               </div>
             ) : (
-              /* Free-text mode: validated against registered users */
+              /* Free-text mode: validated against registered users — duplicates allowed */
               <div className="flex items-center gap-1.5">
                 <CinInput
                   autoFocus
@@ -886,6 +962,11 @@ export default function SheetDetail() {
   });
 
   const removeMember = trpc.member.remove.useMutation({
+    onSuccess: invalidateRows,
+    onError: (e) => toast.error(e.message),
+  });
+
+  const reorderMember = trpc.member.reorder.useMutation({
     onSuccess: invalidateRows,
     onError: (e) => toast.error(e.message),
   });
@@ -1562,6 +1643,7 @@ export default function SheetDetail() {
                               removeMember.mutate({ id, rowId });
                             }
                           }}
+                          onReorderMembers={(rowId, orderedIds) => reorderMember.mutate({ rowId, orderedIds })}
                           rosterCins={rosterCinList}
                         />
                       </td>

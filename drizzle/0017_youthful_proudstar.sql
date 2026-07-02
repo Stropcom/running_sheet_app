@@ -1,0 +1,1 @@
+ALTER TABLE `row_members` ADD `sortOrder` int DEFAULT 0 NOT NULL;

@@ -24,6 +24,12 @@ import {
   targetShortcuts,
   InsertTargetShortcut,
   operationTargetLinks,
+  subObservations,
+  subObservationMembers,
+  subObservationCertifications,
+  type SubObservation,
+  type SubObservationMember,
+  type SubObservationCertification,
 } from "../drizzle/schema";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -1543,4 +1549,121 @@ export async function getTargetShortcutsForSheet(sheetId: number) {
   const sheet = await db.select({ targetId: runningSheets.targetId }).from(runningSheets).where(eq(runningSheets.id, sheetId)).limit(1);
   if (!sheet[0]?.targetId) return [];
   return db.select().from(targetShortcuts).where(eq(targetShortcuts.targetId, sheet[0].targetId));
+}
+
+// ─── Sub-Observations ─────────────────────────────────────────────────────────
+
+export type SubObsWithDetails = SubObservation & {
+  members: SubObservationMember[];
+  certifications: SubObservationCertification[];
+};
+
+export async function getSubObsByRowId(rowId: number): Promise<SubObsWithDetails[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const subs = await db
+    .select()
+    .from(subObservations)
+    .where(eq(subObservations.rowId, rowId))
+    .orderBy(subObservations.sortOrder, subObservations.createdAt);
+  const result: SubObsWithDetails[] = [];
+  for (const sub of subs) {
+    const members = await db.select().from(subObservationMembers).where(eq(subObservationMembers.subObsId, sub.id));
+    const certs = await db
+      .select()
+      .from(subObservationCertifications)
+      .where(and(eq(subObservationCertifications.subObsId, sub.id), eq(subObservationCertifications.isActive, true)));
+    result.push({ ...sub, members, certifications: certs });
+  }
+  return result;
+}
+
+export async function createSubObs(rowId: number, observation: string): Promise<{ id: number }> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const existing = await db.select({ sortOrder: subObservations.sortOrder }).from(subObservations).where(eq(subObservations.rowId, rowId));
+  const maxOrder = existing.reduce((m, s) => Math.max(m, s.sortOrder), -1);
+  const [result] = await db.insert(subObservations).values({ rowId, sortOrder: maxOrder + 1, observation });
+  return { id: (result as { insertId: number }).insertId };
+}
+
+export async function updateSubObs(id: number, observation: string) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(subObservations).set({ observation }).where(eq(subObservations.id, id));
+}
+
+export async function deleteSubObs(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const members = await db.select().from(subObservationMembers).where(eq(subObservationMembers.subObsId, id));
+  for (const m of members) {
+    await db.delete(subObservationCertifications).where(eq(subObservationCertifications.memberId, m.id));
+  }
+  await db.delete(subObservationMembers).where(eq(subObservationMembers.subObsId, id));
+  await db.delete(subObservations).where(eq(subObservations.id, id));
+}
+
+export async function addSubObsMember(subObsId: number, cin: string): Promise<{ id: number }> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const [result] = await db.insert(subObservationMembers).values({ subObsId, memberName: cin });
+  return { id: (result as { insertId: number }).insertId };
+}
+
+export async function removeSubObsMember(memberId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.delete(subObservationCertifications).where(eq(subObservationCertifications.memberId, memberId));
+  await db.delete(subObservationMembers).where(eq(subObservationMembers.id, memberId));
+}
+
+export async function certifySubObsMember(
+  subObsId: number,
+  memberId: number,
+  userId: number,
+  userName: string,
+  userCIN: string
+): Promise<{ certified: boolean }> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const existing = await db
+    .select()
+    .from(subObservationCertifications)
+    .where(
+      and(
+        eq(subObservationCertifications.subObsId, subObsId),
+        eq(subObservationCertifications.memberId, memberId),
+        eq(subObservationCertifications.isActive, true)
+      )
+    )
+    .limit(1);
+  if (existing.length > 0) {
+    await db
+      .update(subObservationCertifications)
+      .set({ isActive: false })
+      .where(eq(subObservationCertifications.id, existing[0].id));
+    return { certified: false };
+  }
+  await db.insert(subObservationCertifications).values({
+    subObsId,
+    memberId,
+    certifiedByUserId: userId,
+    certifiedByName: userName,
+    certifiedByCIN: userCIN,
+    certifiedAt: Date.now(),
+  });
+  return { certified: true };
+}
+
+export async function getSubObsBySheetId(sheetId: number): Promise<SubObsWithDetails[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select({ id: sheetRows.id }).from(sheetRows).where(eq(sheetRows.sheetId, sheetId));
+  const result: SubObsWithDetails[] = [];
+  for (const row of rows) {
+    const subs = await getSubObsByRowId(row.id);
+    result.push(...subs);
+  }
+  return result;
 }

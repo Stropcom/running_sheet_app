@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import DashboardLayout from "@/components/DashboardLayout";
+import SubObservationBlock from "@/components/SubObservationBlock";
 import CinInput from "@/components/CinInput";
 import {
   Dialog,
@@ -193,10 +194,27 @@ function exportToPDF(
 
   const tableRows = rows.map((row) => {
     const rowBg = row.isLocked ? lockedBg : "transparent";
+    // Build sub-observation HTML (indented beneath main obs)
+    const subObsHtml = (row as any).subObservations?.length
+      ? (row as any).subObservations.map((sub: any) => {
+          const subCinCerts = (sub.members ?? []).map((sm: any) => {
+            const cert = (sub.certifications ?? []).find((c: any) => c.memberId === sm.id);
+            const certStr = cert
+              ? `<span style='color:${certColor};white-space:nowrap'>&#10003; ${cert.certifiedByCIN || cert.certifiedByName} <span style='color:#555;font-size:10px'>${format(new Date(cert.certifiedAt), "dd/MM/yy h:mmaaa")}</span></span>`
+              : `<span style='color:#ef4444'>${sm.memberName} — Pending</span>`;
+            return certStr;
+          }).join(" &nbsp;|&nbsp; ");
+          return `<div style='margin-top:4px;padding:3px 6px 3px 16px;border-left:2px solid #cbd5e1;font-size:11px;color:#000'>
+            <span style='font-style:italic'>${(sub.observation ?? "").replace(/\n/g, "<br/>")}</span>
+            ${subCinCerts ? `<div style='margin-top:2px;font-size:10px'>${subCinCerts}</div>` : ""}
+          </div>`;
+        }).join("")
+      : "";
+
     if (row.members.length === 0) {
       return `<tr style="background:${rowBg}">
         <td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap">${row.time ?? ""}</td>
-        <td style="padding:6px 6px 8px;${bb};${cb}">${row.observation ?? ""}</td>
+        <td style="padding:6px 6px 8px;${bb};${cb}">${row.observation ?? ""}${subObsHtml}</td>
         <td style="padding:6px 6px 8px;${bb};font-size:11px"></td>
       </tr>${spacerRow}`;
     }
@@ -212,7 +230,7 @@ function exportToPDF(
         ? `<td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap" rowspan="${rowspan}">${row.time ?? ""}</td>`
         : "";
       const obsTd = isFirst
-        ? `<td style="padding:6px 6px 8px;${bb};${cb}" rowspan="${rowspan}">${(row.observation ?? "").replace(/\n/g, "<br/>")}</td>`
+        ? `<td style="padding:6px 6px 8px;${bb};${cb}" rowspan="${rowspan}">${(row.observation ?? "").replace(/\n/g, "<br/>")}${subObsHtml}</td>`
         : "";
       // Only draw bottom border on the last member row; no inner lines between members
       const isLast = idx === row.members.length - 1;
@@ -1542,6 +1560,13 @@ export default function SheetDetail() {
                           placeholder="Enter observation…"
                           onSave={(val) => updateRow.mutate({ id: row.id, observation: val })}
                           shortcuts={shortcutMap}
+                        />
+                        {/* Sub-observations */}
+                        <SubObservationBlock
+                          rowId={row.id}
+                          rowLocked={!!row.isLocked}
+                          sheetLocked={isClosed}
+                          shortcuts={Object.entries(shortcutMap).map(([trigger, expansion]) => ({ trigger, expansion }))}
                         />
                       </td>
 

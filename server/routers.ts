@@ -77,6 +77,14 @@ import {
   getLinkedOperationsForTarget,
   closeSheet,
   reopenSheet,
+  getSubObsByRowId,
+  createSubObs,
+  updateSubObs,
+  deleteSubObs,
+  addSubObsMember,
+  removeSubObsMember,
+  certifySubObsMember,
+  getSubObsBySheetId,
 } from "./db";
 
 // ─── Role Guards ──────────────────────────────────────────────────────────────
@@ -733,6 +741,8 @@ export const appRouter = router({
           getMembersByRowIds(rowIds),
           getCertificationsByRowIds(rowIds),
         ]);
+        // Fetch sub-observations for all rows
+        const subObsAll = await getSubObsBySheetId(input.id);
         return {
           sheet,
           operation,
@@ -741,6 +751,7 @@ export const appRouter = router({
             ...row,
             members: members.filter((m) => m.rowId === row.id),
             certifications: certs.filter((c) => c.rowId === row.id),
+            subObservations: subObsAll.filter((s) => s.rowId === row.id),
           })),
         };
       }),
@@ -1406,6 +1417,44 @@ export const appRouter = router({
 
         return { results, zipBase64, operationName: input.operationName, producedAt };
       }),
+  }),
+
+  // ─── Sub-Observations ────────────────────────────────────────────────────────
+  subObs: router({
+    list: protectedProcedure
+      .input(z.object({ rowId: z.number() }))
+      .query(async ({ input }) => getSubObsByRowId(input.rowId)),
+
+    create: protectedProcedure
+      .input(z.object({ rowId: z.number(), observation: z.string().optional() }))
+      .mutation(async ({ input }) => createSubObs(input.rowId, input.observation ?? "")),
+
+    update: protectedProcedure
+      .input(z.object({ id: z.number(), observation: z.string() }))
+      .mutation(async ({ input }) => { await updateSubObs(input.id, input.observation); return { ok: true }; }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => { await deleteSubObs(input.id); return { ok: true }; }),
+
+    addMember: protectedProcedure
+      .input(z.object({ subObsId: z.number(), cin: z.string() }))
+      .mutation(async ({ input }) => {
+        const allUsers = await getAllUsers();
+        const user = allUsers.find((u) => u.cin === input.cin);
+        if (!user) throw new TRPCError({ code: "BAD_REQUEST", message: "CIN not found in registered users" });
+        return addSubObsMember(input.subObsId, input.cin);
+      }),
+
+    removeMember: protectedProcedure
+      .input(z.object({ memberId: z.number() }))
+      .mutation(async ({ input }) => { await removeSubObsMember(input.memberId); return { ok: true }; }),
+
+    certify: protectedProcedure
+      .input(z.object({ subObsId: z.number(), memberId: z.number() }))
+      .mutation(async ({ input, ctx }) =>
+        certifySubObsMember(input.subObsId, input.memberId, ctx.user.id, ctx.user.name, ctx.user.cin)
+      ),
   }),
 });
 export type AppRouter = typeof appRouter;

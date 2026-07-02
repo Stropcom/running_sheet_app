@@ -208,7 +208,7 @@ function exportToPDF(
     }
     body{font-family:system-ui,sans-serif;background:#fff;color:#000;margin:0;padding:0;font-size:12px}
     .page-header{text-align:left;margin-bottom:10px}
-    .page-title{font-size:20px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:8px}
+    .page-title{font-size:20px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;text-align:center;margin-bottom:1.2em}
     .meta-table{width:100%;border-collapse:collapse;border:1px solid #334155;margin-bottom:12px;table-layout:auto}
     .meta-label{padding:5px 8px;font-weight:700;font-size:11px;white-space:nowrap;background:#f1f5f9;border:1px solid #cbd5e1;text-transform:uppercase;width:1%;color:#000}
     .meta-value{padding:5px 8px;font-size:11px;border:1px solid #cbd5e1;color:#000}

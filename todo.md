@@ -291,3 +291,11 @@
 - [x] SheetDetail: when closed, lock all editing (rows, observations, governance, target)
 - [x] OperationDetail sheet cards: show faded/muted style + Closed badge with CIN and timestamp when closedAt is set
 - [x] Governance page: show locked banner when sheet is closed
+
+## Calendar Feature
+- [ ] Install react-big-calendar and date-fns localizer
+- [ ] Backend: tRPC calendar.events query returning operations and running sheets as calendar events
+- [ ] Frontend: CalendarPage with Month/Week/Day views using react-big-calendar
+- [ ] Calendar: clicking an event navigates to the relevant operation or running sheet
+- [ ] Sidebar: add Calendar entry between Target Registry and Court
+- [ ] Route /calendar registered in App.tsx

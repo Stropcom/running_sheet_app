@@ -25,7 +25,7 @@ import {
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useTheme } from "@/contexts/ThemeContext";
-import { FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen, Scale, FolderOpen, ChevronDown, ChevronRight } from "lucide-react";
+import { FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen, Scale, FolderOpen, ChevronDown, ChevronRight, CalendarDays } from "lucide-react";
 import React, { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
@@ -121,6 +121,7 @@ function DashboardLayoutContent({
     { icon: FileText, label: "Operations", path: "/" },
     { icon: ClipboardCheck, label: "Governance", path: "/governance" },
     { icon: ClipboardList, label: "To-Do", path: "/todo", badge: todoCount, badgeLabel: todoCount > 0 ? `To-Do (${todoCount})` : "To-Do" },
+    { icon: CalendarDays, label: "Calendar", path: "/calendar" },
     { icon: Zap, label: "Shortcuts", path: "/shortcuts" },
     { icon: FolderSearch, label: "Intelligence", path: "/intelligence" },
     { icon: BookOpen, label: "Target Registry", path: "/target-registry" },

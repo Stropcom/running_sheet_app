@@ -1183,5 +1183,55 @@ export const appRouter = router({
         return getTargetShortcutsForSheet(input.sheetId);
       }),
   }),
+
+  // ─── Calendar ───────────────────────────────────────────────────────────────
+  calendar: router({
+    /** Return all operations and running sheets as calendar events */
+    events: protectedProcedure.query(async () => {
+      const operations = await getOperations();
+      const sheets = await getRunningSheets();
+      const events: {
+        id: string;
+        title: string;
+        start: number;
+        end: number;
+        type: "operation" | "sheet";
+        operationId: number | null;
+        sheetId: number | null;
+        operationName: string | null;
+      }[] = [];
+
+      for (const op of operations) {
+        const ts = new Date(op.createdAt).getTime();
+        events.push({
+          id: `op-${op.id}`,
+          title: op.name,
+          start: ts,
+          end: ts + 60 * 60 * 1000, // 1-hour block
+          type: "operation",
+          operationId: op.id,
+          sheetId: null,
+          operationName: op.name,
+        });
+      }
+
+      for (const sheet of sheets) {
+        const ts = new Date(sheet.createdAt).getTime();
+        const op = operations.find((o) => o.id === sheet.operationId);
+        events.push({
+          id: `sheet-${sheet.id}`,
+          title: sheet.title,
+          start: ts,
+          end: ts + 60 * 60 * 1000,
+          type: "sheet",
+          operationId: sheet.operationId ?? null,
+          sheetId: sheet.id,
+          operationName: op?.name ?? null,
+        });
+      }
+
+      return events;
+    }),
+  }),
 });
 export type AppRouter = typeof appRouter;

@@ -1069,16 +1069,30 @@ export function extractEntitiesFromText(text: string): Array<{
       // Extract the last 2-4 words immediately before the bracket — these are most
       // likely to be the full name. E.g. "Observed Jason JOHNSON (JOHNSON)" →
       // fullDescription = "Observed Jason JOHNSON", last 2 words = "Jason JOHNSON".
+      // Words that are NOT part of a person's name (verbs, prepositions, articles, etc.)
+      const NON_NAME_WORDS = new Set([
+        "with", "the", "a", "an", "and", "or", "at", "to", "from", "in", "on", "of",
+        "front", "back", "side", "door", "gate", "exit", "entry", "via", "near", "by",
+        "into", "out", "up", "down", "off", "over", "under", "through", "along",
+        "exited", "entered", "walked", "ran", "drove", "observed", "seen", "met",
+        "approached", "departed", "arrived", "left", "attended", "accompanied",
+        "was", "were", "is", "are", "had", "has", "been", "being",
+        "then", "also", "who", "whom", "which", "that", "this", "these", "those",
+      ]);
       const words = fullDescription.trim().split(/\s+/);
       // Try last 4, 3, 2 words in order — use the longest that contains shortForm
+      // AND where every word looks like a name word (not a common English word)
       let bestName = "";
       for (let take = Math.min(4, words.length); take >= 2; take--) {
         const candidate = words.slice(-take).join(" ");
         // Candidate must be all letters/spaces/hyphens/apostrophes (a name, not a sentence)
         const looksLikeName = /^[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ\s'\-]{1,60}$/.test(candidate);
+        // None of the candidate words should be a common non-name word
+        const candidateWords = candidate.toLowerCase().split(/\s+/);
+        const hasNonNameWord = candidateWords.some(w => NON_NAME_WORDS.has(w));
         // shortForm must be contained within the candidate (case-insensitive)
         const shortInCandidate = candidate.toUpperCase().includes(shortForm.toUpperCase());
-        if (looksLikeName && shortInCandidate) {
+        if (looksLikeName && !hasNonNameWord && shortInCandidate) {
           bestName = candidate;
           break;
         }

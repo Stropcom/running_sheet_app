@@ -568,6 +568,7 @@ function SheetCard({
       <div className="flex items-center gap-2 shrink-0">
         {isAdmin && (
           <>
+            {/* Copy/Move always available — even when closed */}
             <Button
               size="icon"
               variant="ghost"
@@ -577,14 +578,17 @@ function SheetCard({
             >
               <CopyPlus className="w-4 h-4" />
             </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="w-8 h-8 opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive hover:bg-destructive/10 transition-opacity"
-              onClick={(e) => { e.stopPropagation(); onDelete(); }}
-            >
-              <Trash2 className="w-4 h-4" />
-            </Button>
+            {/* Delete only available when sheet is open (not closed) */}
+            {!isClosed && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="w-8 h-8 opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive hover:bg-destructive/10 transition-opacity"
+                onClick={(e) => { e.stopPropagation(); onDelete(); }}
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            )}
           </>
         )}
         <ChevronRight className={`w-4 h-4 transition-colors ${

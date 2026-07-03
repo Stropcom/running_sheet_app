@@ -1292,27 +1292,51 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
     }
   }
 
-  // ── 4. Post-process: merge entities where one shortForm is a prefix/substring
-  //       of another of the same type. Keep the longer (fuller) version and merge
-  //       all occurrences into it. This handles cases like:
-  //         "1 Smith Street" vs "1 Smith Street, FREMANTLE WA"
-  //         "JOHN SMITH" vs "JOHN SMITH DOB 01/01/1980"
-  //         "ABC 123" vs "ABC 123 White Toyota Hilux"
+  // ── 4. Post-process: merge address and vehicle entities where one shortForm is a
+  //       strict prefix of another (e.g. "1 Smith Street" absorbed into
+  //       "1 Smith Street, FREMANTLE WA", or "ABC 123" into "ABC 123 White Hilux").
+  //
+  //       IMPORTANT constraints:
+  //         - Only applies to "address" and "vehicle" types (NOT persons or businesses)
+  //           because person names share common prefixes legitimately (SMITH vs SMITH JONES)
+  //         - isTarget entities are never touched by this pass
+  //         - The shorter form must end at a natural word boundary in the longer form
+  //           (space, comma, semicolon, dash, or slash) to avoid false merges
   // ─────────────────────────────────────────────────────────────────────────────
-  const mergedMap = new Map<string, IntelligenceEntity>();
 
-  // Group by type first for efficiency
+  // Separate target entities (keyed as target::) from non-target entities
+  const nonTargetEntities = Array.from(entityMap.entries())
+    .filter(([key]) => !key.startsWith("target::"))
+    .map(([, entity]) => entity);
+
+  const targetEntities = Array.from(entityMap.entries())
+    .filter(([key]) => key.startsWith("target::"))
+    .map(([, entity]) => entity);
+
+  // Group non-target entities by type
   const byType = new Map<string, IntelligenceEntity[]>();
-  for (const entity of Array.from(entityMap.values())) {
+  for (const entity of nonTargetEntities) {
     const t = entity.type;
     if (!byType.has(t)) byType.set(t, []);
     byType.get(t)!.push(entity);
   }
 
-  for (const [, group] of Array.from(byType.entries())) {
+  const mergedMap = new Map<string, IntelligenceEntity>();
+
+  for (const [entityType, group] of Array.from(byType.entries())) {
+    // Only apply prefix-merge to addresses and vehicles
+    if (entityType !== "address" && entityType !== "vehicle") {
+      // For all other types, just add them as-is
+      for (const entity of group) {
+        const k = `${entity.type}::${entity.shortForm.toLowerCase().trim()}`;
+        mergedMap.set(k, entity);
+      }
+      continue;
+    }
+
     // Sort by shortForm length descending so longer (fuller) versions come first
     const sorted = [...group].sort((a, b) => b.shortForm.length - a.shortForm.length);
-    const absorbed = new Set<string>(); // keys of entities absorbed into a longer one
+    const absorbed = new Set<string>(); // lowercase shortForms that have been merged away
 
     for (let i = 0; i < sorted.length; i++) {
       const longer = sorted[i];
@@ -1324,9 +1348,8 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
         const shorterLower = shorter.shortForm.toLowerCase().trim();
         if (absorbed.has(shorterLower)) continue;
 
-        // Absorb the shorter into the longer if the longer STARTS WITH the shorter
-        // (i.e. shorter is a prefix of longer, possibly followed by more detail)
-        // Use word-boundary awareness: the shorter must end at a word boundary in the longer
+        // The longer must START WITH the shorter, and the character immediately
+        // after the shorter in the longer must be a natural word boundary
         if (
           longerLower.startsWith(shorterLower) &&
           (
@@ -1334,29 +1357,36 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
             /^[\s,;\-/]/.test(longerLower.slice(shorterLower.length))
           )
         ) {
-          // Merge shorter's occurrences into longer, avoiding exact duplicates
-          const existingRowIds = new Set(longer.occurrences.map((o: IntelligenceEntity["occurrences"][0]) => `${o.sheetId}::${o.rowId}::${o.observationSnippet}`));
+          // Merge shorter's occurrences into longer, deduplicating by sheetId+rowId+snippet
+          const existingKeys = new Set(
+            longer.occurrences.map(
+              (o: IntelligenceEntity["occurrences"][0]) =>
+                `${o.sheetId}::${o.rowId}::${o.observationSnippet}`
+            )
+          );
           for (const occ of shorter.occurrences) {
             const occKey = `${occ.sheetId}::${occ.rowId}::${occ.observationSnippet}`;
-            if (!existingRowIds.has(occKey)) {
+            if (!existingKeys.has(occKey)) {
               longer.occurrences.push(occ);
-              existingRowIds.add(occKey);
+              existingKeys.add(occKey);
             }
           }
           absorbed.add(shorterLower);
         }
       }
 
-      const mergeKey = `${longer.type}::${longerLower}`;
-      mergedMap.set(mergeKey, longer);
+      // Only add to mergedMap if this entity was NOT itself absorbed by a longer one
+      if (!absorbed.has(longerLower)) {
+        const mergeKey = `${longer.type}::${longerLower}`;
+        mergedMap.set(mergeKey, longer);
+      }
     }
   }
 
-  // Also preserve target entities (they use target:: keys and were not in byType groups)
-  for (const [key, entity] of Array.from(entityMap.entries())) {
-    if (key.startsWith("target::")) {
-      mergedMap.set(key, entity);
-    }
+  // Add target entities back — they were never in byType
+  for (const entity of targetEntities) {
+    const k = `target::${entity.shortForm}`;
+    mergedMap.set(k, entity);
   }
 
   return Array.from(mergedMap.values());

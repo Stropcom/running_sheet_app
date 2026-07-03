@@ -37,7 +37,7 @@ const MIN_WIDTH = 200;
 const MAX_WIDTH = 400;
 
 const ROLE_CONFIG = {
-  admin: { label: "Full Access + User Management", icon: Crown, color: "text-amber-400", badge: "border-amber-400/30 bg-amber-400/10 text-amber-400" },
+  admin: { label: "Full Access + User Management", icon: Crown, color: "text-blue-400", badge: "border-blue-400/30 bg-blue-400/10 text-blue-400" },
   member: { label: "Full Access", icon: ShieldCheck, color: "text-emerald-400", badge: "border-emerald-400/30 bg-emerald-400/10 text-emerald-400" },
   observer: { label: "Observer", icon: Eye, color: "text-muted-foreground", badge: "border-border bg-muted/50 text-muted-foreground" },
 };
@@ -213,14 +213,14 @@ function DashboardLayoutContent({
                           tooltip="To-Do"
                           className="h-10 font-normal transition-all"
                         >
-                          <ClipboardList className={`h-4 w-4 ${todoCount > 0 ? "text-amber-400" : location === "/todo" || location === "/todo/governance" ? "text-sidebar-primary" : "text-sidebar-foreground/60"}`} />
+                          <ClipboardList className={`h-4 w-4 ${todoCount > 0 ? "text-blue-400" : location === "/todo" || location === "/todo/governance" ? "text-sidebar-primary" : "text-sidebar-foreground/60"}`} />
                           <span className={`flex-1 ${
-                            todoCount > 0 ? "text-amber-300 font-medium" : location === "/todo" || location === "/todo/governance" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"
+                            todoCount > 0 ? "text-blue-300 font-medium" : location === "/todo" || location === "/todo/governance" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"
                           }`}>
                             To-Do
                           </span>
                           {todoCount > 0 && !isCollapsed && (
-                            <span className="inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-[10px] font-bold bg-amber-500/20 border border-amber-500/40 text-amber-400">
+                            <span className="inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-[10px] font-bold bg-blue-500/20 border border-blue-500/40 text-blue-400">
                               {todoCount}
                             </span>
                           )}
@@ -258,10 +258,10 @@ function DashboardLayoutContent({
                                   : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
                               }`}
                             >
-                              <GovIcon className={`h-3.5 w-3.5 shrink-0 ${govCount > 0 ? "text-amber-400" : "text-emerald-400"}`} />
+                              <GovIcon className={`h-3.5 w-3.5 shrink-0 ${govCount > 0 ? "text-blue-400" : "text-emerald-400"}`} />
                               <span className="flex-1">RS Governance</span>
                               {govCount > 0 && (
-                                <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[9px] font-bold bg-amber-500/20 border border-amber-500/40 text-amber-400">
+                                <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[9px] font-bold bg-blue-500/20 border border-blue-500/40 text-blue-400">
                                   {govCount}
                                 </span>
                               )}
@@ -324,15 +324,15 @@ function DashboardLayoutContent({
                         className="h-10 font-normal transition-all"
                       >
                         <item.icon className={`h-4 w-4 ${
-                          (item as any).badge > 0 ? "text-amber-400" : isActive ? "text-sidebar-primary" : "text-sidebar-foreground/60"
+                          (item as any).badge > 0 ? "text-blue-400" : isActive ? "text-sidebar-primary" : "text-sidebar-foreground/60"
                         }`} />
                         <span className={`flex-1 ${
-                          (item as any).badge > 0 ? "text-amber-300 font-medium" : isActive ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"
+                          (item as any).badge > 0 ? "text-blue-300 font-medium" : isActive ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"
                         }`}>
                           {(item as any).badgeLabel ?? item.label}
                         </span>
                         {(item as any).badge > 0 && !isCollapsed && (
-                          <span className="ml-auto inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-[10px] font-bold bg-amber-500/20 border border-amber-500/40 text-amber-400">
+                          <span className="ml-auto inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-[10px] font-bold bg-blue-500/20 border border-blue-500/40 text-blue-400">
                             {(item as any).badge}
                           </span>
                         )}

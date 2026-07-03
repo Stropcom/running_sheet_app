@@ -34,6 +34,9 @@ import {
   Save,
   Target,
   X,
+  ArrowDownAZ,
+  Clock,
+  Folder,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -492,6 +495,7 @@ export default function TargetRegistryPage() {
   const { data: targets, isLoading } = trpc.target.registry.list.useQuery();
 
   const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState<"alpha" | "recent" | "operation">("alpha");
   const [showCreate, setShowCreate] = useState(false);
   const [linkTarget, setLinkTarget] = useState<RegistryTarget | null>(null);
 
@@ -502,8 +506,7 @@ export default function TargetRegistryPage() {
   const filtered = useMemo(() => {
     if (!targets) return [];
     const q = search.trim().toLowerCase();
-    if (!q) return targets;
-    return targets.filter(t =>
+    const searched = !q ? [...targets] : targets.filter(t =>
       t.name.toLowerCase().includes(q) ||
       (t.tgt ?? "").toLowerCase().includes(q) ||
       (t.hb ?? "").toLowerCase().includes(q) ||
@@ -514,7 +517,30 @@ export default function TargetRegistryPage() {
       (t.v2f ?? "").toLowerCase().includes(q) ||
       t.linkedOperations.some(op => (op.operationName ?? "").toLowerCase().includes(q))
     );
-  }, [targets, search]);
+
+    return [...searched].sort((a, b) => {
+      if (sortBy === "alpha") {
+        return a.name.localeCompare(b.name);
+      }
+      if (sortBy === "recent") {
+        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+      }
+      if (sortBy === "operation") {
+        // Sort by first linked operation name alphabetically; unlinked targets go last
+        const aOp = a.linkedOperations
+          .map(o => o.operationName ?? "")
+          .sort((x, y) => x.localeCompare(y))[0] ?? "";
+        const bOp = b.linkedOperations
+          .map(o => o.operationName ?? "")
+          .sort((x, y) => x.localeCompare(y))[0] ?? "";
+        if (!aOp && bOp) return 1;   // a unlinked → goes after b
+        if (aOp && !bOp) return -1;  // b unlinked → a comes first
+        const opCmp = aOp.localeCompare(bOp);
+        return opCmp !== 0 ? opCmp : a.name.localeCompare(b.name); // tie-break by name
+      }
+      return 0;
+    });
+  }, [targets, search, sortBy]);
 
   return (
     <DashboardLayout>
@@ -532,15 +558,50 @@ export default function TargetRegistryPage() {
           </Button>
         </div>
 
-        {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            className="pl-9"
-            placeholder="Search targets by name, details, or linked operation…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
+        {/* Search + Sort */}
+        <div className="flex flex-col sm:flex-row gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              className="pl-9"
+              placeholder="Search targets by name, details, or linked operation…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+          {/* Sort toggle buttons */}
+          <div className="flex items-center gap-1 shrink-0">
+            <Button
+              size="sm"
+              variant={sortBy === "alpha" ? "default" : "outline"}
+              className="gap-1.5 h-9 px-3 text-xs"
+              onClick={() => setSortBy("alpha")}
+              title="Sort A–Z"
+            >
+              <ArrowDownAZ className="w-3.5 h-3.5" />
+              A–Z
+            </Button>
+            <Button
+              size="sm"
+              variant={sortBy === "recent" ? "default" : "outline"}
+              className="gap-1.5 h-9 px-3 text-xs"
+              onClick={() => setSortBy("recent")}
+              title="Sort by most recently updated"
+            >
+              <Clock className="w-3.5 h-3.5" />
+              Recent
+            </Button>
+            <Button
+              size="sm"
+              variant={sortBy === "operation" ? "default" : "outline"}
+              className="gap-1.5 h-9 px-3 text-xs"
+              onClick={() => setSortBy("operation")}
+              title="Sort by operation name"
+            >
+              <Folder className="w-3.5 h-3.5" />
+              Operation
+            </Button>
+          </div>
         </div>
 
         {/* Stats */}

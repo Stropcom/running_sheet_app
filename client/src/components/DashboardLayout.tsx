@@ -119,16 +119,14 @@ function DashboardLayoutContent({
   const [todoExpanded, setTodoExpanded] = useState(() => {
     return location === "/todo" || location === "/todo/governance";
   });
-  const [intelExpanded, setIntelExpanded] = useState(() => {
-    return location.startsWith("/intelligence");
-  });
+
 
   const menuItems = [
     { icon: FileText, label: "Operations", path: "/" },
     { icon: ClipboardCheck, label: "Governance", path: "/governance" },
     { icon: CalendarDays, label: "Calendar", path: "/calendar" },
     { icon: Zap, label: "Shortcuts", path: "/shortcuts" },
-    { icon: FolderSearch, label: "Intelligence", path: "/intelligence/entities" },
+    { icon: FolderSearch, label: "Intelligence", path: "/intelligence" },
     { icon: BookOpen, label: "Target Registry", path: "/target-registry" },
     { icon: ScrollText, label: "Audit Log", path: "/audit" },
     { icon: User, label: "My Profile", path: "/profile" },
@@ -204,8 +202,8 @@ function DashboardLayoutContent({
                     : location === item.path || location.startsWith(item.path);
                 // Insert To-Do folder before Calendar
                 const isBeforeCalendar = item.path === "/calendar";
-                // Insert Intelligence folder (replaces plain Intelligence item)
-                const isIntelligenceItem = item.path === "/intelligence/entities";
+                // Intelligence is a plain single sidebar item
+                const isIntelligenceItem = false;
                 // Insert Court folder after Target Registry
                 const isAfterTargetRegistry = item.path === "/audit";
                 return (
@@ -275,52 +273,7 @@ function DashboardLayoutContent({
                         )}
                       </SidebarMenuItem>
                     )}
-                    {isIntelligenceItem && (
-                      <SidebarMenuItem key="intel-folder">
-                        <SidebarMenuButton
-                          isActive={location.startsWith("/intelligence")}
-                          onClick={() => setIntelExpanded((v) => !v)}
-                          tooltip="Intelligence"
-                          className="h-10 font-normal transition-all"
-                        >
-                          <FolderSearch className={`h-4 w-4 ${location.startsWith("/intelligence") ? "text-sidebar-primary" : "text-sidebar-foreground/60"}`} />
-                          <span className={`flex-1 ${location.startsWith("/intelligence") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
-                            Intelligence
-                          </span>
-                          {!isCollapsed && (
-                            intelExpanded
-                              ? <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40" />
-                              : <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40" />
-                          )}
-                        </SidebarMenuButton>
-                        {intelExpanded && !isCollapsed && (
-                          <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
-                            <button
-                              onClick={() => setLocation("/intelligence/entities")}
-                              className={`flex items-center gap-2 h-8 px-2 rounded-md text-sm transition-colors w-full text-left ${
-                                location === "/intelligence/entities" || location === "/intelligence"
-                                  ? "bg-sidebar-accent text-sidebar-foreground font-medium"
-                                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
-                              }`}
-                            >
-                              <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-                              Entities
-                            </button>
-                            <button
-                              onClick={() => setLocation("/intelligence/association-map")}
-                              className={`flex items-center gap-2 h-8 px-2 rounded-md text-sm transition-colors w-full text-left ${
-                                location === "/intelligence/association-map"
-                                  ? "bg-sidebar-accent text-sidebar-foreground font-medium"
-                                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
-                              }`}
-                            >
-                              <Network className="h-3.5 w-3.5 shrink-0" />
-                              Association Mapping
-                            </button>
-                          </div>
-                        )}
-                      </SidebarMenuItem>
-                    )}
+
                     {isAfterTargetRegistry && (
                       <SidebarMenuItem key="court-folder">
                         <SidebarMenuButton

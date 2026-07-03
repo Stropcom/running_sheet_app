@@ -304,8 +304,20 @@ export async function copyRunningSheet(sheetId: number, targetOperationId: numbe
 export async function getRowsBySheetId(sheetId: number) {
   const db = await getDb();
   if (!db) return [];
-  // Sort by timeMinutes when available, fall back to rowNumber for rows without a time set
-  return db.select().from(sheetRows).where(eq(sheetRows.sheetId, sheetId)).orderBy(sheetRows.timeMinutes, sheetRows.rowNumber);
+  // Sort order:
+  //   1. Rows WITH a time set come first (ISNULL(timeMinutes) = 0 sorts before 1)
+  //   2. Among timed rows: ascending by timeMinutes
+  //   3. Tie-break: ascending by rowNumber (insertion order)
+  //   4. Rows WITHOUT a time float to the bottom, ordered by rowNumber
+  return db
+    .select()
+    .from(sheetRows)
+    .where(eq(sheetRows.sheetId, sheetId))
+    .orderBy(
+      sql`ISNULL(${sheetRows.timeMinutes}) ASC`,
+      sheetRows.timeMinutes,
+      sheetRows.rowNumber
+    );
 }
 
 export async function getRowById(id: number) {

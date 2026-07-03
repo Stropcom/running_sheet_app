@@ -1291,11 +1291,20 @@ export default function SheetDetail() {
       if (row.members?.some((m: { memberName: string }) => m.memberName.toLowerCase().includes(q))) return true;
       return false;
     });
-    // Rows with no time set always float to the top (being filled in)
-    const withTime = filtered.filter((row: NonNullable<typeof rows>[0]) => !!row.time);
-    const noTime = filtered.filter((row: NonNullable<typeof rows>[0]) => !row.time);
-    const sorted = sortReversed ? [...withTime].reverse() : withTime;
-    return [...noTime, ...sorted];
+    // Rows with no time set float to the bottom (still being filled in)
+    const withTime = filtered.filter((row: NonNullable<typeof rows>[0]) => row.timeMinutes != null);
+    const noTime = filtered.filter((row: NonNullable<typeof rows>[0]) => row.timeMinutes == null);
+    // Always sort timed rows by timeMinutes, then rowNumber as tie-break
+    const sortedWithTime = [...withTime].sort((a: NonNullable<typeof rows>[0], b: NonNullable<typeof rows>[0]) => {
+      const timeDiff = (a.timeMinutes ?? 0) - (b.timeMinutes ?? 0);
+      if (timeDiff !== 0) return sortReversed ? -timeDiff : timeDiff;
+      return sortReversed ? (b.rowNumber - a.rowNumber) : (a.rowNumber - b.rowNumber);
+    });
+    // No-time rows sorted by rowNumber
+    const sortedNoTime = [...noTime].sort((a: NonNullable<typeof rows>[0], b: NonNullable<typeof rows>[0]) =>
+      a.rowNumber - b.rowNumber
+    );
+    return sortReversed ? [...sortedWithTime, ...sortedNoTime] : [...sortedWithTime, ...sortedNoTime];
   }, [rows, searchQuery, sortReversed]);
 
   return (

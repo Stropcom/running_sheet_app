@@ -1106,7 +1106,15 @@ export default function SheetDetail() {
 
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
-  const [sortReversed, setSortReversed] = useState(false);
+  // Persist sort preference in localStorage so it survives navigation
+  const [sortReversed, setSortReversed] = useState<boolean>(() => {
+    try { return localStorage.getItem("runsheet_sort_reversed") === "true"; } catch { return false; }
+  });
+  const toggleSortReversed = () => setSortReversed(v => {
+    const next = !v;
+    try { localStorage.setItem("runsheet_sort_reversed", String(next)); } catch {}
+    return next;
+  });
 
   // Edit sheet state
   const [editSheetOpen, setEditSheetOpen] = useState(false);
@@ -1291,20 +1299,21 @@ export default function SheetDetail() {
       if (row.members?.some((m: { memberName: string }) => m.memberName.toLowerCase().includes(q))) return true;
       return false;
     });
-    // Rows with no time set float to the bottom (still being filled in)
+    // Rows with no time set ALWAYS float to the top (newest/being filled in)
     const withTime = filtered.filter((row: NonNullable<typeof rows>[0]) => row.timeMinutes != null);
     const noTime = filtered.filter((row: NonNullable<typeof rows>[0]) => row.timeMinutes == null);
-    // Always sort timed rows by timeMinutes, then rowNumber as tie-break
+    // Sort timed rows by timeMinutes, then rowNumber as tie-break
     const sortedWithTime = [...withTime].sort((a: NonNullable<typeof rows>[0], b: NonNullable<typeof rows>[0]) => {
       const timeDiff = (a.timeMinutes ?? 0) - (b.timeMinutes ?? 0);
       if (timeDiff !== 0) return sortReversed ? -timeDiff : timeDiff;
       return sortReversed ? (b.rowNumber - a.rowNumber) : (a.rowNumber - b.rowNumber);
     });
-    // No-time rows sorted by rowNumber
+    // No-time rows sorted by descending rowNumber (most recently added first)
     const sortedNoTime = [...noTime].sort((a: NonNullable<typeof rows>[0], b: NonNullable<typeof rows>[0]) =>
-      a.rowNumber - b.rowNumber
+      b.rowNumber - a.rowNumber
     );
-    return sortReversed ? [...sortedWithTime, ...sortedNoTime] : [...sortedWithTime, ...sortedNoTime];
+    // No-time rows always at the TOP regardless of sort direction
+    return [...sortedNoTime, ...sortedWithTime];
   }, [rows, searchQuery, sortReversed]);
 
   return (
@@ -1582,7 +1591,7 @@ export default function SheetDetail() {
                 variant="outline"
                 size="icon"
                 className={`shrink-0 ${sortReversed ? "border-primary text-primary" : ""}`}
-                onClick={() => setSortReversed(v => !v)}
+                onClick={toggleSortReversed}
               >
                 <ArrowUpDown className="w-4 h-4" />
               </Button>

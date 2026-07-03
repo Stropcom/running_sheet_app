@@ -262,6 +262,8 @@ export const auditLogs = mysqlTable("audit_logs", {
     "sheet_deleted",
     "sheet_closed",
     "sheet_reopened",
+    "sheet_moved",
+    "sheet_copied",
     "user_login",
     "user_logout",
     "user_created",

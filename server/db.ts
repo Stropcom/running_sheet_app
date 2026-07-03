@@ -234,6 +234,71 @@ export async function reopenSheet(id: number) {
     .where(eq(runningSheets.id, id));
 }
 
+export async function moveRunningSheet(sheetId: number, targetOperationId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(runningSheets)
+    .set({ operationId: targetOperationId })
+    .where(eq(runningSheets.id, sheetId));
+}
+
+/**
+ * Deep-copies a running sheet (and all its rows + row_members) into the target operation.
+ * Certifications and governance records are NOT copied — the copy starts fresh.
+ * Returns the new sheet ID.
+ */
+export async function copyRunningSheet(sheetId: number, targetOperationId: number, createdBy: number, newTitle?: string): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // 1. Fetch the source sheet
+  const [srcSheet] = await db.select().from(runningSheets).where(eq(runningSheets.id, sheetId)).limit(1);
+  if (!srcSheet) throw new Error("Source sheet not found");
+
+  // 2. Create the new sheet (reset closed state)
+  const [newSheetResult] = await db.insert(runningSheets).values({
+    operationId: targetOperationId,
+    title: newTitle?.trim() || srcSheet.title,
+    targetName: srcSheet.targetName,
+    sheetCins: srcSheet.sheetCins,
+    targetId: srcSheet.targetId,
+    createdBy,
+    closedAt: null,
+    closedByCIN: null,
+  });
+  const newSheetId = newSheetResult.insertId as number;
+
+  // 3. Fetch all rows from the source sheet
+  const srcRows = await db.select().from(sheetRows).where(eq(sheetRows.sheetId, sheetId)).orderBy(sheetRows.rowNumber);
+
+  for (const row of srcRows) {
+    // 4. Insert each row into the new sheet
+    const [newRowResult] = await db.insert(sheetRows).values({
+      sheetId: newSheetId,
+      rowNumber: row.rowNumber,
+      time: row.time,
+      timeMinutes: row.timeMinutes,
+      observation: row.observation,
+      isLocked: false, // copy starts unlocked
+    });
+    const newRowId = newRowResult.insertId as number;
+
+    // 5. Copy row members for this row
+    const srcMembers = await db.select().from(rowMembers).where(eq(rowMembers.rowId, row.id)).orderBy(rowMembers.sortOrder);
+    if (srcMembers.length > 0) {
+      await db.insert(rowMembers).values(
+        srcMembers.map((m) => ({
+          rowId: newRowId,
+          memberName: m.memberName,
+          sortOrder: m.sortOrder,
+        }))
+      );
+    }
+  }
+
+  return newSheetId;
+}
+
 // ─── Sheet Rows ───────────────────────────────────────────────────────────────
 
 export async function getRowsBySheetId(sheetId: number) {

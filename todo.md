@@ -303,7 +303,15 @@
 ## Close Validation & Statement Exclusion Rules (Round 41)
 - [x] sheet.close: validate all rows certified before allowing close
 - [x] sheet.close: validate governance is 100% before allowing close
-- [ ] SheetDetail.tsx: surface server error message clearly on close button failure
-- [ ] Statement exclusion: Travelled Via rule (CIN only in whereat rows after "continued via:" = no statement)
-- [ ] Statement exclusion: Surveillance Commence/Ceased only rule (CIN only in those rows = no statement)
-- [ ] StatementsPage: show excluded CINs with reason badge instead of silently omitting
+- [x] SheetDetail.tsx: surface server error message clearly on close button failure
+- [x] Statement exclusion: Travelled Via rule (CIN only in whereat rows after "continued via:" = no statement)
+- [x] Statement exclusion: Surveillance Commence/Ceased only rule (CIN only in those rows = no statement)
+- [x] StatementsPage: show excluded CINs with reason badge instead of silently omitting
+
+## Copy / Move Running Sheet (Round 42)
+- [x] Backend: db helper copyRunningSheet(sheetId, targetOperationId) — deep copies sheet + rows + row_members (no certifications, no governance)
+- [x] Backend: db helper moveRunningSheet(sheetId, targetOperationId) — updates operationId on the sheet
+- [x] Backend: tRPC sheet.copy and sheet.move procedures (admin/member only)
+- [x] Frontend: CopyMoveSheetDialog component — operation search/select dropdown, Copy vs Move toggle
+- [x] Frontend: Add copy/move icon button to the left of the trash icon on running sheet cards in OperationDetail.tsx
+- [x] Frontend: On success, invalidate operation queries and show toast

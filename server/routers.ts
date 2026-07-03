@@ -78,6 +78,8 @@ import {
   getLinkedOperationsForTarget,
   closeSheet,
   reopenSheet,
+  copyRunningSheet,
+  moveRunningSheet,
 } from "./db";
 
 // ─── Role Guards ──────────────────────────────────────────────────────────────
@@ -462,6 +464,63 @@ export const appRouter = router({
         const cin = ctx.user.cin ?? ctx.user.name ?? "Unknown";
         await createAuditLog({ sheetId: input.id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "sheet_reopened", details: `Sheet reopened by ${cin}`, createdAt: Date.now() });
         return { success: true };
+      }),
+
+    /**
+     * Move a running sheet to a different operation.
+     * The sheet itself (rows, members, governance) is unchanged — only its operationId changes.
+     */
+    move: certifierOrAdminProcedure
+      .input(z.object({
+        sheetId: z.number(),
+        targetOperationId: z.number(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const sheet = await getRunningSheetById(input.sheetId);
+        if (!sheet) throw new TRPCError({ code: "NOT_FOUND", message: "Running sheet not found." });
+        if (sheet.operationId === input.targetOperationId) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Sheet is already in that operation." });
+        }
+        await moveRunningSheet(input.sheetId, input.targetOperationId);
+        const cin = ctx.user.cin ?? ctx.user.name ?? "Unknown";
+        await createAuditLog({
+          sheetId: input.sheetId,
+          userId: ctx.user.id,
+          userName: ctx.user.name ?? "Unknown",
+          userCIN: ctx.user.cin ?? undefined,
+          action: "sheet_moved",
+          details: `Sheet moved to operation ${input.targetOperationId} by ${cin}`,
+          createdAt: Date.now(),
+        });
+        return { success: true };
+      }),
+
+    /**
+     * Copy a running sheet (and all its rows + row_members) to a different operation.
+     * Certifications and governance records are NOT copied — the copy starts fresh.
+     * Returns the new sheet ID.
+     */
+    copy: certifierOrAdminProcedure
+      .input(z.object({
+        sheetId: z.number(),
+        targetOperationId: z.number(),
+        newTitle: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const sheet = await getRunningSheetById(input.sheetId);
+        if (!sheet) throw new TRPCError({ code: "NOT_FOUND", message: "Running sheet not found." });
+        const newSheetId = await copyRunningSheet(input.sheetId, input.targetOperationId, ctx.user.id, input.newTitle);
+        const cin = ctx.user.cin ?? ctx.user.name ?? "Unknown";
+        await createAuditLog({
+          sheetId: newSheetId,
+          userId: ctx.user.id,
+          userName: ctx.user.name ?? "Unknown",
+          userCIN: ctx.user.cin ?? undefined,
+          action: "sheet_copied",
+          details: `Sheet copied from sheet ${input.sheetId} to operation ${input.targetOperationId} by ${cin}`,
+          createdAt: Date.now(),
+        });
+        return { success: true, newSheetId };
       }),
   }),
 

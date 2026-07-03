@@ -52,6 +52,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useState, useEffect } from "react";
+import { CopyMoveSheetDialog } from "@/components/CopyMoveSheetDialog";
+import { CopyPlus } from "lucide-react";
 import { useLocation, useParams, useSearch } from "wouter";
 import { format } from "date-fns";
 import { toast } from "sonner";
@@ -465,6 +467,7 @@ function SheetCard({
   targetName,
   onNavigate,
   onDelete,
+  onCopyMove,
 }: {
   sheet: { id: number; title: string; createdAt: Date; sheetCins?: string | null; closedAt?: number | null; closedByCIN?: string | null };
   cinNames: string[];
@@ -473,6 +476,7 @@ function SheetCard({
   targetName?: string | null;
   onNavigate: () => void;
   onDelete: () => void;
+  onCopyMove: () => void;
 }) {
   const { data: certStatus } = trpc.sheet.cinCertStatus.useQuery(
     { sheetId: sheet.id, cins: cinNames },
@@ -563,14 +567,25 @@ function SheetCard({
 
       <div className="flex items-center gap-2 shrink-0">
         {isAdmin && (
-          <Button
-            size="icon"
-            variant="ghost"
-            className="w-8 h-8 opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive hover:bg-destructive/10 transition-opacity"
-            onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          >
-            <Trash2 className="w-4 h-4" />
-          </Button>
+          <>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="w-8 h-8 opacity-0 group-hover:opacity-100 text-sky-500 hover:text-sky-400 hover:bg-sky-500/10 transition-opacity"
+              title="Copy or Move sheet"
+              onClick={(e) => { e.stopPropagation(); onCopyMove(); }}
+            >
+              <CopyPlus className="w-4 h-4" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="w-8 h-8 opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive hover:bg-destructive/10 transition-opacity"
+              onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            >
+              <Trash2 className="w-4 h-4" />
+            </Button>
+          </>
         )}
         <ChevronRight className={`w-4 h-4 transition-colors ${
           isClosed ? "text-slate-400" :
@@ -604,6 +619,8 @@ export default function OperationDetail() {
   const [cinInput, setCinInput] = useState("");
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [sheetSearch, setSheetSearch] = useState("");
+  // Copy/Move sheet dialog state
+  const [copyMoveSheet, setCopyMoveSheet] = useState<{ id: number; title: string } | null>(null);
 
   // Edit operation state
   const [editOpen, setEditOpen] = useState(false);
@@ -919,6 +936,7 @@ export default function OperationDetail() {
                   targetName={assignedTarget?.name ?? null}
                   onNavigate={() => navigate(`/sheet/${sheet.id}`)}
                   onDelete={() => setDeleteId(sheet.id)}
+                  onCopyMove={() => setCopyMoveSheet({ id: sheet.id, title: sheet.title })}
                 />
               );
             })}
@@ -1262,6 +1280,17 @@ export default function OperationDetail() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Copy / Move sheet dialog */}
+      {copyMoveSheet && (
+        <CopyMoveSheetDialog
+          open={copyMoveSheet !== null}
+          onOpenChange={(v) => { if (!v) setCopyMoveSheet(null); }}
+          sheetId={copyMoveSheet.id}
+          sheetTitle={copyMoveSheet.title}
+          currentOperationId={operationId}
+        />
+      )}
     </DashboardLayout>
   );
 }

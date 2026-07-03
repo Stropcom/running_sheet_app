@@ -71,7 +71,7 @@ export default function AssociationMap() {
   const [enabledTypes, setEnabledTypes] = useState<Set<string>>(
     new Set(ENTITY_TYPES)
   );
-  const [minConnections, setMinConnections] = useState(1);
+  const [minConnections, setMinConnections] = useState(0);
 
   // ── Selected node ─────────────────────────────────────────────────────────
   const [selectedNode, setSelectedNode] = useState<AssocNode | null>(null);
@@ -115,7 +115,7 @@ export default function AssociationMap() {
     // Filter nodes by type and min connections
     const filteredNodeIds = new Set(
       graphData.nodes
-        .filter((n) => enabledTypes.has(n.type) && (connCount.get(n.id) ?? 0) >= minConnections)
+        .filter((n) => enabledTypes.has(n.type) && (minConnections === 0 || (connCount.get(n.id) ?? 0) >= minConnections))
         .map((n) => n.id)
     );
 
@@ -284,7 +284,7 @@ export default function AssociationMap() {
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span>Min links:</span>
             <input
-              type="range" min={1} max={10} value={minConnections}
+              type="range" min={0} max={10} value={minConnections}
               onChange={(e) => setMinConnections(Number(e.target.value))}
               className="w-20 accent-primary"
             />

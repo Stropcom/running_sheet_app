@@ -1066,14 +1066,24 @@ export function extractEntitiesFromText(text: string): Array<{
     // and the shortForm is a suffix/subset of the fullDescription.
     let displayName = shortForm;
     if (type === "person") {
-      const fullTrimmed = fullDescription.trim();
-      // fullDescription must look like a name: 1-5 words, only letters/spaces/hyphens/apostrophes
-      const looksLikeName = /^[A-Za-z][A-Za-z\s'\-]{1,60}$/.test(fullTrimmed) && fullTrimmed.split(/\s+/).length <= 6;
-      // shortForm must appear as a word or suffix in fullDescription (case-insensitive)
-      const shortInFull = fullTrimmed.toLowerCase().includes(shortForm.toLowerCase());
-      if (looksLikeName && shortInFull) {
-        displayName = fullTrimmed;
+      // Extract the last 2-4 words immediately before the bracket — these are most
+      // likely to be the full name. E.g. "Observed Jason JOHNSON (JOHNSON)" →
+      // fullDescription = "Observed Jason JOHNSON", last 2 words = "Jason JOHNSON".
+      const words = fullDescription.trim().split(/\s+/);
+      // Try last 4, 3, 2 words in order — use the longest that contains shortForm
+      let bestName = "";
+      for (let take = Math.min(4, words.length); take >= 2; take--) {
+        const candidate = words.slice(-take).join(" ");
+        // Candidate must be all letters/spaces/hyphens/apostrophes (a name, not a sentence)
+        const looksLikeName = /^[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ\s'\-]{1,60}$/.test(candidate);
+        // shortForm must be contained within the candidate (case-insensitive)
+        const shortInCandidate = candidate.toUpperCase().includes(shortForm.toUpperCase());
+        if (looksLikeName && shortInCandidate) {
+          bestName = candidate;
+          break;
+        }
       }
+      if (bestName) displayName = bestName;
     }
 
     results.push({ shortForm: displayName, fullDescription, type });

@@ -1195,18 +1195,18 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
     }
 
     // Location fields from target card: HBF/HB (address), V1F/V1/V2F/V2 (vehicle)
+    // For each full/abbreviated pair, only register the full version if it is set;
+    // the abbreviated version is only used as a fallback when the full field is empty.
+    // This prevents HBF + HB (or V1F + V1) from appearing as two separate entities.
     const locationFields: Array<{ label: string; value: string | null; type: IntelligenceEntity["type"] }> = [
-      { label: "HBF", value: t.hbf, type: "address" },
-      { label: "HB", value: t.hb, type: "address" },
-      { label: "V1F", value: t.v1f, type: "vehicle" },
-      { label: "V1", value: t.v1, type: "vehicle" },
-      { label: "V2F", value: t.v2f, type: "vehicle" },
-      { label: "V2", value: t.v2, type: "vehicle" },
+      { label: "HBF", value: t.hbf?.trim() || t.hb?.trim() || null, type: "address" },
+      { label: "V1F", value: t.v1f?.trim() || t.v1?.trim() || null, type: "vehicle" },
+      { label: "V2F", value: t.v2f?.trim() || t.v2?.trim() || null, type: "vehicle" },
     ];
     for (const field of locationFields) {
       if (!field.value || field.value.trim() === "") continue;
       const shortForm = field.value.trim();
-      const key = `${field.type}::${shortForm}`;
+      const key = `${field.type}::${shortForm.toLowerCase()}`;
       if (!entityMap.has(key)) {
         entityMap.set(key, { shortForm, type: field.type, occurrences: [] });
       }
@@ -1267,9 +1267,16 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
           }
         }
       }
-      const key = `${e.type}::${e.shortForm}`;
+      // Use lowercase key so "1 Smith Street" and "1 SMITH STREET" are the same entity
+      const key = `${e.type}::${e.shortForm.toLowerCase()}`;
       if (!entityMap.has(key)) {
         entityMap.set(key, { shortForm: e.shortForm, type: e.type, isTarget: false, occurrences: [] });
+      } else {
+        // If the existing entry has a shorter shortForm, upgrade it to the longer one
+        const existing = entityMap.get(key)!;
+        if (e.shortForm.length > existing.shortForm.length) {
+          existing.shortForm = e.shortForm;
+        }
       }
       const snippet = row.observation.slice(0, 80) + (row.observation.length > 80 ? "…" : "");
       entityMap.get(key)!.occurrences.push({
@@ -1285,7 +1292,74 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
     }
   }
 
-  return Array.from(entityMap.values());
+  // ── 4. Post-process: merge entities where one shortForm is a prefix/substring
+  //       of another of the same type. Keep the longer (fuller) version and merge
+  //       all occurrences into it. This handles cases like:
+  //         "1 Smith Street" vs "1 Smith Street, FREMANTLE WA"
+  //         "JOHN SMITH" vs "JOHN SMITH DOB 01/01/1980"
+  //         "ABC 123" vs "ABC 123 White Toyota Hilux"
+  // ─────────────────────────────────────────────────────────────────────────────
+  const mergedMap = new Map<string, IntelligenceEntity>();
+
+  // Group by type first for efficiency
+  const byType = new Map<string, IntelligenceEntity[]>();
+  for (const entity of Array.from(entityMap.values())) {
+    const t = entity.type;
+    if (!byType.has(t)) byType.set(t, []);
+    byType.get(t)!.push(entity);
+  }
+
+  for (const [, group] of Array.from(byType.entries())) {
+    // Sort by shortForm length descending so longer (fuller) versions come first
+    const sorted = [...group].sort((a, b) => b.shortForm.length - a.shortForm.length);
+    const absorbed = new Set<string>(); // keys of entities absorbed into a longer one
+
+    for (let i = 0; i < sorted.length; i++) {
+      const longer = sorted[i];
+      const longerLower = longer.shortForm.toLowerCase().trim();
+      if (absorbed.has(longerLower)) continue;
+
+      for (let j = i + 1; j < sorted.length; j++) {
+        const shorter = sorted[j];
+        const shorterLower = shorter.shortForm.toLowerCase().trim();
+        if (absorbed.has(shorterLower)) continue;
+
+        // Absorb the shorter into the longer if the longer STARTS WITH the shorter
+        // (i.e. shorter is a prefix of longer, possibly followed by more detail)
+        // Use word-boundary awareness: the shorter must end at a word boundary in the longer
+        if (
+          longerLower.startsWith(shorterLower) &&
+          (
+            longerLower.length === shorterLower.length ||
+            /^[\s,;\-/]/.test(longerLower.slice(shorterLower.length))
+          )
+        ) {
+          // Merge shorter's occurrences into longer, avoiding exact duplicates
+          const existingRowIds = new Set(longer.occurrences.map((o: IntelligenceEntity["occurrences"][0]) => `${o.sheetId}::${o.rowId}::${o.observationSnippet}`));
+          for (const occ of shorter.occurrences) {
+            const occKey = `${occ.sheetId}::${occ.rowId}::${occ.observationSnippet}`;
+            if (!existingRowIds.has(occKey)) {
+              longer.occurrences.push(occ);
+              existingRowIds.add(occKey);
+            }
+          }
+          absorbed.add(shorterLower);
+        }
+      }
+
+      const mergeKey = `${longer.type}::${longerLower}`;
+      mergedMap.set(mergeKey, longer);
+    }
+  }
+
+  // Also preserve target entities (they use target:: keys and were not in byType groups)
+  for (const [key, entity] of Array.from(entityMap.entries())) {
+    if (key.startsWith("target::")) {
+      mergedMap.set(key, entity);
+    }
+  }
+
+  return Array.from(mergedMap.values());
 }
 
 // ─── Governance Records ───────────────────────────────────────────────────────

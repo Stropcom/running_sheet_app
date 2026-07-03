@@ -936,7 +936,7 @@ export default function OperationDetail() {
                   sheet={sheet}
                   cinNames={cinNames}
                   cinEntries={parsedCins}
-                  isAdmin={user?.role === "admin"}
+                  isAdmin={user?.role === "admin" || user?.role === "member"}
                   targetName={assignedTarget?.name ?? null}
                   onNavigate={() => navigate(`/sheet/${sheet.id}`)}
                   onDelete={() => setDeleteId(sheet.id)}

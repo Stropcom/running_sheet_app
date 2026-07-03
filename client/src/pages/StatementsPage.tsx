@@ -102,6 +102,16 @@ export default function StatementsPage() {
     },
     onSuccess: (data) => {
       setGenerating(false);
+      // Notify about any skipped CINs
+      if (data.skipped && data.skipped.length > 0) {
+        for (const s of data.skipped) {
+          toast.warning(`CIN ${s.cin} skipped: ${s.reason}`);
+        }
+      }
+      if (data.results.length === 0) {
+        // All requested CINs were skipped
+        return;
+      }
       if (data.results.length === 1) {
         // Single statement — download directly
         downloadBase64(
@@ -124,12 +134,18 @@ export default function StatementsPage() {
   const step = selectedOpId === null ? 1 : selectedSheetIds.length === 0 ? 2 : 3;
 
   // For non-admin, auto-filter previewData to own CIN
-  const availableCins = useMemo(() => {
-    if (!previewData) return [];
-    if (isAdmin) return previewData;
-    // Non-admin: only show their own CIN if it appears
-    const myCin = user?.cin?.toUpperCase() ?? "";
-    return previewData.filter((d) => d.cin === myCin);
+  // Split into qualifying (can generate) and excluded (no statement possible)
+  const { availableCins, excludedCins } = useMemo(() => {
+    if (!previewData) return { availableCins: [], excludedCins: [] };
+    let filtered = previewData;
+    if (!isAdmin) {
+      const myCin = user?.cin?.toUpperCase() ?? "";
+      filtered = previewData.filter((d) => d.cin === myCin);
+    }
+    return {
+      availableCins: filtered.filter((d) => !d.excludedReason),
+      excludedCins: filtered.filter((d) => !!d.excludedReason),
+    };
   }, [previewData, isAdmin, user?.cin]);
 
   // Auto-select own CIN for non-admin when previewData loads
@@ -319,7 +335,7 @@ export default function StatementsPage() {
                 <div className="flex flex-col gap-2">
                   {[1, 2, 3].map((i) => <Skeleton key={i} className="h-14 w-full" />)}
                 </div>
-              ) : availableCins.length === 0 ? (
+              ) : availableCins.length === 0 && excludedCins.length === 0 ? (
                 <div className="flex items-center gap-2 text-sm text-amber-400 bg-amber-400/10 border border-amber-400/20 rounded-lg px-4 py-3">
                   <AlertCircle className="w-4 h-4 shrink-0" />
                   {isAdmin
@@ -328,6 +344,13 @@ export default function StatementsPage() {
                 </div>
               ) : (
                 <>
+                  {/* Qualifying CINs (can generate statements) */}
+                  {availableCins.length === 0 && excludedCins.length > 0 && (
+                    <div className="flex items-center gap-2 text-sm text-amber-400 bg-amber-400/10 border border-amber-400/20 rounded-lg px-4 py-3">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      No qualifying observation rows found — all CINs are excluded (see below).
+                    </div>
+                  )}
                   {isAdmin && availableCins.length > 1 && (
                     <button
                       onClick={toggleAllCins}
@@ -390,6 +413,32 @@ export default function StatementsPage() {
                       </div>
                     </label>
                   ))}
+
+                  {/* Excluded CINs — no statement can be generated */}
+                  {excludedCins.length > 0 && (
+                    <div className="mt-2 flex flex-col gap-2">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                        Excluded — no statement generated
+                      </p>
+                      {excludedCins.map((cinData) => (
+                        <div
+                          key={cinData.cin}
+                          className="flex items-start gap-3 px-4 py-3 rounded-lg border border-dashed border-muted-foreground/30 bg-muted/20 opacity-70"
+                        >
+                          <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-amber-400" />
+                          <div className="flex flex-col gap-1 min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono font-bold text-sm text-foreground">{cinData.cin}</span>
+                              <span className="text-sm text-muted-foreground">{cinData.name}</span>
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-500 border border-amber-400/30">
+                                {cinData.excludedReason}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </>
               )}
             </div>

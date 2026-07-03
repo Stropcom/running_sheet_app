@@ -397,6 +397,43 @@ export const appRouter = router({
         const sheet = await getRunningSheetById(input.id);
         if (!sheet) throw new TRPCError({ code: "NOT_FOUND", message: "Sheet not found." });
         if (sheet.closedAt) throw new TRPCError({ code: "BAD_REQUEST", message: "Sheet is already closed." });
+
+        // ── Validate all rows are certified ────────────────────────────────────
+        const rows = await getRowsBySheetId(input.id);
+        const rowIds = rows.map((r) => r.id);
+        let allSigned = false;
+        if (rowIds.length > 0) {
+          const [members, certs] = await Promise.all([
+            getMembersByRowIds(rowIds),
+            getCertificationsByRowIds(rowIds),
+          ]);
+          const certRowIds = new Set(certs.map((c) => c.rowId));
+          // A row is certified if every non-spacer member in that row has an active cert
+          const nonSpacerMembers = members.filter((m) => m.memberName !== "__SPACE__");
+          const allMembersCertified = nonSpacerMembers.every((m) => certRowIds.has(m.rowId));
+          allSigned = nonSpacerMembers.length === 0 || allMembersCertified;
+        } else {
+          // No rows — treat as all signed (empty sheet)
+          allSigned = true;
+        }
+
+        if (!allSigned) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "All rows must be certified before closing.",
+          });
+        }
+
+        // ── Validate governance is 100% ────────────────────────────────────────
+        const govRecord = await getGovernanceRecord(input.id);
+        const govPercent = computeGovernancePercent(govRecord, allSigned);
+        if (govPercent < 100) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Governance must be 100% complete before closing.",
+          });
+        }
+
         const cin = ctx.user.cin ?? ctx.user.name ?? "Unknown";
         await closeSheet(input.id, cin);
         await createAuditLog({ sheetId: input.id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "sheet_closed", details: `Sheet closed by ${cin}`, createdAt: Date.now() });
@@ -1305,7 +1342,12 @@ export const appRouter = router({
     /**
      * Returns the data needed to generate statements for the given sheets.
      * For each CIN found in the selected sheets, returns surveillance dates,
-     * author dates, and image dates.
+     * author dates, image dates, and an optional exclusion reason.
+     *
+     * Exclusion rules (CIN gets no statement if ALL its row appearances are excluded):
+     *   1. "Surveillance Commenced" / "Surveillance Ceased" rows — not real observations
+     *   2. "Travelled Via" rows — observation ends in "whereat" AND the immediately
+     *      preceding row (by sort order) contains "continued via:" in its observation
      */
     previewData: protectedProcedure
       .input(z.object({ sheetIds: z.array(z.number()).min(1) }))
@@ -1313,21 +1355,93 @@ export const appRouter = router({
         const sheets = await Promise.all(input.sheetIds.map((id) => getRunningSheetById(id)));
         const validSheets = sheets.filter(Boolean) as NonNullable<Awaited<ReturnType<typeof getRunningSheetById>>>[];
 
-        // Build per-CIN data
-        const cinMap = new Map<string, { surveillanceDates: number[]; authorDates: number[]; imageDates: number[] }>();
+        // Build per-CIN data, tracking qualifying vs excluded rows
+        const cinMap = new Map<string, {
+          surveillanceDates: number[];
+          authorDates: number[];
+          imageDates: number[];
+          hasQualifyingRow: boolean;
+          exclusionReasons: Set<string>;
+        }>();
 
         for (const sheet of validSheets) {
           const sheetDate = new Date(sheet.createdAt).setHours(0, 0, 0, 0);
           let roster: { cin: string; hasImages?: boolean; isAuthor?: boolean }[] = [];
           try { roster = sheet.sheetCins ? JSON.parse(sheet.sheetCins) : []; } catch { roster = []; }
 
+          // Fetch rows for this sheet to apply exclusion rules
+          const rows = await getRowsBySheetId(sheet.id);
+          const rowIds = rows.map((r) => r.id);
+          const members = rowIds.length > 0 ? await getMembersByRowIds(rowIds) : [];
+
+          // Build sorted row list for "previous row" lookups
+          const sortedRows = [...rows]; // already sorted by timeMinutes/rowNumber from db
+
+          // Determine which rows are "excluded" observation types
+          const excludedRowIds = new Set<number>();
+          const excludedRowReasons = new Map<number, string>();
+
+          for (let i = 0; i < sortedRows.length; i++) {
+            const row = sortedRows[i];
+            const obs = (row.observation ?? "").trim();
+
+            // Rule 1: Surveillance Commenced / Surveillance Ceased
+            const isSurveillanceMarker =
+              /^surveillance commenced$/i.test(obs) ||
+              /^surveillance ceased$/i.test(obs);
+            if (isSurveillanceMarker) {
+              excludedRowIds.add(row.id);
+              excludedRowReasons.set(row.id, "surveillance-marker");
+              continue;
+            }
+
+            // Rule 2: Travelled Via — ends in "whereat" and previous row contains "continued via:"
+            const endsInWhereat = /whereat$/i.test(obs);
+            if (endsInWhereat && i > 0) {
+              const prevObs = (sortedRows[i - 1].observation ?? "").toLowerCase();
+              if (prevObs.includes("continued via:")) {
+                excludedRowIds.add(row.id);
+                excludedRowReasons.set(row.id, "travelled-via");
+              }
+            }
+          }
+
+          // For each roster CIN, check if they appear in any qualifying row
           for (const entry of roster) {
             const cinUpper = entry.cin.toUpperCase();
-            if (!cinMap.has(cinUpper)) cinMap.set(cinUpper, { surveillanceDates: [], authorDates: [], imageDates: [] });
+            if (!cinMap.has(cinUpper)) {
+              cinMap.set(cinUpper, {
+                surveillanceDates: [],
+                authorDates: [],
+                imageDates: [],
+                hasQualifyingRow: false,
+                exclusionReasons: new Set(),
+              });
+            }
             const data = cinMap.get(cinUpper)!;
             data.surveillanceDates.push(sheetDate);
             if (entry.isAuthor) data.authorDates.push(sheetDate);
             if (entry.hasImages) data.imageDates.push(sheetDate);
+
+            // Check if this CIN appears in any qualifying (non-excluded) row
+            const cinRowIds = members
+              .filter((m) => m.memberName.toUpperCase() === cinUpper)
+              .map((m) => m.rowId);
+
+            for (const rowId of cinRowIds) {
+              if (!excludedRowIds.has(rowId)) {
+                data.hasQualifyingRow = true;
+              } else {
+                const reason = excludedRowReasons.get(rowId);
+                if (reason) data.exclusionReasons.add(reason);
+              }
+            }
+
+            // If CIN has no row appearances at all in this sheet, still mark as qualifying
+            // (they're on the roster — the sheet itself counts as a surveillance date)
+            if (cinRowIds.length === 0) {
+              data.hasQualifyingRow = true;
+            }
           }
         }
 
@@ -1337,12 +1451,27 @@ export const appRouter = router({
 
         return Array.from(cinMap.entries()).map(([cin, data]) => {
           const user = userByCin.get(cin);
+          // Build exclusion reason string if CIN has no qualifying rows
+          let excludedReason: string | null = null;
+          if (!data.hasQualifyingRow) {
+            const reasons = Array.from(data.exclusionReasons);
+            if (reasons.includes("surveillance-marker") && reasons.includes("travelled-via")) {
+              excludedReason = "Only appears in Surveillance Commenced/Ceased and Travelled Via rows";
+            } else if (reasons.includes("surveillance-marker")) {
+              excludedReason = "Only appears in Surveillance Commenced/Ceased rows";
+            } else if (reasons.includes("travelled-via")) {
+              excludedReason = "Only appears in Travelled Via rows";
+            } else {
+              excludedReason = "No qualifying observation rows found";
+            }
+          }
           return {
             cin,
             name: user?.name ?? cin,
             surveillanceDates: data.surveillanceDates,
             authorDates: data.authorDates,
             imageDates: data.imageDates,
+            excludedReason,
           };
         }).sort((a, b) => a.cin.localeCompare(b.cin));
       }),
@@ -1350,6 +1479,8 @@ export const appRouter = router({
     /**
      * Generates a Base64-encoded .docx for the given CIN across the selected sheets.
      * Returns { filename, base64 } for each requested CIN.
+     * CINs that only appear in excluded rows (Surveillance Commenced/Ceased or Travelled Via)
+     * are skipped and returned in the `skipped` array with a reason.
      */
     generate: protectedProcedure
       .input(z.object({
@@ -1367,19 +1498,80 @@ export const appRouter = router({
         const allUsers = await getAllUsers();
         const userByCin = new Map(allUsers.map((u) => [u.cin.toUpperCase(), u]));
 
-        // Build per-CIN data from sheets
-        const cinMap = new Map<string, { surveillanceDates: number[]; authorDates: number[]; imageDates: number[] }>();
+        // Build per-CIN data from sheets, applying exclusion rules
+        const cinMap = new Map<string, {
+          surveillanceDates: number[];
+          authorDates: number[];
+          imageDates: number[];
+          hasQualifyingRow: boolean;
+          exclusionReasons: Set<string>;
+        }>();
+
         for (const sheet of validSheets) {
           const sheetDate = new Date(sheet.createdAt).setHours(0, 0, 0, 0);
           let roster: { cin: string; hasImages?: boolean; isAuthor?: boolean }[] = [];
           try { roster = sheet.sheetCins ? JSON.parse(sheet.sheetCins) : []; } catch { roster = []; }
+
+          const rows = await getRowsBySheetId(sheet.id);
+          const rowIds = rows.map((r) => r.id);
+          const members = rowIds.length > 0 ? await getMembersByRowIds(rowIds) : [];
+          const sortedRows = [...rows];
+
+          const excludedRowIds = new Set<number>();
+          const excludedRowReasons = new Map<number, string>();
+
+          for (let i = 0; i < sortedRows.length; i++) {
+            const row = sortedRows[i];
+            const obs = (row.observation ?? "").trim();
+            const isSurveillanceMarker =
+              /^surveillance commenced$/i.test(obs) ||
+              /^surveillance ceased$/i.test(obs);
+            if (isSurveillanceMarker) {
+              excludedRowIds.add(row.id);
+              excludedRowReasons.set(row.id, "surveillance-marker");
+              continue;
+            }
+            const endsInWhereat = /whereat$/i.test(obs);
+            if (endsInWhereat && i > 0) {
+              const prevObs = (sortedRows[i - 1].observation ?? "").toLowerCase();
+              if (prevObs.includes("continued via:")) {
+                excludedRowIds.add(row.id);
+                excludedRowReasons.set(row.id, "travelled-via");
+              }
+            }
+          }
+
           for (const entry of roster) {
             const cinUpper = entry.cin.toUpperCase();
-            if (!cinMap.has(cinUpper)) cinMap.set(cinUpper, { surveillanceDates: [], authorDates: [], imageDates: [] });
+            if (!cinMap.has(cinUpper)) {
+              cinMap.set(cinUpper, {
+                surveillanceDates: [],
+                authorDates: [],
+                imageDates: [],
+                hasQualifyingRow: false,
+                exclusionReasons: new Set(),
+              });
+            }
             const data = cinMap.get(cinUpper)!;
             data.surveillanceDates.push(sheetDate);
             if (entry.isAuthor) data.authorDates.push(sheetDate);
             if (entry.hasImages) data.imageDates.push(sheetDate);
+
+            const cinRowIds = members
+              .filter((m) => m.memberName.toUpperCase() === cinUpper)
+              .map((m) => m.rowId);
+
+            for (const rowId of cinRowIds) {
+              if (!excludedRowIds.has(rowId)) {
+                data.hasQualifyingRow = true;
+              } else {
+                const reason = excludedRowReasons.get(rowId);
+                if (reason) data.exclusionReasons.add(reason);
+              }
+            }
+            if (cinRowIds.length === 0) {
+              data.hasQualifyingRow = true;
+            }
           }
         }
 
@@ -1390,10 +1582,27 @@ export const appRouter = router({
 
         const requestedCins = input.cins.map((c) => c.toUpperCase());
         const results: { cin: string; filename: string; base64: string }[] = [];
+        const skipped: { cin: string; reason: string }[] = [];
 
         for (const cin of requestedCins) {
           const data = cinMap.get(cin);
           if (!data) continue;
+
+          // Skip CINs with no qualifying rows
+          if (!data.hasQualifyingRow) {
+            const reasons = Array.from(data.exclusionReasons);
+            let reason = "No qualifying observation rows found";
+            if (reasons.includes("surveillance-marker") && reasons.includes("travelled-via")) {
+              reason = "Only appears in Surveillance Commenced/Ceased and Travelled Via rows";
+            } else if (reasons.includes("surveillance-marker")) {
+              reason = "Only appears in Surveillance Commenced/Ceased rows";
+            } else if (reasons.includes("travelled-via")) {
+              reason = "Only appears in Travelled Via rows";
+            }
+            skipped.push({ cin, reason });
+            continue;
+          }
+
           const user = userByCin.get(cin);
           const name = user?.name ?? cin;
           const buf = await generateStatementDocx({
@@ -1411,7 +1620,7 @@ export const appRouter = router({
           results.push({ cin, filename, base64: buf.toString("base64") });
         }
 
-        if (results.length === 0) {
+        if (results.length === 0 && skipped.length === 0) {
           throw new TRPCError({ code: "NOT_FOUND", message: "No matching CINs found in the selected sheets." });
         }
 
@@ -1426,7 +1635,7 @@ export const appRouter = router({
           zipBase64 = zipBuf.toString("base64");
         }
 
-        return { results, zipBase64, operationName: input.operationName, producedAt };
+        return { results, skipped, zipBase64, operationName: input.operationName, producedAt };
       }),
   }),
 });

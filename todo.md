@@ -299,3 +299,11 @@
 - [ ] Calendar: clicking an event navigates to the relevant operation or running sheet
 - [ ] Sidebar: add Calendar entry between Target Registry and Court
 - [ ] Route /calendar registered in App.tsx
+
+## Close Validation & Statement Exclusion Rules (Round 41)
+- [x] sheet.close: validate all rows certified before allowing close
+- [x] sheet.close: validate governance is 100% before allowing close
+- [ ] SheetDetail.tsx: surface server error message clearly on close button failure
+- [ ] Statement exclusion: Travelled Via rule (CIN only in whereat rows after "continued via:" = no statement)
+- [ ] Statement exclusion: Surveillance Commence/Ceased only rule (CIN only in those rows = no statement)
+- [ ] StatementsPage: show excluded CINs with reason badge instead of silently omitting

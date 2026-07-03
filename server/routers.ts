@@ -401,6 +401,20 @@ export const appRouter = router({
         if (!sheet) throw new TRPCError({ code: "NOT_FOUND", message: "Sheet not found." });
         if (sheet.closedAt) throw new TRPCError({ code: "BAD_REQUEST", message: "Sheet is already closed." });
 
+        // ── Permission: only Team Leader CIN or Admin can close ────────────────
+        if (ctx.user.role !== "admin") {
+          const userCin = ctx.user.cin ?? "";
+          let sheetCins: { cin: string; isTeamLeader?: boolean }[] = [];
+          try { sheetCins = sheet.sheetCins ? JSON.parse(sheet.sheetCins) : []; } catch { sheetCins = []; }
+          const isTeamLeader = sheetCins.some((c) => c.isTeamLeader && c.cin === userCin);
+          if (!isTeamLeader) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: "Only the listed Team Leader or an Admin can close this running sheet.",
+            });
+          }
+        }
+
         // ── Validate all rows are certified ────────────────────────────────────
         const rows = await getRowsBySheetId(input.id);
         const rowIds = rows.map((r) => r.id);

@@ -1844,6 +1844,15 @@ export async function getGovernanceTodoForCin(cin: string): Promise<
       const outstanding: string[] = [];
       if (!rec?.isurv) outstanding.push("Summary complete");
       if (!rec?.sentToIO) outstanding.push("Sent to IO");
+
+      // "Ready to close" notification: sheet is open, all rows certified, governance 100%
+      if (!sheet.closedAt && allSigned) {
+        const govPercent = rec ? computeGovernancePercent(rec, allSigned) : 0;
+        if (govPercent >= 100) {
+          outstanding.push("Ready to close");
+        }
+      }
+
       if (outstanding.length > 0) {
         results.push({
           sheetId: sheet.id,

@@ -11,6 +11,7 @@ import {
   Building2,
   AlertTriangle,
   Lock,
+  LockOpen,
 } from "lucide-react";
 import { useLocation } from "wouter";
 
@@ -115,12 +116,16 @@ export default function TodoGovernancePage() {
                           <span
                             key={ti}
                             className={`flex items-center gap-1.5 text-xs ${
-                              task === "Sheet not fully certified"
-                                ? "text-amber-400"
-                                : "text-rose-400"
+                              task === "Ready to close"
+                                ? "text-emerald-400 font-medium"
+                                : task === "Sheet not fully certified"
+                                  ? "text-amber-400"
+                                  : "text-rose-400"
                             }`}
                           >
-                            {task === "Sheet not fully certified" ? (
+                            {task === "Ready to close" ? (
+                              <LockOpen className="w-3 h-3 shrink-0" />
+                            ) : task === "Sheet not fully certified" ? (
                               <Lock className="w-3 h-3 shrink-0" />
                             ) : (
                               <AlertTriangle className="w-3 h-3 shrink-0" />

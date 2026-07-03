@@ -333,3 +333,10 @@
 - [x] Sidebar: restructure Intelligence into expandable sub-items (Entities, Association Mapping) like To-Do and Court
 - [x] Routes: /intelligence/entities and /intelligence/association-map registered in App.tsx
 - [x] Redirect /intelligence to /intelligence/entities (old /intelligence route still works)
+
+## Team Leader Close Permission & Notification
+- [x] Server: sheet.close restricted to Team Leader CIN (from sheetCins) or admin role
+- [x] Server: sheet.reopen remains available to member and admin roles (no change)
+- [x] Server: getGovernanceTodoForCin — add "Ready to close" outstanding item for Team Leader when governance is 100% and all rows certified but sheet is not yet closed
+- [x] Client: SheetDetail.tsx — canCloseSheet checks if current user CIN matches Team Leader CIN or is admin; show tooltip explaining restriction to others
+- [x] Client: TodoGovernancePage — display "Ready to close" items with a distinct style (green/teal)

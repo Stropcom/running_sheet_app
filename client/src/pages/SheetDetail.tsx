@@ -1039,7 +1039,18 @@ export default function SheetDetail() {
   });
 
   const isClosed = !!sheet?.closedAt;
+  // Any member or admin can reopen a sheet
   const canManageClose = user?.role === "member" || user?.role === "admin";
+  // Only the Team Leader CIN or admin can close a sheet
+  // parsedRoster is defined below but sheet?.sheetCins is available here
+  const isCurrentUserTeamLeader = useMemo(() => {
+    if (!user?.cin || !sheet?.sheetCins) return false;
+    try {
+      const raw: CinEntry[] = JSON.parse(sheet.sheetCins);
+      return raw.some((e) => e.isTeamLeader && e.cin.toUpperCase() === user.cin!.toUpperCase());
+    } catch { return false; }
+  }, [user?.cin, sheet?.sheetCins]);
+  const canCloseByRole = user?.role === "admin" || isCurrentUserTeamLeader;
 
   // All rows certified check (same logic as Governance.tsx allSigned)
   const allRowsCertified = useMemo(() => {
@@ -1062,7 +1073,7 @@ export default function SheetDetail() {
     return tlDone && opDone;
   }, [govRecord]);
 
-  const canCloseSheet = canManageClose && allRowsCertified && govComplete && !isClosed;
+  const canCloseSheet = canCloseByRole && allRowsCertified && govComplete && !isClosed;
 
   const canEdit = !isClosed && (user?.role === "member" || user?.role === "admin" || user?.role === "observer");
   const canCertify = !isClosed && (user?.role === "member" || user?.role === "admin");
@@ -1396,16 +1407,17 @@ export default function SheetDetail() {
                   <TooltipContent>
                     {canCloseSheet
                       ? "Close and lock this running sheet"
-                      : !allRowsCertified
-                        ? "All rows must be certified before closing"
-                        : !govComplete
-                          ? "Governance must be 100% complete before closing"
-                          : "Close sheet"}
+                      : !canCloseByRole
+                        ? "Only the Team Leader or Admin can close this sheet"
+                        : !allRowsCertified
+                          ? "All rows must be certified before closing"
+                          : !govComplete
+                            ? "Governance must be 100% complete before closing"
+                            : "Close sheet"}
                   </TooltipContent>
                 </Tooltip>
               )
             )}
-
             {/* Export dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

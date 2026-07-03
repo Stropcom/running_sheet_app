@@ -1060,7 +1060,23 @@ export function extractEntitiesFromText(text: string): Array<{
       type = "business";
     }
 
-    results.push({ shortForm, fullDescription, type });
+    // For person entities: prefer the full name (fullDescription) over the bracketed
+    // shortForm. E.g. "Jason JOHNSON (JOHNSON)" → use "Jason JOHNSON", not "JOHNSON".
+    // Only apply when fullDescription looks like a name: 2–5 words, letters/spaces/hyphens/apostrophes only,
+    // and the shortForm is a suffix/subset of the fullDescription.
+    let displayName = shortForm;
+    if (type === "person") {
+      const fullTrimmed = fullDescription.trim();
+      // fullDescription must look like a name: 1-5 words, only letters/spaces/hyphens/apostrophes
+      const looksLikeName = /^[A-Za-z][A-Za-z\s'\-]{1,60}$/.test(fullTrimmed) && fullTrimmed.split(/\s+/).length <= 6;
+      // shortForm must appear as a word or suffix in fullDescription (case-insensitive)
+      const shortInFull = fullTrimmed.toLowerCase().includes(shortForm.toLowerCase());
+      if (looksLikeName && shortInFull) {
+        displayName = fullTrimmed;
+      }
+    }
+
+    results.push({ shortForm: displayName, fullDescription, type });
   }
 
   return results;

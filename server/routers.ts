@@ -490,18 +490,23 @@ export const appRouter = router({
         const row = await getRowById(input.rowId);
         if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Row not found." });
         if (row.isLocked) throw new TRPCError({ code: "FORBIDDEN", message: "Row is locked." });
-        // Validate CIN against registered users
-        const allRegisteredUsers = await getAllUsers();
+        const SPACER = "__SPACE__";
         const cinUpper = input.memberName.trim().toUpperCase();
-        const registeredCins = new Set(allRegisteredUsers.map((u) => u.cin.toUpperCase()));
-        if (!registeredCins.has(cinUpper)) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: `CIN "${cinUpper}" is not a registered user. Only registered CINs can be added.` });
+        // Allow spacer entries; validate all real CINs against registered users
+        if (cinUpper !== SPACER) {
+          const allRegisteredUsers = await getAllUsers();
+          const registeredCins = new Set(allRegisteredUsers.map((u) => u.cin.toUpperCase()));
+          if (!registeredCins.has(cinUpper)) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: `CIN "${cinUpper}" is not a registered user. Only registered CINs can be added.` });
+          }
         }
-        // Assign sortOrder = current max + 1 so new CINs go to the bottom
+        // Assign sortOrder = current max + 1 so new entries go to the bottom
         const existingMembers = await getMembersByRowIds([input.rowId]);
         const maxOrder = existingMembers.reduce((m, e) => Math.max(m, (e as any).sortOrder ?? 0), 0);
         const id = await addRowMember({ rowId: input.rowId, memberName: cinUpper, sortOrder: maxOrder + 1 });
-        await createAuditLog({ sheetId: row.sheetId, rowId: input.rowId, memberId: id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "member_added", details: `CIN ${input.memberName} added to row`, createdAt: Date.now() });
+        if (cinUpper !== SPACER) {
+          await createAuditLog({ sheetId: row.sheetId, rowId: input.rowId, memberId: id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "member_added", details: `CIN ${cinUpper} added to row`, createdAt: Date.now() });
+        }
         return { id };
       }),
 
@@ -566,7 +571,8 @@ export const appRouter = router({
           getMembersByRowIds([input.rowId]),
           getCertificationsByRowIds([input.rowId]),
         ]);
-        const rowMembers = members.filter((m) => m.rowId === input.rowId);
+        // Exclude spacer entries from certification checks
+        const rowMembers = members.filter((m) => m.rowId === input.rowId && m.memberName !== "__SPACE__");
         const activeCerts = certs.filter((c) => c.rowId === input.rowId && c.isActive);
         const allCertified = rowMembers.length > 0 && rowMembers.every((m) => activeCerts.some((c) => c.memberId === m.id));
 
@@ -627,7 +633,9 @@ export const appRouter = router({
             getMembersByRowIds([member.rowId]),
             getCertificationsByRowIds([member.rowId]),
           ]);
-          const allCertified = rowMembers.length > 0 && rowMembers.every((m) =>
+          // Exclude spacer entries from certification checks
+          const realMembers = rowMembers.filter((m) => m.memberName !== "__SPACE__");
+          const allCertified = realMembers.length > 0 && realMembers.every((m) =>
             rowCerts.some((c) => c.memberId === m.id && c.isActive)
           );
           if (allCertified) await setRowLocked(member.rowId, true);

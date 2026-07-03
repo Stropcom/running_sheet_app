@@ -219,10 +219,8 @@ function exportToPDF(
     }
     // Render one <tr> per member so CIN and Certified columns align perfectly
     const memberRows = row.members.map((m, idx) => {
-      const cert = row.certifications.find((c) => c.memberId === m.id && c.isActive);
-      const certCell = cert
-        ? `<span style='color:${certColor};white-space:nowrap'>&#10003; ${'certifiedByCIN' in cert ? (cert as any).certifiedByCIN || cert.certifiedByName : cert.certifiedByName} &nbsp; <span style='color:#94a3b8;font-size:10px'>${format(new Date(cert.certifiedAt), "dd/MM/yy h:mmaaa")}</span></span>`
-        : `<span style='color:#ef4444'>Pending</span>`;
+      const isSpacer = m.memberName === "__SPACE__";
+      const cert = isSpacer ? undefined : row.certifications.find((c) => c.memberId === m.id && c.isActive);
       const isFirst = idx === 0;
       const rowspan = row.members.length;
       const timeTd = isFirst
@@ -237,6 +235,13 @@ function exportToPDF(
       // Top/bottom padding: generous on first/last, tight on inner member rows
       const pt = isFirst ? "6px" : "2px";
       const pb = isLast ? "8px" : "2px";
+      // Spacer: render as blank cell (no CIN, no cert)
+      if (isSpacer) {
+        return `<tr style="background:${rowBg}">
+          ${timeTd}${obsTd}
+          <td style="padding:${pt} 6px ${pb} 6px;${memberBb};font-size:11px">&nbsp;</td>
+        </tr>`;
+      }
       // Build CIN Certified cell: tick + certifier CIN + date only
       const certifierCIN = cert ? ('certifiedByCIN' in cert ? (cert as any).certifiedByCIN || cert.certifiedByName : cert.certifiedByName) : null;
       const cinCertCell = cert
@@ -300,6 +305,8 @@ function exportToPDF(
 
 // ─── Sortable CIN item ────────────────────────────────────────────────────────
 
+const SPACER = "__SPACE__";
+
 function SortableCinItem({
   member,
   cert,
@@ -321,6 +328,8 @@ function SortableCinItem({
     zIndex: isDragging ? 10 : undefined,
   };
   const ROW_H = "h-8";
+  const isSpacer = member.memberName === SPACER;
+
   return (
     <div
       ref={setNodeRef}
@@ -339,9 +348,14 @@ function SortableCinItem({
           <GripVertical className="w-3 h-3" />
         </button>
       )}
-      <span className={`text-sm font-mono font-medium flex-1 min-w-0 ${cert ? "text-[var(--certified-color)]" : "text-foreground"}`}>
-        {member.memberName}
-      </span>
+      {isSpacer ? (
+        /* Spacer — blank row for visual separation, remove on hover */
+        <span className="flex-1 min-w-0" />
+      ) : (
+        <span className={`text-sm font-mono font-medium flex-1 min-w-0 ${cert ? "text-[var(--certified-color)]" : "text-foreground"}`}>
+          {member.memberName}
+        </span>
+      )}
       {canEdit && !isLocked && (
         <Tooltip>
           <TooltipTrigger asChild>
@@ -354,7 +368,7 @@ function SortableCinItem({
               <Trash2 className="w-3 h-3" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="top" className="text-xs">Remove this CIN</TooltipContent>
+          <TooltipContent side="top" className="text-xs">{isSpacer ? "Remove space" : "Remove this CIN"}</TooltipContent>
         </Tooltip>
       )}
     </div>
@@ -415,6 +429,7 @@ function MemberCell({
 
   return (
     <div className="flex flex-col min-w-[40px]">
+      {/* CIN list — drag handles allow full reordering */}
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={row.members.map((m) => m.id)} strategy={verticalListSortingStrategy}>
           {row.members.map((member) => {
@@ -433,19 +448,24 @@ function MemberCell({
         </SortableContext>
       </DndContext>
 
-      {/* Add member */}
+      {/* Add button — sits below all CINs */}
       {canEdit && !row.isLocked && (
         adding ? (
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-1.5 mt-0.5">
             {rosterCins && rosterCins.length > 0 ? (
-              /* Dropdown mode: pick from team roster — duplicates allowed */
+              /* Dropdown mode: pick from team roster — Space at top, duplicates allowed */
               <div className="flex items-center gap-1.5">
                 <Select
                   value={newName}
                   onValueChange={(v) => {
                     if (v === "__all__") {
-                      rosterCins.forEach((cin) => onAddMember(row.id, cin));
-                      setAdding(false);
+                      // Add sequentially to preserve team order (leader first, then ascending CIN)
+                      const addSequentially = (cins: string[], idx: number) => {
+                        if (idx >= cins.length) { setAdding(false); return; }
+                        onAddMember(row.id, cins[idx]);
+                        setTimeout(() => addSequentially(cins, idx + 1), 80);
+                      };
+                      addSequentially(rosterCins, 0);
                     } else {
                       onAddMember(row.id, v);
                       setNewName("");
@@ -454,9 +474,13 @@ function MemberCell({
                   }}
                 >
                   <SelectTrigger className="h-7 text-xs flex-1 min-w-[120px]">
-                    <SelectValue placeholder="Pick a CIN…" />
+                    <SelectValue placeholder="Pick…" />
                   </SelectTrigger>
                   <SelectContent>
+                    {/* Space option always at the top */}
+                    <SelectItem value={SPACER} className="text-xs text-muted-foreground italic">
+                      — Space —
+                    </SelectItem>
                     {rosterCins.map((cin) => (
                       <SelectItem key={cin} value={cin} className="font-mono text-xs">{cin}</SelectItem>
                     ))}
@@ -501,7 +525,7 @@ function MemberCell({
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors mt-0.5 w-fit"
           >
             <UserPlus className="w-3 h-3" />
-            Add CIN
+            Add
           </button>
         )
       )}

@@ -26,7 +26,9 @@ export default function TodoGovernancePage() {
 
   if (!isAuthenticated) return null;
 
-  const outstanding = govTodo?.filter((g) => !g.allSigned) ?? [];
+  // Show all items with outstanding tasks — regardless of allSigned status.
+  // allSigned only controls which tasks are actionable, not whether the item appears.
+  const outstanding = govTodo?.filter((g) => g.outstanding.length > 0) ?? [];
   const count = outstanding.length;
 
   // Group by operation

@@ -110,7 +110,9 @@ function DashboardLayoutContent({
     refetchOnWindowFocus: true,
   });
   const certifyCount = outstanding?.length ?? 0;
-  const govCount = governanceTodo?.filter(g => !g.allSigned).length ?? 0;
+  // Count all governance items with outstanding tasks — not just uncertified sheets.
+  // This ensures the author's post-certification tasks (save as Word, PDF, etc.) are counted.
+  const govCount = governanceTodo?.filter(g => g.outstanding.length > 0).length ?? 0;
   const todoCount = certifyCount + govCount;
 
   const [courtExpanded, setCourtExpanded] = useState(() => {

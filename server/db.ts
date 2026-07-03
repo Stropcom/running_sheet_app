@@ -1865,6 +1865,16 @@ export async function getGovernanceTodoForCin(cin: string): Promise<
         if (!rec?.savedAsPdf) outstanding.push("Saved as PDF");
         if (!rec?.uploadedToPromis) outstanding.push("Uploaded to PROMIS");
         if (!rec?.savedInOpFolder) outstanding.push("Saved in Operation folder");
+        // Check imagery entries — any unsaved imagery rows are outstanding for the author
+        if (rec?.imageryEntries) {
+          try {
+            const entries: { saved?: boolean }[] = JSON.parse(rec.imageryEntries);
+            const unsavedCount = entries.filter((e) => !e.saved).length;
+            if (unsavedCount > 0) {
+              outstanding.push(`${unsavedCount} imagery entr${unsavedCount === 1 ? "y" : "ies"} not saved`);
+            }
+          } catch { /* ignore parse errors */ }
+        }
       } else {
         // Sheet not yet fully certified — flag it as pending certification
         outstanding.push("Sheet not fully certified");

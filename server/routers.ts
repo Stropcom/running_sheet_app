@@ -80,6 +80,7 @@ import {
   reopenSheet,
   copyRunningSheet,
   moveRunningSheet,
+  getAssociationGraph,
 } from "./db";
 
 // ─── Role Guards ──────────────────────────────────────────────────────────────
@@ -1181,6 +1182,15 @@ export const appRouter = router({
     getEntities: protectedProcedure
       .query(async () => {
         return getAllIntelligenceEntities();
+      }),
+
+    /** Association graph — nodes and weighted edges from entity co-occurrence */
+    getAssociationGraph: protectedProcedure
+      .input(z.object({
+        operationIds: z.array(z.number()).optional(),
+      }))
+      .query(async ({ input }) => {
+        return getAssociationGraph(input.operationIds);
       }),
   }),
 

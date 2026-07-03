@@ -15,6 +15,7 @@ import TodoPage from "./pages/TodoPage";
 import TodoGovernancePage from "./pages/TodoGovernancePage";
 import ShortcutsPage from "./pages/ShortcutsPage";
 import IntelligencePage from "./pages/Intelligence";
+import AssociationMap from "./pages/AssociationMap";
 import GovernancePage from "./pages/Governance";
 import GovernanceListPage from "./pages/GovernanceList";
 import TargetRegistryPage from "./pages/TargetRegistry";
@@ -33,6 +34,8 @@ function Router() {
       <Route path="/todo/governance" component={TodoGovernancePage} />
       <Route path="/shortcuts" component={ShortcutsPage} />
       <Route path="/intelligence" component={IntelligencePage} />
+      <Route path="/intelligence/entities" component={IntelligencePage} />
+      <Route path="/intelligence/association-map" component={AssociationMap} />
       <Route path="/governance" component={GovernanceListPage} />
       <Route path="/governance/:sheetId" component={GovernancePage} />
       <Route path="/target-registry" component={TargetRegistryPage} />

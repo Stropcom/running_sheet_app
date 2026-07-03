@@ -1404,6 +1404,152 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
   return Array.from(mergedMap.values());
 }
 
+// ─── Association Graph ───────────────────────────────────────────────────────
+
+export interface AssocNode {
+  id: string;          // e.g. "person::SAM JACK"
+  label: string;       // display label
+  type: "target" | "person" | "vehicle" | "address" | "business" | "unknown";
+  occurrences: number; // total times seen
+  operationIds: number[];
+  operationNames: string[];
+}
+
+export interface AssocEdge {
+  source: string; // node id
+  target: string; // node id
+  weight: number; // number of rows where both appear together
+}
+
+export interface AssociationGraph {
+  nodes: AssocNode[];
+  edges: AssocEdge[];
+}
+
+export async function getAssociationGraph(
+  operationIds?: number[],
+): Promise<AssociationGraph> {
+  const db = await getDb();
+  if (!db) return { nodes: [], edges: [] };
+
+  // Fetch all rows with their observations, filtered by operation if specified
+  let rowQuery = db
+    .select({
+      rowId: sheetRows.id,
+      observation: sheetRows.observation,
+      sheetId: sheetRows.sheetId,
+      operationId: runningSheets.operationId,
+      operationName: operations.name,
+    })
+    .from(sheetRows)
+    .innerJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
+    .innerJoin(operations, eq(runningSheets.operationId, operations.id));
+
+  const allRows = await rowQuery;
+  const filteredRows = operationIds && operationIds.length > 0
+    ? allRows.filter((r) => operationIds.includes(r.operationId))
+    : allRows;
+
+  // Build TGT alias map from targets
+  const allTargets = await db
+    .select({ id: targets.id, name: targets.name, tgt: targets.tgt, operationId: targets.operationId })
+    .from(targets);
+  const tgtAliasMap = new Map<string, string>(); // alias -> full name
+  for (const t of allTargets) {
+    if (t.tgt?.trim()) tgtAliasMap.set(t.tgt.trim().toUpperCase(), t.name);
+  }
+
+  // nodeMap: id -> AssocNode (accumulate)
+  const nodeMap = new Map<string, AssocNode>();
+
+  // Add target nodes from target cards
+  for (const t of allTargets) {
+    if (operationIds && operationIds.length > 0 && t.operationId && !operationIds.includes(t.operationId)) continue;
+    const nodeId = `target::${t.name}`;
+    if (!nodeMap.has(nodeId)) {
+      nodeMap.set(nodeId, {
+        id: nodeId, label: t.name, type: "target",
+        occurrences: 0, operationIds: [], operationNames: [],
+      });
+    }
+  }
+
+  // edgeWeight: "nodeId1|||nodeId2" -> count (always sort ids so order is consistent)
+  const edgeWeight = new Map<string, number>();
+
+  const ensureNode = (id: string, label: string, type: AssocNode["type"], opId: number, opName: string) => {
+    if (!nodeMap.has(id)) {
+      nodeMap.set(id, { id, label, type, occurrences: 0, operationIds: [], operationNames: [] });
+    }
+    const n = nodeMap.get(id)!;
+    n.occurrences++;
+    if (!n.operationIds.includes(opId)) {
+      n.operationIds.push(opId);
+      n.operationNames.push(opName);
+    }
+  };
+
+  const addEdge = (a: string, b: string) => {
+    if (a === b) return;
+    const key = [a, b].sort().join("|||");
+    edgeWeight.set(key, (edgeWeight.get(key) ?? 0) + 1);
+  };
+
+  for (const row of filteredRows) {
+    if (!row.observation) continue;
+    const rawEntities = extractEntitiesFromText(row.observation);
+
+    // Resolve TGT aliases to canonical target names
+    const rowNodeIds: string[] = [];
+    for (const e of rawEntities) {
+      let nodeId: string;
+      let label: string;
+      let nodeType: AssocNode["type"];
+
+      if (e.type === "person") {
+        const canonical = tgtAliasMap.get(e.shortForm.toUpperCase());
+        if (canonical) {
+          nodeId = `target::${canonical}`;
+          label = canonical;
+          nodeType = "target";
+        } else {
+          nodeId = `person::${e.shortForm.toLowerCase()}`;
+          label = e.shortForm;
+          nodeType = "person";
+        }
+      } else {
+        nodeId = `${e.type}::${e.shortForm.toLowerCase()}`;
+        label = e.shortForm;
+        nodeType = e.type as AssocNode["type"];
+      }
+
+      ensureNode(nodeId, label, nodeType, row.operationId, row.operationName);
+      rowNodeIds.push(nodeId);
+    }
+
+    // Create edges between every pair of entities in this row
+    for (let i = 0; i < rowNodeIds.length; i++) {
+      for (let j = i + 1; j < rowNodeIds.length; j++) {
+        addEdge(rowNodeIds[i], rowNodeIds[j]);
+      }
+    }
+  }
+
+  // Build edges array
+  const edges: AssocEdge[] = [];
+  for (const [key, weight] of Array.from(edgeWeight.entries())) {
+    const [src, dst] = key.split("|||");
+    edges.push({ source: src, target: dst, weight });
+  }
+
+  // Increment occurrences for target nodes from target cards (they may have 0 row appearances)
+  for (const [, node] of Array.from(nodeMap.entries())) {
+    if (node.type === "target" && node.occurrences === 0) node.occurrences = 1;
+  }
+
+  return { nodes: Array.from(nodeMap.values()), edges };
+}
+
 // ─── Governance Records ───────────────────────────────────────────────────────
 
 export async function getGovernanceRecord(sheetId: number): Promise<GovernanceRecord | null> {

@@ -315,3 +315,21 @@
 - [x] Frontend: CopyMoveSheetDialog component — operation search/select dropdown, Copy vs Move toggle
 - [x] Frontend: Add copy/move icon button to the left of the trash icon on running sheet cards in OperationDetail.tsx
 - [x] Frontend: On success, invalidate operation queries and show toast
+
+## Association Map (Intelligence) (Round 43)
+- [ ] Install react-force-graph or d3-force for interactive graph rendering
+- [ ] Backend: tRPC intelligence.getAssociationGraph procedure — returns nodes (persons, vehicles, addresses, businesses) and edges (co-occurrence in same observation/row)
+- [ ] Frontend: AssociationMap.tsx page — interactive force-directed graph with colour-coded node types
+- [ ] Graph: click a node to highlight its direct connections and show a detail panel
+- [ ] Graph: filter by entity type (persons/vehicles/addresses/businesses), operation, or date range
+- [ ] Graph: zoom, pan, and drag nodes
+- [ ] Sidebar nav: add "Association Map" under Intelligence section
+- [ ] Route /association-map registered in App.tsx
+
+## Intelligence Sub-folder Restructure + Association Mapping
+- [x] Install react-force-graph-2d for interactive graph rendering
+- [x] Backend: tRPC intelligence.getAssociationGraph procedure — returns nodes and weighted edges from entity co-occurrence
+- [x] Frontend: AssociationMap.tsx — force-directed graph with operation multi-select, entity type toggles, click-to-highlight, detail panel
+- [x] Sidebar: restructure Intelligence into expandable sub-items (Entities, Association Mapping) like To-Do and Court
+- [x] Routes: /intelligence/entities and /intelligence/association-map registered in App.tsx
+- [x] Redirect /intelligence to /intelligence/entities (old /intelligence route still works)

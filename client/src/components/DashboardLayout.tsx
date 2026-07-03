@@ -25,7 +25,7 @@ import {
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useTheme } from "@/contexts/ThemeContext";
-import { FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen, Scale, FolderOpen, ChevronDown, ChevronRight, CalendarDays, Shield, ClipboardCheck as GovIcon } from "lucide-react";
+import { FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen, Scale, FolderOpen, ChevronDown, ChevronRight, CalendarDays, Shield, ClipboardCheck as GovIcon, Network } from "lucide-react";
 import React, { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
@@ -119,13 +119,16 @@ function DashboardLayoutContent({
   const [todoExpanded, setTodoExpanded] = useState(() => {
     return location === "/todo" || location === "/todo/governance";
   });
+  const [intelExpanded, setIntelExpanded] = useState(() => {
+    return location.startsWith("/intelligence");
+  });
 
   const menuItems = [
     { icon: FileText, label: "Operations", path: "/" },
     { icon: ClipboardCheck, label: "Governance", path: "/governance" },
     { icon: CalendarDays, label: "Calendar", path: "/calendar" },
     { icon: Zap, label: "Shortcuts", path: "/shortcuts" },
-    { icon: FolderSearch, label: "Intelligence", path: "/intelligence" },
+    { icon: FolderSearch, label: "Intelligence", path: "/intelligence/entities" },
     { icon: BookOpen, label: "Target Registry", path: "/target-registry" },
     { icon: ScrollText, label: "Audit Log", path: "/audit" },
     { icon: User, label: "My Profile", path: "/profile" },
@@ -201,6 +204,8 @@ function DashboardLayoutContent({
                     : location === item.path || location.startsWith(item.path);
                 // Insert To-Do folder before Calendar
                 const isBeforeCalendar = item.path === "/calendar";
+                // Insert Intelligence folder (replaces plain Intelligence item)
+                const isIntelligenceItem = item.path === "/intelligence/entities";
                 // Insert Court folder after Target Registry
                 const isAfterTargetRegistry = item.path === "/audit";
                 return (
@@ -270,6 +275,52 @@ function DashboardLayoutContent({
                         )}
                       </SidebarMenuItem>
                     )}
+                    {isIntelligenceItem && (
+                      <SidebarMenuItem key="intel-folder">
+                        <SidebarMenuButton
+                          isActive={location.startsWith("/intelligence")}
+                          onClick={() => setIntelExpanded((v) => !v)}
+                          tooltip="Intelligence"
+                          className="h-10 font-normal transition-all"
+                        >
+                          <FolderSearch className={`h-4 w-4 ${location.startsWith("/intelligence") ? "text-sidebar-primary" : "text-sidebar-foreground/60"}`} />
+                          <span className={`flex-1 ${location.startsWith("/intelligence") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
+                            Intelligence
+                          </span>
+                          {!isCollapsed && (
+                            intelExpanded
+                              ? <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40" />
+                              : <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40" />
+                          )}
+                        </SidebarMenuButton>
+                        {intelExpanded && !isCollapsed && (
+                          <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
+                            <button
+                              onClick={() => setLocation("/intelligence/entities")}
+                              className={`flex items-center gap-2 h-8 px-2 rounded-md text-sm transition-colors w-full text-left ${
+                                location === "/intelligence/entities" || location === "/intelligence"
+                                  ? "bg-sidebar-accent text-sidebar-foreground font-medium"
+                                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+                              }`}
+                            >
+                              <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                              Entities
+                            </button>
+                            <button
+                              onClick={() => setLocation("/intelligence/association-map")}
+                              className={`flex items-center gap-2 h-8 px-2 rounded-md text-sm transition-colors w-full text-left ${
+                                location === "/intelligence/association-map"
+                                  ? "bg-sidebar-accent text-sidebar-foreground font-medium"
+                                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+                              }`}
+                            >
+                              <Network className="h-3.5 w-3.5 shrink-0" />
+                              Association Mapping
+                            </button>
+                          </div>
+                        )}
+                      </SidebarMenuItem>
+                    )}
                     {isAfterTargetRegistry && (
                       <SidebarMenuItem key="court-folder">
                         <SidebarMenuButton
@@ -316,28 +367,30 @@ function DashboardLayoutContent({
                         )}
                       </SidebarMenuItem>
                     )}
-                    <SidebarMenuItem key={item.path}>
-                      <SidebarMenuButton
-                        isActive={isActive}
-                        onClick={() => setLocation(item.path)}
-                        tooltip={item.label}
-                        className="h-10 font-normal transition-all"
-                      >
-                        <item.icon className={`h-4 w-4 ${
-                          (item as any).badge > 0 ? "text-blue-400" : isActive ? "text-sidebar-primary" : "text-sidebar-foreground/60"
-                        }`} />
-                        <span className={`flex-1 ${
-                          (item as any).badge > 0 ? "text-blue-300 font-medium" : isActive ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"
-                        }`}>
-                          {(item as any).badgeLabel ?? item.label}
-                        </span>
-                        {(item as any).badge > 0 && !isCollapsed && (
-                          <span className="ml-auto inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-[10px] font-bold bg-blue-500/20 border border-blue-500/40 text-blue-400">
-                            {(item as any).badge}
+                    {!isIntelligenceItem && (
+                      <SidebarMenuItem key={item.path}>
+                        <SidebarMenuButton
+                          isActive={isActive}
+                          onClick={() => setLocation(item.path)}
+                          tooltip={item.label}
+                          className="h-10 font-normal transition-all"
+                        >
+                          <item.icon className={`h-4 w-4 ${
+                            (item as any).badge > 0 ? "text-blue-400" : isActive ? "text-sidebar-primary" : "text-sidebar-foreground/60"
+                          }`} />
+                          <span className={`flex-1 ${
+                            (item as any).badge > 0 ? "text-blue-300 font-medium" : isActive ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"
+                          }`}>
+                            {(item as any).badgeLabel ?? item.label}
                           </span>
-                        )}
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
+                          {(item as any).badge > 0 && !isCollapsed && (
+                            <span className="ml-auto inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-[10px] font-bold bg-blue-500/20 border border-blue-500/40 text-blue-400">
+                              {(item as any).badge}
+                            </span>
+                          )}
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    )}
                   </React.Fragment>
                 );
               })}

@@ -26,6 +26,7 @@ type CalEvent = {
   title: string;
   start: Date;
   end: Date;
+  allDay: boolean;
   type: "operation" | "sheet";
   operationId: number | null;
   sheetId: number | null;
@@ -88,6 +89,7 @@ export default function CalendarPage() {
         ...e,
         start: new Date(e.start),
         end: new Date(e.end),
+        allDay: true,
       }));
   }, [rawEvents, showOps, showSheets]);
 

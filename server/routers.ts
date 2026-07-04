@@ -1387,12 +1387,14 @@ export const appRouter = router({
       }[] = [];
 
       for (const op of operations) {
-        const ts = new Date(op.createdAt).getTime();
+        // Use start-of-day (midnight local) so the event sits on exactly one calendar day
+        const d = new Date(op.createdAt);
+        const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
         events.push({
           id: `op-${op.id}`,
           title: op.name,
-          start: ts,
-          end: ts + 60 * 60 * 1000, // 1-hour block
+          start: dayStart,
+          end: dayStart, // allDay events: start === end is fine with allDay flag
           type: "operation",
           operationId: op.id,
           sheetId: null,
@@ -1401,13 +1403,14 @@ export const appRouter = router({
       }
 
       for (const sheet of sheets) {
-        const ts = new Date(sheet.createdAt).getTime();
+        const d = new Date(sheet.createdAt);
+        const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
         const op = operations.find((o) => o.id === sheet.operationId);
         events.push({
           id: `sheet-${sheet.id}`,
           title: sheet.title,
-          start: ts,
-          end: ts + 60 * 60 * 1000,
+          start: dayStart,
+          end: dayStart,
           type: "sheet",
           operationId: sheet.operationId ?? null,
           sheetId: sheet.id,

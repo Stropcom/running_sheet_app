@@ -287,6 +287,8 @@ export default function WIPCPage() {
 
   // ── Members Requiring WIPC ───────────────────────────────────────────────────
   const [members, setMembers] = useState<WipcMember[]>([emptyMember()]);
+  const [memberSearch, setMemberSearch] = useState("");
+  const [showMemberSearch, setShowMemberSearch] = useState(false);
 
   function addMember() {
     setMembers((prev) => [...prev, emptyMember()]);
@@ -296,6 +298,30 @@ export default function WIPCPage() {
   }
   function updateMember(idx: number, updated: WipcMember) {
     setMembers((prev) => prev.map((m, i) => (i === idx ? updated : m)));
+  }
+  function addMemberFromRegistry(saved: { fullName: string; dob?: string | null; afpId: string; isUco: boolean; isOco: boolean; isCin: boolean; cinNumber?: string | null; aiInitials?: string | null; aiKnownAs?: string | null }) {
+    const m: WipcMember = {
+      fullName: saved.fullName,
+      dob: saved.dob || "",
+      afpId: saved.afpId,
+      isUco: saved.isUco,
+      isOco: saved.isOco,
+      isCin: saved.isCin,
+      cinNumber: saved.cinNumber || "",
+      aiInitials: saved.aiInitials || "",
+      aiKnownAs: saved.aiKnownAs || "",
+      deploymentStart: "",
+      deploymentEnd: "",
+    };
+    setMembers((prev) => {
+      const last = prev[prev.length - 1];
+      if (last && !last.fullName && !last.afpId) {
+        return [...prev.slice(0, -1), m];
+      }
+      return [...prev, m];
+    });
+    setMemberSearch("");
+    setShowMemberSearch(false);
   }
 
   // ── Data fetching ──────────────────────────────────────────────────────────
@@ -309,6 +335,33 @@ export default function WIPCPage() {
     { operationId: selectedOpId ?? 0 },
     { enabled: !!selectedOpId }
   );
+
+  // Fetch saved member registry (vault)
+  const { data: savedMembers } = trpc.wipc.listMembers.useQuery(undefined, { enabled: isAuthenticated });
+
+  // Filtered members for search dropdown
+  const filteredSavedMembers = useMemo(() => {
+    if (!savedMembers) return [];
+    const q = memberSearch.toLowerCase();
+    if (!q) return savedMembers;
+    return savedMembers.filter(
+      (m) =>
+        m.fullName.toLowerCase().includes(q) ||
+        m.afpId.toLowerCase().includes(q) ||
+        (m.aiKnownAs && m.aiKnownAs.toLowerCase().includes(q))
+    );
+  }, [savedMembers, memberSearch]);
+
+  const utils = trpc.useUtils();
+  const saveMemberMutation = trpc.wipc.saveMember.useMutation({
+    onSuccess() {
+      toast.success("🔒 Member saved to vault registry");
+      utils.wipc.listMembers.invalidate();
+    },
+    onError(err) {
+      toast.error(`Failed to save member: ${err.message}`);
+    },
+  });
 
   // Fetch saved officer profile (vault)
   const { data: savedOfficerProfile, isLoading: profileLoading } = trpc.wipc.getOfficerProfile.useQuery(
@@ -787,28 +840,89 @@ export default function WIPCPage() {
                   <span className="text-xs text-muted-foreground">Page 3 of document</span>
                 </div>
 
+                {/* Saved member search / recall */}
+                {savedMembers && savedMembers.length > 0 && (
+                  <div className="mb-4 p-3 rounded-lg border border-amber-500/20 bg-amber-500/5">
+                    <p className="text-xs font-medium text-amber-400 mb-2 flex items-center gap-1">
+                      <UserCheck className="w-3 h-3" />
+                      Recall member from vault registry
+                    </p>
+                    <div className="relative">
+                      <Input
+                        value={memberSearch}
+                        onChange={(e) => { setMemberSearch(e.target.value); setShowMemberSearch(true); }}
+                        onFocus={() => setShowMemberSearch(true)}
+                        placeholder="Search by name, AFP ID or AI known as…"
+                        className="text-sm"
+                      />
+                      {showMemberSearch && filteredSavedMembers.length > 0 && (
+                        <div className="absolute z-20 top-full mt-1 left-0 right-0 bg-popover border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                          {filteredSavedMembers.map((sm) => (
+                            <button
+                              key={sm.id}
+                              type="button"
+                              onClick={() => addMemberFromRegistry(sm)}
+                              className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-accent text-left transition-colors"
+                            >
+                              <span className="font-medium">{sm.fullName}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {sm.afpId}{sm.aiKnownAs ? ` · ${sm.aiKnownAs}` : ""}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex flex-col gap-3">
                   {members.map((member, idx) => (
-                    <MemberCard
-                      key={idx}
-                      index={idx}
-                      member={member}
-                      onChange={(updated) => updateMember(idx, updated)}
-                      onRemove={() => removeMember(idx)}
-                      canRemove={members.length > 1}
-                    />
+                    <div key={idx} className="flex flex-col gap-2">
+                      <MemberCard
+                        index={idx}
+                        member={member}
+                        onChange={(updated) => updateMember(idx, updated)}
+                        onRemove={() => removeMember(idx)}
+                        canRemove={members.length > 1}
+                      />
+                      {/* Save this member to vault */}
+                      {member.fullName.trim() && member.afpId.trim() && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => saveMemberMutation.mutate({
+                            fullName: member.fullName,
+                            afpId: member.afpId,
+                            dob: member.dob || undefined,
+                            isUco: member.isUco,
+                            isOco: member.isOco,
+                            isCin: member.isCin,
+                            cinNumber: member.cinNumber || undefined,
+                            aiInitials: member.aiInitials || undefined,
+                            aiKnownAs: member.aiKnownAs || undefined,
+                          })}
+                          className="self-end gap-1.5 text-xs text-amber-400 hover:bg-amber-500/10 h-7"
+                        >
+                          <Save className="w-3 h-3" />
+                          Save to vault
+                        </Button>
+                      )}
+                    </div>
                   ))}
                 </div>
 
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={addMember}
-                  className="mt-3 gap-2"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add Another Member
-                </Button>
+                <div className="flex gap-2 mt-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={addMember}
+                    className="gap-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add Another Member
+                  </Button>
+                </div>
               </div>
 
               <Button

@@ -297,12 +297,16 @@ export async function generateWipcRequestDocx(input: WipcRequestInput): Promise<
           cell([para([run(requestingOfficerFullName)])], { width: 6800 }),
         ],
       }),
-      // Row 2: AFP ID | value | AFP WORK LOCATION | value
+      // Row 2: AFP ID | value | AFP WORK LOCATION | value  — total 9000
+      // Cols: label(2200) + afpId(2000) + workLoc-label(2200) + workLoc-value(2600) = 9000
       new TableRow({
         children: [
           cell([para([run("AFP ID", { bold: true })])], { width: 2200, shaded: true }),
           cell([para([run(requestingOfficerAfpId)])], { width: 2000 }),
-          cell([para([run("AFP WORK\nLOCATION", { bold: true })])], { width: 2200, shaded: true }),
+          cell(
+            [new Paragraph({ children: [run("AFP WORK LOCATION", { bold: true })], spacing: sp(60, 60) })],
+            { width: 2200, shaded: true }
+          ),
           cell([para([run(requestingOfficerWorkLocation)])], { width: 2600 }),
         ],
       }),
@@ -456,38 +460,41 @@ export async function generateWipcRequestDocx(input: WipcRequestInput): Promise<
   // Build member rows — each member gets a bordered block of 4 rows
   function buildMemberBlock(m: WipcMember): TableRow[] {
     // Total width = 9000 DXA. Label col = 1800, value cols fill remainder.
-    // Row 1: Full Name (4200) | DOB label (1200) | DOB value (1800)
+    // Row 1: Full Name | DOB label | DOB value  — total 9000
+    // Cols: label(1800) + name(4050) + DOB-label(1350) + DOB-value(1800) = 9000
     const row1 = new TableRow({
       children: [
         cell([para([run("Full Name", { bold: true })])], { width: 1800, shaded: true }),
-        cell([para([run(m.fullName)])], { width: 4200 }),
-        cell([para([run("DOB:", { bold: true })])], { width: 1200, shaded: true }),
+        cell([para([run(m.fullName)])], { width: 4050 }),
+        cell([para([run("DOB:", { bold: true })])], { width: 1350, shaded: true }),
         cell([para([run(m.dob)])], { width: 1800 }),
       ],
     });
 
-    // Row 2: AFP ID (1800) | AFP value (1800) | checkboxes (2700) | CIN number (2700)
+    // Row 2: AFP ID | AFP value | checkboxes | CIN number  — total 9000
+    // Cols: label(1800) + afpId(1350) + checkboxes(3150) + cinNum(2700) = 9000
     const checkText = `${checkChar(m.isUco)} UCO   ${checkChar(m.isOco)} OCO   ${checkChar(m.isCin)} CIN`;
     const row2 = new TableRow({
       children: [
         cell([para([run("AFP ID", { bold: true })])], { width: 1800, shaded: true }),
-        cell([para([run(m.afpId)])], { width: 1800 }),
-        cell([para([run(checkText)])], { width: 2700 }),
+        cell([para([run(m.afpId)])], { width: 1350 }),
+        cell([para([run(checkText)])], { width: 3150 }),
         cell([para([run(m.cinNumber)])], { width: 2700 }),
       ],
     });
 
-    // Row 3: AI Initials (1800) | value (1800) | AI known as label (1800) | value (3600)
+    // Row 3: AI Initials | value | AI known as label | value  — total 9000
+    // Cols: label(1800) + initials(1350) + knownAs-label(1800) + knownAs-value(4050) = 9000
     const row3 = new TableRow({
       children: [
         cell([para([run("AI Initials", { bold: true })])], { width: 1800, shaded: true }),
-        cell([para([run(m.aiInitials)])], { width: 1800 }),
+        cell([para([run(m.aiInitials)])], { width: 1350 }),
         cell([para([run("AI known as:", { bold: true })])], { width: 1800, shaded: true }),
-        cell([para([run(m.aiKnownAs)])], { width: 3600 }),
+        cell([para([run(m.aiKnownAs)])], { width: 4050 }),
       ],
     });
 
-    // Row 4: Deployment Dates label (1800) | value spans remaining (7200)
+    // Row 4: Deployment Dates label | value  — total 9000
     const deploymentText = m.deploymentStart && m.deploymentEnd
       ? `${m.deploymentStart} to ${m.deploymentEnd}`
       : "START – FINISH";

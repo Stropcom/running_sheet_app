@@ -1835,5 +1835,147 @@ export const appRouter = router({
         return { results, skipped, zipBase64, operationName: input.operationName, producedAt };
       }),
   }),
+
+  // ─── Witness List ─────────────────────────────────────────────────────────
+  witnessList: router({
+    /**
+     * Generates a witness list document for the selected running sheets.
+     * Primary witnesses: CINs that appear on at least one non-excluded row.
+     * Secondary witnesses: CINs that ONLY appear on excluded rows (travelled via,
+     *   surveillance commenced/ceased).
+     * Returns a base64-encoded .docx.
+     */
+    generate: protectedProcedure
+      .input(z.object({
+        sheetIds: z.array(z.number()).min(1),
+        operationName: z.string(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { generateWitnessListDocx } = await import("./witnessListGenerator");
+
+        const sheets = await Promise.all(input.sheetIds.map((id) => getRunningSheetById(id)));
+        const validSheets = sheets.filter(Boolean) as NonNullable<Awaited<ReturnType<typeof getRunningSheetById>>>[];
+
+        // Sort sheets by date (YYYYMMDD prefix or createdAt)
+        const getSheetDate = (sheet: NonNullable<Awaited<ReturnType<typeof getRunningSheetById>>>) => {
+          const m = sheet.title.match(/^(\d{4})(\d{2})(\d{2})/);
+          if (m) return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+          const d = new Date(sheet.createdAt instanceof Date ? sheet.createdAt.getTime() : sheet.createdAt);
+          return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+        };
+        validSheets.sort((a, b) => getSheetDate(a) - getSheetDate(b));
+
+        const allUsers = await getAllUsers();
+        const userByCin = new Map(allUsers.map((u) => [u.cin.toUpperCase(), u]));
+
+        // Helper to classify rows for a sheet
+        const classifyRows = async (sheet: NonNullable<Awaited<ReturnType<typeof getRunningSheetById>>>) => {
+          const rows = await getRowsBySheetId(sheet.id);
+          const sortedRows = [...rows];
+          const excludedRowIds = new Set<number>();
+
+          for (let i = 0; i < sortedRows.length; i++) {
+            const row = sortedRows[i];
+            const obs = (row.observation ?? "").trim();
+            // Surveillance commenced/ceased
+            if (/^surveillance commenced/i.test(obs) || /^surveillance ceased/i.test(obs)) {
+              excludedRowIds.add(row.id);
+              continue;
+            }
+            // Travelled via — ends in "whereat" and previous row contains "continued via:"
+            if (/whereat$/i.test(obs) && i > 0) {
+              const prevObs = (sortedRows[i - 1].observation ?? "").toLowerCase();
+              if (prevObs.includes("continued via:")) {
+                excludedRowIds.add(row.id);
+              }
+            }
+          }
+
+          const rowIds = rows.map((r) => r.id);
+          const members = rowIds.length > 0 ? await getMembersByRowIds(rowIds) : [];
+          return { excludedRowIds, members };
+        };
+
+        // Build per-sheet witness data
+        type SheetWitnesses = {
+          sheetTitle: string;
+          sheetDate: number;
+          primary: string[];
+          secondary: string[];
+        };
+
+        const sheetWitnessList: SheetWitnesses[] = [];
+
+        // Overall sets (across all sheets)
+        const overallPrimarySet = new Set<string>();
+        const overallSecondarySet = new Set<string>();
+
+        for (const sheet of validSheets) {
+          const sheetDate = getSheetDate(sheet);
+          let roster: { cin: string }[] = [];
+          try { roster = sheet.sheetCins ? JSON.parse(sheet.sheetCins) : []; } catch { roster = []; }
+
+          const { excludedRowIds, members } = await classifyRows(sheet);
+
+          // For each CIN in roster, determine primary vs secondary
+          const primarySet = new Set<string>();
+          const secondarySet = new Set<string>();
+
+          for (const entry of roster) {
+            const cinUpper = entry.cin.toUpperCase();
+            const cinRowIds = members
+              .filter((m) => m.memberName.toUpperCase() === cinUpper)
+              .map((m) => m.rowId);
+
+            if (cinRowIds.length === 0) {
+              // On roster but no rows — treat as secondary (on duty, no observations)
+              secondarySet.add(cinUpper);
+              continue;
+            }
+
+            const hasQualifyingRow = cinRowIds.some((id) => !excludedRowIds.has(id));
+            if (hasQualifyingRow) {
+              primarySet.add(cinUpper);
+            } else {
+              secondarySet.add(cinUpper);
+            }
+          }
+
+          // A CIN that is primary on ANY sheet is overall primary
+          Array.from(primarySet).forEach((cin) => {
+            overallPrimarySet.add(cin);
+            overallSecondarySet.delete(cin); // remove from secondary if they were added there
+          });
+          Array.from(secondarySet).forEach((cin) => {
+            if (!overallPrimarySet.has(cin)) {
+              overallSecondarySet.add(cin);
+            }
+          });
+
+          sheetWitnessList.push({
+            sheetTitle: sheet.title,
+            sheetDate,
+            primary: Array.from(primarySet).sort(),
+            secondary: Array.from(secondarySet).sort(),
+          });
+        }
+
+        const producedAt = Date.now();
+        const certifierCin = ctx.user.cin ?? "UNKNOWN";
+
+        const buf = await generateWitnessListDocx({
+          operationName: input.operationName,
+          overallPrimary: Array.from(overallPrimarySet).sort(),
+          overallSecondary: Array.from(overallSecondarySet).sort(),
+          sheets: sheetWitnessList,
+          producedAt,
+          certifierCin,
+          userByCin,
+        });
+
+        const filename = `WitnessList_${input.operationName.replace(/[^a-zA-Z0-9]/g, "_")}_${new Date(producedAt).toISOString().slice(0, 10)}.docx`;
+        return { filename, base64: buf.toString("base64"), producedAt };
+      }),
+  }),
 });
 export type AppRouter = typeof appRouter;

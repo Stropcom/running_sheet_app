@@ -335,6 +335,17 @@ function DashboardLayoutContent({
                               <FolderOpen className="h-3.5 w-3.5 shrink-0" />
                               Statements
                             </button>
+                            <button
+                              onClick={() => setLocation("/court/witness-list")}
+                              className={`flex items-center gap-2 h-8 px-2 rounded-md text-sm transition-colors w-full text-left ${
+                                location === "/court/witness-list"
+                                  ? "bg-sidebar-accent text-sidebar-foreground font-medium"
+                                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+                              }`}
+                            >
+                              <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                              Witness List
+                            </button>
                           </div>
                         )}
                       </SidebarMenuItem>

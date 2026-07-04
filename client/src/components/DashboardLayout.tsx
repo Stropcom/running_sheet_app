@@ -314,17 +314,6 @@ function DashboardLayoutContent({
                         {courtExpanded && !isCollapsed && (
                           <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
                             <button
-                              onClick={() => setLocation("/court/disclosure")}
-                              className={`flex items-center gap-2 h-8 px-2 rounded-md text-sm transition-colors w-full text-left ${
-                                location === "/court/disclosure"
-                                  ? "bg-sidebar-accent text-sidebar-foreground font-medium"
-                                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
-                              }`}
-                            >
-                              <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-                              Disclosure
-                            </button>
-                            <button
                               onClick={() => setLocation("/court/statements")}
                               className={`flex items-center gap-2 h-8 px-2 rounded-md text-sm transition-colors w-full text-left ${
                                 location === "/court/statements"
@@ -345,6 +334,17 @@ function DashboardLayoutContent({
                             >
                               <FolderOpen className="h-3.5 w-3.5 shrink-0" />
                               Witness List
+                            </button>
+                            <button
+                              onClick={() => setLocation("/court/wipc")}
+                              className={`flex items-center gap-2 h-8 px-2 rounded-md text-sm transition-colors w-full text-left ${
+                                location === "/court/wipc"
+                                  ? "bg-sidebar-accent text-sidebar-foreground font-medium"
+                                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+                              }`}
+                            >
+                              <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                              WIPC
                             </button>
                           </div>
                         )}

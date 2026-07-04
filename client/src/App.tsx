@@ -23,6 +23,7 @@ import OperationManagementPage from "./pages/OperationManagementPage";
 import CalendarPage from "./pages/CalendarPage";
 import StatementsPage from "./pages/StatementsPage";
 import WitnessListPage from "./pages/WitnessListPage";
+import WIPCPage from "./pages/WIPCPage";
 
 function Router() {
   return (
@@ -45,6 +46,7 @@ function Router() {
       <Route path="/calendar" component={CalendarPage} />
       <Route path="/court/statements" component={StatementsPage} />
       <Route path="/court/witness-list" component={WitnessListPage} />
+      <Route path="/court/wipc" component={WIPCPage} />
       <Route path="/audit" component={AuditLogPage} />
       <Route path="/admin" component={AdminPage} />
       <Route path="/404" component={NotFound} />

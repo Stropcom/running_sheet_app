@@ -86,6 +86,9 @@ import {
   setOperationStatus,
 } from "./db";
 
+import { generateStatDecDocx } from "./statDecGenerator";
+import { generateWipcRequestDocx } from "./wipcRequestGenerator";
+
 // ─── Role Guards ──────────────────────────────────────────────────────────────
 
 /** Member or Admin can certify/uncertify */
@@ -1976,6 +1979,66 @@ export const appRouter = router({
         });
 
         const filename = `WitnessList_${input.operationName.replace(/[^a-zA-Z0-9]/g, "_")}_${new Date(producedAt).toISOString().slice(0, 10)}.docx`;
+        return { filename, base64: buf.toString("base64"), producedAt };
+      }),
+  }),
+
+  // ─── WIPC (Witness Identity Protection Certificates) ───────────────────────────────────
+
+  wipc: router({
+    generateStatDec: protectedProcedure
+      .input(
+        z.object({
+          operationName: z.string().min(1),
+          declarantFullName: z.string().min(1),
+          witnessFullName: z.string().min(1),
+          declarationDate: z.string().min(1), // ISO date string e.g. "2026-07-04"
+        }),
+      )
+      .mutation(async ({ input }) => {
+        const producedAt = Date.now();
+        const buf = await generateStatDecDocx({
+          declarantFullName: input.declarantFullName,
+          witnessFullName: input.witnessFullName,
+          declaredBeforeName: input.declarantFullName,
+          declarationDate: input.declarationDate,
+        });
+        const filename = `StatDec_${input.operationName.replace(/[^a-zA-Z0-9]/g, "_")}_${input.declarationDate}.docx`;
+        return { filename, base64: buf.toString("base64"), producedAt };
+      }),
+
+    generateWipcRequest: protectedProcedure
+      .input(
+        z.object({
+          operationName: z.string().min(1),
+          courtDate: z.string().min(1),
+          courtLocation: z.string().min(1),
+          requestingCommander: z.string().min(1),
+          assistantCommissioner: z.string().min(1),
+          isUrgent: z.boolean(),
+          requestingOfficerFullName: z.string().min(1),
+          requestingOfficerAfpId: z.string().min(1),
+          requestingOfficerWorkLocation: z.string().min(1),
+          requestingOfficerPortfolio: z.string().min(1),
+          requestingOfficerContact: z.string().min(1),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        const producedAt = Date.now();
+        const buf = await generateWipcRequestDocx({
+          operationName: input.operationName,
+          courtDate: input.courtDate,
+          courtLocation: input.courtLocation,
+          requestingCommander: input.requestingCommander,
+          assistantCommissioner: input.assistantCommissioner,
+          isUrgent: input.isUrgent,
+          requestingOfficerFullName: input.requestingOfficerFullName,
+          requestingOfficerAfpId: input.requestingOfficerAfpId,
+          requestingOfficerWorkLocation: input.requestingOfficerWorkLocation,
+          requestingOfficerPortfolio: input.requestingOfficerPortfolio,
+          requestingOfficerContact: input.requestingOfficerContact,
+        });
+        const filename = `WIPCRequest_${input.operationName.replace(/[^a-zA-Z0-9]/g, "_")}_${input.courtDate}.docx`;
         return { filename, base64: buf.toString("base64"), producedAt };
       }),
   }),

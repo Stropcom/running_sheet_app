@@ -372,3 +372,14 @@
 - [x] Server: "continued" footer on all pages
 - [x] Server: AFP logo placeholder (loads from server/assets/afp_logo.png if present)
 - [ ] Upload real AFP logo to server/assets/afp_logo.png when available
+
+## WIPC (Witness Identity Protection Certificates) Subfolder (Round 45)
+- [x] Server: statDecGenerator.ts — Statutory Declaration .docx generator (Times New Roman, AFP template)
+- [x] Server: wipcRequestGenerator.ts — WIPC Request .docx generator (Arial, AFP template)
+- [x] Server: wipc.generateStatDec tRPC procedure (protectedProcedure, returns {filename, base64, producedAt})
+- [x] Server: wipc.generateWipcRequest tRPC procedure (protectedProcedure, returns {filename, base64, producedAt})
+- [x] Frontend: WIPCPage.tsx — 3-step flow: operation select → document type select → form → generate/download
+- [x] Frontend: Stat Dec form fields (declarantFullName, witnessFullName, declarationDate)
+- [x] Frontend: WIPC Request form fields (courtDate, courtLocation, commanders, isUrgent, officer details)
+- [x] Frontend: Route /court/wipc registered in App.tsx
+- [x] Frontend: WIPC nav item added to Court subfolder in DashboardLayout.tsx sidebar (below Witness List)

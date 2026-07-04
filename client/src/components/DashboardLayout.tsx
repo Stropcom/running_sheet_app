@@ -344,8 +344,11 @@ function DashboardLayoutContent({
                                   : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
                               }`}
                             >
-                              <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-                              WIPC
+                              <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+                              <span className="flex-1">WIPC</span>
+                              <span className="inline-flex items-center gap-0.5 px-1 py-0 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 leading-4">
+                                🔒
+                              </span>
                             </button>
                           </div>
                         )}

@@ -319,3 +319,70 @@ export const governanceRecords = mysqlTable("governance_records", {
 
 export type GovernanceRecord = typeof governanceRecords.$inferSelect;
 export type InsertGovernanceRecord = typeof governanceRecords.$inferInsert;
+
+// ─── WIPC Vault ───────────────────────────────────────────────────────────────
+// All sensitive fields in these tables are AES-256-GCM encrypted at rest
+// using the WIPC_VAULT_KEY environment secret. The raw values are NEVER stored
+// in plaintext. Decryption only occurs server-side in authorised procedures.
+
+/**
+ * wipcOfficerProfiles — one saved profile per user (the requesting officer).
+ * Stores the officer's details so they auto-fill on future WIPC requests.
+ * All fields except userId are encrypted.
+ */
+export const wipcOfficerProfiles = mysqlTable("wipc_officer_profiles", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(), // FK → users.id
+  // Encrypted fields (AES-256-GCM via wipcVault.ts)
+  fullName: text("fullName").notNull(),       // encrypted
+  afpId: text("afpId").notNull(),             // encrypted
+  workLocation: text("workLocation"),         // encrypted
+  portfolio: text("portfolio"),               // encrypted
+  contactNumber: text("contactNumber"),       // encrypted
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type WipcOfficerProfile = typeof wipcOfficerProfiles.$inferSelect;
+export type InsertWipcOfficerProfile = typeof wipcOfficerProfiles.$inferInsert;
+
+/**
+ * wipcMembers — the registry of members requiring WIPC.
+ * Each record represents one person. All identity fields are encrypted.
+ * CIN is stored encrypted to prevent CIN-to-identity linkage from raw DB access.
+ */
+export const wipcMembers = mysqlTable("wipc_members", {
+  id: int("id").autoincrement().primaryKey(),
+  createdBy: int("createdBy").notNull(), // FK → users.id (admin who created)
+  // Encrypted identity fields (AES-256-GCM via wipcVault.ts)
+  fullName: text("fullName").notNull(),   // encrypted
+  dob: text("dob"),                       // encrypted (DD/MM/YYYY)
+  afpId: text("afpId").notNull(),         // encrypted
+  cinNumber: text("cinNumber"),           // encrypted — CIN-to-identity link
+  aiInitials: text("aiInitials"),         // encrypted
+  aiKnownAs: text("aiKnownAs"),           // encrypted
+  // Role flags (not sensitive, stored plaintext as booleans)
+  isUco: boolean("isUco").default(false).notNull(),
+  isOco: boolean("isOco").default(false).notNull(),
+  isCin: boolean("isCin").default(true).notNull(),
+  // Audit
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type WipcMemberRecord = typeof wipcMembers.$inferSelect;
+export type InsertWipcMemberRecord = typeof wipcMembers.$inferInsert;
+
+/**
+ * wipcAuditLog — immutable log of all access to WIPC vault data.
+ * Records who accessed/modified what and when.
+ */
+export const wipcAuditLog = mysqlTable("wipc_audit_log", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  action: varchar("action", { length: 64 }).notNull(), // e.g. READ_MEMBERS, SAVE_MEMBER, DELETE_MEMBER, SAVE_OFFICER, READ_OFFICER, GENERATE_WIPC, GENERATE_STAT_DEC
+  targetId: int("targetId"),   // wipcMembers.id or wipcOfficerProfiles.id if applicable
+  detail: varchar("detail", { length: 512 }), // non-sensitive context (e.g. operation name)
+  ipAddress: varchar("ipAddress", { length: 64 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type WipcAuditEntry = typeof wipcAuditLog.$inferSelect;
+export type InsertWipcAuditEntry = typeof wipcAuditLog.$inferInsert;

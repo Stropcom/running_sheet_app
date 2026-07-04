@@ -88,6 +88,17 @@ import {
 
 import { generateStatDecDocx } from "./statDecGenerator";
 import { generateWipcRequestDocx } from "./wipcRequestGenerator";
+import { vaultEncrypt, vaultDecrypt } from "./wipcVault";
+import {
+  createWipcAuditEntry,
+  getWipcAuditLog,
+  upsertWipcOfficerProfile,
+  getWipcOfficerProfile,
+  listWipcMembers,
+  createWipcMember,
+  updateWipcMember,
+  deleteWipcMember,
+} from "./db";
 
 // ─── Role Guards ──────────────────────────────────────────────────────────────
 
@@ -2060,7 +2071,7 @@ export const appRouter = router({
           })).default([]),
         }),
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
         const producedAt = Date.now();
         const buf = await generateWipcRequestDocx({
           operationName: input.operationName,
@@ -2078,8 +2089,77 @@ export const appRouter = router({
           members: input.members,
         });
         const filename = `WIPCRequest_${input.operationName.replace(/[^a-zA-Z0-9]/g, "_")}_${input.courtDate}.docx`;
+        // Audit log the generation
+        await createWipcAuditEntry({ userId: ctx.user.id, action: "GENERATE_WIPC", detail: input.operationName });
         return { filename, base64: buf.toString("base64"), producedAt };
       }),
+
+    // ── Vault: Officer Profile ─────────────────────────────────────────────────
+    getOfficerProfile: protectedProcedure.query(async ({ ctx }) => {
+      await createWipcAuditEntry({ userId: ctx.user.id, action: "READ_OFFICER" });
+      return getWipcOfficerProfile(ctx.user.id);
+    }),
+
+    saveOfficerProfile: protectedProcedure
+      .input(z.object({
+        fullName: z.string().min(1),
+        afpId: z.string().min(1),
+        workLocation: z.string().optional(),
+        portfolio: z.string().optional(),
+        contactNumber: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        await upsertWipcOfficerProfile(ctx.user.id, input);
+        await createWipcAuditEntry({ userId: ctx.user.id, action: "SAVE_OFFICER" });
+        return { ok: true };
+      }),
+
+    // ── Vault: Member Registry (admin only) ───────────────────────────────────
+    listMembers: protectedProcedure.query(async ({ ctx }) => {
+      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required for WIPC member registry" });
+      await createWipcAuditEntry({ userId: ctx.user.id, action: "READ_MEMBERS" });
+      return listWipcMembers();
+    }),
+
+    saveMember: protectedProcedure
+      .input(z.object({
+        id: z.number().optional(),
+        fullName: z.string().min(1),
+        dob: z.string().optional(),
+        afpId: z.string().min(1),
+        cinNumber: z.string().optional(),
+        aiInitials: z.string().optional(),
+        aiKnownAs: z.string().optional(),
+        isUco: z.boolean().default(false),
+        isOco: z.boolean().default(false),
+        isCin: z.boolean().default(true),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
+        if (input.id) {
+          await updateWipcMember(input.id, input);
+          await createWipcAuditEntry({ userId: ctx.user.id, action: "UPDATE_MEMBER", targetId: input.id, detail: "updated" });
+          return { ok: true, id: input.id };
+        } else {
+          const result = await createWipcMember(ctx.user.id, input);
+          await createWipcAuditEntry({ userId: ctx.user.id, action: "SAVE_MEMBER", detail: "created" });
+          return { ok: true, id: (result as { insertId?: number })?.insertId };
+        }
+      }),
+
+    deleteMember: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
+        await createWipcAuditEntry({ userId: ctx.user.id, action: "DELETE_MEMBER", targetId: input.id });
+        await deleteWipcMember(input.id);
+        return { ok: true };
+      }),
+
+    getVaultAuditLog: protectedProcedure.query(async ({ ctx }) => {
+      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
+      return getWipcAuditLog(500);
+    }),
   }),
 });
 export type AppRouter = typeof appRouter;

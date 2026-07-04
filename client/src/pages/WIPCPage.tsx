@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import {
   ShieldCheck,
@@ -16,6 +17,9 @@ import {
   Loader2,
   Plus,
   Trash2,
+  Lock,
+  Save,
+  UserCheck,
 } from "lucide-react";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -306,29 +310,77 @@ export default function WIPCPage() {
     { enabled: !!selectedOpId }
   );
 
+  // Fetch saved officer profile (vault)
+  const { data: savedOfficerProfile, isLoading: profileLoading } = trpc.wipc.getOfficerProfile.useQuery(
+    undefined,
+    { enabled: isAuthenticated }
+  );
+
   const selectedOp = useMemo(
     () => operations?.find((o) => o.id === selectedOpId) ?? null,
     [operations, selectedOpId]
   );
 
-  // When sheetDates loads, auto-fill deployment dates on all members that have empty dates
-  const prevOpIdRef = useState<number | null>(null);
-  if (sheetDates && selectedOpId !== prevOpIdRef[0]) {
-    prevOpIdRef[1](selectedOpId);
-    if (sheetDates.start || sheetDates.end) {
-      setMembers((prev) =>
-        prev.map((m) => ({
-          ...m,
-          deploymentStart: m.deploymentStart || sheetDates.start || "",
-          deploymentEnd: m.deploymentEnd || sheetDates.end || "",
-        }))
-      );
+  // Auto-fill officer details from saved vault profile
+  const [profileLoaded, setProfileLoaded] = useState(false);
+  useEffect(() => {
+    if (savedOfficerProfile && !profileLoaded) {
+      setProfileLoaded(true);
+      if (savedOfficerProfile.fullName) setOfficerFullName(savedOfficerProfile.fullName as string);
+      if (savedOfficerProfile.afpId) setOfficerAfpId(savedOfficerProfile.afpId as string);
+      if (savedOfficerProfile.workLocation) setOfficerWorkLocation(savedOfficerProfile.workLocation as string);
+      if (savedOfficerProfile.portfolio) setOfficerPortfolio(savedOfficerProfile.portfolio as string);
+      if (savedOfficerProfile.contactNumber) setOfficerContact(savedOfficerProfile.contactNumber as string);
     }
-  }
+  }, [savedOfficerProfile, profileLoaded]);
+
+  // When sheetDates loads, auto-fill deployment dates on all members that have empty dates
+  const [lastAutoFillOpId, setLastAutoFillOpId] = useState<number | null>(null);
+  useEffect(() => {
+    if (sheetDates && selectedOpId && selectedOpId !== lastAutoFillOpId) {
+      setLastAutoFillOpId(selectedOpId);
+      if (sheetDates.start || sheetDates.end) {
+        setMembers((prev) =>
+          prev.map((m) => ({
+            ...m,
+            deploymentStart: m.deploymentStart || sheetDates.start || "",
+            deploymentEnd: m.deploymentEnd || sheetDates.end || "",
+          }))
+        );
+      }
+    }
+  }, [sheetDates, selectedOpId, lastAutoFillOpId]);
 
   // ── Mutations ──────────────────────────────────────────────────────────────
 
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+
+  const saveOfficerProfileMutation = trpc.wipc.saveOfficerProfile.useMutation({
+    onSuccess() {
+      toast.success("🔒 Officer profile saved to vault");
+      setIsSavingProfile(false);
+    },
+    onError(err) {
+      toast.error(`Failed to save profile: ${err.message}`);
+      setIsSavingProfile(false);
+    },
+  });
+
+  function handleSaveOfficerProfile() {
+    if (!officerFullName.trim() || !officerAfpId.trim()) {
+      toast.error("Full name and AFP ID are required to save profile");
+      return;
+    }
+    setIsSavingProfile(true);
+    saveOfficerProfileMutation.mutate({
+      fullName: officerFullName,
+      afpId: officerAfpId,
+      workLocation: officerWorkLocation,
+      portfolio: officerPortfolio,
+      contactNumber: officerContact,
+    });
+  }
 
   const generateStatDecMutation = trpc.wipc.generateStatDec.useMutation({
     onSuccess(data) {
@@ -428,11 +480,17 @@ export default function WIPCPage() {
     <DashboardLayout>
       <div className="max-w-3xl mx-auto px-4 py-8 flex flex-col gap-8">
         {/* Page header */}
-        <div className="flex items-center gap-3">
-          <ShieldCheck className="w-7 h-7 text-primary shrink-0" />
-          <div>
-            <h1 className="text-xl font-bold text-foreground">WIPC Documents</h1>
-            <p className="text-sm text-muted-foreground">Generate Witness Identity Protection Certificate documents</p>
+        <div className="flex items-start gap-3">
+          <ShieldCheck className="w-7 h-7 text-primary shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-xl font-bold text-foreground">WIPC Documents</h1>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                <Lock className="w-3 h-3" />
+                AES-256 Encrypted Vault
+              </span>
+            </div>
+            <p className="text-sm text-muted-foreground mt-0.5">Generate Witness Identity Protection Certificate documents — all officer and member data is encrypted at rest</p>
           </div>
         </div>
 
@@ -634,7 +692,23 @@ export default function WIPCPage() {
 
               {/* Requesting Officer Details */}
               <div className="border-t border-border pt-4">
-                <p className="text-sm font-semibold text-foreground mb-3">Requesting Officer Details</p>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-semibold text-foreground">Requesting Officer Details</p>
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                      <Lock className="w-2.5 h-2.5" />
+                      Vault
+                    </span>
+                  </div>
+                  {profileLoading ? (
+                    <span className="text-xs text-muted-foreground">Loading saved profile…</span>
+                  ) : savedOfficerProfile ? (
+                    <span className="inline-flex items-center gap-1 text-xs text-emerald-400">
+                      <UserCheck className="w-3 h-3" />
+                      Profile loaded from vault
+                    </span>
+                  ) : null}
+                </div>
                 <div className="flex flex-col gap-4">
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor="officer-name">Full Name</Label>
@@ -682,13 +756,34 @@ export default function WIPCPage() {
                       />
                     </div>
                   </div>
+
+                  {/* Save to vault button */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSaveOfficerProfile}
+                    disabled={isSavingProfile || !officerFullName.trim() || !officerAfpId.trim()}
+                    className="w-full sm:w-auto gap-2 border-amber-500/40 text-amber-400 hover:bg-amber-500/10"
+                  >
+                    {isSavingProfile ? (
+                      <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…</>
+                    ) : (
+                      <><Save className="w-3.5 h-3.5" /> Save Officer Profile to Vault</>
+                    )}
+                  </Button>
                 </div>
               </div>
 
               {/* ── Members Requiring WIPC (Page 3) ── */}
               <div className="border-t border-border pt-4">
                 <div className="flex items-center justify-between mb-3">
-                  <p className="text-sm font-semibold text-foreground">Members Requiring WIPC</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-semibold text-foreground">Members Requiring WIPC</p>
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                      <Lock className="w-2.5 h-2.5" />
+                      Vault
+                    </span>
+                  </div>
                   <span className="text-xs text-muted-foreground">Page 3 of document</span>
                 </div>
 

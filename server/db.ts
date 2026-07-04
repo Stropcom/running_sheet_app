@@ -1,5 +1,6 @@
 import { and, desc, eq, inArray, isNotNull, like, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
+import { vaultEncrypt, vaultDecrypt } from "./wipcVault";
 import {
   auditLogs,
   certifications,
@@ -24,6 +25,11 @@ import {
   targetShortcuts,
   InsertTargetShortcut,
   operationTargetLinks,
+  wipcMembers,
+  wipcOfficerProfiles,
+  wipcAuditLog,
+  WipcMemberRecord,
+  WipcOfficerProfile,
 } from "../drizzle/schema";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -1978,4 +1984,160 @@ export async function getTargetShortcutsForSheet(sheetId: number) {
   const sheet = await db.select({ targetId: runningSheets.targetId }).from(runningSheets).where(eq(runningSheets.id, sheetId)).limit(1);
   if (!sheet[0]?.targetId) return [];
   return db.select().from(targetShortcuts).where(eq(targetShortcuts.targetId, sheet[0].targetId));
+}
+
+// ─── WIPC Vault Helpers ───────────────────────────────────────────────────────
+// All sensitive fields are encrypted/decrypted via wipcVault.ts (AES-256-GCM).
+// These helpers are called only from server-side procedures with admin guards.
+
+const WIPC_MEMBER_FIELDS = ["fullName", "dob", "afpId", "cinNumber", "aiInitials", "aiKnownAs"] as const;
+const WIPC_OFFICER_FIELDS = ["fullName", "afpId", "workLocation", "portfolio", "contactNumber"] as const;
+
+function encryptMember(m: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...m };
+  for (const f of WIPC_MEMBER_FIELDS) {
+    if (typeof out[f] === "string") out[f] = vaultEncrypt(out[f] as string);
+  }
+  return out;
+}
+
+function decryptMember(m: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...m };
+  for (const f of WIPC_MEMBER_FIELDS) {
+    if (typeof out[f] === "string") out[f] = vaultDecrypt(out[f] as string);
+  }
+  return out;
+}
+
+function encryptOfficer(o: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...o };
+  for (const f of WIPC_OFFICER_FIELDS) {
+    if (typeof out[f] === "string") out[f] = vaultEncrypt(out[f] as string);
+  }
+  return out;
+}
+
+function decryptOfficer(o: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...o };
+  for (const f of WIPC_OFFICER_FIELDS) {
+    if (typeof out[f] === "string") out[f] = vaultDecrypt(out[f] as string);
+  }
+  return out;
+}
+
+/** Write an entry to the WIPC audit log */
+export async function createWipcAuditEntry(data: {
+  userId: number;
+  action: string;
+  targetId?: number;
+  detail?: string;
+  ipAddress?: string;
+}) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(wipcAuditLog).values({
+    userId: data.userId,
+    action: data.action,
+    targetId: data.targetId ?? null,
+    detail: data.detail ?? null,
+    ipAddress: data.ipAddress ?? null,
+  });
+}
+
+/** Get all WIPC audit log entries (admin only) */
+export async function getWipcAuditLog(limit = 200) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(wipcAuditLog).orderBy(desc(wipcAuditLog.createdAt)).limit(limit);
+}
+
+/** Save or update the requesting officer profile for a user (encrypted) */
+export async function upsertWipcOfficerProfile(userId: number, data: {
+  fullName: string;
+  afpId: string;
+  workLocation?: string;
+  portfolio?: string;
+  contactNumber?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const encrypted = encryptOfficer({ ...data }) as typeof data;
+  const existing = await db.select({ id: wipcOfficerProfiles.id }).from(wipcOfficerProfiles).where(eq(wipcOfficerProfiles.userId, userId)).limit(1);
+  if (existing.length > 0) {
+    await db.update(wipcOfficerProfiles).set({ ...encrypted, updatedAt: new Date() }).where(eq(wipcOfficerProfiles.userId, userId));
+  } else {
+    await db.insert(wipcOfficerProfiles).values({ userId, fullName: encrypted.fullName as string, afpId: encrypted.afpId as string, workLocation: encrypted.workLocation as string | undefined, portfolio: encrypted.portfolio as string | undefined, contactNumber: encrypted.contactNumber as string | undefined });
+  }
+}
+
+/** Get the requesting officer profile for a user (decrypted) */
+export async function getWipcOfficerProfile(userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const [row] = await db.select().from(wipcOfficerProfiles).where(eq(wipcOfficerProfiles.userId, userId)).limit(1);
+  if (!row) return null;
+  return decryptOfficer(row as unknown as Record<string, unknown>) as unknown as WipcOfficerProfile;
+}
+
+/** List all WIPC members (decrypted) — admin only */
+export async function listWipcMembers() {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select().from(wipcMembers).orderBy(wipcMembers.createdAt);
+  return rows.map((r) => decryptMember(r as unknown as Record<string, unknown>) as unknown as WipcMemberRecord);
+}
+
+/** Save a new WIPC member (encrypted) — admin only */
+export async function createWipcMember(createdBy: number, data: {
+  fullName: string;
+  dob?: string;
+  afpId: string;
+  cinNumber?: string;
+  aiInitials?: string;
+  aiKnownAs?: string;
+  isUco?: boolean;
+  isOco?: boolean;
+  isCin?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const encrypted = encryptMember({ ...data }) as typeof data;
+  const [result] = await db.insert(wipcMembers).values({
+    createdBy,
+    fullName: encrypted.fullName as string,
+    afpId: encrypted.afpId as string,
+    dob: encrypted.dob as string | undefined,
+    cinNumber: encrypted.cinNumber as string | undefined,
+    aiInitials: encrypted.aiInitials as string | undefined,
+    aiKnownAs: encrypted.aiKnownAs as string | undefined,
+    isUco: data.isUco ?? false,
+    isOco: data.isOco ?? false,
+    isCin: data.isCin ?? true,
+  });
+  return result;
+}
+
+/** Update an existing WIPC member (encrypted) — admin only */
+export async function updateWipcMember(id: number, data: Partial<{
+  fullName: string;
+  dob: string;
+  afpId: string;
+  cinNumber: string;
+  aiInitials: string;
+  aiKnownAs: string;
+  isUco: boolean;
+  isOco: boolean;
+  isCin: boolean;
+}>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const encrypted = encryptMember({ ...data }) as typeof data;
+  await db.update(wipcMembers).set({ ...encrypted, updatedAt: new Date() }).where(eq(wipcMembers.id, id));
+}
+
+/** Delete a WIPC member — admin only */
+export async function deleteWipcMember(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.delete(wipcMembers).where(eq(wipcMembers.id, id));
 }

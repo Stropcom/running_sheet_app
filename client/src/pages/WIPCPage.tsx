@@ -271,8 +271,8 @@ export default function WIPCPage() {
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   });
   const [courtLocation, setCourtLocation] = useState("");
-  const [requestingCommander, setRequestingCommander] = useState("Commander COLLIE");
-  const [assistantCommissioner, setAssistantCommissioner] = useState("A/C SCANLAN");
+  const [requestingCommander, setRequestingCommander] = useState("COLLIE");
+  const [assistantCommissioner, setAssistantCommissioner] = useState("SCANLAN");
   const [isUrgent, setIsUrgent] = useState(false);
   const [operationDetails, setOperationDetails] = useState("");
   const [officerFullName, setOfficerFullName] = useState("");
@@ -300,10 +300,31 @@ export default function WIPCPage() {
     enabled: isAuthenticated,
   });
 
+  // Fetch first/last sheet dates for the selected operation to auto-fill deployment dates
+  const { data: sheetDates } = trpc.wipc.getOperationSheetDates.useQuery(
+    { operationId: selectedOpId ?? 0 },
+    { enabled: !!selectedOpId }
+  );
+
   const selectedOp = useMemo(
     () => operations?.find((o) => o.id === selectedOpId) ?? null,
     [operations, selectedOpId]
   );
+
+  // When sheetDates loads, auto-fill deployment dates on all members that have empty dates
+  const prevOpIdRef = useState<number | null>(null);
+  if (sheetDates && selectedOpId !== prevOpIdRef[0]) {
+    prevOpIdRef[1](selectedOpId);
+    if (sheetDates.start || sheetDates.end) {
+      setMembers((prev) =>
+        prev.map((m) => ({
+          ...m,
+          deploymentStart: m.deploymentStart || sheetDates.start || "",
+          deploymentEnd: m.deploymentEnd || sheetDates.end || "",
+        }))
+      );
+    }
+  }
 
   // ── Mutations ──────────────────────────────────────────────────────────────
 

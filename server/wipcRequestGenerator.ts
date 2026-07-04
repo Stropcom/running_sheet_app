@@ -253,14 +253,30 @@ export async function generateWipcRequestDocx(input: WipcRequestInput): Promise<
     para([run("Each member requiring a WIPC MUST complete a Stat Dec not more than 3 months old.", { bold: true })], { after: 120 }),
   ];
 
-  // ── Court / operation details ───────────────────────────────────────────────
+  // ── Court / operation details (tab-aligned) ──────────────────────────────
+  // Use a fixed tab stop at 5400 DXA so values line up in a column
+  const TAB_STOP = 5400;
+  function detailLine(label: string, value: string, after = 40) {
+    return new Paragraph({
+      children: [
+        new TextRun({ text: label, bold: true, size: SIZE_BODY, font: FONT }),
+        new TextRun({ text: "\t", size: SIZE_BODY, font: FONT }),
+        new TextRun({ text: value, size: SIZE_BODY, font: FONT }),
+      ],
+      tabStops: [{ type: "left" as const, position: TAB_STOP }],
+      spacing: sp(0, after),
+    });
+  }
   const detailsBlock: Paragraph[] = [
-    para([run("COURT DATE: ", { bold: true }), run(courtDate)], { after: 40 }),
-    para([run("COURT LOCATION: ", { bold: true }), run(courtLocation)], { after: 40 }),
-    para([run("OPERATION NAME: ", { bold: true }), run(operationName)], { after: 40 }),
-    para([run("REQUESTING AREAS COMMANDER: ", { bold: true }), run(requestingCommander)], { after: 40 }),
-    para([run("REQUESTING AREAS ASSISTANT COMMISSIONER: ", { bold: true }), run(assistantCommissioner)], { after: 40 }),
-    para([run(isUrgent ? "\u2612 URGENT" : "\u2610 URGENT", { bold: true })], { after: 120 }),
+    detailLine("COURT DATE:", courtDate),
+    detailLine("COURT LOCATION:", courtLocation),
+    detailLine("OPERATION NAME:", operationName),
+    detailLine("REQUESTING AREAS COMMANDER:", requestingCommander),
+    detailLine("REQUESTING AREAS ASSISTANT COMMISSIONER:", assistantCommissioner, 80),
+    new Paragraph({
+      children: [new TextRun({ text: isUrgent ? "\u2612 URGENT" : "\u2610 URGENT", bold: true, size: SIZE_BODY, font: FONT })],
+      spacing: sp(0, 120),
+    }),
   ];
 
   // ── Requesting Officer heading ──────────────────────────────────────────────
@@ -270,33 +286,38 @@ export async function generateWipcRequestDocx(input: WipcRequestInput): Promise<
   );
 
   // ── Requesting Officer table — label cells shaded grey ─────────────────────
+  // Total width = 9000 DXA. Label col = 2200, value col = 6800 (single) or split.
   const officerTable = new Table({
     width: { size: 9000, type: WidthType.DXA },
     rows: [
+      // Row 1: FULL NAME (spans full value width)
       new TableRow({
         children: [
-          cell([para([run("FULL NAME", { bold: true })])], { width: 2000, shaded: true }),
-          cell([para([run(requestingOfficerFullName)])], { width: 7000 }),
+          cell([para([run("FULL NAME", { bold: true })])], { width: 2200, shaded: true }),
+          cell([para([run(requestingOfficerFullName)])], { width: 6800 }),
         ],
       }),
+      // Row 2: AFP ID | value | AFP WORK LOCATION | value
       new TableRow({
         children: [
-          cell([para([run("AFP ID", { bold: true })])], { width: 2000, shaded: true }),
+          cell([para([run("AFP ID", { bold: true })])], { width: 2200, shaded: true }),
           cell([para([run(requestingOfficerAfpId)])], { width: 2000 }),
-          cell([para([run("AFP WORK LOCATION", { bold: true })])], { width: 2000, shaded: true }),
-          cell([para([run(requestingOfficerWorkLocation)])], { width: 3000 }),
+          cell([para([run("AFP WORK\nLOCATION", { bold: true })])], { width: 2200, shaded: true }),
+          cell([para([run(requestingOfficerWorkLocation)])], { width: 2600 }),
         ],
       }),
+      // Row 3: PORTFOLIO/TEAM (spans full value width)
       new TableRow({
         children: [
-          cell([para([run("PORTFOLIO/TEAM", { bold: true })])], { width: 2000, shaded: true }),
-          cell([para([run(requestingOfficerPortfolio)])], { width: 7000 }),
+          cell([para([run("PORTFOLIO/TEAM", { bold: true })])], { width: 2200, shaded: true }),
+          cell([para([run(requestingOfficerPortfolio)])], { width: 6800 }),
         ],
       }),
+      // Row 4: CONTACT NUMBER (spans full value width)
       new TableRow({
         children: [
-          cell([para([run("CONTACT NUMBER", { bold: true })])], { width: 2000, shaded: true }),
-          cell([para([run(requestingOfficerContact)])], { width: 7000 }),
+          cell([para([run("CONTACT NUMBER", { bold: true })])], { width: 2200, shaded: true }),
+          cell([para([run(requestingOfficerContact)])], { width: 6800 }),
         ],
       }),
     ],
@@ -434,45 +455,46 @@ export async function generateWipcRequestDocx(input: WipcRequestInput): Promise<
 
   // Build member rows — each member gets a bordered block of 4 rows
   function buildMemberBlock(m: WipcMember): TableRow[] {
-    // Row 1: Full Name | DOB label | DOB value
+    // Total width = 9000 DXA. Label col = 1800, value cols fill remainder.
+    // Row 1: Full Name (4200) | DOB label (1200) | DOB value (1800)
     const row1 = new TableRow({
       children: [
-        cell([para([run("Full Name", { bold: true })])], { width: 1500, shaded: true }),
-        cell([para([run(m.fullName)])], { width: 4000 }),
-        cell([para([run("DOB:", { bold: true })])], { width: 800, shaded: true }),
-        cell([para([run(m.dob)])], { width: 2700 }),
+        cell([para([run("Full Name", { bold: true })])], { width: 1800, shaded: true }),
+        cell([para([run(m.fullName)])], { width: 4200 }),
+        cell([para([run("DOB:", { bold: true })])], { width: 1200, shaded: true }),
+        cell([para([run(m.dob)])], { width: 1800 }),
       ],
     });
 
-    // Row 2: AFP ID | checkboxes (UCO OCO CIN) | CIN number
+    // Row 2: AFP ID (1800) | AFP value (1800) | checkboxes (2700) | CIN number (2700)
     const checkText = `${checkChar(m.isUco)} UCO   ${checkChar(m.isOco)} OCO   ${checkChar(m.isCin)} CIN`;
     const row2 = new TableRow({
       children: [
-        cell([para([run("AFP ID", { bold: true })])], { width: 1500, shaded: true }),
+        cell([para([run("AFP ID", { bold: true })])], { width: 1800, shaded: true }),
         cell([para([run(m.afpId)])], { width: 1800 }),
-        cell([para([run(checkText)])], { width: 3000 }),
+        cell([para([run(checkText)])], { width: 2700 }),
         cell([para([run(m.cinNumber)])], { width: 2700 }),
       ],
     });
 
-    // Row 3: AI Initials | AI Known as label | AI Known as value
+    // Row 3: AI Initials (1800) | value (1800) | AI known as label (1800) | value (3600)
     const row3 = new TableRow({
       children: [
-        cell([para([run("AI Initials", { bold: true })])], { width: 1500, shaded: true }),
+        cell([para([run("AI Initials", { bold: true })])], { width: 1800, shaded: true }),
         cell([para([run(m.aiInitials)])], { width: 1800 }),
-        cell([para([run("AI known as:", { bold: true })])], { width: 1500, shaded: true }),
-        cell([para([run(m.aiKnownAs)])], { width: 4200 }),
+        cell([para([run("AI known as:", { bold: true })])], { width: 1800, shaded: true }),
+        cell([para([run(m.aiKnownAs)])], { width: 3600 }),
       ],
     });
 
-    // Row 4: Deployment Dates
+    // Row 4: Deployment Dates label (1800) | value spans remaining (7200)
     const deploymentText = m.deploymentStart && m.deploymentEnd
       ? `${m.deploymentStart} to ${m.deploymentEnd}`
       : "START – FINISH";
     const row4 = new TableRow({
       children: [
-        cell([para([run("Deployment Dates", { bold: true })])], { width: 1500, shaded: true }),
-        cell([para([run(deploymentText)])], { width: 7500 }),
+        cell([para([run("Deployment Dates", { bold: true })])], { width: 1800, shaded: true }),
+        cell([para([run(deploymentText)])], { width: 7200 }),
       ],
     });
 

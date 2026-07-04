@@ -1986,6 +1986,29 @@ export const appRouter = router({
   // ─── WIPC (Witness Identity Protection Certificates) ───────────────────────────────────
 
   wipc: router({
+    /** Returns the first and last running sheet dates for an operation (for deployment date auto-fill) */
+    getOperationSheetDates: protectedProcedure
+      .input(z.object({ operationId: z.number() }))
+      .query(async ({ input }) => {
+        const sheets = await getRunningSheetsByOperation(input.operationId);
+        if (!sheets || sheets.length === 0) return { start: null, end: null };
+        // Extract date from YYYYMMDD prefix in title, fall back to createdAt
+        const getDate = (s: typeof sheets[0]) => {
+          const m = s.title.match(/^(\d{4})(\d{2})(\d{2})/);
+          if (m) return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+          return s.createdAt instanceof Date ? s.createdAt.getTime() : new Date(s.createdAt).getTime();
+        };
+        const dates = sheets.map(getDate).sort((a, b) => a - b);
+        const toISO = (ts: number) => {
+          const d = new Date(ts);
+          const y = d.getUTCFullYear();
+          const mo = String(d.getUTCMonth() + 1).padStart(2, "0");
+          const dy = String(d.getUTCDate()).padStart(2, "0");
+          return `${y}-${mo}-${dy}`;
+        };
+        return { start: toISO(dates[0]), end: toISO(dates[dates.length - 1]) };
+      }),
+
     generateStatDec: protectedProcedure
       .input(
         z.object({

@@ -2011,6 +2011,7 @@ export const appRouter = router({
       .input(
         z.object({
           operationName: z.string().min(1),
+          operationDetails: z.string().default(""),
           courtDate: z.string().min(1),
           courtLocation: z.string().min(1),
           requestingCommander: z.string().min(1),
@@ -2021,12 +2022,26 @@ export const appRouter = router({
           requestingOfficerWorkLocation: z.string().min(1),
           requestingOfficerPortfolio: z.string().min(1),
           requestingOfficerContact: z.string().min(1),
+          members: z.array(z.object({
+            fullName: z.string(),
+            dob: z.string(),
+            afpId: z.string(),
+            isUco: z.boolean(),
+            isOco: z.boolean(),
+            isCin: z.boolean(),
+            cinNumber: z.string(),
+            aiInitials: z.string(),
+            aiKnownAs: z.string(),
+            deploymentStart: z.string(),
+            deploymentEnd: z.string(),
+          })).default([]),
         }),
       )
       .mutation(async ({ input }) => {
         const producedAt = Date.now();
         const buf = await generateWipcRequestDocx({
           operationName: input.operationName,
+          operationDetails: input.operationDetails,
           courtDate: input.courtDate,
           courtLocation: input.courtLocation,
           requestingCommander: input.requestingCommander,
@@ -2037,6 +2052,7 @@ export const appRouter = router({
           requestingOfficerWorkLocation: input.requestingOfficerWorkLocation,
           requestingOfficerPortfolio: input.requestingOfficerPortfolio,
           requestingOfficerContact: input.requestingOfficerContact,
+          members: input.members,
         });
         const filename = `WIPCRequest_${input.operationName.replace(/[^a-zA-Z0-9]/g, "_")}_${input.courtDate}.docx`;
         return { filename, base64: buf.toString("base64"), producedAt };

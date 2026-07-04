@@ -3,6 +3,7 @@
  *
  * Generates a .docx WIPC Request (Application for Witness Identity Protection Certificate)
  * exactly matching the HUMINT Ops – Capability Protection Team template.
+ * Page 3 = Members Requiring WIPC table.
  */
 import {
   Document,
@@ -18,22 +19,38 @@ import {
   LineRuleType,
   ShadingType,
   UnderlineType,
-  CheckBox,
+  PageBreak,
 } from "docx";
 
 // ── Types ────────────────────────────────────────────────────────────────────
+export interface WipcMember {
+  fullName: string;
+  dob: string;           // DD/MM/YYYY
+  afpId: string;
+  isUco: boolean;
+  isOco: boolean;
+  isCin: boolean;
+  cinNumber: string;
+  aiInitials: string;
+  aiKnownAs: string;
+  deploymentStart: string; // DD/MM/YYYY
+  deploymentEnd: string;   // DD/MM/YYYY
+}
+
 export interface WipcRequestInput {
   operationName: string;
-  courtDate: string;            // e.g. "28th April 2026"
-  courtLocation: string;        // e.g. "Perth District Court"
-  requestingCommander: string;  // e.g. "Commander COLLIE"
-  assistantCommissioner: string; // e.g. "A/C SCANLAN"
+  operationDetails: string;  // free-text operation detail
+  courtDate: string;         // DD/MM/YYYY
+  courtLocation: string;
+  requestingCommander: string;
+  assistantCommissioner: string;
   isUrgent: boolean;
   requestingOfficerFullName: string;
   requestingOfficerAfpId: string;
   requestingOfficerWorkLocation: string;
   requestingOfficerPortfolio: string;
   requestingOfficerContact: string;
+  members: WipcMember[];
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -42,6 +59,8 @@ const SIZE = 18;       // 9pt
 const SIZE_BODY = 20;  // 10pt
 const SIZE_SMALL = 16; // 8pt
 const SIZE_TITLE = 22; // 11pt
+
+const GREY_FILL = "D9D9D9"; // shading for label cells
 
 const noBorder = {
   top: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
@@ -101,24 +120,32 @@ function emptyPara(size = SIZE_BODY) {
   return new Paragraph({ children: [run("", { size })], spacing: sp(0, 60) });
 }
 
+/** A table cell with optional grey shading for label cells */
 function cell(paragraphs: Paragraph[], opts: {
   width?: number;
   borders?: typeof noBorder;
-  shading?: { fill: string };
-  bold?: boolean;
+  shaded?: boolean;
 } = {}) {
   return new TableCell({
     width: opts.width ? { size: opts.width, type: WidthType.DXA } : undefined,
     borders: opts.borders ?? thinBorder,
-    shading: opts.shading ? { type: ShadingType.CLEAR, fill: opts.shading.fill, color: opts.shading.fill } : undefined,
+    shading: opts.shaded
+      ? { type: ShadingType.CLEAR, fill: GREY_FILL, color: GREY_FILL }
+      : undefined,
     children: paragraphs,
   });
+}
+
+/** Checkbox character (☐ or ☑) */
+function checkChar(checked: boolean) {
+  return checked ? "\u2612" : "\u2610";
 }
 
 // ── Main generator ────────────────────────────────────────────────────────────
 export async function generateWipcRequestDocx(input: WipcRequestInput): Promise<Buffer> {
   const {
     operationName,
+    operationDetails,
     courtDate,
     courtLocation,
     requestingCommander,
@@ -129,9 +156,10 @@ export async function generateWipcRequestDocx(input: WipcRequestInput): Promise<
     requestingOfficerWorkLocation,
     requestingOfficerPortfolio,
     requestingOfficerContact,
+    members,
   } = input;
 
-  // ── PROTECTED banner (top) ──────────────────────────────────────────────────
+  // ── PROTECTED banner ────────────────────────────────────────────────────────
   const protectedBanner = (text = "PROTECTED") =>
     para(
       [run(text, { bold: true, size: 22, color: "C00000" })],
@@ -241,33 +269,33 @@ export async function generateWipcRequestDocx(input: WipcRequestInput): Promise<
     { after: 60 }
   );
 
-  // ── Requesting Officer table ────────────────────────────────────────────────
+  // ── Requesting Officer table — label cells shaded grey ─────────────────────
   const officerTable = new Table({
     width: { size: 9000, type: WidthType.DXA },
     rows: [
       new TableRow({
         children: [
-          cell([para([run("FULL NAME", { bold: true })])], { width: 2000 }),
+          cell([para([run("FULL NAME", { bold: true })])], { width: 2000, shaded: true }),
           cell([para([run(requestingOfficerFullName)])], { width: 7000 }),
         ],
       }),
       new TableRow({
         children: [
-          cell([para([run("AFP ID", { bold: true })])], { width: 2000 }),
+          cell([para([run("AFP ID", { bold: true })])], { width: 2000, shaded: true }),
           cell([para([run(requestingOfficerAfpId)])], { width: 2000 }),
-          cell([para([run("AFP WORK LOCATION", { bold: true })])], { width: 2000 }),
+          cell([para([run("AFP WORK LOCATION", { bold: true })])], { width: 2000, shaded: true }),
           cell([para([run(requestingOfficerWorkLocation)])], { width: 3000 }),
         ],
       }),
       new TableRow({
         children: [
-          cell([para([run("PORTFOLIO/TEAM", { bold: true })])], { width: 2000 }),
+          cell([para([run("PORTFOLIO/TEAM", { bold: true })])], { width: 2000, shaded: true }),
           cell([para([run(requestingOfficerPortfolio)])], { width: 7000 }),
         ],
       }),
       new TableRow({
         children: [
-          cell([para([run("CONTACT NUMBER", { bold: true })])], { width: 2000 }),
+          cell([para([run("CONTACT NUMBER", { bold: true })])], { width: 2000, shaded: true }),
           cell([para([run(requestingOfficerContact)])], { width: 7000 }),
         ],
       }),
@@ -289,7 +317,7 @@ export async function generateWipcRequestDocx(input: WipcRequestInput): Promise<
             borders: thinBorder,
             children: [
               new Paragraph({
-                children: [run(operationName)],
+                children: [run(operationDetails || operationName)],
                 spacing: sp(120, 120),
                 indent: { left: 120 },
               }),
@@ -379,7 +407,7 @@ export async function generateWipcRequestDocx(input: WipcRequestInput): Promise<
     ],
   });
 
-  // ── Bottom PROTECTED banner ─────────────────────────────────────────────────
+  // ── Bottom PROTECTED banner (pages 1-2) ────────────────────────────────────
   const bottomBanner: Paragraph[] = [
     emptyPara(),
     protectedBanner(),
@@ -387,6 +415,107 @@ export async function generateWipcRequestDocx(input: WipcRequestInput): Promise<
       [run("UPDATED January 2026", { size: SIZE_SMALL, italic: true })],
       { alignment: AlignmentType.RIGHT, after: 0 }
     ),
+  ];
+
+  // ── PAGE 3: Members Requiring WIPC ─────────────────────────────────────────
+  // Page break paragraph
+  const pageBreakPara = new Paragraph({
+    children: [new PageBreak()],
+    spacing: sp(0, 0),
+  });
+
+  // Page 3 header
+  const page3Header: Paragraph[] = [
+    protectedBanner(),
+    emptyPara(),
+    protectedBanner(),
+    emptyPara(),
+  ];
+
+  // Build member rows — each member gets a bordered block of 4 rows
+  function buildMemberBlock(m: WipcMember): TableRow[] {
+    // Row 1: Full Name | DOB label | DOB value
+    const row1 = new TableRow({
+      children: [
+        cell([para([run("Full Name", { bold: true })])], { width: 1500, shaded: true }),
+        cell([para([run(m.fullName)])], { width: 4000 }),
+        cell([para([run("DOB:", { bold: true })])], { width: 800, shaded: true }),
+        cell([para([run(m.dob)])], { width: 2700 }),
+      ],
+    });
+
+    // Row 2: AFP ID | checkboxes (UCO OCO CIN) | CIN number
+    const checkText = `${checkChar(m.isUco)} UCO   ${checkChar(m.isOco)} OCO   ${checkChar(m.isCin)} CIN`;
+    const row2 = new TableRow({
+      children: [
+        cell([para([run("AFP ID", { bold: true })])], { width: 1500, shaded: true }),
+        cell([para([run(m.afpId)])], { width: 1800 }),
+        cell([para([run(checkText)])], { width: 3000 }),
+        cell([para([run(m.cinNumber)])], { width: 2700 }),
+      ],
+    });
+
+    // Row 3: AI Initials | AI Known as label | AI Known as value
+    const row3 = new TableRow({
+      children: [
+        cell([para([run("AI Initials", { bold: true })])], { width: 1500, shaded: true }),
+        cell([para([run(m.aiInitials)])], { width: 1800 }),
+        cell([para([run("AI known as:", { bold: true })])], { width: 1500, shaded: true }),
+        cell([para([run(m.aiKnownAs)])], { width: 4200 }),
+      ],
+    });
+
+    // Row 4: Deployment Dates
+    const deploymentText = m.deploymentStart && m.deploymentEnd
+      ? `${m.deploymentStart} to ${m.deploymentEnd}`
+      : "START – FINISH";
+    const row4 = new TableRow({
+      children: [
+        cell([para([run("Deployment Dates", { bold: true })])], { width: 1500, shaded: true }),
+        cell([para([run(deploymentText)])], { width: 7500 }),
+      ],
+    });
+
+    return [row1, row2, row3, row4];
+  }
+
+  // Members Requiring WIPC heading row
+  const membersHeadingRow = new TableRow({
+    children: [
+      new TableCell({
+        columnSpan: 4,
+        borders: thinBorder,
+        shading: { type: ShadingType.CLEAR, fill: GREY_FILL, color: GREY_FILL },
+        children: [
+          new Paragraph({
+            children: [run("MEMBERS REQUIRING WIPC", { bold: true, size: SIZE_BODY })],
+            spacing: sp(60, 60),
+            indent: { left: 120 },
+          }),
+        ],
+      }),
+    ],
+  });
+
+  // Collect all member rows
+  const allMemberRows: TableRow[] = [];
+  const membersToRender = members.length > 0 ? members : [
+    // Provide empty placeholder rows if no members supplied
+    { fullName: "", dob: "", afpId: "", isUco: false, isOco: false, isCin: true, cinNumber: "", aiInitials: "", aiKnownAs: "", deploymentStart: "", deploymentEnd: "" },
+    { fullName: "", dob: "", afpId: "", isUco: false, isOco: false, isCin: true, cinNumber: "", aiInitials: "", aiKnownAs: "", deploymentStart: "", deploymentEnd: "" },
+  ];
+  for (const m of membersToRender) {
+    allMemberRows.push(...buildMemberBlock(m));
+  }
+
+  const membersTable = new Table({
+    width: { size: 9000, type: WidthType.DXA },
+    rows: [membersHeadingRow, ...allMemberRows],
+  });
+
+  const page3Footer: Paragraph[] = [
+    emptyPara(),
+    protectedBanner(),
   ];
 
   // ── Assemble document ────────────────────────────────────────────────────────
@@ -399,6 +528,7 @@ export async function generateWipcRequestDocx(input: WipcRequestInput): Promise<
           },
         },
         children: [
+          // Pages 1-2
           protectedBanner(),
           headerInfoRow,
           emptyPara(),
@@ -413,6 +543,11 @@ export async function generateWipcRequestDocx(input: WipcRequestInput): Promise<
           ...justificationSection,
           justificationBox,
           ...bottomBanner,
+          // Page 3
+          pageBreakPara,
+          ...page3Header,
+          membersTable,
+          ...page3Footer,
         ],
       },
     ],

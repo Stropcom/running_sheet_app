@@ -1558,19 +1558,20 @@ export const appRouter = router({
 
             // Rule 1: Surveillance Commenced / Surveillance Ceased
             const isSurveillanceMarker =
-              /^surveillance commenced$/i.test(obs) ||
-              /^surveillance ceased$/i.test(obs);
+              /^surveillance commenced/i.test(obs) ||
+              /^surveillance ceased/i.test(obs);
             if (isSurveillanceMarker) {
               excludedRowIds.add(row.id);
               excludedRowReasons.set(row.id, "surveillance-marker");
               continue;
             }
 
-            // Rule 2: Travelled Via — ends in "whereat" and previous row contains "continued via:"
-            const endsInWhereat = /whereat$/i.test(obs);
+            // Rule 2: Travelled Via — ends in "whereat" (optionally followed by : or ;)
+            //         AND the previous row contains "continued via" (followed by : or ;)
+            const endsInWhereat = /whereat[;:]?\s*$/i.test(obs);
             if (endsInWhereat && i > 0) {
               const prevObs = (sortedRows[i - 1].observation ?? "").toLowerCase();
-              if (prevObs.includes("continued via:")) {
+              if (/continued via[;:]/.test(prevObs)) {
                 excludedRowIds.add(row.id);
                 excludedRowReasons.set(row.id, "travelled-via");
               }
@@ -1706,17 +1707,17 @@ export const appRouter = router({
             const row = sortedRows[i];
             const obs = (row.observation ?? "").trim();
             const isSurveillanceMarker =
-              /^surveillance commenced$/i.test(obs) ||
-              /^surveillance ceased$/i.test(obs);
+              /^surveillance commenced/i.test(obs) ||
+              /^surveillance ceased/i.test(obs);
             if (isSurveillanceMarker) {
               excludedRowIds.add(row.id);
               excludedRowReasons.set(row.id, "surveillance-marker");
               continue;
             }
-            const endsInWhereat = /whereat$/i.test(obs);
+            const endsInWhereat = /whereat[;:]?\s*$/i.test(obs);
             if (endsInWhereat && i > 0) {
               const prevObs = (sortedRows[i - 1].observation ?? "").toLowerCase();
-              if (prevObs.includes("continued via:")) {
+              if (/continued via[;:]/.test(prevObs)) {
                 excludedRowIds.add(row.id);
                 excludedRowReasons.set(row.id, "travelled-via");
               }
@@ -1882,10 +1883,11 @@ export const appRouter = router({
               excludedRowIds.add(row.id);
               continue;
             }
-            // Travelled via — ends in "whereat" and previous row contains "continued via:"
-            if (/whereat$/i.test(obs) && i > 0) {
+            // Travelled via — ends in "whereat" (optionally followed by : or ;)
+            //                AND previous row contains "continued via" (followed by : or ;)
+            if (/whereat[;:]?\s*$/i.test(obs) && i > 0) {
               const prevObs = (sortedRows[i - 1].observation ?? "").toLowerCase();
-              if (prevObs.includes("continued via:")) {
+              if (/continued via[;:]/.test(prevObs)) {
                 excludedRowIds.add(row.id);
               }
             }

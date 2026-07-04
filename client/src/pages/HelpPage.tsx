@@ -201,10 +201,10 @@ const HELP_SECTIONS: HelpSection[] = [
         important: true,
       },
       {
-        question: "How must entities be written for the Intelligence folder to work?",
+        question: "Do I need to format observations differently for the Intelligence folder?",
         answer:
-          "The Intelligence folder extracts **persons, vehicles, addresses, and businesses** from observation text by looking for text inside **square brackets**. Entities must be written in brackets to be detected:\n\n• Person: `[TANG Bin]`\n• Vehicle: `[ABC 123]` or `[1ABC 234]`\n• Address: `[27 Olding Way]`\n• Business: `[7-Eleven Northbridge]`\n\nIf entities are not bracketed, they will not be extracted, linked, or appear in intelligence profiles. Consistency in spelling and formatting is also critical — `[TANG Bin]` and `[Tang bin]` will be treated as different entities.",
-        tags: ["intelligence", "entities", "brackets", "persons", "vehicles", "addresses", "observation", "format"],
+          "No. The Intelligence folder works automatically from standard AFP surveillance log writing. As long as observations follow the normal format of writing a full description followed by a short form in parentheses — which is standard practice — the system will extract and link entities without any extra effort from the officer.\n\nConsistency in how names, registrations, and addresses are written does matter — for example, writing a vehicle registration as `(ABC 123)` in one sheet and `(ABC123)` in another will cause them to be treated as different entities. Keeping short forms consistent across sheets ensures accurate intelligence linking.",
+        tags: ["intelligence", "entities", "observation", "format", "automatic", "parentheses", "consistency"],
         important: true,
       },
       {
@@ -373,9 +373,9 @@ const HELP_SECTIONS: HelpSection[] = [
       {
         question: "How does entity extraction work?",
         answer:
-          "The system scans observation text for content inside **square brackets [ ]** and classifies it:\n• Vehicle registration patterns (e.g. `[ABC 123]`) → Vehicle\n• Names (e.g. `[TANG Bin]`) → Person\n• Street addresses (e.g. `[27 Olding Way]`) → Address\n• Business names (e.g. `[7-Eleven Northbridge]`) → Business\n\nOnly bracketed text is extracted. Unbracketed names or addresses are ignored by the intelligence system.",
-        tags: ["intelligence", "extraction", "brackets", "vehicles", "persons", "addresses", "businesses"],
-        important: true,
+          "The system automatically scans observation text for the standard AFP surveillance log format — a **full description followed by a short form in parentheses**. No special formatting is required beyond writing observations as you normally would.\n\nExamples the system will detect:\n• `Jason JOHNSON (JOHNSON)` → Person\n• `a silver Toyota Hilux bearing registration (ABC 123)` → Vehicle\n• `1200 Leach Highway, MYAREE (HB)` → Address\n• `7-Eleven Northbridge (7-Eleven)` → Business\n\nThe system classifies the entity type automatically based on context words in the surrounding text — words like 'vehicle', 'registration', 'bearing' indicate a vehicle; all-caps names indicate a person; street numbers and road types indicate an address. Officers do not need to do anything differently from standard observation writing.",
+        tags: ["intelligence", "extraction", "parentheses", "vehicles", "persons", "addresses", "businesses", "automatic"],
+        important: false,
       },
       {
         question: "What is the Association Map?",

@@ -190,8 +190,8 @@ const HELP_SECTIONS: HelpSection[] = [
       {
         question: "What are the default shortcuts?",
         answer:
-          "The default shortcuts are:\n• `sc` → SURVEILLANCE COMMENCED\n• `rack` → RACK\n• `oos` → OUT OF SIGHT\n• `coos` → CAME OUT OF SIGHT\n• `pt` → PHOTOGRAPH/S TAKEN\n\nAdditional shortcuts can be created on the Shortcuts page.",
-        tags: ["shortcuts", "default", "sc", "rack", "oos", "pt"],
+          "The default shortcuts pre-loaded in the system are:\n• `sc` → Surveillance commenced in the vicinity of\n• `rack` → Surveillance ceased in the vicinity of\n• `oos` → Out of sight\n• `coos` → Continued out of sight\n• `pt` → PHOTOGRAPH/S TAKEN\n• `dso` → driver and sole occupant\n\nThese can be edited or deleted, and additional shortcuts can be created on the Shortcuts page in the sidebar.",
+        tags: ["shortcuts", "default", "sc", "rack", "oos", "coos", "pt", "dso"],
       },
       {
         question: "How do target-aware shortcuts work?",

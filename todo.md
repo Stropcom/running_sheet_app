@@ -362,3 +362,13 @@
 - [x] Client: DashboardLayout.tsx — Operation Management nav item between Target Registry and Court
 - [x] Client: Home.tsx — non-active ops excluded from main list; search results show status badge + redirect
 - [x] Governance list uses operation.list (active only) — Before Court/Archive auto-excluded
+
+## AFP Court Statement Generator — Exact Template Match
+- [x] Server: statementGenerator.ts rewritten to match AFP template exactly (logo+Statement header, Name/CIN/Occupation/Employer/Date block, STATES:, paragraphs 1–10, signature block)
+- [x] Server: Per-sheet image times collected per CIN (rows where CIN is member AND observation contains photo/video keyword)
+- [x] Server: surveillanceDays structure (date, isAuthor, imageTimes[]) replaces flat arrays
+- [x] Server: Para 9 sub-items — one per running sheet day, with author line and image times line (bold italic) and EXHIBIT label
+- [x] Server: Signature block — "Digital signature here" italic, signature line, CIN, date produced
+- [x] Server: "continued" footer on all pages
+- [x] Server: AFP logo placeholder (loads from server/assets/afp_logo.png if present)
+- [ ] Upload real AFP logo to server/assets/afp_logo.png when available

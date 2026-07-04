@@ -1670,16 +1670,27 @@ export const appRouter = router({
         const userByCin = new Map(allUsers.map((u) => [u.cin.toUpperCase(), u]));
 
         // Build per-CIN data from sheets, applying exclusion rules
+        // surveillanceDays: one entry per sheet, carrying date, isAuthor flag, and image times for that CIN
         const cinMap = new Map<string, {
-          surveillanceDates: number[];
-          authorDates: number[];
-          imageDates: number[];
+          surveillanceDays: { date: number; isAuthor: boolean; imageTimes: string[] }[];
           hasQualifyingRow: boolean;
           exclusionReasons: Set<string>;
         }>();
 
+        // Photo/video observation keyword pattern (matches PT shortcut expansion and variants)
+        const PHOTO_PATTERN = /photograph|photo\/s|pt\b|video|image/i;
+
         for (const sheet of validSheets) {
-          const sheetDate = new Date(sheet.createdAt).setHours(0, 0, 0, 0);
+          // Derive date from YYYYMMDD prefix in title (same logic as calendar events)
+          let sheetDate: number;
+          const titleMatch = sheet.title.match(/^(\d{4})(\d{2})(\d{2})/);
+          if (titleMatch) {
+            sheetDate = Date.UTC(Number(titleMatch[1]), Number(titleMatch[2]) - 1, Number(titleMatch[3]));
+          } else {
+            const d = new Date(sheet.createdAt instanceof Date ? sheet.createdAt.getTime() : sheet.createdAt);
+            sheetDate = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+          }
+
           let roster: { cin: string; hasImages?: boolean; isAuthor?: boolean }[] = [];
           try { roster = sheet.sheetCins ? JSON.parse(sheet.sheetCins) : []; } catch { roster = []; }
 
@@ -1712,25 +1723,42 @@ export const appRouter = router({
             }
           }
 
+          // Build a map of rowId → time string for photo rows
+          const photoRowTimes = new Map<number, string>();
+          for (const row of sortedRows) {
+            const obs = (row.observation ?? "").trim();
+            if (PHOTO_PATTERN.test(obs) && row.time) {
+              photoRowTimes.set(row.id, row.time);
+            }
+          }
+
           for (const entry of roster) {
             const cinUpper = entry.cin.toUpperCase();
             if (!cinMap.has(cinUpper)) {
               cinMap.set(cinUpper, {
-                surveillanceDates: [],
-                authorDates: [],
-                imageDates: [],
+                surveillanceDays: [],
                 hasQualifyingRow: false,
                 exclusionReasons: new Set(),
               });
             }
             const data = cinMap.get(cinUpper)!;
-            data.surveillanceDates.push(sheetDate);
-            if (entry.isAuthor) data.authorDates.push(sheetDate);
-            if (entry.hasImages) data.imageDates.push(sheetDate);
 
             const cinRowIds = members
               .filter((m) => m.memberName.toUpperCase() === cinUpper)
               .map((m) => m.rowId);
+
+            // Collect image times: rows where this CIN is a member AND row has photo observation
+            const imageTimes: string[] = [];
+            for (const rowId of cinRowIds) {
+              const t = photoRowTimes.get(rowId);
+              if (t) imageTimes.push(t);
+            }
+
+            data.surveillanceDays.push({
+              date: sheetDate,
+              isAuthor: !!entry.isAuthor,
+              imageTimes,
+            });
 
             for (const rowId of cinRowIds) {
               if (!excludedRowIds.has(rowId)) {
@@ -1780,9 +1808,7 @@ export const appRouter = router({
             cin,
             name,
             operationName: input.operationName,
-            surveillanceDates: data.surveillanceDates,
-            authorDates: data.authorDates,
-            imageDates: data.imageDates,
+            surveillanceDays: data.surveillanceDays,
             certifierCin,
             certifierName,
             producedAt,

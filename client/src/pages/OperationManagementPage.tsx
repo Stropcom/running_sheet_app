@@ -31,7 +31,17 @@ import {
   ArrowRightLeft,
   CheckCircle2,
   Lock,
+  Plus,
+  Search,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { useLocation } from "wouter";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -167,6 +177,11 @@ export default function OperationManagementPage() {
     { status: "archive" },
     { enabled: isAuthenticated, staleTime: 30_000 }
   );
+  // Active operations — for the "move here" picker
+  const { data: activeOps } = trpc.operation.list.useQuery(undefined, {
+    enabled: isAuthenticated && isAdmin,
+    staleTime: 30_000,
+  });
 
   const setStatus = trpc.operation.setStatus.useMutation({
     onSuccess: () => {
@@ -174,6 +189,7 @@ export default function OperationManagementPage() {
       utils.operation.list.invalidate();
       toast.success("Operation status updated");
       setConfirm(null);
+      setPickerOpen(null);
     },
     onError: (e) => {
       toast.error(e.message);
@@ -186,6 +202,14 @@ export default function OperationManagementPage() {
     opName: string;
     targetStatus: "active" | "before_court" | "archive";
   } | null>(null);
+
+  // Picker dialog state: which tab is picking ("before_court" | "archive")
+  const [pickerOpen, setPickerOpen] = useState<OpStatus | null>(null);
+  const [pickerSearch, setPickerSearch] = useState("");
+
+  const pickerOps = (activeOps ?? []).filter((op) =>
+    op.name.toLowerCase().includes(pickerSearch.toLowerCase())
+  );
 
   if (!isAuthenticated) return null;
 
@@ -237,18 +261,32 @@ export default function OperationManagementPage() {
 
           {/* Before Court tab */}
           <TabsContent value="before_court">
+            {/* Add operation button */}
+            {isAdmin && (
+              <div className="mb-4">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-2 border-violet-500/40 text-violet-300 hover:bg-violet-500/10 hover:text-violet-200"
+                  onClick={() => { setPickerSearch(""); setPickerOpen("before_court"); }}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Move Active Operation to Before Court
+                </Button>
+              </div>
+            )}
             {bcLoading ? (
               <div className="flex flex-col gap-3">
                 {[1, 2].map((i) => <Skeleton key={i} className="h-28 rounded-xl" />)}
               </div>
             ) : bcCount === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-3 py-20 text-center">
+              <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
                 <div className="p-4 rounded-full bg-violet-500/10 border border-violet-500/20">
                   <CheckCircle2 className="w-8 h-8 text-violet-400" />
                 </div>
                 <p className="text-base font-semibold text-foreground">No operations Before Court</p>
                 <p className="text-sm text-muted-foreground">
-                  Operations moved to Before Court will appear here.
+                  Use the button above to move an active operation here.
                 </p>
               </div>
             ) : (
@@ -272,18 +310,32 @@ export default function OperationManagementPage() {
 
           {/* Archive tab */}
           <TabsContent value="archive">
+            {/* Add operation button */}
+            {isAdmin && (
+              <div className="mb-4">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-2 border-slate-500/40 text-slate-300 hover:bg-slate-500/10 hover:text-slate-200"
+                  onClick={() => { setPickerSearch(""); setPickerOpen("archive"); }}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Move Active Operation to Archive
+                </Button>
+              </div>
+            )}
             {archLoading ? (
               <div className="flex flex-col gap-3">
                 {[1, 2].map((i) => <Skeleton key={i} className="h-28 rounded-xl" />)}
               </div>
             ) : archCount === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-3 py-20 text-center">
+              <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
                 <div className="p-4 rounded-full bg-slate-500/10 border border-slate-500/20">
                   <CheckCircle2 className="w-8 h-8 text-slate-400" />
                 </div>
                 <p className="text-base font-semibold text-foreground">No archived operations</p>
                 <p className="text-sm text-muted-foreground">
-                  Archived operations will appear here.
+                  Use the button above to move an active operation here.
                 </p>
               </div>
             ) : (
@@ -306,6 +358,60 @@ export default function OperationManagementPage() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Operation picker dialog — select active op to move */}
+      <Dialog open={pickerOpen !== null} onOpenChange={(o) => !o && setPickerOpen(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {pickerOpen === "before_court" ? "Move to Before Court" : "Move to Archive"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <p className="text-sm text-muted-foreground">
+              Select an active operation to move. All running sheets must be closed before the move is allowed.
+            </p>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-muted-foreground" />
+              <Input
+                className="pl-8 h-8 text-sm"
+                placeholder="Search operations…"
+                value={pickerSearch}
+                onChange={(e) => setPickerSearch(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="max-h-64 overflow-y-auto flex flex-col gap-1">
+              {pickerOps.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-6">No active operations found</p>
+              ) : (
+                pickerOps.map((op) => (
+                  <button
+                    key={op.id}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-accent/30 transition-colors text-left w-full group"
+                    onClick={() => {
+                      setPickerOpen(null);
+                      setConfirm({ opId: op.id, opName: op.name, targetStatus: pickerOpen! });
+                    }}
+                  >
+                    <FolderOpen className="w-4 h-4 text-primary shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">{op.name}</p>
+                      {op.promisNumber && (
+                        <p className="text-[10px] text-muted-foreground">PROMIS: {op.promisNumber}</p>
+                      )}
+                    </div>
+                    <ChevronRight className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground transition-colors shrink-0" />
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" size="sm" onClick={() => setPickerOpen(null)}>Cancel</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Confirm dialog */}
       <AlertDialog open={confirm !== null} onOpenChange={(o) => !o && setConfirm(null)}>

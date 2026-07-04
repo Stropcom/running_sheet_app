@@ -1,0 +1,1 @@
+ALTER TABLE `operations` ADD `status` enum('active','before_court','archive') DEFAULT 'active' NOT NULL;

@@ -81,6 +81,9 @@ import {
   copyRunningSheet,
   moveRunningSheet,
   getAssociationGraph,
+  getOperationsByStatus,
+  getAllOperations,
+  setOperationStatus,
 } from "./db";
 
 // ─── Role Guards ──────────────────────────────────────────────────────────────
@@ -99,6 +102,28 @@ const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   }
   return next({ ctx });
 });
+
+/**
+ * Throws FORBIDDEN if the operation containing a sheet is not in 'active' status.
+ * Used to block all mutations on Before Court / Archive operations.
+ */
+async function guardActiveOperation(operationId: number) {
+  const op = await getOperationById(operationId);
+  if (!op) throw new TRPCError({ code: "NOT_FOUND", message: "Operation not found." });
+  if (op.status !== "active") {
+    const label = op.status === "before_court" ? "Before Court" : "Archive";
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: `This operation is in ${label} status. Move it back to Active before making changes.`,
+    });
+  }
+}
+
+async function guardActiveSheet(sheetId: number) {
+  const sheet = await getRunningSheetById(sheetId);
+  if (!sheet) throw new TRPCError({ code: "NOT_FOUND", message: "Sheet not found." });
+  await guardActiveOperation(sheet.operationId);
+}
 
 // ─── App Router ───────────────────────────────────────────────────────────────
 
@@ -277,6 +302,43 @@ export const appRouter = router({
       .query(async ({ input }) => {
         return deepSearchOperations(input.query);
       }),
+
+    listByStatus: protectedProcedure
+      .input(z.object({ status: z.enum(["active", "before_court", "archive"]) }))
+      .query(async ({ input }) => {
+        return getOperationsByStatus(input.status);
+      }),
+
+    listAll: protectedProcedure.query(async () => {
+      return getAllOperations();
+    }),
+
+    setStatus: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        status: z.enum(["active", "before_court", "archive"]),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const op = await getOperationById(input.id);
+        if (!op) throw new TRPCError({ code: "NOT_FOUND", message: "Operation not found." });
+        const result = await setOperationStatus(input.id, input.status);
+        if (!result.success) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `Cannot change status: the following running sheets are still open: ${result.blockedSheets?.join(", ")}`,
+          });
+        }
+        await createAuditLog({
+          sheetId: 0,
+          userId: ctx.user.id,
+          userName: ctx.user.name ?? "Unknown",
+          userCIN: ctx.user.cin ?? undefined,
+          action: "operation_status_changed",
+          details: `Operation "${op.name}" status changed to "${input.status}" by ${ctx.user.name}`,
+          createdAt: Date.now(),
+        });
+        return { success: true };
+      }),
   }),
 
   // ─── Running Sheets ──────────────────────────────────────────────────────────
@@ -307,6 +369,7 @@ export const appRouter = router({
         sheetCins: z.array(z.object({ cin: z.string(), hasImages: z.boolean(), isTeamLeader: z.boolean().optional(), isAuthor: z.boolean().optional() })).optional(),
       }))
       .mutation(async ({ input, ctx }) => {
+        await guardActiveOperation(input.operationId);
         // If a new target name is provided, create a real registry target and link it to the operation
         let resolvedTargetId = input.targetId ?? null;
         if (!resolvedTargetId && input.targetName?.trim()) {
@@ -334,6 +397,7 @@ export const appRouter = router({
         sheetCins: z.array(z.object({ cin: z.string(), hasImages: z.boolean(), isTeamLeader: z.boolean().optional(), isAuthor: z.boolean().optional() })).optional(),
       }))
       .mutation(async ({ input, ctx }) => {
+        await guardActiveSheet(input.id);
         const { id, sheetCins, targetName, ...rest } = input;
         const data: Record<string, unknown> = { ...rest };
         // Validate roster CINs against registered users
@@ -366,6 +430,7 @@ export const appRouter = router({
     delete: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
+        await guardActiveSheet(input.id);
         await deleteRunningSheet(input.id);
         await createAuditLog({ sheetId: input.id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "sheet_deleted", details: `Sheet deleted`, createdAt: Date.now() });
         return { success: true };
@@ -561,6 +626,7 @@ export const appRouter = router({
     create: protectedProcedure
       .input(z.object({ sheetId: z.number(), time: z.string().optional(), observation: z.string().optional() }))
       .mutation(async ({ input, ctx }) => {
+        await guardActiveSheet(input.sheetId);
         const existingRows = await getRowsBySheetId(input.sheetId);
         const rowNumber = existingRows.length + 1;
         const id = await createSheetRow({ sheetId: input.sheetId, rowNumber, time: input.time, observation: input.observation, isLocked: false });
@@ -573,6 +639,7 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         const row = await getRowById(input.id);
         if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Row not found." });
+        await guardActiveSheet(row.sheetId);
         if (row.isLocked) throw new TRPCError({ code: "FORBIDDEN", message: "Row is locked. Uncertify to edit." });
         const { id, ...data } = input;
         await updateSheetRow(id, data);
@@ -585,6 +652,7 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         const row = await getRowById(input.id);
         if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Row not found." });
+        await guardActiveSheet(row.sheetId);
         if (row.isLocked) throw new TRPCError({ code: "FORBIDDEN", message: "Row is locked." });
         await deleteSheetRow(input.id);
         await createAuditLog({ sheetId: row.sheetId, rowId: input.id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "row_deleted", details: `Row deleted`, createdAt: Date.now() });
@@ -600,6 +668,7 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         const row = await getRowById(input.rowId);
         if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Row not found." });
+        await guardActiveSheet(row.sheetId);
         if (row.isLocked) throw new TRPCError({ code: "FORBIDDEN", message: "Row is locked." });
         const SPACER = "__SPACE__";
         const cinUpper = input.memberName.trim().toUpperCase();
@@ -626,6 +695,7 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         const row = await getRowById(input.rowId);
         if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Row not found." });
+        await guardActiveSheet(row.sheetId);
         if (row.isLocked) throw new TRPCError({ code: "FORBIDDEN", message: "Row is locked." });
         await reorderRowMembers(input.rowId, input.orderedIds);
         return { success: true };
@@ -636,6 +706,7 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         const row = await getRowById(input.rowId);
         if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Row not found." });
+        await guardActiveSheet(row.sheetId);
         if (row.isLocked) throw new TRPCError({ code: "FORBIDDEN", message: "Row is locked." });
         await removeRowMember(input.id);
         await createAuditLog({ sheetId: row.sheetId, rowId: input.rowId, memberId: input.id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "member_removed", details: `CIN removed from row`, createdAt: Date.now() });

@@ -112,7 +112,43 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 export async function getOperations() {
   const db = await getDb();
   if (!db) return [];
+  // Only return active operations for the main operations list
+  return db.select().from(operations).where(eq(operations.status, "active")).orderBy(desc(operations.createdAt));
+}
+
+export async function getOperationsByStatus(status: "active" | "before_court" | "archive") {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(operations).where(eq(operations.status, status)).orderBy(desc(operations.createdAt));
+}
+
+export async function getAllOperations() {
+  const db = await getDb();
+  if (!db) return [];
   return db.select().from(operations).orderBy(desc(operations.createdAt));
+}
+
+export async function setOperationStatus(
+  id: number,
+  status: "active" | "before_court" | "archive"
+): Promise<{ success: boolean; blockedSheets?: string[] }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // If moving away from active, all sheets must be closed
+  if (status !== "active") {
+    const sheets = await db
+      .select({ id: runningSheets.id, title: runningSheets.title, closedAt: runningSheets.closedAt })
+      .from(runningSheets)
+      .where(eq(runningSheets.operationId, id));
+    const openSheets = sheets.filter((s) => !s.closedAt);
+    if (openSheets.length > 0) {
+      return { success: false, blockedSheets: openSheets.map((s) => s.title) };
+    }
+  }
+
+  await db.update(operations).set({ status }).where(eq(operations.id, id));
+  return { success: true };
 }
 
 export async function getOperationById(id: number) {
@@ -844,6 +880,7 @@ export type DeepSearchMatch = {
   imsNumber: string | null;
   investigationUnit: string | null;
   matchContexts: string[];
+  operationStatus: "active" | "before_court" | "archive";
 };
 
 export async function deepSearchOperations(query: string): Promise<DeepSearchMatch[]> {
@@ -986,6 +1023,7 @@ export async function deepSearchOperations(query: string): Promise<DeepSearchMat
     imsNumber: op.imsNumber ?? null,
     investigationUnit: op.investigationUnit ?? null,
     matchContexts: Array.from(matchMap.get(op.id) ?? []),
+    operationStatus: (op.status ?? "active") as "active" | "before_court" | "archive",
   }));
 }
 

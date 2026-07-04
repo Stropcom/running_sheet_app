@@ -25,7 +25,8 @@ import {
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useTheme } from "@/contexts/ThemeContext";
-import { FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen, Scale, FolderOpen, ChevronDown, ChevronRight, CalendarDays, Shield, ClipboardCheck as GovIcon, Network } from "lucide-react";
+import {
+  FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen, Scale, FolderOpen, ChevronDown, ChevronRight, CalendarDays, Shield, ClipboardCheck as GovIcon, Network, ArrowRightLeft } from "lucide-react";
 import React, { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
@@ -206,7 +207,7 @@ function DashboardLayoutContent({
                 const isBeforeCalendar = item.path === "/calendar";
                 // Intelligence is a plain single sidebar item
                 const isIntelligenceItem = false;
-                // Insert Court folder after Target Registry
+                // Insert Operation Management after Target Registry, Court after Operation Management
                 const isAfterTargetRegistry = item.path === "/audit";
                 return (
                   <React.Fragment key={item.path}>
@@ -273,6 +274,22 @@ function DashboardLayoutContent({
                             </button>
                           </div>
                         )}
+                      </SidebarMenuItem>
+                    )}
+
+                    {isAfterTargetRegistry && (
+                      <SidebarMenuItem key="op-management">
+                        <SidebarMenuButton
+                          isActive={location === "/operation-management"}
+                          onClick={() => setLocation("/operation-management")}
+                          tooltip="Operation Management"
+                          className="h-10 font-normal transition-all"
+                        >
+                          <ArrowRightLeft className={`h-4 w-4 ${location === "/operation-management" ? "text-sidebar-primary" : "text-sidebar-foreground/60"}`} />
+                          <span className={`flex-1 ${location === "/operation-management" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
+                            Operation Management
+                          </span>
+                        </SidebarMenuButton>
                       </SidebarMenuItem>
                     )}
 

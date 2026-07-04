@@ -21,7 +21,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Plus, Search, FolderOpen, ChevronRight, Trash2, Calendar, Hash, Building2 } from "lucide-react";
+import { Plus, Search, FolderOpen, ChevronRight, Trash2, Calendar, Hash, Building2, Scale, Archive } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
@@ -86,8 +87,9 @@ export default function Home() {
         investigationUnit: r.investigationUnit,
         matchContexts: r.matchContexts,
         createdAt: new Date(),
+        operationStatus: r.operationStatus as "active" | "before_court" | "archive",
       }))
-    : (operations ?? []).map((op) => ({ ...op, matchContexts: [] as string[] }));
+    : (operations ?? []).map((op) => ({ ...op, matchContexts: [] as string[], operationStatus: "active" as const }));
 
   const handleCreate = () => {
     if (!newName.trim()) return;
@@ -159,8 +161,19 @@ export default function Home() {
             {filtered.map((op) => (
               <div
                 key={op.id}
-                className="group relative flex items-center gap-4 p-4 rounded-xl border border-border bg-card hover:bg-accent/20 hover:border-primary/30 transition-all duration-150 cursor-pointer"
-                onClick={() => navigate(`/operation/${op.id}`)}
+                className={`group relative flex items-center gap-4 p-4 rounded-xl border bg-card hover:bg-accent/20 transition-all duration-150 cursor-pointer ${
+                  (op as any).operationStatus && (op as any).operationStatus !== "active"
+                    ? "border-violet-500/30 hover:border-violet-500/50 opacity-80"
+                    : "border-border hover:border-primary/30"
+                }`}
+                onClick={() => {
+                  const status = (op as any).operationStatus;
+                  if (status === "before_court" || status === "archive") {
+                    navigate("/operation-management");
+                  } else {
+                    navigate(`/operation/${op.id}`);
+                  }
+                }}
               >
                 {/* Icon */}
                 <div className="p-2.5 rounded-lg bg-primary/10 border border-primary/20 shrink-0">
@@ -169,8 +182,20 @@ export default function Home() {
 
                 {/* Content */}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-semibold text-foreground truncate">{op.name}</span>
+                    {(op as any).operationStatus === "before_court" && (
+                      <Badge className="text-[10px] px-1.5 py-0.5 bg-violet-500/20 text-violet-300 border-violet-500/30 border font-semibold shrink-0">
+                        <Scale className="w-2.5 h-2.5 mr-1" />
+                        Before Court
+                      </Badge>
+                    )}
+                    {(op as any).operationStatus === "archive" && (
+                      <Badge className="text-[10px] px-1.5 py-0.5 bg-slate-500/20 text-slate-400 border-slate-500/30 border font-semibold shrink-0">
+                        <Archive className="w-2.5 h-2.5 mr-1" />
+                        Archive
+                      </Badge>
+                    )}
                   </div>
                   {/* Metadata badges */}
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5">

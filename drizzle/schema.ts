@@ -45,6 +45,7 @@ export const operations = mysqlTable("operations", {
   createdBy: int("createdBy").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  status: mysqlEnum("status", ["active", "before_court", "archive"]).default("active").notNull(),
 });
 
 export type Operation = typeof operations.$inferSelect;
@@ -269,6 +270,7 @@ export const auditLogs = mysqlTable("audit_logs", {
     "user_created",
     "user_updated",
     "user_deleted",
+    "operation_status_changed",
   ]).notNull(),
   details: text("details"),
   createdAt: bigint("createdAt", { mode: "number" }).notNull(),

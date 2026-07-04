@@ -346,3 +346,19 @@
 - [x] Server: govPercent field added to return type — governance completion percentage passed alongside each Team Leader item
 - [x] Client: TodoGovernancePage — governance percent shown as a pill badge next to "Ready to close" (slate=0–49%, sky=50–99%, emerald=100%)
 - [x] Client: "Ready to close" text colour changes — sky-400 when not yet at 100%, emerald-400 when fully ready
+
+## Operation Management Feature (Before Court / Archive)
+- [x] Schema: add `status` enum column (active/before_court/archive) to operations table
+- [x] Schema: add `operation_status_changed` to audit_logs action enum
+- [x] Server db.ts: getOperations() filters to active only (main list)
+- [x] Server db.ts: getOperationsByStatus(), getAllOperations(), setOperationStatus() helpers
+- [x] Server db.ts: setOperationStatus() blocks move if any sheet is open
+- [x] Server routers.ts: operation.listByStatus, operation.listAll, operation.setStatus procedures
+- [x] Server routers.ts: guardActiveOperation/guardActiveSheet helpers block all mutations on non-active ops
+- [x] Server routers.ts: sheet.create/update/delete, row.create/update/delete, member.add/reorder/remove all guarded
+- [x] Server db.ts: deepSearchOperations returns operationStatus field
+- [x] Client: OperationManagementPage.tsx with Before Court / Archive tabs and status change controls
+- [x] Client: App.tsx route /operation-management registered
+- [x] Client: DashboardLayout.tsx — Operation Management nav item between Target Registry and Court
+- [x] Client: Home.tsx — non-active ops excluded from main list; search results show status badge + redirect
+- [x] Governance list uses operation.list (active only) — Before Court/Archive auto-excluded

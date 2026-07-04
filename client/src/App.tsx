@@ -19,6 +19,7 @@ import AssociationMap from "./pages/AssociationMap";
 import GovernancePage from "./pages/Governance";
 import GovernanceListPage from "./pages/GovernanceList";
 import TargetRegistryPage from "./pages/TargetRegistry";
+import OperationManagementPage from "./pages/OperationManagementPage";
 import CalendarPage from "./pages/CalendarPage";
 import StatementsPage from "./pages/StatementsPage";
 
@@ -39,6 +40,7 @@ function Router() {
       <Route path="/governance" component={GovernanceListPage} />
       <Route path="/governance/:sheetId" component={GovernancePage} />
       <Route path="/target-registry" component={TargetRegistryPage} />
+      <Route path="/operation-management" component={OperationManagementPage} />
       <Route path="/calendar" component={CalendarPage} />
       <Route path="/court/statements" component={StatementsPage} />
       <Route path="/audit" component={AuditLogPage} />

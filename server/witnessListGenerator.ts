@@ -218,16 +218,27 @@ export async function generateWitnessListDocx(input: WitnessListInput): Promise<
       { indent: { left: 360 }, spaceAfter: 60 }
     );
 
+  // ── Horizontal rule helper ──────────────────────────────────────────────────
+  const hrPara = (spaceBefore = 160, spaceAfter = 160) =>
+    new Paragraph({
+      children: [],
+      border: {
+        bottom: { style: BorderStyle.SINGLE, size: 6, color: "000000" },
+      },
+      spacing: { before: spaceBefore, after: spaceAfter },
+    });
+
   // ── Build overall section ────────────────────────────────────────────────────
   const overallSection: Paragraph[] = [
-    para([run("OVERALL WITNESS LIST", { bold: true })], { spaceBefore: 240, spaceAfter: 80 }),
+    hrPara(240, 120),
+    para([run("COMBINED WITNESS LIST", { bold: true })], { spaceBefore: 0, spaceAfter: 80 }),
     para(
-      [run(`This list covers all selected running sheets for Operation ${operationName}.`)],
+      [run(`The following is a combined Primary and Secondary witness list for all selected running sheets under Operation ${operationName}.`)],
       { spaceAfter: 120 }
     ),
     sectionHeading("Primary Witnesses", 160),
     para(
-      [run("Operatives with substantive observations (excluding Travelled Via and Surveillance Commenced/Ceased entries).")],
+      [run("Operatives with substantive observations.")],
       { spaceAfter: 80 }
     ),
     ...(overallPrimary.length > 0
@@ -249,15 +260,26 @@ export async function generateWitnessListDocx(input: WitnessListInput): Promise<
   // ── Build per-sheet sections ─────────────────────────────────────────────────
   const sheetSections: Paragraph[] = [];
 
-  for (const sheet of sheets) {
+  if (sheets.length > 0) {
     sheetSections.push(
-      new Paragraph({
-        children: [new PageBreak()],
-        spacing: { before: 0, after: 0 },
-      }),
+      hrPara(240, 120),
+      para([run("INDIVIDUAL RUNNING SHEET WITNESS LIST/S", { bold: true })], { spaceBefore: 0, spaceAfter: 80 }),
+      para(
+        [run(`The following witness lists are specific to each individual running sheet selected under Operation ${operationName}, presented in date order.`)],
+        { spaceAfter: 120 }
+      ),
+    );
+  }
+
+  for (let si = 0; si < sheets.length; si++) {
+    const sheet = sheets[si];
+    if (si > 0) {
+      sheetSections.push(hrPara(160, 80));
+    }
+    sheetSections.push(
       para(
         [run(`Running Sheet: ${sheet.sheetTitle}`, { bold: true })],
-        { spaceBefore: 0, spaceAfter: 40 }
+        { spaceBefore: si === 0 ? 0 : 80, spaceAfter: 40 }
       ),
       para(
         [run(`Date: ${formatDayDate(sheet.sheetDate)}`)],

@@ -15,11 +15,8 @@ import {
   Table,
   TableRow,
   TableCell,
-  VerticalAlign,
   convertInchesToTwip,
   ImageRun,
-  PageNumber,
-  NumberFormat,
 } from "docx";
 import { format } from "date-fns";
 import * as fs from "fs";
@@ -43,6 +40,10 @@ export type StatementInput = {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+const FONT = "Roboto";
+const BODY_SIZE = 20; // half-points: 20 = 10pt
+const LINE_SPACING = { line: 360, lineRule: "auto" as const }; // 1.5 line spacing (240 = single, 360 = 1.5)
+
 /** "Monday, 17 May 2021" */
 function formatDayDate(ts: number): string {
   return format(new Date(ts), "EEEE, d MMMM yyyy");
@@ -53,38 +54,57 @@ function formatShortDate(ts: number): string {
   return format(new Date(ts), "d MMMM yyyy");
 }
 
-function spacer(size = 120): Paragraph {
-  return new Paragraph({ spacing: { after: size }, children: [new TextRun("")] });
+function spacer(after = 120): Paragraph {
+  return new Paragraph({ spacing: { after }, children: [new TextRun("")] });
 }
 
-function hrParagraph(): Paragraph {
-  return new Paragraph({
-    border: {
-      bottom: { style: BorderStyle.SINGLE, size: 6, color: "000000" },
+/** No-border table cell */
+function noBorderCell(width: number, children: Paragraph[], vAlign?: "top" | "center" | "bottom"): TableCell {
+  return new TableCell({
+    width: { size: width, type: WidthType.PERCENTAGE },
+    verticalAlign: vAlign,
+    borders: {
+      top: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
+      bottom: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
+      left: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
+      right: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
     },
-    spacing: { after: 160 },
-    children: [new TextRun("")],
+    children,
   });
 }
 
-/** Standard body text run — Times New Roman 12pt */
+/** No-border table */
+function noBorderTable(rows: TableRow[]): Table {
+  return new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    borders: {
+      top: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
+      bottom: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
+      left: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
+      right: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
+    },
+    rows,
+  });
+}
+
+/** Standard body text run — Roboto 10pt */
 function body(text: string, opts?: { bold?: boolean; italics?: boolean; underline?: boolean; size?: number }): TextRun {
   return new TextRun({
     text,
-    font: "Times New Roman",
-    size: opts?.size ?? 24, // half-points: 24 = 12pt
+    font: FONT,
+    size: opts?.size ?? BODY_SIZE,
     bold: opts?.bold,
     italics: opts?.italics,
     underline: opts?.underline ? {} : undefined,
   });
 }
 
-/** Numbered paragraph (e.g. "1.   text...") using a two-column table for alignment */
+/** Justified numbered paragraph */
 function numberedParagraph(num: number, children: TextRun[]): Paragraph {
-  // We use an indented paragraph with a hanging indent to simulate numbered list
   return new Paragraph({
+    alignment: AlignmentType.JUSTIFIED,
     indent: { left: convertInchesToTwip(0.5), hanging: convertInchesToTwip(0.5) },
-    spacing: { after: 200 },
+    spacing: { after: 160, ...LINE_SPACING },
     children: [
       body(`${num}.\t`),
       ...children,
@@ -92,11 +112,12 @@ function numberedParagraph(num: number, children: TextRun[]): Paragraph {
   });
 }
 
-/** Sub-item paragraph (e.g. "a)  text...") */
+/** Sub-item paragraph */
 function subItemParagraph(letter: string, children: TextRun[]): Paragraph {
   return new Paragraph({
+    alignment: AlignmentType.JUSTIFIED,
     indent: { left: convertInchesToTwip(0.75), hanging: convertInchesToTwip(0.5) },
-    spacing: { after: 160 },
+    spacing: { after: 120, ...LINE_SPACING },
     children: [
       body(`${letter})\t`),
       ...children,
@@ -109,31 +130,29 @@ function subItemParagraph(letter: string, children: TextRun[]): Paragraph {
 export async function generateStatementDocx(input: StatementInput): Promise<Buffer> {
   const {
     cin,
-    name,
     operationName,
     surveillanceDays,
     certifierCin,
-    certifierName,
     producedAt,
   } = input;
 
   const sortedDays = [...surveillanceDays].sort((a, b) => a.date - b.date);
   const producedDateStr = formatShortDate(producedAt);
-  const producedAtStr = format(new Date(producedAt), "d MMMM yyyy 'at' h:mm:ss aaa");
+
+  // Full CIN label e.g. "CIN459"
+  const cinLabel = `CIN${cin}`;
 
   // ── AFP Logo placeholder ──────────────────────────────────────────────────
-  // Try to load a real logo; fall back to a 1×1 transparent PNG placeholder
   let logoImageData: Buffer | null = null;
   const logoPath = path.join(process.cwd(), "server", "assets", "afp_logo.png");
   if (fs.existsSync(logoPath)) {
     logoImageData = fs.readFileSync(logoPath);
   }
 
-  // ── Header row: Logo left, "Statement" right ──────────────────────────────
-  const headerLogoCell = new TableCell({
-    width: { size: 20, type: WidthType.PERCENTAGE },
-    borders: { top: { style: BorderStyle.NONE }, bottom: { style: BorderStyle.NONE }, left: { style: BorderStyle.NONE }, right: { style: BorderStyle.NONE } },
-    children: [
+  // ── Header row: Logo left, "Statement" right — NO BORDERS ────────────────
+  const headerLogoCell = noBorderCell(
+    20,
+    [
       logoImageData
         ? new Paragraph({
             children: [
@@ -146,75 +165,64 @@ export async function generateStatementDocx(input: StatementInput): Promise<Buff
           })
         : new Paragraph({
             children: [
-              body("AFP", { bold: true, size: 28 }),
-              new TextRun({ text: "\nAUSTRALIAN FEDERAL POLICE", font: "Times New Roman", size: 16 }),
+              new TextRun({ text: "AFP", font: FONT, bold: true, size: 28 }),
+              new TextRun({ text: " AUSTRALIAN\nFEDERAL POLICE", font: FONT, size: 14 }),
             ],
           }),
     ],
-  });
+    "top"
+  );
 
-  const headerTitleCell = new TableCell({
-    width: { size: 80, type: WidthType.PERCENTAGE },
-    verticalAlign: VerticalAlign.TOP,
-    borders: { top: { style: BorderStyle.NONE }, bottom: { style: BorderStyle.NONE }, left: { style: BorderStyle.NONE }, right: { style: BorderStyle.NONE } },
-    children: [
+  const headerTitleCell = noBorderCell(
+    80,
+    [
       new Paragraph({
         alignment: AlignmentType.RIGHT,
         children: [body("Statement", { bold: true, size: 28 })],
       }),
     ],
-  });
+    "top"
+  );
 
-  const headerTable = new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    borders: { top: { style: BorderStyle.NONE }, bottom: { style: BorderStyle.NONE }, left: { style: BorderStyle.NONE }, right: { style: BorderStyle.NONE } },
-    rows: [
-      new TableRow({
-        children: [headerLogoCell, headerTitleCell],
-      }),
-    ],
-  });
+  const headerTable = noBorderTable([
+    new TableRow({ children: [headerLogoCell, headerTitleCell] }),
+  ]);
 
-  // ── Details block: Name / CIN / Occupation / Employer / Date ─────────────
+  // ── Details block: Name / Occupation / Employer / Date — NO BORDERS ───────
   function detailRow(label: string, value: string, valueItalic = false): TableRow {
     return new TableRow({
       children: [
-        new TableCell({
-          width: { size: 25, type: WidthType.PERCENTAGE },
-          borders: { top: { style: BorderStyle.NONE }, bottom: { style: BorderStyle.NONE }, left: { style: BorderStyle.NONE }, right: { style: BorderStyle.NONE } },
-          children: [new Paragraph({ children: [body(label, { bold: true })] })],
-        }),
-        new TableCell({
-          width: { size: 75, type: WidthType.PERCENTAGE },
-          borders: { top: { style: BorderStyle.NONE }, bottom: { style: BorderStyle.NONE }, left: { style: BorderStyle.NONE }, right: { style: BorderStyle.NONE } },
-          children: [new Paragraph({ children: [body(value, { italics: valueItalic, bold: valueItalic })] })],
-        }),
+        noBorderCell(25, [new Paragraph({ spacing: LINE_SPACING, children: [body(label, { bold: true })] })]),
+        noBorderCell(75, [new Paragraph({ spacing: LINE_SPACING, children: [body(value, { italics: valueItalic, bold: valueItalic })] })]),
       ],
     });
   }
 
-  const detailsTable = new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    borders: { top: { style: BorderStyle.NONE }, bottom: { style: BorderStyle.NONE }, left: { style: BorderStyle.NONE }, right: { style: BorderStyle.NONE } },
-    rows: [
-      detailRow("Name", cin),
-      detailRow("Occupation", "Federal Agent"),
-      detailRow("Employer", "Australian Federal Police"),
-      detailRow("Date", producedDateStr, true),
-    ],
-  });
+  const detailsTable = noBorderTable([
+    detailRow("Name", cinLabel),
+    detailRow("Occupation", "Federal Agent"),
+    detailRow("Employer", "Australian Federal Police"),
+    detailRow("Date", producedDateStr, true),
+  ]);
 
   // ── Body paragraphs ───────────────────────────────────────────────────────
   const bodyParagraphs: (Paragraph | Table)[] = [];
 
-  // Header table (logo + "Statement")
   bodyParagraphs.push(headerTable);
-  bodyParagraphs.push(hrParagraph());
+
+  // Horizontal rule under header
+  bodyParagraphs.push(
+    new Paragraph({
+      border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: "000000" } },
+      spacing: { after: 160 },
+      children: [new TextRun("")],
+    })
+  );
 
   // "Statement in the matter of: Operation X"
   bodyParagraphs.push(
     new Paragraph({
-      spacing: { after: 200 },
+      spacing: { after: 160, ...LINE_SPACING },
       children: [
         body("Statement in the matter of: "),
         body(`Operation ${operationName}`, { bold: true }),
@@ -223,16 +231,22 @@ export async function generateStatementDocx(input: StatementInput): Promise<Buff
   );
 
   bodyParagraphs.push(spacer(80));
-
-  // Details block
   bodyParagraphs.push(detailsTable);
   bodyParagraphs.push(spacer(80));
-  bodyParagraphs.push(hrParagraph());
+
+  // Second horizontal rule
+  bodyParagraphs.push(
+    new Paragraph({
+      border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: "000000" } },
+      spacing: { after: 200 },
+      children: [new TextRun("")],
+    })
+  );
 
   // STATES:
   bodyParagraphs.push(
     new Paragraph({
-      spacing: { after: 240 },
+      spacing: { after: 200, ...LINE_SPACING },
       children: [body("STATES:", { bold: true })],
     })
   );
@@ -245,7 +259,7 @@ export async function generateStatementDocx(input: StatementInput): Promise<Buff
 
   bodyParagraphs.push(numberedParagraph(2, [
     body("I am a covert operative, covert identification number (CIN) "),
-    body(cin, { bold: false }),
+    body(cin),
     body(", a Federal Agent (FA) of the Australian Federal Police (AFP) assigned to Perth Office at 1280 Hay Street, WEST PERTH, Western Australia (WA)."),
   ]));
 
@@ -284,17 +298,16 @@ export async function generateStatementDocx(input: StatementInput): Promise<Buff
     const letter = subLetters[idx] ?? String(idx + 1);
     const dayLabel = formatDayDate(day.date);
 
-    // Sub-item header: "a)  Monday, 17 May 2021"
     bodyParagraphs.push(subItemParagraph(letter, [
       body(dayLabel, { bold: true, italics: true }),
     ]));
 
-    // Author line (only if isAuthor)
     if (day.isAuthor) {
       bodyParagraphs.push(
         new Paragraph({
+          alignment: AlignmentType.JUSTIFIED,
           indent: { left: convertInchesToTwip(1.0) },
-          spacing: { after: 160 },
+          spacing: { after: 120, ...LINE_SPACING },
           children: [
             body("On this day I was responsible for preparing the Surveillance Running Sheet for the Surveillance Team.", { bold: true, italics: true }),
           ],
@@ -302,27 +315,25 @@ export async function generateStatementDocx(input: StatementInput): Promise<Buff
       );
     }
 
-    // Image times line (only if there are image times)
     if (day.imageTimes.length > 0) {
       const timeStr = day.imageTimes.join(" and ");
       bodyParagraphs.push(
         new Paragraph({
+          alignment: AlignmentType.JUSTIFIED,
           indent: { left: convertInchesToTwip(1.0) },
-          spacing: { after: 160 },
+          spacing: { after: 120, ...LINE_SPACING },
           children: [
             body(`On this day I also took digital images recorded on the Surveillance Running Sheet at ${timeStr}.`, { bold: true, italics: true }),
           ],
         })
       );
 
-      // EXHIBIT label
       bodyParagraphs.push(
         new Paragraph({
+          alignment: AlignmentType.JUSTIFIED,
           indent: { left: convertInchesToTwip(1.0) },
-          spacing: { after: 200 },
-          children: [
-            body("EXHIBIT", { bold: true, underline: true }),
-          ],
+          spacing: { after: 160 },
+          children: [body("EXHIBIT", { bold: true, underline: true })],
         })
       );
     }
@@ -336,85 +347,84 @@ export async function generateStatementDocx(input: StatementInput): Promise<Buff
     body(" which appears on each Surveillance Running Sheet represent observations made by me during that particular period of surveillance.  I signed the cover sheet with my CIN and initialed my CIN against each entry on the Surveillance Running Sheet attributed to me."),
   ]));
 
-  bodyParagraphs.push(spacer(200));
+  bodyParagraphs.push(spacer(240));
 
   // ── Declaration ───────────────────────────────────────────────────────────
 
   bodyParagraphs.push(
     new Paragraph({
-      spacing: { after: 200 },
+      alignment: AlignmentType.JUSTIFIED,
+      spacing: { after: 240, ...LINE_SPACING },
       children: [
         body("This statement is true to the best of my knowledge and belief.  I have made this statement knowing that, if it is tendered in evidence, I will be guilty of a crime if I have wilfully included in the statement anything that I know to be false or that I do not believe is true."),
       ],
     })
   );
 
-  bodyParagraphs.push(spacer(240));
+  bodyParagraphs.push(spacer(320));
 
   // ── Signature block ───────────────────────────────────────────────────────
+  // Blank space above signature line (no "Digital signature here" text)
+  bodyParagraphs.push(spacer(400));
 
+  // Shorter signature line — ~3 inches wide using a narrow table
+  const sigLineTable = noBorderTable([
+    new TableRow({
+      children: [
+        noBorderCell(45, [
+          new Paragraph({
+            border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: "000000" } },
+            spacing: { after: 120 },
+            children: [new TextRun("")],
+          }),
+        ]),
+        noBorderCell(55, [new Paragraph({ children: [new TextRun("")] })]),
+      ],
+    }),
+  ]);
+  bodyParagraphs.push(sigLineTable);
+
+  // Full CIN label under signature line
   bodyParagraphs.push(
     new Paragraph({
       spacing: { after: 80 },
-      children: [body("Digital signature here", { italics: true, bold: true })],
+      children: [body(cinLabel)],
     })
   );
 
-  // Signature line
+  // Date produced
   bodyParagraphs.push(
     new Paragraph({
-      border: {
-        bottom: { style: BorderStyle.SINGLE, size: 6, color: "000000" },
-      },
-      spacing: { after: 120 },
-      children: [new TextRun("")],
-    })
-  );
-
-  // CIN below signature line
-  bodyParagraphs.push(
-    new Paragraph({
-      spacing: { after: 80 },
-      children: [body(cin)],
-    })
-  );
-
-  // Date below CIN
-  bodyParagraphs.push(
-    new Paragraph({
-      spacing: { after: 200 },
+      spacing: { after: 200, ...LINE_SPACING },
       children: [body(producedDateStr, { italics: true, bold: true })],
     })
   );
 
-  bodyParagraphs.push(spacer(200));
-
-  // ── RunLog digital certification footer block ─────────────────────────────
-
+  // ── RunLog Digital Certification — directly under date ────────────────────
   bodyParagraphs.push(
     new Paragraph({
-      border: {
-        top: { style: BorderStyle.SINGLE, size: 6, color: "94A3B8" },
-      },
-      spacing: { before: 200, after: 100 },
+      spacing: { after: 60 },
       children: [
         new TextRun({
           text: "RunLog Digital Certification",
-          font: "Times New Roman",
+          font: FONT,
           bold: true,
-          size: 18,
+          size: 16,
           color: "475569",
         }),
       ],
     })
   );
+
+  // "Certified by CIN459  4 July 2026"
   bodyParagraphs.push(
     new Paragraph({
+      spacing: { after: 0 },
       children: [
         new TextRun({
-          text: `This statement was produced via RunLog. Certified by CIN ${certifierCin} — ${certifierName} — ${producedAtStr}.`,
-          font: "Times New Roman",
-          size: 18,
+          text: `Certified by CIN${certifierCin}  ${producedDateStr}`,
+          font: FONT,
+          size: 16,
           color: "475569",
           italics: true,
         }),
@@ -422,7 +432,7 @@ export async function generateStatementDocx(input: StatementInput): Promise<Buff
     })
   );
 
-  // ── Footer: "continued" on all pages except last ──────────────────────────
+  // ── Footer: "continued" ───────────────────────────────────────────────────
   const footerContent = new Footer({
     children: [
       new Paragraph({
@@ -439,8 +449,8 @@ export async function generateStatementDocx(input: StatementInput): Promise<Buff
       default: {
         document: {
           run: {
-            font: "Times New Roman",
-            size: 24,
+            font: FONT,
+            size: BODY_SIZE,
           },
         },
       },

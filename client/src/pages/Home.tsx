@@ -217,7 +217,7 @@ export default function Home() {
                     <Button
                       size="icon"
                       variant="ghost"
-                      className="w-8 h-8 opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive hover:bg-destructive/10 transition-opacity"
+                      className="w-8 h-8 text-destructive hover:text-destructive hover:bg-destructive/10"
                       onClick={(e) => {
                         e.stopPropagation();
                         setDeleteId(op.id);

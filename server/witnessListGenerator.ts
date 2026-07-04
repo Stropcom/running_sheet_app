@@ -324,7 +324,8 @@ export async function generateWitnessListDocx(input: WitnessListInput): Promise<
           titlePara,
           detailsTable,
           emptyPara(),
-          ...overallSection,
+          // Only include the combined section when more than one sheet is selected
+          ...(sheets.length > 1 ? overallSection : []),
           ...sheetSections,
           ...certBlock,
         ],

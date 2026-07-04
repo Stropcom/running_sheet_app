@@ -1,4 +1,7 @@
 import "dotenv/config";
+// Set server timezone to Perth, Western Australia (UTC+8) — must be first line
+process.env.TZ = "Australia/Perth";
+
 import express from "express";
 import { createServer } from "http";
 import net from "net";

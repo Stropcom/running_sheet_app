@@ -340,3 +340,9 @@
 - [x] Server: getGovernanceTodoForCin — add "Ready to close" outstanding item for Team Leader when governance is 100% and all rows certified but sheet is not yet closed
 - [x] Client: SheetDetail.tsx — canCloseSheet checks if current user CIN matches Team Leader CIN or is admin; show tooltip explaining restriction to others
 - [x] Client: TodoGovernancePage — display "Ready to close" items with a distinct style (green/teal)
+
+## Team Leader Close Notification — Always Visible + Governance Percent
+- [x] Server: getGovernanceTodoForCin — "Ready to close" now always shown for Team Leader on any open sheet (not just when ready)
+- [x] Server: govPercent field added to return type — governance completion percentage passed alongside each Team Leader item
+- [x] Client: TodoGovernancePage — governance percent shown as a pill badge next to "Ready to close" (slate=0–49%, sky=50–99%, emerald=100%)
+- [x] Client: "Ready to close" text colour changes — sky-400 when not yet at 100%, emerald-400 when fully ready

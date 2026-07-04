@@ -117,7 +117,9 @@ export default function TodoGovernancePage() {
                             key={ti}
                             className={`flex items-center gap-1.5 text-xs ${
                               task === "Ready to close"
-                                ? "text-emerald-400 font-medium"
+                                ? item.govPercent === 100
+                                  ? "text-emerald-400 font-medium"
+                                  : "text-sky-400 font-medium"
                                 : task === "Sheet not fully certified"
                                   ? "text-amber-400"
                                   : "text-rose-400"
@@ -131,6 +133,19 @@ export default function TodoGovernancePage() {
                               <AlertTriangle className="w-3 h-3 shrink-0" />
                             )}
                             {task}
+                            {task === "Ready to close" && item.govPercent !== undefined && (
+                              <span
+                                className={`ml-1 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none ${
+                                  item.govPercent >= 100
+                                    ? "bg-emerald-500/20 text-emerald-300"
+                                    : item.govPercent >= 50
+                                      ? "bg-sky-500/20 text-sky-300"
+                                      : "bg-slate-500/20 text-slate-400"
+                                }`}
+                              >
+                                {item.govPercent}%
+                              </span>
+                            )}
                           </span>
                         ))}
                       </div>

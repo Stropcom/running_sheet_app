@@ -1457,15 +1457,30 @@ export const appRouter = router({
         operationName: string | null;
       }[] = [];
 
+      /**
+       * Extract a UTC-safe day start from a title that begins with YYYYMMDD,
+       * e.g. "20260702 - FOREST (OSBORNE)" → 2026-07-02T00:00:00Z.
+       * Falls back to the UTC date of the createdAt timestamp so no timezone
+       * shift occurs on the server (which runs in UTC).
+       */
+      function dayStartFromTitleOrDate(title: string, createdAt: number | Date): number {
+        const m = title.match(/^(\d{4})(\d{2})(\d{2})/);
+        if (m) {
+          // Parse directly as UTC midnight — no timezone shift
+          return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+        }
+        // No date prefix: use UTC date components of createdAt to avoid server-TZ shift
+        const d = new Date(typeof createdAt === "number" ? createdAt : createdAt.getTime());
+        return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+      }
+
       for (const op of operations) {
-        // Use start-of-day (midnight local) so the event sits on exactly one calendar day
-        const d = new Date(op.createdAt);
-        const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+        const dayStart = dayStartFromTitleOrDate(op.name, op.createdAt);
         events.push({
           id: `op-${op.id}`,
           title: op.name,
           start: dayStart,
-          end: dayStart, // allDay events: start === end is fine with allDay flag
+          end: dayStart,
           type: "operation",
           operationId: op.id,
           sheetId: null,
@@ -1474,8 +1489,7 @@ export const appRouter = router({
       }
 
       for (const sheet of sheets) {
-        const d = new Date(sheet.createdAt);
-        const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+        const dayStart = dayStartFromTitleOrDate(sheet.title, sheet.createdAt);
         const op = operations.find((o) => o.id === sheet.operationId);
         events.push({
           id: `sheet-${sheet.id}`,

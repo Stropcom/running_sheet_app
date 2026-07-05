@@ -232,26 +232,31 @@ function buildProfileHtml(entity: Entity, allEntities: Entity[]) {
   /* ── Stats bar ── */
   .stats-bar {
     display: flex;
-    background: ${TEAL};
+    background: #172554;
     color: #fff;
+    border-bottom: 3px solid ${BLUE};
   }
   .stat-item {
     flex: 1;
-    padding: 10px 16px;
-    border-right: 1px solid rgba(255,255,255,0.15);
+    padding: 12px 20px;
+    border-right: 1px solid rgba(255,255,255,0.12);
+    text-align: left;
   }
   .stat-item:last-child { border-right: none; }
   .stat-value {
-    font-size: 18px;
-    font-weight: 700;
+    font-size: 26px;
+    font-weight: 800;
     line-height: 1;
-    margin-bottom: 2px;
+    margin-bottom: 4px;
+    color: #ffffff;
+    letter-spacing: -0.5px;
   }
   .stat-label {
-    font-size: 8.5px;
+    font-size: 9px;
+    font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
-    opacity: 0.75;
+    letter-spacing: 0.12em;
+    color: ${BLUE_MID};
   }
 
   /* ── Body ── */
@@ -426,6 +431,26 @@ function buildProfileHtml(entity: Entity, allEntities: Entity[]) {
   </div>
   <div class="entity-type-pill">${typeLabel}</div>
   <div class="entity-name">${entityName}</div>
+</div>
+
+<!-- Stats Banner -->
+<div class="stats-bar">
+  <div class="stat-item">
+    <div class="stat-value">${entity.occurrences.length}</div>
+    <div class="stat-label">Observations</div>
+  </div>
+  <div class="stat-item">
+    <div class="stat-value">${sheets.length}</div>
+    <div class="stat-label">Running Sheets</div>
+  </div>
+  <div class="stat-item">
+    <div class="stat-value">${relatedPersons.length + relatedVehicles.length + relatedAddresses.length + relatedBusinesses.length}</div>
+    <div class="stat-label">Associations</div>
+  </div>
+  <div class="stat-item">
+    <div class="stat-value">${Array.from(new Set(entity.occurrences.map(o => o.operationId))).length}</div>
+    <div class="stat-label">Operations</div>
+  </div>
 </div>
 
 <!-- Body -->

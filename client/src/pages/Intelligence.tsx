@@ -248,96 +248,93 @@ function ProfileDialog({
           </div>
         </div>
 
-        {/* Full description */}
-        {entity.occurrences[0]?.fullDescription && (
-          <div className="rounded-lg border border-border/60 bg-muted/20 p-3 text-sm">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Full Description (first occurrence)</p>
-            <p className="text-foreground">{entity.occurrences[0].fullDescription}</p>
-          </div>
-        )}
-
-        <Separator />
-
-        {/* Running sheets detail */}
+        {/* Running sheets — clickable titles only, moved up */}
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Running Sheets</p>
-          <div className="space-y-2">
-            {sheets.map((sheet) => {
-              const sheetOccs = entity.occurrences.filter((o) => o.sheetId === sheet.sheetId);
-              return (
-                <div key={sheet.sheetId} className="rounded-lg border border-border/60 bg-muted/20 p-3">
-                  <div className="flex items-start gap-2 mb-1">
-                    <Calendar className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
-                    <div>
-                      <p className="text-xs font-medium text-foreground">{sheet.sheetTitle}</p>
-                      <p className="text-xs text-muted-foreground">{sheet.operationName}</p>
-                    </div>
-                  </div>
-                  {sheetOccs.map((occ, i) => (
-                    <p key={i} className="text-xs text-muted-foreground mt-1 pl-5">
-                      {occ.timeMinutes !== null && (
-                        <span className="font-mono mr-1">[{formatTime(occ.timeMinutes)}]</span>
-                      )}
-                      {occ.observationSnippet}
-                    </p>
-                  ))}
-                </div>
-              );
-            })}
+          <div className="space-y-1">
+            {sheets.map((sheet) => (
+              <button
+                key={sheet.sheetId}
+                onClick={() => { onClose(); window.location.href = `/sheet/${sheet.sheetId}`; }}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border/60 bg-muted/20 hover:bg-accent/10 transition-colors text-left"
+              >
+                <Calendar className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                <span className="text-xs font-medium text-foreground truncate">{sheet.sheetTitle}</span>
+                <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0 ml-auto" />
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Vehicles */}
+        <Separator />
+
+        {/* Vehicles — clickable pills */}
         {relatedVehicles.length > 0 && (
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Associated Vehicles</p>
             <div className="flex flex-wrap gap-2">
               {relatedVehicles.map((v) => (
-                <span key={v.shortForm} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${TYPE_COLORS.vehicle}`}>
+                <button
+                  key={v.shortForm}
+                  onClick={() => { onClose(); setTimeout(() => { const el = document.querySelector(`[data-entity="${v.shortForm}"]`) as HTMLElement; el?.click(); }, 100); }}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity ${TYPE_COLORS.vehicle}`}
+                >
                   <Car className="w-3 h-3" />{v.shortForm}<span className="opacity-60">×{v.occurrences.length}</span>
-                </span>
+                </button>
               ))}
             </div>
           </div>
         )}
 
-        {/* Addresses */}
+        {/* Addresses — clickable pills */}
         {relatedAddresses.length > 0 && (
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Associated Addresses</p>
             <div className="flex flex-wrap gap-2">
               {relatedAddresses.map((a) => (
-                <span key={a.shortForm} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${TYPE_COLORS.address}`}>
+                <button
+                  key={a.shortForm}
+                  onClick={() => { onClose(); setTimeout(() => { const el = document.querySelector(`[data-entity="${a.shortForm}"]`) as HTMLElement; el?.click(); }, 100); }}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity ${TYPE_COLORS.address}`}
+                >
                   <MapPin className="w-3 h-3" />{a.shortForm}<span className="opacity-60">×{a.occurrences.length}</span>
-                </span>
+                </button>
               ))}
             </div>
           </div>
         )}
 
-        {/* Associated Persons */}
+        {/* Associated Persons — clickable pills */}
         {relatedPersons.length > 0 && (
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Associated Persons</p>
             <div className="flex flex-wrap gap-2">
               {relatedPersons.map((p) => (
-                <span key={p.shortForm} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${TYPE_COLORS.person}`}>
+                <button
+                  key={p.shortForm}
+                  onClick={() => { onClose(); setTimeout(() => { const el = document.querySelector(`[data-entity="${p.shortForm}"]`) as HTMLElement; el?.click(); }, 100); }}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity ${TYPE_COLORS.person}`}
+                >
                   <User className="w-3 h-3" />{p.shortForm}<span className="opacity-60">×{p.occurrences.length}</span>
-                </span>
+                </button>
               ))}
             </div>
           </div>
         )}
 
-        {/* Businesses */}
+        {/* Businesses — clickable pills */}
         {relatedBusinesses.length > 0 && (
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Associated Businesses</p>
             <div className="flex flex-wrap gap-2">
               {relatedBusinesses.map((b) => (
-                <span key={b.shortForm} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${TYPE_COLORS.business}`}>
+                <button
+                  key={b.shortForm}
+                  onClick={() => { onClose(); setTimeout(() => { const el = document.querySelector(`[data-entity="${b.shortForm}"]`) as HTMLElement; el?.click(); }, 100); }}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity ${TYPE_COLORS.business}`}
+                >
                   <Building2 className="w-3 h-3" />{b.shortForm}<span className="opacity-60">×{b.occurrences.length}</span>
-                </span>
+                </button>
               ))}
             </div>
           </div>
@@ -754,9 +751,14 @@ export default function IntelligencePage() {
                     const icon = entity.type === "address" || entity.type === "business"
                       ? <MapPin className="w-3.5 h-3.5" />
                       : TYPE_ICONS[entity.type];
+                    // Strip leading 'a ' or 'A ' from vehicle display names
+                    const displayShortForm = entity.type === "vehicle"
+                      ? entity.shortForm.replace(/^[aA]\s+/, "")
+                      : entity.shortForm;
                     return (
                       <button
                         key={`${entity.isTarget ? "target" : entity.type}::${entity.shortForm}`}
+                        data-entity={entity.shortForm}
                         onClick={() => setSelected(entity)}
                         className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-accent/10 transition-colors ${
                           idx < filteredByTab.length - 1 ? "border-b border-border/40" : ""
@@ -767,16 +769,13 @@ export default function IntelligencePage() {
                         </span>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <p className="font-mono text-sm font-medium text-foreground truncate">{entity.shortForm}</p>
+                            <p className="font-mono text-sm font-medium text-foreground truncate">{displayShortForm}</p>
                             {entity.tgtAlias && (
                               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 shrink-0">
                                 TGT: {entity.tgtAlias}
                               </span>
                             )}
                           </div>
-                          <p className="text-xs text-muted-foreground truncate">
-                            {entity.occurrences[0]?.fullDescription ?? ""}
-                          </p>
                         </div>
                         <div className="text-right shrink-0">
                           <p className="text-xs font-medium text-foreground">{entity.occurrences.length}×</p>

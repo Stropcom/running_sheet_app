@@ -1444,15 +1444,22 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
         const shorterLower = shorter.shortForm.toLowerCase().trim();
         if (absorbed.has(shorterLower)) continue;
 
-        // The longer must START WITH the shorter, and the character immediately
-        // after the shorter in the longer must be a natural word boundary
-        if (
-          longerLower.startsWith(shorterLower) &&
-          (
-            longerLower.length === shorterLower.length ||
-            /^[\s,;\-/]/.test(longerLower.slice(shorterLower.length))
-          )
-        ) {
+        // For vehicles: also absorb when the shorter shortForm appears ANYWHERE inside
+        // the longer (e.g. "ABC 123" inside "silver Toyota Hilux bearing ABC 123").
+        // For addresses: keep the original prefix-only rule.
+        const isContained = entityType === "vehicle"
+          ? (() => {
+              const idx = longerLower.indexOf(shorterLower);
+              if (idx === -1) return false;
+              // Must be at a word boundary on both sides
+              const before = idx === 0 || /[\s,;\-/(]/.test(longerLower[idx - 1]);
+              const after = idx + shorterLower.length === longerLower.length || /[\s,;\-/)]/.test(longerLower[idx + shorterLower.length]);
+              return before && after;
+            })()
+          : (longerLower.startsWith(shorterLower) &&
+              (longerLower.length === shorterLower.length ||
+               /^[\s,;\-/]/.test(longerLower.slice(shorterLower.length))));
+        if (isContained) {
           // Merge shorter's occurrences into longer, deduplicating by sheetId+rowId+snippet
           const existingKeys = new Set(
             longer.occurrences.map(

@@ -695,6 +695,20 @@ export default function OperationDetail() {
     onError: (e) => toast.error(e.message),
   });
 
+  // Delete operation (moved from Home page into Edit dialog)
+  const [deleteOpConfirm, setDeleteOpConfirm] = useState(false);
+  const { data: deleteOpStats } = trpc.operation.deleteStats.useQuery(
+    { id: operationId },
+    { enabled: deleteOpConfirm }
+  );
+  const deleteOp = trpc.operation.delete.useMutation({
+    onSuccess: () => {
+      toast.success("Operation deleted");
+      navigate("/");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const deleteSheet = trpc.sheet.delete.useMutation({
     onSuccess: () => {
       utils.sheet.listByOperation.invalidate({ operationId });
@@ -1004,17 +1018,73 @@ export default function OperationDetail() {
               />
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
-            <Button
-              onClick={handleEditSave}
-              disabled={!editName.trim() || updateOperation.isPending}
-            >
-              {updateOperation.isPending ? "Saving…" : "Save Changes"}
-            </Button>
+          <DialogFooter className="flex items-center justify-between w-full">
+            <div className="flex-1">
+              {user?.role === "admin" && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive hover:bg-destructive/10 gap-1.5"
+                  onClick={() => { setEditOpen(false); setDeleteOpConfirm(true); }}
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete Operation
+                </Button>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+              <Button
+                onClick={handleEditSave}
+                disabled={!editName.trim() || updateOperation.isPending}
+              >
+                {updateOperation.isPending ? "Saving…" : "Save Changes"}
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Operation Confirmation */}
+      <AlertDialog open={deleteOpConfirm} onOpenChange={(o) => !o && setDeleteOpConfirm(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Operation?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>This action <strong>cannot be undone</strong>. The following will be permanently deleted:</p>
+                {deleteOpStats ? (
+                  <ul className="text-sm space-y-1 pl-1">
+                    <li className="flex items-center gap-2">
+                      <span className="inline-block w-2 h-2 rounded-full bg-destructive/70" />
+                      <span><strong>{deleteOpStats.sheetCount}</strong> running sheet{deleteOpStats.sheetCount !== 1 ? "s" : ""}</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="inline-block w-2 h-2 rounded-full bg-destructive/70" />
+                      <span><strong>{deleteOpStats.rowCount}</strong> observation row{deleteOpStats.rowCount !== 1 ? "s" : ""}</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="inline-block w-2 h-2 rounded-full bg-destructive/70" />
+                      <span><strong>{deleteOpStats.targetCount}</strong> target{deleteOpStats.targetCount !== 1 ? "s" : ""}</span>
+                    </li>
+                  </ul>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Loading details…</p>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteOp.mutate({ id: operationId })}
+            >
+              Delete Operation
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Create Sheet Dialog */}
       <Dialog open={createOpen} onOpenChange={handleDialogClose}>

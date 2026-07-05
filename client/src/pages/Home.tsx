@@ -238,19 +238,6 @@ export default function Home() {
 
                 {/* Actions */}
                 <div className="flex items-center gap-2 shrink-0">
-                  {user?.role === "admin" && (
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="w-8 h-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDeleteId(op.id);
-                      }}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  )}
                   <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
                 </div>
               </div>

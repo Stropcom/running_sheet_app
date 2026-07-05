@@ -209,10 +209,12 @@ function ProfileDialog({
   entity,
   allEntities,
   onClose,
+  onNavigate,
 }: {
   entity: Entity;
   allEntities: Entity[];
   onClose: () => void;
+  onNavigate: (e: Entity) => void;
 }) {
   const mySheetIds = useMemo(() => new Set(entity.occurrences.map((o) => o.sheetId)), [entity]);
 
@@ -276,7 +278,7 @@ function ProfileDialog({
               {relatedVehicles.map((v) => (
                 <button
                   key={v.shortForm}
-                  onClick={() => { onClose(); setTimeout(() => { const el = document.querySelector(`[data-entity="${v.shortForm}"]`) as HTMLElement; el?.click(); }, 100); }}
+                  onClick={() => onNavigate(v)}
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity ${TYPE_COLORS.vehicle}`}
                 >
                   <Car className="w-3 h-3" />{v.shortForm}<span className="opacity-60">×{v.occurrences.length}</span>
@@ -294,7 +296,7 @@ function ProfileDialog({
               {relatedAddresses.map((a) => (
                 <button
                   key={a.shortForm}
-                  onClick={() => { onClose(); setTimeout(() => { const el = document.querySelector(`[data-entity="${a.shortForm}"]`) as HTMLElement; el?.click(); }, 100); }}
+                  onClick={() => onNavigate(a)}
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity ${TYPE_COLORS.address}`}
                 >
                   <MapPin className="w-3 h-3" />{a.shortForm}<span className="opacity-60">×{a.occurrences.length}</span>
@@ -312,7 +314,7 @@ function ProfileDialog({
               {relatedPersons.map((p) => (
                 <button
                   key={p.shortForm}
-                  onClick={() => { onClose(); setTimeout(() => { const el = document.querySelector(`[data-entity="${p.shortForm}"]`) as HTMLElement; el?.click(); }, 100); }}
+                  onClick={() => onNavigate(p)}
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity ${TYPE_COLORS.person}`}
                 >
                   <User className="w-3 h-3" />{p.shortForm}<span className="opacity-60">×{p.occurrences.length}</span>
@@ -330,7 +332,7 @@ function ProfileDialog({
               {relatedBusinesses.map((b) => (
                 <button
                   key={b.shortForm}
-                  onClick={() => { onClose(); setTimeout(() => { const el = document.querySelector(`[data-entity="${b.shortForm}"]`) as HTMLElement; el?.click(); }, 100); }}
+                  onClick={() => onNavigate(b)}
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity ${TYPE_COLORS.business}`}
                 >
                   <Building2 className="w-3 h-3" />{b.shortForm}<span className="opacity-60">×{b.occurrences.length}</span>
@@ -797,6 +799,7 @@ export default function IntelligencePage() {
           entity={selected}
           allEntities={entities}
           onClose={() => setSelected(null)}
+          onNavigate={(e) => setSelected(e)}
         />
       )}
     </DashboardLayout>

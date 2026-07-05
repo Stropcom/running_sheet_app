@@ -14,7 +14,9 @@ import {
   CheckSquare,
   Square,
   Loader2,
+  ArrowLeft,
 } from "lucide-react";
+import { useLocation } from "wouter";
 import { format } from "date-fns";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -53,6 +55,7 @@ function StepBadge({ n, active, done }: { n: number; active: boolean; done: bool
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function WitnessListPage() {
+  const [, navigate] = useLocation();
   const { isAuthenticated } = useAuth();
 
   const [selectedOpId, setSelectedOpId] = useState<number | null>(null);
@@ -131,6 +134,9 @@ export default function WitnessListPage() {
       <div className="max-w-3xl mx-auto py-8 px-4 flex flex-col gap-8">
         {/* Page header */}
         <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" className="shrink-0" onClick={() => navigate("/")}>
+            <ArrowLeft className="w-4 h-4" />
+          </Button>
           <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
             <Users className="w-5 h-5 text-primary" />
           </div>

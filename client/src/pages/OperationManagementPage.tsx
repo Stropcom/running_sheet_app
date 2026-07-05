@@ -33,6 +33,7 @@ import {
   Lock,
   Plus,
   Search,
+  ArrowLeft,
 } from "lucide-react";
 import {
   Dialog,
@@ -165,6 +166,7 @@ function OperationCard({
 }
 
 export default function OperationManagementPage() {
+  const [, navigate] = useLocation();
   const { isAuthenticated, user } = useAuth();
   const utils = trpc.useUtils();
   const isAdmin = user?.role === "admin";
@@ -221,6 +223,9 @@ export default function OperationManagementPage() {
       <div className="max-w-3xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
+          <Button variant="ghost" size="icon" className="shrink-0" onClick={() => navigate("/")}>
+            <ArrowLeft className="w-4 h-4" />
+          </Button>
           <div className="p-2.5 rounded-xl bg-violet-500/15 border border-violet-500/30">
             <ArrowRightLeft className="w-5 h-5 text-violet-400" />
           </div>

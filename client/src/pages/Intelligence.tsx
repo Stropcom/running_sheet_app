@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Input } from "@/components/ui/input";
@@ -216,6 +217,7 @@ function ProfileDialog({
   onClose: () => void;
   onNavigate: (e: Entity) => void;
 }) {
+  const [, navigate] = useLocation();
   const mySheetIds = useMemo(() => new Set(entity.occurrences.map((o) => o.sheetId)), [entity]);
 
   const relatedVehicles   = useMemo(() => allEntities.filter((e) => e.type === "vehicle"  && e.occurrences.some((o) => mySheetIds.has(o.sheetId))), [allEntities, mySheetIds]);
@@ -257,11 +259,11 @@ function ProfileDialog({
             {sheets.map((sheet) => (
               <button
                 key={sheet.sheetId}
-                onClick={() => { onClose(); window.location.href = `/sheet/${sheet.sheetId}`; }}
+                onClick={() => { onClose(); setTimeout(() => navigate(`/sheet/${sheet.sheetId}`), 0); }}
                 className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border/60 bg-muted/20 hover:bg-accent/10 transition-colors text-left"
               >
                 <Calendar className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                <span className="text-xs font-medium text-foreground truncate">{sheet.sheetTitle}</span>
+                <span className="text-xs font-medium text-foreground break-words min-w-0 flex-1">{sheet.sheetTitle}</span>
                 <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0 ml-auto" />
               </button>
             ))}

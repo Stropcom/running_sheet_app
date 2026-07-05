@@ -383,3 +383,10 @@
 - [x] Frontend: WIPC Request form fields (courtDate, courtLocation, commanders, isUrgent, officer details)
 - [x] Frontend: Route /court/wipc registered in App.tsx
 - [x] Frontend: WIPC nav item added to Court subfolder in DashboardLayout.tsx sidebar (below Witness List)
+
+## Intelligence & Help Guide Fixes (Round 46)
+- [x] Fix Intelligence entity profile dialog: running sheet title showing truncated (replace `truncate` with `break-words min-w-0 flex-1`)
+- [x] Fix React error #310 (hooks violation) when clicking running sheet link in entity dialog (replace window.location.href with useLocation navigate + setTimeout)
+- [x] Update Help Guide: fix delete operation description (button now in Edit dialog, not on card)
+- [x] Update Help Guide: add WIPC section (Stat Dec, WIPC Request, vault, member registry)
+- [x] Update Help Guide: add Application Security section (auth, roles, audit log, AES-256-GCM)

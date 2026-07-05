@@ -76,7 +76,7 @@ const HELP_SECTIONS: HelpSection[] = [
       {
         question: "How do I delete an operation?",
         answer:
-          "On the Operations list page, hover over the operation card and click the **trash icon**. You will be shown a summary of how many running sheets, rows, and targets will also be deleted. Confirm to proceed. This action is permanent and cannot be undone.",
+          "Open the operation, then click the **Edit** (pencil) icon to open the Edit Operation dialog. The **Delete Operation** button is located at the bottom-left of that dialog. You will be shown a summary of how many running sheets, rows, and targets will also be deleted. Confirm to proceed. This action is permanent and cannot be undone.\n\nThe delete button is intentionally placed inside the Edit dialog (not on the card) to prevent accidental deletion.",
         tags: ["delete", "operation", "remove"],
       },
       {
@@ -301,6 +301,51 @@ const HELP_SECTIONS: HelpSection[] = [
     ],
   },
   {
+    id: "wipc",
+    title: "WIPC (Witness Identification Protection)",
+    icon: "🔐",
+    items: [
+      {
+        question: "What is the WIPC folder?",
+        answer:
+          "The **WIPC** folder (under Court in the sidebar) is used to generate two documents related to Witness Identification Protection Certificates:\n\n• **Statutory Declaration** — a formal statutory declaration document for a CIN, declaring the officer's identity at 1120 Hay Street, WEST PERTH, before a witness.\n• **WIPC Request** — a formal WIPC request document that includes operation details, the requesting officer's details, and a third page listing all members requiring WIPC protection.\n\nThe WIPC folder has an additional layer of security (AES-256-GCM encryption) compared to the rest of the application. A gold shield icon in the sidebar indicates this elevated security.",
+        tags: ["WIPC", "witness identification", "court", "statutory declaration", "encryption", "vault"],
+      },
+      {
+        question: "How do I generate a Statutory Declaration?",
+        answer:
+          "Go to **Court → WIPC** in the sidebar. Select the operation, then choose **Statutory Declaration**. Fill in:\n• Full Name of Declarant\n• Full Name of Witness (followed by 'Federal Agent' and '1120 Hay Street, WEST PERTH')\n• Declared Before Name\n• Declaration date\n• CIN\n\nThe declaration location (PERTH) and declarant address (1120 Hay Street, WEST PERTH) are pre-filled but can be changed. Click **Generate** to download the .docx file.",
+        tags: ["statutory declaration", "WIPC", "declarant", "witness", "CIN", "generate", "docx"],
+      },
+      {
+        question: "How do I generate a WIPC Request?",
+        answer:
+          "Go to **Court → WIPC** in the sidebar. Select the operation, then choose **WIPC Request**. Fill in the officer details (name, rank, AFP ID, work location, portfolio) and operation details (court date, court location, operation name, commander, AC, deployment dates). Then add one or more members requiring WIPC protection in the Members Requiring WIPC panel.\n\nClick **Generate WIPC Request** to download a .docx file. The document contains:\n• Page 1–2: Officer details and operation information\n• Page 3: Members Requiring WIPC table (all members you added)",
+        tags: ["WIPC request", "generate", "officer", "members", "court", "docx"],
+      },
+      {
+        question: "What is the WIPC Vault and how does it protect my data?",
+        answer:
+          "The WIPC Vault is an **AES-256-GCM encrypted storage layer** that protects all sensitive WIPC data at rest. This is separate from and in addition to the standard database security.\n\nData protected by the vault includes:\n• Officer profiles (name, rank, AFP ID, work location, portfolio)\n• Member registry entries (names, AFP IDs, AI known-as values)\n• Any data that links CIN numbers to real officer identities\n\nThe vault uses a secret encryption key (WIPC_VAULT_KEY) stored separately from the database. Even if the database were accessed directly, the WIPC data would remain unreadable without the key. The gold shield (🛡) icon on the WIPC sidebar entry indicates this extra security layer.",
+        tags: ["vault", "encryption", "AES-256", "AES-256-GCM", "WIPC", "security", "key", "protect"],
+        important: true,
+      },
+      {
+        question: "How do I save and recall officer details?",
+        answer:
+          "On the WIPC Request form, after filling in your officer details, click **Save Officer Profile to Vault**. Your details are encrypted and saved. The next time you open the WIPC page, your officer details are automatically recalled from the vault and pre-filled in the form.\n\nThis saves time when generating multiple WIPC documents — you only need to enter your officer details once.",
+        tags: ["officer profile", "vault", "save", "recall", "WIPC", "auto-fill"],
+      },
+      {
+        question: "How does the Member Registry work?",
+        answer:
+          "The **Member Registry** is an encrypted store of member details (name, AFP ID, AI known as) that can be recalled when filling in the Members Requiring WIPC section.\n\nTo save a member: fill in their Name and AFP ID in a member card, then click **Save to Vault**. To recall a member: use the search dropdown at the top of the Members panel — search by name, AFP ID, or AI known as. Selecting a result auto-fills that member's details into a new card.\n\nAll member data is encrypted at rest using AES-256-GCM. Only Admin users can access the member registry.",
+        tags: ["member registry", "vault", "save", "recall", "AFP ID", "WIPC", "encryption", "admin"],
+        important: true,
+      },
+    ],
+  },
+  {
     id: "court",
     title: "Court Documents",
     icon: "🏛️",
@@ -421,6 +466,32 @@ const HELP_SECTIONS: HelpSection[] = [
         answer:
           "The **Governance To-Do** page shows outstanding post-surveillance governance tasks for your CIN. Items appear in different colours:\n• **Amber** — rows not yet certified (must be done before governance tasks are actionable)\n• **Rose** — governance checklist items incomplete\n• **Emerald** — sheet is ready to close (Team Leader only)\n\nThe badge count in the sidebar shows the total number of outstanding items.",
         tags: ["governance to-do", "outstanding", "amber", "rose", "emerald", "team leader", "badge"],
+      },
+    ],
+  },
+  {
+    id: "security",
+    title: "Application Security",
+    icon: "🔒",
+    items: [
+      {
+        question: "How is the application secured?",
+        answer:
+          "The Secure Running Sheet Log uses multiple layers of security:\n\n• **Authentication** — All users must log in via Manus OAuth or local credentials. Sessions are signed with a JWT secret and stored in secure HTTP-only cookies.\n• **Role-based access control** — Three roles (Admin, Member, Observer) control what each user can see and do. Sensitive operations (user management, WIPC access) are Admin-only.\n• **Server-side enforcement** — All data access goes through tRPC procedures on the server. The frontend never has direct database access. Every procedure checks the user's role and identity before executing.\n• **Audit logging** — All significant actions (create, edit, delete, certify, close, generate documents) are recorded in the Audit Log with user, timestamp, and details.\n• **WIPC Vault encryption** — Sensitive WIPC data (officer profiles, member registry, CIN-identity links) is encrypted at rest using AES-256-GCM with a separate vault key.",
+        tags: ["security", "authentication", "JWT", "OAuth", "roles", "access control", "audit", "encryption"],
+      },
+      {
+        question: "What is AES-256-GCM encryption and why does WIPC use it?",
+        answer:
+          "AES-256-GCM (Advanced Encryption Standard, 256-bit key, Galois/Counter Mode) is a military-grade authenticated encryption algorithm. It provides both **confidentiality** (data cannot be read without the key) and **integrity** (tampering with the encrypted data is detectable).\n\nWIPC data is subject to this extra layer because it contains information that directly links CIN numbers to real officer identities — which is the most sensitive data in the system. Standard database security protects data from external access, but vault encryption means that even with direct database access, the WIPC data cannot be read without the WIPC_VAULT_KEY secret.\n\nThe vault key is stored separately from the database and is never logged or exposed in application code.",
+        tags: ["AES-256", "AES-256-GCM", "encryption", "WIPC", "vault", "key", "CIN", "identity", "security"],
+        important: true,
+      },
+      {
+        question: "What is the Audit Log?",
+        answer:
+          "The **Audit Log** (in the sidebar) records all significant actions taken within the application. Each entry shows:\n• The user who performed the action\n• The action type (create, edit, delete, certify, close, generate, etc.)\n• The target entity (operation name, sheet title, etc.)\n• The timestamp\n\nThe Audit Log is read-only and cannot be edited or deleted. It is accessible to Admin users and provides a complete history of all changes to the system.",
+        tags: ["audit log", "history", "actions", "admin", "timestamp", "security"],
       },
     ],
   },

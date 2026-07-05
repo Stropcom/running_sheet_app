@@ -1442,19 +1442,7 @@ export default function SheetDetail() {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            {/* Add row — hidden when sheet is closed */}
-            {!isClosed && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-2"
-                onClick={() => addRow.mutate({ sheetId })}
-                disabled={addRow.isPending}
-              >
-                <Plus className="w-4 h-4" />
-                Add Row
-              </Button>
-            )}
+
           </div>
         </div>
 
@@ -1595,8 +1583,21 @@ export default function SheetDetail() {
           );
         })()}
 
-        {/* Search bar + sort toggle */}
+        {/* Search bar + sort toggle + add row */}
         <div className="mb-4 flex items-center gap-2">
+          {/* Add Row — moved here, left of sort toggle, hidden when sheet is closed */}
+          {!isClosed && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-2 shrink-0"
+              onClick={() => addRow.mutate({ sheetId })}
+              disabled={addRow.isPending}
+            >
+              <Plus className="w-4 h-4" />
+              Add Row
+            </Button>
+          )}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

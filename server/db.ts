@@ -778,6 +778,29 @@ export async function linkTargetToOperation(targetId: number, operationId: numbe
   }
 }
 
+/**
+ * Ensure a target is fully linked to both a sheet and its parent operation.
+ * Idempotent — safe to call from any entry point.
+ *  1. Sets sheet.targetId if not already pointing to this target
+ *  2. Creates operationTargetLinks row if missing
+ */
+export async function ensureTargetFullyLinked(targetId: number, sheetId: number) {
+  const db = await getDb();
+  if (!db) throw new Error('DB unavailable');
+  const [sheet] = await db
+    .select({ operationId: runningSheets.operationId, currentTargetId: runningSheets.targetId })
+    .from(runningSheets)
+    .where(eq(runningSheets.id, sheetId))
+    .limit(1);
+  if (!sheet) throw new Error('Sheet not found');
+  // 1. Link sheet → target
+  if (sheet.currentTargetId !== targetId) {
+    await db.update(runningSheets).set({ targetId }).where(eq(runningSheets.id, sheetId));
+  }
+  // 2. Link target → operation (idempotent)
+  await linkTargetToOperation(targetId, sheet.operationId);
+}
+
 /** Unlink a target from an operation */
 export async function unlinkTargetFromOperation(targetId: number, operationId: number) {
   const db = await getDb();

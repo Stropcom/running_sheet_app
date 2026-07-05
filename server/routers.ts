@@ -75,6 +75,7 @@ import {
   createRegistryTarget,
   linkTargetToOperation,
   unlinkTargetFromOperation,
+  ensureTargetFullyLinked,
   getLinkedOperationsForTarget,
   closeSheet,
   reopenSheet,
@@ -384,12 +385,15 @@ export const appRouter = router({
       }))
       .mutation(async ({ input, ctx }) => {
         await guardActiveOperation(input.operationId);
-        // If a new target name is provided, create a real registry target and link it to the operation
+        // Resolve target: create new if name provided, or use existing targetId
         let resolvedTargetId = input.targetId ?? null;
         if (!resolvedTargetId && input.targetName?.trim()) {
           const newTarget = await createRegistryTarget({ name: input.targetName.trim(), createdBy: ctx.user.id });
           await linkTargetToOperation(newTarget.id, input.operationId);
           resolvedTargetId = newTarget.id;
+        } else if (resolvedTargetId) {
+          // Existing target selected — ensure operation link exists
+          await linkTargetToOperation(resolvedTargetId, input.operationId);
         }
         const id = await createRunningSheet({
           operationId: input.operationId,
@@ -1146,11 +1150,16 @@ export const appRouter = router({
         return getTargetById(input.id) ?? null;
       }),
 
-    /** Set the target for a running sheet */
+    /** Set the target for a running sheet — also ensures operation link exists */
     setSheetTarget: protectedProcedure
       .input(z.object({ sheetId: z.number(), targetId: z.number().nullable() }))
       .mutation(async ({ input }) => {
-        await setSheetTarget(input.sheetId, input.targetId);
+        if (input.targetId !== null) {
+          // ensureTargetFullyLinked: sets sheet.targetId AND creates operation↔target link
+          await ensureTargetFullyLinked(input.targetId, input.sheetId);
+        } else {
+          await setSheetTarget(input.sheetId, null);
+        }
         return { success: true };
       }),
 

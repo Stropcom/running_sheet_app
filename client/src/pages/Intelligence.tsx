@@ -113,81 +113,443 @@ function buildProfileHtml(entity: Entity, allEntities: Entity[]) {
   const sheets    = uniqueSheets(entity.occurrences);
   const firstSeen = entity.occurrences[0];
   const lastSeen  = entity.occurrences[entity.occurrences.length - 1];
+  const generatedAt = new Date().toLocaleString("en-AU", { dateStyle: "long", timeStyle: "short" });
 
   const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  // Teal palette matching the RunLog Intel folder card colours
+  const TEAL       = "#0d9488";  // primary teal
+  const TEAL_DARK  = "#0f766e";  // darker teal for header bg
+  const TEAL_LIGHT = "#ccfbf1";  // very light teal for section header bg
+  const TEAL_MID   = "#99f6e4";  // mid teal for accent borders
+  const GREY_TEXT  = "#374151";  // body text
+  const GREY_LIGHT = "#f9fafb";  // alternate row bg
+  const GREY_BORDER= "#e5e7eb";  // subtle borders
+
+  const typeLabel = esc(TYPE_LABELS[entity.type]);
+  const entityName = esc(entity.shortForm);
 
   let html = `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
-<title>Intel Profile — ${esc(entity.shortForm)}</title>
+<title>RunLog Intelligence Profile — ${entityName}</title>
 <style>
-  body { font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.7; margin: 20mm; color: #000; }
-  h1 { font-size: 15px; border-bottom: 2px solid #000; padding-bottom: 4px; margin-bottom: 12px; }
-  h2 { font-size: 12px; border-bottom: 1px solid #666; padding-bottom: 2px; margin: 16px 0 8px; text-transform: uppercase; }
-  .meta { margin-bottom: 12px; }
-  .meta p { margin: 2px 0; }
-  .entry { margin-bottom: 8px; padding-left: 12px; border-left: 2px solid #ccc; }
-  .tag { display: inline-block; border: 1px solid #999; padding: 1px 6px; border-radius: 10px; font-size: 10px; margin-right: 4px; }
-  @page { margin: 20mm; }
-  @media print { body { margin: 0; } }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, 'Segoe UI', Arial, sans-serif;
+    font-size: 11px;
+    line-height: 1.6;
+    color: ${GREY_TEXT};
+    background: #fff;
+  }
+
+  /* ── Cover header ── */
+  .cover-header {
+    background: ${TEAL_DARK};
+    color: #fff;
+    padding: 28px 32px 22px;
+    position: relative;
+    overflow: hidden;
+  }
+  .cover-header::after {
+    content: '';
+    position: absolute;
+    right: -30px; top: -30px;
+    width: 160px; height: 160px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.06);
+  }
+  .cover-header::before {
+    content: '';
+    position: absolute;
+    right: 40px; bottom: -40px;
+    width: 100px; height: 100px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.04);
+  }
+  .brand-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    opacity: 0.85;
+  }
+  .brand-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: ${TEAL_MID};
+  }
+  .brand-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: ${TEAL_MID};
+  }
+  .brand-divider {
+    flex: 1;
+    height: 1px;
+    background: rgba(255,255,255,0.15);
+  }
+  .brand-date {
+    font-size: 9px;
+    color: rgba(255,255,255,0.55);
+    letter-spacing: 0.05em;
+  }
+  .entity-type-pill {
+    display: inline-block;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.3);
+    color: #fff;
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 2px 10px;
+    border-radius: 20px;
+    margin-bottom: 8px;
+  }
+  .entity-name {
+    font-size: 22px;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 0.01em;
+    line-height: 1.2;
+    margin-bottom: 4px;
+    word-break: break-word;
+  }
+  .entity-sub {
+    font-size: 10px;
+    color: rgba(255,255,255,0.65);
+  }
+
+  /* ── Stats bar ── */
+  .stats-bar {
+    display: flex;
+    background: ${TEAL};
+    color: #fff;
+  }
+  .stat-item {
+    flex: 1;
+    padding: 10px 16px;
+    border-right: 1px solid rgba(255,255,255,0.15);
+  }
+  .stat-item:last-child { border-right: none; }
+  .stat-value {
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1;
+    margin-bottom: 2px;
+  }
+  .stat-label {
+    font-size: 8.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    opacity: 0.75;
+  }
+
+  /* ── Body ── */
+  .body-content { padding: 24px 32px 32px; }
+
+  /* ── Meta info grid ── */
+  .meta-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 20px;
+    background: ${GREY_LIGHT};
+    border: 1px solid ${GREY_BORDER};
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 22px;
+  }
+  .meta-item { display: flex; flex-direction: column; gap: 1px; }
+  .meta-key {
+    font-size: 8.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: ${TEAL_DARK};
+  }
+  .meta-val { font-size: 10.5px; color: ${GREY_TEXT}; font-weight: 500; }
+
+  /* ── Section headings ── */
+  .section-heading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 20px 0 10px;
+  }
+  .section-heading-bar {
+    width: 4px;
+    height: 16px;
+    border-radius: 2px;
+    background: ${TEAL};
+    flex-shrink: 0;
+  }
+  .section-heading-text {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: ${TEAL_DARK};
+  }
+  .section-heading-count {
+    font-size: 9px;
+    background: ${TEAL_LIGHT};
+    color: ${TEAL_DARK};
+    border: 1px solid ${TEAL_MID};
+    border-radius: 10px;
+    padding: 1px 7px;
+    font-weight: 600;
+  }
+  .section-rule {
+    flex: 1;
+    height: 1px;
+    background: ${GREY_BORDER};
+  }
+
+  /* ── Running sheet entries ── */
+  .sheet-block {
+    border: 1px solid ${GREY_BORDER};
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 10px;
+  }
+  .sheet-header {
+    background: ${TEAL_LIGHT};
+    border-bottom: 1px solid ${TEAL_MID};
+    padding: 8px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .sheet-title {
+    font-size: 10.5px;
+    font-weight: 700;
+    color: ${TEAL_DARK};
+  }
+  .sheet-op {
+    font-size: 9px;
+    color: ${TEAL};
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .obs-row {
+    padding: 6px 14px;
+    font-size: 10px;
+    border-bottom: 1px solid ${GREY_BORDER};
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .obs-row:last-child { border-bottom: none; }
+  .obs-row:nth-child(even) { background: ${GREY_LIGHT}; }
+  .obs-time {
+    font-size: 9px;
+    font-weight: 700;
+    color: ${TEAL};
+    white-space: nowrap;
+    min-width: 36px;
+    padding-top: 1px;
+  }
+  .obs-text { flex: 1; color: ${GREY_TEXT}; }
+
+  /* ── Association chips ── */
+  .assoc-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+  .assoc-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border: 1px solid ${TEAL_MID};
+    background: ${TEAL_LIGHT};
+    color: ${TEAL_DARK};
+    border-radius: 20px;
+    padding: 3px 10px;
+    font-size: 9.5px;
+    font-weight: 600;
+  }
+  .chip-count {
+    background: ${TEAL};
+    color: #fff;
+    border-radius: 10px;
+    padding: 0 5px;
+    font-size: 8.5px;
+    font-weight: 700;
+  }
+
+  /* ── Footer ── */
+  .doc-footer {
+    margin-top: 28px;
+    padding-top: 12px;
+    border-top: 2px solid ${TEAL_LIGHT};
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .footer-brand {
+    font-size: 9px;
+    font-weight: 700;
+    color: ${TEAL};
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .footer-note {
+    font-size: 8.5px;
+    color: #9ca3af;
+  }
+
+  @page { margin: 0; size: A4; }
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
 </style>
 </head>
 <body>
-<h1>INTELLIGENCE PROFILE — ${esc(entity.shortForm)}</h1>
-<div class="meta">
-  <p><strong>TYPE:</strong> ${esc(TYPE_LABELS[entity.type])}</p>
-  <p><strong>GENERATED:</strong> ${new Date().toLocaleString()}</p>
-  <p><strong>TOTAL APPEARANCES:</strong> ${entity.occurrences.length} observation(s) across ${sheets.length} running sheet(s)</p>
-  ${firstSeen ? `<p><strong>FIRST SEEN:</strong> ${esc(firstSeen.operationName)} — ${esc(firstSeen.sheetTitle)}</p>` : ""}
-  ${lastSeen && lastSeen.sheetId !== firstSeen?.sheetId ? `<p><strong>LAST SEEN:</strong> ${esc(lastSeen.operationName)} — ${esc(lastSeen.sheetTitle)}</p>` : ""}
-  ${entity.occurrences[0]?.fullDescription ? `<p><strong>DESCRIPTION:</strong> ${esc(entity.occurrences[0].fullDescription)}</p>` : ""}
-</div>`;
 
-  html += `<h2>Running Sheets</h2>`;
+<!-- Cover Header -->
+<div class="cover-header">
+  <div class="brand-row">
+    <div class="brand-dot"></div>
+    <span class="brand-label">RunLog Intelligence Profile</span>
+    <div class="brand-divider"></div>
+    <span class="brand-date">Generated: ${generatedAt}</span>
+  </div>
+  <div class="entity-type-pill">${typeLabel}</div>
+  <div class="entity-name">${entityName}</div>
+  ${entity.tgtAlias ? `<div class="entity-sub">TGT Alias: ${esc(entity.tgtAlias)}</div>` : ""}
+</div>
+
+<!-- Stats Bar -->
+<div class="stats-bar">
+  <div class="stat-item">
+    <div class="stat-value">${entity.occurrences.length}</div>
+    <div class="stat-label">Observations</div>
+  </div>
+  <div class="stat-item">
+    <div class="stat-value">${sheets.length}</div>
+    <div class="stat-label">Running Sheets</div>
+  </div>
+  <div class="stat-item">
+    <div class="stat-value">${relatedPersons.length + relatedVehicles.length + relatedAddresses.length + relatedBusinesses.length}</div>
+    <div class="stat-label">Associations</div>
+  </div>
+  <div class="stat-item">
+    <div class="stat-value">${Array.from(new Set(entity.occurrences.map(o => o.operationId))).length}</div>
+    <div class="stat-label">Operations</div>
+  </div>
+</div>
+
+<!-- Body -->
+<div class="body-content">
+
+<!-- Meta grid -->
+<div class="meta-grid">
+  ${firstSeen ? `<div class="meta-item"><span class="meta-key">First Seen</span><span class="meta-val">${esc(firstSeen.operationName)} — ${esc(firstSeen.sheetTitle)}</span></div>` : ""}
+  ${lastSeen && lastSeen.sheetId !== firstSeen?.sheetId ? `<div class="meta-item"><span class="meta-key">Last Seen</span><span class="meta-val">${esc(lastSeen.operationName)} — ${esc(lastSeen.sheetTitle)}</span></div>` : ""}
+  <div class="meta-item"><span class="meta-key">Entity Type</span><span class="meta-val">${typeLabel}</span></div>
+  <div class="meta-item"><span class="meta-key">Profile Generated</span><span class="meta-val">${generatedAt}</span></div>
+</div>
+`;
+
+  // Running sheets section
+  html += `
+<div class="section-heading">
+  <div class="section-heading-bar"></div>
+  <span class="section-heading-text">Running Sheet Observations</span>
+  <span class="section-heading-count">${sheets.length}</span>
+  <div class="section-rule"></div>
+</div>
+`;
   for (const sheet of sheets) {
     const sheetOccs = entity.occurrences.filter((o) => o.sheetId === sheet.sheetId);
-    html += `<div class="entry"><p><strong>${esc(sheet.sheetTitle)}</strong> — ${esc(sheet.operationName)}</p>`;
+    html += `<div class="sheet-block">
+  <div class="sheet-header">
+    <span class="sheet-title">${esc(sheet.sheetTitle)}</span>
+    <span class="sheet-op">${esc(sheet.operationName)}</span>
+  </div>`;
     for (const occ of sheetOccs) {
       const t = formatTime(occ.timeMinutes);
-      html += `<p>${t ? `[${esc(t)}] ` : ""}${esc(occ.observationSnippet)}</p>`;
+      html += `<div class="obs-row">
+    <span class="obs-time">${t ? esc(t) : "—"}</span>
+    <span class="obs-text">${esc(occ.observationSnippet)}</span>
+  </div>`;
     }
     html += `</div>`;
   }
 
   if (relatedVehicles.length > 0) {
-    html += `<h2>Associated Vehicles</h2>`;
+    html += `
+<div class="section-heading">
+  <div class="section-heading-bar"></div>
+  <span class="section-heading-text">Associated Vehicles</span>
+  <span class="section-heading-count">${relatedVehicles.length}</span>
+  <div class="section-rule"></div>
+</div>
+<div class="assoc-list">`;
     for (const v of relatedVehicles) {
-      const desc = v.occurrences[0]?.fullDescription ?? "";
-      html += `<div class="entry"><p><strong>${esc(v.shortForm)}</strong>${desc ? ` — ${esc(desc)}` : ""} <span class="tag">×${v.occurrences.length}</span></p></div>`;
+      html += `<span class="assoc-chip">${esc(v.shortForm)}<span class="chip-count">×${v.occurrences.length}</span></span>`;
     }
+    html += `</div>`;
   }
 
   if (relatedAddresses.length > 0) {
-    html += `<h2>Associated Addresses</h2>`;
+    html += `
+<div class="section-heading">
+  <div class="section-heading-bar"></div>
+  <span class="section-heading-text">Associated Addresses</span>
+  <span class="section-heading-count">${relatedAddresses.length}</span>
+  <div class="section-rule"></div>
+</div>
+<div class="assoc-list">`;
     for (const a of relatedAddresses) {
-      const desc = a.occurrences[0]?.fullDescription ?? "";
-      html += `<div class="entry"><p><strong>${esc(a.shortForm)}</strong>${desc ? ` — ${esc(desc)}` : ""} <span class="tag">×${a.occurrences.length}</span></p></div>`;
+      html += `<span class="assoc-chip">${esc(a.shortForm)}<span class="chip-count">×${a.occurrences.length}</span></span>`;
     }
+    html += `</div>`;
   }
 
   if (relatedPersons.length > 0) {
-    html += `<h2>Associated Persons</h2>`;
+    html += `
+<div class="section-heading">
+  <div class="section-heading-bar"></div>
+  <span class="section-heading-text">Associated Persons</span>
+  <span class="section-heading-count">${relatedPersons.length}</span>
+  <div class="section-rule"></div>
+</div>
+<div class="assoc-list">`;
     for (const p of relatedPersons) {
-      const desc = p.occurrences[0]?.fullDescription ?? "";
-      html += `<div class="entry"><p><strong>${esc(p.shortForm)}</strong>${desc ? ` — ${esc(desc)}` : ""} <span class="tag">×${p.occurrences.length}</span></p></div>`;
+      html += `<span class="assoc-chip">${esc(p.shortForm)}<span class="chip-count">×${p.occurrences.length}</span></span>`;
     }
+    html += `</div>`;
   }
 
   if (relatedBusinesses.length > 0) {
-    html += `<h2>Associated Businesses</h2>`;
+    html += `
+<div class="section-heading">
+  <div class="section-heading-bar"></div>
+  <span class="section-heading-text">Associated Businesses</span>
+  <span class="section-heading-count">${relatedBusinesses.length}</span>
+  <div class="section-rule"></div>
+</div>
+<div class="assoc-list">`;
     for (const b of relatedBusinesses) {
-      const desc = b.occurrences[0]?.fullDescription ?? "";
-      html += `<div class="entry"><p><strong>${esc(b.shortForm)}</strong>${desc ? ` — ${esc(desc)}` : ""} <span class="tag">×${b.occurrences.length}</span></p></div>`;
+      html += `<span class="assoc-chip">${esc(b.shortForm)}<span class="chip-count">×${b.occurrences.length}</span></span>`;
     }
+    html += `</div>`;
   }
 
-  html += `<hr style="margin-top:20px"><p style="font-size:10px;color:#666">END OF PROFILE</p></body></html>`;
+  html += `
+<div class="doc-footer">
+  <span class="footer-brand">RunLog · Intelligence Profile</span>
+  <span class="footer-note">SENSITIVE — FOR AUTHORISED USE ONLY · ${generatedAt}</span>
+</div>
+
+</div><!-- /body-content -->
+</body></html>`;
   return html;
 }
 
@@ -481,9 +843,6 @@ function OperationsTab({
                               </span>
                               <div className="flex-1 min-w-0">
                                 <p className="font-mono text-xs font-medium text-foreground truncate">{entity.shortForm}</p>
-                                {entity.occurrences[0]?.fullDescription && (
-                                  <p className="text-xs text-muted-foreground truncate">{entity.occurrences[0].fullDescription}</p>
-                                )}
                               </div>
                               <div className="text-right shrink-0">
                                 <p className="text-xs font-medium text-foreground">{opOccs.length}×</p>

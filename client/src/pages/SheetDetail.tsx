@@ -555,7 +555,23 @@ function CertifyCell({
   const certified = row.certifications.filter((c) => c.isActive).length;
 
   if (total === 0) {
-    return <span className="text-xs text-muted-foreground italic">No members</span>;
+    // Empty row — show delete button immediately so accidental rows can be removed
+    return (
+      <div className="flex flex-col items-center">
+        <span className="text-xs text-muted-foreground italic">No members</span>
+        {onDeleteRow && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs gap-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 mt-1"
+            onClick={() => onDeleteRow(row.id)}
+          >
+            <Trash2 className="w-3 h-3" />
+            Delete row
+          </Button>
+        )}
+      </div>
+    );
   }
 
   // Height of each member sub-row — must match MemberCell's member row height

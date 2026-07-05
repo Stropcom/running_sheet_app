@@ -132,7 +132,10 @@ function buildProfileHtml(entity: Entity, allEntities: Entity[]) {
   const TEAL_MID   = BLUE_MID;
 
   const typeLabel = esc(TYPE_LABELS[entity.type]);
-  const entityName = esc(entity.shortForm);
+  // Strip leading 'a ' or 'A ' from vehicle descriptions
+  const stripVehicleA = (s: string, type: string) =>
+    type === "vehicle" ? s.replace(/^[aA]\s+/, "") : s;
+  const entityName = esc(stripVehicleA(entity.shortForm, entity.type));
 
   let html = `<!DOCTYPE html>
 <html>
@@ -504,7 +507,7 @@ ${sheets.map(sheet => `<span class="assoc-chip">${esc(sheet.sheetTitle)}</span>`
 </div>
 <div class="assoc-list">`;
     for (const v of relatedVehicles) {
-      html += `<span class="assoc-chip">${esc(v.shortForm)}<span class="chip-count">×${v.occurrences.length}</span></span>`;
+      html += `<span class="assoc-chip">${esc(stripVehicleA(v.shortForm, v.type))}<span class="chip-count">×${v.occurrences.length}</span></span>`;
     }
     html += `</div>`;
   }
@@ -610,7 +613,7 @@ function ProfileDialog({
               {TYPE_ICONS[entity.type]}
               {TYPE_LABELS[entity.type]}
             </span>
-            <span className="font-mono text-lg">{entity.shortForm}</span>
+            <span className="font-mono text-lg">{entity.type === "vehicle" ? entity.shortForm.replace(/^[aA]\s+/, "") : entity.shortForm}</span>
           </DialogTitle>
         </DialogHeader>
 
@@ -657,7 +660,7 @@ function ProfileDialog({
                   onClick={() => onNavigate(v)}
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity ${TYPE_COLORS.vehicle}`}
                 >
-                  <Car className="w-3 h-3" />{v.shortForm}<span className="opacity-60">×{v.occurrences.length}</span>
+                  <Car className="w-3 h-3" />{v.shortForm.replace(/^[aA]\s+/, "")}<span className="opacity-60">×{v.occurrences.length}</span>
                 </button>
               ))}
             </div>
@@ -854,7 +857,7 @@ function OperationsTab({
                                 {TYPE_ICONS[type]}
                               </span>
                               <div className="flex-1 min-w-0">
-                                <p className="font-mono text-xs font-medium text-foreground truncate">{entity.shortForm}</p>
+                                <p className="font-mono text-xs font-medium text-foreground truncate">{entity.type === "vehicle" ? entity.shortForm.replace(/^[aA]\s+/, "") : entity.shortForm}</p>
                               </div>
                               <div className="text-right shrink-0">
                                 <p className="text-xs font-medium text-foreground">{opOccs.length}×</p>

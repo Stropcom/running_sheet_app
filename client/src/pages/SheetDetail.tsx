@@ -1961,25 +1961,25 @@ export default function SheetDetail() {
                     className="grid grid-cols-[1fr_40px_40px_40px_32px] px-3 py-2.5 border-b border-border/50 last:border-0 hover:bg-muted/20 transition-colors"
                   >
                     <span className="flex items-center text-sm font-mono font-medium text-foreground">{entry.cin}</span>
-                    {/* Team Leader */}
+                    {/* Team Leader — radio: selecting one clears all others */}
                     <div className="flex items-center justify-center">
                       <Checkbox
                         checked={!!entry.isTeamLeader}
                         onCheckedChange={() =>
                           setRosterList((prev) =>
-                            prev.map((c) => c.cin === entry.cin ? { ...c, isTeamLeader: !c.isTeamLeader } : c)
+                            prev.map((c) => ({ ...c, isTeamLeader: c.cin === entry.cin ? !entry.isTeamLeader : false }))
                           )
                         }
                         className="data-[state=checked]:bg-yellow-500 data-[state=checked]:border-yellow-500"
                       />
                     </div>
-                    {/* Author */}
+                    {/* Author — radio: selecting one clears all others */}
                     <div className="flex items-center justify-center">
                       <Checkbox
                         checked={!!entry.isAuthor}
                         onCheckedChange={() =>
                           setRosterList((prev) =>
-                            prev.map((c) => c.cin === entry.cin ? { ...c, isAuthor: !c.isAuthor } : c)
+                            prev.map((c) => ({ ...c, isAuthor: c.cin === entry.cin ? !entry.isAuthor : false }))
                           )
                         }
                         className="data-[state=checked]:bg-sky-500 data-[state=checked]:border-sky-500"

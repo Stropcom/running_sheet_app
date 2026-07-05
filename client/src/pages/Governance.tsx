@@ -289,12 +289,18 @@ export default function GovernancePage() {
     return entries;
   }, [exportData, sheetCins]);
 
-  // On first load: if gov has no imagery entries but autoImagery has some, seed them
+  // On load / when autoImagery changes: merge any new entries not yet in stored imagery
   useEffect(() => {
     if (!gov) return;
     const existing = parseImagery(gov.imageryEntries);
-    if (existing.length === 0 && autoImagery.length > 0) {
+    if (autoImagery.length === 0) return;
+    const existingKeys = new Set(existing.map((e) => e.cin + "||" + e.rowTime));
+    const newEntries = autoImagery.filter((e) => !existingKeys.has(e.cin + "||" + e.rowTime));
+    if (existing.length === 0) {
       saveImagery(autoImagery);
+    } else if (newEntries.length > 0) {
+      // Merge: keep saved flags from existing, append new entries
+      saveImagery([...existing, ...newEntries]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gov?.id, autoImagery.length]);
@@ -348,7 +354,18 @@ export default function GovernancePage() {
     updateMutation.mutate({ sheetId, imageryEntries: entries });
   }
   function updateImageryRow(idx: number, patch: Partial<ImageryEntry>) {
-    const next = imagery.map((e, i) => (i === idx ? { ...e, ...patch } : e));
+    // Match by key (cin + rowTime) because displayImagery order may differ from imagery array
+    const target = displayImagery[idx];
+    if (!target) return;
+    const key = target.cin + "||" + target.rowTime;
+    const existingIdx = imagery.findIndex((e) => e.cin + "||" + e.rowTime === key);
+    let next: ImageryEntry[];
+    if (existingIdx >= 0) {
+      next = imagery.map((e, i) => (i === existingIdx ? { ...e, ...patch } : e));
+    } else {
+      // Entry not yet in stored imagery — append it
+      next = [...imagery, { ...target, ...patch }];
+    }
     saveImagery(next);
   }
 
@@ -636,30 +653,40 @@ export default function GovernancePage() {
           />
           {imgExpanded && gov && (
             <div className="mt-2 space-y-2">
-              {/* Imagery taken — auto-derived from team details hasImages flag */}
-              <div
-                className={`flex items-center gap-3 px-4 py-3 rounded-lg border ${
-                  hasAnyImagery
+              {/* Imagery taken — colour reflects save status */}
+              {(() => {
+                const allSavedImg = displayImagery.length > 0 && displayImagery.every((e) => e.saved);
+                const someSavedImg = displayImagery.some((e) => e.saved);
+                const bannerClass = !hasAnyImagery
+                  ? "bg-rose-500/10 border-rose-500/30"
+                  : allSavedImg
                     ? "bg-emerald-500/10 border-emerald-500/30"
-                    : "bg-rose-500/10 border-rose-500/30"
-                }`}
-              >
-                {hasAnyImagery ? (
-                  <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
-                ) : (
-                  <span className="text-rose-500 text-lg shrink-0 leading-none">✗</span>
-                )}
-                <div className="flex-1 min-w-0">
-                  <p className={`text-sm font-medium ${hasAnyImagery ? "text-foreground" : "text-rose-400"}`}>
-                    Imagery taken during surveillance
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {hasAnyImagery
-                      ? "One or more team members have imagery flagged"
-                      : "No imagery flagged on team details — no imagery taken"}
-                  </p>
-                </div>
-              </div>
+                    : "bg-amber-500/10 border-amber-500/30";
+                const iconEl = !hasAnyImagery
+                  ? <span className="text-rose-500 text-lg shrink-0 leading-none">✗</span>
+                  : allSavedImg
+                    ? <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
+                    : <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />;
+                const titleColor = !hasAnyImagery ? "text-rose-400" : allSavedImg ? "text-foreground" : "text-amber-500";
+                const subText = !hasAnyImagery
+                  ? "No imagery flagged on team details — no imagery taken"
+                  : allSavedImg
+                    ? "All imagery saved"
+                    : someSavedImg
+                      ? "Some imagery not yet saved"
+                      : "Imagery flagged — not yet saved";
+                return (
+                  <div className={`flex items-center gap-3 px-4 py-3 rounded-lg border ${bannerClass}`}>
+                    {iconEl}
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm font-medium ${titleColor}`}>
+                        Imagery taken during surveillance
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{subText}</p>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Imagery entries table — auto-populated from rows */}
               {displayImagery.length > 0 && (

@@ -241,15 +241,6 @@ function TargetCard({
           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onLinkOps} title="Link to operations">
             <Link2 className="h-4 w-4" />
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-destructive hover:text-destructive"
-            onClick={() => setConfirmDelete(true)}
-            title="Delete target"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
         </div>
         <ChevronRight className={`w-4 h-4 text-muted-foreground transition-transform ${expanded ? "rotate-90" : ""}`} />
       </div>
@@ -290,7 +281,16 @@ function TargetCard({
             </div>
           ))}
 
-          <div className="flex items-center justify-end">
+          <div className="flex items-center justify-between">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-2 text-destructive hover:text-destructive"
+              onClick={() => setConfirmDelete(true)}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Delete Target
+            </Button>
             <Button
               size="sm"
               className="gap-2"

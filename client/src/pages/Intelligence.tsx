@@ -117,14 +117,19 @@ function buildProfileHtml(entity: Entity, allEntities: Entity[]) {
 
   const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-  // Teal palette matching the RunLog Intel folder card colours
-  const TEAL       = "#0d9488";  // primary teal
-  const TEAL_DARK  = "#0f766e";  // darker teal for header bg
-  const TEAL_LIGHT = "#ccfbf1";  // very light teal for section header bg
-  const TEAL_MID   = "#99f6e4";  // mid teal for accent borders
-  const GREY_TEXT  = "#374151";  // body text
-  const GREY_LIGHT = "#f9fafb";  // alternate row bg
-  const GREY_BORDER= "#e5e7eb";  // subtle borders
+  // Blue palette for RunLog Intelligence Profile
+  const BLUE       = "#1d4ed8";  // primary blue
+  const BLUE_DARK  = "#1e3a8a";  // dark blue for header bg
+  const BLUE_LIGHT = "#dbeafe";  // very light blue for section header bg
+  const BLUE_MID   = "#93c5fd";  // mid blue for accent borders
+  const GREY_TEXT  = "#1e293b";  // body text (darker for readability)
+  const GREY_LIGHT = "#f8fafc";  // alternate row bg
+  const GREY_BORDER= "#e2e8f0";  // subtle borders
+  // Aliases so the rest of the template uses the same variable names
+  const TEAL       = BLUE;
+  const TEAL_DARK  = BLUE_DARK;
+  const TEAL_LIGHT = BLUE_LIGHT;
+  const TEAL_MID   = BLUE_MID;
 
   const typeLabel = esc(TYPE_LABELS[entity.type]);
   const entityName = esc(entity.shortForm);
@@ -421,66 +426,48 @@ function buildProfileHtml(entity: Entity, allEntities: Entity[]) {
   </div>
   <div class="entity-type-pill">${typeLabel}</div>
   <div class="entity-name">${entityName}</div>
-  ${entity.tgtAlias ? `<div class="entity-sub">TGT Alias: ${esc(entity.tgtAlias)}</div>` : ""}
-</div>
-
-<!-- Stats Bar -->
-<div class="stats-bar">
-  <div class="stat-item">
-    <div class="stat-value">${entity.occurrences.length}</div>
-    <div class="stat-label">Observations</div>
-  </div>
-  <div class="stat-item">
-    <div class="stat-value">${sheets.length}</div>
-    <div class="stat-label">Running Sheets</div>
-  </div>
-  <div class="stat-item">
-    <div class="stat-value">${relatedPersons.length + relatedVehicles.length + relatedAddresses.length + relatedBusinesses.length}</div>
-    <div class="stat-label">Associations</div>
-  </div>
-  <div class="stat-item">
-    <div class="stat-value">${Array.from(new Set(entity.occurrences.map(o => o.operationId))).length}</div>
-    <div class="stat-label">Operations</div>
-  </div>
 </div>
 
 <!-- Body -->
 <div class="body-content">
 
-<!-- Meta grid -->
 <div class="meta-grid">
-  ${firstSeen ? `<div class="meta-item"><span class="meta-key">First Seen</span><span class="meta-val">${esc(firstSeen.operationName)} — ${esc(firstSeen.sheetTitle)}</span></div>` : ""}
-  ${lastSeen && lastSeen.sheetId !== firstSeen?.sheetId ? `<div class="meta-item"><span class="meta-key">Last Seen</span><span class="meta-val">${esc(lastSeen.operationName)} — ${esc(lastSeen.sheetTitle)}</span></div>` : ""}
   <div class="meta-item"><span class="meta-key">Entity Type</span><span class="meta-val">${typeLabel}</span></div>
   <div class="meta-item"><span class="meta-key">Profile Generated</span><span class="meta-val">${generatedAt}</span></div>
 </div>
 `;
 
-  // Running sheets section
+  // Operations section — list unique operations this entity appears in
+  const uniqueOps = Array.from(
+    entity.occurrences.reduce((map, o) => {
+      if (!map.has(o.operationId)) map.set(o.operationId, o.operationName);
+      return map;
+    }, new Map<number, string>()).values()
+  );
   html += `
 <div class="section-heading">
   <div class="section-heading-bar"></div>
-  <span class="section-heading-text">Running Sheet Observations</span>
+  <span class="section-heading-text">Operations</span>
+  <span class="section-heading-count">${uniqueOps.length}</span>
+  <div class="section-rule"></div>
+</div>
+<div class="assoc-list">
+${uniqueOps.map(op => `<span class="assoc-chip">${esc(op)}</span>`).join("\n")}
+</div>
+`;
+
+  // Running sheets section — show sheet titles only (no observation rows)
+  html += `
+<div class="section-heading">
+  <div class="section-heading-bar"></div>
+  <span class="section-heading-text">Running Sheets</span>
   <span class="section-heading-count">${sheets.length}</span>
   <div class="section-rule"></div>
 </div>
+<div class="assoc-list">
+${sheets.map(sheet => `<span class="assoc-chip">${esc(sheet.sheetTitle)}</span>`).join("\n")}
+</div>
 `;
-  for (const sheet of sheets) {
-    const sheetOccs = entity.occurrences.filter((o) => o.sheetId === sheet.sheetId);
-    html += `<div class="sheet-block">
-  <div class="sheet-header">
-    <span class="sheet-title">${esc(sheet.sheetTitle)}</span>
-    <span class="sheet-op">${esc(sheet.operationName)}</span>
-  </div>`;
-    for (const occ of sheetOccs) {
-      const t = formatTime(occ.timeMinutes);
-      html += `<div class="obs-row">
-    <span class="obs-time">${t ? esc(t) : "—"}</span>
-    <span class="obs-text">${esc(occ.observationSnippet)}</span>
-  </div>`;
-    }
-    html += `</div>`;
-  }
 
   if (relatedVehicles.length > 0) {
     html += `

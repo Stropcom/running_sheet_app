@@ -289,21 +289,34 @@ export default function GovernancePage() {
     return entries;
   }, [exportData, sheetCins]);
 
-  // On load / when autoImagery changes: merge any new entries not yet in stored imagery
+  // On load / when autoImagery changes: sync stored imagery with current autoImagery
+  // - Add new entries not yet stored
+  // - Remove stale entries whose CIN+rowTime no longer exists in autoImagery
+  // - Preserve saved flags for entries that still exist
   useEffect(() => {
     if (!gov) return;
     const existing = parseImagery(gov.imageryEntries);
-    if (autoImagery.length === 0) return;
+    if (autoImagery.length === 0) {
+      // No imagery at all now — clear any stale stored entries
+      if (existing.length > 0) {
+        saveImagery([]);
+      }
+      return;
+    }
+    const autoKeys = new Set(autoImagery.map((e) => e.cin + "||" + e.rowTime));
     const existingKeys = new Set(existing.map((e) => e.cin + "||" + e.rowTime));
+    // Remove stale entries (removed from team list / observations)
+    const pruned = existing.filter((e) => autoKeys.has(e.cin + "||" + e.rowTime));
+    // Add new entries not yet stored
     const newEntries = autoImagery.filter((e) => !existingKeys.has(e.cin + "||" + e.rowTime));
-    if (existing.length === 0) {
-      saveImagery(autoImagery);
-    } else if (newEntries.length > 0) {
-      // Merge: keep saved flags from existing, append new entries
-      saveImagery([...existing, ...newEntries]);
+    const merged = [...pruned, ...newEntries];
+    // Only save if something changed
+    const changed = pruned.length !== existing.length || newEntries.length > 0;
+    if (changed) {
+      saveImagery(merged);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gov?.id, autoImagery.length]);
+  }, [gov?.id, JSON.stringify(autoImagery.map((e) => e.cin + e.rowTime))]);
 
   // ── Toggle helper ──
   type BoolField =
@@ -396,9 +409,10 @@ export default function GovernancePage() {
   // - Otherwise: percentage of rows marked as saved
   //   Use autoImagery as the source of truth for CINs; merge saved flags from stored imagery.
   const imageryTakenChecked = !!(gov as Record<string, unknown> | undefined)?.imageryTaken;
-  // Build display imagery: autoImagery CINs merged with saved flags from stored imagery
+  // Build display imagery: autoImagery is the source of truth for which entries exist;
+  // merge saved flags from stored imagery. If autoImagery is empty, no imagery to show.
   const displayImagery = useMemo<ImageryEntry[]>(() => {
-    if (autoImagery.length === 0) return imagery;
+    if (autoImagery.length === 0) return [];
     const savedMap = new Map(imagery.map((e) => [e.cin + e.rowTime, e.saved]));
     return autoImagery.map((e) => ({
       ...e,

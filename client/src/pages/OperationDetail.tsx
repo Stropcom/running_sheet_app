@@ -577,17 +577,7 @@ function SheetCard({
             >
               <CopyPlus className="w-4 h-4" />
             </Button>
-            {/* Delete only available when sheet is open (not closed) */}
-            {!isClosed && (
-              <Button
-                size="icon"
-                variant="ghost"
-                className="w-8 h-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-                onClick={(e) => { e.stopPropagation(); onDelete(); }}
-              >
-                <Trash2 className="w-4 h-4" />
-              </Button>
-            )}
+            {/* Delete button removed from RS panel — delete is only in the RS Edit dialog */}
           </>
         )}
         <ChevronRight className={`w-4 h-4 transition-colors ${

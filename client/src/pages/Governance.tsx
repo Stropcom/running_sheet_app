@@ -457,11 +457,11 @@ export default function GovernancePage() {
       <div className="p-6 max-w-3xl mx-auto">
         {/* Back nav */}
         <button
-          onClick={() => navigate("/governance")}
+          onClick={() => window.history.back()}
           className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-5 transition-colors"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
-          Back to Governance
+          Back
         </button>
 
         {/* Tab switcher */}

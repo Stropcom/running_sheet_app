@@ -1476,7 +1476,7 @@ export default function SheetDetail() {
       <div className="p-6 lg:p-8">
         {/* Header */}
         <div className="flex items-center gap-4 mb-6">
-          <Button variant="ghost" size="icon" className="shrink-0" onClick={() => sheet ? navigate(`/operation/${sheet.operationId}`) : navigate("/")}>
+          <Button variant="ghost" size="icon" className="shrink-0" onClick={() => window.history.back()}>
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div className="min-w-0 flex items-center gap-2">

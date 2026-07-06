@@ -93,8 +93,8 @@ function TargetCard({
     onSuccess: () => { utils.target.list.invalidate({ operationId }); setDirty(false); toast.success("Target saved"); },
     onError: (e: { message: string }) => toast.error(e.message),
   });
-  const del = trpc.target.delete.useMutation({
-    onSuccess: () => { utils.target.list.invalidate({ operationId }); onDeleted(); toast.success("Target deleted"); },
+  const removeFromOp = trpc.target.registry.unlinkFromOperation.useMutation({
+    onSuccess: () => { utils.target.list.invalidate({ operationId }); onDeleted(); toast.success("Target removed from operation"); },
     onError: (e: { message: string }) => toast.error(e.message),
   });
   const removeFromSheet = trpc.target.setSheetTarget.useMutation({
@@ -183,12 +183,12 @@ function TargetCard({
               <Button
                 size="sm"
                 variant="ghost"
-                className="gap-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+                className="gap-2 text-amber-500 hover:text-amber-600 hover:bg-amber-500/10"
                 onClick={() => setConfirmDelete(true)}
-                disabled={del.isPending}
+                disabled={removeFromOp.isPending}
               >
-                <Trash2 className="w-3.5 h-3.5" />
-                {del.isPending ? "Deleting…" : "Delete"}
+                <X className="w-3.5 h-3.5" />
+                {removeFromOp.isPending ? "Removing…" : "Remove from operation"}
               </Button>
             )}
             <Button size="sm" className="gap-2" onClick={() => update.mutate({ id: target.id, name, tgt, hbf, hb, v1f, v1, v2f, v2, dep, arr })} disabled={update.isPending || !dirty}>
@@ -290,18 +290,18 @@ function TargetCard({
     <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete target?</AlertDialogTitle>
+          <AlertDialogTitle>Remove target from operation?</AlertDialogTitle>
           <AlertDialogDescription>
-            Are you sure you want to delete <strong>{target.name}</strong>? This cannot be undone.
+            This will remove <strong>{target.name}</strong> from this operation. The target will remain in the Target Registry and can be re-linked at any time.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            onClick={() => { setConfirmDelete(false); del.mutate({ id: target.id }); }}
+            className="bg-amber-600 text-white hover:bg-amber-700"
+            onClick={() => { setConfirmDelete(false); removeFromOp.mutate({ targetId: target.id, operationId }); }}
           >
-            Delete
+            Remove
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -329,8 +329,8 @@ function TargetPanel({ operationId, autoExpandId, fromSheetId }: { operationId: 
     onError: (e: { message: string }) => toast.error(e.message),
   });
 
-  // Link = copy the selected target's data into this operation as a new target record
-  const linkTarget = trpc.target.create.useMutation({
+  // Link = link the existing target record to this operation (no duplication)
+  const linkTarget = trpc.target.registry.linkToOperation.useMutation({
     onSuccess: () => {
       utils.target.list.invalidate({ operationId });
       setMode("idle");
@@ -420,9 +420,8 @@ function TargetPanel({ operationId, autoExpandId, fromSheetId }: { operationId: 
                   key={t.id}
                   className="flex items-start gap-3 px-3 py-2 rounded-lg hover:bg-muted/60 text-left transition-colors w-full"
                   onClick={() => linkTarget.mutate({
+                    targetId: t.id,
                     operationId,
-                    name: t.name,
-                    tgt: t.tgt ?? undefined,
                   })}
                   disabled={linkTarget.isPending}
                 >

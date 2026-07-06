@@ -219,47 +219,29 @@ function exportToPDF(
     return text.replace(pattern, "<strong>$1</strong>");
   }
 
-  // Meta table without imagery row — repeats on every page via @page running element
-  const metaTableBase = `
-      <table class="meta-table">
-        <tbody>
-          <tr>
-            <td class="meta-label">OPERATION:</td>
-            <td class="meta-value">${operationName}</td>
-          </tr>
-          <tr>
-            <td class="meta-label">TARGET:</td>
-            <td class="meta-value">${targetFullName ?? ""}</td>
-          </tr>
-          <tr>
-            <td class="meta-label">DATE:</td>
-            <td class="meta-value">${dateStr}</td>
-          </tr>
-          ${authorCin ? `<tr>
-            <td class="meta-label">PREPARED BY:</td>
-            <td class="meta-value">${preparedByCell}</td>
-          </tr>` : ""}
-        </tbody>
-      </table>`;
+  // ── Page headers ────────────────────────────────────────────────────────────
+  // Strategy: use <thead> to repeat the meta table (without imagery) on every page.
+  // Page 1: show first-page-header (title + meta + imagery) above the table.
+  //         The <thead> meta rows are hidden on page 1 via beforeprint JS.
+  // Pages 2+: <thead> shows (title + meta + column headers) via display:table-header-group.
+  //
+  // beforeprint: hides first-page-header, removes 'hide-on-print' from thead meta rows.
+  // afterprint:  restores first-page-header, re-adds 'hide-on-print' to thead meta rows.
 
-  // First-page header includes imagery row
+  const metaRowsHtml = `
+    <tr><td class="meta-label">OPERATION:</td><td class="meta-value">${operationName}</td></tr>
+    <tr><td class="meta-label">TARGET:</td><td class="meta-value">${targetFullName ?? ""}</td></tr>
+    <tr><td class="meta-label">DATE:</td><td class="meta-value">${dateStr}</td></tr>
+    ${authorCin ? `<tr><td class="meta-label">PREPARED BY:</td><td class="meta-value">${preparedByCell}</td></tr>` : ""}`;
+
+  // First-page header block (shown on screen and on page 1 during print)
   const pageHeader = `
-    <div class="page-header">
+    <div class="first-page-header" id="first-page-header">
       <div class="page-title">WC SURVEILLANCE RUNNING SHEET</div>
-      ${metaTableBase}
-      <table class="meta-table" style="margin-top:-1px">
-        <tbody>
-          <tr>
-            <td class="meta-label">IMAGERY TAKEN:</td>
-            <td class="meta-value">${imageryRowHtml}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    <!-- Subsequent pages repeat the base meta table without imagery row -->
-    <div class="page-header-repeat" style="display:none">
-      <div class="page-title">WC SURVEILLANCE RUNNING SHEET</div>
-      ${metaTableBase}
+      <table class="meta-table"><tbody>
+        ${metaRowsHtml}
+        <tr><td class="meta-label">IMAGERY:</td><td class="meta-value">${imageryRowHtml}</td></tr>
+      </tbody></table>
     </div>`;
 
   // ── Running sheet table ──────────────────────────────────────────────────────
@@ -322,41 +304,121 @@ function exportToPDF(
       @top-center{content:'PROTECTED';font-family:system-ui,sans-serif;font-size:12px;font-weight:700;color:#dc2626;letter-spacing:0.08em}
       @bottom-center{content:'PROTECTED';font-family:system-ui,sans-serif;font-size:12px;font-weight:700;color:#dc2626;letter-spacing:0.08em}
     }
+    /* Force background colours to print — Chrome strips backgrounds by default */
+    *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;color-adjust:exact !important}
     body{font-family:system-ui,sans-serif;background:#fff;color:#000;margin:0;padding:0;font-size:12px}
-    .page-header{text-align:left;margin-bottom:10px}
-    .page-header-repeat{display:none;text-align:left;margin-bottom:10px}
     .page-title{font-size:20px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;text-align:center;margin-bottom:1.2em}
-    .meta-table{width:100%;border-collapse:collapse;border:2px solid #334155;margin-bottom:0;table-layout:auto}
-    .meta-table+.meta-table{border-top:none;margin-bottom:12px}
-    .meta-label{padding:5px 8px;font-weight:700;font-size:11px;white-space:nowrap;background:#f1f5f9;border:1px solid #94a3b8;text-transform:uppercase;width:1%;color:#000}
-    .meta-value{padding:5px 8px;font-size:11px;border:1px solid #94a3b8;color:#000}
+    .page-title-sm{font-size:15px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;text-align:center;margin-bottom:0.5em;margin-top:4px}
+    /* Meta info table — light blue label cells */
+    .meta-table{width:100%;border-collapse:collapse;border:2px solid #334155;table-layout:auto}
+    .meta-label{padding:5px 8px;font-weight:700;font-size:11px;white-space:nowrap;background:#dbeafe;border:1px solid #94a3b8;text-transform:uppercase;width:1%;color:#000}
+    .meta-value{padding:5px 8px;font-size:11px;border:1px solid #94a3b8;color:#000;background:#fff}
+    /* Log table */
     table.log-table{width:100%;border-collapse:collapse;table-layout:auto;border:2px solid #334155}
     col.c-time{width:80px}
     col.c-obs{width:auto}
     col.c-cert{width:1%;white-space:nowrap}
-    .log-table th{background:#f1f5f9;color:#000;font-weight:700;padding:6px;text-align:left;
-       border-bottom:2px solid #334155;border-right:1px solid #94a3b8;overflow:hidden}
+    /* Column header row — light blue to match meta labels */
+    .log-table th{background:#dbeafe;color:#000;font-weight:700;padding:6px;text-align:left;
+       border-bottom:2px solid #334155;border-right:1px solid #94a3b8}
     .log-table th:last-child,.log-table td:last-child{border-right:none}
     .log-table td{vertical-align:top;word-break:break-word;overflow:hidden;color:#000;border-right:1px solid #94a3b8}
     .log-table td:last-child{white-space:nowrap;word-break:normal;border-right:none}
+    /* thead wrapper cell — no border/padding/bg so it's invisible as a table cell */
+    .thead-meta-cell{padding:0 !important;border:none !important;background:transparent !important}
+    .thead-meta-inner{padding-bottom:8px}
+    /* Screen: show first-page-header (with imagery); hide print-only blocks */
+    .first-page-header{text-align:left;margin-bottom:10px}
+    .print-only{display:none !important}
     @media print{
+      /* Prevent observation rows from splitting across pages */
+      .log-table tbody tr{page-break-inside:avoid;break-inside:avoid}
+      /* thead repeats on every page */
       thead{display:table-header-group}
-      .page-header-repeat{display:block !important;margin-top:8px}
-      .page-header{margin-bottom:6px}
     }
-  </style></head><body>
-  ${pageHeader}
+  </style>
+  <script>
+    (function(){
+      /*
+       * PRINT STRATEGY (browser-compatible, no Prince XML):
+       *
+       * Screen view:
+       *   - .first-page-header: visible (title + meta + imagery)
+       *   - .print-only elements: hidden
+       *
+       * Print view (beforeprint):
+       *   - Hide .first-page-header
+       *   - Show .print-only elements:
+       *       #p1-header div (before the table): title + meta + IMAGERY row
+       *         → sits before the log table so it only appears on page 1
+       *       .thead-meta-row (inside <thead>): title + meta WITHOUT imagery
+       *         → repeats on every page via thead display:table-header-group
+       *
+       * Result:
+       *   Page 1: p1-header (title+meta+imagery) + thead(title+meta+colhdrs) + rows
+       *   Pages 2+: thead(title+meta+colhdrs) + rows
+       *
+       * The meta table appears twice on page 1 (once in p1-header, once in thead).
+       * To eliminate the duplicate: we DON'T show the thead-meta-row on page 1.
+       * Since CSS can't distinguish page 1 from page 2+, we use a different split:
+       *   - p1-header shows ONLY the imagery row (not the full meta)
+       *   - thead-meta-row shows the FULL meta (no imagery)
+       * Page 1: imagery-only div + thead(title+meta+colhdrs) + rows
+       * Pages 2+: thead(title+meta+colhdrs) + rows
+       * Imagery appears above the meta table on page 1 (slightly non-ideal visually
+       * but correct and avoids duplication).
+       */
+      window.addEventListener('beforeprint', function(){
+        document.getElementById('first-page-header').style.display = 'none';
+        document.querySelectorAll('.print-only').forEach(function(el){
+          el.style.removeProperty('display');
+          el.style.setProperty('display', el.dataset.pd || 'block', 'important');
+        });
+      });
+      window.addEventListener('afterprint', function(){
+        document.getElementById('first-page-header').style.display = '';
+        document.querySelectorAll('.print-only').forEach(function(el){
+          el.style.setProperty('display', 'none', 'important');
+        });
+      });
+    })();
+  </script>
+  </head><body>
+  <!-- SCREEN VIEW: full header with imagery — hidden during print -->
+  <div class="first-page-header" id="first-page-header">
+    <div class="page-title">WC SURVEILLANCE RUNNING SHEET</div>
+    <table class="meta-table"><tbody>
+      ${metaRowsHtml}
+      <tr><td class="meta-label">IMAGERY:</td><td class="meta-value">${imageryRowHtml}</td></tr>
+    </tbody></table>
+  </div>
   <table class="log-table">
     <colgroup>
       <col class="c-time"/>
       <col class="c-obs"/>
       <col class="c-cert"/>
     </colgroup>
-    <thead><tr>
-      <th>Time</th>
-      <th>Observation</th>
-      <th>CIN Certified</th>
-    </tr></thead>
+    <thead>
+      <!-- Full header repeats on every page via thead display:table-header-group.
+           Hidden on screen (first-page-header shows instead); shown during print by JS.
+           Includes imagery row so every page has the complete header. -->
+      <tr class="print-only" data-pd="table-row">
+        <td colspan="3" class="thead-meta-cell">
+          <div class="thead-meta-inner">
+            <div class="page-title-sm">WC SURVEILLANCE RUNNING SHEET</div>
+            <table class="meta-table"><tbody>
+              ${metaRowsHtml}
+              <tr><td class="meta-label">IMAGERY:</td><td class="meta-value">${imageryRowHtml}</td></tr>
+            </tbody></table>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <th>Time</th>
+        <th>Observation</th>
+        <th>CIN Certified</th>
+      </tr>
+    </thead>
     <tbody>${tableRows}</tbody>
   </table>
 </body></html>`;

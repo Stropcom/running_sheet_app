@@ -111,7 +111,17 @@ export default function TodoGovernancePage() {
                       <span className="font-medium text-sm text-foreground truncate block">
                         {item.sheetTitle}
                       </span>
-                      <div className="mt-1 flex flex-col gap-0.5">
+                      {/* Role badge — shown between title and task items */}
+                      <span
+                        className={`inline-flex items-center mt-0.5 mb-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${
+                          item.role === "teamLeader"
+                            ? "bg-violet-500/15 text-violet-400 border border-violet-500/25"
+                            : "bg-sky-500/15 text-sky-400 border border-sky-500/25"
+                        }`}
+                      >
+                        {item.role === "teamLeader" ? "Team Leader" : "Author"}
+                      </span>
+                      <div className="mt-0 flex flex-col gap-0.5">
                         {item.outstanding.map((task, ti) => (
                           <span
                             key={ti}

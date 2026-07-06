@@ -85,6 +85,14 @@ import {
   getOperationsByStatus,
   getAllOperations,
   setOperationStatus,
+  softDeleteOperation,
+  softDeleteSheet,
+  softDeleteTarget,
+  getRecycleBinItems,
+  reinstateOperation,
+  reinstateSheet,
+  reinstateTarget,
+  purgeExpiredRecycleBinItems,
 } from "./db";
 
 import { generateStatDecDocx } from "./statDecGenerator";
@@ -307,6 +315,13 @@ export const appRouter = router({
 
     delete: adminProcedure
       .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await softDeleteOperation(input.id, ctx.user.cin ?? "Unknown");
+        return { success: true };
+      }),
+
+    hardDelete: adminProcedure
+      .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         await deleteOperation(input.id);
         return { success: true };
@@ -448,9 +463,16 @@ export const appRouter = router({
     delete: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
-        await guardActiveSheet(input.id);
+        await softDeleteSheet(input.id, ctx.user.cin ?? "Unknown");
+        await createAuditLog({ sheetId: input.id, userId: ctx.user.id, userName: ctx.user.cin ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "sheet_deleted", details: `Sheet moved to Recycle Bin`, createdAt: Date.now() });
+        return { success: true };
+      }),
+
+    hardDelete: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
         await deleteRunningSheet(input.id);
-        await createAuditLog({ sheetId: input.id, userId: ctx.user.id, userName: ctx.user.cin ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "sheet_deleted", details: `Sheet deleted`, createdAt: Date.now() });
+        await createAuditLog({ sheetId: input.id, userId: ctx.user.id, userName: ctx.user.cin ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "sheet_deleted", details: `Sheet permanently deleted`, createdAt: Date.now() });
         return { success: true };
       }),
 
@@ -1214,8 +1236,14 @@ export const appRouter = router({
           return updateTarget(id, data);
         }),
 
-      /** Delete a target from the registry (removes all operation links too) */
+      /** Delete a target from the registry (soft-delete → Recycle Bin) */
       delete: protectedProcedure
+        .input(z.object({ id: z.number() }))
+        .mutation(async ({ input, ctx }) => {
+          await softDeleteTarget(input.id, ctx.user.cin ?? "Unknown");
+          return { success: true };
+        }),
+      hardDelete: protectedProcedure
         .input(z.object({ id: z.number() }))
         .mutation(async ({ input }) => {
           await deleteTarget(input.id);
@@ -2169,6 +2197,22 @@ export const appRouter = router({
       if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
       return getWipcAuditLog(500);
     }),
+  }),
+
+  // ─── Recycle Bin ──────────────────────────────────────────────────────────────
+  recycleBin: router({
+    list: protectedProcedure.query(async () => {
+      await purgeExpiredRecycleBinItems();
+      return getRecycleBinItems();
+    }),
+    reinstate: protectedProcedure
+      .input(z.object({ type: z.enum(["operation", "sheet", "target"]), id: z.number() }))
+      .mutation(async ({ input }) => {
+        if (input.type === "operation") await reinstateOperation(input.id);
+        else if (input.type === "sheet") await reinstateSheet(input.id);
+        else await reinstateTarget(input.id);
+        return { success: true };
+      }),
   }),
 });
 export type AppRouter = typeof appRouter;

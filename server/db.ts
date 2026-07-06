@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, like, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, like, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { vaultEncrypt, vaultDecrypt } from "./wipcVault";
 import {
@@ -118,20 +118,20 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 export async function getOperations() {
   const db = await getDb();
   if (!db) return [];
-  // Only return active operations for the main operations list
-  return db.select().from(operations).where(eq(operations.status, "active")).orderBy(desc(operations.createdAt));
+  // Only return active, non-deleted operations for the main operations list
+  return db.select().from(operations).where(and(eq(operations.status, "active"), isNull(operations.deletedAt))).orderBy(desc(operations.createdAt));
 }
 
 export async function getOperationsByStatus(status: "active" | "before_court" | "archive") {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(operations).where(eq(operations.status, status)).orderBy(desc(operations.createdAt));
+  return db.select().from(operations).where(and(eq(operations.status, status), isNull(operations.deletedAt))).orderBy(desc(operations.createdAt));
 }
 
 export async function getAllOperations() {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(operations).orderBy(desc(operations.createdAt));
+  return db.select().from(operations).where(isNull(operations.deletedAt)).orderBy(desc(operations.createdAt));
 }
 
 export async function setOperationStatus(
@@ -177,6 +177,12 @@ export async function updateOperation(id: number, data: Partial<InsertOperation>
   await db.update(operations).set(data).where(eq(operations.id, id));
 }
 
+export async function softDeleteOperation(id: number, cin: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(operations).set({ deletedAt: Date.now(), deletedByCIN: cin }).where(eq(operations.id, id));
+}
+
 export async function deleteOperation(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -219,7 +225,7 @@ export async function getRunningSheets() {
 export async function getRunningSheetsByOperation(operationId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(runningSheets).where(eq(runningSheets.operationId, operationId)).orderBy(desc(runningSheets.createdAt));
+  return db.select().from(runningSheets).where(and(eq(runningSheets.operationId, operationId), isNull(runningSheets.deletedAt))).orderBy(desc(runningSheets.createdAt));
 }
 
 export async function getRunningSheetById(id: number) {
@@ -240,6 +246,12 @@ export async function updateRunningSheet(id: number, data: Partial<InsertRunning
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(runningSheets).set(data).where(eq(runningSheets.id, id));
+}
+
+export async function softDeleteSheet(id: number, cin: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(runningSheets).set({ deletedAt: Date.now(), deletedByCIN: cin }).where(eq(runningSheets.id, id));
 }
 
 export async function deleteRunningSheet(id: number) {
@@ -704,6 +716,12 @@ export async function getTargetById(id: number) {
   return result;
 }
 
+export async function softDeleteTarget(id: number, cin: string) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(targets).set({ deletedAt: Date.now(), deletedByCIN: cin }).where(eq(targets.id, id));
+}
+
 export async function deleteTarget(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -734,7 +752,7 @@ export async function setSheetTarget(sheetId: number, targetId: number | null) {
 export async function getAllTargetsForRegistry() {
   const db = await getDb();
   if (!db) return [];
-  const allTargets = await db.select().from(targets).orderBy(targets.name);
+  const allTargets = await db.select().from(targets).where(isNull(targets.deletedAt)).orderBy(targets.name);
   const links = await db
     .select({
       targetId: operationTargetLinks.targetId,
@@ -2170,4 +2188,141 @@ export async function deleteWipcMember(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   await db.delete(wipcMembers).where(eq(wipcMembers.id, id));
+}
+
+// ─── Recycle Bin ─────────────────────────────────────────────────────────────
+
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+export type RecycleBinItem = {
+  id: number;
+  type: "operation" | "sheet" | "target";
+  label: string;
+  sublabel?: string;
+  deletedAt: number;
+  deletedByCIN: string | null;
+  expiresAt: number;
+  // For reinstate context
+  operationId?: number | null;
+  operationName?: string | null;
+};
+
+export async function getRecycleBinItems(): Promise<RecycleBinItem[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const now = Date.now();
+  const cutoff = now - SEVEN_DAYS_MS;
+  const items: RecycleBinItem[] = [];
+
+  // Deleted operations (not yet permanently purged)
+  const deletedOps = await db
+    .select()
+    .from(operations)
+    .where(and(isNotNull(operations.deletedAt), sql`${operations.deletedAt} > ${cutoff}`));
+  for (const op of deletedOps) {
+    items.push({
+      id: op.id,
+      type: "operation",
+      label: op.name,
+      sublabel: op.investigationUnit ?? undefined,
+      deletedAt: op.deletedAt!,
+      deletedByCIN: op.deletedByCIN ?? null,
+      expiresAt: op.deletedAt! + SEVEN_DAYS_MS,
+    });
+  }
+
+  // Deleted running sheets
+  const deletedSheets = await db
+    .select({
+      id: runningSheets.id,
+      title: runningSheets.title,
+      operationId: runningSheets.operationId,
+      operationName: operations.name,
+      deletedAt: runningSheets.deletedAt,
+      deletedByCIN: runningSheets.deletedByCIN,
+    })
+    .from(runningSheets)
+    .leftJoin(operations, eq(runningSheets.operationId, operations.id))
+    .where(and(isNotNull(runningSheets.deletedAt), sql`${runningSheets.deletedAt} > ${cutoff}`));
+  for (const s of deletedSheets) {
+    items.push({
+      id: s.id,
+      type: "sheet",
+      label: s.title,
+      sublabel: s.operationName ?? undefined,
+      deletedAt: s.deletedAt!,
+      deletedByCIN: s.deletedByCIN ?? null,
+      expiresAt: s.deletedAt! + SEVEN_DAYS_MS,
+      operationId: s.operationId,
+      operationName: s.operationName,
+    });
+  }
+
+  // Deleted targets
+  const deletedTargets = await db
+    .select()
+    .from(targets)
+    .where(and(isNotNull(targets.deletedAt), sql`${targets.deletedAt} > ${cutoff}`));
+  for (const t of deletedTargets) {
+    items.push({
+      id: t.id,
+      type: "target",
+      label: t.name,
+      sublabel: t.tgt ? `TGT: ${t.tgt}` : undefined,
+      deletedAt: t.deletedAt!,
+      deletedByCIN: t.deletedByCIN ?? null,
+      expiresAt: t.deletedAt! + SEVEN_DAYS_MS,
+    });
+  }
+
+  // Sort newest deleted first
+  return items.sort((a, b) => b.deletedAt - a.deletedAt);
+}
+
+export async function reinstateOperation(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(operations).set({ deletedAt: null, deletedByCIN: null }).where(eq(operations.id, id));
+}
+
+export async function reinstateSheet(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(runningSheets).set({ deletedAt: null, deletedByCIN: null }).where(eq(runningSheets.id, id));
+}
+
+export async function reinstateTarget(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(targets).set({ deletedAt: null, deletedByCIN: null }).where(eq(targets.id, id));
+}
+
+export async function purgeExpiredRecycleBinItems() {
+  const db = await getDb();
+  if (!db) return;
+  const cutoff = Date.now() - SEVEN_DAYS_MS;
+  // Permanently delete expired operations (cascade sheets first)
+  const expiredOps = await db
+    .select({ id: operations.id })
+    .from(operations)
+    .where(and(isNotNull(operations.deletedAt), sql`${operations.deletedAt} <= ${cutoff}`));
+  for (const op of expiredOps) {
+    await deleteOperation(op.id);
+  }
+  // Permanently delete expired sheets
+  const expiredSheets = await db
+    .select({ id: runningSheets.id })
+    .from(runningSheets)
+    .where(and(isNotNull(runningSheets.deletedAt), sql`${runningSheets.deletedAt} <= ${cutoff}`));
+  for (const s of expiredSheets) {
+    await deleteRunningSheet(s.id);
+  }
+  // Permanently delete expired targets
+  const expiredTargets = await db
+    .select({ id: targets.id })
+    .from(targets)
+    .where(and(isNotNull(targets.deletedAt), sql`${targets.deletedAt} <= ${cutoff}`));
+  for (const t of expiredTargets) {
+    await deleteTarget(t.id);
+  }
 }

@@ -26,7 +26,7 @@ import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useTheme } from "@/contexts/ThemeContext";
 import {
-  FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen, Scale, FolderOpen, ChevronDown, ChevronRight, CalendarDays, Shield, ClipboardCheck as GovIcon, Network, ArrowRightLeft, HelpCircle } from "lucide-react";
+  FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen, Scale, FolderOpen, ChevronDown, ChevronRight, CalendarDays, Shield, ClipboardCheck as GovIcon, Network, ArrowRightLeft, HelpCircle, Trash2 } from "lucide-react";
 import React, { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
@@ -132,6 +132,7 @@ function DashboardLayoutContent({
     { icon: FolderSearch, label: "Intelligence", path: "/intelligence" },
     { icon: BookOpen, label: "Target Registry", path: "/target-registry" },
     { icon: ScrollText, label: "Audit Log", path: "/audit" },
+    { icon: Trash2, label: "Recycle Bin", path: "/recycle-bin" },
     { icon: HelpCircle, label: "Help", path: "/help" },
     { icon: User, label: "My Profile", path: "/profile" },
     ...(user?.role === "admin" ? [

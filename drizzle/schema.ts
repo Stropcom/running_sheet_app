@@ -46,6 +46,8 @@ export const operations = mysqlTable("operations", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   status: mysqlEnum("status", ["active", "before_court", "archive"]).default("active").notNull(),
+  deletedAt: bigint("deletedAt", { mode: "number" }),
+  deletedByCIN: varchar("deletedByCIN", { length: 64 }),
 });
 
 export type Operation = typeof operations.$inferSelect;
@@ -67,6 +69,9 @@ export const runningSheets = mysqlTable("running_sheets", {
   // Close/Reopen
   closedAt: bigint("closedAt", { mode: "number" }),
   closedByCIN: varchar("closedByCIN", { length: 64 }),
+  // Soft-delete
+  deletedAt: bigint("deletedAt", { mode: "number" }),
+  deletedByCIN: varchar("deletedByCIN", { length: 64 }),
 });
 
 export type RunningSheet = typeof runningSheets.$inferSelect;
@@ -140,6 +145,9 @@ export const targets = mysqlTable("targets", {
   createdBy: int("createdBy").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  // Soft-delete
+  deletedAt: bigint("deletedAt", { mode: "number" }),
+  deletedByCIN: varchar("deletedByCIN", { length: 64 }),
 });
 
 export type Target = typeof targets.$inferSelect;

@@ -390,3 +390,15 @@
 - [x] Update Help Guide: fix delete operation description (button now in Edit dialog, not on card)
 - [x] Update Help Guide: add WIPC section (Stat Dec, WIPC Request, vault, member registry)
 - [x] Update Help Guide: add Application Security section (auth, roles, audit log, AES-256-GCM)
+
+## Recycle Bin (Round 47)
+- [ ] DB: add deletedAt (bigint nullable) and deletedByCIN (varchar nullable) to operations, running_sheets, and targets tables; run migration
+- [ ] Server db.ts: update getOperations, getRunningSheets, getAllTargetsForRegistry to filter out soft-deleted rows
+- [ ] Server db.ts: add softDeleteOperation, softDeleteSheet, softDeleteTarget helpers
+- [ ] Server db.ts: add listDeletedItems, reinstateOperation, reinstateSheet, reinstateTarget, purgeExpiredItems helpers
+- [ ] Server routers.ts: update operation.delete, sheet.delete, target.registry.delete to call soft-delete helpers
+- [ ] Server routers.ts: add recycleBin.list, recycleBin.reinstate, recycleBin.purge procedures
+- [ ] Frontend: RecycleBin.tsx page — banner cards per deleted item with type icon, name, deleted date, days remaining, Reinstate button
+- [ ] Frontend: Add Recycle Bin to sidebar navigation
+- [ ] Frontend: Route /recycle-bin registered in App.tsx
+- [ ] Frontend: purge expired items on RecycleBin page load (call recycleBin.purge)

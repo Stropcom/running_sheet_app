@@ -1347,6 +1347,17 @@ export default function SheetDetail() {
     onError: (e) => toast.error(e.message),
   });
 
+  const deleteSheet = trpc.sheet.delete.useMutation({
+    onSuccess: () => {
+      setEditSheetOpen(false);
+      toast.success("Running sheet moved to Recycle Bin");
+      // Navigate back to the operation page
+      if (sheet) navigate(`/operation/${sheet.operationId}`);
+      else navigate("/");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const [pendingExportType, setPendingExportType] = useState<"pdf" | null>(null);
   const [exportEnabled, setExportEnabled] = useState(false);
   const { data: exportData, isFetching: exportFetching, refetch: refetchExport } = trpc.export.sheetData.useQuery(
@@ -2014,7 +2025,23 @@ export default function SheetDetail() {
               </div>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            {/* Delete button — bottom left, admin only */}
+            {user?.role === "admin" && (
+              <Button
+                variant="ghost"
+                className="sm:mr-auto text-destructive hover:text-destructive hover:bg-destructive/10 gap-1.5"
+                disabled={deleteSheet.isPending}
+                onClick={() => {
+                  if (confirm(`Move "${sheet?.title}" to the Recycle Bin? It can be restored from there.`)) {
+                    deleteSheet.mutate({ id: sheetId });
+                  }
+                }}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                {deleteSheet.isPending ? "Deleting…" : "Delete Sheet"}
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setEditSheetOpen(false)}>Cancel</Button>
             <Button
               onClick={async () => {

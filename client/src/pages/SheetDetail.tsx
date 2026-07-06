@@ -129,7 +129,7 @@ function exportToPDF(
   targetFullName?: string | null,
 ) {
   const certColor = "#22c55e";
-  const lockedBg = "#0f2a1a";
+  const lockedBg = "#ffffff"; // White in PDF — dark green is screen-only via CSS class
   const cb = "border-right:1px solid #334155";
   const bb = "border-bottom:1px solid #1e293b";
 

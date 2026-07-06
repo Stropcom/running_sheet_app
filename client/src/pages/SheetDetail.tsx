@@ -179,9 +179,48 @@ function exportToPDF(
     }
   }
 
-  const pageHeader = `
-    <div class="page-header">
-      <div class="page-title">WC SURVEILLANCE RUNNING SHEET</div>
+  // ── Imagery Taken row data ───────────────────────────────────────────────────
+  const IMAGERY_PHRASES = [
+    "PHOTOGRAPHS TAKEN",
+    "PHOTOGRAPH/S TAKEN",
+    "PHOTOGRAPH TAKEN",
+    "VIDEO TAKEN",
+    "VIDEO FOOTAGE TAKEN",
+    "PHOTOS TAKEN",
+    "PHOTO TAKEN",
+  ];
+  const imageryEntries: { cin: string; time: string }[] = [];
+  for (const row of rows) {
+    const obs = (row.observation ?? "").toUpperCase();
+    const hasImagery = IMAGERY_PHRASES.some((p) => obs.includes(p));
+    if (hasImagery && row.time) {
+      for (const m of row.members) {
+        if (m.memberName !== "__SPACE__") {
+          imageryEntries.push({ cin: m.memberName, time: row.time });
+        }
+      }
+    }
+  }
+  // Deduplicate by cin+time
+  const seenImagery = new Set<string>();
+  const uniqueImageryEntries = imageryEntries.filter((e) => {
+    const key = `${e.cin}|${e.time}`;
+    if (seenImagery.has(key)) return false;
+    seenImagery.add(key);
+    return true;
+  });
+  const imageryRowHtml = uniqueImageryEntries.length > 0
+    ? uniqueImageryEntries.map((e) => `${e.cin} (${e.time})`).join(", ")
+    : "Nil";
+
+  // ── Bold imagery keywords in observation text ────────────────────────────────
+  function boldImageryKeywords(text: string): string {
+    const pattern = /(PHOTOGRAPHS TAKEN|PHOTOGRAPH\/S TAKEN|PHOTOGRAPH TAKEN|VIDEO FOOTAGE TAKEN|VIDEO TAKEN|PHOTOS TAKEN|PHOTO TAKEN)/gi;
+    return text.replace(pattern, "<strong>$1</strong>");
+  }
+
+  // Meta table without imagery row — repeats on every page via @page running element
+  const metaTableBase = `
       <table class="meta-table">
         <tbody>
           <tr>
@@ -201,7 +240,26 @@ function exportToPDF(
             <td class="meta-value">${preparedByCell}</td>
           </tr>` : ""}
         </tbody>
+      </table>`;
+
+  // First-page header includes imagery row
+  const pageHeader = `
+    <div class="page-header">
+      <div class="page-title">WC SURVEILLANCE RUNNING SHEET</div>
+      ${metaTableBase}
+      <table class="meta-table" style="margin-top:-1px">
+        <tbody>
+          <tr>
+            <td class="meta-label">IMAGERY TAKEN:</td>
+            <td class="meta-value">${imageryRowHtml}</td>
+          </tr>
+        </tbody>
       </table>
+    </div>
+    <!-- Subsequent pages repeat the base meta table without imagery row -->
+    <div class="page-header-repeat" style="display:none">
+      <div class="page-title">WC SURVEILLANCE RUNNING SHEET</div>
+      ${metaTableBase}
     </div>`;
 
   // ── Running sheet table ──────────────────────────────────────────────────────
@@ -211,9 +269,10 @@ function exportToPDF(
   const tableRows = rows.map((row) => {
     const rowBg = row.isLocked ? lockedBg : "transparent";
     if (row.members.length === 0) {
+      const obsHtml = boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>"));
       return `<tr style="background:${rowBg}">
         <td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap">${row.time ?? ""}</td>
-        <td style="padding:6px 6px 8px;${bb};${cb}">${row.observation ?? ""}</td>
+        <td style="padding:6px 6px 8px;${bb};${cb}">${obsHtml}</td>
         <td style="padding:6px 6px 8px;${bb};font-size:11px"></td>
       </tr>${spacerRow}`;
     }
@@ -227,7 +286,7 @@ function exportToPDF(
         ? `<td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap" rowspan="${rowspan}">${row.time ?? ""}</td>`
         : "";
       const obsTd = isFirst
-        ? `<td style="padding:6px 6px 8px;${bb};${cb}" rowspan="${rowspan}">${(row.observation ?? "").replace(/\n/g, "<br/>")}</td>`
+        ? `<td style="padding:6px 6px 8px;${bb};${cb}" rowspan="${rowspan}">${boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>"))}</td>`
         : "";
       // Only draw bottom border on the last member row; no inner lines between members
       const isLast = idx === row.members.length - 1;
@@ -246,7 +305,7 @@ function exportToPDF(
       const certifierCIN = cert ? ('certifiedByCIN' in cert ? (cert as any).certifiedByCIN || cert.certifiedByName : cert.certifiedByName) : null;
       const cinCertCell = cert
         ? `<span style='color:${certColor};white-space:nowrap'>&#10003; ${certifierCIN} <span style='color:#555;font-size:10px'>${format(new Date(cert.certifiedAt), "dd/MM/yy h:mmaaa")}</span></span>`
-        : `<span style='color:#ef4444'>Pending</span>`;
+        : `<span style='color:#ef4444;font-weight:700'>${m.memberName} Pending</span>`;
       return `<tr style="background:${rowBg}">
         ${timeTd}${obsTd}
         <td style="padding:${pt} 6px ${pb} 6px;${memberBb};font-size:11px">${cinCertCell}</td>
@@ -265,19 +324,26 @@ function exportToPDF(
     }
     body{font-family:system-ui,sans-serif;background:#fff;color:#000;margin:0;padding:0;font-size:12px}
     .page-header{text-align:left;margin-bottom:10px}
+    .page-header-repeat{display:none;text-align:left;margin-bottom:10px}
     .page-title{font-size:20px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;text-align:center;margin-bottom:1.2em}
-    .meta-table{width:100%;border-collapse:collapse;border:1px solid #334155;margin-bottom:12px;table-layout:auto}
-    .meta-label{padding:5px 8px;font-weight:700;font-size:11px;white-space:nowrap;background:#f1f5f9;border:1px solid #cbd5e1;text-transform:uppercase;width:1%;color:#000}
-    .meta-value{padding:5px 8px;font-size:11px;border:1px solid #cbd5e1;color:#000}
-    table.log-table{width:100%;border-collapse:collapse;table-layout:auto;border:1px solid #334155}
+    .meta-table{width:100%;border-collapse:collapse;border:2px solid #334155;margin-bottom:0;table-layout:auto}
+    .meta-table+.meta-table{border-top:none;margin-bottom:12px}
+    .meta-label{padding:5px 8px;font-weight:700;font-size:11px;white-space:nowrap;background:#f1f5f9;border:1px solid #94a3b8;text-transform:uppercase;width:1%;color:#000}
+    .meta-value{padding:5px 8px;font-size:11px;border:1px solid #94a3b8;color:#000}
+    table.log-table{width:100%;border-collapse:collapse;table-layout:auto;border:2px solid #334155}
     col.c-time{width:80px}
     col.c-obs{width:auto}
     col.c-cert{width:1%;white-space:nowrap}
     .log-table th{background:#f1f5f9;color:#000;font-weight:700;padding:6px;text-align:left;
-       border-bottom:2px solid #334155;border-right:1px solid #334155;overflow:hidden}
+       border-bottom:2px solid #334155;border-right:1px solid #94a3b8;overflow:hidden}
     .log-table th:last-child,.log-table td:last-child{border-right:none}
-    .log-table td{vertical-align:top;word-break:break-word;overflow:hidden;color:#000}
-    .log-table td:last-child{white-space:nowrap;word-break:normal}
+    .log-table td{vertical-align:top;word-break:break-word;overflow:hidden;color:#000;border-right:1px solid #94a3b8}
+    .log-table td:last-child{white-space:nowrap;word-break:normal;border-right:none}
+    @media print{
+      thead{display:table-header-group}
+      .page-header-repeat{display:block !important;margin-top:8px}
+      .page-header{margin-bottom:6px}
+    }
   </style></head><body>
   ${pageHeader}
   <table class="log-table">

@@ -81,8 +81,8 @@ function exportAuditToPDF(sheetTitle: string, logs: AuditLog[]) {
       <td style="padding:5px 8px;${borderBottom};${colBorder};color:${hexColor};font-weight:500">
         ${actionLabel}
       </td>
-      <td style="padding:5px 8px;${borderBottom};${colBorder}">
-        ${log.userName}${(log as any).userCIN ? `<br/><span style='font-family:monospace;font-size:10px;color:#64748b'>${(log as any).userCIN}</span>` : ''}
+      <td style="padding:5px 8px;${borderBottom};${colBorder};font-family:monospace;font-size:12px">
+        ${(log as any).userCIN ?? log.userName}
       </td>
       <td style="padding:5px 8px;${borderBottom};color:#94a3b8;font-size:12px">
         ${log.details ?? "—"}
@@ -108,7 +108,7 @@ function exportAuditToPDF(sheetTitle: string, logs: AuditLog[]) {
     <thead><tr>
       <th style="width:160px">Timestamp</th>
       <th style="width:140px">Action</th>
-      <th style="width:140px">User</th>
+      <th style="width:140px">CIN</th>
       <th>Details</th>
     </tr></thead>
     <tbody>${tableRows}</tbody>
@@ -155,7 +155,7 @@ export default function AuditLogPage() {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     return (
-      log.userName.toLowerCase().includes(q) ||
+      ((log as any).userCIN ?? log.userName).toLowerCase().includes(q) ||
       log.action.toLowerCase().includes(q) ||
       (log.details ?? "").toLowerCase().includes(q)
     );
@@ -261,7 +261,7 @@ export default function AuditLogPage() {
                   <tr className="bg-muted/30">
                     <th className="w-44">Timestamp</th>
                     <th className="w-36">Action</th>
-                    <th className="w-36">User / CIN</th>
+                    <th className="w-36">CIN</th>
                     <th>Details</th>
                   </tr>
                 </thead>
@@ -283,12 +283,7 @@ export default function AuditLogPage() {
                           </div>
                         </td>
                         <td>
-                          <div className="flex flex-col gap-0.5">
-                            <span className="text-sm text-foreground">{log.userName}</span>
-                            {(log as any).userCIN && (
-                              <span className="text-xs font-mono text-muted-foreground">{(log as any).userCIN}</span>
-                            )}
-                          </div>
+                          <span className="text-sm font-mono text-foreground">{(log as any).userCIN ?? log.userName}</span>
                         </td>
                         <td>
                           <span className="text-sm text-muted-foreground">{log.details ?? "—"}</span>

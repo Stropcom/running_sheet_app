@@ -175,10 +175,10 @@ export const appRouter = router({
         await createAuditLog({
           sheetId: 0,
           userId: ctx.user.id,
-          userName: ctx.user.name ?? "Unknown",
+          userName: ctx.user.cin ?? "Unknown",
           userCIN: ctx.user.cin ?? undefined,
           action: "user_updated",
-          details: `User ${ctx.user.name} changed their password`,
+          details: `CIN ${ctx.user.cin ?? "Unknown"} changed password`,
           createdAt: Date.now(),
         });
         return { success: true };
@@ -216,10 +216,10 @@ export const appRouter = router({
         await createAuditLog({
           sheetId: 0,
           userId: user.id,
-          userName: user.name,
+          userName: user.cin ?? "Unknown",
           userCIN: user.cin,
           action: "user_login",
-          details: `User ${user.name} (CIN: ${user.cin}) logged in`,
+          details: `CIN ${user.cin ?? "Unknown"} logged in`,
           createdAt: Date.now(),
         });
 
@@ -241,10 +241,10 @@ export const appRouter = router({
         await createAuditLog({
           sheetId: 0,
           userId: ctx.user.id,
-          userName: ctx.user.name ?? "Unknown",
+          userName: ctx.user.cin ?? "Unknown",
           userCIN: ctx.user.cin ?? undefined,
           action: "user_logout",
-          details: `User ${ctx.user.name} logged out`,
+          details: `CIN ${ctx.user.cin ?? "Unknown"} logged out`,
           createdAt: Date.now(),
         });
       }
@@ -346,10 +346,10 @@ export const appRouter = router({
         await createAuditLog({
           sheetId: 0,
           userId: ctx.user.id,
-          userName: ctx.user.name ?? "Unknown",
+          userName: ctx.user.cin ?? "Unknown",
           userCIN: ctx.user.cin ?? undefined,
           action: "operation_status_changed",
-          details: `Operation "${op.name}" status changed to "${input.status}" by ${ctx.user.name}`,
+          details: `Operation "${op.name}" status changed to "${input.status}" by ${ctx.user.cin ?? "Unknown"}`,
           createdAt: Date.now(),
         });
         return { success: true };
@@ -403,7 +403,7 @@ export const appRouter = router({
           sheetCins: input.sheetCins ? JSON.stringify(input.sheetCins) : null,
           createdBy: ctx.user.id,
         });
-        await createAuditLog({ sheetId: id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "sheet_created", details: `Sheet "${input.title}" created`, createdAt: Date.now() });
+        await createAuditLog({ sheetId: id, userId: ctx.user.id, userName: ctx.user.cin ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "sheet_created", details: `Sheet "${input.title}" created`, createdAt: Date.now() });
         return { id };
       }),
 
@@ -441,7 +441,7 @@ export const appRouter = router({
           data.targetName = null;
         }
         await updateRunningSheet(id, data);
-        await createAuditLog({ sheetId: id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "sheet_updated", details: `Sheet updated`, createdAt: Date.now() });
+        await createAuditLog({ sheetId: id, userId: ctx.user.id, userName: ctx.user.cin ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "sheet_updated", details: `Sheet updated`, createdAt: Date.now() });
         return { success: true };
       }),
 
@@ -450,7 +450,7 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         await guardActiveSheet(input.id);
         await deleteRunningSheet(input.id);
-        await createAuditLog({ sheetId: input.id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "sheet_deleted", details: `Sheet deleted`, createdAt: Date.now() });
+        await createAuditLog({ sheetId: input.id, userId: ctx.user.id, userName: ctx.user.cin ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "sheet_deleted", details: `Sheet deleted`, createdAt: Date.now() });
         return { success: true };
       }),
 
@@ -536,7 +536,7 @@ export const appRouter = router({
 
         const cin = ctx.user.cin ?? ctx.user.name ?? "Unknown";
         await closeSheet(input.id, cin);
-        await createAuditLog({ sheetId: input.id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "sheet_closed", details: `Sheet closed by ${cin}`, createdAt: Date.now() });
+        await createAuditLog({ sheetId: input.id, userId: ctx.user.id, userName: ctx.user.cin ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "sheet_closed", details: `Sheet closed by ${cin}`, createdAt: Date.now() });
         return { success: true };
       }),
 
@@ -560,7 +560,7 @@ export const appRouter = router({
           savedInOpFolderCIN: null,
         });
         const cin = ctx.user.cin ?? ctx.user.name ?? "Unknown";
-        await createAuditLog({ sheetId: input.id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "sheet_reopened", details: `Sheet reopened by ${cin}`, createdAt: Date.now() });
+        await createAuditLog({ sheetId: input.id, userId: ctx.user.id, userName: ctx.user.cin ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "sheet_reopened", details: `Sheet reopened by ${cin}`, createdAt: Date.now() });
         return { success: true };
       }),
 
@@ -584,7 +584,7 @@ export const appRouter = router({
         await createAuditLog({
           sheetId: input.sheetId,
           userId: ctx.user.id,
-          userName: ctx.user.name ?? "Unknown",
+          userName: ctx.user.cin ?? "Unknown",
           userCIN: ctx.user.cin ?? undefined,
           action: "sheet_moved",
           details: `Sheet moved to operation ${input.targetOperationId} by ${cin}`,
@@ -612,7 +612,7 @@ export const appRouter = router({
         await createAuditLog({
           sheetId: newSheetId,
           userId: ctx.user.id,
-          userName: ctx.user.name ?? "Unknown",
+          userName: ctx.user.cin ?? "Unknown",
           userCIN: ctx.user.cin ?? undefined,
           action: "sheet_copied",
           details: `Sheet copied from sheet ${input.sheetId} to operation ${input.targetOperationId} by ${cin}`,
@@ -648,7 +648,7 @@ export const appRouter = router({
         const existingRows = await getRowsBySheetId(input.sheetId);
         const rowNumber = existingRows.length + 1;
         const id = await createSheetRow({ sheetId: input.sheetId, rowNumber, time: input.time, observation: input.observation, isLocked: false });
-        await createAuditLog({ sheetId: input.sheetId, rowId: id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "row_created", details: `Row ${rowNumber} created`, createdAt: Date.now() });
+        await createAuditLog({ sheetId: input.sheetId, rowId: id, userId: ctx.user.id, userName: ctx.user.cin ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "row_created", details: `Row ${rowNumber} created`, createdAt: Date.now() });
         return { id, rowNumber };
       }),
 
@@ -661,7 +661,7 @@ export const appRouter = router({
         if (row.isLocked) throw new TRPCError({ code: "FORBIDDEN", message: "Row is locked. Uncertify to edit." });
         const { id, ...data } = input;
         await updateSheetRow(id, data);
-        await createAuditLog({ sheetId: row.sheetId, rowId: id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "row_updated", details: `Row updated`, createdAt: Date.now() });
+        await createAuditLog({ sheetId: row.sheetId, rowId: id, userId: ctx.user.id, userName: ctx.user.cin ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "row_updated", details: `Row updated`, createdAt: Date.now() });
         return { success: true };
       }),
 
@@ -673,7 +673,7 @@ export const appRouter = router({
         await guardActiveSheet(row.sheetId);
         if (row.isLocked) throw new TRPCError({ code: "FORBIDDEN", message: "Row is locked." });
         await deleteSheetRow(input.id);
-        await createAuditLog({ sheetId: row.sheetId, rowId: input.id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "row_deleted", details: `Row deleted`, createdAt: Date.now() });
+        await createAuditLog({ sheetId: row.sheetId, rowId: input.id, userId: ctx.user.id, userName: ctx.user.cin ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "row_deleted", details: `Row deleted`, createdAt: Date.now() });
         return { success: true };
       }),
   }),
@@ -703,7 +703,7 @@ export const appRouter = router({
         const maxOrder = existingMembers.reduce((m, e) => Math.max(m, (e as any).sortOrder ?? 0), 0);
         const id = await addRowMember({ rowId: input.rowId, memberName: cinUpper, sortOrder: maxOrder + 1 });
         if (cinUpper !== SPACER) {
-          await createAuditLog({ sheetId: row.sheetId, rowId: input.rowId, memberId: id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "member_added", details: `CIN ${cinUpper} added to row`, createdAt: Date.now() });
+          await createAuditLog({ sheetId: row.sheetId, rowId: input.rowId, memberId: id, userId: ctx.user.id, userName: ctx.user.cin ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "member_added", details: `CIN ${cinUpper} added to row`, createdAt: Date.now() });
         }
         return { id };
       }),
@@ -727,7 +727,7 @@ export const appRouter = router({
         await guardActiveSheet(row.sheetId);
         if (row.isLocked) throw new TRPCError({ code: "FORBIDDEN", message: "Row is locked." });
         await removeRowMember(input.id);
-        await createAuditLog({ sheetId: row.sheetId, rowId: input.rowId, memberId: input.id, userId: ctx.user.id, userName: ctx.user.name ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "member_removed", details: `CIN removed from row`, createdAt: Date.now() });
+        await createAuditLog({ sheetId: row.sheetId, rowId: input.rowId, memberId: input.id, userId: ctx.user.id, userName: ctx.user.cin ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "member_removed", details: `CIN removed from row`, createdAt: Date.now() });
         return { success: true };
       }),
   }),
@@ -783,10 +783,10 @@ export const appRouter = router({
           rowId: input.rowId,
           memberId: input.memberId,
           userId: ctx.user.id,
-          userName: ctx.user.name ?? "Unknown",
+          userName: ctx.user.cin ?? "Unknown",
           userCIN: certifierCIN,
           action: "certified",
-          details: `Certified by ${ctx.user.name} (CIN: ${certifierCIN}) at ${new Date(now).toISOString()}${allCertified ? " — Row locked" : ""}`,
+          details: `Certified by CIN ${certifierCIN} at ${new Date(now).toISOString()}${allCertified ? " — Row locked" : ""}`,
           createdAt: now,
         });
 
@@ -847,10 +847,10 @@ export const appRouter = router({
               rowId: member.rowId,
               memberId: member.id,
               userId: ctx.user.id,
-              userName: ctx.user.name ?? "Unknown",
+              userName: ctx.user.cin ?? "Unknown",
               userCIN: certifierCIN,
               action: "certified",
-              details: `Bulk certified by ${ctx.user.name} (CIN: ${certifierCIN}) for CIN ${input.cin}${allCertified ? " — Row locked" : ""}`,
+              details: `Bulk certified by CIN ${certifierCIN} for CIN ${input.cin}${allCertified ? " — Row locked" : ""}`,
               createdAt: now,
             });
           }
@@ -882,10 +882,10 @@ export const appRouter = router({
           rowId: input.rowId,
           memberId: input.memberId,
           userId: ctx.user.id,
-          userName: ctx.user.name ?? "Unknown",
+          userName: ctx.user.cin ?? "Unknown",
           userCIN: certifierCIN,
           action: "uncertified",
-          details: `Certification removed by ${ctx.user.name} (CIN: ${certifierCIN}) — Row unlocked`,
+          details: `Certification removed by CIN ${certifierCIN} — Row unlocked`,
           createdAt: Date.now(),
         });
 
@@ -914,10 +914,10 @@ export const appRouter = router({
           sheetId: row.sheetId,
           rowId: input.rowId,
           userId: ctx.user.id,
-          userName: ctx.user.name ?? "Unknown",
+          userName: ctx.user.cin ?? "Unknown",
           userCIN: certifierCIN,
           action: "uncertified",
-          details: `All certifications removed by ${ctx.user.name} (CIN: ${certifierCIN}) — Row unlocked`,
+          details: `All certifications removed by CIN ${certifierCIN} — Row unlocked`,
           createdAt: Date.now(),
         });
 
@@ -1001,7 +1001,7 @@ export const appRouter = router({
         await createAuditLog({
           sheetId: 0,
           userId: ctx.user.id,
-          userName: ctx.user.name ?? "Unknown",
+          userName: ctx.user.cin ?? "Unknown",
           userCIN: ctx.user.cin ?? undefined,
           action: "user_created",
           details: `User "${input.name}" (CIN: ${input.cin}) created with role "${input.role}"`,
@@ -1033,7 +1033,7 @@ export const appRouter = router({
         await createAuditLog({
           sheetId: 0,
           userId: ctx.user.id,
-          userName: ctx.user.name ?? "Unknown",
+          userName: ctx.user.cin ?? "Unknown",
           userCIN: ctx.user.cin ?? undefined,
           action: "user_updated",
           details: `User ID ${id} profile updated`,
@@ -1050,7 +1050,7 @@ export const appRouter = router({
         await createAuditLog({
           sheetId: 0,
           userId: ctx.user.id,
-          userName: ctx.user.name ?? "Unknown",
+          userName: ctx.user.cin ?? "Unknown",
           userCIN: ctx.user.cin ?? undefined,
           action: "user_deleted",
           details: `User ID ${input.id} deleted`,

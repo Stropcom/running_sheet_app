@@ -74,6 +74,17 @@ import { GripVertical } from "lucide-react";
 import { useLocation, useParams } from "wouter";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { WifiOff, RefreshCw } from "lucide-react";
+import { useOffline } from "@/contexts/OfflineContext";
+import {
+  saveCachedSheet,
+  getCachedSheet,
+  addPendingRowToCachedSheet,
+  editPendingRowInCachedSheet,
+  deletePendingRowInCachedSheet,
+  enqueueSyncAction,
+  type CachedSheet,
+} from "@/lib/offlineStore";
 
 type Member = { id: number; rowId: number; memberName: string; sortOrder: number; createdAt: Date };
 type Certification = {
@@ -1096,6 +1107,11 @@ export default function SheetDetail() {
   const [, navigate] = useLocation();
 
   const utils = trpc.useUtils();
+  const { isOnline, syncStatus } = useOffline();
+
+  // Offline-aware local row state — used when offline
+  const [offlineRows, setOfflineRows] = useState<typeof rows | null>(null);
+  const [hasPendingOfflineChanges, setHasPendingOfflineChanges] = useState(false);
 
   const { data: sheet, isLoading: sheetLoading } = trpc.sheet.get.useQuery(
     { id: sheetId },
@@ -1104,25 +1120,164 @@ export default function SheetDetail() {
 
   const { data: rows, isLoading: rowsLoading } = trpc.row.list.useQuery(
     { sheetId },
-    { enabled: isAuthenticated && !!sheetId, refetchInterval: 10000 }
+    { enabled: isAuthenticated && !!sheetId && isOnline, refetchInterval: isOnline ? 10000 : false }
   );
 
   const invalidateRows = useCallback(() => utils.row.list.invalidate({ sheetId }), [utils, sheetId]);
 
-  const addRow = trpc.row.create.useMutation({
+  // Cache sheet data to IndexedDB whenever we have fresh data online
+  useEffect(() => {
+    if (!isOnline || !sheet || !rows || !sheetId) return;
+    const cacheData: CachedSheet = {
+      serverId: sheetId,
+      operationId: sheet.operationId,
+      title: sheet.title,
+      sheetCins: sheet.sheetCins
+        ? (JSON.parse(sheet.sheetCins) as CachedSheet["sheetCins"])
+        : [],
+      rows: rows.map((r) => ({
+        id: r.id,
+        rowNumber: r.rowNumber,
+        time: r.time ?? undefined,
+        observation: r.observation ?? undefined,
+        members: r.members.map((m) => m.memberName).filter((n) => n !== "__SPACE__"),
+      })),
+      cachedAt: Date.now(),
+    };
+    saveCachedSheet(cacheData).catch(() => {});
+  }, [isOnline, sheet, rows, sheetId]);
+
+  // When going offline, load cached data from IndexedDB
+  useEffect(() => {
+    if (isOnline) {
+      setOfflineRows(null);
+      setHasPendingOfflineChanges(false);
+      return;
+    }
+    getCachedSheet(sheetId).then((cached) => {
+      if (!cached) return;
+      // Convert cached rows back to the expected shape
+      const converted = cached.rows.map((r) => ({
+        id: r.id,
+        sheetId,
+        rowNumber: r.rowNumber,
+        time: r.time ?? null,
+        observation: r.observation ?? null,
+        timeMinutes: null,
+        isLocked: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        members: r.members.map((name, idx) => ({ id: idx, rowId: r.id, memberName: name, sortOrder: idx, createdAt: new Date() })),
+        certifications: [] as NonNullable<typeof rows>[0]["certifications"],
+      })) as unknown as NonNullable<typeof rows>;
+      setOfflineRows(converted);
+      const hasPending = cached.rows.some((r) => r.pendingLocalId || r.pendingEdit || r.pendingDelete);
+      setHasPendingOfflineChanges(hasPending);
+    }).catch(() => {});
+  }, [isOnline, sheetId]);
+
+  const _addRowOnline = trpc.row.create.useMutation({
     onSuccess: invalidateRows,
     onError: (e) => toast.error(e.message),
   });
 
-  const updateRow = trpc.row.update.useMutation({
+  const _updateRowOnline = trpc.row.update.useMutation({
     onSuccess: invalidateRows,
     onError: (e) => toast.error(e.message),
   });
 
-  const deleteRow = trpc.row.delete.useMutation({
+  const _deleteRowOnline = trpc.row.delete.useMutation({
     onSuccess: invalidateRows,
     onError: (e) => toast.error(e.message),
   });
+
+  // Offline-aware wrappers — queue locally when offline, call server when online
+  const addRow = useMemo(() => ({
+    isPending: _addRowOnline.isPending,
+    mutate: (input: { sheetId: number }) => {
+      if (isOnline) {
+        _addRowOnline.mutate(input);
+      } else {
+        addPendingRowToCachedSheet(input.sheetId, { rowNumber: Date.now(), members: [] }).then((localId) => {
+          enqueueSyncAction({ type: "addRowToServerSheet", localId, payload: { sheetServerId: input.sheetId, members: [] } });
+          // Refresh offline rows from cache
+          getCachedSheet(input.sheetId).then((cached) => {
+            if (!cached) return;
+            const converted = cached.rows.map((r) => ({
+              id: r.id, sheetId: input.sheetId, rowNumber: r.rowNumber,
+              time: r.time ?? null, observation: r.observation ?? null, timeMinutes: null,
+              isLocked: false, createdAt: new Date(), updatedAt: new Date(),
+              members: r.members.map((name, idx) => ({ id: idx, rowId: r.id, memberName: name, sortOrder: idx, createdAt: new Date() })),
+              certifications: [] as NonNullable<typeof rows>[0]["certifications"],
+            })) as unknown as NonNullable<typeof rows>;
+            setOfflineRows(converted);
+            setHasPendingOfflineChanges(true);
+          });
+        }).catch(() => toast.error("Failed to save row locally"));
+      }
+    },
+  }), [isOnline, _addRowOnline, rows]);
+
+  const updateRow = useMemo(() => ({
+    isPending: _updateRowOnline.isPending,
+    mutate: (input: { id: number; time?: string; timeMinutes?: number; observation?: string }) => {
+      if (isOnline) {
+        _updateRowOnline.mutate(input);
+      } else {
+        const updates: { time?: string; observation?: string } = {};
+        if (input.time !== undefined) updates.time = input.time;
+        if (input.observation !== undefined) updates.observation = input.observation;
+        editPendingRowInCachedSheet(sheetId, input.id, updates).then(() => {
+          // If row is a server row (positive id), enqueue server update
+          if (input.id > 0) {
+            enqueueSyncAction({ type: "updateServerRow", serverId: input.id, payload: updates });
+          }
+          // Refresh offline rows
+          getCachedSheet(sheetId).then((cached) => {
+            if (!cached) return;
+            const converted = cached.rows.map((r) => ({
+              id: r.id, sheetId, rowNumber: r.rowNumber,
+              time: r.time ?? null, observation: r.observation ?? null, timeMinutes: null,
+              isLocked: false, createdAt: new Date(), updatedAt: new Date(),
+              members: r.members.map((name, idx) => ({ id: idx, rowId: r.id, memberName: name, sortOrder: idx, createdAt: new Date() })),
+              certifications: [] as NonNullable<typeof rows>[0]["certifications"],
+            })) as unknown as NonNullable<typeof rows>;
+            setOfflineRows(converted);
+            setHasPendingOfflineChanges(true);
+          });
+        }).catch(() => {});
+      }
+    },
+  }), [isOnline, _updateRowOnline, sheetId, rows]);
+
+  const deleteRow = useMemo(() => ({
+    isPending: _deleteRowOnline.isPending,
+    mutate: (input: { id: number }) => {
+      if (isOnline) {
+        _deleteRowOnline.mutate(input);
+      } else {
+        deletePendingRowInCachedSheet(sheetId, input.id).then(() => {
+          if (input.id > 0) {
+            enqueueSyncAction({ type: "deleteServerRow", serverId: input.id });
+          }
+          getCachedSheet(sheetId).then((cached) => {
+            if (!cached) return;
+            const converted = cached.rows
+              .filter((r) => !r.pendingDelete)
+              .map((r) => ({
+                id: r.id, sheetId, rowNumber: r.rowNumber,
+                time: r.time ?? null, observation: r.observation ?? null, timeMinutes: null,
+                isLocked: false, createdAt: new Date(), updatedAt: new Date(),
+                members: r.members.map((name, idx) => ({ id: idx, rowId: r.id, memberName: name, sortOrder: idx, createdAt: new Date() })),
+                certifications: [] as NonNullable<typeof rows>[0]["certifications"],
+              })) as unknown as NonNullable<typeof rows>;
+            setOfflineRows(converted);
+            setHasPendingOfflineChanges(true);
+          });
+        }).catch(() => {});
+      }
+    },
+  }), [isOnline, _deleteRowOnline, sheetId, rows]);
 
   const addMember = trpc.member.add.useMutation({
     onSuccess: invalidateRows,
@@ -1455,10 +1610,13 @@ export default function SheetDetail() {
 
   const isLoading = sheetLoading || rowsLoading;
 
+  // Use offline cached rows when offline, live rows when online
+  const displayRows = !isOnline && offlineRows ? offlineRows : rows;
+
   // Filter rows by search query (time, observation, member names)
   const filteredRows = useMemo(() => {
-    if (!rows) return [];
-    const filtered = !searchQuery.trim() ? rows : rows.filter((row: NonNullable<typeof rows>[0]) => {
+    if (!displayRows) return [];
+    const filtered = !searchQuery.trim() ? displayRows : displayRows.filter((row: NonNullable<typeof rows>[0]) => {
       const q = searchQuery.toLowerCase();
       if (row.time?.toLowerCase().includes(q)) return true;
       if (row.observation?.toLowerCase().includes(q)) return true;
@@ -1480,7 +1638,7 @@ export default function SheetDetail() {
     );
     // No-time rows always at the TOP regardless of sort direction
     return [...sortedNoTime, ...sortedWithTime];
-  }, [rows, searchQuery, sortReversed]);
+  }, [displayRows, searchQuery, sortReversed]);
 
   return (
     <DashboardLayout>
@@ -1523,6 +1681,22 @@ export default function SheetDetail() {
             )}
           </div>
           <div className="ml-auto flex items-center gap-2 shrink-0">
+            {/* Offline indicator */}
+            {!isOnline && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 text-xs font-medium">
+                    {syncStatus === "syncing" ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <WifiOff className="w-3.5 h-3.5" />
+                    )}
+                    {hasPendingOfflineChanges ? "Offline — changes queued" : "Offline"}
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>No internet connection. Changes are saved locally and will sync automatically when you reconnect.</TooltipContent>
+              </Tooltip>
+            )}
             {/* Close / Reopen button */}
             {canManageClose && (
               isClosed ? (

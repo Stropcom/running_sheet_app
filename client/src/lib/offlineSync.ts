@@ -195,5 +195,42 @@ async function processSyncEntry(entry: { id?: number; action: import("./offlineS
       await trpcClient.row.delete.mutate({ id: serverId });
       break;
     }
+
+    // ── Server-sheet offline edits (scenarios 2 & 3) ──────────────────────────
+
+    case "addRowToServerSheet": {
+      const { localId, payload } = action;
+      const result = await trpcClient.row.create.mutate({
+        sheetId: payload.sheetServerId,
+        time: payload.time,
+        observation: payload.observation,
+      });
+      idMap.set(String(localId), result.id);
+      // Add CIN members if any
+      for (const cin of payload.members ?? []) {
+        try {
+          await trpcClient.member.add.mutate({ rowId: result.id, memberName: cin });
+        } catch {
+          // Non-fatal
+        }
+      }
+      break;
+    }
+
+    case "updateServerRow": {
+      const { serverId, payload } = action;
+      await trpcClient.row.update.mutate({ id: serverId, ...payload });
+      break;
+    }
+
+    case "deleteServerRow": {
+      const { serverId } = action;
+      try {
+        await trpcClient.row.delete.mutate({ id: serverId });
+      } catch {
+        // Row may already be deleted — non-fatal
+      }
+      break;
+    }
   }
 }

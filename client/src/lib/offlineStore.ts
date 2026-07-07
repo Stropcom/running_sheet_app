@@ -71,13 +71,38 @@ export interface DraftRow {
   synced: boolean;
 }
 
+// ── Cached server-side sheet (for offline editing) ────────────────────────────
+
+export interface CachedSheetRow {
+  id: number;              // real server row ID
+  rowNumber: number;
+  time?: string;
+  observation?: string;
+  members: string[];       // CIN strings
+  pendingLocalId?: string; // set when a local addition is queued
+  pendingDelete?: boolean;
+  pendingEdit?: boolean;
+}
+
+export interface CachedSheet {
+  serverId: number;        // real server sheet ID (used as key)
+  operationId: number;
+  title: string;
+  sheetCins: Array<{ cin: string; hasImages: boolean; isTeamLeader?: boolean; isAuthor?: boolean }>;
+  rows: CachedSheetRow[];
+  cachedAt: number;        // ms timestamp
+}
+
 export type SyncAction =
-  | { type: "createOperation";  localId: string; payload: Omit<DraftOperation, "localId" | "serverId" | "synced"> }
-  | { type: "createTarget";     localId: string; payload: Omit<DraftTarget,    "localId" | "serverId" | "synced"> }
-  | { type: "createSheet";      localId: string; payload: Omit<DraftSheet,     "localId" | "serverId" | "synced"> }
-  | { type: "createRow";        localId: string; payload: Omit<DraftRow,       "localId" | "serverId" | "synced"> }
-  | { type: "updateRow";        localId: string; payload: { time?: string; observation?: string } }
-  | { type: "deleteRow";        localId: string };
+  | { type: "createOperation";     localId: string; payload: Omit<DraftOperation, "localId" | "serverId" | "synced"> }
+  | { type: "createTarget";        localId: string; payload: Omit<DraftTarget,    "localId" | "serverId" | "synced"> }
+  | { type: "createSheet";         localId: string; payload: Omit<DraftSheet,     "localId" | "serverId" | "synced"> }
+  | { type: "createRow";           localId: string; payload: Omit<DraftRow,       "localId" | "serverId" | "synced"> }
+  | { type: "updateRow";           localId: string; payload: { time?: string; observation?: string } }
+  | { type: "deleteRow";           localId: string }
+  | { type: "addRowToServerSheet"; localId: string; payload: { sheetServerId: number; time?: string; observation?: string; members: string[] } }
+  | { type: "updateServerRow";     serverId: number; payload: { time?: string; observation?: string } }
+  | { type: "deleteServerRow";     serverId: number };
 
 export interface SyncQueueEntry {
   id?: number;           // auto-increment key
@@ -95,28 +120,27 @@ type RunLogDB = IDBPDatabase<{
   draftSheets:     { key: string; value: DraftSheet };
   draftRows:       { key: string; value: DraftRow };
   syncQueue:       { key: number; value: SyncQueueEntry };
+  cachedSheets:    { key: number; value: CachedSheet };
 }>;
 
 let _db: RunLogDB | null = null;
 
 async function getDB(): Promise<RunLogDB> {
   if (_db) return _db;
-  _db = await openDB("runlog-offline", 1, {
-    upgrade(db) {
-      if (!db.objectStoreNames.contains("draftOperations")) {
+  _db = await openDB("runlog-offline", 2, {
+    upgrade(db, oldVersion) {
+      if (oldVersion < 1) {
         db.createObjectStore("draftOperations", { keyPath: "localId" });
+        db.createObjectStore("draftTargets",    { keyPath: "localId" });
+        db.createObjectStore("draftSheets",     { keyPath: "localId" });
+        db.createObjectStore("draftRows",       { keyPath: "localId" });
+        db.createObjectStore("syncQueue",       { keyPath: "id", autoIncrement: true });
       }
-      if (!db.objectStoreNames.contains("draftTargets")) {
-        db.createObjectStore("draftTargets", { keyPath: "localId" });
-      }
-      if (!db.objectStoreNames.contains("draftSheets")) {
-        db.createObjectStore("draftSheets", { keyPath: "localId" });
-      }
-      if (!db.objectStoreNames.contains("draftRows")) {
-        db.createObjectStore("draftRows", { keyPath: "localId" });
-      }
-      if (!db.objectStoreNames.contains("syncQueue")) {
-        db.createObjectStore("syncQueue", { keyPath: "id", autoIncrement: true });
+      if (oldVersion < 2) {
+        // Add the cachedSheets store for offline editing of existing server sheets
+        if (!db.objectStoreNames.contains("cachedSheets")) {
+          db.createObjectStore("cachedSheets", { keyPath: "serverId" });
+        }
       }
     },
   }) as RunLogDB;
@@ -313,6 +337,93 @@ export async function clearSyncedDrafts(): Promise<void> {
     ...sheets.filter((s) => s.synced).map((s) => db.delete("draftSheets", s.localId)),
     ...rows.filter((r) => r.synced).map((r) => db.delete("draftRows", r.localId)),
   ]);
+}
+
+// ── Cached Sheets (server-side sheets cached for offline editing) ─────────────────
+
+export async function saveCachedSheet(sheet: CachedSheet): Promise<void> {
+  const db = await getDB();
+  await db.put("cachedSheets", sheet);
+}
+
+export async function getCachedSheet(serverId: number): Promise<CachedSheet | undefined> {
+  const db = await getDB();
+  return db.get("cachedSheets", serverId);
+}
+
+export async function updateCachedSheet(serverId: number, updates: Partial<CachedSheet>): Promise<void> {
+  const db = await getDB();
+  const existing = await db.get("cachedSheets", serverId);
+  if (existing) await db.put("cachedSheets", { ...existing, ...updates });
+}
+
+export async function deleteCachedSheet(serverId: number): Promise<void> {
+  const db = await getDB();
+  await db.delete("cachedSheets", serverId);
+}
+
+export async function getAllCachedSheets(): Promise<CachedSheet[]> {
+  const db = await getDB();
+  return db.getAll("cachedSheets");
+}
+
+/**
+ * Add a pending row to a cached sheet (offline addition to server sheet).
+ * Returns the generated localId for the pending row.
+ */
+export async function addPendingRowToCachedSheet(
+  serverId: number,
+  row: Omit<CachedSheetRow, "id"> & { id?: number }
+): Promise<string> {
+  const db = await getDB();
+  const sheet = await db.get("cachedSheets", serverId);
+  if (!sheet) throw new Error(`No cached sheet for serverId ${serverId}`);
+  const localId = generateLocalId();
+  const maxRowNum = sheet.rows.reduce((m, r) => Math.max(m, r.rowNumber), 0);
+  const newRow: CachedSheetRow = {
+    id: -1 * Date.now(), // temporary negative ID until synced
+    rowNumber: maxRowNum + 1,
+    time: row.time,
+    observation: row.observation,
+    members: row.members ?? [],
+    pendingLocalId: localId,
+  };
+  sheet.rows = [...sheet.rows, newRow];
+  await db.put("cachedSheets", sheet);
+  return localId;
+}
+
+/**
+ * Mark a cached sheet row as pending edit.
+ */
+export async function editPendingRowInCachedSheet(
+  serverId: number,
+  rowId: number,
+  updates: { time?: string; observation?: string }
+): Promise<void> {
+  const db = await getDB();
+  const sheet = await db.get("cachedSheets", serverId);
+  if (!sheet) return;
+  sheet.rows = sheet.rows.map((r) =>
+    r.id === rowId ? { ...r, ...updates, pendingEdit: true } : r
+  );
+  await db.put("cachedSheets", sheet);
+}
+
+/**
+ * Mark a cached sheet row as pending delete.
+ */
+export async function deletePendingRowInCachedSheet(
+  serverId: number,
+  rowId: number
+): Promise<void> {
+  const db = await getDB();
+  const sheet = await db.get("cachedSheets", serverId);
+  if (!sheet) return;
+  sheet.rows = sheet.rows.map((r) =>
+    r.id === rowId ? { ...r, pendingDelete: true } : r
+  );
+  await db.put("cachedSheets", sheet);
 }
 
 export async function clearAllDrafts(): Promise<void> {

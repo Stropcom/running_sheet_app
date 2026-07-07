@@ -25,7 +25,10 @@ import StatementsPage from "./pages/StatementsPage";
 import WitnessListPage from "./pages/WitnessListPage";
 import WIPCPage from "./pages/WIPCPage";
 import HelpPage from "./pages/HelpPage";
-import RecycleBin from "./pages/RecycleBin";
+import RecycleBin from "@/pages/RecycleBin";
+import DraftHubPage from "@/pages/DraftHubPage";
+import DraftSheetPage from "@/pages/DraftSheetPage";
+import { DraftModeBanner } from "@/components/DraftModeBanner";
 
 function Router() {
   return (
@@ -51,6 +54,8 @@ function Router() {
       <Route path="/court/wipc" component={WIPCPage} />
       <Route path="/help" component={HelpPage} />
       <Route path="/recycle-bin" component={RecycleBin} />
+      <Route path="/draft" component={DraftHubPage} />
+      <Route path="/draft/sheet/:localId" component={DraftSheetPage} />
       <Route path="/audit" component={AuditLogPage} />
       <Route path="/admin" component={AdminPage} />
       <Route path="/404" component={NotFound} />
@@ -65,6 +70,7 @@ function App() {
       <ThemeProvider defaultTheme="dark" switchable>
         <TooltipProvider>
           <Toaster />
+          <DraftModeBanner />
           <Router />
         </TooltipProvider>
       </ThemeProvider>

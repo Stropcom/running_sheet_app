@@ -26,11 +26,12 @@ import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useTheme } from "@/contexts/ThemeContext";
 import {
-  FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen, Scale, FolderOpen, ChevronDown, ChevronRight, CalendarDays, Shield, ClipboardCheck as GovIcon, Network, ArrowRightLeft, HelpCircle, Trash2 } from "lucide-react";
+  FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen, Scale, FolderOpen, ChevronDown, ChevronRight, CalendarDays, Shield, ClipboardCheck as GovIcon, Network, ArrowRightLeft, HelpCircle, Trash2, WifiOff } from "lucide-react";
 import React, { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { Button } from "./ui/button";
+import { useOffline } from "@/contexts/OfflineContext";
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
 const DEFAULT_WIDTH = 260;
@@ -116,6 +117,8 @@ function DashboardLayoutContent({
   const govCount = governanceTodo?.filter(g => g.outstanding.length > 0).length ?? 0;
   const todoCount = certifyCount + govCount;
 
+  const { draftCounts } = useOffline();
+
   const [courtExpanded, setCourtExpanded] = useState(() => {
     return location.startsWith("/court");
   });
@@ -132,6 +135,7 @@ function DashboardLayoutContent({
     { icon: FolderSearch, label: "Intelligence", path: "/intelligence" },
     { icon: BookOpen, label: "Target Registry", path: "/target-registry" },
     { icon: ScrollText, label: "Audit Log", path: "/audit" },
+    { icon: WifiOff, label: "Draft Mode", path: "/draft", badge: draftCounts.total > 0 ? draftCounts.total : undefined },
     { icon: Trash2, label: "Recycle Bin", path: "/recycle-bin" },
     { icon: HelpCircle, label: "Help", path: "/help" },
     { icon: User, label: "My Profile", path: "/profile" },

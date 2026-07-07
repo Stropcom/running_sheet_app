@@ -11,6 +11,7 @@ import superjson from "superjson";
 import App from "./App";
 import { getLoginUrl } from "./const";
 import { OfflineProvider } from "./contexts/OfflineContext";
+import { ObservationFocusProvider } from "./contexts/ObservationFocusContext";
 import "./index.css";
 
 const queryClient = new QueryClient();
@@ -83,7 +84,9 @@ createRoot(document.getElementById("root")!).render(
   <trpc.Provider client={trpcClient} queryClient={queryClient}>
     <QueryClientProvider client={queryClient}>
       <OfflineProvider>
-        <App />
+        <ObservationFocusProvider>
+          <App />
+        </ObservationFocusProvider>
       </OfflineProvider>
     </QueryClientProvider>
   </trpc.Provider>

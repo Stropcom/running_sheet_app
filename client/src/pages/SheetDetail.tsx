@@ -54,6 +54,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { useObservationFocus } from "@/contexts/ObservationFocusContext";
 import {
   DndContext,
   closestCenter,
@@ -1011,6 +1012,7 @@ function EditableCell({
   onSave,
   shortcuts,
 }: {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   value: string | null;
   locked: boolean;
   multiline?: boolean;
@@ -1020,6 +1022,7 @@ function EditableCell({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value ?? "");
+  const { notifyObservationFocus, notifyObservationBlur } = useObservationFocus();
 
   const commit = () => {
     if (draft !== (value ?? "")) onSave(draft);
@@ -1065,7 +1068,8 @@ function EditableCell({
           autoFocus
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          onBlur={commit}
+          onFocus={notifyObservationFocus}
+          onBlur={() => { notifyObservationBlur(); commit(); }}
           onKeyDown={(e) => {
             handleShortcutKeyDown(e as React.KeyboardEvent<HTMLTextAreaElement>);
             if (e.key === "Escape") { setDraft(value ?? ""); setEditing(false); }
@@ -1692,14 +1696,11 @@ export default function SheetDetail() {
     setExportEnabled(true);
   }, [sheet, exportData, exportFetching, refetchExport]);
 
-  if (!isAuthenticated) return null;
-
-  const isLoading = sheetLoading || rowsLoading;
-
   // Use offline cached rows when offline, live rows when online
   const displayRows = !isOnline && offlineRows ? offlineRows : rows;
 
   // Filter rows by search query (time, observation, member names)
+  // NOTE: must be above the early return to satisfy React rules-of-hooks
   const filteredRows = useMemo(() => {
     if (!displayRows) return [];
     const filtered = !searchQuery.trim() ? displayRows : displayRows.filter((row: NonNullable<typeof rows>[0]) => {
@@ -1725,6 +1726,10 @@ export default function SheetDetail() {
     // No-time rows always at the TOP regardless of sort direction
     return [...sortedNoTime, ...sortedWithTime];
   }, [displayRows, searchQuery, sortReversed]);
+
+  if (!isAuthenticated) return null;
+
+  const isLoading = sheetLoading || rowsLoading;
 
   return (
     <DashboardLayout>

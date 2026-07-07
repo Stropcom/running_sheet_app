@@ -28,6 +28,7 @@ import { useTheme } from "@/contexts/ThemeContext";
 import {
   FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen, Scale, FolderOpen, ChevronDown, ChevronRight, CalendarDays, Shield, ClipboardCheck as GovIcon, Network, ArrowRightLeft, HelpCircle, Trash2, WifiOff } from "lucide-react";
 import React, { CSSProperties, useEffect, useRef, useState } from "react";
+import { useObservationFocus } from "@/contexts/ObservationFocusContext";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { Button } from "./ui/button";
@@ -118,6 +119,22 @@ function DashboardLayoutContent({
   const todoCount = certifyCount + govCount;
 
   const { draftCounts } = useOffline();
+  const { isObservationFocused } = useObservationFocus();
+  const [shortcutsPanelOpen, setShortcutsPanelOpen] = useState(false);
+  const [shortcutsPanelHovered, setShortcutsPanelHovered] = useState(false);
+  const shortcutsItemRef = useRef<HTMLLIElement>(null);
+
+  const { data: shortcutsList } = trpc.shortcuts.list.useQuery(undefined, {
+    staleTime: 60_000,
+    enabled: isObservationFocused,
+  });
+
+  // Close panel when observation focus is lost and mouse is not in panel
+  useEffect(() => {
+    if (!isObservationFocused && !shortcutsPanelHovered) {
+      setShortcutsPanelOpen(false);
+    }
+  }, [isObservationFocused, shortcutsPanelHovered]);
 
   const [courtExpanded, setCourtExpanded] = useState(() => {
     return location.startsWith("/court");
@@ -360,18 +377,23 @@ function DashboardLayoutContent({
                       </SidebarMenuItem>
                     )}
                     {!isIntelligenceItem && (
-                      <SidebarMenuItem key={item.path}>
+                      <SidebarMenuItem key={item.path} ref={item.label === "Shortcuts" ? shortcutsItemRef : undefined}>
                         <SidebarMenuButton
                           isActive={isActive}
                           onClick={() => setLocation(item.path)}
                           tooltip={item.label}
                           className="h-10 font-normal transition-all"
+                          onMouseEnter={() => {
+                            if (item.label === "Shortcuts" && isObservationFocused) {
+                              setShortcutsPanelOpen(true);
+                            }
+                          }}
                         >
                           <item.icon className={`h-4 w-4 ${
-                            (item as any).badge > 0 ? "text-blue-400" : isActive ? "text-sidebar-primary" : "text-sidebar-foreground/60"
+                            (item as any).badge > 0 ? "text-blue-400" : isActive ? "text-sidebar-primary" : item.label === "Shortcuts" && isObservationFocused ? "text-cyan-400" : "text-sidebar-foreground/60"
                           }`} />
                           <span className={`flex-1 ${
-                            (item as any).badge > 0 ? "text-blue-300 font-medium" : isActive ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"
+                            (item as any).badge > 0 ? "text-blue-300 font-medium" : isActive ? "text-sidebar-foreground font-medium" : item.label === "Shortcuts" && isObservationFocused ? "text-cyan-300 font-medium" : "text-sidebar-foreground/80"
                           }`}>
                             {(item as any).badgeLabel ?? item.label}
                           </span>
@@ -379,6 +401,9 @@ function DashboardLayoutContent({
                             <span className="ml-auto inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-[10px] font-bold bg-blue-500/20 border border-blue-500/40 text-blue-400">
                               {(item as any).badge}
                             </span>
+                          )}
+                          {item.label === "Shortcuts" && isObservationFocused && !isCollapsed && (
+                            <span className="ml-1 text-[9px] font-bold text-cyan-500 uppercase tracking-wide">hover</span>
                           )}
                         </SidebarMenuButton>
                       </SidebarMenuItem>
@@ -469,6 +494,53 @@ function DashboardLayoutContent({
         )}
         <main className="flex-1 min-h-screen bg-background">{children}</main>
       </SidebarInset>
+
+      {/* ── Shortcuts Reference Panel ─────────────────────────────────────── */}
+      {shortcutsPanelOpen && isObservationFocused && (
+        <div
+          className="fixed z-[200] top-1/4 left-0 w-72 rounded-r-xl border border-sidebar-border bg-sidebar shadow-2xl overflow-hidden"
+          style={{ maxHeight: "60vh" }}
+          onMouseEnter={() => setShortcutsPanelHovered(true)}
+          onMouseLeave={() => {
+            setShortcutsPanelHovered(false);
+            if (!isObservationFocused) setShortcutsPanelOpen(false);
+          }}
+          onMouseDown={(e) => e.preventDefault()} // prevent textarea blur
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-sidebar-border bg-sidebar-accent/30">
+            <div className="flex items-center gap-2">
+              <Zap className="h-4 w-4 text-cyan-400" />
+              <span className="text-sm font-semibold text-sidebar-foreground">Shortcuts Reference</span>
+            </div>
+            <button
+              className="h-6 w-6 flex items-center justify-center rounded hover:bg-sidebar-accent text-sidebar-foreground/50 hover:text-sidebar-foreground transition-colors"
+              onClick={() => setShortcutsPanelOpen(false)}
+              onMouseDown={(e) => e.preventDefault()}
+              aria-label="Close shortcuts panel"
+            >
+              ×
+            </button>
+          </div>
+          {/* List */}
+          <div className="overflow-y-auto" style={{ maxHeight: "calc(60vh - 48px)" }}>
+            {!shortcutsList || shortcutsList.length === 0 ? (
+              <p className="px-4 py-6 text-sm text-sidebar-foreground/50 text-center italic">No shortcuts defined</p>
+            ) : (
+              <table className="w-full text-sm">
+                <tbody>
+                  {shortcutsList.map((s: { id: number; trigger: string; expansion: string }) => (
+                    <tr key={s.id} className="border-b border-sidebar-border/40 last:border-0 hover:bg-sidebar-accent/20 transition-colors">
+                      <td className="px-4 py-2.5 font-mono text-cyan-400 font-semibold whitespace-nowrap w-1/3">{s.trigger}</td>
+                      <td className="px-3 py-2.5 text-sidebar-foreground/80 leading-snug">{s.expansion}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
     </>
   );
 }

@@ -2,10 +2,20 @@ import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Trash2, RotateCcw, FolderOpen, FileText, User } from "lucide-react";
+import { useAuth } from "@/_core/hooks/useAuth";
 
 type RecycleBinItem = {
   id: number;
@@ -52,16 +62,19 @@ function daysRemaining(expiresAt: number) {
 }
 
 export default function RecycleBin() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+
   const utils = trpc.useUtils();
   const { data: items, isLoading } = trpc.recycleBin.list.useQuery(undefined, {
     refetchOnWindowFocus: true,
   });
 
+  // ── Reinstate ────────────────────────────────────────────────────────────────
   const reinstateMutation = trpc.recycleBin.reinstate.useMutation({
     onSuccess: (_data, variables) => {
       toast.success(`${typeLabel(variables.type)} reinstated successfully.`);
       utils.recycleBin.list.invalidate();
-      // Also invalidate the relevant list so it reappears immediately
       if (variables.type === "operation") utils.operation.list.invalidate();
       if (variables.type === "sheet") utils.sheet.list.invalidate();
       if (variables.type === "target") utils.target.registry.list.invalidate();
@@ -79,6 +92,28 @@ export default function RecycleBin() {
     setReinstating(null);
   }
 
+  // ── Permanent delete ─────────────────────────────────────────────────────────
+  const hardDeleteMutation = trpc.recycleBin.hardDelete.useMutation({
+    onSuccess: (_data, variables) => {
+      toast.success(`${typeLabel(variables.type)} permanently deleted.`);
+      utils.recycleBin.list.invalidate();
+    },
+    onError: (err) => {
+      toast.error(err.message ?? "Failed to permanently delete item.");
+    },
+  });
+
+  const [confirmItem, setConfirmItem] = useState<RecycleBinItem | null>(null);
+  const [deleting, setDeleting] = useState<number | null>(null);
+
+  async function handleHardDelete() {
+    if (!confirmItem) return;
+    setDeleting(confirmItem.id);
+    setConfirmItem(null);
+    await hardDeleteMutation.mutateAsync({ type: confirmItem.type, id: confirmItem.id });
+    setDeleting(null);
+  }
+
   return (
     <DashboardLayout>
       <div className="max-w-3xl mx-auto py-8 px-4">
@@ -90,6 +125,9 @@ export default function RecycleBin() {
         <p className="text-sm text-muted-foreground mb-6">
           Deleted items are kept for <strong>7 days</strong> before being permanently removed.
           Use <strong>Reinstate</strong> to restore an item to its original location.
+          {isAdmin && (
+            <span> Admins can also <strong>permanently delete</strong> items immediately.</span>
+          )}
         </p>
 
         {isLoading && (
@@ -111,6 +149,7 @@ export default function RecycleBin() {
             {items.map((item) => {
               const days = daysRemaining(item.expiresAt);
               const isExpiringSoon = days <= 1;
+              const isActing = reinstating === item.id || deleting === item.id;
               return (
                 <div
                   key={`${item.type}-${item.id}`}
@@ -141,27 +180,74 @@ export default function RecycleBin() {
                     </div>
                   </div>
 
-                  {/* Reinstate button */}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="shrink-0 gap-1.5 border-blue-300 text-blue-700 hover:bg-blue-50"
-                    disabled={reinstating === item.id}
-                    onClick={() => handleReinstate(item)}
-                  >
-                    {reinstating === item.id ? (
-                      <Spinner className="w-3.5 h-3.5" />
-                    ) : (
-                      <RotateCcw className="w-3.5 h-3.5" />
+                  {/* Actions */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    {/* Reinstate button */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5 border-blue-300 text-blue-700 hover:bg-blue-50"
+                      disabled={isActing}
+                      onClick={() => handleReinstate(item)}
+                    >
+                      {reinstating === item.id ? (
+                        <Spinner className="w-3.5 h-3.5" />
+                      ) : (
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      )}
+                      Reinstate
+                    </Button>
+
+                    {/* Permanent delete — admin only */}
+                    {isAdmin && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5 border-red-300 text-red-700 hover:bg-red-50"
+                        disabled={isActing}
+                        onClick={() => setConfirmItem(item)}
+                      >
+                        {deleting === item.id ? (
+                          <Spinner className="w-3.5 h-3.5" />
+                        ) : (
+                          <Trash2 className="w-3.5 h-3.5" />
+                        )}
+                        Delete
+                      </Button>
                     )}
-                    Reinstate
-                  </Button>
+                  </div>
                 </div>
               );
             })}
           </div>
         )}
       </div>
+
+      {/* Permanent delete confirmation dialog */}
+      <AlertDialog open={!!confirmItem} onOpenChange={(open) => { if (!open) setConfirmItem(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Permanently delete this item?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmItem && (
+                <>
+                  <strong>{confirmItem.label}</strong> ({typeLabel(confirmItem.type)}) will be{" "}
+                  <strong>permanently deleted</strong> and cannot be recovered. This action cannot be undone.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700 text-white"
+              onClick={handleHardDelete}
+            >
+              Permanently Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DashboardLayout>
   );
 }

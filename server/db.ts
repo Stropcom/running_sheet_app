@@ -219,7 +219,7 @@ export async function getOperationDeleteStats(id: number) {
 export async function getRunningSheets() {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(runningSheets).orderBy(desc(runningSheets.createdAt));
+  return db.select().from(runningSheets).where(isNull(runningSheets.deletedAt)).orderBy(desc(runningSheets.createdAt));
 }
 
 export async function getRunningSheetsByOperation(operationId: number) {
@@ -659,12 +659,13 @@ export async function getTargetsByOperation(operationId: number) {
   const db = await getDb();
   if (!db) return [];
   // Get targets by legacy operationId FK AND by operation_target_links (registry-linked)
-  const byFk = await db.select().from(targets).where(eq(targets.operationId, operationId));
+  // Exclude soft-deleted targets in both paths
+  const byFk = await db.select().from(targets).where(and(eq(targets.operationId, operationId), isNull(targets.deletedAt)));
   const linked = await db
     .select({ id: targets.id, name: targets.name, tgt: targets.tgt, hbf: targets.hbf, hb: targets.hb, v1f: targets.v1f, v1: targets.v1, v2f: targets.v2f, v2: targets.v2, dep: targets.dep, arr: targets.arr, operationId: targets.operationId, createdBy: targets.createdBy, createdAt: targets.createdAt, updatedAt: targets.updatedAt })
     .from(operationTargetLinks)
     .innerJoin(targets, eq(operationTargetLinks.targetId, targets.id))
-    .where(eq(operationTargetLinks.operationId, operationId));
+    .where(and(eq(operationTargetLinks.operationId, operationId), isNull(targets.deletedAt)));
   // Merge, deduplicate by id
   const seen = new Set<number>();
   const all = [];
@@ -688,6 +689,7 @@ export async function getAllTargets() {
     })
     .from(targets)
     .leftJoin(operations, eq(targets.operationId, operations.id))
+    .where(isNull(targets.deletedAt))
     .orderBy(targets.name);
   return rows;
 }
@@ -954,9 +956,12 @@ export async function deepSearchOperations(query: string): Promise<DeepSearchMat
     .select({ operationId: runningSheets.operationId, title: runningSheets.title, sheetCins: runningSheets.sheetCins })
     .from(runningSheets)
     .where(
-      or(
-        like(sql`LOWER(${runningSheets.title})`, q),
-        like(sql`LOWER(COALESCE(${runningSheets.sheetCins}, ''))`, q),
+      and(
+        isNull(runningSheets.deletedAt),
+        or(
+          like(sql`LOWER(${runningSheets.title})`, q),
+          like(sql`LOWER(COALESCE(${runningSheets.sheetCins}, ''))`, q),
+        )
       )
     );
 
@@ -965,17 +970,20 @@ export async function deepSearchOperations(query: string): Promise<DeepSearchMat
     .select({ operationId: targets.operationId, name: targets.name, tgt: targets.tgt, hbf: targets.hbf, hb: targets.hb, v1f: targets.v1f, v1: targets.v1, v2f: targets.v2f, v2: targets.v2, dep: targets.dep, arr: targets.arr })
     .from(targets)
     .where(
-      or(
-        like(sql`LOWER(${targets.name})`, q),
-        like(sql`LOWER(COALESCE(${targets.tgt}, ''))`, q),
-        like(sql`LOWER(COALESCE(${targets.hb}, ''))`, q),
-        like(sql`LOWER(COALESCE(${targets.v1}, ''))`, q),
-        like(sql`LOWER(COALESCE(${targets.v2}, ''))`, q),
-        like(sql`LOWER(COALESCE(${targets.hbf}, ''))`, q),
-        like(sql`LOWER(COALESCE(${targets.v1f}, ''))`, q),
-        like(sql`LOWER(COALESCE(${targets.v2f}, ''))`, q),
-        like(sql`LOWER(COALESCE(${targets.dep}, ''))`, q),
-        like(sql`LOWER(COALESCE(${targets.arr}, ''))`, q),
+      and(
+        isNull(targets.deletedAt),
+        or(
+          like(sql`LOWER(${targets.name})`, q),
+          like(sql`LOWER(COALESCE(${targets.tgt}, ''))`, q),
+          like(sql`LOWER(COALESCE(${targets.hb}, ''))`, q),
+          like(sql`LOWER(COALESCE(${targets.v1}, ''))`, q),
+          like(sql`LOWER(COALESCE(${targets.v2}, ''))`, q),
+          like(sql`LOWER(COALESCE(${targets.hbf}, ''))`, q),
+          like(sql`LOWER(COALESCE(${targets.v1f}, ''))`, q),
+          like(sql`LOWER(COALESCE(${targets.v2f}, ''))`, q),
+          like(sql`LOWER(COALESCE(${targets.dep}, ''))`, q),
+          like(sql`LOWER(COALESCE(${targets.arr}, ''))`, q),
+        )
       )
     );
 
@@ -1232,7 +1240,8 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
       operationName: operations.name,
     })
     .from(targets)
-    .leftJoin(operations, eq(targets.operationId!, operations.id));
+    .leftJoin(operations, eq(targets.operationId!, operations.id))
+    .where(isNull(targets.deletedAt));
 
   // Also load registry-linked targets (via operation_target_links)
   const linkedTargetRows = await db
@@ -1251,7 +1260,8 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
     })
     .from(targets)
     .innerJoin(operationTargetLinks, eq(operationTargetLinks.targetId, targets.id))
-    .innerJoin(operations, eq(operationTargetLinks.operationId, operations.id));
+    .innerJoin(operations, eq(operationTargetLinks.operationId, operations.id))
+    .where(isNull(targets.deletedAt));
 
   // Merge: for each target, prefer linked operation rows; fall back to direct row
   const seenTargetOpPairs = new Set<string>();
@@ -1274,7 +1284,7 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
     }
   }
 
-  // Find sheets linked to each target
+  // Find sheets linked to each target (exclude soft-deleted sheets)
   const sheetsByTarget = await db
     .select({
       targetId: runningSheets.targetId,
@@ -1282,7 +1292,7 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
       sheetTitle: runningSheets.title,
     })
     .from(runningSheets)
-    .where(isNotNull(runningSheets.targetId));
+    .where(and(isNotNull(runningSheets.targetId), isNull(runningSheets.deletedAt)));
 
   const targetSheetMap = new Map<number, Array<{ sheetId: number; sheetTitle: string }>>();
   for (const s of sheetsByTarget) {
@@ -1565,6 +1575,7 @@ export async function getAssociationGraph(
   if (!db) return { nodes: [], edges: [] };
 
   // Fetch all rows with their observations, filtered by operation if specified
+  // Exclude rows from soft-deleted sheets
   let rowQuery = db
     .select({
       rowId: sheetRows.id,
@@ -1574,7 +1585,7 @@ export async function getAssociationGraph(
       operationName: operations.name,
     })
     .from(sheetRows)
-    .innerJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
+    .innerJoin(runningSheets, and(eq(sheetRows.sheetId, runningSheets.id), isNull(runningSheets.deletedAt)))
     .innerJoin(operations, eq(runningSheets.operationId, operations.id));
 
   const allRows = await rowQuery;
@@ -1582,10 +1593,11 @@ export async function getAssociationGraph(
     ? allRows.filter((r) => operationIds.includes(r.operationId))
     : allRows;
 
-  // Build TGT alias map from targets
+  // Build TGT alias map from targets (exclude soft-deleted)
   const allTargets = await db
     .select({ id: targets.id, name: targets.name, tgt: targets.tgt, operationId: targets.operationId })
-    .from(targets);
+    .from(targets)
+    .where(isNull(targets.deletedAt));
   const tgtAliasMap = new Map<string, string>(); // alias -> full name
   for (const t of allTargets) {
     if (t.tgt?.trim()) tgtAliasMap.set(t.tgt.trim().toUpperCase(), t.name);
@@ -1889,7 +1901,8 @@ export async function getGovernanceTodoForCin(cin: string): Promise<
   if (!db) return [];
 
   // Find all sheets where this CIN is TL or Author (stored in sheetCins JSON)
-  const allSheets = await db.select().from(runningSheets);
+  // Exclude soft-deleted sheets so they don't appear in governance to-do
+  const allSheets = await db.select().from(runningSheets).where(isNull(runningSheets.deletedAt));
   const relevantSheets = allSheets.filter((s) => {
     try {
       const cins: { cin: string; isTeamLeader?: boolean; isAuthor?: boolean }[] = JSON.parse(s.sheetCins ?? "[]");

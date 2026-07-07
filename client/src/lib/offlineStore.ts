@@ -325,8 +325,13 @@ export async function getDraftCounts(): Promise<{
 }
 
 /**
- * Remove only drafts that have been successfully synced (synced: true).
- * Called after a successful sync to clean up the local store.
+ * Remove all drafts that have been successfully synced.
+ * Called after a successful sync to clean up the local store so
+ * getDraftCounts() returns 0 and the DraftModeBanner dismisses.
+ *
+ * Clears:
+ *  - draftOperations / draftTargets / draftSheets / draftRows with synced:true
+ *  - syncQueue entirely (all entries were replayed by runSync)
  */
 export async function clearSyncedDrafts(): Promise<void> {
   const db = await getDB();
@@ -341,6 +346,8 @@ export async function clearSyncedDrafts(): Promise<void> {
     ...targets.filter((t) => t.synced).map((t) => db.delete("draftTargets", t.localId)),
     ...sheets.filter((s) => s.synced).map((s) => db.delete("draftSheets", s.localId)),
     ...rows.filter((r) => r.synced).map((r) => db.delete("draftRows", r.localId)),
+    // Clear the entire sync queue — every entry was already replayed by runSync()
+    db.clear("syncQueue"),
   ]);
 }
 

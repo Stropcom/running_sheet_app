@@ -2213,6 +2213,21 @@ export const appRouter = router({
         else await reinstateTarget(input.id);
         return { success: true };
       }),
+    hardDelete: adminProcedure
+      .input(z.object({ type: z.enum(["operation", "sheet", "target"]), id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        if (input.type === "operation") {
+          await deleteOperation(input.id);
+          // No operation_deleted enum value — log under operation_status_changed as a record
+          await createAuditLog({ sheetId: 0, userId: ctx.user.id, userName: ctx.user.cin ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "operation_status_changed", details: `Operation permanently deleted from Recycle Bin by CIN ${ctx.user.cin ?? "Unknown"}`, createdAt: Date.now() });
+        } else if (input.type === "sheet") {
+          await deleteRunningSheet(input.id);
+          await createAuditLog({ sheetId: input.id, userId: ctx.user.id, userName: ctx.user.cin ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "sheet_deleted", details: `Sheet permanently deleted from Recycle Bin`, createdAt: Date.now() });
+        } else {
+          await deleteTarget(input.id);
+        }
+        return { success: true };
+      }),
   }),
 });
 export type AppRouter = typeof appRouter;

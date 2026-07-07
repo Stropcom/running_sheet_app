@@ -523,6 +523,7 @@ function MemberCell({
   onAddMember,
   onRemoveMember,
   onReorderMembers,
+  onManualReorder,
   rosterCins,
 }: {
   row: SheetRow;
@@ -530,6 +531,8 @@ function MemberCell({
   onAddMember: (rowId: number, name: string) => void;
   onRemoveMember: (memberId: number, rowId: number) => void;
   onReorderMembers: (rowId: number, orderedIds: number[]) => void;
+  /** Called when the user manually drags to reorder — disables auto-sort for this row */
+  onManualReorder?: (rowId: number) => void;
   rosterCins?: string[];
 }) {
   const [adding, setAdding] = useState(false);
@@ -564,6 +567,8 @@ function MemberCell({
     const newIndex = row.members.findIndex((m) => m.id === over.id);
     if (oldIndex === -1 || newIndex === -1) return;
     const reordered = arrayMove(row.members, oldIndex, newIndex);
+    // Mark this row as manually reordered so auto-sort is suppressed going forward
+    onManualReorder?.(row.id);
     onReorderMembers(row.id, reordered.map((m) => m.id));
   };
 
@@ -1117,6 +1122,13 @@ export default function SheetDetail() {
   const [offlineRows, setOfflineRows] = useState<typeof rows | null>(null);
   const [hasPendingOfflineChanges, setHasPendingOfflineChanges] = useState(false);
 
+  // Per-session manual reorder tracking — suppresses auto-sort for rows the user has dragged
+  // (client-only; resets on page reload, which is acceptable since sortOrder is persisted)
+  const manuallyReorderedRowsRef = useRef<Set<number>>(new Set());
+  const markManualReorder = (rowId: number) => manuallyReorderedRowsRef.current.add(rowId);
+  // Ref to the auto-sort function — set after parsedRoster and reorderMember are available
+  const autoSortRef = useRef<((rowId: number) => void) | null>(null);
+
   const { data: sheet, isLoading: sheetLoading } = trpc.sheet.get.useQuery(
     { id: sheetId },
     { enabled: isAuthenticated && !!sheetId }
@@ -1302,7 +1314,15 @@ export default function SheetDetail() {
     isPending: _addMemberOnline.isPending,
     mutate: (input: { rowId: number; memberName: string }) => {
       if (isOnline) {
-        _addMemberOnline.mutate(input);
+        // Store rowId for auto-sort after the query refreshes
+        const rowIdToSort = input.rowId;
+        _addMemberOnline.mutate(input, {
+          onSuccess: () => {
+            invalidateRows();
+            // Auto-sort is triggered via the autoSortRowMembers ref set up below
+            setTimeout(() => autoSortRef.current?.(rowIdToSort), 300);
+          },
+        });
       } else {
         // Update the cached sheet row's members array
         getCachedSheet(sheetId).then(async (cached) => {
@@ -1484,6 +1504,48 @@ export default function SheetDetail() {
     } catch { return []; }
   }, [sheet?.sheetCins]);
   const rosterCinList = useMemo(() => parsedRoster.map((e) => e.cin), [parsedRoster]);
+
+  // ─── CIN auto-sort helper ────────────────────────────────────────────────────
+  // After any member is added, re-sort the row's CINs: TL first, then ascending CIN number.
+  // Spacers keep their relative positions. Skipped if the user has manually dragged this row.
+  const autoSortRowMembers = useCallback((rowId: number) => {
+    if (manuallyReorderedRowsRef.current.has(rowId)) return; // user has custom order
+    const currentRow = rows?.find((r) => r.id === rowId);
+    if (!currentRow || currentRow.members.length < 2) return;
+
+    // Build canonical CIN order: TL first, then ascending numeric CIN
+    const tlCin = parsedRoster.find((e) => e.isTeamLeader)?.cin?.toUpperCase();
+    const nonSpacers = currentRow.members.filter((m) => m.memberName !== SPACER);
+    const spacers = currentRow.members.filter((m) => m.memberName === SPACER);
+
+    const sorted = [...nonSpacers].sort((a, b) => {
+      const aIsLeader = tlCin && a.memberName.toUpperCase() === tlCin;
+      const bIsLeader = tlCin && b.memberName.toUpperCase() === tlCin;
+      if (aIsLeader && !bIsLeader) return -1;
+      if (!aIsLeader && bIsLeader) return 1;
+      const aNum = parseInt(a.memberName, 10);
+      const bNum = parseInt(b.memberName, 10);
+      if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
+      return a.memberName.localeCompare(b.memberName);
+    });
+
+    // Re-insert spacers at their original relative positions
+    const result = [...sorted];
+    for (const sp of spacers) {
+      const origIdx = currentRow.members.indexOf(sp);
+      const clampedIdx = Math.min(origIdx, result.length);
+      result.splice(clampedIdx, 0, sp);
+    }
+
+    // Only call reorder if the order actually changed
+    const changed = result.some((m, i) => m.id !== currentRow.members[i]?.id);
+    if (changed) {
+      reorderMember.mutate({ rowId, orderedIds: result.map((m) => m.id) });
+    }
+  }, [rows, parsedRoster, reorderMember]);
+
+  // Keep the ref in sync so the addMember useMemo (declared earlier) can call it
+  autoSortRef.current = autoSortRowMembers;
 
   // Compute which CINs have ALL their rows certified
   const cinFullyCertified = useMemo(() => {
@@ -2119,6 +2181,7 @@ export default function SheetDetail() {
                             }
                           }}
                           onReorderMembers={(rowId, orderedIds) => reorderMember.mutate({ rowId, orderedIds })}
+                          onManualReorder={markManualReorder}
                           rosterCins={rosterCinList}
                         />
                       </td>

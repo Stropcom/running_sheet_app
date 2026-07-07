@@ -1227,24 +1227,28 @@ export default function SheetDetail() {
         const updates: { time?: string; observation?: string } = {};
         if (input.time !== undefined) updates.time = input.time;
         if (input.observation !== undefined) updates.observation = input.observation;
-        editPendingRowInCachedSheet(sheetId, input.id, updates).then(() => {
-          // If row is a server row (positive id), enqueue server update
+        editPendingRowInCachedSheet(sheetId, input.id, updates).then(async () => {
+          // Look up the row's pendingLocalId to determine how to enqueue
+          const cached = await getCachedSheet(sheetId);
+          if (!cached) return;
+          const cachedRow = cached.rows.find((r) => r.id === input.id);
           if (input.id > 0) {
+            // Existing server row — enqueue direct update
             enqueueSyncAction({ type: "updateServerRow", serverId: input.id, payload: updates });
+          } else if (cachedRow?.pendingLocalId) {
+            // New offline row — enqueue update keyed by pendingLocalId
+            enqueueSyncAction({ type: "updatePendingRow", pendingLocalId: cachedRow.pendingLocalId, payload: updates });
           }
-          // Refresh offline rows
-          getCachedSheet(sheetId).then((cached) => {
-            if (!cached) return;
-            const converted = cached.rows.map((r) => ({
-              id: r.id, sheetId, rowNumber: r.rowNumber,
-              time: r.time ?? null, observation: r.observation ?? null, timeMinutes: null,
-              isLocked: false, createdAt: new Date(), updatedAt: new Date(),
-              members: r.members.map((name, idx) => ({ id: idx, rowId: r.id, memberName: name, sortOrder: idx, createdAt: new Date() })),
-              certifications: [] as NonNullable<typeof rows>[0]["certifications"],
-            })) as unknown as NonNullable<typeof rows>;
-            setOfflineRows(converted);
-            setHasPendingOfflineChanges(true);
-          });
+          // Refresh offline rows display
+          const converted = cached.rows.map((r) => ({
+            id: r.id, sheetId, rowNumber: r.rowNumber,
+            time: r.time ?? null, observation: r.observation ?? null, timeMinutes: null,
+            isLocked: false, createdAt: new Date(), updatedAt: new Date(),
+            members: r.members.map((name, idx) => ({ id: idx, rowId: r.id, memberName: name, sortOrder: idx, createdAt: new Date() })),
+            certifications: [] as NonNullable<typeof rows>[0]["certifications"],
+          })) as unknown as NonNullable<typeof rows>;
+          setOfflineRows(converted);
+          setHasPendingOfflineChanges(true);
         }).catch(() => {});
       }
     },
@@ -1279,15 +1283,97 @@ export default function SheetDetail() {
     },
   }), [isOnline, _deleteRowOnline, sheetId, rows]);
 
-  const addMember = trpc.member.add.useMutation({
+  const _addMemberOnline = trpc.member.add.useMutation({
     onSuccess: invalidateRows,
     onError: (e) => toast.error(e.message),
   });
 
-  const removeMember = trpc.member.remove.useMutation({
+  const _removeMemberOnline = trpc.member.remove.useMutation({
     onSuccess: invalidateRows,
     onError: (e) => toast.error(e.message),
   });
+
+  // Offline-aware addMember — updates cached sheet and queues sync action
+  const addMember = useMemo(() => ({
+    isPending: _addMemberOnline.isPending,
+    mutate: (input: { rowId: number; memberName: string }) => {
+      if (isOnline) {
+        _addMemberOnline.mutate(input);
+      } else {
+        // Update the cached sheet row's members array
+        getCachedSheet(sheetId).then(async (cached) => {
+          if (!cached) return;
+          const row = cached.rows.find((r) => r.id === input.rowId);
+          if (!row) return;
+          // Add member to cached row
+          const updatedRows = cached.rows.map((r) =>
+            r.id === input.rowId ? { ...r, members: [...r.members, input.memberName] } : r
+          );
+          await import("@/lib/offlineStore").then(({ saveCachedSheet }) =>
+            saveCachedSheet({ ...cached, rows: updatedRows })
+          );
+          // Enqueue sync action
+          if (input.rowId > 0) {
+            enqueueSyncAction({ type: "addMemberToServerRow", serverId: input.rowId, memberName: input.memberName });
+          } else if (row.pendingLocalId) {
+            enqueueSyncAction({ type: "addMemberToServerRow", serverId: input.rowId, pendingLocalId: row.pendingLocalId, memberName: input.memberName });
+          }
+          // Refresh display
+          const updatedCached = { ...cached, rows: updatedRows };
+          const converted = updatedCached.rows.map((r) => ({
+            id: r.id, sheetId, rowNumber: r.rowNumber,
+            time: r.time ?? null, observation: r.observation ?? null, timeMinutes: null,
+            isLocked: false, createdAt: new Date(), updatedAt: new Date(),
+            members: r.members.map((name, idx) => ({ id: idx, rowId: r.id, memberName: name, sortOrder: idx, createdAt: new Date() })),
+            certifications: [] as NonNullable<typeof rows>[0]["certifications"],
+          })) as unknown as NonNullable<typeof rows>;
+          setOfflineRows(converted);
+          setHasPendingOfflineChanges(true);
+        }).catch(() => toast.error("Failed to save member locally"));
+      }
+    },
+  }), [isOnline, _addMemberOnline, sheetId, rows]);
+
+  // Offline-aware removeMember — updates cached sheet and queues sync action
+  const removeMember = useMemo(() => ({
+    isPending: _removeMemberOnline.isPending,
+    mutate: (input: { id: number; rowId: number }) => {
+      if (isOnline) {
+        _removeMemberOnline.mutate(input);
+      } else {
+        getCachedSheet(sheetId).then(async (cached) => {
+          if (!cached) return;
+          const row = cached.rows.find((r) => r.id === input.rowId);
+          if (!row) return;
+          // Remove member at index `input.id` (which we use as the member index offline)
+          const updatedRows = cached.rows.map((r) => {
+            if (r.id !== input.rowId) return r;
+            // input.id is the member index (we set idx as id in the converted rows)
+            const newMembers = r.members.filter((_, idx) => idx !== input.id);
+            return { ...r, members: newMembers };
+          });
+          await import("@/lib/offlineStore").then(({ saveCachedSheet }) =>
+            saveCachedSheet({ ...cached, rows: updatedRows })
+          );
+          // Enqueue sync — best effort (member removal by name)
+          if (input.rowId > 0 && row.members[input.id]) {
+            enqueueSyncAction({ type: "removeMemberFromServerRow", serverId: input.rowId, memberName: row.members[input.id] });
+          }
+          // Refresh display
+          const updatedCached = { ...cached, rows: updatedRows };
+          const converted = updatedCached.rows.map((r) => ({
+            id: r.id, sheetId, rowNumber: r.rowNumber,
+            time: r.time ?? null, observation: r.observation ?? null, timeMinutes: null,
+            isLocked: false, createdAt: new Date(), updatedAt: new Date(),
+            members: r.members.map((name, idx) => ({ id: idx, rowId: r.id, memberName: name, sortOrder: idx, createdAt: new Date() })),
+            certifications: [] as NonNullable<typeof rows>[0]["certifications"],
+          })) as unknown as NonNullable<typeof rows>;
+          setOfflineRows(converted);
+          setHasPendingOfflineChanges(true);
+        }).catch(() => {});
+      }
+    },
+  }), [isOnline, _removeMemberOnline, sheetId, rows]);
 
   const reorderMember = trpc.member.reorder.useMutation({
     onSuccess: invalidateRows,

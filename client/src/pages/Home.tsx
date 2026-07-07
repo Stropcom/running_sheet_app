@@ -21,12 +21,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Plus, Search, FolderOpen, ChevronRight, Trash2, Calendar, Hash, Building2, Scale, Archive } from "lucide-react";
+import { Plus, Search, FolderOpen, ChevronRight, Trash2, Calendar, Hash, Building2, Scale, Archive, WifiOff } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
 import { toast } from "sonner";
+import { useOffline } from "@/contexts/OfflineContext";
+import { saveOperationsListCache, getOperationsListCache, type CachedOperationSummary } from "@/lib/offlineStore";
 
 export default function Home() {
   const { isAuthenticated, user } = useAuth();
@@ -45,9 +47,37 @@ export default function Home() {
 
   const utils = trpc.useUtils();
 
+  const { isOnline } = useOffline();
+  const [cachedOps, setCachedOps] = useState<CachedOperationSummary[] | null>(null);
+
   const { data: operations, isLoading } = trpc.operation.list.useQuery(undefined, {
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && isOnline,
   });
+
+  // Cache operations list when loaded online
+  useEffect(() => {
+    if (operations && isOnline) {
+      const toCache: CachedOperationSummary[] = operations.map((op) => ({
+        id: op.id,
+        name: op.name,
+        promisNumber: op.promisNumber,
+        imsNumber: op.imsNumber,
+        unit: op.investigationUnit,
+        status: "active",
+        createdAt: op.createdAt instanceof Date ? op.createdAt.getTime() : Number(op.createdAt),
+      }));
+      saveOperationsListCache(toCache).catch(() => {});
+    }
+  }, [operations, isOnline]);
+
+  // Load cached ops for offline fallback
+  useEffect(() => {
+    if (!isOnline) {
+      getOperationsListCache().then((cached) => {
+        if (cached) setCachedOps(cached);
+      }).catch(() => {});
+    }
+  }, [isOnline]);
 
   const { data: deepResults, isFetching: deepFetching } = trpc.operation.deepSearch.useQuery(
     { query: search },
@@ -78,7 +108,17 @@ export default function Home() {
 
   // When a search query is active, use deep search results; otherwise show all operations
   const isSearching = search.trim().length > 0;
-  const filtered = isSearching
+  // When offline, use cached operations list as fallback
+  const displayOps = isOnline ? (operations ?? []) : (cachedOps?.map((op) => ({
+    id: op.id,
+    name: op.name,
+    promisNumber: op.promisNumber ?? null,
+    imsNumber: op.imsNumber ?? null,
+    investigationUnit: op.unit ?? null,
+    createdAt: new Date(op.createdAt),
+  })) ?? []);
+
+  const filtered = isSearching && isOnline
     ? (deepResults ?? []).map((r) => ({
         id: r.operationId,
         name: r.operationName,
@@ -89,7 +129,7 @@ export default function Home() {
         createdAt: new Date(),
         operationStatus: r.operationStatus as "active" | "before_court" | "archive",
       }))
-    : (operations ?? []).map((op) => ({ ...op, matchContexts: [] as string[], operationStatus: "active" as const }));
+    : displayOps.map((op) => ({ ...op, matchContexts: [] as string[], operationStatus: "active" as const }));
 
   const handleCreate = () => {
     if (!newName.trim()) return;
@@ -106,13 +146,21 @@ export default function Home() {
       <div className="p-6 lg:p-8 max-w-4xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
-          <div>
+          <div className="flex items-center gap-3">
             <h1 className="text-2xl font-semibold text-foreground">Operations</h1>
+            {!isOnline && (
+              <Badge variant="outline" className="gap-1 text-amber-600 border-amber-300 bg-amber-50">
+                <WifiOff className="w-3 h-3" />
+                Offline
+              </Badge>
+            )}
           </div>
           <Button
             size="sm"
             className="gap-2"
             onClick={() => setCreateOpen(true)}
+            disabled={!isOnline}
+            title={!isOnline ? "Cannot create operations while offline" : undefined}
           >
             <Plus className="w-4 h-4" />
             New Operation
@@ -134,7 +182,7 @@ export default function Home() {
         </div>
 
         {/* Operations list */}
-        {isLoading || (isSearching && deepFetching && !deepResults) ? (
+        {(isOnline && isLoading) || (isSearching && deepFetching && !deepResults) ? (
           <div className="flex flex-col gap-3">
             {[1, 2, 3].map((i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
           </div>

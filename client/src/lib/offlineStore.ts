@@ -102,7 +102,10 @@ export type SyncAction =
   | { type: "deleteRow";           localId: string }
   | { type: "addRowToServerSheet"; localId: string; payload: { sheetServerId: number; time?: string; observation?: string; members: string[] } }
   | { type: "updateServerRow";     serverId: number; payload: { time?: string; observation?: string } }
-  | { type: "deleteServerRow";     serverId: number };
+  | { type: "updatePendingRow";    pendingLocalId: string; payload: { time?: string; observation?: string } }
+  | { type: "deleteServerRow";     serverId: number }
+  | { type: "addMemberToServerRow";   serverId: number; pendingLocalId?: string; memberName: string }
+  | { type: "removeMemberFromServerRow"; serverId: number; memberName: string };
 
 export interface SyncQueueEntry {
   id?: number;           // auto-increment key
@@ -310,13 +313,15 @@ export async function getDraftCounts(): Promise<{
   total: number;
 }> {
   const db = await getDB();
-  const [ops, targets, sheets, rows] = await Promise.all([
+  const [ops, targets, sheets, rows, queued] = await Promise.all([
     db.count("draftOperations"),
     db.count("draftTargets"),
     db.count("draftSheets"),
     db.count("draftRows"),
+    db.count("syncQueue"),
   ]);
-  return { operations: ops, targets, sheets, rows, total: ops + targets + sheets + rows };
+  // Include queued server-sheet edits (addRowToServerSheet, updateServerRow, etc.) in total
+  return { operations: ops, targets, sheets, rows, total: ops + targets + sheets + rows + queued };
 }
 
 /**
@@ -435,4 +440,29 @@ export async function clearAllDrafts(): Promise<void> {
     db.clear("draftRows"),
     db.clear("syncQueue"),
   ]);
+}
+
+// ── Cached Operations List (for offline navigation) ────────────────────────────
+
+export interface CachedOperationSummary {
+  id: number;
+  name: string;
+  promisNumber?: string | null;
+  imsNumber?: string | null;
+  unit?: string | null;
+  status: string;
+  createdAt: number; // unix ms
+  sheetCount?: number;
+}
+
+export async function saveOperationsListCache(ops: CachedOperationSummary[]): Promise<void> {
+  const db = await getDB();
+  // Store as a single entry keyed by 0
+  await db.put("cachedSheets", { serverId: -999, rows: [], cachedAt: Date.now(), ops } as unknown as CachedSheet);
+}
+
+export async function getOperationsListCache(): Promise<CachedOperationSummary[] | null> {
+  const db = await getDB();
+  const entry = await db.get("cachedSheets", -999) as unknown as { ops?: CachedOperationSummary[] } | undefined;
+  return entry?.ops ?? null;
 }

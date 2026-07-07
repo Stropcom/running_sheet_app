@@ -5,6 +5,8 @@ process.env.TZ = "Australia/Perth";
 import express from "express";
 import { createServer } from "http";
 import net from "net";
+import helmet from "helmet";
+import { rateLimit } from "express-rate-limit";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
@@ -32,13 +34,36 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
   throw new Error(`No available port found starting from ${startPort}`);
 }
 
+// ─── Rate limiter: OAuth / login endpoints ───────────────────────────────────
+// 20 attempts per 15 minutes per IP — stops brute-force, invisible to normal users
+const authRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later." },
+  skip: (req) => process.env.NODE_ENV === "test",
+});
+
 async function startServer() {
   const app = express();
   const server = createServer(app);
+
+  // ─── Security headers (Helmet — CSP excluded to avoid blocking app resources) ─
+  app.use(helmet({
+    contentSecurityPolicy: false,   // CSP requires careful per-app whitelisting — applied separately when ready
+    crossOriginEmbedderPolicy: false, // Allows Manus OAuth portal to embed resources
+  }));
+
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerStorageProxy(app);
+
+  // Apply rate limiting to all OAuth/auth routes
+  app.use("/api/oauth", authRateLimiter);
+  app.use("/api/trpc/auth", authRateLimiter);
+
   registerOAuthRoutes(app);
   // tRPC API
   app.use(

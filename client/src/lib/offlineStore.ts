@@ -295,6 +295,26 @@ export async function getDraftCounts(): Promise<{
   return { operations: ops, targets, sheets, rows, total: ops + targets + sheets + rows };
 }
 
+/**
+ * Remove only drafts that have been successfully synced (synced: true).
+ * Called after a successful sync to clean up the local store.
+ */
+export async function clearSyncedDrafts(): Promise<void> {
+  const db = await getDB();
+  const [ops, targets, sheets, rows] = await Promise.all([
+    db.getAll("draftOperations"),
+    db.getAll("draftTargets"),
+    db.getAll("draftSheets"),
+    db.getAll("draftRows"),
+  ]);
+  await Promise.all([
+    ...ops.filter((o) => o.synced).map((o) => db.delete("draftOperations", o.localId)),
+    ...targets.filter((t) => t.synced).map((t) => db.delete("draftTargets", t.localId)),
+    ...sheets.filter((s) => s.synced).map((s) => db.delete("draftSheets", s.localId)),
+    ...rows.filter((r) => r.synced).map((r) => db.delete("draftRows", r.localId)),
+  ]);
+}
+
 export async function clearAllDrafts(): Promise<void> {
   const db = await getDB();
   await Promise.all([

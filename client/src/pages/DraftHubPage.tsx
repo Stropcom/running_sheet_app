@@ -12,6 +12,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useLocation } from "wouter";
+import DashboardLayout from "@/components/DashboardLayout";
 import {
   Plus,
   WifiOff,
@@ -21,6 +22,8 @@ import {
   Building2,
   RefreshCw,
   Loader2,
+  Home,
+  ArrowLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -159,16 +162,22 @@ export default function DraftHubPage() {
   const totalDrafts = draftCounts.total;
 
   return (
+    <DashboardLayout>
     <div className="mx-auto max-w-2xl space-y-6 p-4">
       {/* Page header */}
       <div className="flex items-center justify-between">
-        <div>
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" onClick={() => navigate("/")} title="Go to Home">
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div>
           <h1 className="text-xl font-bold">Draft Mode</h1>
           <p className="text-sm text-muted-foreground">
             {isDraftMode
               ? "You are offline. Data is saved locally and will sync when you reconnect."
               : "You are online. Draft items below are waiting to sync."}
           </p>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           {isOnline ? (
@@ -213,10 +222,18 @@ export default function DraftHubPage() {
 
       {/* No drafts */}
       {!loading && totalDrafts === 0 && (
-        <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-          {isDraftMode
-            ? "No drafts yet. Create an operation or running sheet below."
-            : "No unsynced drafts. All data is on the server."}
+        <div className="rounded-lg border border-dashed p-8 text-center space-y-4">
+          <p className="text-sm text-muted-foreground">
+            {isDraftMode
+              ? "No drafts yet. Create an operation or running sheet below."
+              : "No unsynced drafts. All data is on the server."}
+          </p>
+          {isOnline && (
+            <Button onClick={() => navigate("/")} variant="outline" className="gap-2">
+              <Home className="h-4 w-4" />
+              Go to Home
+            </Button>
+          )}
         </div>
       )}
 
@@ -390,5 +407,6 @@ export default function DraftHubPage() {
         </DialogContent>
       </Dialog>
     </div>
+    </DashboardLayout>
   );
 }

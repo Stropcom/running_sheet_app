@@ -18,7 +18,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { getDraftCounts } from "@/lib/offlineStore";
+import { getDraftCounts, clearSyncedDrafts } from "@/lib/offlineStore";
 import { runSync, type SyncResult, type SyncStatus } from "@/lib/offlineSync";
 import { trpc } from "@/lib/trpc";
 
@@ -97,11 +97,15 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
       await utils.sheet.list?.invalidate?.();
       await utils.row.list?.invalidate?.();
 
-      // Refresh draft counts (synced items are marked, queue is cleared)
+      // Remove synced drafts from IndexedDB so counts drop to 0
+      await clearSyncedDrafts();
       await refreshDraftCounts();
 
       // Reset status after 4 seconds
-      setTimeout(() => setSyncStatus("idle"), 4000);
+      setTimeout(() => {
+        setSyncStatus("idle");
+        setSyncResult(null);
+      }, 4000);
     } catch (err) {
       setSyncResult({ synced: 0, failed: 1, errors: [String(err)] });
       setSyncStatus("error");

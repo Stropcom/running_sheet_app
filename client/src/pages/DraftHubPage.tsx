@@ -30,6 +30,7 @@ import {
   Home,
   ArrowLeft,
   AlertCircle,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,6 +43,16 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Select,
   SelectContent,
@@ -59,6 +70,7 @@ import {
   saveDraftSheet,
   enqueueSyncAction,
   getOperationsListCache,
+  discardDraftSheet,
   type DraftOperation,
   type DraftSheet,
   type CachedOperationSummary,
@@ -84,6 +96,17 @@ export default function DraftHubPage() {
   const [newOpName, setNewOpName] = useState("");
   const [newOpPromis, setNewOpPromis] = useState("");
   const [savingOp, setSavingOp] = useState(false);
+
+  // Discard confirmation
+  const [discardTarget, setDiscardTarget] = useState<DraftSheet | null>(null);
+
+  const handleDiscardSheet = async (sheet: DraftSheet) => {
+    await discardDraftSheet(sheet.localId);
+    await refreshDraftCounts();
+    await loadDrafts();
+    toast.success(`Draft "${sheet.title}" discarded`);
+    setDiscardTarget(null);
+  };
 
   // New sheet dialog
   const [showNewSheet, setShowNewSheet] = useState(false);
@@ -338,8 +361,17 @@ export default function DraftHubPage() {
                     Created {new Date(sheet.createdAt).toLocaleString()}
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                   <DraftBadge />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    title="Discard this draft"
+                    onClick={(e) => { e.stopPropagation(); setDiscardTarget(sheet); }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                   <ChevronRight className="h-4 w-4 text-muted-foreground" />
                 </div>
               </button>
@@ -376,6 +408,33 @@ export default function DraftHubPage() {
           )}
         </div>
       </div>
+
+      {/* ── Discard Confirmation Dialog ── */}
+      <AlertDialog open={!!discardTarget} onOpenChange={(open) => { if (!open) setDiscardTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard Draft Running Sheet?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the draft &ldquo;{discardTarget?.title}&rdquo; and all its rows from this device.
+              {discardTarget && !discardTarget.operationLocalId && !discardTarget.operationServerId && (
+                <span className="mt-2 block font-medium text-amber-600 dark:text-amber-400">
+                  This sheet has no linked operation and cannot sync — discarding it will clear the sync error.
+                </span>
+              )}
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => discardTarget && handleDiscardSheet(discardTarget)}
+            >
+              Discard
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* ── New Operation Dialog ── */}
       <Dialog open={showNewOp} onOpenChange={setShowNewOp}>

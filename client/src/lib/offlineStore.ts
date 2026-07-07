@@ -351,6 +351,41 @@ export async function clearSyncedDrafts(): Promise<void> {
   ]);
 }
 
+/**
+ * Discard a stuck/unwanted draft sheet and all associated data.
+ * Removes:
+ *  - The draftSheet record
+ *  - All draftRows that belong to it
+ *  - All syncQueue entries whose localId matches the sheet or any of its rows
+ *    (covers createSheet, createRow, updateRow, deleteRow actions)
+ */
+export async function discardDraftSheet(sheetLocalId: string): Promise<void> {
+  const db = await getDB();
+
+  // 1. Collect row localIds belonging to this sheet
+  const allRows = await db.getAll("draftRows");
+  const sheetRows = allRows.filter((r) => r.sheetLocalId === sheetLocalId);
+  const rowLocalIds = new Set(sheetRows.map((r) => r.localId));
+
+  // 2. Remove the sheet and its rows from the draft stores
+  await db.delete("draftSheets", sheetLocalId);
+  await Promise.all(sheetRows.map((r) => db.delete("draftRows", r.localId)));
+
+  // 3. Remove all syncQueue entries related to this sheet or its rows
+  const queue = await db.getAll("syncQueue");
+  const toRemove = queue.filter((entry) => {
+    const a = entry.action;
+    if (a.type === "createSheet" && a.localId === sheetLocalId) return true;
+    if (a.type === "createRow" && rowLocalIds.has(a.localId)) return true;
+    if (a.type === "updateRow" && rowLocalIds.has(a.localId)) return true;
+    if (a.type === "deleteRow" && rowLocalIds.has(a.localId)) return true;
+    return false;
+  });
+  await Promise.all(
+    toRemove.filter((e) => e.id !== undefined).map((e) => db.delete("syncQueue", e.id!))
+  );
+}
+
 // ── Cached Sheets (server-side sheets cached for offline editing) ─────────────────
 
 export async function saveCachedSheet(sheet: CachedSheet): Promise<void> {

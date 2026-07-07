@@ -4,10 +4,15 @@
  * The offline draft hub — shows all locally saved drafts and lets the user
  * create new operations, sheets and rows while offline.
  *
- * This page is accessible from the sidebar at all times so users can:
- *   1. See what is saved locally
- *   2. Open a draft sheet to add rows
- *   3. Create new draft operations / sheets
+ * Key rule: a running sheet MUST always be linked to an operation.
+ *   - If the user has draft (offline-created) operations, they can pick one.
+ *   - If the device has a cached list of server operations, they can pick one.
+ *   - If neither is available, the "New Draft Running Sheet" button is disabled
+ *     with a tooltip explaining they must create a draft operation first.
+ *
+ * This prevents the sync engine from hitting the
+ * "Cannot resolve operationId for sheet" error that leaves the sync banner
+ * permanently stuck at the top of the page.
  */
 
 import { useEffect, useState, useCallback } from "react";
@@ -24,6 +29,7 @@ import {
   Loader2,
   Home,
   ArrowLeft,
+  AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,7 +40,15 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { DraftBadge } from "@/components/DraftModeBanner";
 import { useOffline } from "@/contexts/OfflineContext";
 import {
@@ -44,10 +58,17 @@ import {
   saveDraftOperation,
   saveDraftSheet,
   enqueueSyncAction,
+  getOperationsListCache,
   type DraftOperation,
   type DraftSheet,
+  type CachedOperationSummary,
 } from "@/lib/offlineStore";
 import { toast } from "sonner";
+
+// ── Unified option type used in the operation picker ──────────────────────────
+type OperationOption =
+  | { kind: "draft"; localId: string; name: string }
+  | { kind: "server"; serverId: number; name: string };
 
 export default function DraftHubPage() {
   const [, navigate] = useLocation();
@@ -55,6 +76,7 @@ export default function DraftHubPage() {
 
   const [draftOps, setDraftOps] = useState<DraftOperation[]>([]);
   const [draftSheets, setDraftSheets] = useState<DraftSheet[]>([]);
+  const [cachedServerOps, setCachedServerOps] = useState<CachedOperationSummary[]>([]);
   const [loading, setLoading] = useState(true);
 
   // New operation dialog
@@ -66,20 +88,33 @@ export default function DraftHubPage() {
   // New sheet dialog
   const [showNewSheet, setShowNewSheet] = useState(false);
   const [newSheetTitle, setNewSheetTitle] = useState("");
-  const [newSheetOpId, setNewSheetOpId] = useState<string>(""); // localId of selected op
+  const [newSheetOpKey, setNewSheetOpKey] = useState<string>(""); // "draft:<localId>" or "server:<id>"
   const [newSheetCins, setNewSheetCins] = useState("");
   const [savingSheet, setSavingSheet] = useState(false);
 
   const loadDrafts = useCallback(async () => {
-    const [ops, sheets] = await Promise.all([getDraftOperations(), getDraftSheets()]);
+    const [ops, sheets, cached] = await Promise.all([
+      getDraftOperations(),
+      getDraftSheets(),
+      getOperationsListCache(),
+    ]);
     setDraftOps(ops.filter((o) => !o.synced));
     setDraftSheets(sheets.filter((s) => !s.synced));
+    setCachedServerOps(cached ?? []);
     setLoading(false);
   }, []);
 
   useEffect(() => {
     loadDrafts();
   }, [loadDrafts, draftCounts]);
+
+  // ── Build the unified options list for the operation picker ──────────────────
+  const operationOptions: OperationOption[] = [
+    ...draftOps.map((op) => ({ kind: "draft" as const, localId: op.localId, name: op.name })),
+    ...cachedServerOps.map((op) => ({ kind: "server" as const, serverId: op.id, name: op.name })),
+  ];
+
+  const hasOperations = operationOptions.length > 0;
 
   // ── Create draft operation ─────────────────────────────────────────────────
   const handleCreateOp = async () => {
@@ -117,7 +152,7 @@ export default function DraftHubPage() {
 
   // ── Create draft sheet ─────────────────────────────────────────────────────
   const handleCreateSheet = async () => {
-    if (!newSheetTitle.trim()) return;
+    if (!newSheetTitle.trim() || !newSheetOpKey) return;
     setSavingSheet(true);
     try {
       const localId = generateLocalId();
@@ -127,9 +162,20 @@ export default function DraftHubPage() {
         .filter(Boolean)
         .map((cin) => ({ cin, hasImages: false, isAuthor: false }));
 
+      // Resolve whether this is a draft op (localId) or a cached server op (serverId)
+      let operationLocalId: string | undefined;
+      let operationServerId: number | undefined;
+
+      if (newSheetOpKey.startsWith("draft:")) {
+        operationLocalId = newSheetOpKey.slice("draft:".length);
+      } else if (newSheetOpKey.startsWith("server:")) {
+        operationServerId = Number(newSheetOpKey.slice("server:".length));
+      }
+
       const draft: DraftSheet = {
         localId,
-        operationLocalId: newSheetOpId || undefined,
+        operationLocalId,
+        operationServerId,
         title: newSheetTitle.trim(),
         sheetCins: cins,
         createdAt: Date.now(),
@@ -141,6 +187,7 @@ export default function DraftHubPage() {
         localId,
         payload: {
           operationLocalId: draft.operationLocalId,
+          operationServerId: draft.operationServerId,
           title: draft.title,
           sheetCins: draft.sheetCins,
           createdAt: draft.createdAt,
@@ -150,7 +197,7 @@ export default function DraftHubPage() {
       setShowNewSheet(false);
       setNewSheetTitle("");
       setNewSheetCins("");
-      setNewSheetOpId("");
+      setNewSheetOpKey("");
       toast.success(`Sheet "${draft.title}" saved as draft`);
       // Navigate straight to the draft sheet editor
       navigate(`/draft/sheet/${localId}`);
@@ -311,13 +358,23 @@ export default function DraftHubPage() {
           <Plus className="mr-2 h-4 w-4" />
           New Draft Operation
         </Button>
-        <Button
-          className="flex-1"
-          onClick={() => setShowNewSheet(true)}
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          New Draft Running Sheet
-        </Button>
+        <div className="flex-1 flex flex-col gap-1">
+          <Button
+            className="w-full"
+            onClick={() => setShowNewSheet(true)}
+            disabled={!hasOperations}
+            title={!hasOperations ? "Create a draft operation first, or go online so existing operations are available." : undefined}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            New Draft Running Sheet
+          </Button>
+          {!hasOperations && (
+            <p className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+              <AlertCircle className="h-3 w-3 shrink-0" />
+              Create a draft operation first (or go online to load existing ones).
+            </p>
+          )}
+        </div>
       </div>
 
       {/* ── New Operation Dialog ── */}
@@ -360,33 +417,60 @@ export default function DraftHubPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>New Draft Running Sheet</DialogTitle>
+            <DialogDescription>
+              A running sheet must always be linked to an operation.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
+            {/* Operation picker — required */}
             <div>
-              <label className="mb-1 block text-sm font-medium">Sheet Title *</label>
+              <label className="mb-1 block text-sm font-medium">
+                Operation <span className="text-red-500">*</span>
+              </label>
+              <Select value={newSheetOpKey} onValueChange={setNewSheetOpKey}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select an operation…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {draftOps.length > 0 && (
+                    <>
+                      <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                        Draft (offline)
+                      </div>
+                      {draftOps.map((op) => (
+                        <SelectItem key={`draft:${op.localId}`} value={`draft:${op.localId}`}>
+                          {op.name}
+                          <span className="ml-2 text-xs text-amber-600">(draft)</span>
+                        </SelectItem>
+                      ))}
+                    </>
+                  )}
+                  {cachedServerOps.length > 0 && (
+                    <>
+                      <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                        Existing operations
+                      </div>
+                      {cachedServerOps.map((op) => (
+                        <SelectItem key={`server:${op.id}`} value={`server:${op.id}`}>
+                          {op.name}
+                        </SelectItem>
+                      ))}
+                    </>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium">
+                Sheet Title <span className="text-red-500">*</span>
+              </label>
               <Input
                 placeholder="e.g. 20260706 - STILLWATER (JAMES)"
                 value={newSheetTitle}
                 onChange={(e) => setNewSheetTitle(e.target.value)}
               />
             </div>
-            {draftOps.length > 0 && (
-              <div>
-                <label className="mb-1 block text-sm font-medium">Link to Draft Operation</label>
-                <select
-                  className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                  value={newSheetOpId}
-                  onChange={(e) => setNewSheetOpId(e.target.value)}
-                >
-                  <option value="">— None —</option>
-                  {draftOps.map((op) => (
-                    <option key={op.localId} value={op.localId}>
-                      {op.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
             <div>
               <label className="mb-1 block text-sm font-medium">Team CINs</label>
               <Input
@@ -399,7 +483,10 @@ export default function DraftHubPage() {
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setShowNewSheet(false)}>Cancel</Button>
-            <Button onClick={handleCreateSheet} disabled={!newSheetTitle.trim() || savingSheet}>
+            <Button
+              onClick={handleCreateSheet}
+              disabled={!newSheetTitle.trim() || !newSheetOpKey || savingSheet}
+            >
               {savingSheet ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Create &amp; Open
             </Button>

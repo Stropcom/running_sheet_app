@@ -1376,6 +1376,17 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
   }
 
   // ── 3. Extract from observation rows ──────────────────────────────────────
+  //
+  // Two-pass approach:
+  //   Pass A: for each sheet, scan all rows in time order and collect every
+  //           bracketed introduction "FullForm (ShortForm)" into a per-sheet
+  //           entity dictionary.  This is the "first mention" that establishes
+  //           the entity's type and canonical full description.
+  //   Pass B: re-scan every row in the sheet and, for each known short form
+  //           that appears as a standalone token (unbracketed), emit an
+  //           occurrence using the registered full description and type.
+  //           This handles all subsequent mentions that omit the brackets.
+  //
   const rows = await db
     .select({
       rowId: sheetRows.id,
@@ -1389,56 +1400,125 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
     .from(sheetRows)
     .innerJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
     .innerJoin(operations, eq(runningSheets.operationId, operations.id))
-    .orderBy(sheetRows.timeMinutes);
+    .orderBy(sheetRows.sheetId, sheetRows.timeMinutes);
 
+  // Group rows by sheetId so we can do the two-pass per sheet
+  const rowsBySheet = new Map<number, typeof rows>();
   for (const row of rows) {
-    if (!row.observation) continue;
-    const entities = extractEntitiesFromText(row.observation);
-    for (const e of entities) {
-      // If this person shortForm is a known TGT alias, merge its occurrences
-      // into the canonical target entity instead of creating a duplicate
-      if (e.type === "person") {
-        const canonicalName = tgtAliasToFullName.get(e.shortForm.toUpperCase());
-        if (canonicalName) {
-          const targetKey = `target::${canonicalName}`;
-          if (entityMap.has(targetKey)) {
-            const snippet = row.observation.slice(0, 80) + (row.observation.length > 80 ? "…" : "");
-            entityMap.get(targetKey)!.occurrences.push({
-              sheetId: row.sheetId,
-              sheetTitle: row.sheetTitle,
-              operationId: row.operationId,
-              operationName: row.operationName,
-              rowId: row.rowId,
-              observationSnippet: snippet,
-              timeMinutes: row.timeMinutes ?? null,
-              fullDescription: e.fullDescription,
-            });
-            continue; // skip adding as a separate entity
+    if (!rowsBySheet.has(row.sheetId)) rowsBySheet.set(row.sheetId, []);
+    rowsBySheet.get(row.sheetId)!.push(row);
+  }
+
+  // Helper: register or merge an entity occurrence into entityMap
+  function registerOccurrence(
+    e: { shortForm: string; fullDescription: string; type: "person" | "vehicle" | "address" | "business" | "unknown" },
+    row: { sheetId: number; sheetTitle: string; operationId: number; operationName: string; rowId: number; observation: string | null; timeMinutes: number | null }
+  ) {
+    if (!row.observation) return;
+    // If this person shortForm is a known TGT alias, merge into the canonical target entity
+    if (e.type === "person") {
+      const canonicalName = tgtAliasToFullName.get(e.shortForm.toUpperCase());
+      if (canonicalName) {
+        const targetKey = `target::${canonicalName}`;
+        if (entityMap.has(targetKey)) {
+          const snippet = row.observation.slice(0, 80) + (row.observation.length > 80 ? "…" : "");
+          entityMap.get(targetKey)!.occurrences.push({
+            sheetId: row.sheetId,
+            sheetTitle: row.sheetTitle,
+            operationId: row.operationId,
+            operationName: row.operationName,
+            rowId: row.rowId,
+            observationSnippet: snippet,
+            timeMinutes: row.timeMinutes ?? null,
+            fullDescription: e.fullDescription,
+          });
+          return; // skip adding as a separate entity
+        }
+      }
+    }
+    const key = `${e.type}::${e.shortForm.toLowerCase()}`;
+    if (!entityMap.has(key)) {
+      entityMap.set(key, { shortForm: e.shortForm, type: e.type, isTarget: false, occurrences: [] });
+    } else {
+      // Upgrade to longer shortForm if available
+      const existing = entityMap.get(key)!;
+      if (e.shortForm.length > existing.shortForm.length) existing.shortForm = e.shortForm;
+    }
+    const snippet = row.observation.slice(0, 80) + (row.observation.length > 80 ? "…" : "");
+    entityMap.get(key)!.occurrences.push({
+      sheetId: row.sheetId,
+      sheetTitle: row.sheetTitle,
+      operationId: row.operationId,
+      operationName: row.operationName,
+      rowId: row.rowId,
+      observationSnippet: snippet,
+      timeMinutes: row.timeMinutes ?? null,
+      fullDescription: e.fullDescription,
+    });
+  }
+
+  for (const [, sheetRows_] of Array.from(rowsBySheet.entries())) {
+    // ── Pass A: build per-sheet entity dictionary from bracketed introductions ──
+    // Dictionary key: shortForm.toLowerCase(), value: {shortForm, fullDescription, type}
+    type DictEntry = { shortForm: string; fullDescription: string; type: "person" | "vehicle" | "address" | "business" | "unknown" };
+    const sheetDict = new Map<string, DictEntry>();
+
+    for (const row of sheetRows_) {
+      if (!row.observation) continue;
+      const bracketed = extractEntitiesFromText(row.observation);
+      for (const e of bracketed) {
+        const dk = e.shortForm.toLowerCase();
+        if (!sheetDict.has(dk)) {
+          sheetDict.set(dk, { shortForm: e.shortForm, fullDescription: e.fullDescription, type: e.type });
+        } else {
+          // Upgrade to longer shortForm
+          const existing = sheetDict.get(dk)!;
+          if (e.shortForm.length > existing.shortForm.length) {
+            existing.shortForm = e.shortForm;
+            existing.fullDescription = e.fullDescription;
           }
         }
       }
-      // Use lowercase key so "1 Smith Street" and "1 SMITH STREET" are the same entity
-      const key = `${e.type}::${e.shortForm.toLowerCase()}`;
-      if (!entityMap.has(key)) {
-        entityMap.set(key, { shortForm: e.shortForm, type: e.type, isTarget: false, occurrences: [] });
-      } else {
-        // If the existing entry has a shorter shortForm, upgrade it to the longer one
-        const existing = entityMap.get(key)!;
-        if (e.shortForm.length > existing.shortForm.length) {
-          existing.shortForm = e.shortForm;
+    }
+
+    // ── Pass B: scan every row for both bracketed AND unbracketed occurrences ──
+    // Build a sorted list of known short forms (longest first to avoid partial matches)
+    const knownEntries = Array.from(sheetDict.values())
+      .sort((a, b) => b.shortForm.length - a.shortForm.length);
+
+    for (const row of sheetRows_) {
+      if (!row.observation) continue;
+
+      // First, register all bracketed entities in this row (as before)
+      const bracketed = extractEntitiesFromText(row.observation);
+      const bracketedShortForms = new Set(bracketed.map(e => e.shortForm.toLowerCase()));
+      for (const e of bracketed) {
+        registerOccurrence(e, row);
+      }
+
+      // Then, scan for unbracketed occurrences of known short forms
+      // We strip the observation of all bracketed spans first to avoid double-counting
+      const strippedObs = row.observation.replace(/[^()]{3,120}?\s*\([^()]{1,80}\)/g, (m) => " ".repeat(m.length));
+
+      for (const entry of knownEntries) {
+        // Skip if this short form was already captured as a bracketed entity in this row
+        if (bracketedShortForms.has(entry.shortForm.toLowerCase())) continue;
+
+        // Build a word-boundary regex for the short form.
+        // For vehicle registrations (e.g. "1CZQ642") use a lookahead/lookbehind for
+        // non-alphanumeric boundaries; for names use \b.
+        const escaped = entry.shortForm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const wordBoundary = /^[A-Za-z]/.test(entry.shortForm) ? `\\b${escaped}\\b` : `(?<![A-Za-z0-9])${escaped}(?![A-Za-z0-9])`;
+        const re = new RegExp(wordBoundary, "i");
+
+        if (re.test(strippedObs)) {
+          registerOccurrence({
+            shortForm: entry.shortForm,
+            fullDescription: entry.fullDescription,
+            type: entry.type,
+          }, row);
         }
       }
-      const snippet = row.observation.slice(0, 80) + (row.observation.length > 80 ? "…" : "");
-      entityMap.get(key)!.occurrences.push({
-        sheetId: row.sheetId,
-        sheetTitle: row.sheetTitle,
-        operationId: row.operationId,
-        operationName: row.operationName,
-        rowId: row.rowId,
-        observationSnippet: snippet,
-        timeMinutes: row.timeMinutes ?? null,
-        fullDescription: e.fullDescription,
-      });
     }
   }
 

@@ -418,3 +418,10 @@
 - [x] App.tsx: routes for all 5 profile pages registered
 - [x] Intelligence.tsx: Entity interface updated with targetId field; entity card onClick navigates to correct profile page based on entity type
 - [x] Server db.ts: IntelligenceEntity interface updated with targetId field; getAllIntelligenceEntities sets targetId on target entities
+
+## Intelligence Entity Extraction — Unbracketed Short-Form Recall (Round 49)
+- [x] Server db.ts: getAllIntelligenceEntities upgraded to two-pass per-sheet extraction
+- [x] Pass A: build per-sheet entity dictionary from all bracketed introductions (FullForm (ShortForm)) across all rows in the sheet
+- [x] Pass B: re-scan every row for unbracketed occurrences of known short forms using word-boundary regex — emits occurrence with original full description and type
+- [x] Double-counting prevention: bracketed entities already registered in Pass B are skipped in the unbracketed scan
+- [x] TypeScript: 0 errors

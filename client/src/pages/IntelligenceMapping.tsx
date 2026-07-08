@@ -299,7 +299,7 @@ export default function IntelligenceMapping() {
   const obsPins = locations?.filter(l => l.type === "observation").length ?? 0;
 
   return (
-    <div className="flex h-full w-full overflow-hidden">
+    <div className="flex w-full overflow-hidden" style={{ height: "calc(100vh - 0px)" }}>
       {/* ── Side Panel ── */}
       <div
         className={`flex flex-col border-r border-border bg-card transition-all duration-200 ${

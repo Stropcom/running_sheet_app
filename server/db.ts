@@ -1496,22 +1496,55 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
         registerOccurrence(e, row);
       }
 
-      // Then, scan for unbracketed occurrences of known short forms
-      // We strip the observation of all bracketed spans first to avoid double-counting
-      const strippedObs = row.observation.replace(/[^()]{3,120}?\s*\([^()]{1,80}\)/g, (m) => " ".repeat(m.length));
+      // Then, scan for unbracketed occurrences of known short forms.
+      //
+      // Correct approach: work on the ORIGINAL observation text but track only
+      // the paren content ranges "(ShortForm)" — i.e. the brackets themselves.
+      // A short-form match is considered "inside a bracket" only if it falls
+      // entirely within one of those paren ranges.  This correctly handles rows
+      // like "Vehicle 1CZQ642 (1CZQ642) with G HOTA (HOTA) ..." where the same
+      // token appears both unbracketed (the real entity) and inside parens
+      // (the short-form label) — we want the unbracketed occurrence.
+      //
+      // Step 1: collect all paren-content ranges [start, end) in this row.
+      //         We mark the entire "(ShortForm)" including the parens.
+      const parenRanges: Array<[number, number]> = [];
+      const parenPattern = /\([^()]{1,80}\)/g;
+      let spanMatch: RegExpExecArray | null;
+      while ((spanMatch = parenPattern.exec(row.observation)) !== null) {
+        parenRanges.push([spanMatch.index, spanMatch.index + spanMatch[0].length]);
+      }
+
+      // Helper: returns true if the match at [start, end) is entirely inside a paren
+      const isInsideParenContent = (start: number, end: number): boolean =>
+        parenRanges.some(([s, e]) => start >= s && end <= e);
 
       for (const entry of knownEntries) {
         // Skip if this short form was already captured as a bracketed entity in this row
         if (bracketedShortForms.has(entry.shortForm.toLowerCase())) continue;
 
         // Build a word-boundary regex for the short form.
-        // For vehicle registrations (e.g. "1CZQ642") use a lookahead/lookbehind for
-        // non-alphanumeric boundaries; for names use \b.
+        // For vehicle registrations (e.g. "1CZQ642") use lookahead/lookbehind for
+        // non-alphanumeric boundaries; for alphabetic short forms use \b.
         const escaped = entry.shortForm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const wordBoundary = /^[A-Za-z]/.test(entry.shortForm) ? `\\b${escaped}\\b` : `(?<![A-Za-z0-9])${escaped}(?![A-Za-z0-9])`;
-        const re = new RegExp(wordBoundary, "i");
+        const wordBoundary = /^[A-Za-z]/.test(entry.shortForm)
+          ? `\\b${escaped}\\b`
+          : `(?<![A-Za-z0-9])${escaped}(?![A-Za-z0-9])`;
+        const re = new RegExp(wordBoundary, "gi");
 
-        if (re.test(strippedObs)) {
+        let tokenMatch: RegExpExecArray | null;
+        let found = false;
+        while ((tokenMatch = re.exec(row.observation)) !== null) {
+          const mStart = tokenMatch.index;
+          const mEnd = mStart + tokenMatch[0].length;
+          // Only count this occurrence if it is NOT inside a bracketed span
+          if (!isInsideParenContent(mStart, mEnd)) {
+            found = true;
+            break;
+          }
+        }
+
+        if (found) {
           registerOccurrence({
             shortForm: entry.shortForm,
             fullDescription: entry.fullDescription,

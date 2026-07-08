@@ -1091,11 +1091,13 @@ export async function deepSearchOperations(query: string): Promise<DeepSearchMat
  */
 export function extractEntitiesFromText(text: string): Array<{
   shortForm: string;
+  rawShortForm: string;
   fullDescription: string;
   type: "person" | "vehicle" | "address" | "business" | "unknown";
 }> {
   const results: Array<{
     shortForm: string;
+    rawShortForm: string; // the exact bracketed token before name-recovery
     fullDescription: string;
     type: "person" | "vehicle" | "address" | "business" | "unknown";
   }> = [];
@@ -1122,10 +1124,16 @@ export function extractEntitiesFromText(text: string): Array<{
     // If the full description (before the parenthesis) contains a street address
     // pattern — e.g. "1200 Leach Highway, MYAREE" — classify as address regardless
     // of whether the word "vehicle" appears elsewhere in the sentence.
+    // Also classify airport terminals, train stations, bus stops, ports, and
+    // numbered terminals (e.g. "Terminal 2", "Gate 3", "Platform 5") as addresses.
     const addressInFull =
       /\b\d{1,5}\s+\w[\w\s]*(street|road|ave|avenue|drive|way|court|place|close|crescent|boulevard|highway|freeway|lane|terrace|parade|circuit)\b/i.test(fullDescription) ||
       /\b(street|road|ave|avenue|drive|way|court|place|close|crescent|boulevard|highway|freeway|lane|terrace|parade|circuit)\b/i.test(shortForm) ||
-      /^\d{1,5}\s/.test(shortForm);
+      /^\d{1,5}\s/.test(shortForm) ||
+      // Airport terminals, train stations, bus stops, ports, gates, platforms
+      /\b(terminal|gate|platform|pier|bay|berth|concourse|departure|arrival|lounge)\s+\d/i.test(shortForm) ||
+      /\b(airport|station|terminus|port|wharf|depot|interchange|shopping centre|shopping center|shopping mall|mall|plaza|precinct)\b/i.test(shortForm) ||
+      /\b(airport|station|terminus|port|wharf|depot|interchange)\b/i.test(fullDescription);
 
     if (addressInFull) {
       type = "address";
@@ -1193,7 +1201,7 @@ export function extractEntitiesFromText(text: string): Array<{
       if (bestName) displayName = bestName;
     }
 
-    results.push({ shortForm: displayName, fullDescription, type });
+    results.push({ shortForm: displayName, rawShortForm: shortForm, fullDescription, type });
   }
 
   return results;
@@ -1411,13 +1419,18 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
 
   // Helper: register or merge an entity occurrence into entityMap
   function registerOccurrence(
-    e: { shortForm: string; fullDescription: string; type: "person" | "vehicle" | "address" | "business" | "unknown" },
+    e: { shortForm: string; rawShortForm?: string; fullDescription: string; type: "person" | "vehicle" | "address" | "business" | "unknown" },
     row: { sheetId: number; sheetTitle: string; operationId: number; operationName: string; rowId: number; observation: string | null; timeMinutes: number | null }
   ) {
     if (!row.observation) return;
-    // If this person shortForm is a known TGT alias, merge into the canonical target entity
+    // If this person shortForm (or its raw bracketed token) is a known TGT alias,
+    // merge into the canonical target entity.
+    // We must check BOTH because name-recovery may expand "HOTA" → "G HOTA",
+    // but the tgtAliasToFullName map is keyed by the raw alias ("HOTA").
     if (e.type === "person") {
-      const canonicalName = tgtAliasToFullName.get(e.shortForm.toUpperCase());
+      const canonicalName =
+        tgtAliasToFullName.get(e.shortForm.toUpperCase()) ??
+        (e.rawShortForm ? tgtAliasToFullName.get(e.rawShortForm.toUpperCase()) : undefined);
       if (canonicalName) {
         const targetKey = `target::${canonicalName}`;
         if (entityMap.has(targetKey)) {
@@ -1459,24 +1472,38 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
 
   for (const [, sheetRows_] of Array.from(rowsBySheet.entries())) {
     // ── Pass A: build per-sheet entity dictionary from bracketed introductions ──
-    // Dictionary key: shortForm.toLowerCase(), value: {shortForm, fullDescription, type}
-    type DictEntry = { shortForm: string; fullDescription: string; type: "person" | "vehicle" | "address" | "business" | "unknown" };
+    // Dictionary key: shortForm.toLowerCase() AND rawShortForm.toLowerCase() (both point to same entry)
+    // This is critical: name-recovery may change "HOTA" → "G HOTA", so we must register
+    // BOTH keys so that Pass B can find "HOTA" in subsequent rows even though the
+    // display name is "G HOTA".
+    type DictEntry = { shortForm: string; rawShortForm: string; fullDescription: string; type: "person" | "vehicle" | "address" | "business" | "unknown" };
     const sheetDict = new Map<string, DictEntry>();
+
+    const registerDictEntry = (key: string, entry: DictEntry) => {
+      if (!sheetDict.has(key)) {
+        sheetDict.set(key, entry);
+      } else {
+        // Upgrade to longer shortForm if available
+        const existing = sheetDict.get(key)!;
+        if (entry.shortForm.length > existing.shortForm.length) {
+          existing.shortForm = entry.shortForm;
+          existing.fullDescription = entry.fullDescription;
+        }
+      }
+    };
 
     for (const row of sheetRows_) {
       if (!row.observation) continue;
       const bracketed = extractEntitiesFromText(row.observation);
       for (const e of bracketed) {
-        const dk = e.shortForm.toLowerCase();
-        if (!sheetDict.has(dk)) {
-          sheetDict.set(dk, { shortForm: e.shortForm, fullDescription: e.fullDescription, type: e.type });
-        } else {
-          // Upgrade to longer shortForm
-          const existing = sheetDict.get(dk)!;
-          if (e.shortForm.length > existing.shortForm.length) {
-            existing.shortForm = e.shortForm;
-            existing.fullDescription = e.fullDescription;
-          }
+        const entry: DictEntry = { shortForm: e.shortForm, rawShortForm: e.rawShortForm, fullDescription: e.fullDescription, type: e.type };
+        // Register by displayName key (e.g. "g hota")
+        registerDictEntry(e.shortForm.toLowerCase(), entry);
+        // Also register by raw bracketed token key (e.g. "hota") if different
+        // This ensures Pass B can find "HOTA" in subsequent rows even though
+        // the display name is "G HOTA".
+        if (e.rawShortForm.toLowerCase() !== e.shortForm.toLowerCase()) {
+          registerDictEntry(e.rawShortForm.toLowerCase(), entry);
         }
       }
     }
@@ -1491,7 +1518,13 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
 
       // First, register all bracketed entities in this row (as before)
       const bracketed = extractEntitiesFromText(row.observation);
-      const bracketedShortForms = new Set(bracketed.map(e => e.shortForm.toLowerCase()));
+      // Track both displayName and rawShortForm so we don't double-count
+      // e.g. "G HOTA" (displayName) and "HOTA" (rawShortForm) are the same entity
+      const bracketedShortForms = new Set<string>();
+      for (const e of bracketed) {
+        bracketedShortForms.add(e.shortForm.toLowerCase());
+        bracketedShortForms.add(e.rawShortForm.toLowerCase());
+      }
       for (const e of bracketed) {
         registerOccurrence(e, row);
       }
@@ -1519,34 +1552,56 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
       const isInsideParenContent = (start: number, end: number): boolean =>
         parenRanges.some(([s, e]) => start >= s && end <= e);
 
+      // Deduplicate knownEntries so we don't emit two occurrences for the same entity
+      // (sheetDict may have both "g hota" and "hota" pointing to the same DictEntry object)
+      const seenEntryObjects = new Set<DictEntry>();
+
       for (const entry of knownEntries) {
-        // Skip if this short form was already captured as a bracketed entity in this row
+        // Skip duplicates (same DictEntry registered under multiple keys)
+        if (seenEntryObjects.has(entry)) continue;
+        seenEntryObjects.add(entry);
+
+        // Skip if this entity was already captured as a bracketed entity in this row
+        // (check both displayName and rawShortForm)
         if (bracketedShortForms.has(entry.shortForm.toLowerCase())) continue;
+        if (bracketedShortForms.has(entry.rawShortForm.toLowerCase())) continue;
 
-        // Build a word-boundary regex for the short form.
-        // For vehicle registrations (e.g. "1CZQ642") use lookahead/lookbehind for
-        // non-alphanumeric boundaries; for alphabetic short forms use \b.
-        const escaped = entry.shortForm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const wordBoundary = /^[A-Za-z]/.test(entry.shortForm)
-          ? `\\b${escaped}\\b`
-          : `(?<![A-Za-z0-9])${escaped}(?![A-Za-z0-9])`;
-        const re = new RegExp(wordBoundary, "gi");
+        // For person entities, search by BOTH the displayName ("G HOTA") AND the raw
+        // bracketed token ("HOTA") — because subsequent rows use the short alias.
+        // For other types, only search by shortForm.
+        const searchTerms: string[] = [entry.shortForm];
+        if (entry.type === "person" && entry.rawShortForm !== entry.shortForm) {
+          searchTerms.push(entry.rawShortForm);
+        }
 
-        let tokenMatch: RegExpExecArray | null;
         let found = false;
-        while ((tokenMatch = re.exec(row.observation)) !== null) {
-          const mStart = tokenMatch.index;
-          const mEnd = mStart + tokenMatch[0].length;
-          // Only count this occurrence if it is NOT inside a bracketed span
-          if (!isInsideParenContent(mStart, mEnd)) {
-            found = true;
-            break;
+        for (const term of searchTerms) {
+          if (found) break;
+          // Build a word-boundary regex for the search term.
+          // For vehicle registrations (e.g. "1CZQ642") use lookahead/lookbehind for
+          // non-alphanumeric boundaries; for alphabetic terms use \b.
+          const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const wordBoundary = /^[A-Za-z]/.test(term)
+            ? `\\b${escaped}\\b`
+            : `(?<![A-Za-z0-9])${escaped}(?![A-Za-z0-9])`;
+          const re = new RegExp(wordBoundary, "gi");
+
+          let tokenMatch: RegExpExecArray | null;
+          while ((tokenMatch = re.exec(row.observation)) !== null) {
+            const mStart = tokenMatch.index;
+            const mEnd = mStart + tokenMatch[0].length;
+            // Only count this occurrence if it is NOT inside a paren
+            if (!isInsideParenContent(mStart, mEnd)) {
+              found = true;
+              break;
+            }
           }
         }
 
         if (found) {
           registerOccurrence({
             shortForm: entry.shortForm,
+            rawShortForm: entry.rawShortForm,
             fullDescription: entry.fullDescription,
             type: entry.type,
           }, row);
@@ -2817,11 +2872,25 @@ export async function getIntelVehicleProfile(label: string): Promise<IntelVehicl
     .from(targets)
     .where(isNull(targets.deletedAt));
 
+  // Find linkedTarget from TWO sources:
+  // 1. Target card v1f/v2f fields that mention this vehicle
+  // 2. Row-level co-occurrence: isTarget entities that share observation rows with this vehicle
   let linkedTarget: IntelVehicleProfile["linkedTarget"] = null;
   for (const t of allTargets) {
     if ((t.v1f && t.v1f.toLowerCase().includes(labelLower)) || (t.v2f && t.v2f.toLowerCase().includes(labelLower))) {
       linkedTarget = { targetId: t.id, name: t.name };
       break;
+    }
+  }
+  if (!linkedTarget) {
+    // Check row-level co-occurrence with target entities
+    for (const other of allEntities) {
+      if (!other.isTarget || !other.targetId) continue;
+      const overlappingOccs = other.occurrences.filter(o => o.rowId > 0 && assocRowIds.has(o.rowId));
+      if (overlappingOccs.length > 0) {
+        linkedTarget = { targetId: other.targetId, name: other.shortForm };
+        break;
+      }
     }
   }
 
@@ -2882,16 +2951,28 @@ export async function getIntelLocationProfile(label: string): Promise<IntelLocat
     .from(targets)
     .where(isNull(targets.deletedAt));
 
-  const linkedTargets: IntelLocationProfile["linkedTargets"] = [];
+  // Build linkedTargets from TWO sources:
+  // 1. Target card fields (hbf/dep/arr) that mention this location
+  // 2. Row-level co-occurrence: isTarget entities that share observation rows with this location
+  const linkedTargetsMap = new Map<number, { targetId: number; name: string }>();
   for (const t of allTargets) {
     if (
       (t.hbf && t.hbf.toLowerCase().includes(labelLower)) ||
       (t.dep && t.dep.toLowerCase().includes(labelLower)) ||
       (t.arr && t.arr.toLowerCase().includes(labelLower))
     ) {
-      linkedTargets.push({ targetId: t.id, name: t.name });
+      linkedTargetsMap.set(t.id, { targetId: t.id, name: t.name });
     }
   }
+  // Also check row-level co-occurrence with target entities
+  for (const other of allEntities) {
+    if (!other.isTarget || !other.targetId) continue;
+    const overlappingOccs = other.occurrences.filter(o => o.rowId > 0 && assocRowIds.has(o.rowId));
+    if (overlappingOccs.length > 0 && !linkedTargetsMap.has(other.targetId)) {
+      linkedTargetsMap.set(other.targetId, { targetId: other.targetId, name: other.shortForm });
+    }
+  }
+  const linkedTargets: IntelLocationProfile["linkedTargets"] = Array.from(linkedTargetsMap.values());
 
   const opMap = new Map<number, { id: number; name: string }>();
   const sheetMap = new Map<number, { id: number; title: string; operationId: number; operationName: string }>();

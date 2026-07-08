@@ -1492,6 +1492,23 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
       }
     };
 
+    // ── Pre-seed sheetDict with ALL target aliases from the target registry ──
+    // Operators often write the target alias (e.g. "JAMES", "SMITH") from the very
+    // first row without ever bracketing it, because the target card IS the introduction.
+    // Without pre-seeding, Pass B would never find these tokens.
+    // We register each alias under its lowercase key so Pass B can match it in any row.
+    for (const [alias, canonicalName] of Array.from(tgtAliasToFullName.entries())) {
+      const aliasKey = alias.toLowerCase();
+      if (!sheetDict.has(aliasKey)) {
+        sheetDict.set(aliasKey, {
+          shortForm: canonicalName,   // display as full canonical name
+          rawShortForm: alias,         // raw alias is the search token
+          fullDescription: `Target: ${canonicalName}`,
+          type: "person",
+        });
+      }
+    }
+
     for (const row of sheetRows_) {
       if (!row.observation) continue;
       const bracketed = extractEntitiesFromText(row.observation);

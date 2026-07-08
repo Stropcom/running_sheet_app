@@ -744,6 +744,7 @@ function OperationsTab({
   search: string;
 }) {
   const [expandedOpId, setExpandedOpId] = useState<number | null>(null);
+  const [, navigate] = useLocation();
 
   const operations = useMemo<OperationSummary[]>(() => {
     const opMap = new Map<number, OperationSummary>();
@@ -826,6 +827,14 @@ function OperationsTab({
                   {op.entityCount} {op.entityCount === 1 ? "entity" : "entities"} · {op.sheetCount} {op.sheetCount === 1 ? "sheet" : "sheets"}
                 </p>
               </div>
+              <button
+                onClick={(e) => { e.stopPropagation(); navigate(`/intelligence/operation/${op.operationId}`); }}
+                title="View Operation Profile"
+                className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-500/10 border border-blue-500/20 hover:bg-blue-500/20 transition-colors shrink-0"
+              >
+                <FileText className="w-3 h-3" />
+                <span className="hidden sm:inline">Profile</span>
+              </button>
               <ChevronRight
                 className={`w-4 h-4 text-muted-foreground shrink-0 transition-transform duration-200 ${isExpanded ? "rotate-90" : ""}`}
               />

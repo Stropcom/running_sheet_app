@@ -129,15 +129,13 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
     <div class="ops-list">${profile.operations.map(o => `<span class="op-badge">${esc(o.name)}</span>`).join("")}</div>
   </div>
 
-  ${(profile.hbf || profile.v1f || profile.v2f || profile.dep || profile.arr) ? `
+  ${(profile.hbf || profile.v1f || profile.v2f) ? `
   <div class="section">
     <div class="section-title">Registered Details</div>
     <div class="detail-grid">
       ${profile.hbf ? `<span class="detail-label">Home Address</span><span class="detail-value">${esc(profile.hbf)}${profile.hb ? ` (${esc(profile.hb)})` : ""}</span>` : ""}
       ${profile.v1f ? `<span class="detail-label">Vehicle 1</span><span class="detail-value">${esc(profile.v1f)}${profile.v1 ? ` (${esc(profile.v1)})` : ""}</span>` : ""}
       ${profile.v2f ? `<span class="detail-label">Vehicle 2</span><span class="detail-value">${esc(profile.v2f)}${profile.v2 ? ` (${esc(profile.v2)})` : ""}</span>` : ""}
-      ${profile.dep ? `<span class="detail-label">Depart Address</span><span class="detail-value">${esc(profile.dep)}</span>` : ""}
-      ${profile.arr ? `<span class="detail-label">Arrive Address</span><span class="detail-value">${esc(profile.arr)}</span>` : ""}
     </div>
   </div>` : ""}
 
@@ -258,9 +256,9 @@ export default function IntelligenceTargetProfile() {
             </div>
 
             {/* Registered Details */}
-            {(profile.hbf || profile.v1f || profile.v2f || profile.dep || profile.arr) && (
+            {(profile.hbf || profile.v1f || profile.v2f) && (
               <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
-                <SectionHeading label="Registered Details" count={[profile.hbf, profile.v1f, profile.v2f, profile.dep, profile.arr].filter(Boolean).length} />
+                <SectionHeading label="Registered Details" count={[profile.hbf, profile.v1f, profile.v2f].filter(Boolean).length} />
                 <div className="grid grid-cols-1 gap-2 text-sm">
                   {profile.hbf && (
                     <div className="flex gap-3 items-start">
@@ -278,18 +276,6 @@ export default function IntelligenceTargetProfile() {
                     <div className="flex gap-3 items-start">
                       <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">Vehicle 2</span>
                       <span className="font-mono text-xs text-foreground">{profile.v2f}{profile.v2 ? ` (${profile.v2})` : ""}</span>
-                    </div>
-                  )}
-                  {profile.dep && (
-                    <div className="flex gap-3 items-start">
-                      <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">Depart Address</span>
-                      <span className="font-mono text-xs text-foreground">{profile.dep}</span>
-                    </div>
-                  )}
-                  {profile.arr && (
-                    <div className="flex gap-3 items-start">
-                      <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">Arrive Address</span>
-                      <span className="font-mono text-xs text-foreground">{profile.arr}</span>
                     </div>
                   )}
                 </div>

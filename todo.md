@@ -425,3 +425,10 @@
 - [x] Pass B: re-scan every row for unbracketed occurrences of known short forms using word-boundary regex — emits occurrence with original full description and type
 - [x] Double-counting prevention: bracketed entities already registered in Pass B are skipped in the unbracketed scan
 - [x] TypeScript: 0 errors
+
+## Google Maps Integration (Round 50)
+- [x] VITE_GOOGLE_MAPS_API_KEY stored as project secret (Manus proxy handles auth automatically)
+- [x] IntelligenceLocationProfile: MapView component added below Associations section
+- [x] Geocoder geocodes the location label (with WA fallback) and drops an AdvancedMarkerElement pin
+- [x] Map defaults to Perth centre (-31.9505, 115.8605) zoom 12; zooms to 16 on geocode success
+- [x] TypeScript: 0 errors

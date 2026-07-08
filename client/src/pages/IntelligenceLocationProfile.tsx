@@ -1,8 +1,10 @@
 import { useRoute, useLocation } from "wouter";
+import { useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { MapView } from "@/components/Map";
 import { ArrowLeft, FileDown, User, Car, MapPin, FileText } from "lucide-react";
 
 interface IntelProfileEntity { id: string; label: string; type: string; rowCount: number; sheetIds: number[]; operationIds: number[] }
@@ -93,6 +95,27 @@ export default function IntelligenceLocationProfile() {
   const label = decodeURIComponent(params?.label ?? "");
   const { data, isLoading, error } = trpc.intelligence.locationProfile.useQuery({ label }, { enabled: !!label });
   const profile = data as IntelLocationProfile | undefined;
+  const mapRef = useRef<google.maps.Map | null>(null);
+
+  function handleMapReady(map: google.maps.Map) {
+    mapRef.current = map;
+    if (!label) return;
+    const geocoder = new window.google.maps.Geocoder();
+    // Append ", Western Australia, Australia" to improve geocoding accuracy for WA addresses
+    const searchQuery = label.match(/,\s*(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)/) ? label : `${label}, Western Australia, Australia`;
+    geocoder.geocode({ address: searchQuery }, (results, status) => {
+      if (status === "OK" && results && results[0]) {
+        const loc = results[0].geometry.location;
+        map.setCenter(loc);
+        map.setZoom(16);
+        new window.google.maps.marker.AdvancedMarkerElement({
+          map,
+          position: loc,
+          title: label,
+        });
+      }
+    });
+  }
 
   function exportPdf() {
     if (!profile) return;
@@ -192,6 +215,19 @@ export default function IntelligenceLocationProfile() {
                 )}
               </div>
             )}
+
+            <div className="rounded-xl border border-border/60 bg-card overflow-hidden mb-4">
+              <div className="px-4 py-3 border-b border-border/60 flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-emerald-600" />
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Map</p>
+              </div>
+              <MapView
+                className="w-full h-64 rounded-b-xl"
+                initialCenter={{ lat: -31.9505, lng: 115.8605 }}
+                initialZoom={12}
+                onMapReady={handleMapReady}
+              />
+            </div>
           </>
         )}
       </div>

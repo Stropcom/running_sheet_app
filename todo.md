@@ -402,3 +402,19 @@
 - [ ] Frontend: Add Recycle Bin to sidebar navigation
 - [ ] Frontend: Route /recycle-bin registered in App.tsx
 - [ ] Frontend: purge expired items on RecycleBin page load (call recycleBin.purge)
+
+## Intelligence Folder Rebuild — 5 Profile Types (Round 48)
+- [x] Server db.ts: getIntelTargetProfile — Direct Links (target card fields) + Operational Links (row-level co-occurrence)
+- [x] Server db.ts: getIntelOperationProfile — all entities in an operation with row-level associations
+- [x] Server db.ts: getIntelAssociateProfile — associate profile with row-level co-occurrence links
+- [x] Server db.ts: getIntelVehicleProfile — vehicle profile with row-level co-occurrence links
+- [x] Server db.ts: getIntelLocationProfile — location profile with row-level co-occurrence links
+- [x] Server routers.ts: 5 new intelligence procedures (targetProfile, operationProfile, associateProfile, vehicleProfile, locationProfile)
+- [x] Frontend: IntelligenceTargetProfile.tsx — target profile page with Direct Links + Operational Links sections + PDF export
+- [x] Frontend: IntelligenceOperationProfile.tsx — operation profile page with PDF export
+- [x] Frontend: IntelligenceAssociateProfile.tsx — associate profile page with PDF export
+- [x] Frontend: IntelligenceVehicleProfile.tsx — vehicle profile page with PDF export
+- [x] Frontend: IntelligenceLocationProfile.tsx — location profile page with PDF export
+- [x] App.tsx: routes for all 5 profile pages registered
+- [x] Intelligence.tsx: Entity interface updated with targetId field; entity card onClick navigates to correct profile page based on entity type
+- [x] Server db.ts: IntelligenceEntity interface updated with targetId field; getAllIntelligenceEntities sets targetId on target entities

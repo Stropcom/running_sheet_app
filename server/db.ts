@@ -1206,6 +1206,8 @@ export interface IntelligenceEntity {
   isTarget?: boolean;
   /** For target entities: the TGT code alias (e.g. "TANG") if set on the target card */
   tgtAlias?: string | null;
+  /** For target entities: the numeric DB id of the target record */
+  targetId?: number | null;
   occurrences: Array<{
     sheetId: number;
     sheetTitle: string;
@@ -1325,6 +1327,7 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
         type: "person",
         isTarget: true,
         tgtAlias: t.tgt?.trim() || null,
+        targetId: t.targetId,
         occurrences: [],
       });
     }
@@ -2338,4 +2341,479 @@ export async function purgeExpiredRecycleBinItems() {
   for (const t of expiredTargets) {
     await deleteTarget(t.id);
   }
+}
+
+// ─── Intelligence Profile Queries ─────────────────────────────────────────────
+// Correct association logic: an entity is an "operational associate" of a target
+// ONLY if it appears in an observation row on a running sheet where that target
+// is the LINKED TARGET (runningSheets.targetId = target.id).
+// Co-membership in the same operation is NOT sufficient.
+
+export interface IntelProfileEntity {
+  id: string;
+  label: string;
+  type: "target" | "person" | "vehicle" | "address" | "business";
+  targetId?: number;
+  sheetIds: number[];
+  operationIds: number[];
+  rowCount: number;
+}
+
+export interface IntelTargetProfile {
+  targetId: number;
+  name: string;
+  tgt: string | null;
+  hbf: string | null;
+  hb: string | null;
+  v1f: string | null;
+  v1: string | null;
+  v2f: string | null;
+  v2: string | null;
+  dep: string | null;
+  arr: string | null;
+  operations: Array<{ id: number; name: string }>;
+  linkedSheets: Array<{ id: number; title: string; operationId: number; operationName: string }>;
+  observationCount: number;
+  assocPersons: IntelProfileEntity[];
+  assocVehicles: IntelProfileEntity[];
+  assocLocations: IntelProfileEntity[];
+}
+
+export interface IntelOperationProfile {
+  operationId: number;
+  operationName: string;
+  promisNumber: string | null;
+  imsNumber: string | null;
+  investigationUnit: string | null;
+  linkedSheets: Array<{ id: number; title: string; targetId: number | null; targetName: string | null }>;
+  targets: Array<{
+    targetId: number;
+    name: string;
+    tgt: string | null;
+    hbf: string | null;
+    v1f: string | null;
+    v2f: string | null;
+    dep: string | null;
+    arr: string | null;
+    linkedSheets: Array<{ id: number; title: string }>;
+    assocPersons: IntelProfileEntity[];
+    assocVehicles: IntelProfileEntity[];
+    assocLocations: IntelProfileEntity[];
+  }>;
+}
+
+export interface IntelAssociateProfile {
+  label: string;
+  type: "person" | "business";
+  linkedTargets: Array<{ targetId: number; name: string; operationId: number; operationName: string }>;
+  linkedSheets: Array<{ id: number; title: string; operationId: number; operationName: string }>;
+  assocLocations: IntelProfileEntity[];
+  assocVehicles: IntelProfileEntity[];
+}
+
+export interface IntelVehicleProfile {
+  label: string;
+  linkedTarget: { targetId: number; name: string } | null;
+  linkedOperations: Array<{ id: number; name: string }>;
+  linkedSheets: Array<{ id: number; title: string; operationId: number; operationName: string }>;
+  assocPersons: IntelProfileEntity[];
+  assocLocations: IntelProfileEntity[];
+}
+
+export interface IntelLocationProfile {
+  label: string;
+  linkedTargets: Array<{ targetId: number; name: string }>;
+  linkedOperations: Array<{ id: number; name: string }>;
+  linkedSheets: Array<{ id: number; title: string; operationId: number; operationName: string }>;
+  assocPersons: IntelProfileEntity[];
+  assocVehicles: IntelProfileEntity[];
+}
+
+async function buildTargetOperationalAssociations(
+  targetId: number,
+  targetLabel: string,
+  allEntities: IntelligenceEntity[],
+): Promise<{ assocPersons: IntelProfileEntity[]; assocVehicles: IntelProfileEntity[]; assocLocations: IntelProfileEntity[] }> {
+  const db = await getDb();
+  if (!db) return { assocPersons: [], assocVehicles: [], assocLocations: [] };
+
+  const targetSheets = await db
+    .select({ id: runningSheets.id })
+    .from(runningSheets)
+    .where(and(eq(runningSheets.targetId, targetId), isNull(runningSheets.deletedAt)));
+
+  if (!targetSheets.length) return { assocPersons: [], assocVehicles: [], assocLocations: [] };
+
+  const targetSheetIds = targetSheets.map(s => s.id);
+  const rows = await db
+    .select({ id: sheetRows.id })
+    .from(sheetRows)
+    .where(inArray(sheetRows.sheetId, targetSheetIds));
+
+  const targetRowIds = new Set(rows.map(r => r.id));
+  const targetLabelLower = targetLabel.toLowerCase();
+
+  const assocPersonsMap = new Map<string, IntelProfileEntity>();
+  const assocVehiclesMap = new Map<string, IntelProfileEntity>();
+  const assocLocationsMap = new Map<string, IntelProfileEntity>();
+
+  for (const entity of allEntities) {
+    if (entity.shortForm.toLowerCase() === targetLabelLower) continue;
+    const relevantOccs = entity.occurrences.filter(occ => occ.rowId > 0 && targetRowIds.has(occ.rowId));
+    if (!relevantOccs.length) continue;
+
+    const key = `${entity.type}::${entity.shortForm.toLowerCase()}`;
+    const profileEntity: IntelProfileEntity = {
+      id: key,
+      label: entity.shortForm,
+      type: entity.isTarget ? "target" : (entity.type as IntelProfileEntity["type"]),
+      sheetIds: Array.from(new Set(relevantOccs.map(o => o.sheetId))),
+      operationIds: Array.from(new Set(relevantOccs.map(o => o.operationId))),
+      rowCount: new Set(relevantOccs.map(o => o.rowId)).size,
+    };
+
+    if (entity.type === "person" || entity.isTarget) {
+      assocPersonsMap.set(key, profileEntity);
+    } else if (entity.type === "vehicle") {
+      assocVehiclesMap.set(key, profileEntity);
+    } else if (entity.type === "address" || entity.type === "business") {
+      assocLocationsMap.set(key, profileEntity);
+    }
+  }
+
+  return {
+    assocPersons: Array.from(assocPersonsMap.values()).sort((a, b) => a.label.localeCompare(b.label)),
+    assocVehicles: Array.from(assocVehiclesMap.values()).sort((a, b) => a.label.localeCompare(b.label)),
+    assocLocations: Array.from(assocLocationsMap.values()).sort((a, b) => a.label.localeCompare(b.label)),
+  };
+}
+
+export async function getIntelTargetProfile(targetId: number): Promise<IntelTargetProfile | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const target = await getTargetById(targetId);
+  if (!target) return null;
+
+  const opLinks = await db
+    .select({ id: operations.id, name: operations.name })
+    .from(operationTargetLinks)
+    .innerJoin(operations, eq(operations.id, operationTargetLinks.operationId))
+    .where(and(eq(operationTargetLinks.targetId, targetId), isNull(operations.deletedAt)));
+
+  const linkedSheetRows = await db
+    .select({ id: runningSheets.id, title: runningSheets.title, operationId: runningSheets.operationId })
+    .from(runningSheets)
+    .where(and(eq(runningSheets.targetId, targetId), isNull(runningSheets.deletedAt)));
+
+  const opNames: Record<number, string> = {};
+  for (const op of opLinks) opNames[op.id] = op.name;
+
+  const extraOpIds = Array.from(new Set(linkedSheetRows.map(s => s.operationId).filter(id => !opNames[id])));
+  if (extraOpIds.length) {
+    const extraOps = await db
+      .select({ id: operations.id, name: operations.name })
+      .from(operations)
+      .where(inArray(operations.id, extraOpIds));
+    for (const op of extraOps) opNames[op.id] = op.name;
+  }
+
+  let observationCount = 0;
+  for (const sheet of linkedSheetRows) {
+    const cnt = await db.select({ c: sql<number>`count(*)` }).from(sheetRows).where(eq(sheetRows.sheetId, sheet.id));
+    observationCount += Number(cnt[0]?.c ?? 0);
+  }
+
+  const allEntities = await getAllIntelligenceEntities();
+  const targetLabel = target.tgt ?? target.name;
+  const { assocPersons, assocVehicles, assocLocations } = await buildTargetOperationalAssociations(targetId, targetLabel, allEntities);
+
+  return {
+    targetId,
+    name: target.name,
+    tgt: target.tgt,
+    hbf: target.hbf,
+    hb: target.hb,
+    v1f: target.v1f,
+    v1: target.v1,
+    v2f: target.v2f,
+    v2: target.v2,
+    dep: target.dep,
+    arr: target.arr,
+    operations: opLinks,
+    linkedSheets: linkedSheetRows.map(s => ({
+      id: s.id,
+      title: s.title,
+      operationId: s.operationId,
+      operationName: opNames[s.operationId] ?? "Unknown",
+    })),
+    observationCount,
+    assocPersons,
+    assocVehicles,
+    assocLocations,
+  };
+}
+
+export async function getIntelOperationProfile(operationId: number): Promise<IntelOperationProfile | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const opRows = await db.select().from(operations).where(and(eq(operations.id, operationId), isNull(operations.deletedAt)));
+  if (!opRows.length) return null;
+  const op = opRows[0];
+
+  const sheets = await db
+    .select({ id: runningSheets.id, title: runningSheets.title, targetId: runningSheets.targetId, targetName: runningSheets.targetName })
+    .from(runningSheets)
+    .where(and(eq(runningSheets.operationId, operationId), isNull(runningSheets.deletedAt)));
+
+  const targetLinks = await db
+    .select({ targetId: operationTargetLinks.targetId })
+    .from(operationTargetLinks)
+    .where(eq(operationTargetLinks.operationId, operationId));
+
+  const allEntities = await getAllIntelligenceEntities();
+
+  const targetProfiles = (await Promise.all(
+    targetLinks.map(async ({ targetId }) => {
+      const target = await getTargetById(targetId);
+      if (!target) return null;
+      const targetLabel = target.tgt ?? target.name;
+      const targetSheets = sheets.filter(s => s.targetId === targetId);
+      const { assocPersons, assocVehicles, assocLocations } = await buildTargetOperationalAssociations(targetId, targetLabel, allEntities);
+      return {
+        targetId,
+        name: target.name,
+        tgt: target.tgt,
+        hbf: target.hbf,
+        v1f: target.v1f,
+        v2f: target.v2f,
+        dep: target.dep,
+        arr: target.arr,
+        linkedSheets: targetSheets.map(s => ({ id: s.id, title: s.title })),
+        assocPersons,
+        assocVehicles,
+        assocLocations,
+      };
+    })
+  )).filter(Boolean) as IntelOperationProfile["targets"];
+
+  return {
+    operationId,
+    operationName: op.name,
+    promisNumber: op.promisNumber ?? null,
+    imsNumber: op.imsNumber ?? null,
+    investigationUnit: op.investigationUnit ?? null,
+    linkedSheets: sheets,
+    targets: targetProfiles,
+  };
+}
+
+export async function getIntelAssociateProfile(label: string): Promise<IntelAssociateProfile | null> {
+  const allEntities = await getAllIntelligenceEntities();
+  const db = await getDb();
+  if (!db) return null;
+
+  const entity = allEntities.find(
+    e => e.shortForm.toLowerCase() === label.toLowerCase() &&
+    (e.type === "person" || e.type === "business") &&
+    !e.isTarget
+  );
+  if (!entity) return null;
+
+  const observationOccs = entity.occurrences.filter(o => o.rowId > 0);
+  const assocRowIds = new Set(observationOccs.map(o => o.rowId));
+
+  const sheetMap = new Map<number, { id: number; title: string; operationId: number; operationName: string }>();
+  for (const occ of observationOccs) {
+    if (!sheetMap.has(occ.sheetId)) {
+      sheetMap.set(occ.sheetId, { id: occ.sheetId, title: occ.sheetTitle, operationId: occ.operationId, operationName: occ.operationName });
+    }
+  }
+
+  const allTargets = await db
+    .select({ id: targets.id, name: targets.name })
+    .from(targets)
+    .where(isNull(targets.deletedAt));
+
+  const linkedTargets: IntelAssociateProfile["linkedTargets"] = [];
+
+  for (const target of allTargets) {
+    const targetSheets = await db
+      .select({ id: runningSheets.id, operationId: runningSheets.operationId })
+      .from(runningSheets)
+      .where(and(eq(runningSheets.targetId, target.id), isNull(runningSheets.deletedAt)));
+
+    for (const sheet of targetSheets) {
+      const rows = await db.select({ id: sheetRows.id }).from(sheetRows).where(eq(sheetRows.sheetId, sheet.id));
+      const hasOverlap = rows.some(r => assocRowIds.has(r.id));
+      if (hasOverlap) {
+        const opRows = await db.select({ name: operations.name }).from(operations).where(eq(operations.id, sheet.operationId));
+        const alreadyLinked = linkedTargets.some(lt => lt.targetId === target.id && lt.operationId === sheet.operationId);
+        if (!alreadyLinked) {
+          linkedTargets.push({ targetId: target.id, name: target.name, operationId: sheet.operationId, operationName: opRows[0]?.name ?? "Unknown" });
+        }
+        break;
+      }
+    }
+  }
+
+  const assocLocationsMap = new Map<string, IntelProfileEntity>();
+  const assocVehiclesMap = new Map<string, IntelProfileEntity>();
+
+  for (const other of allEntities) {
+    if (other.shortForm.toLowerCase() === label.toLowerCase()) continue;
+    const overlappingOccs = other.occurrences.filter(o => o.rowId > 0 && assocRowIds.has(o.rowId));
+    if (!overlappingOccs.length) continue;
+    const key = `${other.type}::${other.shortForm.toLowerCase()}`;
+    const profileEntity: IntelProfileEntity = {
+      id: key, label: other.shortForm,
+      type: other.isTarget ? "target" : (other.type as IntelProfileEntity["type"]),
+      sheetIds: Array.from(new Set(overlappingOccs.map(o => o.sheetId))),
+      operationIds: Array.from(new Set(overlappingOccs.map(o => o.operationId))),
+      rowCount: new Set(overlappingOccs.map(o => o.rowId)).size,
+    };
+    if (other.type === "vehicle") assocVehiclesMap.set(key, profileEntity);
+    else if (other.type === "address" || other.type === "business") assocLocationsMap.set(key, profileEntity);
+  }
+
+  return {
+    label: entity.shortForm,
+    type: entity.type as "person" | "business",
+    linkedTargets,
+    linkedSheets: Array.from(sheetMap.values()),
+    assocLocations: Array.from(assocLocationsMap.values()).sort((a, b) => a.label.localeCompare(b.label)),
+    assocVehicles: Array.from(assocVehiclesMap.values()).sort((a, b) => a.label.localeCompare(b.label)),
+  };
+}
+
+export async function getIntelVehicleProfile(label: string): Promise<IntelVehicleProfile | null> {
+  const allEntities = await getAllIntelligenceEntities();
+  const db = await getDb();
+  if (!db) return null;
+
+  const entity = allEntities.find(e => e.shortForm.toLowerCase() === label.toLowerCase() && e.type === "vehicle");
+  if (!entity) return null;
+
+  const observationOccs = entity.occurrences.filter(o => o.rowId > 0);
+  const assocRowIds = new Set(observationOccs.map(o => o.rowId));
+  const labelLower = label.toLowerCase();
+
+  const allTargets = await db
+    .select({ id: targets.id, name: targets.name, v1f: targets.v1f, v2f: targets.v2f })
+    .from(targets)
+    .where(isNull(targets.deletedAt));
+
+  let linkedTarget: IntelVehicleProfile["linkedTarget"] = null;
+  for (const t of allTargets) {
+    if ((t.v1f && t.v1f.toLowerCase().includes(labelLower)) || (t.v2f && t.v2f.toLowerCase().includes(labelLower))) {
+      linkedTarget = { targetId: t.id, name: t.name };
+      break;
+    }
+  }
+
+  const opMap = new Map<number, { id: number; name: string }>();
+  const sheetMap = new Map<number, { id: number; title: string; operationId: number; operationName: string }>();
+  for (const occ of entity.occurrences) {
+    if (!opMap.has(occ.operationId)) opMap.set(occ.operationId, { id: occ.operationId, name: occ.operationName });
+    if (occ.rowId > 0 && !sheetMap.has(occ.sheetId)) {
+      sheetMap.set(occ.sheetId, { id: occ.sheetId, title: occ.sheetTitle, operationId: occ.operationId, operationName: occ.operationName });
+    }
+  }
+
+  const assocPersonsMap = new Map<string, IntelProfileEntity>();
+  const assocLocationsMap = new Map<string, IntelProfileEntity>();
+
+  for (const other of allEntities) {
+    if (other.shortForm.toLowerCase() === labelLower) continue;
+    const overlappingOccs = other.occurrences.filter(o => o.rowId > 0 && assocRowIds.has(o.rowId));
+    if (!overlappingOccs.length) continue;
+    const key = `${other.type}::${other.shortForm.toLowerCase()}`;
+    const profileEntity: IntelProfileEntity = {
+      id: key, label: other.shortForm,
+      type: other.isTarget ? "target" : (other.type as IntelProfileEntity["type"]),
+      sheetIds: Array.from(new Set(overlappingOccs.map(o => o.sheetId))),
+      operationIds: Array.from(new Set(overlappingOccs.map(o => o.operationId))),
+      rowCount: new Set(overlappingOccs.map(o => o.rowId)).size,
+    };
+    if (other.type === "person" || other.isTarget) assocPersonsMap.set(key, profileEntity);
+    else if (other.type === "address" || other.type === "business") assocLocationsMap.set(key, profileEntity);
+  }
+
+  return {
+    label: entity.shortForm,
+    linkedTarget,
+    linkedOperations: Array.from(opMap.values()),
+    linkedSheets: Array.from(sheetMap.values()),
+    assocPersons: Array.from(assocPersonsMap.values()).sort((a, b) => a.label.localeCompare(b.label)),
+    assocLocations: Array.from(assocLocationsMap.values()).sort((a, b) => a.label.localeCompare(b.label)),
+  };
+}
+
+export async function getIntelLocationProfile(label: string): Promise<IntelLocationProfile | null> {
+  const allEntities = await getAllIntelligenceEntities();
+  const db = await getDb();
+  if (!db) return null;
+
+  const entity = allEntities.find(
+    e => e.shortForm.toLowerCase() === label.toLowerCase() && (e.type === "address" || e.type === "business")
+  );
+  if (!entity) return null;
+
+  const observationOccs = entity.occurrences.filter(o => o.rowId > 0);
+  const assocRowIds = new Set(observationOccs.map(o => o.rowId));
+  const labelLower = label.toLowerCase();
+
+  const allTargets = await db
+    .select({ id: targets.id, name: targets.name, hbf: targets.hbf, dep: targets.dep, arr: targets.arr })
+    .from(targets)
+    .where(isNull(targets.deletedAt));
+
+  const linkedTargets: IntelLocationProfile["linkedTargets"] = [];
+  for (const t of allTargets) {
+    if (
+      (t.hbf && t.hbf.toLowerCase().includes(labelLower)) ||
+      (t.dep && t.dep.toLowerCase().includes(labelLower)) ||
+      (t.arr && t.arr.toLowerCase().includes(labelLower))
+    ) {
+      linkedTargets.push({ targetId: t.id, name: t.name });
+    }
+  }
+
+  const opMap = new Map<number, { id: number; name: string }>();
+  const sheetMap = new Map<number, { id: number; title: string; operationId: number; operationName: string }>();
+  for (const occ of entity.occurrences) {
+    if (!opMap.has(occ.operationId)) opMap.set(occ.operationId, { id: occ.operationId, name: occ.operationName });
+    if (occ.rowId > 0 && !sheetMap.has(occ.sheetId)) {
+      sheetMap.set(occ.sheetId, { id: occ.sheetId, title: occ.sheetTitle, operationId: occ.operationId, operationName: occ.operationName });
+    }
+  }
+
+  const assocPersonsMap = new Map<string, IntelProfileEntity>();
+  const assocVehiclesMap = new Map<string, IntelProfileEntity>();
+
+  for (const other of allEntities) {
+    if (other.shortForm.toLowerCase() === labelLower) continue;
+    const overlappingOccs = other.occurrences.filter(o => o.rowId > 0 && assocRowIds.has(o.rowId));
+    if (!overlappingOccs.length) continue;
+    const key = `${other.type}::${other.shortForm.toLowerCase()}`;
+    const profileEntity: IntelProfileEntity = {
+      id: key, label: other.shortForm,
+      type: other.isTarget ? "target" : (other.type as IntelProfileEntity["type"]),
+      sheetIds: Array.from(new Set(overlappingOccs.map(o => o.sheetId))),
+      operationIds: Array.from(new Set(overlappingOccs.map(o => o.operationId))),
+      rowCount: new Set(overlappingOccs.map(o => o.rowId)).size,
+    };
+    if (other.type === "person" || other.isTarget) assocPersonsMap.set(key, profileEntity);
+    else if (other.type === "vehicle") assocVehiclesMap.set(key, profileEntity);
+  }
+
+  return {
+    label: entity.shortForm,
+    linkedTargets,
+    linkedOperations: Array.from(opMap.values()),
+    linkedSheets: Array.from(sheetMap.values()),
+    assocPersons: Array.from(assocPersonsMap.values()).sort((a, b) => a.label.localeCompare(b.label)),
+    assocVehicles: Array.from(assocVehiclesMap.values()).sort((a, b) => a.label.localeCompare(b.label)),
+  };
 }

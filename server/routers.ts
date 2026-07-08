@@ -93,6 +93,11 @@ import {
   reinstateSheet,
   reinstateTarget,
   purgeExpiredRecycleBinItems,
+  getIntelTargetProfile,
+  getIntelOperationProfile,
+  getIntelAssociateProfile,
+  getIntelVehicleProfile,
+  getIntelLocationProfile,
 } from "./db";
 
 import { generateStatDecDocx } from "./statDecGenerator";
@@ -1327,6 +1332,51 @@ export const appRouter = router({
       }))
       .query(async ({ input }) => {
         return getAssociationGraph(input.operationIds);
+      }),
+
+    /** Target intelligence profile */
+    targetProfile: protectedProcedure
+      .input(z.object({ targetId: z.number() }))
+      .query(async ({ input }) => {
+        const profile = await getIntelTargetProfile(input.targetId);
+        if (!profile) throw new TRPCError({ code: "NOT_FOUND", message: "Target not found." });
+        return profile;
+      }),
+
+    /** Operation intelligence profile */
+    operationProfile: protectedProcedure
+      .input(z.object({ operationId: z.number() }))
+      .query(async ({ input }) => {
+        const profile = await getIntelOperationProfile(input.operationId);
+        if (!profile) throw new TRPCError({ code: "NOT_FOUND", message: "Operation not found." });
+        return profile;
+      }),
+
+    /** Associate intelligence profile (by label/name) */
+    associateProfile: protectedProcedure
+      .input(z.object({ label: z.string() }))
+      .query(async ({ input }) => {
+        const profile = await getIntelAssociateProfile(input.label);
+        if (!profile) throw new TRPCError({ code: "NOT_FOUND", message: "Associate not found." });
+        return profile;
+      }),
+
+    /** Vehicle intelligence profile (by label) */
+    vehicleProfile: protectedProcedure
+      .input(z.object({ label: z.string() }))
+      .query(async ({ input }) => {
+        const profile = await getIntelVehicleProfile(input.label);
+        if (!profile) throw new TRPCError({ code: "NOT_FOUND", message: "Vehicle not found." });
+        return profile;
+      }),
+
+    /** Location intelligence profile (by label) */
+    locationProfile: protectedProcedure
+      .input(z.object({ label: z.string() }))
+      .query(async ({ input }) => {
+        const profile = await getIntelLocationProfile(input.label);
+        if (!profile) throw new TRPCError({ code: "NOT_FOUND", message: "Location not found." });
+        return profile;
       }),
   }),
 

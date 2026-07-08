@@ -47,6 +47,7 @@ interface Entity {
   type: EntityType;
   isTarget?: boolean;
   tgtAlias?: string | null;
+  targetId?: number | null;
   occurrences: Occurrence[];
 }
 
@@ -922,6 +923,7 @@ const TAB_OPTIONS: Array<{ value: TabView; label: string; icon: React.ReactNode 
 
 export default function IntelligencePage() {
   const { data: entities, isLoading } = trpc.intelligence.getEntities.useQuery();
+  const [, navigate] = useLocation();
   const [search, setSearch]         = useState("");
   const [activeTab, setActiveTab]   = useState<TabView>("operations");
   const [selected, setSelected]     = useState<Entity | null>(null);
@@ -1137,7 +1139,17 @@ export default function IntelligencePage() {
                       <button
                         key={`${entity.isTarget ? "target" : entity.type}::${entity.shortForm}`}
                         data-entity={entity.shortForm}
-                        onClick={() => setSelected(entity)}
+                        onClick={() => {
+                          if (entity.isTarget && entity.targetId) {
+                            navigate(`/intelligence/target/${entity.targetId}`);
+                          } else if (entity.type === "vehicle") {
+                            navigate(`/intelligence/vehicle/${encodeURIComponent(entity.shortForm)}`);
+                          } else if (entity.type === "address" || entity.type === "business") {
+                            navigate(`/intelligence/location/${encodeURIComponent(entity.shortForm)}`);
+                          } else {
+                            navigate(`/intelligence/associate/${encodeURIComponent(entity.shortForm)}`);
+                          }
+                        }}
                         className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-accent/10 transition-colors ${
                           idx < filteredByTab.length - 1 ? "border-b border-border/40" : ""
                         }`}

@@ -27,6 +27,11 @@ import WIPCPage from "./pages/WIPCPage";
 import HelpPage from "./pages/HelpPage";
 import RecycleBin from "@/pages/RecycleBin";
 import DraftHubPage from "@/pages/DraftHubPage";
+import IntelligenceTargetProfile from "@/pages/IntelligenceTargetProfile";
+import IntelligenceOperationProfile from "@/pages/IntelligenceOperationProfile";
+import IntelligenceAssociateProfile from "@/pages/IntelligenceAssociateProfile";
+import IntelligenceVehicleProfile from "@/pages/IntelligenceVehicleProfile";
+import IntelligenceLocationProfile from "@/pages/IntelligenceLocationProfile";
 import DraftSheetPage from "@/pages/DraftSheetPage";
 import { DraftModeBanner } from "@/components/DraftModeBanner";
 
@@ -44,6 +49,11 @@ function Router() {
       <Route path="/intelligence" component={IntelligencePage} />
       <Route path="/intelligence/entities" component={IntelligencePage} />
       <Route path="/intelligence/association-map" component={AssociationMap} />
+      <Route path="/intelligence/target/:id" component={IntelligenceTargetProfile} />
+      <Route path="/intelligence/operation/:id" component={IntelligenceOperationProfile} />
+      <Route path="/intelligence/associate/:label" component={IntelligenceAssociateProfile} />
+      <Route path="/intelligence/vehicle/:label" component={IntelligenceVehicleProfile} />
+      <Route path="/intelligence/location/:label" component={IntelligenceLocationProfile} />
       <Route path="/governance" component={GovernanceListPage} />
       <Route path="/governance/:sheetId" component={GovernancePage} />
       <Route path="/target-registry" component={TargetRegistryPage} />

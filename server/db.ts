@@ -30,6 +30,7 @@ import {
   wipcAuditLog,
   WipcMemberRecord,
   WipcOfficerProfile,
+  userLocations,
 } from "../drizzle/schema";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -3239,4 +3240,104 @@ export async function getIntelMappingLocations(
   }
 
   return result.sort((a, b) => a.label.localeCompare(b.label));
+}
+
+// ─── User Location Helpers ────────────────────────────────────────────────────
+
+export interface UserLocationRow {
+  userId: number;
+  name: string;
+  team: "TEAM1" | "TEAM2" | "PTT" | null;
+  lat: number;
+  lng: number;
+  operationIds: number[];
+  updatedAt: number;
+}
+
+/**
+ * Returns all users who have sharingEnabled=true and whose selected operationIds
+ * overlap with the caller's operationIds (operation-scoped visibility).
+ * If callerOpIds is empty, returns all sharing users (no filter).
+ */
+export async function getUserLocations(callerOpIds: number[]): Promise<UserLocationRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({
+      userId: userLocations.userId,
+      name: users.name,
+      team: users.team,
+      lat: userLocations.lat,
+      lng: userLocations.lng,
+      operationIds: userLocations.operationIds,
+      updatedAt: userLocations.updatedAt,
+    })
+    .from(userLocations)
+    .innerJoin(users, eq(users.id, userLocations.userId))
+    .where(eq(userLocations.sharingEnabled, true));
+
+  return rows
+    .map((r) => {
+      let opIds: number[] = [];
+      try { opIds = JSON.parse(r.operationIds || "[]"); } catch { opIds = []; }
+      return { ...r, operationIds: opIds };
+    })
+    .filter((r) => {
+      if (callerOpIds.length === 0) return true;
+      return r.operationIds.some((id) => callerOpIds.includes(id));
+    });
+}
+
+/**
+ * Upserts a user's location record. Creates if not exists, updates if exists.
+ */
+export async function upsertUserLocation(
+  userId: number,
+  lat: number,
+  lng: number,
+  operationIds: number[],
+  sharingEnabled: boolean,
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const now = Date.now();
+  const opIdsJson = JSON.stringify(operationIds);
+  await db
+    .insert(userLocations)
+    .values({ userId, lat, lng, operationIds: opIdsJson, sharingEnabled, updatedAt: now })
+    .onDuplicateKeyUpdate({
+      set: { lat, lng, operationIds: opIdsJson, sharingEnabled, updatedAt: now },
+    });
+}
+
+/**
+ * Disables location sharing for a user (sets sharingEnabled=false).
+ */
+export async function clearUserLocation(userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .update(userLocations)
+    .set({ sharingEnabled: false, updatedAt: Date.now() })
+    .where(eq(userLocations.userId, userId));
+}
+
+/**
+ * Returns the current location/sharing state for a single user.
+ */
+export async function getUserLocationState(userId: number): Promise<{
+  sharingEnabled: boolean;
+  operationIds: number[];
+} | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select({ sharingEnabled: userLocations.sharingEnabled, operationIds: userLocations.operationIds })
+    .from(userLocations)
+    .where(eq(userLocations.userId, userId))
+    .limit(1);
+  if (!rows.length) return null;
+  let opIds: number[] = [];
+  try { opIds = JSON.parse(rows[0].operationIds || "[]"); } catch { opIds = []; }
+  return { sharingEnabled: rows[0].sharingEnabled, operationIds: opIds };
 }

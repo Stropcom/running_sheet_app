@@ -162,6 +162,13 @@
       "when": 1783335071377,
       "tag": "0022_slimy_jack_murdock",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "5",
+      "when": 1783548059418,
+      "tag": "0023_lowly_kid_colt",
+      "breakpoints": true
     }
   ]
 }

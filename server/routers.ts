@@ -99,6 +99,10 @@ import {
   getIntelVehicleProfile,
   getIntelLocationProfile,
   getIntelMappingLocations,
+  getUserLocations,
+  upsertUserLocation,
+  clearUserLocation,
+  getUserLocationState,
 } from "./db";
 
 import { generateStatDecDocx } from "./statDecGenerator";
@@ -1388,6 +1392,47 @@ export const appRouter = router({
       }))
       .query(async ({ input }) => {
         return getIntelMappingLocations(input.operationIds, input.targetIds);
+      }),
+
+    /** Live user locations — operation-scoped, sharing-enabled users only */
+    userLocations: protectedProcedure
+      .input(z.object({
+        operationIds: z.array(z.number()).default([]),
+      }))
+      .query(async ({ input }) => {
+        return getUserLocations(input.operationIds);
+      }),
+
+    /** Update (upsert) the caller's location and sharing preference */
+    updateUserLocation: protectedProcedure
+      .input(z.object({
+        lat: z.number(),
+        lng: z.number(),
+        operationIds: z.array(z.number()).default([]),
+        sharingEnabled: z.boolean(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        await upsertUserLocation(
+          ctx.user.id,
+          input.lat,
+          input.lng,
+          input.operationIds,
+          input.sharingEnabled,
+        );
+        return { ok: true };
+      }),
+
+    /** Disable location sharing for the caller */
+    clearUserLocation: protectedProcedure
+      .mutation(async ({ ctx }) => {
+        await clearUserLocation(ctx.user.id);
+        return { ok: true };
+      }),
+
+    /** Get the caller's current sharing state (for restoring toggle on load) */
+    myLocationState: protectedProcedure
+      .query(async ({ ctx }) => {
+        return getUserLocationState(ctx.user.id);
       }),
   }),
 

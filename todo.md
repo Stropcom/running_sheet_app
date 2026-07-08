@@ -447,3 +447,32 @@
 - [x] DashboardLayout: Intelligence nav item converted to expandable sub-folder with Intel Profiles and Mapping children
 - [x] App.tsx: /intelligence/mapping route registered
 - [x] TypeScript: 0 errors
+
+## Map Settings Panel + Live User Location (Round 52)
+- [x] DB schema: user_locations table (userId unique, lat, lng, operationIds JSON, sharingEnabled, updatedAt bigint)
+- [x] DB migration: user_locations table created in TiDB via node script
+- [x] Server db.ts: getUserLocations(callerOpIds) — returns sharing-enabled users with operation overlap filter
+- [x] Server db.ts: upsertUserLocation(userId, lat, lng, operationIds, sharingEnabled) — insert/update on duplicate key
+- [x] Server db.ts: clearUserLocation(userId) — sets sharingEnabled=false
+- [x] Server db.ts: getUserLocationState(userId) — returns current sharing state for toggle restore on load
+- [x] Server routers.ts: intelligence.userLocations — GET all visible live users (operation-scoped)
+- [x] Server routers.ts: intelligence.updateUserLocation — POST upsert caller's location
+- [x] Server routers.ts: intelligence.clearUserLocation — POST disable sharing for caller
+- [x] Server routers.ts: intelligence.myLocationState — GET caller's current sharing state
+- [x] Frontend IntelligenceMapping.tsx: renamed "Filter" panel → "Map Settings" (Settings2 icon)
+- [x] Frontend: collapsed panel replaced with left-edge arrow tab (20px wide, vertically centred, ChevronRight) — does not overlap Google map type/satellite controls
+- [x] Frontend: click anywhere on map area closes the panel (onClick on map div)
+- [x] Frontend: "Share my location" toggle in Map Settings — starts GPS watchPosition, pushes to server
+- [x] Frontend: GPS uses navigator.geolocation.watchPosition with high accuracy; clears on toggle off
+- [x] Frontend: desktop warning shown if non-mobile device enables sharing
+- [x] Frontend: "Show my pin" toggle (only visible when sharing is on) — hides own pin from map
+- [x] Frontend: short polling every 15 seconds via refetchInterval on userLocations query
+- [x] Frontend: operation-scoped visibility — only users with overlapping selectedOpIds are returned
+- [x] Frontend: team colour coding — Team 1 = magenta (#e91e8c), Team 2 = blue (#1976d2), PTT = yellow (#f9a825)
+- [x] Frontend: user pins show name in CAPITALS as label tag below pin, initials inside pin
+- [x] Frontend: per-team visibility toggles (Show/Hide per team group) in Map Settings panel
+- [x] Frontend: per-user visibility toggles (Show/Hide per user) within each team group
+- [x] Frontend: unassigned users (no team) shown in a separate group
+- [x] Frontend: legend updated with team colour entries
+- [x] Admin page: team assignment (TEAM1/TEAM2/PTT) already implemented in User Management — no changes needed
+- [x] TypeScript: 0 errors

@@ -7,6 +7,7 @@ import {
   varchar,
   boolean,
   bigint,
+  double,
 } from "drizzle-orm/mysql-core";
 
 // ─── Users ───────────────────────────────────────────────────────────────────
@@ -394,3 +395,21 @@ export const wipcAuditLog = mysqlTable("wipc_audit_log", {
 });
 export type WipcAuditEntry = typeof wipcAuditLog.$inferSelect;
 export type InsertWipcAuditEntry = typeof wipcAuditLog.$inferInsert;
+
+// ─── User Locations ───────────────────────────────────────────────────────────
+// Stores the last known GPS location for each user who has enabled location
+// sharing. operationIds is a JSON array of operation IDs the user has selected
+// — used for operation-scoped visibility filtering.
+
+export const userLocations = mysqlTable("user_locations", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(), // FK → users.id, one row per user
+  lat: double("lat").notNull(),
+  lng: double("lng").notNull(),
+  operationIds: text("operationIds").notNull().default("[]"), // JSON array of op IDs
+  sharingEnabled: boolean("sharingEnabled").default(false).notNull(),
+  updatedAt: bigint("updatedAt", { mode: "number" }).notNull(),
+});
+
+export type UserLocation = typeof userLocations.$inferSelect;
+export type InsertUserLocation = typeof userLocations.$inferInsert;

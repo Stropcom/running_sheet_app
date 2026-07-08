@@ -98,6 +98,7 @@ import {
   getIntelAssociateProfile,
   getIntelVehicleProfile,
   getIntelLocationProfile,
+  getIntelMappingLocations,
 } from "./db";
 
 import { generateStatDecDocx } from "./statDecGenerator";
@@ -1377,6 +1378,16 @@ export const appRouter = router({
         const profile = await getIntelLocationProfile(input.label);
         if (!profile) throw new TRPCError({ code: "NOT_FOUND", message: "Location not found." });
         return profile;
+      }),
+
+    /** Intelligence mapping — all locations with linked targets/associates/vehicles */
+    mappingLocations: protectedProcedure
+      .input(z.object({
+        operationIds: z.array(z.number()).optional(),
+        targetIds: z.array(z.number()).optional(),
+      }))
+      .query(async ({ input }) => {
+        return getIntelMappingLocations(input.operationIds, input.targetIds);
       }),
   }),
 

@@ -3028,3 +3028,214 @@ export async function getIntelLocationProfile(label: string): Promise<IntelLocat
     assocVehicles: Array.from(assocVehiclesMap.values()).sort((a, b) => a.label.localeCompare(b.label)),
   };
 }
+
+// ─── Intelligence Mapping ─────────────────────────────────────────────────────
+
+export interface IntelMapLocation {
+  label: string;
+  type: "target_address" | "observation";
+  /** Targets whose registered details (HBF/V1F/V2F) include this location */
+  linkedTargets: Array<{
+    targetId: number;
+    name: string;
+    tgt: string | null;
+    hbf: string | null;
+    v1f: string | null;
+    v2f: string | null;
+    operationId: number | null;
+    operationName: string | null;
+  }>;
+  /** Associates (non-target persons) seen at this location in observation rows */
+  assocPersons: string[];
+  /** Vehicles seen at this location in observation rows */
+  assocVehicles: string[];
+  /** Total link count (targets + assocPersons + assocVehicles) */
+  linkCount: number;
+}
+
+export async function getIntelMappingLocations(
+  operationIds?: number[],
+  targetIds?: number[]
+): Promise<IntelMapLocation[]> {
+  const allEntities = await getAllIntelligenceEntities();
+
+  // Filter entities to only those in the requested operations/targets
+  const filterByOp = operationIds && operationIds.length > 0;
+  const filterByTarget = targetIds && targetIds.length > 0;
+
+  const filteredEntities = allEntities.filter(e => {
+    if (!filterByOp && !filterByTarget) return true;
+    const opIds = e.occurrences.map(o => o.operationId).filter(id => id > 0);
+    const tgtMatch = filterByTarget && e.isTarget && e.targetId != null && targetIds!.includes(e.targetId);
+    const opMatch = filterByOp && opIds.some(id => operationIds!.includes(id));
+    return tgtMatch || opMatch || (!filterByTarget && opMatch);
+  });
+
+  // Build a set of target entities that pass the filter
+  const filteredTargetEntities = filteredEntities.filter(e => e.isTarget && e.targetId != null);
+  const filteredTargetIds = new Set(filteredTargetEntities.map(e => e.targetId!));
+
+  // Load full target card details for filtered targets
+  const db = await getDb();
+  if (!db) return [];
+
+  const allTargetRows = await db
+    .select({
+      id: targets.id,
+      name: targets.name,
+      tgt: targets.tgt,
+      hbf: targets.hbf,
+      hb: targets.hb,
+      v1f: targets.v1f,
+      v1: targets.v1,
+      v2f: targets.v2f,
+      v2: targets.v2,
+      operationId: targets.operationId,
+      operationName: operations.name,
+    })
+    .from(targets)
+    .leftJoin(operations, eq(targets.operationId!, operations.id))
+    .where(isNull(targets.deletedAt));
+
+  // Also load registry-linked targets
+  const linkedTargetRows = await db
+    .select({
+      id: targets.id,
+      name: targets.name,
+      tgt: targets.tgt,
+      hbf: targets.hbf,
+      hb: targets.hb,
+      v1f: targets.v1f,
+      v1: targets.v1,
+      v2f: targets.v2f,
+      v2: targets.v2,
+      operationId: operationTargetLinks.operationId,
+      operationName: operations.name,
+    })
+    .from(targets)
+    .innerJoin(operationTargetLinks, eq(operationTargetLinks.targetId, targets.id))
+    .innerJoin(operations, eq(operationTargetLinks.operationId, operations.id))
+    .where(isNull(targets.deletedAt));
+
+  // Merge, prefer linked rows
+  const seenPairs = new Set<string>();
+  const allTargetData: typeof allTargetRows = [];
+  for (const r of linkedTargetRows) {
+    seenPairs.add(`${r.id}::${r.operationId}`);
+    allTargetData.push(r);
+  }
+  for (const r of allTargetRows) {
+    if (!seenPairs.has(`${r.id}::${r.operationId}`)) allTargetData.push(r);
+  }
+
+  // Only keep targets that pass the filter
+  const relevantTargets = allTargetData.filter(t =>
+    filteredTargetIds.size === 0 ? true : filteredTargetIds.has(t.id)
+  );
+
+  // Build location map: label (lowercase) -> IntelMapLocation
+  const locationMap = new Map<string, IntelMapLocation>();
+
+  const ensureLocation = (label: string): IntelMapLocation => {
+    const key = label.toLowerCase().trim();
+    if (!locationMap.has(key)) {
+      locationMap.set(key, {
+        label: label.trim(),
+        type: "observation",
+        linkedTargets: [],
+        assocPersons: [],
+        assocVehicles: [],
+        linkCount: 0,
+      });
+    }
+    return locationMap.get(key)!;
+  };
+
+  // Step 1: Register target card addresses as target_address type
+  for (const t of relevantTargets) {
+    const addrFields = [
+      t.hbf?.trim() || t.hb?.trim() || null,
+    ].filter(Boolean) as string[];
+    for (const addr of addrFields) {
+      const loc = ensureLocation(addr);
+      loc.type = "target_address";
+      // Add this target to linkedTargets if not already there
+      if (!loc.linkedTargets.find(lt => lt.targetId === t.id)) {
+        loc.linkedTargets.push({
+          targetId: t.id,
+          name: t.name,
+          tgt: t.tgt,
+          hbf: t.hbf?.trim() || t.hb?.trim() || null,
+          v1f: t.v1f?.trim() || t.v1?.trim() || null,
+          v2f: t.v2f?.trim() || t.v2?.trim() || null,
+          operationId: t.operationId ?? null,
+          operationName: t.operationName ?? null,
+        });
+      }
+    }
+  }
+
+  // Step 2: Use entity co-occurrence to populate observation locations with persons/vehicles
+  // Get all location entities (address + business) from filtered set
+  const locationEntities = filteredEntities.filter(
+    e => e.type === "address" || e.type === "business"
+  );
+
+  // Build a rowId -> [entity] map for co-occurrence
+  const rowEntityMap = new Map<number, IntelligenceEntity[]>();
+  for (const e of filteredEntities) {
+    for (const occ of e.occurrences) {
+      if (occ.rowId <= 0) continue;
+      if (!rowEntityMap.has(occ.rowId)) rowEntityMap.set(occ.rowId, []);
+      rowEntityMap.get(occ.rowId)!.push(e);
+    }
+  }
+
+  for (const locEntity of locationEntities) {
+    const loc = ensureLocation(locEntity.shortForm);
+    // Collect all rowIds for this location entity
+    const locRowIds = new Set(
+      locEntity.occurrences.filter(o => o.rowId > 0).map(o => o.rowId)
+    );
+    for (const rowId of Array.from(locRowIds)) {
+      const coEntities = rowEntityMap.get(rowId) ?? [];
+      for (const co of coEntities) {
+        if (co === locEntity) continue;
+        if (co.isTarget) {
+          // Add to linkedTargets if not already there
+          const tData = relevantTargets.find(t => t.id === co.targetId);
+          if (tData && !loc.linkedTargets.find(lt => lt.targetId === co.targetId)) {
+            loc.type = "target_address"; // upgrade to target_address if a target is linked
+            loc.linkedTargets.push({
+              targetId: tData.id,
+              name: tData.name,
+              tgt: tData.tgt,
+              hbf: tData.hbf?.trim() || tData.hb?.trim() || null,
+              v1f: tData.v1f?.trim() || tData.v1?.trim() || null,
+              v2f: tData.v2f?.trim() || tData.v2?.trim() || null,
+              operationId: tData.operationId ?? null,
+              operationName: tData.operationName ?? null,
+            });
+          }
+        } else if (co.type === "person") {
+          if (!loc.assocPersons.includes(co.shortForm)) {
+            loc.assocPersons.push(co.shortForm);
+          }
+        } else if (co.type === "vehicle") {
+          if (!loc.assocVehicles.includes(co.shortForm)) {
+            loc.assocVehicles.push(co.shortForm);
+          }
+        }
+      }
+    }
+  }
+
+  // Step 3: Compute link counts and return
+  const result: IntelMapLocation[] = [];
+  for (const loc of Array.from(locationMap.values())) {
+    loc.linkCount = loc.linkedTargets.length + loc.assocPersons.length + loc.assocVehicles.length;
+    result.push(loc);
+  }
+
+  return result.sort((a, b) => a.label.localeCompare(b.label));
+}

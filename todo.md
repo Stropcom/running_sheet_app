@@ -432,3 +432,18 @@
 - [x] Geocoder geocodes the location label (with WA fallback) and drops an AdvancedMarkerElement pin
 - [x] Map defaults to Perth centre (-31.9505, 115.8605) zoom 12; zooms to 16 on geocode success
 - [x] TypeScript: 0 errors
+
+## Intelligence Mapping Sub-folder (Round 51)
+- [x] Server db.ts: getIntelMappingLocations — returns deduplicated locations with isTargetAddress flag, linkedTargets (name+vehicles), linkedAssociates, linkedVehicles, filtered by operationIds/targetIds
+- [x] Server routers.ts: intelligence.getMappingLocations tRPC procedure
+- [x] Frontend: IntelligenceMapping.tsx — full-screen Google Map with side filter panel
+- [x] Side panel: Operation multi-select with expand to show targets per operation
+- [x] Side panel: Legend (red = target address, purple = observed location, badge = link count)
+- [x] Map: Red AdvancedMarkerElement pins for target registered addresses
+- [x] Map: Purple AdvancedMarkerElement pins for observation-only locations
+- [x] Map: Badge count on each pin showing total number of links
+- [x] Map: InfoWindow on pin click — target cards (name, address, vehicles) for red pins; associate/vehicle list for purple pins
+- [x] Map: Geocoding of location labels with WA fallback
+- [x] DashboardLayout: Intelligence nav item converted to expandable sub-folder with Intel Profiles and Mapping children
+- [x] App.tsx: /intelligence/mapping route registered
+- [x] TypeScript: 0 errors

@@ -50,7 +50,7 @@ interface LiveUser {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 const TEAM_COLOURS: Record<string, string> = {
-  TEAM1: "#e91e8c", // magenta
+  TEAM1: "#ec4899", // pink
   TEAM2: "#1976d2", // blue
   PTT:   "#f9a825", // yellow
   null:  "#6b7280", // grey for unassigned
@@ -137,7 +137,6 @@ export default function IntelligenceMapping() {
 
   // Location sharing state
   const [sharingEnabled, setSharingEnabled] = useState(false);
-  const [showOwnLocation, setShowOwnLocation] = useState(true);
   // Per-user visibility: Set of userIds that are hidden
   const [hiddenUsers, setHiddenUsers] = useState<Set<number>>(new Set());
   // Per-team visibility: Set of team keys that are hidden
@@ -179,6 +178,9 @@ export default function IntelligenceMapping() {
       setSharingEnabled(myLocationState.sharingEnabled);
     }
   }, [myLocationState]);
+
+  // showOwnLocation always mirrors sharingEnabled (single toggle)
+  const showOwnLocation = sharingEnabled;
 
   // Mutations
   const updateLocationMut = trpc.intelligence.updateUserLocation.useMutation();
@@ -260,9 +262,12 @@ export default function IntelligenceMapping() {
     if (checked) {
       if (!isMobile) {
         setGpsError("Location sharing is designed for mobile devices. Your desktop location may be inaccurate.");
+      } else {
+        setGpsError(null);
       }
       startWatching();
     } else {
+      setGpsError(null);
       stopWatching();
     }
   };
@@ -331,45 +336,26 @@ export default function IntelligenceMapping() {
   const createUserPinElement = useCallback((liveUser: LiveUser) => {
     const color = getTeamColour(liveUser.team);
     const label = liveUser.name.toUpperCase();
-    const initials = label.split(" ").map(w => w[0]).join("").slice(0, 2);
 
     const el = document.createElement("div");
     el.style.cssText = `position:relative;display:flex;flex-direction:column;align-items:center;cursor:pointer;`;
 
-    const pin = document.createElement("div");
-    pin.style.cssText = `
-      min-width:36px;height:36px;
-      border-radius:18px 18px 18px 0;
-      transform:rotate(-45deg);
-      background:${color};
-      border:2px solid #fff;
-      box-shadow:0 2px 10px rgba(0,0,0,0.4);
-      display:flex;align-items:center;justify-content:center;
-      padding:0 6px;
-    `;
-
-    const inner = document.createElement("div");
-    inner.style.cssText = `transform:rotate(45deg);color:#fff;font-size:10px;font-weight:800;line-height:1;white-space:nowrap;letter-spacing:0.03em;`;
-    inner.textContent = initials;
-    pin.appendChild(inner);
-
-    // Name label below pin
+    // Name rectangle only — no teardrop/bubble
     const nameTag = document.createElement("div");
     nameTag.style.cssText = `
-      margin-top:2px;
       background:${color};
       color:#fff;
-      font-size:9px;
-      font-weight:700;
-      padding:1px 5px;
-      border-radius:3px;
+      font-size:12px;
+      font-weight:800;
+      padding:5px 10px;
+      border-radius:5px;
       white-space:nowrap;
-      box-shadow:0 1px 4px rgba(0,0,0,0.3);
-      letter-spacing:0.04em;
+      box-shadow:0 2px 8px rgba(0,0,0,0.45);
+      letter-spacing:0.05em;
+      border:2px solid rgba(255,255,255,0.6);
     `;
     nameTag.textContent = label;
 
-    el.appendChild(pin);
     el.appendChild(nameTag);
     return el;
   }, []);
@@ -645,9 +631,9 @@ export default function IntelligenceMapping() {
               <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Field Units</span>
             </div>
 
-            {/* Share my location toggle */}
+            {/* Share my location toggle (also shows own pin) */}
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-foreground">Share my location</span>
+              <span className="text-xs text-foreground">Share &amp; show my location</span>
               <Switch
                 checked={sharingEnabled}
                 onCheckedChange={handleSharingToggle}
@@ -657,21 +643,9 @@ export default function IntelligenceMapping() {
 
             {/* GPS error / desktop warning */}
             {gpsError && (
-              <div className="flex items-start gap-1.5 mb-2 p-2 rounded bg-amber-500/10 border border-amber-500/30">
+              <div className="flex items-start gap-1.5 mb-3 p-2 rounded bg-amber-500/10 border border-amber-500/30">
                 <AlertTriangle className="h-3 w-3 text-amber-500 mt-0.5 flex-shrink-0" />
                 <span className="text-[10px] text-amber-400 leading-tight">{gpsError}</span>
-              </div>
-            )}
-
-            {/* Show own location toggle (only when sharing) */}
-            {sharingEnabled && (
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs text-muted-foreground">Show my pin</span>
-                <Switch
-                  checked={showOwnLocation}
-                  onCheckedChange={setShowOwnLocation}
-                  className="scale-90"
-                />
               </div>
             )}
 
@@ -780,7 +754,7 @@ export default function IntelligenceMapping() {
               <span className="text-xs text-muted-foreground">Observed location</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded-full flex-shrink-0" style={{ background: TEAM_COLOURS.TEAM1 }} />
+              <div className="w-4 h-4 rounded flex-shrink-0" style={{ background: TEAM_COLOURS.TEAM1 }} />
               <span className="text-xs text-muted-foreground">Team 1 unit</span>
             </div>
             <div className="flex items-center gap-2">

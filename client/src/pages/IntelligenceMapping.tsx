@@ -165,10 +165,10 @@ export default function IntelligenceMapping() {
     targetIds: selectedTargetIds.length > 0 ? selectedTargetIds : undefined,
   });
 
-  // Live user locations — poll every 15 seconds
+  // Live user locations — poll every 1 second
   const { data: liveUsers } = trpc.intelligence.userLocations.useQuery(
     { operationIds: selectedOpIds },
-    { refetchInterval: 15000, enabled: true }
+    { refetchInterval: 1000, enabled: true }
   );
 
   // Restore sharing state on mount

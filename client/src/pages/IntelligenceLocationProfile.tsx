@@ -55,15 +55,16 @@ function buildLocationProfileHtml(profile: IntelLocationProfile) {
   };
   const generatedAt = new Date().toLocaleString("en-AU", { dateStyle: "long", timeStyle: "short" });
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>RunLog — Location Profile: ${esc(profile.label)}</title>
-<style>* { box-sizing:border-box; margin:0; padding:0; } body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.6; color:${GREY_TEXT}; background:#fff; }
-.cover-header { background:#064e3b; color:#fff; padding:28px 32px 22px; }
-.brand-label { font-size:10px; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; color:#6ee7b7; margin-bottom:14px; }
+<style>* { box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; } body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.6; color:${GREY_TEXT}; background:#fff; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+.cover-header { background:#064e3b !important; color:#fff !important; padding:28px 32px 22px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+.brand-label { font-size:10px; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; color:#6ee7b7 !important; margin-bottom:14px; }
 .entity-name { font-size:22px; font-weight:700; } .gen-time { font-size:9px; opacity:0.6; margin-top:12px; }
-.stats-row { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; padding:16px 32px; background:#d1fae5; border-bottom:2px solid #6ee7b7; }
-.stat-box { text-align:center; } .stat-num { font-size:20px; font-weight:700; color:#064e3b; } .stat-label { font-size:9px; text-transform:uppercase; letter-spacing:0.08em; color:#64748b; }
-.content { padding:20px 32px; } .section-title { font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#064e3b; padding:6px 10px; background:#d1fae5; border-left:3px solid #6ee7b7; margin-bottom:10px; }
+.stats-row { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; padding:16px 32px; background:#d1fae5 !important; border-bottom:2px solid #6ee7b7; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+.stat-box { text-align:center; } .stat-num { font-size:20px; font-weight:700; color:#064e3b !important; } .stat-label { font-size:9px; text-transform:uppercase; letter-spacing:0.08em; color:#64748b; }
+.content { padding:20px 32px; } .section-title { font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#064e3b !important; padding:6px 10px; background:#d1fae5 !important; border-left:3px solid #6ee7b7; margin-bottom:10px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 .sub-title { font-size:9px; font-weight:700; letter-spacing:0.1em; text-transform:uppercase; color:#64748b; margin-bottom:6px; border-bottom:1px solid ${GREY_BORDER}; padding-bottom:4px; }
 .footer { margin-top:32px; padding-top:12px; border-top:1px solid ${GREY_BORDER}; display:flex; justify-content:space-between; font-size:9px; color:#94a3b8; }
+@media print { * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; } .cover-header { background:#064e3b !important; } .stats-row { background:#d1fae5 !important; } .section-title { background:#d1fae5 !important; } }
 </style></head><body>
 <div class="cover-header">
   <div class="brand-label">RunLog Intelligence Profile — Location</div>

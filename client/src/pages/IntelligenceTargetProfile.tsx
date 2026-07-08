@@ -83,9 +83,9 @@ function buildTargetProfileHtml(profile: NonNullable<ReturnType<typeof useTarget
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>RunLog Intelligence Profile — ${esc(profile.name)}</title>
 <style>
-* { box-sizing:border-box; margin:0; padding:0; }
-body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.6; color:${GREY_TEXT}; background:#fff; }
-.cover-header { background:${BLUE_DARK}; color:#fff; padding:28px 32px 22px; }
+* { box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.6; color:${GREY_TEXT}; background:#fff; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+.cover-header { background:${BLUE_DARK} !important; color:#fff !important; padding:28px 32px 22px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 .brand-row { display:flex; align-items:center; gap:10px; margin-bottom:14px; opacity:0.85; }
 .brand-dot { width:10px; height:10px; border-radius:50%; background:${BLUE_MID}; }
 .brand-label { font-size:10px; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; color:${BLUE_MID}; }
@@ -93,22 +93,23 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 .entity-name { font-size:22px; font-weight:700; letter-spacing:-0.01em; line-height:1.2; }
 .entity-sub { font-size:12px; opacity:0.75; margin-top:4px; }
 .gen-time { font-size:9px; opacity:0.6; margin-top:12px; }
-.stats-row { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; padding:16px 32px; background:${BLUE_LIGHT}; border-bottom:2px solid ${BLUE_MID}; }
+.stats-row { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; padding:16px 32px; background:${BLUE_LIGHT} !important; border-bottom:2px solid ${BLUE_MID}; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 .stat-box { text-align:center; }
-.stat-num { font-size:20px; font-weight:700; color:${BLUE_DARK}; }
+.stat-num { font-size:20px; font-weight:700; color:${BLUE_DARK} !important; }
 .stat-label { font-size:9px; text-transform:uppercase; letter-spacing:0.08em; color:#64748b; }
 .content { padding:20px 32px; }
 .section { margin-bottom:20px; }
-.section-title { font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${BLUE_DARK}; padding:6px 10px; background:${BLUE_LIGHT}; border-left:3px solid ${BLUE_MID}; margin-bottom:10px; }
+.section-title { font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${BLUE_DARK} !important; padding:6px 10px; background:${BLUE_LIGHT} !important; border-left:3px solid ${BLUE_MID}; margin-bottom:10px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 .detail-grid { display:grid; grid-template-columns:120px 1fr; gap:4px 12px; font-size:10px; margin-bottom:8px; }
 .detail-label { color:#64748b; font-weight:600; }
 .detail-value { color:${GREY_TEXT}; }
 .ops-list { display:flex; flex-wrap:wrap; gap:6px; }
-.op-badge { background:${BLUE_LIGHT}; color:${BLUE_DARK}; border:1px solid ${BLUE_MID}; border-radius:6px; padding:3px 10px; font-size:10px; font-weight:600; }
+.op-badge { background:${BLUE_LIGHT} !important; color:${BLUE_DARK} !important; border:1px solid ${BLUE_MID}; border-radius:6px; padding:3px 10px; font-size:10px; font-weight:600; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 .sheet-item { display:flex; align-items:center; gap:8px; padding:5px 8px; border-bottom:1px solid ${GREY_BORDER}; font-size:10px; }
 .sheet-item:last-child { border-bottom:none; }
 .sheet-dot { width:6px; height:6px; border-radius:50%; background:${BLUE_MID}; flex-shrink:0; }
 .footer { margin-top:32px; padding-top:12px; border-top:1px solid ${GREY_BORDER}; display:flex; justify-content:space-between; font-size:9px; color:#94a3b8; }
+@media print { * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; } .cover-header { background:${BLUE_DARK} !important; } .stats-row { background:${BLUE_LIGHT} !important; } .section-title { background:${BLUE_LIGHT} !important; } .op-badge { background:${BLUE_LIGHT} !important; } }
 </style></head><body>
 <div class="cover-header">
   <div class="brand-row"><div class="brand-dot"></div><span class="brand-label">RunLog Intelligence Profile</span></div>

@@ -3205,7 +3205,8 @@ export async function getIntelMappingLocations(
           // Add to linkedTargets if not already there
           const tData = relevantTargets.find(t => t.id === co.targetId);
           if (tData && !loc.linkedTargets.find(lt => lt.targetId === co.targetId)) {
-            loc.type = "target_address"; // upgrade to target_address if a target is linked
+            // Do NOT upgrade type here — only target card addresses are "target_address"
+            // Observation locations stay purple even if a target co-occurs in the same row
             loc.linkedTargets.push({
               targetId: tData.id,
               name: tData.name,

@@ -102,13 +102,70 @@ function uniqueSheets(occurrences: Occurrence[]) {
 
 // ─── PDF Export ───────────────────────────────────────────────────────────────
 
-function buildProfileHtml(entity: Entity, allEntities: Entity[]) {
-  const mySheetIds = new Set(entity.occurrences.map((o) => o.sheetId));
+// ── Compute direct links and operational links for an entity ──────────────
+// Direct links: entities whose occurrences came from THIS entity's target card
+//   fields (rowId === 0 and observationSnippet mentions the entity's name).
+// Operational links: entities that share a specific observation ROW with this
+//   entity (rowId > 0 overlap) — NOT just the same sheet.
+function computeLinks(entity: Entity, allEntities: Entity[]) {
+  // Row-level IDs where this entity actually appears (excludes target-card rows)
+  const myRowIds = new Set(
+    entity.occurrences.filter((o) => o.rowId > 0).map((o) => o.rowId)
+  );
+  const myName = entity.shortForm.toLowerCase();
 
-  const relatedVehicles   = allEntities.filter((e) => e.type === "vehicle"  && e.occurrences.some((o) => mySheetIds.has(o.sheetId)));
-  const relatedAddresses  = allEntities.filter((e) => e.type === "address"  && e.occurrences.some((o) => mySheetIds.has(o.sheetId)));
-  const relatedBusinesses = allEntities.filter((e) => e.type === "business" && e.occurrences.some((o) => mySheetIds.has(o.sheetId)));
-  const relatedPersons    = allEntities.filter((e) => e.type === "person"   && e.shortForm !== entity.shortForm && e.occurrences.some((o) => mySheetIds.has(o.sheetId)));
+  // Direct: rowId === 0 and the snippet references this entity's name
+  // (these are target card field entries injected by getAllIntelligenceEntities)
+  const directVehicles: Entity[] = [];
+  const directAddresses: Entity[] = [];
+  // No direct persons yet (no person fields on target card)
+
+  // Operational: share a rowId with this entity's observation rows
+  const opVehicles:   Entity[] = [];
+  const opAddresses:  Entity[] = [];
+  const opPersons:    Entity[] = [];
+  const opBusinesses: Entity[] = [];
+
+  for (const e of allEntities) {
+    if (e.shortForm === entity.shortForm && e.type === entity.type) continue;
+
+    // Check direct link: at least one occurrence is a target-card row (rowId===0)
+    // that references this entity's name
+    const isDirectLink = e.occurrences.some(
+      (o) => o.rowId === 0 && o.observationSnippet.toLowerCase().includes(myName)
+    );
+
+    if (isDirectLink) {
+      if (e.type === "vehicle")  directVehicles.push(e);
+      if (e.type === "address")  directAddresses.push(e);
+      continue; // direct link — don't also add to operational
+    }
+
+    // Check operational link: shares a row-level observation with this entity
+    const isOperationalLink = myRowIds.size > 0 && e.occurrences.some(
+      (o) => o.rowId > 0 && myRowIds.has(o.rowId)
+    );
+
+    if (isOperationalLink) {
+      if (e.type === "vehicle")  opVehicles.push(e);
+      if (e.type === "address")  opAddresses.push(e);
+      if (e.type === "person")   opPersons.push(e);
+      if (e.type === "business") opBusinesses.push(e);
+    }
+  }
+
+  return { directVehicles, directAddresses, opVehicles, opAddresses, opPersons, opBusinesses };
+}
+
+function buildProfileHtml(entity: Entity, allEntities: Entity[]) {
+  const { directVehicles, directAddresses, opVehicles, opAddresses, opPersons, opBusinesses } =
+    computeLinks(entity, allEntities);
+
+  // Keep legacy names for stats banner count
+  const relatedVehicles   = [...directVehicles, ...opVehicles];
+  const relatedAddresses  = [...directAddresses, ...opAddresses];
+  const relatedPersons    = opPersons;
+  const relatedBusinesses = opBusinesses;
 
   const sheets    = uniqueSheets(entity.occurrences);
   const firstSeen = entity.occurrences[0];
@@ -497,64 +554,116 @@ ${sheets.map(sheet => `<span class="assoc-chip">${esc(sheet.sheetTitle)}</span>`
 </div>
 `;
 
-  if (relatedVehicles.length > 0) {
+  // ── Direct Links section ─────────────────────────────────────────────────
+  const hasDirectLinks = directVehicles.length > 0 || directAddresses.length > 0;
+  if (hasDirectLinks) {
     html += `
+<div class="section-heading" style="margin-top:24px">
+  <div class="section-heading-bar" style="background:#1e3a8a"></div>
+  <span class="section-heading-text" style="color:#1e3a8a;font-size:12px">Direct Links</span>
+  <div class="section-rule"></div>
+</div>`;
+
+    if (directVehicles.length > 0) {
+      html += `
 <div class="section-heading">
-  <div class="section-heading-bar"></div>
-  <span class="section-heading-text">Associated Vehicles</span>
-  <span class="section-heading-count">${relatedVehicles.length}</span>
+  <div class="section-heading-bar" style="background:#d97706"></div>
+  <span class="section-heading-text" style="color:#92400e">Vehicles</span>
+  <span class="section-heading-count" style="background:#fef3c7;color:#92400e;border-color:#fcd34d">${directVehicles.length}</span>
   <div class="section-rule"></div>
 </div>
 <div class="assoc-list">`;
-    for (const v of relatedVehicles) {
-      html += `<span class="assoc-chip">${esc(stripVehicleA(v.shortForm, v.type))}<span class="chip-count">×${v.occurrences.length}</span></span>`;
+      for (const v of directVehicles) {
+        html += `<span class="assoc-chip" style="background:#fef3c7;border-color:#fcd34d;color:#92400e">${esc(stripVehicleA(v.shortForm, v.type))}<span class="chip-count" style="background:#d97706">×${v.occurrences.length}</span></span>`;
+      }
+      html += `</div>`;
     }
-    html += `</div>`;
+
+    if (directAddresses.length > 0) {
+      html += `
+<div class="section-heading">
+  <div class="section-heading-bar" style="background:#059669"></div>
+  <span class="section-heading-text" style="color:#065f46">Addresses</span>
+  <span class="section-heading-count" style="background:#d1fae5;color:#065f46;border-color:#6ee7b7">${directAddresses.length}</span>
+  <div class="section-rule"></div>
+</div>
+<div class="assoc-list">`;
+      for (const a of directAddresses) {
+        html += `<span class="assoc-chip" style="background:#d1fae5;border-color:#6ee7b7;color:#065f46">${esc(a.shortForm)}<span class="chip-count" style="background:#059669">×${a.occurrences.length}</span></span>`;
+      }
+      html += `</div>`;
+    }
   }
 
-  if (relatedAddresses.length > 0) {
+  // ── Operational Links section ─────────────────────────────────────────────
+  const hasOpLinks = opVehicles.length > 0 || opAddresses.length > 0 || opPersons.length > 0 || opBusinesses.length > 0;
+  if (hasOpLinks) {
     html += `
-<div class="section-heading">
-  <div class="section-heading-bar"></div>
-  <span class="section-heading-text">Associated Addresses</span>
-  <span class="section-heading-count">${relatedAddresses.length}</span>
+<div class="section-heading" style="margin-top:24px">
+  <div class="section-heading-bar" style="background:#1d4ed8"></div>
+  <span class="section-heading-text" style="color:#1e3a8a;font-size:12px">Operational Links</span>
   <div class="section-rule"></div>
-</div>
-<div class="assoc-list">`;
-    for (const a of relatedAddresses) {
-      html += `<span class="assoc-chip">${esc(a.shortForm)}<span class="chip-count">×${a.occurrences.length}</span></span>`;
-    }
-    html += `</div>`;
-  }
+</div>`;
 
-  if (relatedPersons.length > 0) {
-    html += `
+    if (opVehicles.length > 0) {
+      html += `
 <div class="section-heading">
-  <div class="section-heading-bar"></div>
-  <span class="section-heading-text">Associated Persons</span>
-  <span class="section-heading-count">${relatedPersons.length}</span>
+  <div class="section-heading-bar" style="background:#d97706"></div>
+  <span class="section-heading-text" style="color:#92400e">Associated Vehicles</span>
+  <span class="section-heading-count" style="background:#fef3c7;color:#92400e;border-color:#fcd34d">${opVehicles.length}</span>
   <div class="section-rule"></div>
 </div>
 <div class="assoc-list">`;
-    for (const p of relatedPersons) {
-      html += `<span class="assoc-chip">${esc(p.shortForm)}<span class="chip-count">×${p.occurrences.length}</span></span>`;
+      for (const v of opVehicles) {
+        html += `<span class="assoc-chip" style="background:#fef3c7;border-color:#fcd34d;color:#92400e">${esc(stripVehicleA(v.shortForm, v.type))}<span class="chip-count" style="background:#d97706">×${v.occurrences.length}</span></span>`;
+      }
+      html += `</div>`;
     }
-    html += `</div>`;
-  }
 
-  if (relatedBusinesses.length > 0) {
-    html += `
+    if (opAddresses.length > 0) {
+      html += `
 <div class="section-heading">
-  <div class="section-heading-bar"></div>
-  <span class="section-heading-text">Associated Businesses</span>
-  <span class="section-heading-count">${relatedBusinesses.length}</span>
+  <div class="section-heading-bar" style="background:#059669"></div>
+  <span class="section-heading-text" style="color:#065f46">Associated Addresses</span>
+  <span class="section-heading-count" style="background:#d1fae5;color:#065f46;border-color:#6ee7b7">${opAddresses.length}</span>
   <div class="section-rule"></div>
 </div>
 <div class="assoc-list">`;
-    for (const b of relatedBusinesses) {
-      html += `<span class="assoc-chip">${esc(b.shortForm)}<span class="chip-count">×${b.occurrences.length}</span></span>`;
+      for (const a of opAddresses) {
+        html += `<span class="assoc-chip" style="background:#d1fae5;border-color:#6ee7b7;color:#065f46">${esc(a.shortForm)}<span class="chip-count" style="background:#059669">×${a.occurrences.length}</span></span>`;
+      }
+      html += `</div>`;
     }
-    html += `</div>`;
+
+    if (opPersons.length > 0) {
+      html += `
+<div class="section-heading">
+  <div class="section-heading-bar" style="background:#2563eb"></div>
+  <span class="section-heading-text" style="color:#1e3a8a">Associated Persons</span>
+  <span class="section-heading-count" style="background:#dbeafe;color:#1e3a8a;border-color:#93c5fd">${opPersons.length}</span>
+  <div class="section-rule"></div>
+</div>
+<div class="assoc-list">`;
+      for (const p of opPersons) {
+        html += `<span class="assoc-chip" style="background:#dbeafe;border-color:#93c5fd;color:#1e3a8a">${esc(p.shortForm)}<span class="chip-count" style="background:#2563eb">×${p.occurrences.length}</span></span>`;
+      }
+      html += `</div>`;
+    }
+
+    if (opBusinesses.length > 0) {
+      html += `
+<div class="section-heading">
+  <div class="section-heading-bar" style="background:#7c3aed"></div>
+  <span class="section-heading-text" style="color:#4c1d95">Associated Businesses</span>
+  <span class="section-heading-count" style="background:#ede9fe;color:#4c1d95;border-color:#c4b5fd">${opBusinesses.length}</span>
+  <div class="section-rule"></div>
+</div>
+<div class="assoc-list">`;
+      for (const b of opBusinesses) {
+        html += `<span class="assoc-chip" style="background:#ede9fe;border-color:#c4b5fd;color:#4c1d95">${esc(b.shortForm)}<span class="chip-count" style="background:#7c3aed">×${b.occurrences.length}</span></span>`;
+      }
+      html += `</div>`;
+    }
   }
 
   html += `
@@ -595,12 +704,9 @@ function ProfileDialog({
   onNavigate: (e: Entity) => void;
 }) {
   const [, navigate] = useLocation();
-  const mySheetIds = useMemo(() => new Set(entity.occurrences.map((o) => o.sheetId)), [entity]);
 
-  const relatedVehicles   = useMemo(() => allEntities.filter((e) => e.type === "vehicle"  && e.occurrences.some((o) => mySheetIds.has(o.sheetId))), [allEntities, mySheetIds]);
-  const relatedAddresses  = useMemo(() => allEntities.filter((e) => e.type === "address"  && e.occurrences.some((o) => mySheetIds.has(o.sheetId))), [allEntities, mySheetIds]);
-  const relatedBusinesses = useMemo(() => allEntities.filter((e) => e.type === "business" && e.occurrences.some((o) => mySheetIds.has(o.sheetId))), [allEntities, mySheetIds]);
-  const relatedPersons    = useMemo(() => allEntities.filter((e) => e.type === "person"   && e.shortForm !== entity.shortForm && e.occurrences.some((o) => mySheetIds.has(o.sheetId))), [allEntities, mySheetIds, entity.shortForm]);
+  const { directVehicles, directAddresses, opVehicles, opAddresses, opPersons, opBusinesses } =
+    useMemo(() => computeLinks(entity, allEntities), [entity, allEntities]);
 
   const sheets = useMemo(() => uniqueSheets(entity.occurrences), [entity]);
 
@@ -649,75 +755,101 @@ function ProfileDialog({
 
         <Separator />
 
-        {/* Vehicles — clickable pills */}
-        {relatedVehicles.length > 0 && (
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Associated Vehicles</p>
-            <div className="flex flex-wrap gap-2">
-              {relatedVehicles.map((v) => (
-                <button
-                  key={v.shortForm}
-                  onClick={() => onNavigate(v)}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity ${TYPE_COLORS.vehicle}`}
-                >
-                  <Car className="w-3 h-3" />{v.shortForm.replace(/^[aA]\s+/, "")}<span className="opacity-60">×{v.occurrences.length}</span>
-                </button>
-              ))}
-            </div>
+        {/* ── Direct Links ─────────────────────────────────────────── */}
+        {(directVehicles.length > 0 || directAddresses.length > 0) && (
+          <div className="space-y-3">
+            <p className="text-xs font-bold uppercase tracking-wider text-foreground border-b border-border/60 pb-1">Direct Links</p>
+
+            {directVehicles.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400 mb-2">Vehicles</p>
+                <div className="flex flex-wrap gap-2">
+                  {directVehicles.map((v) => (
+                    <button key={v.shortForm} onClick={() => onNavigate(v)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity ${TYPE_COLORS.vehicle}`}>
+                      <Car className="w-3 h-3" />{v.shortForm.replace(/^[aA]\s+/, "")}<span className="opacity-60">×{v.occurrences.length}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {directAddresses.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 mb-2">Addresses</p>
+                <div className="flex flex-wrap gap-2">
+                  {directAddresses.map((a) => (
+                    <button key={a.shortForm} onClick={() => onNavigate(a)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity ${TYPE_COLORS.address}`}>
+                      <MapPin className="w-3 h-3" />{a.shortForm}<span className="opacity-60">×{a.occurrences.length}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Addresses — clickable pills */}
-        {relatedAddresses.length > 0 && (
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Associated Addresses</p>
-            <div className="flex flex-wrap gap-2">
-              {relatedAddresses.map((a) => (
-                <button
-                  key={a.shortForm}
-                  onClick={() => onNavigate(a)}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity ${TYPE_COLORS.address}`}
-                >
-                  <MapPin className="w-3 h-3" />{a.shortForm}<span className="opacity-60">×{a.occurrences.length}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* ── Operational Links ────────────────────────────────────── */}
+        {(opVehicles.length > 0 || opAddresses.length > 0 || opPersons.length > 0 || opBusinesses.length > 0) && (
+          <div className="space-y-3">
+            <p className="text-xs font-bold uppercase tracking-wider text-foreground border-b border-border/60 pb-1">Operational Links</p>
 
-        {/* Associated Persons — clickable pills */}
-        {relatedPersons.length > 0 && (
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Associated Persons</p>
-            <div className="flex flex-wrap gap-2">
-              {relatedPersons.map((p) => (
-                <button
-                  key={p.shortForm}
-                  onClick={() => onNavigate(p)}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity ${TYPE_COLORS.person}`}
-                >
-                  <User className="w-3 h-3" />{p.shortForm}<span className="opacity-60">×{p.occurrences.length}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+            {opVehicles.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400 mb-2">Associated Vehicles</p>
+                <div className="flex flex-wrap gap-2">
+                  {opVehicles.map((v) => (
+                    <button key={v.shortForm} onClick={() => onNavigate(v)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity ${TYPE_COLORS.vehicle}`}>
+                      <Car className="w-3 h-3" />{v.shortForm.replace(/^[aA]\s+/, "")}<span className="opacity-60">×{v.occurrences.length}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
-        {/* Businesses — clickable pills */}
-        {relatedBusinesses.length > 0 && (
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Associated Businesses</p>
-            <div className="flex flex-wrap gap-2">
-              {relatedBusinesses.map((b) => (
-                <button
-                  key={b.shortForm}
-                  onClick={() => onNavigate(b)}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity ${TYPE_COLORS.business}`}
-                >
-                  <Building2 className="w-3 h-3" />{b.shortForm}<span className="opacity-60">×{b.occurrences.length}</span>
-                </button>
-              ))}
-            </div>
+            {opAddresses.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 mb-2">Associated Addresses</p>
+                <div className="flex flex-wrap gap-2">
+                  {opAddresses.map((a) => (
+                    <button key={a.shortForm} onClick={() => onNavigate(a)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity ${TYPE_COLORS.address}`}>
+                      <MapPin className="w-3 h-3" />{a.shortForm}<span className="opacity-60">×{a.occurrences.length}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {opPersons.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400 mb-2">Associated Persons</p>
+                <div className="flex flex-wrap gap-2">
+                  {opPersons.map((p) => (
+                    <button key={p.shortForm} onClick={() => onNavigate(p)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity ${TYPE_COLORS.person}`}>
+                      <User className="w-3 h-3" />{p.shortForm}<span className="opacity-60">×{p.occurrences.length}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {opBusinesses.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-purple-600 dark:text-purple-400 mb-2">Associated Businesses</p>
+                <div className="flex flex-wrap gap-2">
+                  {opBusinesses.map((b) => (
+                    <button key={b.shortForm} onClick={() => onNavigate(b)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity ${TYPE_COLORS.business}`}>
+                      <Building2 className="w-3 h-3" />{b.shortForm}<span className="opacity-60">×{b.occurrences.length}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

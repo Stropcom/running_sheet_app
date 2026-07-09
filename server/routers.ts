@@ -103,6 +103,10 @@ import {
   upsertUserLocation,
   clearUserLocation,
   getUserLocationState,
+  getCustomMarkers,
+  createCustomMarker,
+  updateCustomMarker,
+  deleteCustomMarker,
 } from "./db";
 
 import { generateStatDecDocx } from "./statDecGenerator";
@@ -2393,6 +2397,73 @@ export const appRouter = router({
         } else {
           await deleteTarget(input.id);
         }
+        return { success: true };
+      }),
+  }),
+  // ─── Custom Map Markers ──────────────────────────────────────────────────────
+
+  customMarker: router({
+    list: protectedProcedure
+      .input(z.object({ operationIds: z.array(z.number()).optional() }))
+      .query(async ({ input }) => {
+        return getCustomMarkers(input.operationIds);
+      }),
+
+    create: protectedProcedure
+      .input(z.object({
+        lat: z.number(),
+        lng: z.number(),
+        markerIcon: z.string().min(1),
+        markerColour: z.string().min(1),
+        label: z.string().optional().nullable(),
+        address: z.string().optional().nullable(),
+        note: z.string().optional().nullable(),
+        operationId: z.number().optional().nullable(),
+        targetId: z.number().optional().nullable(),
+        assocPersons: z.array(z.string()).optional(),
+        assocVehicles: z.array(z.string()).optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const id = await createCustomMarker({
+          createdBy: ctx.user.id,
+          lat: input.lat,
+          lng: input.lng,
+          markerIcon: input.markerIcon,
+          markerColour: input.markerColour,
+          label: input.label ?? null,
+          address: input.address ?? null,
+          note: input.note ?? null,
+          operationId: input.operationId ?? null,
+          targetId: input.targetId ?? null,
+          assocPersons: input.assocPersons ?? [],
+          assocVehicles: input.assocVehicles ?? [],
+        });
+        return { id };
+      }),
+
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        label: z.string().optional().nullable(),
+        address: z.string().optional().nullable(),
+        markerIcon: z.string().optional(),
+        markerColour: z.string().optional(),
+        note: z.string().optional().nullable(),
+        operationId: z.number().optional().nullable(),
+        targetId: z.number().optional().nullable(),
+        assocPersons: z.array(z.string()).optional(),
+        assocVehicles: z.array(z.string()).optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...rest } = input;
+        await updateCustomMarker(id, rest);
+        return { success: true };
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await deleteCustomMarker(input.id);
         return { success: true };
       }),
   }),

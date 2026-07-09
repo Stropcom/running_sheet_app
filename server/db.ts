@@ -31,6 +31,9 @@ import {
   WipcMemberRecord,
   WipcOfficerProfile,
   userLocations,
+  customMapMarkers,
+  CustomMapMarker,
+  InsertCustomMapMarker,
 } from "../drizzle/schema";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -3368,4 +3371,114 @@ export async function getUserLocationState(userId: number, deviceId: string): Pr
   let opIds: number[] = [];
   try { opIds = JSON.parse(rows[0].operationIds || "[]"); } catch { opIds = []; }
   return { sharingEnabled: rows[0].sharingEnabled, operationIds: opIds };
+}
+
+// ─── Custom Map Markers ───────────────────────────────────────────────────────
+
+export interface CustomMarkerRow {
+  id: number;
+  createdBy: number;
+  operationId: number | null;
+  targetId: number | null;
+  lat: number;
+  lng: number;
+  label: string | null;
+  address: string | null;
+  markerIcon: string;
+  markerColour: string;
+  note: string | null;
+  assocPersons: string[];   // parsed from JSON
+  assocVehicles: string[];  // parsed from JSON
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+function parseMarkerRow(row: CustomMapMarker): CustomMarkerRow {
+  let persons: string[] = [];
+  let vehicles: string[] = [];
+  try { persons = JSON.parse(row.assocPersons || "[]"); } catch { persons = []; }
+  try { vehicles = JSON.parse(row.assocVehicles || "[]"); } catch { vehicles = []; }
+  return { ...row, assocPersons: persons, assocVehicles: vehicles };
+}
+
+export async function getCustomMarkers(operationIds?: number[]): Promise<CustomMarkerRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  let rows: CustomMapMarker[];
+  if (operationIds && operationIds.length > 0) {
+    rows = await db.select().from(customMapMarkers)
+      .where(inArray(customMapMarkers.operationId, operationIds))
+      .orderBy(desc(customMapMarkers.createdAt));
+  } else {
+    rows = await db.select().from(customMapMarkers)
+      .orderBy(desc(customMapMarkers.createdAt));
+  }
+  return rows.map(parseMarkerRow);
+}
+
+export async function createCustomMarker(data: {
+  createdBy: number;
+  operationId?: number | null;
+  targetId?: number | null;
+  lat: number;
+  lng: number;
+  label?: string | null;
+  address?: string | null;
+  markerIcon: string;
+  markerColour: string;
+  note?: string | null;
+  assocPersons?: string[];
+  assocVehicles?: string[];
+}): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const result = await db.insert(customMapMarkers).values({
+    createdBy: data.createdBy,
+    operationId: data.operationId ?? null,
+    targetId: data.targetId ?? null,
+    lat: data.lat,
+    lng: data.lng,
+    label: data.label ?? null,
+    address: data.address ?? null,
+    markerIcon: data.markerIcon,
+    markerColour: data.markerColour,
+    note: data.note ?? null,
+    assocPersons: JSON.stringify(data.assocPersons ?? []),
+    assocVehicles: JSON.stringify(data.assocVehicles ?? []),
+  });
+  return (result as any).insertId as number;
+}
+
+export async function updateCustomMarker(id: number, data: {
+  label?: string | null;
+  address?: string | null;
+  markerIcon?: string;
+  markerColour?: string;
+  note?: string | null;
+  operationId?: number | null;
+  targetId?: number | null;
+  assocPersons?: string[];
+  assocVehicles?: string[];
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const update: Partial<InsertCustomMapMarker> = {};
+  if (data.label !== undefined) update.label = data.label;
+  if (data.address !== undefined) update.address = data.address;
+  if (data.markerIcon !== undefined) update.markerIcon = data.markerIcon;
+  if (data.markerColour !== undefined) update.markerColour = data.markerColour;
+  if (data.note !== undefined) update.note = data.note;
+  if (data.operationId !== undefined) update.operationId = data.operationId;
+  if (data.targetId !== undefined) update.targetId = data.targetId;
+  if (data.assocPersons !== undefined) update.assocPersons = JSON.stringify(data.assocPersons);
+  if (data.assocVehicles !== undefined) update.assocVehicles = JSON.stringify(data.assocVehicles);
+  if (Object.keys(update).length > 0) {
+    await db.update(customMapMarkers).set(update).where(eq(customMapMarkers.id, id));
+  }
+}
+
+export async function deleteCustomMarker(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.delete(customMapMarkers).where(eq(customMapMarkers.id, id));
 }

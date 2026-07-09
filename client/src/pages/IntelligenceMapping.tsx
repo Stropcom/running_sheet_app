@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getMarkerDataUrl, getMarkerSvg, MARKER_COLOURS, MARKER_COLOUR_LABELS, MARKER_ICON_GROUPS, MARKER_ICON_LABELS, type MarkerColour, type MarkerIcon } from "@/lib/markerSvgs";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -8,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { Spinner } from "@/components/ui/spinner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import {
   ChevronDown,
@@ -331,6 +333,25 @@ export default function IntelligenceMapping() {
   const rsCountdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const rsInlineInputRef = useRef<HTMLTextAreaElement | null>(null);
 
+  // ── Custom Marker Placement State ────────────────────────────────────────────
+  const [placingMarker, setPlacingMarker] = useState(false); // placement mode active
+  const [pendingLatLng, setPendingLatLng] = useState<{ lat: number; lng: number } | null>(null);
+  const [cmLabel, setCmLabel] = useState("");
+  const [cmAddress, setCmAddress] = useState("");
+  const [cmNote, setCmNote] = useState("");
+  const [cmOpId, setCmOpId] = useState<number | null>(null);
+  const [cmPersons, setCmPersons] = useState<string[]>([]);
+  const [cmVehicles, setCmVehicles] = useState<string[]>([]);
+  const [cmIcon, setCmIcon] = useState<MarkerIcon>("house_filled");
+  const [cmColour, setCmColour] = useState<MarkerColour>("red");
+  const [cmPersonInput, setCmPersonInput] = useState("");
+  const [cmVehicleInput, setCmVehicleInput] = useState("");
+  const [cmSaving, setCmSaving] = useState(false);
+  // ref for long-press on mobile
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // custom marker map objects
+  const customMarkersRef = useRef<Map<number, google.maps.marker.AdvancedMarkerElement>>(new Map());
+
   // Map state
   const [mapReady, setMapReady] = useState(false);
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -389,6 +410,29 @@ export default function IntelligenceMapping() {
   const clearLocationMutRef = useRef(clearLocationMut);
   useEffect(() => { updateLocationMutRef.current = updateLocationMut; });
   useEffect(() => { clearLocationMutRef.current = clearLocationMut; });
+
+  // Custom map markers — poll every 5 seconds
+  const { data: customMarkers, refetch: refetchCustomMarkers } = trpc.customMarker.list.useQuery(
+    { operationIds: selectedOpIds.length > 0 ? selectedOpIds : undefined },
+    { refetchInterval: 5000, enabled: true }
+  );
+  const createCustomMarkerMut = trpc.customMarker.create.useMutation({
+    onSuccess: () => { void refetchCustomMarkers(); },
+  });
+  const deleteCustomMarkerMut = trpc.customMarker.delete.useMutation({
+    onSuccess: () => { void refetchCustomMarkers(); },
+  });
+
+  // Intelligence entities for associate/vehicle dropdowns
+  const { data: intelEntities } = trpc.intelligence.getEntities.useQuery();
+  const assocPersonOptions = useMemo(() => {
+    if (!intelEntities) return [];
+    return (intelEntities as any[]).filter((e: any) => e.type === "person").map((e: any) => e.label as string);
+  }, [intelEntities]);
+  const vehicleOptions = useMemo(() => {
+    if (!intelEntities) return [];
+    return (intelEntities as any[]).filter((e: any) => e.type === "vehicle").map((e: any) => e.label as string);
+  }, [intelEntities]);
 
   // Restore sharing state on mount (per-device)
   const { data: myLocationState } = trpc.intelligence.myLocationState.useQuery(
@@ -782,7 +826,99 @@ export default function IntelligenceMapping() {
     if (locations) {
       renderLocations(locations);
     }
+    // Right-click to place a custom marker (desktop)
+    map.addListener("rightclick", (e: google.maps.MapMouseEvent) => {
+      if (!e.latLng) return;
+      const lat = e.latLng.lat();
+      const lng = e.latLng.lng();
+      setPendingLatLng({ lat, lng });
+      setCmLabel(""); setCmAddress(""); setCmNote(""); setCmPersons([]); setCmVehicles([]);
+      setCmPersonInput(""); setCmVehicleInput("");
+      // Reverse geocode to pre-fill address
+      const geocoder = new google.maps.Geocoder();
+      geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+        if (status === "OK" && results && results[0]) {
+          setCmAddress(results[0].formatted_address);
+        }
+      });
+    });
   }, [locations, renderLocations]);
+
+  // ── Custom marker rendering ────────────────────────────────────────────────
+  const customMarkerMapRefs = useRef<Map<number, google.maps.marker.AdvancedMarkerElement>>(new Map());
+
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    const map = mapRef.current;
+    const existing = customMarkerMapRefs.current;
+    const incoming = customMarkers ?? [];
+    const incomingIds = new Set(incoming.map((m: any) => m.id as number));
+
+    // Remove stale markers
+    existing.forEach((marker, id) => {
+      if (!incomingIds.has(id)) {
+        marker.map = null;
+        existing.delete(id);
+      }
+    });
+
+    // Add / update markers
+    incoming.forEach((cm: any) => {
+      const dataUrl = getMarkerDataUrl(cm.markerIcon as MarkerIcon, cm.markerColour as MarkerColour);
+      const el = document.createElement("div");
+      el.style.cssText = "width:40px;height:40px;cursor:pointer;";
+      const img = document.createElement("img");
+      img.src = dataUrl;
+      img.style.cssText = "width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));";
+      el.appendChild(img);
+
+      if (existing.has(cm.id)) {
+        const m = existing.get(cm.id)!;
+        m.position = { lat: cm.lat, lng: cm.lng };
+        m.content = el;
+      } else {
+        const marker = new google.maps.marker.AdvancedMarkerElement({
+          map,
+          position: { lat: cm.lat, lng: cm.lng },
+          content: el,
+          title: cm.label ?? MARKER_ICON_LABELS[cm.markerIcon as MarkerIcon],
+        });
+        marker.addListener("click", () => {
+          if (!infoWindowRef.current) return;
+          const lines: string[] = [];
+          if (cm.label) lines.push(`<strong style="font-size:13px">${cm.label}</strong>`);
+          if (cm.address) lines.push(`<span style="font-size:11px;color:#888">${cm.address}</span>`);
+          if (cm.note) lines.push(`<p style="font-size:12px;margin:4px 0 0">${cm.note}</p>`);
+          if (cm.assocPersons?.length) lines.push(`<p style="font-size:11px;color:#aaa;margin:4px 0 0">Persons: ${(cm.assocPersons as string[]).join(", ")}</p>`);
+          if (cm.assocVehicles?.length) lines.push(`<p style="font-size:11px;color:#aaa;margin:2px 0 0">Vehicles: ${(cm.assocVehicles as string[]).join(", ")}</p>`);
+          const lat = cm.lat;
+          const lng = cm.lng;
+          lines.push(`<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+            <a href="https://waze.com/ul?ll=${lat},${lng}&navigate=yes" target="_blank" style="font-size:11px;padding:4px 10px;background:#00bcd4;color:#fff;border-radius:4px;text-decoration:none">Waze</a>
+            <a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}" target="_blank" style="font-size:11px;padding:4px 10px;background:#4285f4;color:#fff;border-radius:4px;text-decoration:none">Street View</a>
+            <button onclick="window.__deleteCustomMarker(${cm.id})" style="font-size:11px;padding:4px 10px;background:#ef4444;color:#fff;border-radius:4px;border:none;cursor:pointer">Delete</button>
+          </div>`);
+          infoWindowRef.current.setContent(`<div style="font-family:sans-serif;max-width:220px">${lines.join("")}</div>`);
+          infoWindowRef.current.open(map, marker);
+        });
+        existing.set(cm.id, marker);
+      }
+    });
+  }, [customMarkers, mapReady]);
+
+  // Global delete handler for custom marker info window
+  useEffect(() => {
+    (window as any).__deleteCustomMarker = async (id: number) => {
+      infoWindowRef.current?.close();
+      try {
+        await deleteCustomMarkerMut.mutateAsync({ id });
+        toast.success("Marker deleted");
+      } catch {
+        toast.error("Failed to delete marker");
+      }
+    };
+    return () => { delete (window as any).__deleteCustomMarker; };
+  }, [deleteCustomMarkerMut]);
 
   // ── Stats ────────────────────────────────────────────────────────────────────
   const targetPins = locations?.filter(l => l.type === "target_address").length ?? 0;
@@ -1201,12 +1337,60 @@ export default function IntelligenceMapping() {
           </div>
         )}
 
-        <MapView
-          onMapReady={handleMapReady}
+        {/* Placement mode indicator */}
+        {placingMarker && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 bg-primary text-primary-foreground text-xs font-semibold px-4 py-2 rounded-full shadow-lg pointer-events-none">
+            Tap &amp; hold to place marker
+          </div>
+        )}
+
+        <div
           className="w-full h-full"
-          initialCenter={{ lat: -31.9505, lng: 115.8605 }}
-          initialZoom={11}
-        />
+          onTouchStart={(e) => {
+            if (e.touches.length !== 1) return;
+            const touch = e.touches[0];
+            longPressTimerRef.current = setTimeout(() => {
+              // Get map coordinates from touch position
+              if (!mapRef.current) return;
+              const mapDiv = mapRef.current.getDiv();
+              const rect = mapDiv.getBoundingClientRect();
+              const x = touch.clientX - rect.left;
+              const y = touch.clientY - rect.top;
+              const proj = mapRef.current.getProjection();
+              if (!proj) return;
+              const bounds = mapRef.current.getBounds();
+              if (!bounds) return;
+              const ne = bounds.getNorthEast();
+              const sw = bounds.getSouthWest();
+              const mapWidth = rect.width;
+              const mapHeight = rect.height;
+              const lng = sw.lng() + (x / mapWidth) * (ne.lng() - sw.lng());
+              const lat = ne.lat() - (y / mapHeight) * (ne.lat() - sw.lat());
+              setPendingLatLng({ lat, lng });
+              setCmLabel(""); setCmAddress(""); setCmNote(""); setCmPersons([]); setCmVehicles([]);
+              setCmPersonInput(""); setCmVehicleInput("");
+              const geocoder = new google.maps.Geocoder();
+              geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+                if (status === "OK" && results && results[0]) {
+                  setCmAddress(results[0].formatted_address);
+                }
+              });
+            }, 600);
+          }}
+          onTouchEnd={() => {
+            if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+          }}
+          onTouchMove={() => {
+            if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+          }}
+        >
+          <MapView
+            onMapReady={handleMapReady}
+            className="w-full h-full"
+            initialCenter={{ lat: -31.9505, lng: 115.8605 }}
+            initialZoom={11}
+          />
+        </div>
 
         {/* RS Actions pane toggle tab — right edge, vertically centred */}
         {!rsActionsPaneOpen && (
@@ -1617,6 +1801,254 @@ export default function IntelligenceMapping() {
             <p className="text-[11px] text-muted-foreground/60 mt-3 text-center">
               {quickLinks.length}/4 slots used — Home and Operations are always shown
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Custom Marker Placement Modal ── */}
+      {pendingLatLng && (
+        <div
+          className="absolute inset-0 z-40 flex items-end justify-center"
+          style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}
+          onClick={() => setPendingLatLng(null)}
+        >
+          <div
+            className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-sm font-bold text-foreground">Place Map Marker</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  {pendingLatLng.lat.toFixed(5)}, {pendingLatLng.lng.toFixed(5)}
+                </p>
+              </div>
+              <button onClick={() => setPendingLatLng(null)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* 1. Icon picker */}
+            <div className="mb-4">
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">Marker Icon</p>
+              <div className="space-y-3">
+                {MARKER_ICON_GROUPS.map((group) => (
+                  <div key={group.label}>
+                    <p className="text-[10px] text-muted-foreground/70 mb-1.5">{group.label}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {group.icons.map((iconKey) => (
+                        <button
+                          key={iconKey}
+                          onClick={() => setCmIcon(iconKey as MarkerIcon)}
+                          title={MARKER_ICON_LABELS[iconKey as MarkerIcon]}
+                          className={`w-10 h-10 rounded-lg border-2 flex items-center justify-center transition-all ${
+                            cmIcon === iconKey
+                              ? "border-primary bg-primary/10 scale-110"
+                              : "border-border bg-accent/30 hover:border-primary/50"
+                          }`}
+                        >
+                          <img
+                            src={getMarkerDataUrl(iconKey as MarkerIcon, cmColour)}
+                            alt={MARKER_ICON_LABELS[iconKey as MarkerIcon]}
+                            className="w-7 h-7 object-contain"
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 2. Colour picker */}
+            <div className="mb-4">
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">Colour</p>
+              <div className="flex gap-2">
+                {(Object.keys(MARKER_COLOURS) as MarkerColour[]).map((col) => (
+                  <button
+                    key={col}
+                    onClick={() => setCmColour(col)}
+                    title={MARKER_COLOUR_LABELS[col]}
+                    className={`w-8 h-8 rounded-full border-2 transition-all ${
+                      cmColour === col ? "border-foreground scale-110" : "border-transparent hover:border-foreground/40"
+                    }`}
+                    style={{ background: MARKER_COLOURS[col] }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* 3. Label */}
+            <div className="mb-3">
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Location / Business Name</label>
+              <input
+                type="text"
+                value={cmLabel}
+                onChange={(e) => setCmLabel(e.target.value)}
+                placeholder="e.g. Target address, coffee shop..."
+                className="w-full text-sm bg-background border border-border rounded-md px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+
+            {/* 4. Address */}
+            <div className="mb-3">
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Address</label>
+              <input
+                type="text"
+                value={cmAddress}
+                onChange={(e) => setCmAddress(e.target.value)}
+                placeholder="Auto-filled from coordinates..."
+                className="w-full text-sm bg-background border border-border rounded-md px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+
+            {/* 5. Operation */}
+            <div className="mb-3">
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Operation</label>
+              <Select
+                value={cmOpId !== null ? String(cmOpId) : ""}
+                onValueChange={(v) => setCmOpId(v ? Number(v) : null)}
+              >
+                <SelectTrigger className="w-full text-sm">
+                  <SelectValue placeholder="Select operation..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {(operations as any[] | undefined)?.map((op: any) => (
+                    <SelectItem key={op.id} value={String(op.id)}>{op.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* 6. Person(s) */}
+            <div className="mb-3">
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Person(s) it relates to</label>
+              <div className="flex gap-2 mb-1.5">
+                <input
+                  type="text"
+                  value={cmPersonInput}
+                  onChange={(e) => setCmPersonInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && cmPersonInput.trim()) {
+                      setCmPersons(prev => [...prev, cmPersonInput.trim()]);
+                      setCmPersonInput("");
+                    }
+                  }}
+                  list="cm-person-list"
+                  placeholder="Type name or select..."
+                  className="flex-1 text-sm bg-background border border-border rounded-md px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <datalist id="cm-person-list">
+                  {assocPersonOptions.map((p) => <option key={p} value={p} />)}
+                </datalist>
+                <button
+                  onClick={() => { if (cmPersonInput.trim()) { setCmPersons(prev => [...prev, cmPersonInput.trim()]); setCmPersonInput(""); } }}
+                  className="px-3 py-2 text-xs bg-primary/20 text-primary rounded-md hover:bg-primary/30"
+                >Add</button>
+              </div>
+              {cmPersons.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {cmPersons.map((p, i) => (
+                    <span key={i} className="flex items-center gap-1 text-xs bg-accent/50 border border-border rounded-full px-2.5 py-1">
+                      {p}
+                      <button onClick={() => setCmPersons(prev => prev.filter((_, j) => j !== i))} className="text-muted-foreground hover:text-foreground"><X className="h-2.5 w-2.5" /></button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 7. Vehicle(s) */}
+            <div className="mb-3">
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Vehicle(s) it relates to</label>
+              <div className="flex gap-2 mb-1.5">
+                <input
+                  type="text"
+                  value={cmVehicleInput}
+                  onChange={(e) => setCmVehicleInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && cmVehicleInput.trim()) {
+                      setCmVehicles(prev => [...prev, cmVehicleInput.trim()]);
+                      setCmVehicleInput("");
+                    }
+                  }}
+                  list="cm-vehicle-list"
+                  placeholder="Type rego/description or select..."
+                  className="flex-1 text-sm bg-background border border-border rounded-md px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <datalist id="cm-vehicle-list">
+                  {vehicleOptions.map((v) => <option key={v} value={v} />)}
+                </datalist>
+                <button
+                  onClick={() => { if (cmVehicleInput.trim()) { setCmVehicles(prev => [...prev, cmVehicleInput.trim()]); setCmVehicleInput(""); } }}
+                  className="px-3 py-2 text-xs bg-primary/20 text-primary rounded-md hover:bg-primary/30"
+                >Add</button>
+              </div>
+              {cmVehicles.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {cmVehicles.map((v, i) => (
+                    <span key={i} className="flex items-center gap-1 text-xs bg-accent/50 border border-border rounded-full px-2.5 py-1">
+                      {v}
+                      <button onClick={() => setCmVehicles(prev => prev.filter((_, j) => j !== i))} className="text-muted-foreground hover:text-foreground"><X className="h-2.5 w-2.5" /></button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 8. Observation note */}
+            <div className="mb-4">
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Observation Note</label>
+              <Textarea
+                value={cmNote}
+                onChange={(e) => setCmNote(e.target.value)}
+                placeholder="Optional observation details..."
+                rows={2}
+                className="text-sm resize-none"
+              />
+            </div>
+
+            {/* Save / Cancel */}
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setPendingLatLng(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1"
+                disabled={cmSaving}
+                onClick={async () => {
+                  if (!pendingLatLng) return;
+                  setCmSaving(true);
+                  try {
+                    await createCustomMarkerMut.mutateAsync({
+                      lat: pendingLatLng.lat,
+                      lng: pendingLatLng.lng,
+                      markerIcon: cmIcon,
+                      markerColour: cmColour,
+                      label: cmLabel.trim() || null,
+                      address: cmAddress.trim() || null,
+                      note: cmNote.trim() || null,
+                      operationId: cmOpId,
+                      assocPersons: cmPersons,
+                      assocVehicles: cmVehicles,
+                    });
+                    setPendingLatLng(null);
+                    toast.success("Marker placed");
+                  } catch {
+                    toast.error("Failed to save marker");
+                  } finally {
+                    setCmSaving(false);
+                  }
+                }}
+              >
+                {cmSaving ? <Spinner className="h-4 w-4" /> : "Place Marker"}
+              </Button>
+            </div>
           </div>
         </div>
       )}

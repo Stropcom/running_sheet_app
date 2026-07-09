@@ -397,6 +397,32 @@ export const wipcAuditLog = mysqlTable("wipc_audit_log", {
 export type WipcAuditEntry = typeof wipcAuditLog.$inferSelect;
 export type InsertWipcAuditEntry = typeof wipcAuditLog.$inferInsert;
 
+// ─── Custom Map Markers ─────────────────────────────────────────────────────
+// User-placed markers on the intelligence map. Each marker has a position,
+// an icon (type + colour), optional label/address, and optional links to
+// an operation, target, persons, and vehicles.
+
+export const customMapMarkers = mysqlTable("custom_map_markers", {
+  id: int("id").autoincrement().primaryKey(),
+  createdBy: int("createdBy").notNull(),          // FK → users.id
+  operationId: int("operationId"),                // FK → operations.id (nullable)
+  targetId: int("targetId"),                      // FK → targets.id (nullable)
+  lat: double("lat").notNull(),
+  lng: double("lng").notNull(),
+  label: varchar("label", { length: 255 }),       // user-typed name/business
+  address: varchar("address", { length: 512 }),   // reverse-geocoded or typed
+  markerIcon: varchar("markerIcon", { length: 64 }).notNull(),  // e.g. "house_filled"
+  markerColour: varchar("markerColour", { length: 32 }).notNull(), // "red"|"yellow"|"blue"|"purple"
+  note: text("note"),                             // observation note
+  assocPersons: text("assocPersons"),             // JSON array of person label strings
+  assocVehicles: text("assocVehicles"),           // JSON array of vehicle label strings
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CustomMapMarker = typeof customMapMarkers.$inferSelect;
+export type InsertCustomMapMarker = typeof customMapMarkers.$inferInsert;
+
 // ─── User Locations ───────────────────────────────────────────────────────────
 // Stores the last known GPS location for each user who has enabled location
 // sharing. operationIds is a JSON array of operation IDs the user has selected

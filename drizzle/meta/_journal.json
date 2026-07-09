@@ -176,6 +176,13 @@
       "when": 1783574821004,
       "tag": "0024_misty_madrox",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "5",
+      "when": 1783606557886,
+      "tag": "0025_mean_wild_child",
+      "breakpoints": true
     }
   ]
 }

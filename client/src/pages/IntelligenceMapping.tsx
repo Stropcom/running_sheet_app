@@ -344,6 +344,7 @@ export default function IntelligenceMapping() {
   const [cmVehicles, setCmVehicles] = useState<string[]>([]);
   const [cmIcon, setCmIcon] = useState<MarkerIcon>("house_filled");
   const [cmColour, setCmColour] = useState<MarkerColour>("red");
+  const [cmRotation, setCmRotation] = useState(0);
   const [cmPersonInput, setCmPersonInput] = useState("");
   const [cmVehicleInput, setCmVehicleInput] = useState("");
   const [cmSaving, setCmSaving] = useState(false);
@@ -832,7 +833,7 @@ export default function IntelligenceMapping() {
       const lat = e.latLng.lat();
       const lng = e.latLng.lng();
       setPendingLatLng({ lat, lng });
-      setCmLabel(""); setCmAddress(""); setCmNote(""); setCmPersons([]); setCmVehicles([]);
+      setCmLabel(""); setCmAddress(""); setCmNote(""); setCmPersons([]); setCmVehicles([]); setCmRotation(0);
       setCmPersonInput(""); setCmVehicleInput("");
       // Reverse geocode to pre-fill address
       const geocoder = new google.maps.Geocoder();
@@ -865,11 +866,12 @@ export default function IntelligenceMapping() {
     // Add / update markers
     incoming.forEach((cm: any) => {
       const dataUrl = getMarkerDataUrl(cm.markerIcon as MarkerIcon, cm.markerColour as MarkerColour);
+      const rotation = (cm.rotation ?? 0) as number;
       const el = document.createElement("div");
       el.style.cssText = "width:40px;height:40px;cursor:pointer;";
       const img = document.createElement("img");
       img.src = dataUrl;
-      img.style.cssText = "width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));";
+      img.style.cssText = `width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));transform:rotate(${rotation}deg);`;
       el.appendChild(img);
 
       if (existing.has(cm.id)) {
@@ -1367,7 +1369,7 @@ export default function IntelligenceMapping() {
               const lng = sw.lng() + (x / mapWidth) * (ne.lng() - sw.lng());
               const lat = ne.lat() - (y / mapHeight) * (ne.lat() - sw.lat());
               setPendingLatLng({ lat, lng });
-              setCmLabel(""); setCmAddress(""); setCmNote(""); setCmPersons([]); setCmVehicles([]);
+              setCmLabel(""); setCmAddress(""); setCmNote(""); setCmPersons([]); setCmVehicles([]); setCmRotation(0);
               setCmPersonInput(""); setCmVehicleInput("");
               const geocoder = new google.maps.Geocoder();
               geocoder.geocode({ location: { lat, lng } }, (results, status) => {
@@ -1879,7 +1881,48 @@ export default function IntelligenceMapping() {
               </div>
             </div>
 
-            {/* 3. Label */}
+            {/* 3. Rotation */}
+            <div className="mb-4">
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">Rotation — {cmRotation}°</p>
+              <div className="flex items-center gap-3">
+                {/* Rotated preview */}
+                <div className="shrink-0 w-10 h-10 flex items-center justify-center">
+                  <img
+                    src={getMarkerDataUrl(cmIcon, cmColour)}
+                    alt="preview"
+                    className="w-8 h-8 object-contain transition-transform"
+                    style={{ transform: `rotate(${cmRotation}deg)` }}
+                  />
+                </div>
+                {/* Slider */}
+                <input
+                  type="range"
+                  min={0}
+                  max={359}
+                  step={1}
+                  value={cmRotation}
+                  onChange={(e) => setCmRotation(Number(e.target.value))}
+                  className="flex-1 accent-primary"
+                />
+                {/* Quick preset buttons */}
+                <div className="flex gap-1">
+                  {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => (
+                    <button
+                      key={deg}
+                      onClick={() => setCmRotation(deg)}
+                      title={`${deg}°`}
+                      className={`w-6 h-6 text-[9px] rounded border transition-all ${
+                        cmRotation === deg ? "bg-primary text-primary-foreground border-primary" : "border-border hover:border-primary/50 text-muted-foreground"
+                      }`}
+                    >
+                      {deg === 0 ? "N" : deg === 45 ? "NE" : deg === 90 ? "E" : deg === 135 ? "SE" : deg === 180 ? "S" : deg === 225 ? "SW" : deg === 270 ? "W" : "NW"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* 4. Label */}
             <div className="mb-3">
               <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Location / Business Name</label>
               <input
@@ -2030,6 +2073,7 @@ export default function IntelligenceMapping() {
                       lng: pendingLatLng.lng,
                       markerIcon: cmIcon,
                       markerColour: cmColour,
+                      rotation: cmRotation,
                       label: cmLabel.trim() || null,
                       address: cmAddress.trim() || null,
                       note: cmNote.trim() || null,
@@ -2038,6 +2082,7 @@ export default function IntelligenceMapping() {
                       assocVehicles: cmVehicles,
                     });
                     setPendingLatLng(null);
+                    setCmRotation(0);
                     toast.success("Marker placed");
                   } catch {
                     toast.error("Failed to save marker");

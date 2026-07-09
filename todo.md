@@ -618,3 +618,9 @@
 - [x] InfoWindow shows label, address, note, persons, vehicles, Waze/StreetView/Delete buttons
 - [x] Custom markers poll every 5 seconds for live updates across devices
 - [x] Delete custom marker from InfoWindow with confirmation toast
+- [x] Add rotation column (INT, default 0) to custom_map_markers schema
+- [x] Add rotation dial UI to marker placement form (slider + N/NE/E/SE/S/SW/W/NW presets + live preview)
+- [x] Wire rotation into create mutation call
+- [x] Apply CSS rotation to rendered custom markers on the map
+- [x] Reset rotation to 0 when placement form is opened or submitted
+- [x] Soft-delete custom markers to Recycle Bin (7-day retention) — RecycleBin.tsx updated

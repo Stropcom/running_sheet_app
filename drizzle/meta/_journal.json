@@ -183,6 +183,13 @@
       "when": 1783606557886,
       "tag": "0025_mean_wild_child",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "5",
+      "when": 1783607370311,
+      "tag": "0026_known_maginty",
+      "breakpoints": true
     }
   ]
 }

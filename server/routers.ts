@@ -106,7 +106,9 @@ import {
   getCustomMarkers,
   createCustomMarker,
   updateCustomMarker,
-  deleteCustomMarker,
+  softDeleteCustomMarker,
+  reinstateCustomMarker,
+  hardDeleteCustomMarker,
 } from "./db";
 
 import { generateStatDecDocx } from "./statDecGenerator";
@@ -2377,23 +2379,25 @@ export const appRouter = router({
       return getRecycleBinItems();
     }),
     reinstate: protectedProcedure
-      .input(z.object({ type: z.enum(["operation", "sheet", "target"]), id: z.number() }))
+      .input(z.object({ type: z.enum(["operation", "sheet", "target", "map_marker"]), id: z.number() }))
       .mutation(async ({ input }) => {
         if (input.type === "operation") await reinstateOperation(input.id);
         else if (input.type === "sheet") await reinstateSheet(input.id);
+        else if (input.type === "map_marker") await reinstateCustomMarker(input.id);
         else await reinstateTarget(input.id);
         return { success: true };
       }),
     hardDelete: adminProcedure
-      .input(z.object({ type: z.enum(["operation", "sheet", "target"]), id: z.number() }))
+      .input(z.object({ type: z.enum(["operation", "sheet", "target", "map_marker"]), id: z.number() }))
       .mutation(async ({ input, ctx }) => {
         if (input.type === "operation") {
           await deleteOperation(input.id);
-          // No operation_deleted enum value — log under operation_status_changed as a record
           await createAuditLog({ sheetId: 0, userId: ctx.user.id, userName: ctx.user.cin ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "operation_status_changed", details: `Operation permanently deleted from Recycle Bin by CIN ${ctx.user.cin ?? "Unknown"}`, createdAt: Date.now() });
         } else if (input.type === "sheet") {
           await deleteRunningSheet(input.id);
           await createAuditLog({ sheetId: input.id, userId: ctx.user.id, userName: ctx.user.cin ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "sheet_deleted", details: `Sheet permanently deleted from Recycle Bin`, createdAt: Date.now() });
+        } else if (input.type === "map_marker") {
+          await hardDeleteCustomMarker(input.id);
         } else {
           await deleteTarget(input.id);
         }
@@ -2422,6 +2426,7 @@ export const appRouter = router({
         targetId: z.number().optional().nullable(),
         assocPersons: z.array(z.string()).optional(),
         assocVehicles: z.array(z.string()).optional(),
+        rotation: z.number().min(0).max(359).optional(),
       }))
       .mutation(async ({ input, ctx }) => {
         const id = await createCustomMarker({
@@ -2437,6 +2442,7 @@ export const appRouter = router({
           targetId: input.targetId ?? null,
           assocPersons: input.assocPersons ?? [],
           assocVehicles: input.assocVehicles ?? [],
+          rotation: input.rotation ?? 0,
         });
         return { id };
       }),
@@ -2453,6 +2459,7 @@ export const appRouter = router({
         targetId: z.number().optional().nullable(),
         assocPersons: z.array(z.string()).optional(),
         assocVehicles: z.array(z.string()).optional(),
+        rotation: z.number().min(0).max(359).optional(),
       }))
       .mutation(async ({ input }) => {
         const { id, ...rest } = input;
@@ -2462,8 +2469,9 @@ export const appRouter = router({
 
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
-        await deleteCustomMarker(input.id);
+      .mutation(async ({ input, ctx }) => {
+        const cin = ctx.user.cin ?? ctx.user.name ?? "unknown";
+        await softDeleteCustomMarker(input.id, cin);
         return { success: true };
       }),
   }),

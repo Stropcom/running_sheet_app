@@ -2401,7 +2401,7 @@ const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type RecycleBinItem = {
   id: number;
-  type: "operation" | "sheet" | "target";
+  type: "operation" | "sheet" | "target" | "map_marker";
   label: string;
   sublabel?: string;
   deletedAt: number;
@@ -2477,6 +2477,23 @@ export async function getRecycleBinItems(): Promise<RecycleBinItem[]> {
       deletedAt: t.deletedAt!,
       deletedByCIN: t.deletedByCIN ?? null,
       expiresAt: t.deletedAt! + SEVEN_DAYS_MS,
+    });
+  }
+
+  // Deleted custom map markers
+  const deletedMarkers = await db
+    .select()
+    .from(customMapMarkers)
+    .where(and(isNotNull(customMapMarkers.deletedAt), sql`${customMapMarkers.deletedAt} > ${cutoff}`));
+  for (const m of deletedMarkers) {
+    items.push({
+      id: m.id,
+      type: "map_marker",
+      label: m.label ?? `Marker at ${m.lat.toFixed(5)}, ${m.lng.toFixed(5)}`,
+      sublabel: m.address ?? undefined,
+      deletedAt: m.deletedAt!,
+      deletedByCIN: m.deletedByCIN ?? null,
+      expiresAt: m.deletedAt! + SEVEN_DAYS_MS,
     });
   }
 
@@ -3389,6 +3406,9 @@ export interface CustomMarkerRow {
   note: string | null;
   assocPersons: string[];   // parsed from JSON
   assocVehicles: string[];  // parsed from JSON
+  rotation: number;
+  deletedAt: number | null;
+  deletedByCIN: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -3398,7 +3418,7 @@ function parseMarkerRow(row: CustomMapMarker): CustomMarkerRow {
   let vehicles: string[] = [];
   try { persons = JSON.parse(row.assocPersons || "[]"); } catch { persons = []; }
   try { vehicles = JSON.parse(row.assocVehicles || "[]"); } catch { vehicles = []; }
-  return { ...row, assocPersons: persons, assocVehicles: vehicles };
+  return { ...row, assocPersons: persons, assocVehicles: vehicles, rotation: row.rotation ?? 0, deletedAt: row.deletedAt ?? null, deletedByCIN: row.deletedByCIN ?? null };
 }
 
 export async function getCustomMarkers(operationIds?: number[]): Promise<CustomMarkerRow[]> {
@@ -3407,10 +3427,11 @@ export async function getCustomMarkers(operationIds?: number[]): Promise<CustomM
   let rows: CustomMapMarker[];
   if (operationIds && operationIds.length > 0) {
     rows = await db.select().from(customMapMarkers)
-      .where(inArray(customMapMarkers.operationId, operationIds))
+      .where(and(inArray(customMapMarkers.operationId, operationIds), isNull(customMapMarkers.deletedAt)))
       .orderBy(desc(customMapMarkers.createdAt));
   } else {
     rows = await db.select().from(customMapMarkers)
+      .where(isNull(customMapMarkers.deletedAt))
       .orderBy(desc(customMapMarkers.createdAt));
   }
   return rows.map(parseMarkerRow);
@@ -3429,6 +3450,7 @@ export async function createCustomMarker(data: {
   note?: string | null;
   assocPersons?: string[];
   assocVehicles?: string[];
+  rotation?: number;
 }): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -3445,6 +3467,7 @@ export async function createCustomMarker(data: {
     note: data.note ?? null,
     assocPersons: JSON.stringify(data.assocPersons ?? []),
     assocVehicles: JSON.stringify(data.assocVehicles ?? []),
+    rotation: data.rotation ?? 0,
   });
   return (result as any).insertId as number;
 }
@@ -3472,12 +3495,25 @@ export async function updateCustomMarker(id: number, data: {
   if (data.targetId !== undefined) update.targetId = data.targetId;
   if (data.assocPersons !== undefined) update.assocPersons = JSON.stringify(data.assocPersons);
   if (data.assocVehicles !== undefined) update.assocVehicles = JSON.stringify(data.assocVehicles);
+  if ((data as any).rotation !== undefined) (update as any).rotation = (data as any).rotation;
   if (Object.keys(update).length > 0) {
     await db.update(customMapMarkers).set(update).where(eq(customMapMarkers.id, id));
   }
 }
 
-export async function deleteCustomMarker(id: number): Promise<void> {
+export async function softDeleteCustomMarker(id: number, cin: string): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(customMapMarkers).set({ deletedAt: Date.now(), deletedByCIN: cin }).where(eq(customMapMarkers.id, id));
+}
+
+export async function reinstateCustomMarker(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(customMapMarkers).set({ deletedAt: null, deletedByCIN: null }).where(eq(customMapMarkers.id, id));
+}
+
+export async function hardDeleteCustomMarker(id: number): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   await db.delete(customMapMarkers).where(eq(customMapMarkers.id, id));

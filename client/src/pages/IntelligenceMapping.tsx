@@ -36,6 +36,8 @@ interface IntelMapLocation {
   assocPersons: string[];
   assocVehicles: string[];
   linkCount: number;
+  lat?: number;
+  lng?: number;
 }
 
 interface LiveUser {
@@ -118,6 +120,31 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
     for (const t of loc.linkedTargets) {
       html += `<div style="font-size:12px;color:#1e293b;padding:2px 0;display:flex;align-items:center;gap:5px;"><span style="color:#dc2626;">🎯</span>${t.name}</div>`;
     }
+  }
+
+  // Waze navigation button — only shown when coordinates are available
+  if (loc.lat != null && loc.lng != null) {
+    const wazeUrl = `https://waze.com/ul?ll=${loc.lat},${loc.lng}&navigate=yes`;
+    html += `
+      <div style="border-top:1px solid #e2e8f0;margin-top:10px;padding-top:10px;">
+        <a
+          href="${wazeUrl}"
+          target="_blank"
+          rel="noopener noreferrer"
+          style="
+            display:flex;align-items:center;justify-content:center;gap:8px;
+            background:#05c8f7;color:#fff;
+            border-radius:6px;padding:8px 12px;
+            font-size:12px;font-weight:700;letter-spacing:0.04em;
+            text-decoration:none;
+            box-shadow:0 2px 6px rgba(5,200,247,0.35);
+          "
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C7.03 2 3 6.03 3 11c0 3.1 1.53 5.84 3.88 7.54L6 22l3.37-1.12A9.04 9.04 0 0 0 12 21c4.97 0 9-4.03 9-9s-4.03-10-9-10zm0 16c-1.18 0-2.31-.27-3.32-.74l-.24-.11-2.47.82.59-2.38-.16-.25A7.02 7.02 0 0 1 5 11c0-3.86 3.14-7 7-7s7 3.14 7 7-3.14 7-7 7z"/></svg>
+          Navigate in Waze
+        </a>
+      </div>
+    `;
   }
 
   html += `</div></div>`;
@@ -373,7 +400,9 @@ export default function IntelligenceMapping() {
       if (!infoWindowRef.current) {
         infoWindowRef.current = new google.maps.InfoWindow();
       }
-      infoWindowRef.current.setContent(buildInfoWindowContent(loc));
+      // Enrich loc with resolved coordinates for Waze link
+      const enriched = { ...loc, lat: position.lat, lng: position.lng };
+      infoWindowRef.current.setContent(buildInfoWindowContent(enriched));
       infoWindowRef.current.open({ map: mapRef.current!, anchor: marker });
     });
     markersRef.current.push(marker);

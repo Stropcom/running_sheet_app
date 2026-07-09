@@ -323,6 +323,7 @@ export default function IntelligenceMapping() {
   const rsInlineInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Map state
+  const [mapReady, setMapReady] = useState(false);
   const mapRef = useRef<google.maps.Map | null>(null);
   const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
   // Key: "userId_deviceId" for per-device pins
@@ -754,12 +755,15 @@ export default function IntelligenceMapping() {
         liveMarkersRef.current.set(pinKey, marker);
       }
     }
-  }, [liveUsers, showOwnLocation, hiddenUsers, hiddenTeams, user, createUserPinElement]);
+  // mapReady is included so this effect re-runs the moment the map is available,
+  // even if liveUsers data arrived before the map was initialised.
+  }, [liveUsers, showOwnLocation, hiddenUsers, hiddenTeams, user, createUserPinElement, mapReady]);
 
   const handleMapReady = useCallback((map: google.maps.Map) => {
     mapRef.current = map;
     geocoderRef.current = new google.maps.Geocoder();
     infoWindowRef.current = new google.maps.InfoWindow();
+    setMapReady(true); // triggers live marker effect to run now that map is available
     if (locations) {
       renderLocations(locations);
     }

@@ -733,20 +733,24 @@ export default function IntelligenceMapping() {
     for (const liveUser of visibleUsers) {
       const pinKey = `${liveUser.userId}_${liveUser.deviceId}`;
       const existing = liveMarkersRef.current.get(pinKey);
-      if (existing) {
-        existing.position = { lat: liveUser.lat, lng: liveUser.lng };
-        // Refresh content to update motion dot
-        existing.content = createUserPinElement(liveUser);
-      } else {
-        const pinEl = createUserPinElement(liveUser);
-        const marker = new google.maps.marker.AdvancedMarkerElement({
-          map: mapRef.current,
-          position: { lat: liveUser.lat, lng: liveUser.lng },
-          content: pinEl,
-          title: liveUser.name.toUpperCase(),
-          zIndex: 999,
-        });
-        liveMarkersRef.current.set(pinKey, marker);
+      try {
+        if (existing) {
+          existing.position = { lat: liveUser.lat, lng: liveUser.lng };
+          // Refresh content to update motion dot
+          existing.content = createUserPinElement(liveUser);
+        } else {
+          const pinEl = createUserPinElement(liveUser);
+          const marker = new google.maps.marker.AdvancedMarkerElement({
+            map: mapRef.current,
+            position: { lat: liveUser.lat, lng: liveUser.lng },
+            content: pinEl,
+            title: liveUser.name.toUpperCase(),
+            zIndex: 999,
+          });
+          liveMarkersRef.current.set(pinKey, marker);
+        }
+      } catch (err) {
+        console.error('[LiveMarkers] failed to place pin for', liveUser.name, err);
       }
     }
   // mapReady is included so this effect re-runs the moment the map is available,

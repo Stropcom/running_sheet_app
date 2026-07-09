@@ -403,9 +403,13 @@ export type InsertWipcAuditEntry = typeof wipcAuditLog.$inferInsert;
 
 export const userLocations = mysqlTable("user_locations", {
   id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull().unique(), // FK → users.id, one row per user
+  userId: int("userId").notNull(),          // FK → users.id
+  deviceId: varchar("deviceId", { length: 128 }).notNull(), // unique per browser/device
   lat: double("lat").notNull(),
   lng: double("lng").notNull(),
+  speed: double("speed"),                   // m/s from GPS, null when unknown
+  heading: double("heading"),               // degrees 0-360, null when unknown
+  accuracy: double("accuracy"),             // metres
   operationIds: text("operationIds").notNull().default("[]"), // JSON array of op IDs
   sharingEnabled: boolean("sharingEnabled").default(false).notNull(),
   updatedAt: bigint("updatedAt", { mode: "number" }).notNull(),

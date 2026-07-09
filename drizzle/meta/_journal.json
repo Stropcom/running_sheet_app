@@ -169,6 +169,13 @@
       "when": 1783548059418,
       "tag": "0023_lowly_kid_colt",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "5",
+      "when": 1783574821004,
+      "tag": "0024_misty_madrox",
+      "breakpoints": true
     }
   ]
 }

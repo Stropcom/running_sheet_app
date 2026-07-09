@@ -3246,10 +3246,13 @@ export async function getIntelMappingLocations(
 
 export interface UserLocationRow {
   userId: number;
+  deviceId: string;
   name: string;
   team: "TEAM1" | "TEAM2" | "PTT" | null;
   lat: number;
   lng: number;
+  speed: number | null;
+  heading: number | null;
   operationIds: number[];
   updatedAt: number;
 }
@@ -3265,10 +3268,13 @@ export async function getUserLocations(callerOpIds: number[]): Promise<UserLocat
   const rows = await db
     .select({
       userId: userLocations.userId,
+      deviceId: userLocations.deviceId,
       name: users.name,
       team: users.team,
       lat: userLocations.lat,
       lng: userLocations.lng,
+      speed: userLocations.speed,
+      heading: userLocations.heading,
       operationIds: userLocations.operationIds,
       updatedAt: userLocations.updatedAt,
     })
@@ -3293,10 +3299,14 @@ export async function getUserLocations(callerOpIds: number[]): Promise<UserLocat
  */
 export async function upsertUserLocation(
   userId: number,
+  deviceId: string,
   lat: number,
   lng: number,
   operationIds: number[],
   sharingEnabled: boolean,
+  speed: number | null,
+  heading: number | null,
+  accuracy: number | null,
 ): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -3304,28 +3314,28 @@ export async function upsertUserLocation(
   const opIdsJson = JSON.stringify(operationIds);
   await db
     .insert(userLocations)
-    .values({ userId, lat, lng, operationIds: opIdsJson, sharingEnabled, updatedAt: now })
+    .values({ userId, deviceId, lat, lng, speed, heading, accuracy, operationIds: opIdsJson, sharingEnabled, updatedAt: now })
     .onDuplicateKeyUpdate({
-      set: { lat, lng, operationIds: opIdsJson, sharingEnabled, updatedAt: now },
+      set: { lat, lng, speed, heading, accuracy, operationIds: opIdsJson, sharingEnabled, updatedAt: now },
     });
 }
 
 /**
  * Disables location sharing for a user (sets sharingEnabled=false).
  */
-export async function clearUserLocation(userId: number): Promise<void> {
+export async function clearUserLocation(userId: number, deviceId: string): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db
     .update(userLocations)
     .set({ sharingEnabled: false, updatedAt: Date.now() })
-    .where(eq(userLocations.userId, userId));
+    .where(and(eq(userLocations.userId, userId), eq(userLocations.deviceId, deviceId)));
 }
 
 /**
  * Returns the current location/sharing state for a single user.
  */
-export async function getUserLocationState(userId: number): Promise<{
+export async function getUserLocationState(userId: number, deviceId: string): Promise<{
   sharingEnabled: boolean;
   operationIds: number[];
 } | null> {
@@ -3334,7 +3344,7 @@ export async function getUserLocationState(userId: number): Promise<{
   const rows = await db
     .select({ sharingEnabled: userLocations.sharingEnabled, operationIds: userLocations.operationIds })
     .from(userLocations)
-    .where(eq(userLocations.userId, userId))
+    .where(and(eq(userLocations.userId, userId), eq(userLocations.deviceId, deviceId)))
     .limit(1);
   if (!rows.length) return null;
   let opIds: number[] = [];

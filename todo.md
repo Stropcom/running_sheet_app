@@ -476,3 +476,20 @@
 - [x] Frontend: legend updated with team colour entries
 - [x] Admin page: team assignment (TEAM1/TEAM2/PTT) already implemented in User Management — no changes needed
 - [x] TypeScript: 0 errors
+
+## Map Location Pin Improvements (Round 53)
+- [x] Per-device location tracking (userId + deviceId composite key in user_locations)
+- [x] Pill-shaped name tag markers on map
+- [x] Motion indicator dot (green=moving, grey=stopped) on left of name tag
+- [x] Multiple pins per user when sharing from multiple devices simultaneously
+## Mapping Page Bottom Navigation Banner (Round 53b)
+- [x] Bottom banner bar on Intelligence Mapping page with permanent Home and Operations links
+- [x] 4 flexible quick-link slots (user-configurable)
+- [x] Edit mode: user can pick from all available pages/folders for the 4 flexible slots
+- [x] Custom quick-links persisted to localStorage
+## Mapping Folder Relocation (Round 53c)
+- [x] Move Mapping out of Intelligence subfolder into its own top-level sidebar folder
+- [x] Place Mapping folder between To-Do and Calendar in DashboardLayout sidebar
+- [x] Restore Intelligence folder to original state (Intel Profiles only, no Mapping subfolder)
+- [x] Keep same Network icon for Mapping folder
+- [x] Update IntelligenceMapping.tsx back-link to no longer reference Intel Profiles parent

@@ -1406,33 +1406,43 @@ export const appRouter = router({
     /** Update (upsert) the caller's location and sharing preference */
     updateUserLocation: protectedProcedure
       .input(z.object({
+        deviceId: z.string(),
         lat: z.number(),
         lng: z.number(),
         operationIds: z.array(z.number()).default([]),
         sharingEnabled: z.boolean(),
+        speed: z.number().nullable().optional(),
+        heading: z.number().nullable().optional(),
+        accuracy: z.number().nullable().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         await upsertUserLocation(
           ctx.user.id,
+          input.deviceId,
           input.lat,
           input.lng,
           input.operationIds,
           input.sharingEnabled,
+          input.speed ?? null,
+          input.heading ?? null,
+          input.accuracy ?? null,
         );
         return { ok: true };
       }),
 
-    /** Disable location sharing for the caller */
+    /** Disable location sharing for the caller (for this device) */
     clearUserLocation: protectedProcedure
-      .mutation(async ({ ctx }) => {
-        await clearUserLocation(ctx.user.id);
+      .input(z.object({ deviceId: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        await clearUserLocation(ctx.user.id, input.deviceId);
         return { ok: true };
       }),
 
-    /** Get the caller's current sharing state (for restoring toggle on load) */
+    /** Get the caller's current sharing state for this device (for restoring toggle on load) */
     myLocationState: protectedProcedure
-      .query(async ({ ctx }) => {
-        return getUserLocationState(ctx.user.id);
+      .input(z.object({ deviceId: z.string() }))
+      .query(async ({ ctx, input }) => {
+        return getUserLocationState(ctx.user.id, input.deviceId);
       }),
   }),
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -17,6 +17,18 @@ import {
   ArrowLeft,
   Radio,
   AlertTriangle,
+  Home,
+  FolderOpen,
+  Pencil,
+  Check,
+  FileText,
+  ClipboardCheck,
+  CalendarDays,
+  FolderSearch,
+  BookOpen,
+  ScrollText,
+  HelpCircle,
+  Map as MapIcon,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -42,13 +54,48 @@ interface IntelMapLocation {
 
 interface LiveUser {
   userId: number;
+  deviceId: string;
   name: string;
   team: "TEAM1" | "TEAM2" | "PTT" | null;
   lat: number;
   lng: number;
+  speed: number | null;
+  heading: number | null;
   operationIds: number[];
   updatedAt: number;
 }
+
+// ── Quick-link config ──────────────────────────────────────────────────────────
+interface QuickLink {
+  label: string;
+  path: string;
+  icon: string; // icon name key
+}
+
+const ALL_QUICK_LINK_OPTIONS: QuickLink[] = [
+  { label: "Governance", path: "/governance", icon: "ClipboardCheck" },
+  { label: "Calendar", path: "/calendar", icon: "CalendarDays" },
+  { label: "Shortcuts", path: "/shortcuts", icon: "Zap" },
+  { label: "Intel Profiles", path: "/intelligence", icon: "FolderSearch" },
+  { label: "Target Registry", path: "/target-registry", icon: "BookOpen" },
+  { label: "Audit Log", path: "/audit", icon: "ScrollText" },
+  { label: "Draft Mode", path: "/draft", icon: "FileText" },
+  { label: "Recycle Bin", path: "/recycle-bin", icon: "Trash2" },
+  { label: "Help", path: "/help", icon: "HelpCircle" },
+  { label: "My Profile", path: "/profile", icon: "User" },
+  { label: "Operation Mgmt", path: "/operation-management", icon: "FolderOpen" },
+  { label: "Court", path: "/court/statements", icon: "Scale" },
+  { label: "To-Do", path: "/todo", icon: "ClipboardList" },
+];
+
+const DEFAULT_QUICK_LINKS: QuickLink[] = [
+  { label: "Intel Profiles", path: "/intelligence", icon: "FolderSearch" },
+  { label: "Target Registry", path: "/target-registry", icon: "BookOpen" },
+  { label: "Governance", path: "/governance", icon: "ClipboardCheck" },
+  { label: "Calendar", path: "/calendar", icon: "CalendarDays" },
+];
+
+const LS_QUICK_LINKS_KEY = "runlog_map_quick_links";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 const TEAM_COLOURS: Record<string, string> = {
@@ -162,6 +209,16 @@ export default function IntelligenceMapping() {
   const [opExpanded, setOpExpanded] = useState<Set<number>>(new Set());
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
+  // Per-device ID — persisted in localStorage so each browser/device is unique
+  const deviceId = useMemo(() => {
+    let id = localStorage.getItem("runlog_device_id");
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem("runlog_device_id", id);
+    }
+    return id;
+  }, []);
+
   // Location sharing state
   const [sharingEnabled, setSharingEnabled] = useState(false);
   // Per-user visibility: Set of userIds that are hidden
@@ -173,10 +230,21 @@ export default function IntelligenceMapping() {
   // Whether device supports geolocation
   const isMobile = typeof navigator !== "undefined" && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
+  // Quick-link state
+  const [quickLinks, setQuickLinks] = useState<QuickLink[]>(() => {
+    try {
+      const saved = localStorage.getItem(LS_QUICK_LINKS_KEY);
+      if (saved) return JSON.parse(saved) as QuickLink[];
+    } catch { /* ignore */ }
+    return DEFAULT_QUICK_LINKS;
+  });
+  const [editingQuickLinks, setEditingQuickLinks] = useState(false);
+
   // Map state
   const mapRef = useRef<google.maps.Map | null>(null);
   const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
-  const liveMarkersRef = useRef<Map<number, google.maps.marker.AdvancedMarkerElement>>(new Map());
+  // Key: "userId_deviceId" for per-device pins
+  const liveMarkersRef = useRef<Map<string, google.maps.marker.AdvancedMarkerElement>>(new Map());
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
   const geocoderRef = useRef<google.maps.Geocoder | null>(null);
   const geocodeQueueRef = useRef<IntelMapLocation[]>([]);
@@ -198,8 +266,11 @@ export default function IntelligenceMapping() {
     { refetchInterval: 1000, enabled: true }
   );
 
-  // Restore sharing state on mount
-  const { data: myLocationState } = trpc.intelligence.myLocationState.useQuery();
+  // Restore sharing state on mount (per-device)
+  const { data: myLocationState } = trpc.intelligence.myLocationState.useQuery(
+    { deviceId },
+    { enabled: !!deviceId }
+  );
   useEffect(() => {
     if (myLocationState) {
       setSharingEnabled(myLocationState.sharingEnabled);
@@ -263,10 +334,14 @@ export default function IntelligenceMapping() {
       (pos) => {
         setGpsError(null);
         updateLocationMut.mutate({
+          deviceId,
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
           operationIds: selectedOpIds,
           sharingEnabled: true,
+          speed: pos.coords.speed ?? null,
+          heading: pos.coords.heading ?? null,
+          accuracy: pos.coords.accuracy ?? null,
         });
       },
       (err) => {
@@ -274,15 +349,15 @@ export default function IntelligenceMapping() {
       },
       { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
     );
-  }, [selectedOpIds, updateLocationMut]);
+  }, [deviceId, selectedOpIds, updateLocationMut]);
 
   const stopWatching = useCallback(() => {
     if (watchIdRef.current !== null) {
       navigator.geolocation.clearWatch(watchIdRef.current);
       watchIdRef.current = null;
     }
-    clearLocationMut.mutate();
-  }, [clearLocationMut]);
+    clearLocationMut.mutate({ deviceId });
+  }, [clearLocationMut, deviceId]);
 
   const handleSharingToggle = (checked: boolean) => {
     setSharingEnabled(checked);
@@ -363,27 +438,49 @@ export default function IntelligenceMapping() {
   const createUserPinElement = useCallback((liveUser: LiveUser) => {
     const color = getTeamColour(liveUser.team);
     const label = liveUser.name.toUpperCase();
+    // Motion: speed > 0.5 m/s = moving (green dot), otherwise stopped (grey dot)
+    const isMoving = liveUser.speed != null && liveUser.speed > 0.5;
+    const dotColor = isMoving ? "#22c55e" : "#9ca3af";
 
     const el = document.createElement("div");
     el.style.cssText = `position:relative;display:flex;flex-direction:column;align-items:center;cursor:pointer;`;
 
-    // Name rectangle only — no teardrop/bubble
-    const nameTag = document.createElement("div");
-    nameTag.style.cssText = `
+    // Pill-shaped name tag with motion dot on left
+    const pill = document.createElement("div");
+    pill.style.cssText = `
+      display:flex;
+      align-items:center;
       background:${color};
       color:#fff;
       font-size:12px;
       font-weight:800;
-      padding:5px 10px;
-      border-radius:5px;
+      padding:5px 12px 5px 7px;
+      border-radius:20px;
       white-space:nowrap;
-      box-shadow:0 2px 8px rgba(0,0,0,0.45);
-      letter-spacing:0.05em;
-      border:2px solid rgba(255,255,255,0.6);
+      box-shadow:0 2px 10px rgba(0,0,0,0.45);
+      letter-spacing:0.06em;
+      border:2px solid rgba(255,255,255,0.65);
+      gap:6px;
     `;
-    nameTag.textContent = label;
 
-    el.appendChild(nameTag);
+    // Motion indicator dot
+    const dot = document.createElement("div");
+    dot.style.cssText = `
+      width:9px;
+      height:9px;
+      border-radius:50%;
+      background:${dotColor};
+      flex-shrink:0;
+      border:1.5px solid rgba(255,255,255,0.75);
+      box-shadow:0 0 4px ${isMoving ? "rgba(34,197,94,0.7)" : "rgba(0,0,0,0.2)"};
+    `;
+
+    const nameSpan = document.createElement("span");
+    nameSpan.textContent = label;
+
+    pill.appendChild(dot);
+    pill.appendChild(nameSpan);
+    el.appendChild(pill);
     return el;
   }, []);
 
@@ -460,20 +557,23 @@ export default function IntelligenceMapping() {
       return true;
     });
 
-    // Remove markers for users no longer visible
-    const visibleIds = new Set(visibleUsers.map(u => u.userId));
-    Array.from(liveMarkersRef.current.entries()).forEach(([uid, marker]) => {
-      if (!visibleIds.has(uid)) {
+    // Remove markers for devices no longer visible
+    const visibleKeys = new Set(visibleUsers.map(u => `${u.userId}_${u.deviceId}`));
+    Array.from(liveMarkersRef.current.entries()).forEach(([key, marker]) => {
+      if (!visibleKeys.has(key)) {
         marker.map = null;
-        liveMarkersRef.current.delete(uid);
+        liveMarkersRef.current.delete(key);
       }
     });
 
-    // Add/update markers for visible users
+    // Add/update markers for visible devices
     for (const liveUser of visibleUsers) {
-      const existing = liveMarkersRef.current.get(liveUser.userId);
+      const pinKey = `${liveUser.userId}_${liveUser.deviceId}`;
+      const existing = liveMarkersRef.current.get(pinKey);
       if (existing) {
         existing.position = { lat: liveUser.lat, lng: liveUser.lng };
+        // Refresh content to update motion dot
+        existing.content = createUserPinElement(liveUser);
       } else {
         const pinEl = createUserPinElement(liveUser);
         const marker = new google.maps.marker.AdvancedMarkerElement({
@@ -483,7 +583,7 @@ export default function IntelligenceMapping() {
           title: liveUser.name.toUpperCase(),
           zIndex: 999,
         });
-        liveMarkersRef.current.set(liveUser.userId, marker);
+        liveMarkersRef.current.set(pinKey, marker);
       }
     }
   }, [liveUsers, showOwnLocation, hiddenUsers, hiddenTeams, user, createUserPinElement]);
@@ -534,7 +634,7 @@ export default function IntelligenceMapping() {
   };
 
   return (
-    <div className="flex w-full overflow-hidden" style={{ height: "calc(100vh - 0px)" }}>
+    <div className="relative flex w-full overflow-hidden" style={{ height: "calc(100vh - 0px)" }}>
       {/* ── Side Panel ── */}
       <div
         ref={panelRef}
@@ -851,6 +951,128 @@ export default function IntelligenceMapping() {
           initialZoom={11}
         />
       </div>
+
+      {/* ── Bottom Quick-Link Banner ── */}
+      <div
+        className="absolute bottom-0 left-0 right-0 z-20 flex items-center justify-center gap-1 px-2 py-1.5"
+        style={{
+          background: "rgba(15,17,23,0.88)",
+          backdropFilter: "blur(10px)",
+          borderTop: "1px solid rgba(255,255,255,0.08)",
+        }}
+      >
+        {/* Permanent: Home */}
+        <button
+          onClick={() => setLocation("/")}
+          className="flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-lg hover:bg-white/10 active:scale-95 transition-all min-w-[52px]"
+        >
+          <Home className="h-4 w-4 text-white/80" />
+          <span className="text-[10px] font-semibold text-white/70 leading-none">Home</span>
+        </button>
+
+        <div className="w-px h-6 bg-white/10 mx-0.5" />
+
+        {/* Permanent: Operations */}
+        <button
+          onClick={() => setLocation("/")}
+          className="flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-lg hover:bg-white/10 active:scale-95 transition-all min-w-[52px]"
+        >
+          <FolderOpen className="h-4 w-4 text-blue-400" />
+          <span className="text-[10px] font-semibold text-blue-300/80 leading-none">Operations</span>
+        </button>
+
+        <div className="w-px h-6 bg-white/10 mx-0.5" />
+
+        {/* 4 flexible quick-link slots */}
+        {quickLinks.slice(0, 4).map((ql, idx) => (
+          <button
+            key={idx}
+            onClick={() => setLocation(ql.path)}
+            className="flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-lg hover:bg-white/10 active:scale-95 transition-all min-w-[52px]"
+          >
+            <FolderSearch className="h-4 w-4 text-white/60" />
+            <span className="text-[10px] font-medium text-white/55 leading-none truncate max-w-[56px]">{ql.label}</span>
+          </button>
+        ))}
+
+        <div className="w-px h-6 bg-white/10 mx-0.5" />
+
+        {/* Edit button */}
+        <button
+          onClick={() => setEditingQuickLinks(true)}
+          className="flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-lg hover:bg-white/10 active:scale-95 transition-all min-w-[44px]"
+          title="Customise quick links"
+        >
+          <Pencil className="h-3.5 w-3.5 text-white/40" />
+          <span className="text-[10px] text-white/35 leading-none">Edit</span>
+        </button>
+      </div>
+
+      {/* ── Quick-Link Editor Modal ── */}
+      {editingQuickLinks && (
+        <div
+          className="absolute inset-0 z-30 flex items-end justify-center"
+          style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}
+          onClick={() => setEditingQuickLinks(false)}
+        >
+          <div
+            className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-sm font-bold text-foreground">Customise Quick Links</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Choose up to 4 folders for the map banner</p>
+              </div>
+              <button
+                onClick={() => setEditingQuickLinks(false)}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 max-h-72 overflow-y-auto">
+              {ALL_QUICK_LINK_OPTIONS.map((opt) => {
+                const isSelected = quickLinks.some(q => q.path === opt.path);
+                return (
+                  <button
+                    key={opt.path}
+                    onClick={() => {
+                      setQuickLinks(prev => {
+                        let next: QuickLink[];
+                        if (isSelected) {
+                          next = prev.filter(q => q.path !== opt.path);
+                        } else if (prev.length < 4) {
+                          next = [...prev, opt];
+                        } else {
+                          // Replace last slot
+                          next = [...prev.slice(0, 3), opt];
+                        }
+                        localStorage.setItem(LS_QUICK_LINKS_KEY, JSON.stringify(next));
+                        return next;
+                      });
+                    }}
+                    className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-medium transition-all ${
+                      isSelected
+                        ? "bg-primary/15 border-primary/40 text-primary"
+                        : "bg-accent/30 border-border text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                    }`}
+                  >
+                    <FolderSearch className="h-3.5 w-3.5 flex-shrink-0" />
+                    <span className="truncate">{opt.label}</span>
+                    {isSelected && <Check className="h-3.5 w-3.5 ml-auto flex-shrink-0" />}
+                  </button>
+                );
+              })}
+            </div>
+
+            <p className="text-[11px] text-muted-foreground/60 mt-3 text-center">
+              {quickLinks.length}/4 slots used — Home and Operations are always shown
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

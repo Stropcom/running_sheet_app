@@ -3060,9 +3060,12 @@ export async function getIntelMappingLocations(
 ): Promise<IntelMapLocation[]> {
   const allEntities = await getAllIntelligenceEntities();
 
-  // Filter entities to only those in the requested operations/targets
+  // Filter entities to only those in the requested operations/targets.
+  // IMPORTANT: if neither filter is active, return nothing (empty map) rather than everything.
   const filterByOp = operationIds && operationIds.length > 0;
   const filterByTarget = targetIds && targetIds.length > 0;
+
+  if (!filterByOp && !filterByTarget) return [];
 
   const filteredEntities = allEntities.filter(e => {
     if (!filterByOp && !filterByTarget) return true;

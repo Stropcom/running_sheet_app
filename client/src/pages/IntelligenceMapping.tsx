@@ -219,7 +219,8 @@ export default function IntelligenceMapping() {
   const [opExpanded, setOpExpanded] = useState<Set<number>>(() => {
     try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return new Set<number>(JSON.parse(s).opExpanded ?? []); } catch { /* ignore */ } return new Set();
   });
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Left pane starts closed — user opens it when needed. Never auto-open on navigation.
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Per-device ID — persisted in localStorage so each browser/device is unique
   // deviceId is scoped to this user+browser combination.
@@ -240,8 +241,15 @@ export default function IntelligenceMapping() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
-  // Location sharing state
-  const [sharingEnabled, setSharingEnabled] = useState(false);
+  // Location sharing state — read from localStorage immediately so the toggle shows the right state
+  // before the server query resolves. The server query will confirm/correct it on mount.
+  const [sharingEnabled, setSharingEnabled] = useState<boolean>(() => {
+    try {
+      const key = `runlog_sharing_u${typeof window !== 'undefined' ? (localStorage.getItem('runlog_last_user_id') ?? 'anon') : 'anon'}`;
+      const v = localStorage.getItem(key);
+      return v === 'true';
+    } catch { return false; }
+  });
   // Per-user visibility: Set of userIds that are hidden
   const [hiddenUsers, setHiddenUsers] = useState<Set<number>>(new Set());
   // Per-team visibility: Set of team keys that are hidden
@@ -298,6 +306,17 @@ export default function IntelligenceMapping() {
     } catch { /* ignore */ }
   }, [selectedOpIds, selectedTargetIds, opExpanded, rsSelectedOpId, rsSelectedSheetId]);
 
+  // Persist sharing state and current userId so it can be read before auth resolves
+  useEffect(() => {
+    try {
+      if (user?.id) {
+        localStorage.setItem('runlog_last_user_id', String(user.id));
+        const key = `runlog_sharing_u${user.id}`;
+        localStorage.setItem(key, String(sharingEnabled));
+      }
+    } catch { /* ignore */ }
+  }, [sharingEnabled, user?.id]);
+
   // Data
   const { data: operations, isLoading: opsLoading } = trpc.operation.list.useQuery();
   const { data: locations, isLoading: locsLoading } = trpc.intelligence.mappingLocations.useQuery({
@@ -318,13 +337,30 @@ export default function IntelligenceMapping() {
   );
   // Track whether we've already restored sharing so we don't restart on every poll
   const sharingRestoredRef = useRef(false);
+
+  // Start GPS immediately on mount if localStorage says sharing was on.
+  // This ensures the pin appears before the server query resolves.
+  const gpsStartedFromCacheRef = useRef(false);
+  useEffect(() => {
+    if (sharingEnabled && !gpsStartedFromCacheRef.current && watchIdRef.current === null) {
+      gpsStartedFromCacheRef.current = true;
+      startWatching();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sharingEnabled]);
+
   useEffect(() => {
     if (myLocationState && !sharingRestoredRef.current) {
       sharingRestoredRef.current = true;
-      setSharingEnabled(myLocationState.sharingEnabled);
-      if (myLocationState.sharingEnabled) {
-        // Restart GPS watch so the pin reappears immediately on return to map
+      const serverSharingOn = myLocationState.sharingEnabled;
+      setSharingEnabled(serverSharingOn);
+      if (serverSharingOn && watchIdRef.current === null) {
+        // Server confirms sharing is on but GPS isn't running yet — start it
         startWatching();
+      } else if (!serverSharingOn && watchIdRef.current !== null) {
+        // Server says sharing is off but we started GPS from cache — stop it
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps

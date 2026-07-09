@@ -522,3 +522,8 @@
 - [x] Fix deviceId generation: use a single stable key per user+browser so it never duplicates
 - [x] Add server-side auto-cleanup: delete rows older than 2 hours with sharingEnabled=false on each upsert
 - [x] Add a clearAllMyDevices procedure so a user can manually wipe all their stale rows
+
+## Map Bugs (Round 56)
+- [x] Fix 1: When no operations are selected, map should show NO markers (currently shows all)
+- [x] Fix 2: Returning to map via Back to Map icon should NOT open the left pane automatically
+- [x] Fix 3: Name tag must reliably restore when returning to map if sharing was on (no toggle needed)

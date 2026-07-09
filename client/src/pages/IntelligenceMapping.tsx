@@ -348,6 +348,7 @@ export default function IntelligenceMapping() {
   const [cmPersonInput, setCmPersonInput] = useState("");
   const [cmVehicleInput, setCmVehicleInput] = useState("");
   const [cmSaving, setCmSaving] = useState(false);
+  const [editingMarkerId, setEditingMarkerId] = useState<number | null>(null);
   // ref for long-press on mobile
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // custom marker map objects
@@ -421,6 +422,9 @@ export default function IntelligenceMapping() {
     onSuccess: () => { void refetchCustomMarkers(); },
   });
   const deleteCustomMarkerMut = trpc.customMarker.delete.useMutation({
+    onSuccess: () => { void refetchCustomMarkers(); },
+  });
+  const updateCustomMarkerMut = trpc.customMarker.update.useMutation({
     onSuccess: () => { void refetchCustomMarkers(); },
   });
 
@@ -898,6 +902,7 @@ export default function IntelligenceMapping() {
           lines.push(`<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
             <a href="https://waze.com/ul?ll=${lat},${lng}&navigate=yes" target="_blank" style="font-size:11px;padding:4px 10px;background:#00bcd4;color:#fff;border-radius:4px;text-decoration:none">Waze</a>
             <a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}" target="_blank" style="font-size:11px;padding:4px 10px;background:#4285f4;color:#fff;border-radius:4px;text-decoration:none">Street View</a>
+            <button onclick="window.__editCustomMarker(${cm.id})" style="font-size:11px;padding:4px 10px;background:#16a34a;color:#fff;border-radius:4px;border:none;cursor:pointer">Edit</button>
             <button onclick="window.__deleteCustomMarker(${cm.id})" style="font-size:11px;padding:4px 10px;background:#ef4444;color:#fff;border-radius:4px;border:none;cursor:pointer">Delete</button>
           </div>`);
           infoWindowRef.current.setContent(`<div style="font-family:sans-serif;max-width:240px;color:#111">${lines.join("")}</div>`);
@@ -921,6 +926,31 @@ export default function IntelligenceMapping() {
     };
     return () => { delete (window as any).__deleteCustomMarker; };
   }, [deleteCustomMarkerMut]);
+
+  // Global edit handler for custom marker info window
+  useEffect(() => {
+    (window as any).__editCustomMarker = (id: number) => {
+      infoWindowRef.current?.close();
+      const cm = (customMarkers as any[] | undefined)?.find((m: any) => m.id === id);
+      if (!cm) return;
+      // Pre-fill all form fields with existing marker data
+      setCmIcon((cm.markerIcon as MarkerIcon) ?? "house_filled");
+      setCmColour((cm.markerColour as MarkerColour) ?? "red");
+      setCmRotation(cm.rotation ?? 0);
+      setCmLabel(cm.label ?? "");
+      setCmAddress(cm.address ?? "");
+      setCmNote(cm.note ?? "");
+      setCmOpId(cm.operationId ?? null);
+      setCmPersons(Array.isArray(cm.assocPersons) ? cm.assocPersons : []);
+      setCmVehicles(Array.isArray(cm.assocVehicles) ? cm.assocVehicles : []);
+      setCmPersonInput("");
+      setCmVehicleInput("");
+      setEditingMarkerId(id);
+      // Use the marker's lat/lng as the "pending" position to open the form panel
+      setPendingLatLng({ lat: cm.lat, lng: cm.lng });
+    };
+    return () => { delete (window as any).__editCustomMarker; };
+  }, [customMarkers]);
 
   // ── Stats ────────────────────────────────────────────────────────────────────
   const targetPins = locations?.filter(l => l.type === "target_address").length ?? 0;
@@ -1812,7 +1842,7 @@ export default function IntelligenceMapping() {
         <div
           className="absolute inset-0 z-40 flex items-end justify-center"
           style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}
-          onClick={() => setPendingLatLng(null)}
+          onClick={() => { setPendingLatLng(null); setEditingMarkerId(null); }}
         >
           <div
             className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8 max-h-[90vh] overflow-y-auto"
@@ -1821,12 +1851,12 @@ export default function IntelligenceMapping() {
             {/* Header */}
             <div className="flex items-center justify-between mb-4">
               <div>
-                <p className="text-sm font-bold text-foreground">Place Map Marker</p>
+                <p className="text-sm font-bold text-foreground">{editingMarkerId ? "Edit Map Marker" : "Place Map Marker"}</p>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
                   {pendingLatLng.lat.toFixed(5)}, {pendingLatLng.lng.toFixed(5)}
                 </p>
               </div>
-              <button onClick={() => setPendingLatLng(null)} className="text-muted-foreground hover:text-foreground">
+              <button onClick={() => { setPendingLatLng(null); setEditingMarkerId(null); }} className="text-muted-foreground hover:text-foreground">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -2057,7 +2087,7 @@ export default function IntelligenceMapping() {
               <Button
                 variant="outline"
                 className="flex-1"
-                onClick={() => setPendingLatLng(null)}
+                onClick={() => { setPendingLatLng(null); setEditingMarkerId(null); }}
               >
                 Cancel
               </Button>
@@ -2068,30 +2098,49 @@ export default function IntelligenceMapping() {
                   if (!pendingLatLng) return;
                   setCmSaving(true);
                   try {
-                    await createCustomMarkerMut.mutateAsync({
-                      lat: pendingLatLng.lat,
-                      lng: pendingLatLng.lng,
-                      markerIcon: cmIcon,
-                      markerColour: cmColour,
-                      rotation: cmRotation,
-                      label: cmLabel.trim() || null,
-                      address: cmAddress.trim() || null,
-                      note: cmNote.trim() || null,
-                      operationId: cmOpId,
-                      assocPersons: cmPersons,
-                      assocVehicles: cmVehicles,
-                    });
+                    if (editingMarkerId !== null) {
+                      // Update existing marker
+                      await updateCustomMarkerMut.mutateAsync({
+                        id: editingMarkerId,
+                        markerIcon: cmIcon,
+                        markerColour: cmColour,
+                        rotation: cmRotation,
+                        label: cmLabel.trim() || null,
+                        address: cmAddress.trim() || null,
+                        note: cmNote.trim() || null,
+                        operationId: cmOpId,
+                        assocPersons: cmPersons,
+                        assocVehicles: cmVehicles,
+                      });
+                      toast.success("Marker updated");
+                    } else {
+                      // Create new marker
+                      await createCustomMarkerMut.mutateAsync({
+                        lat: pendingLatLng.lat,
+                        lng: pendingLatLng.lng,
+                        markerIcon: cmIcon,
+                        markerColour: cmColour,
+                        rotation: cmRotation,
+                        label: cmLabel.trim() || null,
+                        address: cmAddress.trim() || null,
+                        note: cmNote.trim() || null,
+                        operationId: cmOpId,
+                        assocPersons: cmPersons,
+                        assocVehicles: cmVehicles,
+                      });
+                      toast.success("Marker placed");
+                    }
                     setPendingLatLng(null);
+                    setEditingMarkerId(null);
                     setCmRotation(0);
-                    toast.success("Marker placed");
                   } catch {
-                    toast.error("Failed to save marker");
+                    toast.error(editingMarkerId !== null ? "Failed to update marker" : "Failed to save marker");
                   } finally {
                     setCmSaving(false);
                   }
                 }}
               >
-                {cmSaving ? <Spinner className="h-4 w-4" /> : "Place Marker"}
+                {cmSaving ? <Spinner className="h-4 w-4" /> : editingMarkerId !== null ? "Save Changes" : "Place Marker"}
               </Button>
             </div>
           </div>

@@ -534,3 +534,9 @@
 - [x] Add "Vehicle Depart" quick action button
 - [x] Add "Person Depart" quick action button
 - [x] Add "Person Arrive" quick action button
+
+## Stale Sharing Pin Bug (Round 58)
+- [x] Fix: user pin shows in Field Units list even when sharing toggle is OFF
+- [x] Fix: live users query must only return rows where sharingEnabled = true
+- [x] Fix: on page mount, if localStorage says sharing is OFF, immediately clear the DB row for this device
+- [x] Clean up all current stale sharingEnabled=true rows in DB

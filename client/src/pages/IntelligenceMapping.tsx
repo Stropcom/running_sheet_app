@@ -352,16 +352,23 @@ export default function IntelligenceMapping() {
   useEffect(() => {
     if (myLocationState && !sharingRestoredRef.current) {
       sharingRestoredRef.current = true;
+      // localStorage is the source of truth for the user's intent on THIS device.
+      // sharingEnabled was already initialised from localStorage in useState.
+      // We only need to reconcile the DB (server) state with the local intent:
+      //   • If local=OFF but server=ON  → the browser was closed without cleanup; clear DB now.
+      //   • If local=ON  but server=OFF → GPS was already started by the cache effect; nothing extra needed.
+      //   • If both agree → nothing to do (GPS already started or already stopped).
       const serverSharingOn = myLocationState.sharingEnabled;
-      setSharingEnabled(serverSharingOn);
-      if (serverSharingOn && watchIdRef.current === null) {
-        // Server confirms sharing is on but GPS isn't running yet — start it
+      const localSharingOn = sharingEnabled;
+
+      if (serverSharingOn && !localSharingOn) {
+        // Stale DB row — clear it immediately so the pin disappears from other devices
+        clearLocationMut.mutate({ deviceId });
+      } else if (!serverSharingOn && localSharingOn && watchIdRef.current === null) {
+        // DB was cleared externally but user wants sharing on — start GPS
         startWatching();
-      } else if (!serverSharingOn && watchIdRef.current !== null) {
-        // Server says sharing is off but we started GPS from cache — stop it
-        navigator.geolocation.clearWatch(watchIdRef.current);
-        watchIdRef.current = null;
       }
+      // If both agree (on+on or off+off), the cache effect already handled GPS start/stop.
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myLocationState]);

@@ -432,25 +432,7 @@ export default function IntelligenceMapping() {
   // RS Actions pane — create row mutation
   const rsAddMember = trpc.member.add.useMutation();
 
-  const rsCreateRow = trpc.row.create.useMutation({
-    onSuccess: (data, vars) => {
-      const now = new Date();
-      const h24 = now.getHours();
-      const min = now.getMinutes();
-      const timeStr = `${String(h24 % 12 === 0 ? 12 : h24 % 12).padStart(2, "0")}:${String(min).padStart(2, "0")} ${h24 < 12 ? "AM" : "PM"}`;
-      setRsLastEntry({ label: vars.observation ?? "Entry", time: timeStr });
-      setRsAddingRow(false);
-      // If a CIN was selected, attach it to the newly created row
-      if (rsInlineCinRef.current && (data as any)?.id) {
-        rsAddMember.mutate({ rowId: (data as any).id, memberName: rsInlineCinRef.current });
-      }
-      toast.success("RS entry added");
-    },
-    onError: (e) => {
-      setRsAddingRow(false);
-      toast.error(e.message);
-    },
-  });
+  const rsCreateRow = trpc.row.create.useMutation();
 
   // Targets per operation
   const { data: allTargets } = trpc.target.registry.list.useQuery();
@@ -856,8 +838,10 @@ export default function IntelligenceMapping() {
   const submitInlineField = () => {
     if (!rsInlineLabel) return;
     const finalText = rsInlineText.trim() ? `${rsInlineLabel} — ${rsInlineText.trim()}` : rsInlineLabel;
-    addQuickRsEntry(finalText);
+    // Capture CIN BEFORE closeInlineField clears the ref
+    const cinToAttach = rsInlineCinRef.current;
     closeInlineField();
+    addQuickRsEntry(finalText, cinToAttach);
   };
 
   const resetInlineTimer = () => {
@@ -876,7 +860,7 @@ export default function IntelligenceMapping() {
     startInlineCountdown();
   };
 
-  const addQuickRsEntry = (observation: string) => {
+  const addQuickRsEntry = (observation: string, cinToAttach?: string | null) => {
     if (!rsSelectedSheetId) return;
     const now = new Date();
     const h24 = now.getHours();
@@ -885,7 +869,30 @@ export default function IntelligenceMapping() {
     const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
     const timeStr = `${String(h12).padStart(2, "0")}:${String(min).padStart(2, "0")} ${h24 < 12 ? "AM" : "PM"}`;
     setRsAddingRow(true);
-    rsCreateRow.mutate({ sheetId: rsSelectedSheetId, time: timeStr, timeMinutes: totalMins, observation });
+    // Store the CIN in a local variable captured by the mutation callback
+    const cin = cinToAttach ?? null;
+    rsCreateRow.mutate(
+      { sheetId: rsSelectedSheetId, time: timeStr, timeMinutes: totalMins, observation },
+      {
+        onSuccess: (data, vars) => {
+          const now2 = new Date();
+          const h24b = now2.getHours();
+          const minb = now2.getMinutes();
+          const timeStr2 = `${String(h24b % 12 === 0 ? 12 : h24b % 12).padStart(2, "0")}:${String(minb).padStart(2, "0")} ${h24b < 12 ? "AM" : "PM"}`;
+          setRsLastEntry({ label: vars.observation ?? "Entry", time: timeStr2 });
+          setRsAddingRow(false);
+          // Attach the CIN if one was selected — use the locally captured variable, not the ref
+          if (cin && (data as any)?.id) {
+            rsAddMember.mutate({ rowId: (data as any).id, memberName: cin });
+          }
+          toast.success("RS entry added");
+        },
+        onError: (e) => {
+          setRsAddingRow(false);
+          toast.error(e.message);
+        },
+      }
+    );
   };
 
   return (

@@ -581,3 +581,9 @@
 ## Colour-Coded Folder Icons (Round 61)
 - [x] Assign a distinct standout colour to every sidebar folder icon in DashboardLayout
 - [x] Match bottom map banner quick-link icons to the same coloured sidebar icons
+
+## Right Sidebar Quick-Entry Improvements (Round 63)
+- [x] Remove redundant "Open full running sheet" link from RS Actions pane (sheet title is already a link)
+- [x] Add CIN picker row below the observation textarea (pill buttons from sheet roster, TL first)
+- [x] Add 30-second countdown ring + timer display to inline observation field
+- [x] Attach selected CIN as a row member when the quick entry is submitted

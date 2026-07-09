@@ -315,7 +315,11 @@ export default function IntelligenceMapping() {
   // Inline observation field state
   const [rsInlineLabel, setRsInlineLabel] = useState<string | null>(null); // null = closed
   const [rsInlineText, setRsInlineText] = useState("");
+  const [rsInlineCin, setRsInlineCin] = useState<string | null>(null); // selected CIN for the inline entry
+  const rsInlineCinRef = useRef<string | null>(null); // ref so mutation callback always sees latest
+  const [rsCountdown, setRsCountdown] = useState<number>(30); // countdown seconds
   const rsInlineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rsCountdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const rsInlineInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Map state
@@ -426,14 +430,20 @@ export default function IntelligenceMapping() {
     { enabled: rsSelectedSheetId !== null }
   );
   // RS Actions pane — create row mutation
+  const rsAddMember = trpc.member.add.useMutation();
+
   const rsCreateRow = trpc.row.create.useMutation({
-    onSuccess: (_data, vars) => {
+    onSuccess: (data, vars) => {
       const now = new Date();
       const h24 = now.getHours();
       const min = now.getMinutes();
       const timeStr = `${String(h24 % 12 === 0 ? 12 : h24 % 12).padStart(2, "0")}:${String(min).padStart(2, "0")} ${h24 < 12 ? "AM" : "PM"}`;
       setRsLastEntry({ label: vars.observation ?? "Entry", time: timeStr });
       setRsAddingRow(false);
+      // If a CIN was selected, attach it to the newly created row
+      if (rsInlineCinRef.current && (data as any)?.id) {
+        rsAddMember.mutate({ rowId: (data as any).id, memberName: rsInlineCinRef.current });
+      }
       toast.success("RS entry added");
     },
     onError: (e) => {
@@ -809,11 +819,37 @@ export default function IntelligenceMapping() {
   };
 
   // ── RS Quick-entry helper ────────────────────────────────────────────────────
-  // Inline observation field helpers
+  // Helper: start/restart the 30-second countdown + auto-submit timer
+  const startInlineCountdown = () => {
+    // Clear existing timers
+    if (rsInlineTimerRef.current) clearTimeout(rsInlineTimerRef.current);
+    if (rsCountdownIntervalRef.current) clearInterval(rsCountdownIntervalRef.current);
+    // Reset countdown display
+    setRsCountdown(30);
+    // Tick every second
+    rsCountdownIntervalRef.current = setInterval(() => {
+      setRsCountdown(prev => {
+        if (prev <= 1) {
+          if (rsCountdownIntervalRef.current) clearInterval(rsCountdownIntervalRef.current);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    // Auto-submit after 30 s
+    rsInlineTimerRef.current = setTimeout(() => {
+      submitInlineField();
+    }, 30000);
+  };
+
   const closeInlineField = () => {
     if (rsInlineTimerRef.current) clearTimeout(rsInlineTimerRef.current);
+    if (rsCountdownIntervalRef.current) clearInterval(rsCountdownIntervalRef.current);
     setRsInlineLabel(null);
     setRsInlineText("");
+    setRsInlineCin(null);
+    rsInlineCinRef.current = null;
+    setRsCountdown(30);
   };
 
   const submitInlineField = () => {
@@ -824,23 +860,19 @@ export default function IntelligenceMapping() {
   };
 
   const resetInlineTimer = () => {
-    if (rsInlineTimerRef.current) clearTimeout(rsInlineTimerRef.current);
-    rsInlineTimerRef.current = setTimeout(() => {
-      submitInlineField();
-    }, 30000);
+    startInlineCountdown();
   };
 
   const openInlineField = (label: string) => {
     if (!rsSelectedSheetId) return;
     setRsInlineLabel(label);
     setRsInlineText("");
+    setRsInlineCin(null);
+    rsInlineCinRef.current = null;
     // Focus the textarea after render
     setTimeout(() => rsInlineInputRef.current?.focus(), 50);
-    // Start auto-submit timer
-    if (rsInlineTimerRef.current) clearTimeout(rsInlineTimerRef.current);
-    rsInlineTimerRef.current = setTimeout(() => {
-      submitInlineField();
-    }, 30000);
+    // Start auto-submit countdown
+    startInlineCountdown();
   };
 
   const addQuickRsEntry = (observation: string) => {
@@ -1310,40 +1342,91 @@ export default function IntelligenceMapping() {
               )}
 
               {/* Inline observation field — shown when a quick action button is tapped */}
-              {rsInlineLabel && (
-                <div
-                  className="rounded-lg border border-border bg-muted/40 p-2.5 flex flex-col gap-2"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{rsInlineLabel}</span>
-                    <button onClick={closeInlineField} className="text-muted-foreground hover:text-foreground">
-                      <X className="h-3.5 w-3.5" />
-                    </button>
+              {rsInlineLabel && (() => {
+                // Parse roster CINs from the selected sheet
+                const selectedSheet = (rsSheetsData as any[] | undefined)?.find((s: any) => s.id === rsSelectedSheetId);
+                const rosterCins: string[] = [];
+                if (selectedSheet?.sheetCins) {
+                  try {
+                    const parsed: Array<{ cin: string; isTeamLeader?: boolean }> = typeof selectedSheet.sheetCins === "string"
+                      ? JSON.parse(selectedSheet.sheetCins)
+                      : selectedSheet.sheetCins;
+                    parsed
+                      .sort((a, b) => (b.isTeamLeader ? 1 : 0) - (a.isTeamLeader ? 1 : 0))
+                      .forEach(c => { if (c.cin) rosterCins.push(c.cin); });
+                  } catch { /* ignore */ }
+                }
+                return (
+                  <div
+                    className="rounded-lg border border-border bg-muted/40 p-2.5 flex flex-col gap-2"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{rsInlineLabel}</span>
+                      <button onClick={closeInlineField} className="text-muted-foreground hover:text-foreground">
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    <textarea
+                      ref={rsInlineInputRef}
+                      value={rsInlineText}
+                      onChange={(e) => { setRsInlineText(e.target.value); resetInlineTimer(); }}
+                      onFocus={resetInlineTimer}
+                      onBlur={() => { /* keep timer running on blur */ }}
+                      placeholder="Add details (optional)…"
+                      rows={2}
+                      className="w-full resize-none rounded-md border border-border bg-background px-2.5 py-1.5 text-[11px] placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                    />
+                    {/* CIN picker row */}
+                    {rosterCins.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {rosterCins.map((cin) => (
+                          <button
+                            key={cin}
+                            onClick={() => {
+                              const next = rsInlineCin === cin ? null : cin;
+                              setRsInlineCin(next);
+                              rsInlineCinRef.current = next;
+                              resetInlineTimer();
+                            }}
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all active:scale-95 ${
+                              rsInlineCin === cin
+                                ? "bg-primary/20 border-primary/60 text-primary"
+                                : "bg-muted/40 border-border text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                            }`}
+                          >
+                            {cin}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between gap-2">
+                      {/* Countdown ring */}
+                      <div className="flex items-center gap-1.5">
+                        <svg className="h-5 w-5 -rotate-90" viewBox="0 0 20 20">
+                          <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted-foreground/20" />
+                          <circle
+                            cx="10" cy="10" r="8" fill="none" stroke="currentColor" strokeWidth="2"
+                            strokeDasharray={`${2 * Math.PI * 8}`}
+                            strokeDashoffset={`${2 * Math.PI * 8 * (1 - rsCountdown / 30)}`}
+                            className={rsCountdown <= 10 ? "text-red-400" : "text-primary"}
+                            style={{ transition: "stroke-dashoffset 1s linear" }}
+                          />
+                        </svg>
+                        <span className={`text-[10px] font-mono tabular-nums ${rsCountdown <= 10 ? "text-red-400" : "text-muted-foreground"}`}>{rsCountdown}s</span>
+                      </div>
+                      <button
+                        onClick={submitInlineField}
+                        disabled={rsAddingRow}
+                        className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-[10px] font-semibold text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-50"
+                      >
+                        {rsAddingRow ? <Spinner className="h-3 w-3" /> : <Send className="h-3 w-3" />}
+                        Submit
+                      </button>
+                    </div>
                   </div>
-                  <textarea
-                    ref={rsInlineInputRef}
-                    value={rsInlineText}
-                    onChange={(e) => { setRsInlineText(e.target.value); resetInlineTimer(); }}
-                    onFocus={resetInlineTimer}
-                    onBlur={() => { /* keep timer running on blur */ }}
-                    placeholder="Add details (optional)…"
-                    rows={2}
-                    className="w-full resize-none rounded-md border border-border bg-background px-2.5 py-1.5 text-[11px] placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                  />
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[9px] text-muted-foreground">Auto-submits after 30 s of inactivity</span>
-                    <button
-                      onClick={submitInlineField}
-                      disabled={rsAddingRow}
-                      className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-[10px] font-semibold text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-50"
-                    >
-                      {rsAddingRow ? <Spinner className="h-3 w-3" /> : <Send className="h-3 w-3" />}
-                      Submit
-                    </button>
-                  </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Quick action buttons — 2-column grid */}
               <div className="grid grid-cols-2 gap-1.5">
@@ -1390,14 +1473,7 @@ export default function IntelligenceMapping() {
                 </div>
               )}
 
-              {/* Link to full RS */}
-              <button
-                onClick={() => setLocation(`/sheet/${rsSelectedSheetId}`)}
-                className="w-full flex items-center justify-center gap-1.5 text-[11px] font-medium text-primary hover:text-primary/80 transition-colors py-1.5 rounded-lg hover:bg-primary/10"
-              >
-                <MapIcon className="h-3 w-3" />
-                Open full running sheet
-              </button>
+
             </div>
           )}
 

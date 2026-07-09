@@ -527,3 +527,10 @@
 - [x] Fix 1: When no operations are selected, map should show NO markers (currently shows all)
 - [x] Fix 2: Returning to map via Back to Map icon should NOT open the left pane automatically
 - [x] Fix 3: Name tag must reliably restore when returning to map if sharing was on (no toggle needed)
+
+## RS Actions Pane Improvements (Round 57)
+- [x] Compact/redesign right pane layout — smaller text, tighter spacing
+- [x] Add "Vehicle Arrive" quick action button (same as Other Entry — adds timestamp row)
+- [x] Add "Vehicle Depart" quick action button
+- [x] Add "Person Depart" quick action button
+- [x] Add "Person Arrive" quick action button

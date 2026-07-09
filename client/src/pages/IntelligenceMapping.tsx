@@ -400,8 +400,10 @@ export default function IntelligenceMapping() {
   useEffect(() => { clearLocationMutRef.current = clearLocationMut; });
 
   // Custom map markers — poll every 5 seconds
+  // Pass operationIds filter but also always fetch null-op markers so manually placed
+  // markers without an operation are never hidden by the filter.
   const { data: customMarkers, refetch: refetchCustomMarkers } = trpc.customMarker.list.useQuery(
-    { operationIds: selectedOpIds.length > 0 ? selectedOpIds : undefined },
+    { operationIds: undefined }, // always fetch all; filter display in UI if needed
     { refetchInterval: 5000, enabled: true }
   );
   const createCustomMarkerMut = trpc.customMarker.create.useMutation({
@@ -1917,6 +1919,8 @@ export default function IntelligenceMapping() {
                     const { lat, lng, address } = actionChooser;
                     setCmLabel(""); setCmAddress(address); setCmNote(""); setCmPersons([]); setCmVehicles([]); setCmRotation(0);
                     setCmPersonInput(""); setCmVehicleInput("");
+                    // Pre-fill operation from the active filter so the marker appears in the list
+                    setCmOpId(selectedOpIds.length === 1 ? selectedOpIds[0] : (rsSelectedOpId ?? null));
                     setPendingLatLng({ lat, lng });
                     setActionChooser(null);
                   }}

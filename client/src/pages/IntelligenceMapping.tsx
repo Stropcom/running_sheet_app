@@ -1137,30 +1137,6 @@ export default function IntelligenceMapping() {
             )}
           </div>
 
-          {/* ── Legend ── */}
-          <div className="px-4 py-3 space-y-1.5">
-            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Legend</p>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded-full bg-red-600 border border-white shadow-sm flex-shrink-0" />
-              <span className="text-xs text-muted-foreground">Target registered address</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded-full bg-purple-700 border border-white shadow-sm flex-shrink-0" />
-              <span className="text-xs text-muted-foreground">Observed location</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded flex-shrink-0" style={{ background: TEAM_COLOURS.TEAM1 }} />
-              <span className="text-xs text-muted-foreground">Team 1 unit</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded-full flex-shrink-0" style={{ background: TEAM_COLOURS.TEAM2 }} />
-              <span className="text-xs text-muted-foreground">Team 2 unit</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded-full flex-shrink-0" style={{ background: TEAM_COLOURS.PTT }} />
-              <span className="text-xs text-muted-foreground">PTT unit</span>
-            </div>
-          </div>
         </div>
       </div>
 

@@ -587,3 +587,6 @@
 - [x] Add CIN picker row below the observation textarea (pill buttons from sheet roster, TL first)
 - [x] Add 30-second countdown ring + timer display to inline observation field
 - [x] Attach selected CIN as a row member when the quick entry is submitted
+
+## Location Sharing Fix Part 2 (Round 64)
+- [x] Fix: receiving device must show other users' pins even when its own sharing toggle is OFF

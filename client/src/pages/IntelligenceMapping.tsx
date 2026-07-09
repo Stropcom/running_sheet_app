@@ -732,12 +732,13 @@ export default function IntelligenceMapping() {
 
     const currentUserId = user?.id;
     const visibleUsers = (liveUsers as LiveUser[]).filter((u) => {
-      // Own location: respect showOwnLocation toggle
+      // Own location: only hide the current device's own pin when sharing is off.
+      // Other users' pins are ALWAYS shown regardless of the receiver's sharing toggle.
       if (u.userId === currentUserId && !showOwnLocation) return false;
-      // Per-team visibility
+      // Per-team visibility (manual hide buttons in the team list)
       const teamKey = u.team ?? "null";
       if (hiddenTeams.has(teamKey)) return false;
-      // Per-user visibility
+      // Per-user visibility (manual hide button per user)
       if (hiddenUsers.has(u.userId)) return false;
       return true;
     });

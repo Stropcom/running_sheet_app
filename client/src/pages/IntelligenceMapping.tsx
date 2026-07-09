@@ -34,6 +34,7 @@ import {
   ClipboardList,
   Plus,
   ChevronLeft as ChevronLeftIcon,
+  Send,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -279,6 +280,12 @@ export default function IntelligenceMapping() {
   });
   const [rsAddingRow, setRsAddingRow] = useState(false);
   const [rsLastEntry, setRsLastEntry] = useState<{ label: string; time: string } | null>(null);
+
+  // Inline observation field state
+  const [rsInlineLabel, setRsInlineLabel] = useState<string | null>(null); // null = closed
+  const [rsInlineText, setRsInlineText] = useState("");
+  const rsInlineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rsInlineInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Map state
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -761,6 +768,40 @@ export default function IntelligenceMapping() {
   };
 
   // ── RS Quick-entry helper ────────────────────────────────────────────────────
+  // Inline observation field helpers
+  const closeInlineField = () => {
+    if (rsInlineTimerRef.current) clearTimeout(rsInlineTimerRef.current);
+    setRsInlineLabel(null);
+    setRsInlineText("");
+  };
+
+  const submitInlineField = () => {
+    if (!rsInlineLabel) return;
+    const finalText = rsInlineText.trim() ? `${rsInlineLabel} — ${rsInlineText.trim()}` : rsInlineLabel;
+    addQuickRsEntry(finalText);
+    closeInlineField();
+  };
+
+  const resetInlineTimer = () => {
+    if (rsInlineTimerRef.current) clearTimeout(rsInlineTimerRef.current);
+    rsInlineTimerRef.current = setTimeout(() => {
+      submitInlineField();
+    }, 5000);
+  };
+
+  const openInlineField = (label: string) => {
+    if (!rsSelectedSheetId) return;
+    setRsInlineLabel(label);
+    setRsInlineText("");
+    // Focus the textarea after render
+    setTimeout(() => rsInlineInputRef.current?.focus(), 50);
+    // Start auto-submit timer
+    if (rsInlineTimerRef.current) clearTimeout(rsInlineTimerRef.current);
+    rsInlineTimerRef.current = setTimeout(() => {
+      submitInlineField();
+    }, 5000);
+  };
+
   const addQuickRsEntry = (observation: string) => {
     if (!rsSelectedSheetId) return;
     const now = new Date();
@@ -1128,7 +1169,7 @@ export default function IntelligenceMapping() {
         </div>
 
         {/* Pane Body — compact layout */}
-        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3" onClick={() => { if (rsInlineLabel) closeInlineField(); }}>
 
           {/* Step 1 + 2: selectors in a compact stack */}
           <div className="space-y-2">
@@ -1227,6 +1268,42 @@ export default function IntelligenceMapping() {
                 <p className="text-[11px] text-muted-foreground text-center py-1">No target linked — DEP/ARR unavailable.</p>
               )}
 
+              {/* Inline observation field — shown when a quick action button is tapped */}
+              {rsInlineLabel && (
+                <div
+                  className="rounded-lg border border-border bg-muted/40 p-2.5 flex flex-col gap-2"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{rsInlineLabel}</span>
+                    <button onClick={closeInlineField} className="text-muted-foreground hover:text-foreground">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <textarea
+                    ref={rsInlineInputRef}
+                    value={rsInlineText}
+                    onChange={(e) => { setRsInlineText(e.target.value); resetInlineTimer(); }}
+                    onFocus={resetInlineTimer}
+                    onBlur={() => { /* keep timer running on blur */ }}
+                    placeholder="Add details (optional)…"
+                    rows={2}
+                    className="w-full resize-none rounded-md border border-border bg-background px-2.5 py-1.5 text-[11px] placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[9px] text-muted-foreground">Auto-submits in 5 s of inactivity</span>
+                    <button
+                      onClick={submitInlineField}
+                      disabled={rsAddingRow}
+                      className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-[10px] font-semibold text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-50"
+                    >
+                      {rsAddingRow ? <Spinner className="h-3 w-3" /> : <Send className="h-3 w-3" />}
+                      Submit
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Quick action buttons — 2-column grid */}
               <div className="grid grid-cols-2 gap-1.5">
                 {([
@@ -1243,14 +1320,21 @@ export default function IntelligenceMapping() {
                     rose:   "border-rose-500/30 bg-rose-500/5 hover:bg-rose-500/10 text-rose-400",
                     slate:  "border-border bg-muted/30 hover:bg-muted/60 text-muted-foreground",
                   };
+                  const isActive = rsInlineLabel === text;
                   return (
                     <button
                       key={label}
                       disabled={rsAddingRow}
-                      onClick={() => addQuickRsEntry(text)}
-                      className={`flex flex-col items-center justify-center gap-0.5 rounded-md border active:scale-95 transition-all px-2 py-2.5 disabled:opacity-50 ${colourMap[colour]}`}
+                      onClick={() => {
+                        if (isActive) {
+                          closeInlineField();
+                        } else {
+                          openInlineField(text);
+                        }
+                      }}
+                      className={`flex flex-col items-center justify-center gap-0.5 rounded-md border active:scale-95 transition-all px-2 py-2.5 disabled:opacity-50 ${colourMap[colour]} ${isActive ? "ring-1 ring-current" : ""}`}
                     >
-                      {rsAddingRow ? <Spinner className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+                      {rsAddingRow && isActive ? <Spinner className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
                       <span className="text-[10px] font-semibold leading-tight text-center">{label}</span>
                     </button>
                   );

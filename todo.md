@@ -540,3 +540,11 @@
 - [x] Fix: live users query must only return rows where sharingEnabled = true
 - [x] Fix: on page mount, if localStorage says sharing is OFF, immediately clear the DB row for this device
 - [x] Clean up all current stale sharingEnabled=true rows in DB
+
+## RS Quick Action Inline Observation Field (Round 59)
+- [x] Tapping a quick action button (Vehicle Arrive/Depart, Person Arrive/Depart, Other Entry) opens an inline observation field below the buttons
+- [x] Field is pre-filled with the button label text (e.g. "Vehicle arrive")
+- [x] User can append free text to the pre-filled text
+- [x] Auto-closes and submits after 5 seconds of cursor inactivity inside the field
+- [x] Tapping outside the field (anywhere in pane or map) closes and discards the field
+- [x] Submit button inside the field to manually confirm immediately

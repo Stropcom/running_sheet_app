@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { Spinner } from "@/components/ui/spinner";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { toast } from "sonner";
 import {
   ChevronDown,
   ChevronRight,
@@ -29,6 +31,9 @@ import {
   ScrollText,
   HelpCircle,
   Map as MapIcon,
+  ClipboardList,
+  Plus,
+  ChevronLeft as ChevronLeftIcon,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -240,6 +245,13 @@ export default function IntelligenceMapping() {
   });
   const [editingQuickLinks, setEditingQuickLinks] = useState(false);
 
+  // RS Actions pane state
+  const [rsActionsPaneOpen, setRsActionsPaneOpen] = useState(false);
+  const [rsSelectedOpId, setRsSelectedOpId] = useState<number | null>(null);
+  const [rsSelectedSheetId, setRsSelectedSheetId] = useState<number | null>(null);
+  const [rsAddingRow, setRsAddingRow] = useState(false);
+  const [rsLastEntry, setRsLastEntry] = useState<{ label: string; time: string } | null>(null);
+
   // Map state
   const mapRef = useRef<google.maps.Map | null>(null);
   const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
@@ -283,6 +295,33 @@ export default function IntelligenceMapping() {
   // Mutations
   const updateLocationMut = trpc.intelligence.updateUserLocation.useMutation();
   const clearLocationMut = trpc.intelligence.clearUserLocation.useMutation();
+
+  // RS Actions pane — sheets for selected operation
+  const { data: rsSheetsData } = trpc.sheet.listByOperation.useQuery(
+    { operationId: rsSelectedOpId! },
+    { enabled: rsSelectedOpId !== null }
+  );
+  // RS Actions pane — target for selected sheet
+  const { data: rsTargetData } = trpc.intelligence.getSheetTarget.useQuery(
+    { sheetId: rsSelectedSheetId! },
+    { enabled: rsSelectedSheetId !== null }
+  );
+  // RS Actions pane — create row mutation
+  const rsCreateRow = trpc.row.create.useMutation({
+    onSuccess: (_data, vars) => {
+      const now = new Date();
+      const h24 = now.getHours();
+      const min = now.getMinutes();
+      const timeStr = `${String(h24 % 12 === 0 ? 12 : h24 % 12).padStart(2, "0")}:${String(min).padStart(2, "0")} ${h24 < 12 ? "AM" : "PM"}`;
+      setRsLastEntry({ label: vars.observation ?? "Entry", time: timeStr });
+      setRsAddingRow(false);
+      toast.success("RS entry added");
+    },
+    onError: (e) => {
+      setRsAddingRow(false);
+      toast.error(e.message);
+    },
+  });
 
   // Targets per operation
   const { data: allTargets } = trpc.target.registry.list.useQuery();
@@ -633,6 +672,19 @@ export default function IntelligenceMapping() {
     });
   };
 
+  // ── RS Quick-entry helper ────────────────────────────────────────────────────
+  const addQuickRsEntry = (observation: string) => {
+    if (!rsSelectedSheetId) return;
+    const now = new Date();
+    const h24 = now.getHours();
+    const min = now.getMinutes();
+    const totalMins = h24 * 60 + min;
+    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+    const timeStr = `${String(h12).padStart(2, "0")}:${String(min).padStart(2, "0")} ${h24 < 12 ? "AM" : "PM"}`;
+    setRsAddingRow(true);
+    rsCreateRow.mutate({ sheetId: rsSelectedSheetId, time: timeStr, timeMinutes: totalMins, observation });
+  };
+
   return (
     <div className="relative flex w-full overflow-hidden" style={{ height: "calc(100vh - 0px)" }}>
       {/* ── Side Panel ── */}
@@ -950,6 +1002,207 @@ export default function IntelligenceMapping() {
           initialCenter={{ lat: -31.9505, lng: 115.8605 }}
           initialZoom={11}
         />
+
+        {/* RS Actions pane toggle tab — right edge, vertically centred */}
+        {!rsActionsPaneOpen && (
+          <button
+            onClick={(e) => { e.stopPropagation(); setRsActionsPaneOpen(true); }}
+            className="absolute right-0 z-10 flex items-center justify-center bg-card border border-r-0 border-border shadow-md hover:bg-accent transition-colors"
+            style={{
+              top: "50%",
+              transform: "translateY(-50%)",
+              width: "20px",
+              height: "56px",
+              borderRadius: "6px 0 0 6px",
+            }}
+            title="Open RS Actions"
+          >
+            <ChevronLeft className="h-3.5 w-3.5 text-muted-foreground" />
+          </button>
+        )}
+      </div>
+
+      {/* ── RS Actions Right Pane ── */}
+      <div
+        className={`flex flex-col border-l border-border bg-card transition-all duration-200 ${
+          rsActionsPaneOpen ? "w-80 min-w-[20rem]" : "w-0 min-w-0 overflow-hidden"
+        }`}
+      >
+        {/* Pane Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <ClipboardList className="h-4 w-4 text-muted-foreground" />
+            <span className="font-semibold text-sm">RS Actions</span>
+          </div>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setRsActionsPaneOpen(false)}>
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+
+        {/* Pane Body */}
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
+
+          {/* Step 1: Choose Operation */}
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">1. Choose Operation</p>
+            <Select
+              value={rsSelectedOpId !== null ? String(rsSelectedOpId) : ""}
+              onValueChange={(val) => {
+                setRsSelectedOpId(Number(val));
+                setRsSelectedSheetId(null);
+                setRsLastEntry(null);
+              }}
+            >
+              <SelectTrigger className="w-full h-9 text-sm">
+                <SelectValue placeholder="Select operation…" />
+              </SelectTrigger>
+              <SelectContent>
+                {(operations ?? []).map((op: any) => (
+                  <SelectItem key={op.id} value={String(op.id)}>{op.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Step 2: Choose Running Sheet */}
+          {rsSelectedOpId !== null && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">2. Choose Running Sheet</p>
+              <Select
+                value={rsSelectedSheetId !== null ? String(rsSelectedSheetId) : ""}
+                onValueChange={(val) => {
+                  setRsSelectedSheetId(Number(val));
+                  setRsLastEntry(null);
+                }}
+              >
+                <SelectTrigger className="w-full h-9 text-sm">
+                  <SelectValue placeholder="Select running sheet…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(rsSheetsData ?? []).filter((s: any) => !s.closedAt && !s.deletedAt).map((s: any) => (
+                    <SelectItem key={s.id} value={String(s.id)}>{s.title || `Sheet #${s.id}`}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Target details + shortcuts */}
+          {rsSelectedSheetId !== null && (
+            <div className="space-y-3">
+              {/* Target info strip */}
+              {rsTargetData && (
+                <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">Target</p>
+                  <p className="text-sm font-semibold text-foreground">{rsTargetData.name}</p>
+                  {rsTargetData.tgt && <p className="text-xs text-muted-foreground">TGT: {rsTargetData.tgt}</p>}
+                </div>
+              )}
+
+              {/* Separator */}
+              <div className="border-t border-border" />
+
+              {/* DEP shortcut */}
+              {rsTargetData?.dep && (
+                <div className="rounded-lg border border-border bg-card p-3">
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div>
+                      <span className="inline-block text-[10px] font-bold uppercase tracking-wide bg-orange-500/15 text-orange-500 rounded px-1.5 py-0.5 mb-1">DEP</span>
+                      <p className="text-xs text-foreground font-mono leading-snug">{rsTargetData.dep}</p>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    className="w-full h-8 gap-1.5 text-xs"
+                    disabled={rsAddingRow}
+                    onClick={() => addQuickRsEntry(rsTargetData!.dep!)}
+                  >
+                    {rsAddingRow ? <Spinner className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+                    Add DEP Entry
+                  </Button>
+                </div>
+              )}
+
+              {/* ARR shortcut */}
+              {rsTargetData?.arr && (
+                <div className="rounded-lg border border-border bg-card p-3">
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div>
+                      <span className="inline-block text-[10px] font-bold uppercase tracking-wide bg-green-500/15 text-green-500 rounded px-1.5 py-0.5 mb-1">ARR</span>
+                      <p className="text-xs text-foreground font-mono leading-snug">{rsTargetData.arr}</p>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    className="w-full h-8 gap-1.5 text-xs"
+                    disabled={rsAddingRow}
+                    onClick={() => addQuickRsEntry(rsTargetData!.arr!)}
+                  >
+                    {rsAddingRow ? <Spinner className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+                    Add ARR Entry
+                  </Button>
+                </div>
+              )}
+
+              {/* No target or no DEP/ARR */}
+              {!rsTargetData && (
+                <div className="rounded-lg border border-dashed border-border px-3 py-4 text-center">
+                  <p className="text-xs text-muted-foreground">No target linked to this running sheet.</p>
+                  <p className="text-[11px] text-muted-foreground/60 mt-1">DEP and ARR shortcuts require a target with those fields set.</p>
+                </div>
+              )}
+              {rsTargetData && !rsTargetData.dep && !rsTargetData.arr && (
+                <div className="rounded-lg border border-dashed border-border px-3 py-4 text-center">
+                  <p className="text-xs text-muted-foreground">Target has no DEP or ARR values set.</p>
+                </div>
+              )}
+
+              {/* Other Entry shortcut — always shown once sheet is selected */}
+              <div className="rounded-lg border border-border bg-card p-3">
+                <div className="mb-2">
+                  <span className="inline-block text-[10px] font-bold uppercase tracking-wide bg-blue-500/15 text-blue-400 rounded px-1.5 py-0.5 mb-1">OTHER</span>
+                  <p className="text-xs text-muted-foreground">Records a timestamped entry with the text \"Other entry\" in the observation column.</p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full h-8 gap-1.5 text-xs"
+                  disabled={rsAddingRow}
+                  onClick={() => addQuickRsEntry("Other entry")}
+                >
+                  {rsAddingRow ? <Spinner className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+                  Add Other Entry
+                </Button>
+              </div>
+
+              {/* Last entry confirmation */}
+              {rsLastEntry && (
+                <div className="rounded-lg border border-green-500/30 bg-green-500/10 px-3 py-2.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-green-400 mb-0.5">Last Entry Added</p>
+                  <p className="text-xs font-mono text-foreground">{rsLastEntry.time}</p>
+                  <p className="text-xs text-muted-foreground truncate">{rsLastEntry.label}</p>
+                </div>
+              )}
+
+              {/* Link to full RS */}
+              <button
+                onClick={() => setLocation(`/sheet/${rsSelectedSheetId}`)}
+                className="w-full flex items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors py-1"
+              >
+                <ArrowLeft className="h-3 w-3 rotate-180" />
+                Open full running sheet
+              </button>
+            </div>
+          )}
+
+          {/* Placeholder when nothing selected */}
+          {rsSelectedOpId === null && (
+            <div className="flex flex-col items-center justify-center text-center py-10 gap-3">
+              <ClipboardList className="h-10 w-10 text-muted-foreground/25" />
+              <p className="text-sm text-muted-foreground">Select an operation and running sheet to use quick RS shortcuts.</p>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── Bottom Quick-Link Banner ── */}

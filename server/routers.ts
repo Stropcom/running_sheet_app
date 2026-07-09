@@ -674,12 +674,12 @@ export const appRouter = router({
       }),
 
     create: protectedProcedure
-      .input(z.object({ sheetId: z.number(), time: z.string().optional(), observation: z.string().optional() }))
+      .input(z.object({ sheetId: z.number(), time: z.string().optional(), timeMinutes: z.number().optional(), observation: z.string().optional() }))
       .mutation(async ({ input, ctx }) => {
         await guardActiveSheet(input.sheetId);
         const existingRows = await getRowsBySheetId(input.sheetId);
         const rowNumber = existingRows.length + 1;
-        const id = await createSheetRow({ sheetId: input.sheetId, rowNumber, time: input.time, observation: input.observation, isLocked: false });
+        const id = await createSheetRow({ sheetId: input.sheetId, rowNumber, time: input.time, timeMinutes: input.timeMinutes, observation: input.observation, isLocked: false });
         await createAuditLog({ sheetId: input.sheetId, rowId: id, userId: ctx.user.id, userName: ctx.user.cin ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "row_created", details: `Row ${rowNumber} created`, createdAt: Date.now() });
         return { id, rowNumber };
       }),
@@ -1428,6 +1428,29 @@ export const appRouter = router({
           input.accuracy ?? null,
         );
         return { ok: true };
+      }),
+
+    /** Get the target details (DEP/ARR/etc.) for a specific running sheet */
+    getSheetTarget: protectedProcedure
+      .input(z.object({ sheetId: z.number() }))
+      .query(async ({ input }) => {
+        const sheet = await getRunningSheetById(input.sheetId);
+        if (!sheet || !sheet.targetId) return null;
+        const target = await getTargetById(sheet.targetId);
+        if (!target) return null;
+        return {
+          id: target.id,
+          name: target.name,
+          tgt: target.tgt,
+          dep: target.dep,
+          arr: target.arr,
+          hb: target.hb,
+          hbf: target.hbf,
+          v1: target.v1,
+          v1f: target.v1f,
+          v2: target.v2,
+          v2f: target.v2f,
+        };
       }),
 
     /** Disable location sharing for the caller (for this device) */

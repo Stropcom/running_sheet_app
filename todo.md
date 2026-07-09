@@ -493,3 +493,15 @@
 - [x] Restore Intelligence folder to original state (Intel Profiles only, no Mapping subfolder)
 - [x] Keep same Network icon for Mapping folder
 - [x] Update IntelligenceMapping.tsx back-link to no longer reference Intel Profiles parent
+
+## Mapping Page RS Actions Right Pane
+- [x] Right-side slide pane (same style as left Map Settings pane) on Mapping page
+- [x] Step 1: Choose Operation (dropdown of active operations)
+- [x] Step 2: Choose Running Sheet (dropdown filtered by chosen operation)
+- [x] Display target shortcut details (DEP, ARR) derived from target linked to chosen RS
+- [x] DEP shortcut button: adds observation row with timestamp + DEP expansion text
+- [x] ARR shortcut button: adds observation row with timestamp + ARR expansion text
+- [x] Other Entry shortcut button: adds observation row with timestamp + "Other entry" text
+- [x] Entries use same expansion logic as main running sheet shortcuts
+- [x] Entries can be edited later in the full running sheet
+- [x] Right pane toggle button on right edge of map (mirror of left pane arrow tab)

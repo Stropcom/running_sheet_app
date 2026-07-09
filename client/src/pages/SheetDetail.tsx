@@ -1210,7 +1210,7 @@ export default function SheetDetail() {
   // Offline-aware wrappers — queue locally when offline, call server when online
   const addRow = useMemo(() => ({
     isPending: _addRowOnline.isPending,
-    mutate: (input: { sheetId: number }) => {
+    mutate: (input: { sheetId: number; time?: string; timeMinutes?: number; observation?: string }) => {
       if (isOnline) {
         _addRowOnline.mutate(input);
       } else {
@@ -2053,12 +2053,32 @@ export default function SheetDetail() {
               </div>
               {hasAnyField && (
                 <div className="flex flex-wrap gap-x-6 gap-y-1">
-                  {fields.filter((f) => f.value).map((f) => (
-                    <div key={f.label} className="flex items-baseline gap-1.5 text-xs">
-                      <span className="font-semibold text-muted-foreground uppercase tracking-wide">{f.label}:</span>
-                      <span className="font-mono text-foreground">{f.value}</span>
-                    </div>
-                  ))}
+                  {fields.filter((f) => f.value).map((f) => {
+                    const isDepArr = (f.label === "DEP" || f.label === "ARR") && !isClosed;
+                    return (
+                      <div key={f.label} className="flex items-baseline gap-1.5 text-xs">
+                        <span className="font-semibold text-muted-foreground uppercase tracking-wide">{f.label}:</span>
+                        <span className="font-mono text-foreground">{f.value}</span>
+                        {isDepArr && (
+                          <button
+                            onClick={() => {
+                              const now = new Date();
+                              const h24 = now.getHours();
+                              const min = now.getMinutes();
+                              const totalMins = h24 * 60 + min;
+                              const timeStr = minutesToTimeString(totalMins);
+                              addRow.mutate({ sheetId, time: timeStr, timeMinutes: totalMins, observation: f.value! });
+                            }}
+                            disabled={addRow.isPending}
+                            title={`Add ${f.label} row with current time`}
+                            className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-primary/15 text-primary hover:bg-primary/25 active:scale-95 transition-all border border-primary/30"
+                          >
+                            + Row
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

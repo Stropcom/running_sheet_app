@@ -786,7 +786,7 @@ export default function IntelligenceMapping() {
     if (rsInlineTimerRef.current) clearTimeout(rsInlineTimerRef.current);
     rsInlineTimerRef.current = setTimeout(() => {
       submitInlineField();
-    }, 5000);
+    }, 30000);
   };
 
   const openInlineField = (label: string) => {
@@ -799,7 +799,7 @@ export default function IntelligenceMapping() {
     if (rsInlineTimerRef.current) clearTimeout(rsInlineTimerRef.current);
     rsInlineTimerRef.current = setTimeout(() => {
       submitInlineField();
-    }, 5000);
+    }, 30000);
   };
 
   const addQuickRsEntry = (observation: string) => {
@@ -1291,7 +1291,7 @@ export default function IntelligenceMapping() {
                     className="w-full resize-none rounded-md border border-border bg-background px-2.5 py-1.5 text-[11px] placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                   />
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[9px] text-muted-foreground">Auto-submits in 5 s of inactivity</span>
+                    <span className="text-[9px] text-muted-foreground">Auto-submits after 30 s of inactivity</span>
                     <button
                       onClick={submitInlineField}
                       disabled={rsAddingRow}

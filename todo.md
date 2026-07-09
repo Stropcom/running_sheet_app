@@ -630,3 +630,9 @@
 - [x] Assess and implement the strongest feasible edit flow for observation-derived intelligence markers (View Location Profile button)
 - [x] Redesign intelligence map InfoWindow popups (target-address and observation) to match modern custom-marker card style
 - [x] Review and fix Google Maps address format extraction in the intelligence scraper
+- [ ] Add two-option action sheet (RS Quick Entry / Marker) on tap-and-hold and existing marker tap
+- [ ] RS Quick Entry option: show same quick entry form as right pane, auto-fill address from tapped location, inherit selected operation/sheet from right pane
+- [ ] Marker option: show existing marker placement form with generated address at top
+- [ ] Fix single-tap map icon popup text to black (currently hard to read)
+- [x] Differentiate action chooser for intel markers (target address / observation): show "RS Quick Entry" + "Intel" (opens existing info popup, data untouched) instead of "RS Quick Entry" + "Marker"
+- [x] Blank map tap-and-hold continues to show "RS Quick Entry" + "Marker" as before

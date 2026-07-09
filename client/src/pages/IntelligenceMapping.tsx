@@ -303,6 +303,12 @@ export default function IntelligenceMapping() {
   // ── Custom Marker Placement State ────────────────────────────────────────────
   const [placingMarker, setPlacingMarker] = useState(false); // placement mode active
   const [pendingLatLng, setPendingLatLng] = useState<{ lat: number; lng: number } | null>(null);
+  // Action chooser: shown on tap-and-hold / right-click before user picks RS Quick Entry or Marker/Intel
+  // intelLoc is set when the tap is on an intelligence-derived marker (target address / observation)
+  const [actionChooser, setActionChooser] = useState<{ lat: number; lng: number; address: string; intelLoc?: IntelMapLocation } | null>(null);
+  // RS Quick Entry from map: shown when user picks "RS Quick Entry" from the action chooser
+  const [mapQeOpen, setMapQeOpen] = useState(false);
+  const [mapQeAddress, setMapQeAddress] = useState(""); // pre-filled address for the observation
   const [cmLabel, setCmLabel] = useState("");
   const [cmAddress, setCmAddress] = useState("");
   const [cmNote, setCmNote] = useState("");
@@ -715,16 +721,13 @@ export default function IntelligenceMapping() {
       title: loc.label,
     });
     marker.addListener("click", () => {
-      if (!infoWindowRef.current) {
-        infoWindowRef.current = new google.maps.InfoWindow();
-      }
-      // Enrich loc with resolved coordinates for Waze link
+      // Show the two-option action chooser (RS Quick Entry | Intel)
+      // The Intel option will open the existing info popup with all data intact
       const enriched = { ...loc, lat: position.lat, lng: position.lng };
-      infoWindowRef.current.setContent(buildInfoWindowContent(enriched));
-      infoWindowRef.current.open({ map: mapRef.current!, anchor: marker });
+      setActionChooser({ lat: position.lat, lng: position.lng, address: loc.label, intelLoc: enriched });
     });
     markersRef.current.push(marker);
-  }, [createPinElement]);
+  }, [createPinElement, setActionChooser]);
 
   const geocodeNext = useCallback(() => {
     const queue = geocodeQueueRef.current;
@@ -826,20 +829,16 @@ export default function IntelligenceMapping() {
     if (locations) {
       renderLocations(locations);
     }
-    // Right-click to place a custom marker (desktop)
+    // Right-click / tap-and-hold: show action chooser (RS Quick Entry or Marker)
     map.addListener("rightclick", (e: google.maps.MapMouseEvent) => {
       if (!e.latLng) return;
       const lat = e.latLng.lat();
       const lng = e.latLng.lng();
-      setPendingLatLng({ lat, lng });
-      setCmLabel(""); setCmAddress(""); setCmNote(""); setCmPersons([]); setCmVehicles([]); setCmRotation(0);
-      setCmPersonInput(""); setCmVehicleInput("");
-      // Reverse geocode to pre-fill address
+      // Reverse geocode to get address, then show chooser
       const geocoder = new google.maps.Geocoder();
       geocoder.geocode({ location: { lat, lng } }, (results, status) => {
-        if (status === "OK" && results && results[0]) {
-          setCmAddress(results[0].formatted_address);
-        }
+        const addr = (status === "OK" && results && results[0]) ? results[0].formatted_address : `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+        setActionChooser({ lat, lng, address: addr });
       });
     });
   }, [locations, renderLocations]);
@@ -1414,14 +1413,11 @@ export default function IntelligenceMapping() {
               const mapHeight = rect.height;
               const lng = sw.lng() + (x / mapWidth) * (ne.lng() - sw.lng());
               const lat = ne.lat() - (y / mapHeight) * (ne.lat() - sw.lat());
-              setPendingLatLng({ lat, lng });
-              setCmLabel(""); setCmAddress(""); setCmNote(""); setCmPersons([]); setCmVehicles([]); setCmRotation(0);
-              setCmPersonInput(""); setCmVehicleInput("");
+              // Reverse geocode, then show action chooser
               const geocoder = new google.maps.Geocoder();
               geocoder.geocode({ location: { lat, lng } }, (results, status) => {
-                if (status === "OK" && results && results[0]) {
-                  setCmAddress(results[0].formatted_address);
-                }
+                const addr = (status === "OK" && results && results[0]) ? results[0].formatted_address : `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+                setActionChooser({ lat, lng, address: addr });
               });
             }, 600);
           }}
@@ -1853,6 +1849,274 @@ export default function IntelligenceMapping() {
         </div>
       )}
 
+      {/* ── Action Chooser Bottom Sheet ── */}
+      {actionChooser && !pendingLatLng && !mapQeOpen && (
+        <div
+          className="absolute inset-0 z-40 flex items-end justify-center"
+          style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(3px)" }}
+          onClick={() => setActionChooser(null)}
+        >
+          <div
+            className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Address preview */}
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-0.5">Tapped Location</p>
+                <p className="text-sm font-semibold text-foreground leading-snug">{actionChooser.address}</p>
+              </div>
+              <button onClick={() => setActionChooser(null)} className="ml-3 text-muted-foreground hover:text-foreground flex-shrink-0">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {/* RS Quick Entry — always shown */}
+              <button
+                onClick={() => {
+                  setMapQeAddress(actionChooser.address);
+                  setMapQeOpen(true);
+                  setActionChooser(null);
+                }}
+                className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-primary/40 bg-primary/5 hover:bg-primary/10 active:scale-95 transition-all px-4 py-5"
+              >
+                <ClipboardList className="h-7 w-7 text-primary" />
+                <span className="text-sm font-bold text-foreground">RS Quick Entry</span>
+                <span className="text-[10px] text-muted-foreground text-center leading-tight">Add a running sheet entry for this location</span>
+              </button>
+
+              {/* Intel — shown for intelligence-derived markers (target address / observation) */}
+              {actionChooser.intelLoc ? (
+                <button
+                  onClick={() => {
+                    const enriched = actionChooser.intelLoc!;
+                    if (!infoWindowRef.current) {
+                      infoWindowRef.current = new google.maps.InfoWindow();
+                    }
+                    infoWindowRef.current.setContent(buildInfoWindowContent(enriched));
+                    infoWindowRef.current.setPosition({ lat: enriched.lat!, lng: enriched.lng! });
+                    infoWindowRef.current.open(mapRef.current!);
+                    setActionChooser(null);
+                  }}
+                  className={`flex flex-col items-center justify-center gap-2 rounded-xl border-2 active:scale-95 transition-all px-4 py-5 ${
+                    actionChooser.intelLoc.type === "target_address"
+                      ? "border-red-500/40 bg-red-500/5 hover:bg-red-500/10"
+                      : "border-purple-500/40 bg-purple-500/5 hover:bg-purple-500/10"
+                  }`}
+                >
+                  <FolderSearch className={`h-7 w-7 ${actionChooser.intelLoc.type === "target_address" ? "text-red-500" : "text-purple-500"}`} />
+                  <span className="text-sm font-bold text-foreground">Intel</span>
+                  <span className="text-[10px] text-muted-foreground text-center leading-tight">
+                    {actionChooser.intelLoc.type === "target_address" ? "View target address info" : "View observed location info"}
+                  </span>
+                </button>
+              ) : (
+                /* Marker — shown for blank map taps */
+                <button
+                  onClick={() => {
+                    const { lat, lng, address } = actionChooser;
+                    setCmLabel(""); setCmAddress(address); setCmNote(""); setCmPersons([]); setCmVehicles([]); setCmRotation(0);
+                    setCmPersonInput(""); setCmVehicleInput("");
+                    setPendingLatLng({ lat, lng });
+                    setActionChooser(null);
+                  }}
+                  className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-border bg-muted/30 hover:bg-muted/60 active:scale-95 transition-all px-4 py-5"
+                >
+                  <MapPin className="h-7 w-7 text-muted-foreground" />
+                  <span className="text-sm font-bold text-foreground">Marker</span>
+                  <span className="text-[10px] text-muted-foreground text-center leading-tight">Place a custom map marker here</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Map RS Quick Entry Modal ── */}
+      {mapQeOpen && (
+        <div
+          className="absolute inset-0 z-40 flex items-end justify-center"
+          style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(3px)" }}
+          onClick={() => { setMapQeOpen(false); setMapQeAddress(""); closeInlineField(); }}
+        >
+          <div
+            className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-foreground">RS Quick Entry</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{mapQeAddress}</p>
+              </div>
+              <button onClick={() => { setMapQeOpen(false); setMapQeAddress(""); closeInlineField(); }} className="ml-3 text-muted-foreground hover:text-foreground flex-shrink-0">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* No sheet selected warning */}
+            {rsSelectedSheetId === null ? (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-3 text-center">
+                <p className="text-xs font-semibold text-amber-400 mb-1">No running sheet selected</p>
+                <p className="text-[11px] text-muted-foreground">Select an operation and running sheet in the right panel first, then tap &amp; hold the map again.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {/* Sheet + target strip */}
+                <div className="flex items-center gap-2">
+                  {rsSheetsData && (() => {
+                    const sheet = (rsSheetsData as any[]).find((s: any) => s.id === rsSelectedSheetId);
+                    return sheet ? (
+                      <div className="flex-1 flex items-center gap-1.5 px-2 py-1.5 rounded-md border border-primary/30 bg-primary/5 min-w-0">
+                        <MapIcon className="h-3 w-3 text-primary flex-shrink-0" />
+                        <span className="text-[11px] font-semibold text-primary truncate">{sheet.title || `Sheet #${sheet.id}`}</span>
+                      </div>
+                    ) : null;
+                  })()}
+                  {rsTargetData && (
+                    <div className="flex-shrink-0 rounded-md border border-border bg-muted/30 px-2 py-1">
+                      <p className="text-[10px] font-bold text-foreground leading-none">{rsTargetData.tgt ?? rsTargetData.name}</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="border-t border-border" />
+
+                {/* DEP / ARR */}
+                {(rsTargetData?.dep || rsTargetData?.arr) && (
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {rsTargetData?.dep && (
+                      <button
+                        disabled={rsAddingRow}
+                        onClick={() => {
+                          const obs = `${rsTargetData!.dep!} — ${mapQeAddress}`;
+                          if (rsInlineLabel === obs) { closeInlineField(); } else { openInlineField(obs); }
+                        }}
+                        className={`flex flex-col items-start gap-0.5 rounded-md border border-orange-500/30 bg-orange-500/5 hover:bg-orange-500/10 active:scale-95 transition-all px-2.5 py-2 disabled:opacity-50 ${rsInlineLabel?.startsWith(rsTargetData!.dep!) ? "ring-1 ring-orange-400" : ""}`}
+                      >
+                        <span className="text-[9px] font-bold uppercase tracking-wide text-orange-400">DEP</span>
+                        <span className="text-[10px] text-foreground font-mono leading-tight line-clamp-2">{rsTargetData.dep}</span>
+                      </button>
+                    )}
+                    {rsTargetData?.arr && (
+                      <button
+                        disabled={rsAddingRow}
+                        onClick={() => {
+                          const obs = `${rsTargetData!.arr!} — ${mapQeAddress}`;
+                          if (rsInlineLabel === obs) { closeInlineField(); } else { openInlineField(obs); }
+                        }}
+                        className={`flex flex-col items-start gap-0.5 rounded-md border border-green-500/30 bg-green-500/5 hover:bg-green-500/10 active:scale-95 transition-all px-2.5 py-2 disabled:opacity-50 ${rsInlineLabel?.startsWith(rsTargetData!.arr!) ? "ring-1 ring-green-400" : ""}`}
+                      >
+                        <span className="text-[9px] font-bold uppercase tracking-wide text-green-400">ARR</span>
+                        <span className="text-[10px] text-foreground font-mono leading-tight line-clamp-2">{rsTargetData.arr}</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Inline observation field */}
+                {rsInlineLabel && (() => {
+                  const selectedSheet = (rsSheetsData as any[] | undefined)?.find((s: any) => s.id === rsSelectedSheetId);
+                  const rosterCins: string[] = [];
+                  if (selectedSheet?.sheetCins) {
+                    try {
+                      const parsed: Array<{ cin: string; isTeamLeader?: boolean }> = typeof selectedSheet.sheetCins === "string"
+                        ? JSON.parse(selectedSheet.sheetCins)
+                        : selectedSheet.sheetCins;
+                      parsed.sort((a, b) => (b.isTeamLeader ? 1 : 0) - (a.isTeamLeader ? 1 : 0)).forEach(c => { if (c.cin) rosterCins.push(c.cin); });
+                    } catch { /* ignore */ }
+                  }
+                  return (
+                    <div className="rounded-lg border border-border bg-muted/40 p-2.5 flex flex-col gap-2" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{rsInlineLabel}</span>
+                        <button onClick={closeInlineField} className="text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
+                      </div>
+                      <textarea
+                        ref={rsInlineInputRef}
+                        value={rsInlineText}
+                        onChange={(e) => { setRsInlineText(e.target.value); resetInlineTimer(); }}
+                        onFocus={resetInlineTimer}
+                        placeholder="Add details (optional)…"
+                        rows={2}
+                        className="w-full resize-none rounded-md border border-border bg-background px-2.5 py-1.5 text-[11px] placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                      />
+                      {rosterCins.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {rosterCins.map((cin) => (
+                            <button key={cin} onClick={() => { const next = rsInlineCin === cin ? null : cin; setRsInlineCin(next); rsInlineCinRef.current = next; resetInlineTimer(); }}
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all active:scale-95 ${rsInlineCin === cin ? "bg-primary/20 border-primary/60 text-primary" : "bg-muted/40 border-border text-muted-foreground hover:bg-muted/70 hover:text-foreground"}`}>
+                              {cin}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <svg className="h-5 w-5 -rotate-90" viewBox="0 0 20 20">
+                            <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted-foreground/20" />
+                            <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" strokeWidth="2"
+                              strokeDasharray={`${2 * Math.PI * 8}`}
+                              strokeDashoffset={`${2 * Math.PI * 8 * (1 - rsCountdown / 30)}`}
+                              className={rsCountdown <= 10 ? "text-red-400" : "text-primary"}
+                              style={{ transition: "stroke-dashoffset 1s linear" }}
+                            />
+                          </svg>
+                          <span className={`text-[10px] font-mono tabular-nums ${rsCountdown <= 10 ? "text-red-400" : "text-muted-foreground"}`}>{rsCountdown}s</span>
+                        </div>
+                        <button onClick={submitInlineField} disabled={rsAddingRow}
+                          className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-[10px] font-semibold text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-50">
+                          {rsAddingRow ? <Spinner className="h-3 w-3" /> : <Send className="h-3 w-3" />}
+                          Submit
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Quick action buttons */}
+                <div className="grid grid-cols-2 gap-1.5">
+                  {([
+                    { label: "Vehicle Arrive",  text: "Vehicle arrive",  colour: "blue" },
+                    { label: "Vehicle Depart",  text: "Vehicle depart",  colour: "purple" },
+                    { label: "Person Arrive",   text: "Person arrive",   colour: "teal" },
+                    { label: "Person Depart",   text: "Person depart",   colour: "rose" },
+                    { label: "Other Entry",     text: "Other entry",     colour: "slate" },
+                  ] as const).map(({ label, text, colour }) => {
+                    const colourMap: Record<string, string> = {
+                      blue:   "border-blue-500/30 bg-blue-500/5 hover:bg-blue-500/10 text-blue-400",
+                      purple: "border-purple-500/30 bg-purple-500/5 hover:bg-purple-500/10 text-purple-400",
+                      teal:   "border-teal-500/30 bg-teal-500/5 hover:bg-teal-500/10 text-teal-400",
+                      rose:   "border-rose-500/30 bg-rose-500/5 hover:bg-rose-500/10 text-rose-400",
+                      slate:  "border-border bg-muted/30 hover:bg-muted/60 text-muted-foreground",
+                    };
+                    // Pre-append address to the observation text
+                    const obsText = `${text} — ${mapQeAddress}`;
+                    const isActive = rsInlineLabel === obsText;
+                    return (
+                      <button key={label} disabled={rsAddingRow}
+                        onClick={() => { if (isActive) { closeInlineField(); } else { openInlineField(obsText); } }}
+                        className={`flex flex-col items-center justify-center gap-0.5 rounded-md border active:scale-95 transition-all px-2 py-2.5 disabled:opacity-50 ${colourMap[colour]} ${isActive ? "ring-1 ring-current" : ""}`}>
+                        {rsAddingRow && isActive ? <Spinner className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+                        <span className="text-[10px] font-semibold leading-tight text-center">{label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Last entry confirmation */}
+                {rsLastEntry && (
+                  <div className="rounded-md border border-green-500/30 bg-green-500/10 px-2.5 py-2">
+                    <p className="text-[9px] font-bold uppercase tracking-wide text-green-400 mb-0.5">Last Entry</p>
+                    <p className="text-[11px] font-mono text-foreground">{rsLastEntry.time} — {rsLastEntry.label}</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── Custom Marker Placement Modal ── */}
       {pendingLatLng && (
         <div
@@ -1875,6 +2139,18 @@ export default function IntelligenceMapping() {
               <button onClick={() => { setPendingLatLng(null); setEditingMarkerId(null); }} className="text-muted-foreground hover:text-foreground">
                 <X className="h-4 w-4" />
               </button>
+            </div>
+
+            {/* 0. Address — shown at top so user can verify before filling other fields */}
+            <div className="mb-4 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1">Address</p>
+              <input
+                type="text"
+                value={cmAddress}
+                onChange={(e) => setCmAddress(e.target.value)}
+                placeholder="Auto-filled from coordinates…"
+                className="w-full text-sm bg-transparent border-none outline-none text-foreground placeholder:text-muted-foreground"
+              />
             </div>
 
             {/* 1. Icon picker */}
@@ -1976,18 +2252,6 @@ export default function IntelligenceMapping() {
                 value={cmLabel}
                 onChange={(e) => setCmLabel(e.target.value)}
                 placeholder="e.g. Target address, coffee shop..."
-                className="w-full text-sm bg-background border border-border rounded-md px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-              />
-            </div>
-
-            {/* 4. Address */}
-            <div className="mb-3">
-              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Address</label>
-              <input
-                type="text"
-                value={cmAddress}
-                onChange={(e) => setCmAddress(e.target.value)}
-                placeholder="Auto-filled from coordinates..."
                 className="w-full text-sm bg-background border border-border rounded-md px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
               />
             </div>

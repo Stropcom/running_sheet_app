@@ -222,14 +222,23 @@ export default function IntelligenceMapping() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Per-device ID — persisted in localStorage so each browser/device is unique
+  // deviceId is scoped to this user+browser combination.
+  // We use a user-specific key so different users on the same browser never share a deviceId.
+  // We also write to sessionStorage as a fallback so the same session never generates a new id
+  // even if localStorage was cleared mid-session (common on iOS Safari in private mode).
   const deviceId = useMemo(() => {
-    let id = localStorage.getItem("runlog_device_id");
+    const userKey = `runlog_device_id_u${user?.id ?? "anon"}`;
+    // Check sessionStorage first (survives within a single browser session)
+    let id = sessionStorage.getItem(userKey) ?? localStorage.getItem(userKey);
     if (!id) {
       id = crypto.randomUUID();
-      localStorage.setItem("runlog_device_id", id);
     }
+    // Always write to both so they stay in sync
+    try { localStorage.setItem(userKey, id); } catch { /* ignore */ }
+    try { sessionStorage.setItem(userKey, id); } catch { /* ignore */ }
     return id;
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   // Location sharing state
   const [sharingEnabled, setSharingEnabled] = useState(false);

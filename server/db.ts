@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, isNull, like, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, like, lt, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { vaultEncrypt, vaultDecrypt } from "./wipcVault";
 import {
@@ -3318,6 +3318,19 @@ export async function upsertUserLocation(
     .onDuplicateKeyUpdate({
       set: { lat, lng, speed, heading, accuracy, operationIds: opIdsJson, sharingEnabled, updatedAt: now },
     });
+
+  // Auto-cleanup: remove stale rows for this user that are not sharing and older than 2 hours.
+  // This prevents accumulation of orphaned device rows from old sessions.
+  const twoHoursAgo = now - 2 * 60 * 60 * 1000;
+  await db
+    .delete(userLocations)
+    .where(
+      and(
+        eq(userLocations.userId, userId),
+        eq(userLocations.sharingEnabled, false),
+        lt(userLocations.updatedAt, twoHoursAgo),
+      )
+    );
 }
 
 /**

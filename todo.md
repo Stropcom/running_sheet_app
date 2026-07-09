@@ -516,3 +516,9 @@
 - [x] Fix 7: RS pane sheet title is a clickable link to the full running sheet; add back-to-map icon
 - [x] Fix 8: Persist all left and right pane settings in localStorage (ops selected, targets, sharing state)
 - [x] Fix 9: Restore sharing/location pin on return to map — if share+show was on, it must stay on
+
+## Duplicate Device Location Fix (Round 55)
+- [x] Clean up stale duplicate user_location rows in DB (keep only the most recent per user)
+- [x] Fix deviceId generation: use a single stable key per user+browser so it never duplicates
+- [x] Add server-side auto-cleanup: delete rows older than 2 hours with sharingEnabled=false on each upsert
+- [x] Add a clearAllMyDevices procedure so a user can manually wipe all their stale rows

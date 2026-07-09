@@ -628,3 +628,5 @@
 - [x] Change observation intelligence map markers from teardrop pins to purple house markers
 - [x] Add popup edit action for target-address intelligence markers
 - [x] Assess and implement the strongest feasible edit flow for observation-derived intelligence markers (View Location Profile button)
+- [x] Redesign intelligence map InfoWindow popups (target-address and observation) to match modern custom-marker card style
+- [x] Review and fix Google Maps address format extraction in the intelligence scraper

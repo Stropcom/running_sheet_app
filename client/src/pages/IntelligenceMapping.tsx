@@ -149,153 +149,73 @@ function getTeamColour(team: string | null): string {
 
 function buildInfoWindowContent(loc: IntelMapLocation): string {
   const isTarget = loc.type === "target_address";
-  const headerBg = isTarget ? "#dc2626" : "#7c3aed";
+  const accentColor = isTarget ? "#dc2626" : "#7c3aed";
+  const typeLabel = isTarget ? "TARGET ADDRESS" : "OBSERVED LOCATION";
 
-  let html = `
-    <div style="font-family:system-ui,sans-serif;min-width:260px;max-width:340px;border-radius:8px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.25);">
-      <div style="background:${headerBg};padding:10px 14px;">
-        <div style="color:#fff;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;opacity:0.85;margin-bottom:2px;">
-          ${isTarget ? "Target Address" : "Observed Location"}
-        </div>
-        <div style="color:#fff;font-size:15px;font-weight:700;line-height:1.3;">${loc.label}</div>
-      </div>
-      <div style="padding:10px 14px;background:#fff;">
-  `;
+  const lines: string[] = [];
 
+  // Type badge + label
+  lines.push(`
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+      <span style="background:${accentColor};color:#fff;border-radius:4px;font-size:9px;font-weight:700;padding:2px 6px;letter-spacing:0.07em;white-space:nowrap;">${typeLabel}</span>
+    </div>
+    <strong style="font-size:13px;color:#111;line-height:1.35;display:block;margin-bottom:2px;">${loc.label}</strong>
+  `);
+
+  // Linked target details (for target_address)
   if (isTarget && loc.linkedTargets.length > 0) {
     for (const t of loc.linkedTargets) {
-      html += `
-        <div style="border:1px solid #fca5a5;border-radius:6px;padding:8px 10px;margin-bottom:8px;background:#fff5f5;">
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-            <span style="background:#dc2626;color:#fff;border-radius:4px;font-size:9px;font-weight:700;padding:1px 5px;letter-spacing:0.06em;">TARGET</span>
-            <span style="font-size:13px;font-weight:700;color:#1e293b;">${t.name}</span>
-          </div>
-          ${t.tgt ? `<div style="font-size:11px;color:#334155;margin-bottom:3px;">TGT: ${t.tgt}</div>` : ""}
-          ${t.hbf ? `<div style="font-size:11px;color:#475569;display:flex;align-items:flex-start;gap:4px;margin-bottom:2px;"><span style="color:#dc2626;margin-top:1px;">⌂</span><span>${t.hbf}</span></div>` : ""}
-          ${t.v1f ? `<div style="font-size:11px;color:#475569;display:flex;align-items:flex-start;gap:4px;margin-bottom:2px;"><span style="color:#f59e0b;margin-top:1px;">⊕</span><span>${t.v1f}</span></div>` : ""}
-          ${t.v2f ? `<div style="font-size:11px;color:#475569;display:flex;align-items:flex-start;gap:4px;margin-bottom:2px;"><span style="color:#f59e0b;margin-top:1px;">⊕</span><span>${t.v2f}</span></div>` : ""}
-          ${t.operationName ? `<div style="font-size:10px;color:#94a3b8;margin-top:3px;">Op: ${t.operationName}</div>` : ""}
-        </div>
-      `;
+      lines.push(`<div style="margin-top:6px;padding:6px 8px;background:#fef2f2;border-left:3px solid #dc2626;border-radius:0 4px 4px 0;">`);
+      lines.push(`<div style="font-size:12px;font-weight:700;color:#111;margin-bottom:2px;">${t.name}</div>`);
+      if (t.tgt) lines.push(`<div style="font-size:11px;color:#444;margin-bottom:1px;">TGT: ${t.tgt}</div>`);
+      if (t.hbf) lines.push(`<div style="font-size:11px;color:#555;margin-bottom:1px;">HBF: ${t.hbf}</div>`);
+      if (t.v1f) lines.push(`<div style="font-size:11px;color:#555;margin-bottom:1px;">V1F: ${t.v1f}</div>`);
+      if (t.v2f) lines.push(`<div style="font-size:11px;color:#555;margin-bottom:1px;">V2F: ${t.v2f}</div>`);
+      if (t.operationName) lines.push(`<div style="font-size:10px;color:#888;margin-top:2px;">Op: ${t.operationName}</div>`);
+      lines.push(`</div>`);
     }
   }
 
-  const hasAssoc = loc.assocPersons.length > 0 || loc.assocVehicles.length > 0;
-  if (hasAssoc) {
-    if (isTarget && loc.linkedTargets.length > 0) {
-      html += `<div style="border-top:1px solid #e2e8f0;margin:6px 0 8px;"></div>`;
-    }
-    if (loc.assocPersons.length > 0) {
-      html += `<div style="font-size:10px;font-weight:600;color:#334155;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:4px;">Associates</div>`;
-      for (const p of loc.assocPersons) {
-        html += `<div style="font-size:12px;color:#0f172a;padding:2px 0;display:flex;align-items:center;gap:5px;"><span style="color:#3b82f6;">👤</span>${p}</div>`;
-      }
-    }
-    if (loc.assocVehicles.length > 0) {
-      html += `<div style="font-size:10px;font-weight:600;color:#334155;text-transform:uppercase;letter-spacing:0.07em;margin:6px 0 4px;">Vehicles</div>`;
-      for (const v of loc.assocVehicles) {
-        html += `<div style="font-size:12px;color:#0f172a;padding:2px 0;display:flex;align-items:center;gap:5px;"><span style="color:#f59e0b;">🚗</span>${v}</div>`;
-      }
-    }
-  }
-
+  // Linked targets (for observation)
   if (!isTarget && loc.linkedTargets.length > 0) {
-    html += `<div style="border-top:1px solid #e2e8f0;margin:6px 0 8px;"></div>`;
-    html += `<div style="font-size:10px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:4px;">Linked Targets</div>`;
+    lines.push(`<div style="margin-top:6px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Linked Targets</span>`);
     for (const t of loc.linkedTargets) {
-      html += `<div style="font-size:12px;color:#1e293b;padding:2px 0;display:flex;align-items:center;gap:5px;"><span style="color:#dc2626;">🎯</span>${t.name}</div>`;
+      lines.push(`<div style="font-size:12px;color:#111;padding:1px 0;">${t.name}</div>`);
     }
+    lines.push(`</div>`);
   }
 
-  // Edit / navigation action buttons
+  // Associated persons
+  if (loc.assocPersons.length > 0) {
+    lines.push(`<div style="margin-top:6px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Persons</span><p style="font-size:12px;color:#111;margin:2px 0 0">${loc.assocPersons.join(", ")}</p></div>`);
+  }
+
+  // Associated vehicles
+  if (loc.assocVehicles.length > 0) {
+    lines.push(`<div style="margin-top:4px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Vehicles</span><p style="font-size:12px;color:#111;margin:2px 0 0">${loc.assocVehicles.join(", ")}</p></div>`);
+  }
+
+  // Action buttons row
+  const btnRow: string[] = [];
+  if (loc.lat != null && loc.lng != null) {
+    const lat = loc.lat;
+    const lng = loc.lng;
+    btnRow.push(`<a href="https://waze.com/ul?ll=${lat},${lng}&navigate=yes" target="_blank" style="font-size:11px;padding:4px 10px;background:#00bcd4;color:#fff;border-radius:4px;text-decoration:none">Waze</a>`);
+    btnRow.push(`<a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}" target="_blank" style="font-size:11px;padding:4px 10px;background:#4285f4;color:#fff;border-radius:4px;text-decoration:none">Street View</a>`);
+  }
   if (isTarget && loc.linkedTargets.length > 0) {
-    html += `<div style="border-top:1px solid #e2e8f0;margin-top:10px;padding-top:10px;display:flex;flex-direction:column;gap:6px;">`;
     for (const t of loc.linkedTargets) {
-      html += `
-        <button
-          onclick="window.__editTargetFromMap(${t.targetId})"
-          style="
-            display:flex;align-items:center;justify-content:center;gap:8px;
-            background:#16a34a;color:#fff;
-            border:none;border-radius:6px;padding:8px 12px;
-            font-size:12px;font-weight:700;letter-spacing:0.04em;
-            cursor:pointer;
-            box-shadow:0 2px 6px rgba(22,163,74,0.35);
-            width:100%;
-          "
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" xmlns="http://www.w3.org/2000/svg"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-          Edit ${t.name}
-        </button>
-      `;
+      btnRow.push(`<button onclick="window.__editTargetFromMap(${t.targetId})" style="font-size:11px;padding:4px 10px;background:#16a34a;color:#fff;border-radius:4px;border:none;cursor:pointer">Edit ${t.name}</button>`);
     }
-    html += `</div>`;
   } else if (!isTarget) {
     const encodedLabel = encodeURIComponent(loc.label);
-    html += `
-      <div style="border-top:1px solid #e2e8f0;margin-top:10px;padding-top:10px;">
-        <a
-          href="/intelligence/location/${encodedLabel}"
-          style="
-            display:flex;align-items:center;justify-content:center;gap:8px;
-            background:#7c3aed;color:#fff;
-            border-radius:6px;padding:8px 12px;
-            font-size:12px;font-weight:700;letter-spacing:0.04em;
-            text-decoration:none;
-            box-shadow:0 2px 6px rgba(124,58,237,0.35);
-          "
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" xmlns="http://www.w3.org/2000/svg"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          View Location Profile
-        </a>
-      </div>
-    `;
+    btnRow.push(`<a href="/intelligence/location/${encodedLabel}" style="font-size:11px;padding:4px 10px;background:#7c3aed;color:#fff;border-radius:4px;text-decoration:none">View Profile</a>`);
+  }
+  if (btnRow.length > 0) {
+    lines.push(`<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${btnRow.join("")}</div>`);
   }
 
-  // Navigation buttons — only shown when coordinates are available
-  if (loc.lat != null && loc.lng != null) {
-    const wazeUrl = `https://waze.com/ul?ll=${loc.lat},${loc.lng}&navigate=yes`;
-    const streetViewUrl = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${loc.lat},${loc.lng}`;
-    html += `
-      <div style="border-top:1px solid #e2e8f0;margin-top:10px;padding-top:10px;display:flex;flex-direction:column;gap:8px;">
-        <a
-          href="${wazeUrl}"
-          target="_blank"
-          rel="noopener noreferrer"
-          style="
-            display:flex;align-items:center;justify-content:center;gap:8px;
-            background:#05c8f7;color:#fff;
-            border-radius:6px;padding:8px 12px;
-            font-size:12px;font-weight:700;letter-spacing:0.04em;
-            text-decoration:none;
-            box-shadow:0 2px 6px rgba(5,200,247,0.35);
-          "
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C7.03 2 3 6.03 3 11c0 3.1 1.53 5.84 3.88 7.54L6 22l3.37-1.12A9.04 9.04 0 0 0 12 21c4.97 0 9-4.03 9-9s-4.03-10-9-10zm0 16c-1.18 0-2.31-.27-3.32-.74l-.24-.11-2.47.82.59-2.38-.16-.25A7.02 7.02 0 0 1 5 11c0-3.86 3.14-7 7-7s7 3.14 7 7-3.14 7-7 7z"/></svg>
-          Navigate in Waze
-        </a>
-        <a
-          href="${streetViewUrl}"
-          target="_blank"
-          rel="noopener noreferrer"
-          style="
-            display:flex;align-items:center;justify-content:center;gap:8px;
-            background:#4285f4;color:#fff;
-            border-radius:6px;padding:8px 12px;
-            font-size:12px;font-weight:700;letter-spacing:0.04em;
-            text-decoration:none;
-            box-shadow:0 2px 6px rgba(66,133,244,0.35);
-          "
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg"><path d="M12 3C8.13 3 5 6.13 5 10c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 7.5 12 7.5s2.5 1.12 2.5 2.5S13.38 12.5 12 12.5z"/></svg>
-          Street View
-        </a>
-      </div>
-    `;
-  }
-
-  html += `</div></div>`;
-  return html;
+  return `<div style="font-family:sans-serif;max-width:260px;color:#111">${lines.join("")}</div>`;
 }
 
 // ── Main Component ─────────────────────────────────────────────────────────────

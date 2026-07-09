@@ -1134,6 +1134,14 @@ export function extractEntitiesFromText(text: string): Array<{
       /\b\d{1,5}\s+\w[\w\s]*(street|road|ave|avenue|drive|way|court|place|close|crescent|boulevard|highway|freeway|lane|terrace|parade|circuit)\b/i.test(fullDescription) ||
       /\b(street|road|ave|avenue|drive|way|court|place|close|crescent|boulevard|highway|freeway|lane|terrace|parade|circuit)\b/i.test(shortForm) ||
       /^\d{1,5}\s/.test(shortForm) ||
+      // Google Maps formatted addresses: "131 Lakey St, Southern River WA 6110, Australia"
+      // Pattern: number + street name + suburb + STATE + postcode (+ optional ", Australia")
+      /\b\d{1,5}[A-Za-z]?\/\d{1,5}\s/.test(shortForm) ||  // unit/number e.g. "3/12 Smith St"
+      /\b\d{1,5}[A-Za-z]?\/\d{1,5}\s/.test(fullDescription) ||
+      /,\s*[A-Za-z][\w\s]+\s+(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\s+\d{4}/.test(shortForm) ||
+      /,\s*[A-Za-z][\w\s]+\s+(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\s+\d{4}/.test(fullDescription) ||
+      /,\s*Australia\s*$/.test(shortForm) ||
+      /,\s*Australia\s*$/.test(fullDescription) ||
       // Airport terminals, train stations, bus stops, ports, gates, platforms
       /\b(terminal|gate|platform|pier|bay|berth|concourse|departure|arrival|lounge)\s+\d/i.test(shortForm) ||
       /\b(airport|station|terminus|port|wharf|depot|interchange|shopping centre|shopping center|shopping mall|mall|plaza|precinct)\b/i.test(shortForm) ||

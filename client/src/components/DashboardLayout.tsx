@@ -145,19 +145,19 @@ function DashboardLayoutContent({
 
 
   const menuItems = [
-    { icon: FileText, label: "Operations", path: "/" },
-    { icon: ClipboardCheck, label: "Governance", path: "/governance" },
-    { icon: CalendarDays, label: "Calendar", path: "/calendar" },
-    { icon: Zap, label: "Shortcuts", path: "/shortcuts" },
-    { icon: FolderSearch, label: "Intelligence", path: "/intelligence" },
-    { icon: BookOpen, label: "Target Registry", path: "/target-registry" },
-    { icon: ScrollText, label: "Audit Log", path: "/audit" },
-    { icon: WifiOff, label: "Draft Mode", path: "/draft", badge: draftCounts.total > 0 ? draftCounts.total : undefined },
-    { icon: Trash2, label: "Recycle Bin", path: "/recycle-bin" },
-    { icon: HelpCircle, label: "Help", path: "/help" },
-    { icon: User, label: "My Profile", path: "/profile" },
+    { icon: FileText, label: "Operations", path: "/", color: "text-blue-400" },
+    { icon: ClipboardCheck, label: "Governance", path: "/governance", color: "text-purple-400" },
+    { icon: CalendarDays, label: "Calendar", path: "/calendar", color: "text-cyan-400" },
+    { icon: Zap, label: "Shortcuts", path: "/shortcuts", color: "text-yellow-400" },
+    { icon: FolderSearch, label: "Intelligence", path: "/intelligence", color: "text-violet-400" },
+    { icon: BookOpen, label: "Target Registry", path: "/target-registry", color: "text-rose-400" },
+    { icon: ScrollText, label: "Audit Log", path: "/audit", color: "text-slate-400" },
+    { icon: WifiOff, label: "Draft Mode", path: "/draft", badge: draftCounts.total > 0 ? draftCounts.total : undefined, color: "text-orange-400" },
+    { icon: Trash2, label: "Recycle Bin", path: "/recycle-bin", color: "text-red-400" },
+    { icon: HelpCircle, label: "Help", path: "/help", color: "text-sky-400" },
+    { icon: User, label: "My Profile", path: "/profile", color: "text-lime-400" },
     ...(user?.role === "admin" ? [
-      { icon: Users, label: "User Management", path: "/admin" },
+      { icon: Users, label: "User Management", path: "/admin", color: "text-indigo-400" },
     ] : []), // member and observer do not see User Management
   ];
 
@@ -243,9 +243,9 @@ function DashboardLayoutContent({
                           tooltip="To-Do"
                           className="h-10 font-normal transition-all"
                         >
-                          <ClipboardList className={`h-4 w-4 ${todoCount > 0 ? "text-blue-400" : location === "/todo" || location === "/todo/governance" ? "text-sidebar-primary" : "text-sidebar-foreground/60"}`} />
+                          <ClipboardList className={`h-4 w-4 ${todoCount > 0 ? "text-amber-400" : location === "/todo" || location === "/todo/governance" ? "text-amber-400" : "text-amber-400/60"}`} />
                           <span className={`flex-1 ${
-                            todoCount > 0 ? "text-blue-300 font-medium" : location === "/todo" || location === "/todo/governance" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"
+                            todoCount > 0 ? "text-amber-300 font-medium" : location === "/todo" || location === "/todo/governance" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"
                           }`}>
                             To-Do
                           </span>
@@ -308,7 +308,7 @@ function DashboardLayoutContent({
                           tooltip="Mapping"
                           className="h-10 font-normal transition-all"
                         >
-                          <Network className={`h-4 w-4 ${location === "/intelligence/mapping" ? "text-emerald-400" : "text-sidebar-foreground/60"}`} />
+                          <Network className={`h-4 w-4 ${location === "/intelligence/mapping" ? "text-emerald-400" : "text-emerald-400/60"}`} />
                           <span className={`flex-1 ${location === "/intelligence/mapping" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
                             Mapping
                           </span>
@@ -325,7 +325,7 @@ function DashboardLayoutContent({
                           tooltip="Operation Management"
                           className="h-10 font-normal transition-all"
                         >
-                          <ArrowRightLeft className={`h-4 w-4 ${location === "/operation-management" ? "text-sidebar-primary" : "text-sidebar-foreground/60"}`} />
+                          <ArrowRightLeft className={`h-4 w-4 ${location === "/operation-management" ? "text-teal-400" : "text-teal-400/60"}`} />
                           <span className={`flex-1 ${location === "/operation-management" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
                             Operation Management
                           </span>
@@ -341,7 +341,7 @@ function DashboardLayoutContent({
                           tooltip="Court"
                           className="h-10 font-normal transition-all"
                         >
-                          <Scale className={`h-4 w-4 ${location.startsWith("/court") ? "text-sidebar-primary" : "text-sidebar-foreground/60"}`} />
+                          <Scale className={`h-4 w-4 ${location.startsWith("/court") ? "text-amber-400" : "text-amber-400/60"}`} />
                           <span className={`flex-1 ${location.startsWith("/court") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
                             Court
                           </span>
@@ -401,7 +401,7 @@ function DashboardLayoutContent({
                           tooltip="Intelligence"
                           className="h-10 font-normal transition-all"
                         >
-                          <FolderSearch className={`h-4 w-4 ${location === "/intelligence" || (location.startsWith("/intelligence") && !location.startsWith("/intelligence/mapping")) ? "text-sidebar-primary" : "text-sidebar-foreground/60"}`} />
+                          <FolderSearch className={`h-4 w-4 ${location === "/intelligence" || (location.startsWith("/intelligence") && !location.startsWith("/intelligence/mapping")) ? "text-violet-400" : "text-violet-400/60"}`} />
                           <span className={`flex-1 ${location === "/intelligence" || (location.startsWith("/intelligence") && !location.startsWith("/intelligence/mapping")) ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
                             Intelligence
                           </span>
@@ -422,7 +422,7 @@ function DashboardLayoutContent({
                           }}
                         >
                           <item.icon className={`h-4 w-4 ${
-                            (item as any).badge > 0 ? "text-blue-400" : isActive ? "text-sidebar-primary" : item.label === "Shortcuts" && isObservationFocused ? "text-cyan-400" : "text-sidebar-foreground/60"
+                            (item as any).badge > 0 ? "text-blue-400" : isActive ? (item as any).color ?? "text-sidebar-primary" : item.label === "Shortcuts" && isObservationFocused ? "text-yellow-400" : (item as any).color ? `${(item as any).color}/60` : "text-sidebar-foreground/60"
                           }`} />
                           <span className={`flex-1 ${
                             (item as any).badge > 0 ? "text-blue-300 font-medium" : isActive ? "text-sidebar-foreground font-medium" : item.label === "Shortcuts" && isObservationFocused ? "text-cyan-300 font-medium" : "text-sidebar-foreground/80"

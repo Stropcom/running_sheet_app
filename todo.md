@@ -555,3 +555,29 @@
 - [x] Stable deviceId: use server-assigned persistent cookie token instead of localStorage UUID
 - [x] Remove operationIds scoping from visibility — viewer's selection determines what they see, not sender's stored ops
 - [x] Clean all stale rows from DB
+
+## Colour-Coded Folder Icons (Round 61)
+- [x] Assign a distinct standout colour to every sidebar folder icon in DashboardLayout
+- [x] Match bottom map banner quick-link icons to the same coloured sidebar icons
+
+## Location Sharing Fix (Round 62)
+- [ ] Add unique constraint on (userId, deviceId) in user_locations table via SQL migration
+- [ ] Update schema.ts to reflect the unique index
+- [ ] Clean up duplicate rows in DB before adding constraint
+- [ ] Fix restore-on-navigation: ensure startWatching is called reliably when sharingEnabled=true on mount
+
+## Colour-Coded Folder Icons (Round 61)
+- [x] Assign a distinct standout colour to every sidebar folder icon in DashboardLayout
+- [x] Match bottom map banner quick-link icons to the same coloured sidebar icons
+
+## Location Sharing Fix (Round 62)
+- [x] Clean duplicate user_locations rows in DB
+- [x] Add unique index on (userId, deviceId) in user_locations table
+- [x] Update schema.ts to declare the unique index
+- [x] Fix duplicate pins and duplicate team-list entries (caused by missing unique constraint)
+- [x] Fix restore-on-navigation: ensure GPS restarts reliably when sharingEnabled=true on mount
+- [x] Fix hide toggle affecting all instances of same user (caused by userId-only hide key)
+
+## Colour-Coded Folder Icons (Round 61)
+- [x] Assign a distinct standout colour to every sidebar folder icon in DashboardLayout
+- [x] Match bottom map banner quick-link icons to the same coloured sidebar icons

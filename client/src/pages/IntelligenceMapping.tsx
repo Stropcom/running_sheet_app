@@ -35,6 +35,13 @@ import {
   Plus,
   ChevronLeft as ChevronLeftIcon,
   Send,
+  Zap,
+  Scale,
+  ArrowRightLeft,
+  Trash2,
+  WifiOff,
+  User,
+  Network,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -78,6 +85,26 @@ interface QuickLink {
   icon: string; // icon name key
 }
 
+// Icon component + colour for each quick-link option
+const ICON_MAP: Record<string, { Icon: React.ComponentType<{ className?: string }>; colour: string }> = {
+  ClipboardCheck: { Icon: ClipboardCheck, colour: "text-purple-400" },
+  CalendarDays:   { Icon: CalendarDays,   colour: "text-cyan-400" },
+  Zap:            { Icon: Zap,            colour: "text-yellow-400" },
+  FolderSearch:   { Icon: FolderSearch,   colour: "text-violet-400" },
+  BookOpen:       { Icon: BookOpen,       colour: "text-rose-400" },
+  ScrollText:     { Icon: ScrollText,     colour: "text-slate-400" },
+  FileText:       { Icon: FileText,       colour: "text-orange-400" },
+  Trash2:         { Icon: Trash2,         colour: "text-red-400" },
+  HelpCircle:     { Icon: HelpCircle,     colour: "text-sky-400" },
+  User:           { Icon: User,           colour: "text-lime-400" },
+  FolderOpen:     { Icon: FolderOpen,     colour: "text-teal-400" },
+  Scale:          { Icon: Scale,          colour: "text-amber-400" },
+  ClipboardList:  { Icon: ClipboardList,  colour: "text-amber-400" },
+  ArrowRightLeft: { Icon: ArrowRightLeft, colour: "text-teal-400" },
+  Network:        { Icon: Network,        colour: "text-emerald-400" },
+  WifiOff:        { Icon: WifiOff,        colour: "text-orange-400" },
+};
+
 const ALL_QUICK_LINK_OPTIONS: QuickLink[] = [
   { label: "Governance", path: "/governance", icon: "ClipboardCheck" },
   { label: "Calendar", path: "/calendar", icon: "CalendarDays" },
@@ -89,7 +116,7 @@ const ALL_QUICK_LINK_OPTIONS: QuickLink[] = [
   { label: "Recycle Bin", path: "/recycle-bin", icon: "Trash2" },
   { label: "Help", path: "/help", icon: "HelpCircle" },
   { label: "My Profile", path: "/profile", icon: "User" },
-  { label: "Operation Mgmt", path: "/operation-management", icon: "FolderOpen" },
+  { label: "Operation Mgmt", path: "/operation-management", icon: "ArrowRightLeft" },
   { label: "Court", path: "/court/statements", icon: "Scale" },
   { label: "To-Do", path: "/todo", icon: "ClipboardList" },
 ];
@@ -341,55 +368,52 @@ export default function IntelligenceMapping() {
     { refetchInterval: 1000, enabled: true }
   );
 
+  // Mutations — declared early so refs are available to GPS effects below
+  const updateLocationMut = trpc.intelligence.updateUserLocation.useMutation();
+  const clearLocationMut = trpc.intelligence.clearUserLocation.useMutation();
+  const updateLocationMutRef = useRef(updateLocationMut);
+  const clearLocationMutRef = useRef(clearLocationMut);
+  useEffect(() => { updateLocationMutRef.current = updateLocationMut; });
+  useEffect(() => { clearLocationMutRef.current = clearLocationMut; });
+
   // Restore sharing state on mount (per-device)
   const { data: myLocationState } = trpc.intelligence.myLocationState.useQuery(
     { deviceId },
     { enabled: !!deviceId }
   );
-  // Track whether we've already restored sharing so we don't restart on every poll
-  const sharingRestoredRef = useRef(false);
 
-  // Start GPS immediately on mount if localStorage says sharing was on.
-  // This ensures the pin appears before the server query resolves.
+  // On mount: if localStorage says sharing was on, start GPS immediately
+  // (before server query resolves) so the pin appears without delay.
   const gpsStartedFromCacheRef = useRef(false);
   useEffect(() => {
-    if (sharingEnabled && !gpsStartedFromCacheRef.current && watchIdRef.current === null) {
+    if (sharingEnabled && !gpsStartedFromCacheRef.current) {
       gpsStartedFromCacheRef.current = true;
       startWatching();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sharingEnabled]);
+  }, []); // mount-only
 
+  // Server reconciliation: once myLocationState arrives, reconcile DB with local intent.
+  const sharingRestoredRef = useRef(false);
   useEffect(() => {
-    if (myLocationState && !sharingRestoredRef.current) {
-      sharingRestoredRef.current = true;
-      // localStorage is the source of truth for the user's intent on THIS device.
-      // sharingEnabled was already initialised from localStorage in useState.
-      // We only need to reconcile the DB (server) state with the local intent:
-      //   • If local=OFF but server=ON  → the browser was closed without cleanup; clear DB now.
-      //   • If local=ON  but server=OFF → GPS was already started by the cache effect; nothing extra needed.
-      //   • If both agree → nothing to do (GPS already started or already stopped).
-      const serverSharingOn = myLocationState.sharingEnabled;
-      const localSharingOn = sharingEnabled;
+    if (!myLocationState || sharingRestoredRef.current) return;
+    sharingRestoredRef.current = true;
 
-      if (serverSharingOn && !localSharingOn) {
-        // Stale DB row — clear it immediately so the pin disappears from other devices
-        clearLocationMut.mutate({ deviceId });
-      } else if (!serverSharingOn && localSharingOn && watchIdRef.current === null) {
-        // DB was cleared externally but user wants sharing on — start GPS
-        startWatching();
-      }
-      // If both agree (on+on or off+off), the cache effect already handled GPS start/stop.
+    const serverSharingOn = myLocationState.sharingEnabled;
+    const localSharingOn = sharingEnabled;
+
+    if (serverSharingOn && !localSharingOn) {
+      // Stale DB row (browser closed without cleanup) — clear it
+      clearLocationMutRef.current.mutate({ deviceId: deviceIdRef.current });
+    } else if (localSharingOn && watchIdRef.current === null) {
+      // GPS watcher died somehow — restart it
+      startWatching();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myLocationState]);
 
   // showOwnLocation always mirrors sharingEnabled (single toggle)
   const showOwnLocation = sharingEnabled;
-
-  // Mutations
-  const updateLocationMut = trpc.intelligence.updateUserLocation.useMutation();
-  const clearLocationMut = trpc.intelligence.clearUserLocation.useMutation();
 
   // RS Actions pane — sheets for selected operation
   const { data: rsSheetsData } = trpc.sheet.listByOperation.useQuery(
@@ -459,19 +483,32 @@ export default function IntelligenceMapping() {
   };
 
   // ── GPS / Sharing ────────────────────────────────────────────────────────────
+  // Keep refs for values used inside watchPosition callback so the callback
+  // always sees the latest deviceId and selectedOpIds without needing to
+  // re-register the watcher.
+  const deviceIdRef = useRef(deviceId);
+  const selectedOpIdsRef = useRef(selectedOpIds);
+  useEffect(() => { deviceIdRef.current = deviceId; }, [deviceId]);
+  useEffect(() => { selectedOpIdsRef.current = selectedOpIds; }, [selectedOpIds]);
+
   const startWatching = useCallback(() => {
     if (!navigator.geolocation) {
       setGpsError("Geolocation not supported on this device.");
       return;
     }
+    // Clear any existing watcher before starting a new one
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
     watchIdRef.current = navigator.geolocation.watchPosition(
       (pos) => {
         setGpsError(null);
-        updateLocationMut.mutate({
-          deviceId,
+        updateLocationMutRef.current.mutate({
+          deviceId: deviceIdRef.current,
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
-          operationIds: selectedOpIds,
+          operationIds: selectedOpIdsRef.current,
           sharingEnabled: true,
           speed: pos.coords.speed ?? null,
           heading: pos.coords.heading ?? null,
@@ -481,17 +518,17 @@ export default function IntelligenceMapping() {
       (err) => {
         setGpsError(`GPS error: ${err.message}`);
       },
-      { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
     );
-  }, [deviceId, selectedOpIds, updateLocationMut]);
+  }, []); // no deps — uses refs only
 
   const stopWatching = useCallback(() => {
     if (watchIdRef.current !== null) {
       navigator.geolocation.clearWatch(watchIdRef.current);
       watchIdRef.current = null;
     }
-    clearLocationMut.mutate({ deviceId });
-  }, [clearLocationMut, deviceId]);
+    clearLocationMutRef.current.mutate({ deviceId: deviceIdRef.current });
+  }, []); // no deps — uses refs only
 
   const handleSharingToggle = (checked: boolean) => {
     setSharingEnabled(checked);
@@ -1388,23 +1425,28 @@ export default function IntelligenceMapping() {
           onClick={() => setLocation("/")}
           className="flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-lg hover:bg-white/10 active:scale-95 transition-all min-w-[52px]"
         >
-          <FolderOpen className="h-4 w-4 text-blue-400" />
+          <FileText className="h-4 w-4 text-blue-400" />
           <span className="text-[10px] font-semibold text-blue-300/80 leading-none">Operations</span>
         </button>
 
         <div className="w-px h-6 bg-white/10 mx-0.5" />
 
         {/* 4 flexible quick-link slots */}
-        {quickLinks.slice(0, 4).map((ql, idx) => (
-          <button
-            key={idx}
-            onClick={() => setLocation(ql.path)}
-            className="flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-lg hover:bg-white/10 active:scale-95 transition-all min-w-[52px]"
-          >
-            <FolderSearch className="h-4 w-4 text-white/60" />
-            <span className="text-[10px] font-medium text-white/55 leading-none truncate max-w-[56px]">{ql.label}</span>
-          </button>
-        ))}
+        {quickLinks.slice(0, 4).map((ql, idx) => {
+          const iconEntry = ICON_MAP[ql.icon];
+          const IconComp = iconEntry?.Icon ?? FolderSearch;
+          const iconColour = iconEntry?.colour ?? "text-white/60";
+          return (
+            <button
+              key={idx}
+              onClick={() => setLocation(ql.path)}
+              className="flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-lg hover:bg-white/10 active:scale-95 transition-all min-w-[52px]"
+            >
+              <IconComp className={`h-4 w-4 ${iconColour}`} />
+              <span className="text-[10px] font-medium text-white/55 leading-none truncate max-w-[56px]">{ql.label}</span>
+            </button>
+          );
+        })}
 
         <div className="w-px h-6 bg-white/10 mx-0.5" />
 
@@ -1446,6 +1488,9 @@ export default function IntelligenceMapping() {
             <div className="grid grid-cols-2 gap-2 max-h-72 overflow-y-auto">
               {ALL_QUICK_LINK_OPTIONS.map((opt) => {
                 const isSelected = quickLinks.some(q => q.path === opt.path);
+                const iconEntry = ICON_MAP[opt.icon];
+                const IconComp = iconEntry?.Icon ?? FolderSearch;
+                const iconColour = iconEntry?.colour ?? "text-muted-foreground";
                 return (
                   <button
                     key={opt.path}
@@ -1470,7 +1515,7 @@ export default function IntelligenceMapping() {
                         : "bg-accent/30 border-border text-muted-foreground hover:bg-accent/60 hover:text-foreground"
                     }`}
                   >
-                    <FolderSearch className="h-3.5 w-3.5 flex-shrink-0" />
+                    <IconComp className={`h-3.5 w-3.5 flex-shrink-0 ${iconColour}`} />
                     <span className="truncate">{opt.label}</span>
                     {isSelected && <Check className="h-3.5 w-3.5 ml-auto flex-shrink-0" />}
                   </button>

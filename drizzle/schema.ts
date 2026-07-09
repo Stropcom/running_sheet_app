@@ -8,6 +8,7 @@ import {
   boolean,
   bigint,
   double,
+  uniqueIndex,
 } from "drizzle-orm/mysql-core";
 
 // ─── Users ───────────────────────────────────────────────────────────────────
@@ -413,7 +414,9 @@ export const userLocations = mysqlTable("user_locations", {
   operationIds: text("operationIds").notNull().default("[]"), // JSON array of op IDs
   sharingEnabled: boolean("sharingEnabled").default(false).notNull(),
   updatedAt: bigint("updatedAt", { mode: "number" }).notNull(),
-});
+}, (table) => ({
+  userDeviceIdx: uniqueIndex("idx_user_device").on(table.userId, table.deviceId),
+}));
 
 export type UserLocation = typeof userLocations.$inferSelect;
 export type InsertUserLocation = typeof userLocations.$inferInsert;

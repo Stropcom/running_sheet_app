@@ -4,7 +4,7 @@
  * Colours: red (#E53935), yellow (#F9A825), blue (#1E88E5), purple (#8E24AA)
  */
 
-export type MarkerColour = "red" | "yellow" | "blue" | "purple";
+export type MarkerColour = "red" | "yellow" | "blue" | "purple" | "black";
 export type MarkerIcon =
   | "house_outline"
   | "house_filled"
@@ -25,6 +25,7 @@ export const MARKER_COLOURS: Record<MarkerColour, string> = {
   yellow: "#F9A825",
   blue: "#1E88E5",
   purple: "#8E24AA",
+  black: "#212121",
 };
 
 export const MARKER_COLOUR_LABELS: Record<MarkerColour, string> = {
@@ -32,6 +33,7 @@ export const MARKER_COLOUR_LABELS: Record<MarkerColour, string> = {
   yellow: "Yellow",
   blue: "Blue",
   purple: "Purple",
+  black: "Black",
 };
 
 export const MARKER_ICON_LABELS: Record<MarkerIcon, string> = {

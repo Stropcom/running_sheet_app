@@ -135,9 +135,9 @@ export function MapView({
       zoom: initialZoom,
       center: initialCenter,
       mapTypeControl: true,
-      fullscreenControl: true,
-      zoomControl: true,
-      streetViewControl: true,
+      fullscreenControl: false,
+      zoomControl: false,
+      streetViewControl: false,
       mapId: "DEMO_MAP_ID",
       gestureHandling: "greedy", // one-finger pan on mobile
     });

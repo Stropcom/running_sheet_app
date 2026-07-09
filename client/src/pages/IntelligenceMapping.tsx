@@ -203,11 +203,12 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
     }
   }
 
-  // Waze navigation button — only shown when coordinates are available
+  // Navigation buttons — only shown when coordinates are available
   if (loc.lat != null && loc.lng != null) {
     const wazeUrl = `https://waze.com/ul?ll=${loc.lat},${loc.lng}&navigate=yes`;
+    const streetViewUrl = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${loc.lat},${loc.lng}`;
     html += `
-      <div style="border-top:1px solid #e2e8f0;margin-top:10px;padding-top:10px;">
+      <div style="border-top:1px solid #e2e8f0;margin-top:10px;padding-top:10px;display:flex;flex-direction:column;gap:8px;">
         <a
           href="${wazeUrl}"
           target="_blank"
@@ -223,6 +224,22 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C7.03 2 3 6.03 3 11c0 3.1 1.53 5.84 3.88 7.54L6 22l3.37-1.12A9.04 9.04 0 0 0 12 21c4.97 0 9-4.03 9-9s-4.03-10-9-10zm0 16c-1.18 0-2.31-.27-3.32-.74l-.24-.11-2.47.82.59-2.38-.16-.25A7.02 7.02 0 0 1 5 11c0-3.86 3.14-7 7-7s7 3.14 7 7-3.14 7-7 7z"/></svg>
           Navigate in Waze
+        </a>
+        <a
+          href="${streetViewUrl}"
+          target="_blank"
+          rel="noopener noreferrer"
+          style="
+            display:flex;align-items:center;justify-content:center;gap:8px;
+            background:#4285f4;color:#fff;
+            border-radius:6px;padding:8px 12px;
+            font-size:12px;font-weight:700;letter-spacing:0.04em;
+            text-decoration:none;
+            box-shadow:0 2px 6px rgba(66,133,244,0.35);
+          "
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg"><path d="M12 3C8.13 3 5 6.13 5 10c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 7.5 12 7.5s2.5 1.12 2.5 2.5S13.38 12.5 12 12.5z"/></svg>
+          Street View
         </a>
       </div>
     `;

@@ -1324,8 +1324,14 @@ export default function IntelligenceMapping() {
                   {rsTargetData?.dep && (
                     <button
                       disabled={rsAddingRow}
-                      onClick={() => addQuickRsEntry(rsTargetData!.dep!)}
-                      className="flex flex-col items-start gap-0.5 rounded-md border border-orange-500/30 bg-orange-500/5 hover:bg-orange-500/10 active:scale-95 transition-all px-2.5 py-2 disabled:opacity-50"
+                      onClick={() => {
+                        if (rsInlineLabel === rsTargetData!.dep!) {
+                          closeInlineField();
+                        } else {
+                          openInlineField(rsTargetData!.dep!);
+                        }
+                      }}
+                      className={`flex flex-col items-start gap-0.5 rounded-md border border-orange-500/30 bg-orange-500/5 hover:bg-orange-500/10 active:scale-95 transition-all px-2.5 py-2 disabled:opacity-50 ${rsInlineLabel === rsTargetData!.dep! ? "ring-1 ring-orange-400" : ""}`}
                     >
                       <span className="text-[9px] font-bold uppercase tracking-wide text-orange-400">DEP</span>
                       <span className="text-[10px] text-foreground font-mono leading-tight line-clamp-2">{rsTargetData.dep}</span>
@@ -1334,8 +1340,14 @@ export default function IntelligenceMapping() {
                   {rsTargetData?.arr && (
                     <button
                       disabled={rsAddingRow}
-                      onClick={() => addQuickRsEntry(rsTargetData!.arr!)}
-                      className="flex flex-col items-start gap-0.5 rounded-md border border-green-500/30 bg-green-500/5 hover:bg-green-500/10 active:scale-95 transition-all px-2.5 py-2 disabled:opacity-50"
+                      onClick={() => {
+                        if (rsInlineLabel === rsTargetData!.arr!) {
+                          closeInlineField();
+                        } else {
+                          openInlineField(rsTargetData!.arr!);
+                        }
+                      }}
+                      className={`flex flex-col items-start gap-0.5 rounded-md border border-green-500/30 bg-green-500/5 hover:bg-green-500/10 active:scale-95 transition-all px-2.5 py-2 disabled:opacity-50 ${rsInlineLabel === rsTargetData!.arr! ? "ring-1 ring-green-400" : ""}`}
                     >
                       <span className="text-[9px] font-bold uppercase tracking-wide text-green-400">ARR</span>
                       <span className="text-[10px] text-foreground font-mono leading-tight line-clamp-2">{rsTargetData.arr}</span>

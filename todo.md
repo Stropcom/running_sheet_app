@@ -548,3 +548,10 @@
 - [x] Auto-closes and submits after 5 seconds of cursor inactivity inside the field
 - [x] Tapping outside the field (anywhere in pane or map) closes and discards the field
 - [x] Submit button inside the field to manually confirm immediately
+
+## Location Sharing Root Fix (Round 60)
+- [x] Fix getUserLocations filter: sender with empty operationIds should be visible to all viewers (not filtered out)
+- [x] Add 90-second server-side expiry: only return rows where updatedAt > now - 90s
+- [x] Stable deviceId: use server-assigned persistent cookie token instead of localStorage UUID
+- [x] Remove operationIds scoping from visibility — viewer's selection determines what they see, not sender's stored ops
+- [x] Clean all stale rows from DB

@@ -1324,6 +1324,34 @@ export const appRouter = router({
   }),
   /** Intelligence Folder */
   intelligence: router({
+    /**
+     * Returns a stable device token for this browser, creating one if it doesn't exist.
+     * The token is stored in an httpOnly cookie so it survives localStorage clears.
+     * This is used as the deviceId for location sharing.
+     */
+    getDeviceToken: protectedProcedure
+      .query(async ({ ctx }) => {
+        // Parse cookies manually from the raw header (no cookie-parser middleware)
+        const cookieHeader = ctx.req.headers.cookie || '';
+        const cookies: Record<string, string> = {};
+        cookieHeader.split(';').forEach((part) => {
+          const [k, ...v] = part.trim().split('=');
+          if (k) cookies[k.trim()] = decodeURIComponent(v.join('='));
+        });
+        const existing = cookies['runlog_device_token'];
+        if (existing && existing.length > 8) {
+          return { deviceToken: existing };
+        }
+        // Generate a new stable token
+        const token = `dt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+        // Set as a long-lived non-httpOnly cookie so JS can read it
+        const isSecure = ctx.req.protocol === 'https' ||
+          (ctx.req.headers['x-forwarded-proto'] as string || '').includes('https');
+        const cookieVal = `runlog_device_token=${token}; Path=/; Max-Age=${365 * 24 * 60 * 60}; SameSite=None${isSecure ? '; Secure' : ''}`;
+        ctx.res.setHeader('Set-Cookie', cookieVal);
+        return { deviceToken: token };
+      }),
+
     /** List all extracted entities from all observation rows */
     getEntities: protectedProcedure
       .query(async () => {

@@ -223,24 +223,28 @@ export default function IntelligenceMapping() {
   // Left pane starts closed — user opens it when needed. Never auto-open on navigation.
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Per-device ID — persisted in localStorage so each browser/device is unique
-  // deviceId is scoped to this user+browser combination.
-  // We use a user-specific key so different users on the same browser never share a deviceId.
-  // We also write to sessionStorage as a fallback so the same session never generates a new id
-  // even if localStorage was cleared mid-session (common on iOS Safari in private mode).
-  const deviceId = useMemo(() => {
+  // Per-device ID — server-assigned stable token stored in a long-lived cookie.
+  // Falls back to localStorage/sessionStorage if the server query hasn't resolved yet.
+  const [deviceId, setDeviceId] = useState<string>(() => {
+    // Immediate fallback: use sessionStorage/localStorage until server token arrives
     const userKey = `runlog_device_id_u${user?.id ?? "anon"}`;
-    // Check sessionStorage first (survives within a single browser session)
-    let id = sessionStorage.getItem(userKey) ?? localStorage.getItem(userKey);
-    if (!id) {
-      id = crypto.randomUUID();
+    return sessionStorage.getItem(userKey) ?? localStorage.getItem(userKey) ?? `tmp_${Math.random().toString(36).slice(2)}`;
+  });
+  // Fetch the stable server-assigned device token on mount
+  const { data: deviceTokenData } = trpc.intelligence.getDeviceToken.useQuery(undefined, {
+    enabled: !!user,
+    staleTime: Infinity, // never re-fetch — the token is stable
+  });
+  useEffect(() => {
+    if (deviceTokenData?.deviceToken) {
+      const token = deviceTokenData.deviceToken;
+      setDeviceId(token);
+      // Also cache locally so it's available immediately on next load
+      const userKey = `runlog_device_id_u${user?.id ?? "anon"}`;
+      try { localStorage.setItem(userKey, token); } catch { /* ignore */ }
+      try { sessionStorage.setItem(userKey, token); } catch { /* ignore */ }
     }
-    // Always write to both so they stay in sync
-    try { localStorage.setItem(userKey, id); } catch { /* ignore */ }
-    try { sessionStorage.setItem(userKey, id); } catch { /* ignore */ }
-    return id;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
+  }, [deviceTokenData?.deviceToken, user?.id]);
 
   // Location sharing state — read from localStorage immediately so the toggle shows the right state
   // before the server query resolves. The server query will confirm/correct it on mount.

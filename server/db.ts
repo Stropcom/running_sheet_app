@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, isNull, like, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNotNull, isNull, like, lt, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { vaultEncrypt, vaultDecrypt } from "./wipcVault";
 import {
@@ -3261,13 +3261,15 @@ export interface UserLocationRow {
 }
 
 /**
- * Returns all users who have sharingEnabled=true and whose selected operationIds
- * overlap with the caller's operationIds (operation-scoped visibility).
- * If callerOpIds is empty, returns all sharing users (no filter).
+ * Returns all users who have sharingEnabled=true and whose location was updated
+ * within the last 90 seconds (server-side expiry — no client cleanup needed).
+ * Visibility is NOT filtered by operationIds — any sharing user is visible to
+ * any viewer regardless of which operations either party has selected.
  */
-export async function getUserLocations(callerOpIds: number[]): Promise<UserLocationRow[]> {
+export async function getUserLocations(_callerOpIds: number[]): Promise<UserLocationRow[]> {
   const db = await getDb();
   if (!db) return [];
+  const expiryMs = Date.now() - 90_000; // 90 seconds ago
   const rows = await db
     .select({
       userId: userLocations.userId,
@@ -3283,18 +3285,18 @@ export async function getUserLocations(callerOpIds: number[]): Promise<UserLocat
     })
     .from(userLocations)
     .innerJoin(users, eq(users.id, userLocations.userId))
-    .where(eq(userLocations.sharingEnabled, true));
+    .where(
+      and(
+        eq(userLocations.sharingEnabled, true),
+        gt(userLocations.updatedAt, expiryMs)
+      )
+    );
 
-  return rows
-    .map((r) => {
-      let opIds: number[] = [];
-      try { opIds = JSON.parse(r.operationIds || "[]"); } catch { opIds = []; }
-      return { ...r, operationIds: opIds };
-    })
-    .filter((r) => {
-      if (callerOpIds.length === 0) return true;
-      return r.operationIds.some((id) => callerOpIds.includes(id));
-    });
+  return rows.map((r) => {
+    let opIds: number[] = [];
+    try { opIds = JSON.parse(r.operationIds || "[]"); } catch { opIds = []; }
+    return { ...r, operationIds: opIds };
+  });
 }
 
 /**

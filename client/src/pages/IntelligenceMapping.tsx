@@ -10,6 +10,8 @@ import { Switch } from "@/components/ui/switch";
 import { Spinner } from "@/components/ui/spinner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import {
   ChevronDown,
@@ -205,6 +207,51 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
     }
   }
 
+  // Edit / navigation action buttons
+  if (isTarget && loc.linkedTargets.length > 0) {
+    html += `<div style="border-top:1px solid #e2e8f0;margin-top:10px;padding-top:10px;display:flex;flex-direction:column;gap:6px;">`;
+    for (const t of loc.linkedTargets) {
+      html += `
+        <button
+          onclick="window.__editTargetFromMap(${t.targetId})"
+          style="
+            display:flex;align-items:center;justify-content:center;gap:8px;
+            background:#16a34a;color:#fff;
+            border:none;border-radius:6px;padding:8px 12px;
+            font-size:12px;font-weight:700;letter-spacing:0.04em;
+            cursor:pointer;
+            box-shadow:0 2px 6px rgba(22,163,74,0.35);
+            width:100%;
+          "
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" xmlns="http://www.w3.org/2000/svg"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          Edit ${t.name}
+        </button>
+      `;
+    }
+    html += `</div>`;
+  } else if (!isTarget) {
+    const encodedLabel = encodeURIComponent(loc.label);
+    html += `
+      <div style="border-top:1px solid #e2e8f0;margin-top:10px;padding-top:10px;">
+        <a
+          href="/intelligence/location/${encodedLabel}"
+          style="
+            display:flex;align-items:center;justify-content:center;gap:8px;
+            background:#7c3aed;color:#fff;
+            border-radius:6px;padding:8px 12px;
+            font-size:12px;font-weight:700;letter-spacing:0.04em;
+            text-decoration:none;
+            box-shadow:0 2px 6px rgba(124,58,237,0.35);
+          "
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" xmlns="http://www.w3.org/2000/svg"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          View Location Profile
+        </a>
+      </div>
+    `;
+  }
+
   // Navigation buttons — only shown when coordinates are available
   if (loc.lat != null && loc.lng != null) {
     const wazeUrl = `https://waze.com/ul?ll=${loc.lat},${loc.lng}&navigate=yes`;
@@ -349,6 +396,19 @@ export default function IntelligenceMapping() {
   const [cmVehicleInput, setCmVehicleInput] = useState("");
   const [cmSaving, setCmSaving] = useState(false);
   const [editingMarkerId, setEditingMarkerId] = useState<number | null>(null);
+  // Target edit dialog state
+  const [editingTargetId, setEditingTargetId] = useState<number | null>(null);
+  const [etName, setEtName] = useState("");
+  const [etTgt, setEtTgt] = useState("");
+  const [etHbf, setEtHbf] = useState("");
+  const [etHb, setEtHb] = useState("");
+  const [etV1f, setEtV1f] = useState("");
+  const [etV1, setEtV1] = useState("");
+  const [etV2f, setEtV2f] = useState("");
+  const [etV2, setEtV2] = useState("");
+  const [etDep, setEtDep] = useState("");
+  const [etArr, setEtArr] = useState("");
+  const [etSaving, setEtSaving] = useState(false);
   // ref for long-press on mobile
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // custom marker map objects
@@ -426,6 +486,17 @@ export default function IntelligenceMapping() {
   });
   const updateCustomMarkerMut = trpc.customMarker.update.useMutation({
     onSuccess: () => { void refetchCustomMarkers(); },
+  });
+  const utils = trpc.useUtils();
+  const updateTargetMut = trpc.target.registry.update.useMutation({
+    onSuccess: () => {
+      void utils.target.registry.list.invalidate();
+      void utils.intelligence.mappingLocations.invalidate();
+      setEditingTargetId(null);
+      setEtSaving(false);
+      toast.success("Target saved");
+    },
+    onError: (e) => { setEtSaving(false); toast.error(e.message); },
   });
 
   // Intelligence entities for associate/vehicle dropdowns
@@ -633,28 +704,32 @@ export default function IntelligenceMapping() {
 
   const createPinElement = useCallback((loc: IntelMapLocation) => {
     const isTarget = loc.type === "target_address";
-    const color = isTarget ? "#dc2626" : "#7c3aed";
+    const colour = isTarget ? "red" : "purple" as "red" | "purple";
     const count = loc.linkCount;
 
     const el = document.createElement("div");
-    el.style.cssText = `position:relative;display:flex;flex-direction:column;align-items:center;cursor:pointer;`;
+    el.style.cssText = `position:relative;display:inline-flex;flex-direction:column;align-items:center;cursor:pointer;`;
 
-    const pin = document.createElement("div");
-    pin.style.cssText = `
-      width:32px;height:32px;
-      border-radius:50% 50% 50% 0;
-      transform:rotate(-45deg);
-      background:${color};
-      border:2px solid #fff;
-      box-shadow:0 2px 8px rgba(0,0,0,0.35);
-      display:flex;align-items:center;justify-content:center;
-    `;
+    const img = document.createElement("img");
+    img.src = getMarkerDataUrl("house_filled", colour);
+    img.style.cssText = `width:40px;height:40px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4));display:block;`;
+    el.appendChild(img);
 
-    const inner = document.createElement("div");
-    inner.style.cssText = `transform:rotate(45deg);color:#fff;font-size:11px;font-weight:700;line-height:1;`;
-    inner.textContent = count > 0 ? String(count) : "";
-    pin.appendChild(inner);
-    el.appendChild(pin);
+    if (count > 0) {
+      const badge = document.createElement("div");
+      badge.style.cssText = `
+        position:absolute;top:-4px;right:-4px;
+        background:${isTarget ? "#dc2626" : "#7c3aed"};
+        color:#fff;font-size:10px;font-weight:700;
+        min-width:16px;height:16px;
+        border-radius:8px;padding:0 3px;
+        display:flex;align-items:center;justify-content:center;
+        border:1.5px solid #fff;
+        box-shadow:0 1px 3px rgba(0,0,0,0.3);
+      `;
+      badge.textContent = String(count);
+      el.appendChild(badge);
+    }
     return el;
   }, []);
 
@@ -926,6 +1001,27 @@ export default function IntelligenceMapping() {
     };
     return () => { delete (window as any).__deleteCustomMarker; };
   }, [deleteCustomMarkerMut]);
+
+  // Global edit handler for target-address markers
+  useEffect(() => {
+    (window as any).__editTargetFromMap = (targetId: number) => {
+      infoWindowRef.current?.close();
+      const t = (allTargets as any[] | undefined)?.find((t: any) => t.id === targetId);
+      if (!t) return;
+      setEtName(t.name ?? "");
+      setEtTgt(t.tgt ?? "");
+      setEtHbf(t.hbf ?? "");
+      setEtHb(t.hb ?? "");
+      setEtV1f(t.v1f ?? "");
+      setEtV1(t.v1 ?? "");
+      setEtV2f(t.v2f ?? "");
+      setEtV2(t.v2 ?? "");
+      setEtDep(t.dep ?? "");
+      setEtArr(t.arr ?? "");
+      setEditingTargetId(targetId);
+    };
+    return () => { delete (window as any).__editTargetFromMap; };
+  }, [allTargets]);
 
   // Global edit handler for custom marker info window
   useEffect(() => {
@@ -2146,6 +2242,58 @@ export default function IntelligenceMapping() {
           </div>
         </div>
       )}
+      {/* ── Target Edit Dialog ── */}
+      <Dialog open={editingTargetId !== null} onOpenChange={(open) => { if (!open) setEditingTargetId(null); }}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Target</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-3 py-2">
+            {([
+              { label: "Full Name, Born", val: etName, set: setEtName },
+              { label: "Target (TGT)", val: etTgt, set: setEtTgt },
+              { label: "Home Address Full (HBF)", val: etHbf, set: setEtHbf },
+              { label: "Home (HB)", val: etHb, set: setEtHb },
+              { label: "Vehicle 1 Full (V1F)", val: etV1f, set: setEtV1f },
+              { label: "Vehicle (V1)", val: etV1, set: setEtV1 },
+              { label: "Vehicle 2 Full (V2F)", val: etV2f, set: setEtV2f },
+              { label: "Vehicle (V2)", val: etV2, set: setEtV2 },
+              { label: "Depart (DEP)", val: etDep, set: setEtDep },
+              { label: "Arrive (ARR)", val: etArr, set: setEtArr },
+            ] as { label: string; val: string; set: (v: string) => void }[]).map(({ label, val, set }) => (
+              <div key={label} className="flex flex-col gap-1">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{label}</label>
+                <Input value={val} onChange={e => set(e.target.value)} />
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingTargetId(null)}>Cancel</Button>
+            <Button
+              disabled={etSaving}
+              onClick={() => {
+                if (!editingTargetId) return;
+                setEtSaving(true);
+                updateTargetMut.mutate({
+                  id: editingTargetId,
+                  name: etName || undefined,
+                  tgt: etTgt || null,
+                  hbf: etHbf || null,
+                  hb: etHb || null,
+                  v1f: etV1f || null,
+                  v1: etV1 || null,
+                  v2f: etV2f || null,
+                  v2: etV2 || null,
+                  dep: etDep || null,
+                  arr: etArr || null,
+                });
+              }}
+            >
+              {etSaving ? <Spinner className="h-4 w-4" /> : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -624,3 +624,7 @@
 - [x] Apply CSS rotation to rendered custom markers on the map
 - [x] Reset rotation to 0 when placement form is opened or submitted
 - [x] Soft-delete custom markers to Recycle Bin (7-day retention) — RecycleBin.tsx updated
+- [x] Change target-address intelligence map markers from red teardrop pins to red house markers
+- [x] Change observation intelligence map markers from teardrop pins to purple house markers
+- [x] Add popup edit action for target-address intelligence markers
+- [x] Assess and implement the strongest feasible edit flow for observation-derived intelligence markers (View Location Profile button)

@@ -101,6 +101,7 @@ const DEFAULT_QUICK_LINKS: QuickLink[] = [
 ];
 
 const LS_QUICK_LINKS_KEY = "runlog_map_quick_links";
+const LS_MAP_SETTINGS_KEY = "runlog_map_settings";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 const TEAM_COLOURS: Record<string, string> = {
@@ -137,7 +138,7 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
             <span style="background:#dc2626;color:#fff;border-radius:4px;font-size:9px;font-weight:700;padding:1px 5px;letter-spacing:0.06em;">TARGET</span>
             <span style="font-size:13px;font-weight:700;color:#1e293b;">${t.name}</span>
           </div>
-          ${t.tgt ? `<div style="font-size:11px;color:#64748b;margin-bottom:3px;">TGT: ${t.tgt}</div>` : ""}
+          ${t.tgt ? `<div style="font-size:11px;color:#334155;margin-bottom:3px;">TGT: ${t.tgt}</div>` : ""}
           ${t.hbf ? `<div style="font-size:11px;color:#475569;display:flex;align-items:flex-start;gap:4px;margin-bottom:2px;"><span style="color:#dc2626;margin-top:1px;">⌂</span><span>${t.hbf}</span></div>` : ""}
           ${t.v1f ? `<div style="font-size:11px;color:#475569;display:flex;align-items:flex-start;gap:4px;margin-bottom:2px;"><span style="color:#f59e0b;margin-top:1px;">⊕</span><span>${t.v1f}</span></div>` : ""}
           ${t.v2f ? `<div style="font-size:11px;color:#475569;display:flex;align-items:flex-start;gap:4px;margin-bottom:2px;"><span style="color:#f59e0b;margin-top:1px;">⊕</span><span>${t.v2f}</span></div>` : ""}
@@ -153,15 +154,15 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
       html += `<div style="border-top:1px solid #e2e8f0;margin:6px 0 8px;"></div>`;
     }
     if (loc.assocPersons.length > 0) {
-      html += `<div style="font-size:10px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:4px;">Associates</div>`;
+      html += `<div style="font-size:10px;font-weight:600;color:#334155;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:4px;">Associates</div>`;
       for (const p of loc.assocPersons) {
-        html += `<div style="font-size:12px;color:#1e293b;padding:2px 0;display:flex;align-items:center;gap:5px;"><span style="color:#3b82f6;">👤</span>${p}</div>`;
+        html += `<div style="font-size:12px;color:#0f172a;padding:2px 0;display:flex;align-items:center;gap:5px;"><span style="color:#3b82f6;">👤</span>${p}</div>`;
       }
     }
     if (loc.assocVehicles.length > 0) {
-      html += `<div style="font-size:10px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.07em;margin:6px 0 4px;">Vehicles</div>`;
+      html += `<div style="font-size:10px;font-weight:600;color:#334155;text-transform:uppercase;letter-spacing:0.07em;margin:6px 0 4px;">Vehicles</div>`;
       for (const v of loc.assocVehicles) {
-        html += `<div style="font-size:12px;color:#1e293b;padding:2px 0;display:flex;align-items:center;gap:5px;"><span style="color:#f59e0b;">🚗</span>${v}</div>`;
+        html += `<div style="font-size:12px;color:#0f172a;padding:2px 0;display:flex;align-items:center;gap:5px;"><span style="color:#f59e0b;">🚗</span>${v}</div>`;
       }
     }
   }
@@ -208,10 +209,16 @@ export default function IntelligenceMapping() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
 
-  // Filter state
-  const [selectedOpIds, setSelectedOpIds] = useState<number[]>([]);
-  const [selectedTargetIds, setSelectedTargetIds] = useState<number[]>([]);
-  const [opExpanded, setOpExpanded] = useState<Set<number>>(new Set());
+  // Filter state — persisted in localStorage
+  const [selectedOpIds, setSelectedOpIds] = useState<number[]>(() => {
+    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return JSON.parse(s).selectedOpIds ?? []; } catch { /* ignore */ } return [];
+  });
+  const [selectedTargetIds, setSelectedTargetIds] = useState<number[]>(() => {
+    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return JSON.parse(s).selectedTargetIds ?? []; } catch { /* ignore */ } return [];
+  });
+  const [opExpanded, setOpExpanded] = useState<Set<number>>(() => {
+    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return new Set<number>(JSON.parse(s).opExpanded ?? []); } catch { /* ignore */ } return new Set();
+  });
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Per-device ID — persisted in localStorage so each browser/device is unique
@@ -245,10 +252,14 @@ export default function IntelligenceMapping() {
   });
   const [editingQuickLinks, setEditingQuickLinks] = useState(false);
 
-  // RS Actions pane state
+  // RS Actions pane state — persisted in localStorage
   const [rsActionsPaneOpen, setRsActionsPaneOpen] = useState(false);
-  const [rsSelectedOpId, setRsSelectedOpId] = useState<number | null>(null);
-  const [rsSelectedSheetId, setRsSelectedSheetId] = useState<number | null>(null);
+  const [rsSelectedOpId, setRsSelectedOpId] = useState<number | null>(() => {
+    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return JSON.parse(s).rsSelectedOpId ?? null; } catch { /* ignore */ } return null;
+  });
+  const [rsSelectedSheetId, setRsSelectedSheetId] = useState<number | null>(() => {
+    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return JSON.parse(s).rsSelectedSheetId ?? null; } catch { /* ignore */ } return null;
+  });
   const [rsAddingRow, setRsAddingRow] = useState(false);
   const [rsLastEntry, setRsLastEntry] = useState<{ label: string; time: string } | null>(null);
 
@@ -264,6 +275,19 @@ export default function IntelligenceMapping() {
   const geocodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const watchIdRef = useRef<number | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
+
+  // Persist map settings to localStorage whenever they change
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_MAP_SETTINGS_KEY, JSON.stringify({
+        selectedOpIds,
+        selectedTargetIds,
+        opExpanded: Array.from(opExpanded),
+        rsSelectedOpId,
+        rsSelectedSheetId,
+      }));
+    } catch { /* ignore */ }
+  }, [selectedOpIds, selectedTargetIds, opExpanded, rsSelectedOpId, rsSelectedSheetId]);
 
   // Data
   const { data: operations, isLoading: opsLoading } = trpc.operation.list.useQuery();
@@ -283,10 +307,18 @@ export default function IntelligenceMapping() {
     { deviceId },
     { enabled: !!deviceId }
   );
+  // Track whether we've already restored sharing so we don't restart on every poll
+  const sharingRestoredRef = useRef(false);
   useEffect(() => {
-    if (myLocationState) {
+    if (myLocationState && !sharingRestoredRef.current) {
+      sharingRestoredRef.current = true;
       setSharingEnabled(myLocationState.sharingEnabled);
+      if (myLocationState.sharingEnabled) {
+        // Restart GPS watch so the pin reappears immediately on return to map
+        startWatching();
+      }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myLocationState]);
 
   // showOwnLocation always mirrors sharingEnabled (single toggle)
@@ -430,10 +462,11 @@ export default function IntelligenceMapping() {
     };
   }, []);
 
-  // ── Click-outside to close panel ────────────────────────────────────────────
+  // ── Click-outside to close panels ──────────────────────────────────────────
   const handleMapAreaClick = useCallback(() => {
     if (sidebarOpen) setSidebarOpen(false);
-  }, [sidebarOpen]);
+    if (rsActionsPaneOpen) setRsActionsPaneOpen(false);
+  }, [sidebarOpen, rsActionsPaneOpen]);
 
   // ── Map pin rendering ────────────────────────────────────────────────────────
   const clearMarkers = useCallback(() => {
@@ -477,48 +510,51 @@ export default function IntelligenceMapping() {
   const createUserPinElement = useCallback((liveUser: LiveUser) => {
     const color = getTeamColour(liveUser.team);
     const label = liveUser.name.toUpperCase();
-    // Motion: speed > 0.5 m/s = moving (green dot), otherwise stopped (grey dot)
+    // Motion: speed > 0.5 m/s = moving (green underline), otherwise stopped (grey underline)
     const isMoving = liveUser.speed != null && liveUser.speed > 0.5;
-    const dotColor = isMoving ? "#22c55e" : "#9ca3af";
+    const underlineColor = isMoving ? "#22c55e" : "#9ca3af";
 
     const el = document.createElement("div");
     el.style.cssText = `position:relative;display:flex;flex-direction:column;align-items:center;cursor:pointer;`;
 
-    // Pill-shaped name tag with motion dot on left
+    // Pill-shaped name tag — slightly smaller than before
     const pill = document.createElement("div");
     pill.style.cssText = `
-      display:flex;
+      position:relative;
+      display:inline-flex;
       align-items:center;
       background:${color};
       color:#fff;
-      font-size:12px;
+      font-size:10px;
       font-weight:800;
-      padding:5px 12px 5px 7px;
+      padding:3px 10px 5px 10px;
       border-radius:20px;
       white-space:nowrap;
-      box-shadow:0 2px 10px rgba(0,0,0,0.45);
+      box-shadow:0 2px 8px rgba(0,0,0,0.40);
       letter-spacing:0.06em;
-      border:2px solid rgba(255,255,255,0.65);
-      gap:6px;
-    `;
-
-    // Motion indicator dot
-    const dot = document.createElement("div");
-    dot.style.cssText = `
-      width:9px;
-      height:9px;
-      border-radius:50%;
-      background:${dotColor};
-      flex-shrink:0;
-      border:1.5px solid rgba(255,255,255,0.75);
-      box-shadow:0 0 4px ${isMoving ? "rgba(34,197,94,0.7)" : "rgba(0,0,0,0.2)"};
+      border:1.5px solid rgba(255,255,255,0.60);
+      overflow:hidden;
     `;
 
     const nameSpan = document.createElement("span");
     nameSpan.textContent = label;
+    nameSpan.style.cssText = `position:relative;z-index:1;`;
 
-    pill.appendChild(dot);
+    // Thin underline at the bottom of the pill indicating motion state
+    const underline = document.createElement("div");
+    underline.style.cssText = `
+      position:absolute;
+      bottom:0;
+      left:0;
+      right:0;
+      height:3px;
+      background:${underlineColor};
+      border-radius:0 0 20px 20px;
+      opacity:0.9;
+    `;
+
     pill.appendChild(nameSpan);
+    pill.appendChild(underline);
     el.appendChild(pill);
     return el;
   }, []);
@@ -1090,6 +1126,20 @@ export default function IntelligenceMapping() {
           {/* Target details + shortcuts */}
           {rsSelectedSheetId !== null && (
             <div className="space-y-3">
+              {/* Sheet title as link */}
+              {rsSheetsData && (() => {
+                const sheet = (rsSheetsData as any[]).find((s: any) => s.id === rsSelectedSheetId);
+                return sheet ? (
+                  <button
+                    onClick={() => setLocation(`/sheet/${rsSelectedSheetId}`)}
+                    className="w-full flex items-center gap-2 text-left px-3 py-2 rounded-lg border border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors"
+                  >
+                    <MapIcon className="h-3.5 w-3.5 text-primary flex-shrink-0" />
+                    <span className="text-xs font-semibold text-primary truncate">{sheet.title || `Sheet #${sheet.id}`}</span>
+                  </button>
+                ) : null;
+              })()}
+
               {/* Target info strip */}
               {rsTargetData && (
                 <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5">
@@ -1187,9 +1237,9 @@ export default function IntelligenceMapping() {
               {/* Link to full RS */}
               <button
                 onClick={() => setLocation(`/sheet/${rsSelectedSheetId}`)}
-                className="w-full flex items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors py-1"
+                className="w-full flex items-center justify-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors py-1.5 rounded-lg hover:bg-primary/10"
               >
-                <ArrowLeft className="h-3 w-3 rotate-180" />
+                <MapIcon className="h-3.5 w-3.5" />
                 Open full running sheet
               </button>
             </div>
@@ -1214,17 +1264,6 @@ export default function IntelligenceMapping() {
           borderTop: "1px solid rgba(255,255,255,0.08)",
         }}
       >
-        {/* Permanent: Home */}
-        <button
-          onClick={() => setLocation("/")}
-          className="flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-lg hover:bg-white/10 active:scale-95 transition-all min-w-[52px]"
-        >
-          <Home className="h-4 w-4 text-white/80" />
-          <span className="text-[10px] font-semibold text-white/70 leading-none">Home</span>
-        </button>
-
-        <div className="w-px h-6 bg-white/10 mx-0.5" />
-
         {/* Permanent: Operations */}
         <button
           onClick={() => setLocation("/")}

@@ -522,6 +522,28 @@ function DashboardLayoutContent({
                 {activeMenuItem?.label ?? "Running Sheet"}
               </span>
             </div>
+            {location !== "/intelligence/mapping" && (
+              <button
+                onClick={() => setLocation("/intelligence/mapping")}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+                title="Back to Map"
+              >
+                <Network className="h-3.5 w-3.5" />
+                <span>Map</span>
+              </button>
+            )}
+          </div>
+        )}
+        {!isMobile && location !== "/intelligence/mapping" && (
+          <div className="flex justify-end px-4 pt-2 pb-0">
+            <button
+              onClick={() => setLocation("/intelligence/mapping")}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+              title="Back to Map"
+            >
+              <Network className="h-3.5 w-3.5" />
+              <span>Back to Map</span>
+            </button>
           </div>
         )}
         <main className="flex-1 min-h-screen bg-background">{children}</main>

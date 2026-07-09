@@ -505,3 +505,14 @@
 - [x] Entries use same expansion logic as main running sheet shortcuts
 - [x] Entries can be edited later in the full running sheet
 - [x] Right pane toggle button on right edge of map (mirror of left pane arrow tab)
+
+## Mapping Page Fixes (Round 54)
+- [x] Fix 1: Per-device location sharing — each device is standalone; sharing on = pin shows for that device on all maps
+- [x] Fix 2: Right pane click-outside closes it (same as left pane)
+- [x] Fix 3: Remove Home button from bottom banner (Home and Operations go to same place)
+- [x] Fix 4: Add back-to-map icon/arrow on pages navigated to from bottom banner quick links
+- [x] Fix 5: Pill name tag slightly smaller; replace green/grey dot with thin underline (green=moving, grey=stopped)
+- [x] Fix 6: Info window entity description text darker (currently light grey, hard to read)
+- [x] Fix 7: RS pane sheet title is a clickable link to the full running sheet; add back-to-map icon
+- [x] Fix 8: Persist all left and right pane settings in localStorage (ops selected, targets, sharing state)
+- [x] Fix 9: Restore sharing/location pin on return to map — if share+show was on, it must stay on

@@ -888,11 +888,11 @@ export default function IntelligenceMapping() {
         marker.addListener("click", () => {
           if (!infoWindowRef.current) return;
           const lines: string[] = [];
-          if (cm.label) lines.push(`<strong style="font-size:13px">${cm.label}</strong>`);
-          if (cm.address) lines.push(`<span style="font-size:11px;color:#888">${cm.address}</span>`);
-          if (cm.note) lines.push(`<p style="font-size:12px;margin:4px 0 0">${cm.note}</p>`);
-          if (cm.assocPersons?.length) lines.push(`<p style="font-size:11px;color:#aaa;margin:4px 0 0">Persons: ${(cm.assocPersons as string[]).join(", ")}</p>`);
-          if (cm.assocVehicles?.length) lines.push(`<p style="font-size:11px;color:#aaa;margin:2px 0 0">Vehicles: ${(cm.assocVehicles as string[]).join(", ")}</p>`);
+          if (cm.label) lines.push(`<strong style="font-size:13px;color:#111">${cm.label}</strong>`);
+          if (cm.address) lines.push(`<div style="font-size:11px;color:#444;margin-top:2px">${cm.address}</div>`);
+          if (cm.note) lines.push(`<div style="margin-top:6px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Notes</span><p style="font-size:12px;color:#111;margin:2px 0 0">${cm.note}</p></div>`);
+          if (cm.assocPersons?.length) lines.push(`<div style="margin-top:6px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Persons</span><p style="font-size:12px;color:#111;margin:2px 0 0">${(cm.assocPersons as string[]).join(", ")}</p></div>`);
+          if (cm.assocVehicles?.length) lines.push(`<div style="margin-top:4px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Vehicles</span><p style="font-size:12px;color:#111;margin:2px 0 0">${(cm.assocVehicles as string[]).join(", ")}</p></div>`);
           const lat = cm.lat;
           const lng = cm.lng;
           lines.push(`<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
@@ -900,7 +900,7 @@ export default function IntelligenceMapping() {
             <a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}" target="_blank" style="font-size:11px;padding:4px 10px;background:#4285f4;color:#fff;border-radius:4px;text-decoration:none">Street View</a>
             <button onclick="window.__deleteCustomMarker(${cm.id})" style="font-size:11px;padding:4px 10px;background:#ef4444;color:#fff;border-radius:4px;border:none;cursor:pointer">Delete</button>
           </div>`);
-          infoWindowRef.current.setContent(`<div style="font-family:sans-serif;max-width:220px">${lines.join("")}</div>`);
+          infoWindowRef.current.setContent(`<div style="font-family:sans-serif;max-width:240px;color:#111">${lines.join("")}</div>`);
           infoWindowRef.current.open(map, marker);
         });
         existing.set(cm.id, marker);
@@ -2040,13 +2040,13 @@ export default function IntelligenceMapping() {
               )}
             </div>
 
-            {/* 8. Observation note */}
+            {/* 8. Notes */}
             <div className="mb-4">
-              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Observation Note</label>
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Notes</label>
               <Textarea
                 value={cmNote}
                 onChange={(e) => setCmNote(e.target.value)}
-                placeholder="Optional observation details..."
+                placeholder="Optional notes..."
                 rows={2}
                 className="text-sm resize-none"
               />

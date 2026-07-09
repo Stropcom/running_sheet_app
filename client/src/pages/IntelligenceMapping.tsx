@@ -250,28 +250,20 @@ export default function IntelligenceMapping() {
   // Left pane starts closed — user opens it when needed. Never auto-open on navigation.
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Per-device ID — server-assigned stable token stored in a long-lived cookie.
-  // Falls back to localStorage/sessionStorage if the server query hasn't resolved yet.
-  const [deviceId, setDeviceId] = useState<string>(() => {
-    // Immediate fallback: use sessionStorage/localStorage until server token arrives
-    const userKey = `runlog_device_id_u${user?.id ?? "anon"}`;
-    return sessionStorage.getItem(userKey) ?? localStorage.getItem(userKey) ?? `tmp_${Math.random().toString(36).slice(2)}`;
+  // Per-device ID — tab-unique, stored in sessionStorage so each browser tab gets its own ID.
+  // This is critical: two tabs logged in as the same user must have different deviceIds so
+  // the receiving tab can see the sharing tab's pin without its own sharing being on.
+  const [deviceId] = useState<string>(() => {
+    const ssKey = `runlog_tab_device_id`;
+    const existing = sessionStorage.getItem(ssKey);
+    if (existing) return existing;
+    const newId = `tab_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+    try { sessionStorage.setItem(ssKey, newId); } catch { /* ignore */ }
+    return newId;
   });
-  // Fetch the stable server-assigned device token on mount
-  const { data: deviceTokenData } = trpc.intelligence.getDeviceToken.useQuery(undefined, {
-    enabled: !!user,
-    staleTime: Infinity, // never re-fetch — the token is stable
-  });
-  useEffect(() => {
-    if (deviceTokenData?.deviceToken) {
-      const token = deviceTokenData.deviceToken;
-      setDeviceId(token);
-      // Also cache locally so it's available immediately on next load
-      const userKey = `runlog_device_id_u${user?.id ?? "anon"}`;
-      try { localStorage.setItem(userKey, token); } catch { /* ignore */ }
-      try { sessionStorage.setItem(userKey, token); } catch { /* ignore */ }
-    }
-  }, [deviceTokenData?.deviceToken, user?.id]);
+  // Keep a ref so GPS callbacks always use the latest value
+  // (deviceId is now stable for the tab lifetime, but ref is still needed for the GPS callbacks)
+  // No server query needed — the ID is generated client-side per tab.
 
   // Location sharing state — read from localStorage immediately so the toggle shows the right state
   // before the server query resolves. The server query will confirm/correct it on mount.
@@ -714,10 +706,12 @@ export default function IntelligenceMapping() {
     if (!mapRef.current || !liveUsers) return;
 
     const currentUserId = user?.id;
+    const currentDeviceId = deviceIdRef.current;
     const visibleUsers = (liveUsers as LiveUser[]).filter((u) => {
-      // Own location: only hide the current device's own pin when sharing is off.
-      // Other users' pins are ALWAYS shown regardless of the receiver's sharing toggle.
-      if (u.userId === currentUserId && !showOwnLocation) return false;
+      // Only hide THIS device's own pin when sharing is off.
+      // Same user on a different device (different deviceId) must always show.
+      const isThisDevice = u.userId === currentUserId && u.deviceId === currentDeviceId;
+      if (isThisDevice && !showOwnLocation) return false;
       // Per-team visibility (manual hide buttons in the team list)
       const teamKey = u.team ?? "null";
       if (hiddenTeams.has(teamKey)) return false;

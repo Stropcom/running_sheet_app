@@ -196,10 +196,47 @@ export async function deleteOperation(id: number) {
   for (const sheet of sheets) {
     await deleteRunningSheet(sheet.id);
   }
-  // Remove operation-target links (targets themselves stay in the registry)
+  // Find targets that are EXCLUSIVELY linked to this operation (via legacy operationId FK)
+  // and have no other operation links — these should be deleted, not orphaned
+  const exclusiveTargets = await db
+    .select({ id: targets.id })
+    .from(targets)
+    .where(and(eq(targets.operationId, id), isNull(targets.deletedAt)));
+  for (const t of exclusiveTargets) {
+    // Check if this target is also linked to other operations via the join table
+    const otherLinks = await db
+      .select({ id: operationTargetLinks.id })
+      .from(operationTargetLinks)
+      .where(and(eq(operationTargetLinks.targetId, t.id), sql`${operationTargetLinks.operationId} != ${id}`))
+      .limit(1);
+    if (otherLinks.length === 0) {
+      // Exclusively linked — delete target shortcuts then the target
+      await db.delete(targetShortcuts).where(eq(targetShortcuts.targetId, t.id));
+      await db.delete(targets).where(eq(targets.id, t.id));
+    } else {
+      // Linked to other ops too — just clear the legacy FK
+      await db.update(targets).set({ operationId: null }).where(eq(targets.id, t.id));
+    }
+  }
+  // Remove operation-target links for registry targets linked via join table
+  // For registry targets linked ONLY to this operation, also delete them
+  const linkedOnlyToThis = await db
+    .select({ targetId: operationTargetLinks.targetId })
+    .from(operationTargetLinks)
+    .where(eq(operationTargetLinks.operationId, id));
+  for (const link of linkedOnlyToThis) {
+    const otherLinks = await db
+      .select({ id: operationTargetLinks.id })
+      .from(operationTargetLinks)
+      .where(and(eq(operationTargetLinks.targetId, link.targetId), sql`${operationTargetLinks.operationId} != ${id}`))
+      .limit(1);
+    if (otherLinks.length === 0) {
+      // Only linked to this operation — delete the target too
+      await db.delete(targetShortcuts).where(eq(targetShortcuts.targetId, link.targetId));
+      await db.delete(targets).where(eq(targets.id, link.targetId));
+    }
+  }
   await db.delete(operationTargetLinks).where(eq(operationTargetLinks.operationId, id));
-  // Clear legacy operationId FK on targets (nullable, so set to null rather than delete)
-  await db.update(targets).set({ operationId: null }).where(eq(targets.operationId, id));
   await db.delete(operations).where(eq(operations.id, id));
 }
 

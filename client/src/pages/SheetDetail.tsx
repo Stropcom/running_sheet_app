@@ -76,7 +76,7 @@ import { GripVertical } from "lucide-react";
 import { useLocation, useParams } from "wouter";
 import { toast } from "sonner";
 import { format } from "date-fns";
-import { WifiOff, RefreshCw } from "lucide-react";
+import { WifiOff, RefreshCw, ChevronDown } from "lucide-react";
 import { useOffline } from "@/contexts/OfflineContext";
 import {
   saveCachedSheet,
@@ -1582,6 +1582,10 @@ export default function SheetDetail() {
 
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
+  // Target panel collapsed state — expanded by default, persisted in localStorage
+  const [targetPanelExpanded, setTargetPanelExpanded] = useState<boolean>(() => {
+    try { return localStorage.getItem("runsheet_target_panel_expanded") !== "false"; } catch { return true; }
+  });
   // Persist sort preference in localStorage so it survives navigation
   const [sortReversed, setSortReversed] = useState<boolean>(() => {
     try { return localStorage.getItem("runsheet_sort_reversed") === "true"; } catch { return false; }
@@ -2049,50 +2053,67 @@ export default function SheetDetail() {
           ];
           const hasAnyField = fields.some((f) => f.value);
           return (
-            <div className="mb-4 rounded-lg border border-border bg-card/60 px-4 py-3">
-              <div className="flex items-center gap-2 mb-2">
-                <Target className="w-3.5 h-3.5 text-muted-foreground" />
+            <div className="mb-4 rounded-lg border border-border bg-card/60 overflow-hidden">
+              {/* Header — always visible, tap to collapse/expand */}
+              <button
+                className="w-full flex items-center gap-2 px-4 py-3 hover:bg-muted/20 active:bg-muted/30 transition-colors select-none text-left"
+                onClick={() => setTargetPanelExpanded(v => {
+                  const next = !v;
+                  try { localStorage.setItem("runsheet_target_panel_expanded", String(next)); } catch {}
+                  return next;
+                })}
+              >
+                <Target className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                 <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex-1">TARGET — {t.name}</span>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="gap-1.5 text-xs text-muted-foreground hover:text-foreground h-7 px-2"
-                  onClick={() => navigate(`/operation/${sheet!.operationId}?tab=target&targetId=${t.id}&fromSheet=${sheetId}`)}
-                  title="Edit Target"
-                >
-                  <Pencil className="w-3 h-3" />
-                  Edit
-                </Button>
-
-              </div>
-              {hasAnyField && (
-                <div className="flex flex-wrap gap-x-6 gap-y-1">
-                  {fields.filter((f) => f.value).map((f) => {
-                    const isDepArr = (f.label === "DEP" || f.label === "ARR") && !isClosed;
-                    return (
-                      <div key={f.label} className="flex items-baseline gap-1.5 text-xs">
-                        <span className="font-semibold text-muted-foreground uppercase tracking-wide">{f.label}:</span>
-                        <span className="font-mono text-foreground">{f.value}</span>
-                        {isDepArr && (
-                          <button
-                            onClick={() => {
-                              const now = new Date();
-                              const h24 = now.getHours();
-                              const min = now.getMinutes();
-                              const totalMins = h24 * 60 + min;
-                              const timeStr = minutesToTimeString(totalMins);
-                              addRow.mutate({ sheetId, time: timeStr, timeMinutes: totalMins, observation: f.value! });
-                            }}
-                            disabled={addRow.isPending}
-                            title={`Add ${f.label} row with current time`}
-                            className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-primary/15 text-primary hover:bg-primary/25 active:scale-95 transition-all border border-primary/30"
-                          >
-                            + Row
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
+                <ChevronDown
+                  className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 ${targetPanelExpanded ? "" : "-rotate-90"}`}
+                />
+              </button>
+              {/* Collapsible details */}
+              {targetPanelExpanded && (
+                <div className="px-4 pb-3 border-t border-border/40">
+                  <div className="flex items-center justify-end pt-2 mb-2">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="gap-1.5 text-xs text-muted-foreground hover:text-foreground h-7 px-2"
+                      onClick={(e) => { e.stopPropagation(); navigate(`/operation/${sheet!.operationId}?tab=target&targetId=${t.id}&fromSheet=${sheetId}`); }}
+                      title="Edit Target"
+                    >
+                      <Pencil className="w-3 h-3" />
+                      Edit
+                    </Button>
+                  </div>
+                  {hasAnyField && (
+                    <div className="flex flex-wrap gap-x-6 gap-y-1">
+                      {fields.filter((f) => f.value).map((f) => {
+                        const isDepArr = (f.label === "DEP" || f.label === "ARR") && !isClosed;
+                        return (
+                          <div key={f.label} className="flex items-baseline gap-1.5 text-xs">
+                            <span className="font-semibold text-muted-foreground uppercase tracking-wide">{f.label}:</span>
+                            <span className="font-mono text-foreground">{f.value}</span>
+                            {isDepArr && (
+                              <button
+                                onClick={() => {
+                                  const now = new Date();
+                                  const h24 = now.getHours();
+                                  const min = now.getMinutes();
+                                  const totalMins = h24 * 60 + min;
+                                  const timeStr = minutesToTimeString(totalMins);
+                                  addRow.mutate({ sheetId, time: timeStr, timeMinutes: totalMins, observation: f.value! });
+                                }}
+                                disabled={addRow.isPending}
+                                title={`Add ${f.label} row with current time`}
+                                className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-primary/15 text-primary hover:bg-primary/25 active:scale-95 transition-all border border-primary/30"
+                              >
+                                + Row
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

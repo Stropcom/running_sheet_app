@@ -3434,8 +3434,12 @@ export async function getCustomMarkers(operationIds?: number[]): Promise<CustomM
   if (!db) return [];
   let rows: CustomMapMarker[];
   if (operationIds && operationIds.length > 0) {
+    // Include markers assigned to the selected operations OR markers with no operation (unassigned)
     rows = await db.select().from(customMapMarkers)
-      .where(and(inArray(customMapMarkers.operationId, operationIds), isNull(customMapMarkers.deletedAt)))
+      .where(and(
+        or(inArray(customMapMarkers.operationId, operationIds), isNull(customMapMarkers.operationId)),
+        isNull(customMapMarkers.deletedAt)
+      ))
       .orderBy(desc(customMapMarkers.createdAt));
   } else {
     rows = await db.select().from(customMapMarkers)

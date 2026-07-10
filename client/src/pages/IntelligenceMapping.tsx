@@ -2678,6 +2678,35 @@ export default function IntelligenceMapping() {
                           </div>
                         );
                       })()}
+                      {/* Address chips — full RS address and short street address */}
+                      {mapQeAddress && (() => {
+                        const appendText = (text: string) => { setRsInlineText(prev => prev ? `${prev} ${text}` : text); resetInlineTimer(); rsInlineInputRef.current?.focus(); };
+                        // Extract short address from bracket code: e.g. "21 Olding Way, MELVILLE WA (21 OLDING WAY)" → "21 Olding Way"
+                        const bracketMatch = mapQeAddress.match(/^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/);
+                        // Short address: title-case the bracket code content (e.g. "21 OLDING WAY" → "21 Olding Way")
+                        const toTitleCase = (s: string) => s.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+                        const shortAddr = bracketMatch
+                          ? toTitleCase(bracketMatch[2])
+                          : mapQeAddress.split(",")[0]?.trim() ?? mapQeAddress;
+                        return (
+                          <div className="flex flex-col gap-1">
+                            <button
+                              onClick={() => appendText(mapQeAddress)}
+                              className="w-full text-left px-2.5 py-1.5 rounded-md border border-teal-500/30 bg-teal-500/5 text-teal-400 hover:bg-teal-500/15 active:scale-[0.98] transition-all"
+                            >
+                              <span className="text-[9px] font-bold uppercase tracking-wide text-teal-500/70 block mb-0.5">Full Address</span>
+                              <span className="text-[10px] font-mono leading-tight break-all">{mapQeAddress}</span>
+                            </button>
+                            <button
+                              onClick={() => appendText(shortAddr)}
+                              className="w-full text-left px-2.5 py-1.5 rounded-md border border-teal-500/20 bg-teal-500/5 text-teal-300 hover:bg-teal-500/10 active:scale-[0.98] transition-all"
+                            >
+                              <span className="text-[9px] font-bold uppercase tracking-wide text-teal-500/70 block mb-0.5">Short Address</span>
+                              <span className="text-[10px] font-mono leading-tight">{shortAddr}</span>
+                            </button>
+                          </div>
+                        );
+                      })()}
                       {/* CIN picker — multi-select with TEAM */}
                       {rosterCins.length > 0 && (
                         <div className="flex flex-wrap gap-1.5">

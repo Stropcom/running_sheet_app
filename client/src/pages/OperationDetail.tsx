@@ -592,6 +592,129 @@ function SheetCard({
   );
 }
 
+/** Tile view card for a running sheet — with cert status, all CINs, colour coding and role icons */
+function SheetTileCard({
+  sheet,
+  cinNames,
+  cinEntries,
+  targetName,
+  onNavigate,
+  onCopyMove,
+}: {
+  sheet: { id: number; title: string; createdAt: Date; sheetCins?: string | null; closedAt?: number | null; closedByCIN?: string | null };
+  cinNames: string[];
+  cinEntries?: CinEntry[];
+  targetName?: string | null;
+  onNavigate: () => void;
+  onCopyMove: () => void;
+}) {
+  const { data: certStatus } = trpc.sheet.cinCertStatus.useQuery(
+    { sheetId: sheet.id, cins: cinNames },
+    { enabled: cinNames.length > 0, staleTime: 30_000 },
+  );
+
+  const allCertified =
+    cinNames.length > 0 &&
+    certStatus !== undefined &&
+    certStatus.every((s) => s.certified);
+
+  const isClosed = !!sheet.closedAt;
+
+  return (
+    <div
+      onClick={onNavigate}
+      className={`group flex flex-col gap-3 p-5 rounded-xl border cursor-pointer hover:-translate-y-0.5 transition-all duration-150 ${
+        isClosed
+          ? "border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/40 opacity-70"
+          : allCertified
+            ? "border-emerald-500/60 bg-emerald-500/10 hover:bg-emerald-500/15 hover:border-emerald-500/80 hover:shadow-md"
+            : "border-border bg-card hover:bg-accent/20 hover:border-primary/30 hover:shadow-md"
+      }`}
+    >
+      {/* Header row: icon + CLOSED badge + copy-move button */}
+      <div className="flex items-start justify-between gap-2">
+        <div className={`p-2 rounded-lg border shrink-0 ${
+          isClosed ? "bg-slate-200/60 dark:bg-slate-700/40 border-slate-300 dark:border-slate-600"
+          : allCertified ? "bg-emerald-500/20 border-emerald-500/40"
+          : "bg-primary/10 border-primary/20"
+        }`}>
+          {isClosed
+            ? <LockKeyhole className="w-4 h-4 text-slate-400" />
+            : <FileText className={`w-4 h-4 ${allCertified ? "text-emerald-400" : "text-primary"}`} />}
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          {isClosed && (
+            <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border border-slate-400/50 bg-slate-200/60 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 font-medium">
+              <LockKeyhole className="w-2.5 h-2.5" />CLOSED
+            </span>
+          )}
+          {allCertified && !isClosed && (
+            <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border border-emerald-500/50 bg-emerald-500/15 text-emerald-400 font-medium">
+              ✓ CERTIFIED
+            </span>
+          )}
+          {!isClosed && (
+            <Button size="icon" variant="ghost" className="w-7 h-7 text-sky-500 hover:bg-sky-500/10"
+              onClick={(e) => { e.stopPropagation(); onCopyMove(); }}
+              title="Copy or Move">
+              <LayoutGrid className="w-3.5 h-3.5" />
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Sheet title */}
+      <p className={`font-semibold leading-tight line-clamp-2 ${
+        isClosed ? "text-slate-500 dark:text-slate-400"
+        : allCertified ? "text-emerald-300"
+        : "text-foreground"
+      }`}>{sheet.title}</p>
+
+      {/* Target */}
+      {targetName && (
+        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <Target className="w-3 h-3 shrink-0" />
+          <span className="truncate">{targetName}</span>
+        </div>
+      )}
+
+      {/* CIN chips — all shown, colour coded, with role icons */}
+      {cinNames.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {cinNames.map((cin) => {
+            const certified = certStatus?.find((s) => s.cin === cin)?.certified ?? false;
+            const entry = cinEntries?.find((e) => e.cin === cin);
+            return (
+              <span
+                key={cin}
+                className={`inline-flex items-center gap-0.5 text-xs px-2 py-0.5 rounded-full border font-mono ${
+                  certified
+                    ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-400"
+                    : "border-red-500/40 bg-red-500/10 text-red-400"
+                }`}
+              >
+                {entry?.isTeamLeader && <span className="text-yellow-400" title="Team Leader">★</span>}
+                {entry?.isAuthor && <span className="text-sky-400" title="Author">✏</span>}
+                {entry?.hasImages && <span className="text-violet-400" title="Has images">📷</span>}
+                {cin}
+              </span>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Footer: date */}
+      <div className="flex items-center gap-1 mt-auto text-xs text-muted-foreground">
+        <Calendar className="w-3 h-3" />
+        <span>{format(new Date(sheet.createdAt), "d MMM yyyy")}</span>
+        {sheet.closedAt && sheet.closedByCIN && (
+          <span className="ml-2 text-slate-400">· Closed by <span className="font-mono">{sheet.closedByCIN}</span></span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function OperationDetail() {
   const { isAuthenticated, user } = useAuth();
   const params = useParams<{ id: string }>();
@@ -929,59 +1052,30 @@ export default function OperationDetail() {
             {viewMode === "tile" ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filteredSheets.map((sheet) => {
-                  const parsedCins: CinEntry[] = (() => { try { return sheet.sheetCins ? JSON.parse(sheet.sheetCins) : []; } catch { return []; } })();
+                  const parsedCins: CinEntry[] = (() => {
+                    try {
+                      const raw: CinEntry[] = sheet.sheetCins ? JSON.parse(sheet.sheetCins) : [];
+                      return [...raw].sort((a, b) => {
+                        if (a.isTeamLeader && !b.isTeamLeader) return -1;
+                        if (!a.isTeamLeader && b.isTeamLeader) return 1;
+                        const aNum = parseInt(a.cin, 10); const bNum = parseInt(b.cin, 10);
+                        if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
+                        return a.cin.localeCompare(b.cin);
+                      });
+                    } catch { return []; }
+                  })();
                   const cinNames = parsedCins.map((c) => c.cin);
                   const assignedTarget = operationTargets?.find((t) => t.id === (sheet as { targetId?: number | null }).targetId);
-                  const isClosed = !!sheet.closedAt;
                   return (
-                    <div
+                    <SheetTileCard
                       key={sheet.id}
-                      onClick={() => navigate(`/sheet/${sheet.id}`)}
-                      className={`group flex flex-col gap-3 p-5 rounded-xl border cursor-pointer hover:-translate-y-0.5 transition-all duration-150 ${
-                        isClosed
-                          ? "border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/40 opacity-70"
-                          : "border-border bg-card hover:bg-accent/20 hover:border-primary/30 hover:shadow-md"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className={`p-2 rounded-lg border shrink-0 ${
-                          isClosed ? "bg-slate-200/60 dark:bg-slate-700/40 border-slate-300 dark:border-slate-600" : "bg-primary/10 border-primary/20"
-                        }`}>
-                          {isClosed ? <LockKeyhole className="w-4 h-4 text-slate-400" /> : <FileText className="w-4 h-4 text-primary" />}
-                        </div>
-                        {isClosed && (
-                          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border border-slate-400/50 bg-slate-200/60 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 font-medium shrink-0">
-                            <LockKeyhole className="w-2.5 h-2.5" />CLOSED
-                          </span>
-                        )}
-                        {!isClosed && (
-                          <Button size="icon" variant="ghost" className="w-7 h-7 text-sky-500 hover:bg-sky-500/10 shrink-0"
-                            onClick={(e) => { e.stopPropagation(); setCopyMoveSheet({ id: sheet.id, title: sheet.title }); }}
-                            title="Copy or Move">
-                            <LayoutGrid className="w-3.5 h-3.5" />
-                          </Button>
-                        )}
-                      </div>
-                      <p className="font-semibold text-foreground leading-tight line-clamp-2">{sheet.title}</p>
-                      {assignedTarget && (
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <Target className="w-3 h-3 shrink-0" />
-                          <span className="truncate">{assignedTarget.name}</span>
-                        </div>
-                      )}
-                      {cinNames.length > 0 && (
-                        <div className="flex flex-wrap gap-1">
-                          {cinNames.slice(0, 6).map((cin) => (
-                            <span key={cin} className="text-xs px-1.5 py-0.5 rounded-full border border-border font-mono text-muted-foreground">{cin}</span>
-                          ))}
-                          {cinNames.length > 6 && <span className="text-xs text-muted-foreground">+{cinNames.length - 6}</span>}
-                        </div>
-                      )}
-                      <div className="flex items-center gap-1 mt-auto text-xs text-muted-foreground">
-                        <Calendar className="w-3 h-3" />
-                        <span>{format(new Date(sheet.createdAt), "d MMM yyyy")}</span>
-                      </div>
-                    </div>
+                      sheet={sheet}
+                      cinNames={cinNames}
+                      cinEntries={parsedCins}
+                      targetName={assignedTarget?.name}
+                      onNavigate={() => navigate(`/sheet/${sheet.id}`)}
+                      onCopyMove={() => setCopyMoveSheet({ id: sheet.id, title: sheet.title })}
+                    />
                   );
                 })}
               </div>

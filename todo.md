@@ -654,3 +654,7 @@
 - [ ] CIN buttons: slightly larger and darker font
 - [ ] CIN buttons: multi-select (tap to toggle, multiple CINs can be selected)
 - [ ] CIN buttons: TEAM shortcut button that selects all CINs at once
+
+## Google Address Bulk Backfill (Round N)
+- [x] Add bulk backfill tRPC procedure to convert Google-formatted addresses in all existing observation rows to RS format
+- [x] Add "Fix Google Addresses" button in admin/settings area with result summary (rows scanned, rows updated)

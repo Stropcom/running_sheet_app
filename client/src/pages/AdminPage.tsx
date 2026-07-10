@@ -38,6 +38,8 @@ import {
   ShieldAlert,
   Crown,
   Eye,
+  Wrench,
+  CheckCircle2,
 } from "lucide-react";
 
 type Role = "observer" | "member" | "admin";
@@ -199,6 +201,16 @@ export default function AdminPage() {
       toast.success("User updated successfully.");
       setEditTarget(null);
       invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const [backfillResult, setBackfillResult] = useState<{ scanned: number; updated: number } | null>(null);
+
+  const backfillGoogleAddresses = trpc.adminUtils.backfillGoogleAddresses.useMutation({
+    onSuccess: (result) => {
+      setBackfillResult(result);
+      toast.success(`Done — ${result.updated} row${result.updated !== 1 ? 's' : ''} updated out of ${result.scanned} scanned.`);
     },
     onError: (e) => toast.error(e.message),
   });
@@ -408,6 +420,51 @@ export default function AdminPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Data Tools Section */}
+        <div className="mt-8 rounded-xl border border-border/60 bg-card/50 p-5">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
+              <Wrench className="w-4 h-4 text-amber-400" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-foreground">Data Tools</h2>
+              <p className="text-xs text-muted-foreground">One-time maintenance utilities for existing data.</p>
+            </div>
+          </div>
+          <div className="flex flex-col gap-3">
+            <div className="flex items-start gap-4 rounded-lg border border-border/40 bg-background/50 p-4">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-foreground">Fix Google Maps Addresses</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Scans all existing running sheet observations and converts any Google Maps formatted addresses
+                  (e.g. "131 Lakey St, Southern River WA 6110, Australia") into the standard running sheet format
+                  (e.g. "131 Lakey St, Southern River WA (131 LAKEY ST)") so they are picked up by the intelligence extractor.
+                </p>
+                {backfillResult && (
+                  <div className="flex items-center gap-2 mt-2 text-xs text-emerald-400">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Last run: {backfillResult.updated} row{backfillResult.updated !== 1 ? 's' : ''} updated out of {backfillResult.scanned} scanned.</span>
+                  </div>
+                )}
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="shrink-0 gap-2 border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                onClick={() => backfillGoogleAddresses.mutate()}
+                disabled={backfillGoogleAddresses.isPending}
+              >
+                {backfillGoogleAddresses.isPending ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Wrench className="w-3.5 h-3.5" />
+                )}
+                {backfillGoogleAddresses.isPending ? "Running…" : "Run Now"}
+              </Button>
+            </div>
+          </div>
+        </div>
 
         {/* Delete Confirm Dialog */}
         <Dialog open={deleteTarget !== null} onOpenChange={(o) => !o && setDeleteTarget(null)}>

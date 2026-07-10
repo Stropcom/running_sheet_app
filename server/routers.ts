@@ -109,6 +109,7 @@ import {
   softDeleteCustomMarker,
   reinstateCustomMarker,
   hardDeleteCustomMarker,
+  backfillGoogleAddressesInObservations,
 } from "./db";
 
 import { generateStatDecDocx } from "./statDecGenerator";
@@ -2474,6 +2475,14 @@ export const appRouter = router({
         await softDeleteCustomMarker(input.id, cin);
         return { success: true };
       }),
+  }),
+
+  // ─── Admin Utilities ────────────────────────────────────────────────────────
+  adminUtils: router({
+    backfillGoogleAddresses: adminProcedure.mutation(async () => {
+      const result = await backfillGoogleAddressesInObservations();
+      return result;
+    }),
   }),
 });
 export type AppRouter = typeof appRouter;

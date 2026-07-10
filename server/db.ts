@@ -3526,3 +3526,53 @@ export async function hardDeleteCustomMarker(id: number): Promise<void> {
   if (!db) throw new Error("DB unavailable");
   await db.delete(customMapMarkers).where(eq(customMapMarkers.id, id));
 }
+
+// ─── Google Address Backfill ──────────────────────────────────────────────────
+
+const AU_STATES_BACKFILL = "WA|NSW|VIC|QLD|SA|TAS|NT|ACT";
+const GOOGLE_ADDRESS_RE_BACKFILL = new RegExp(
+  `((?:[^,\\d\\n][^,\\n]*,\\s*)?)` +
+  `(\\d{1,5}[A-Za-z]?(?:\\/\\d{1,5}[A-Za-z]?)?)\\s+` +
+  `([A-Za-z][\\w\\s]{2,50}?)` +
+  `,\\s*([A-Za-z][\\w\\s]{1,40}?\\s+(?:${AU_STATES_BACKFILL}))` +
+  `(?:\\s+(\\d{4}))?` +
+  `(?:,\\s*Australia)?`,
+  "gi"
+);
+
+function convertGoogleAddressesServer(text: string): string {
+  if (!text) return text;
+  return text.replace(
+    GOOGLE_ADDRESS_RE_BACKFILL,
+    (fullMatch: string, businessPrefix: string, streetNum: string, streetName: string, suburbState: string, _postcode: string, offset: number, str: string) => {
+      const afterMatch = str.slice(offset + fullMatch.length).trimStart();
+      if (afterMatch.startsWith("(")) return fullMatch;
+      const bracketCode = `${streetNum} ${streetName.trim()}`.toUpperCase();
+      const cleanedAddress = `${businessPrefix ?? ""}${streetNum} ${streetName.trim()}, ${suburbState.trim()}`;
+      return `${cleanedAddress} (${bracketCode})`;
+    }
+  );
+}
+
+export async function backfillGoogleAddressesInObservations(): Promise<{ scanned: number; updated: number }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Fetch all non-deleted rows that have an observation
+  const rows = await db
+    .select({ id: sheetRows.id, observation: sheetRows.observation })
+    .from(sheetRows)
+    .where(sql`${sheetRows.observation} IS NOT NULL AND ${sheetRows.observation} != ''`);
+
+  let updated = 0;
+  for (const row of rows) {
+    if (!row.observation) continue;
+    const converted = convertGoogleAddressesServer(row.observation);
+    if (converted !== row.observation) {
+      await db.update(sheetRows).set({ observation: converted }).where(eq(sheetRows.id, row.id));
+      updated++;
+    }
+  }
+
+  return { scanned: rows.length, updated };
+}

@@ -104,13 +104,26 @@ export default function TodoGovernancePage() {
                   <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 shrink-0">
                     <FileText className="w-4 h-4 text-amber-400" />
                   </div>
-                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide shrink-0 ${
-                    item.role === "teamLeader"
-                      ? "bg-violet-500/15 text-violet-400 border border-violet-500/25"
-                      : "bg-sky-500/15 text-sky-400 border border-sky-500/25"
-                  }`}>
-                    {item.role === "teamLeader" ? "TL" : "Author"}
-                  </span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${
+                      item.role === "teamLeader"
+                        ? "bg-violet-500/15 text-violet-400 border border-violet-500/25"
+                        : "bg-sky-500/15 text-sky-400 border border-sky-500/25"
+                    }`}>
+                      {item.role === "teamLeader" ? "TL" : "Author"}
+                    </span>
+                    {item.role === "teamLeader" && item.govPercent !== undefined && (
+                      <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none ${
+                        item.govPercent >= 100
+                          ? "bg-emerald-500/20 text-emerald-300"
+                          : item.govPercent >= 50
+                            ? "bg-sky-500/20 text-sky-300"
+                            : "bg-slate-500/20 text-slate-400"
+                      }`}>
+                        {item.govPercent}%
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <p className="font-semibold text-foreground leading-tight line-clamp-2">{item.sheetTitle}</p>
                 <div className="flex items-center gap-1 text-xs text-muted-foreground">

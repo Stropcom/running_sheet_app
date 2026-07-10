@@ -43,6 +43,7 @@ import {
 import { ViewToggle } from "@/components/ViewToggle";
 import { useViewMode } from "@/contexts/ViewModeContext";
 import { cn } from "@/lib/utils";
+import { useLocation } from "wouter";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -496,6 +497,7 @@ function AddTargetDialog({
 
 export default function TargetRegistryPage() {
   const utils = trpc.useUtils();
+  const [, navigate] = useLocation();
   const { data: targets, isLoading } = trpc.target.registry.list.useQuery();
 
   const { viewMode } = useViewMode();
@@ -642,7 +644,7 @@ export default function TargetRegistryPage() {
               <div
                 key={t.id}
                 className="group flex flex-col gap-3 p-5 rounded-xl border border-border bg-card hover:bg-accent/20 hover:border-primary/30 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 cursor-pointer"
-                onClick={() => setLinkTarget(t as RegistryTarget)}
+                onClick={() => navigate(`/intelligence/target/${t.id}`)}
               >
                 {/* Header */}
                 <div className="flex items-start justify-between gap-2">
@@ -652,7 +654,7 @@ export default function TargetRegistryPage() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="h-7 w-7 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-sky-400 hover:bg-sky-500/10"
                     onClick={e => { e.stopPropagation(); setLinkTarget(t as RegistryTarget); }}
                     title="Link to operations"
                   >

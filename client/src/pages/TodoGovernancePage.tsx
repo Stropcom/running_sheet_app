@@ -131,17 +131,34 @@ export default function TodoGovernancePage() {
                   <span className="truncate">{item.operationName}</span>
                 </div>
                 <div className="flex flex-col gap-0.5 mt-auto">
-                  {item.outstanding.slice(0, 3).map((task, ti) => (
-                    <span key={ti} className={`flex items-center gap-1 text-xs ${
-                      task === "Ready to close" ? "text-emerald-400" :
-                      task === "Sheet not fully certified" ? "text-amber-400" : "text-rose-400"
-                    }`}>
-                      {task === "Ready to close" ? <LockOpen className="w-3 h-3 shrink-0" /> :
-                       task === "Sheet not fully certified" ? <Lock className="w-3 h-3 shrink-0" /> :
-                       <AlertTriangle className="w-3 h-3 shrink-0" />}
-                      {task}
-                    </span>
-                  ))}
+                  {item.outstanding.slice(0, 3).map((task, ti) => {
+                    const isReadyToClose = task === "Ready to close";
+                    const isReadyLabel = isReadyToClose && item.govPercent === 100;
+                    const isNotReadyLabel = isReadyToClose && (item.govPercent ?? 0) < 100;
+                    const displayTask = isNotReadyLabel ? "Not ready to close" : task;
+                    return (
+                      <span key={ti} className={`flex items-center gap-1 text-xs ${
+                        isReadyLabel ? "text-emerald-400 font-medium" :
+                        isNotReadyLabel ? "text-rose-400 font-medium" :
+                        task === "Sheet not fully certified" ? "text-amber-400" : "text-rose-400"
+                      }`}>
+                        {isReadyLabel ? <LockOpen className="w-3 h-3 shrink-0" /> :
+                         isNotReadyLabel ? <AlertTriangle className="w-3 h-3 shrink-0" /> :
+                         task === "Sheet not fully certified" ? <Lock className="w-3 h-3 shrink-0" /> :
+                         <AlertTriangle className="w-3 h-3 shrink-0" />}
+                        {displayTask}
+                        {isReadyToClose && item.govPercent !== undefined && (
+                          <span className={`ml-1 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none ${
+                            item.govPercent >= 100 ? "bg-emerald-500/20 text-emerald-300" :
+                            item.govPercent >= 50 ? "bg-sky-500/20 text-sky-300" :
+                            "bg-slate-500/20 text-slate-400"
+                          }`}>
+                            {item.govPercent}%
+                          </span>
+                        )}
+                      </span>
+                    );
+                  })}
                 </div>
               </div>
             ))}
@@ -181,28 +198,35 @@ export default function TodoGovernancePage() {
                         {item.role === "teamLeader" ? "Team Leader" : "Author"}
                       </span>
                       <div className="mt-0 flex flex-col gap-0.5">
-                        {item.outstanding.map((task, ti) => (
+                        {item.outstanding.map((task, ti) => {
+                          const isReadyToClose = task === "Ready to close";
+                          const isReadyLabel = isReadyToClose && item.govPercent === 100;
+                          const isNotReadyLabel = isReadyToClose && (item.govPercent ?? 0) < 100;
+                          const displayTask = isNotReadyLabel ? "Not ready to close" : task;
+                          return (
                           <span
                             key={ti}
                             className={`flex items-center gap-1.5 text-xs ${
-                              task === "Ready to close"
-                                ? item.govPercent === 100
-                                  ? "text-emerald-400 font-medium"
-                                  : "text-sky-400 font-medium"
-                                : task === "Sheet not fully certified"
-                                  ? "text-amber-400"
-                                  : "text-rose-400"
+                              isReadyLabel
+                                ? "text-emerald-400 font-medium"
+                                : isNotReadyLabel
+                                  ? "text-rose-400 font-medium"
+                                  : task === "Sheet not fully certified"
+                                    ? "text-amber-400"
+                                    : "text-rose-400"
                             }`}
                           >
-                            {task === "Ready to close" ? (
+                            {isReadyLabel ? (
                               <LockOpen className="w-3 h-3 shrink-0" />
+                            ) : isNotReadyLabel ? (
+                              <AlertTriangle className="w-3 h-3 shrink-0" />
                             ) : task === "Sheet not fully certified" ? (
                               <Lock className="w-3 h-3 shrink-0" />
                             ) : (
                               <AlertTriangle className="w-3 h-3 shrink-0" />
                             )}
-                            {task}
-                            {task === "Ready to close" && item.govPercent !== undefined && (
+                            {displayTask}
+                            {isReadyToClose && item.govPercent !== undefined && (
                               <span
                                 className={`ml-1 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none ${
                                   item.govPercent >= 100
@@ -216,7 +240,8 @@ export default function TodoGovernancePage() {
                               </span>
                             )}
                           </span>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                     <ChevronRight className="w-4 h-4 text-amber-400/50 group-hover:text-amber-400 transition-colors shrink-0 mt-1" />

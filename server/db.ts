@@ -1999,22 +1999,31 @@ export interface GovernanceUpsertInput {
   dueDate?: number | null;
   summaryNotification?: boolean;
   isurvCIN?: string | null;
+  isurvName?: string | null;
   sentToIO?: boolean;
   sentToIOCIN?: string | null;
+  sentToIOName?: string | null;
   savedAsWord?: boolean;
   savedAsWordCIN?: string | null;
+  savedAsWordName?: string | null;
   savedAsPdf?: boolean;
   savedAsPdfCIN?: string | null;
+  savedAsPdfName?: string | null;
   uploadedToPromis?: boolean;
   uploadedToPromisCIN?: string | null;
+  uploadedToPromisName?: string | null;
   linked?: boolean;
   linkedCIN?: string | null;
+  linkedName?: string | null;
   savedInOpFolder?: boolean;
   savedInOpFolderCIN?: string | null;
+  savedInOpFolderName?: string | null;
   imageryTaken?: boolean;
   imageryTakenCIN?: string | null;
+  imageryTakenName?: string | null;
   coverPage?: boolean;
   coverPageCIN?: string | null;
+  coverPageName?: string | null;
   sheetCell?: string | null;
   imageryEntries?: ImageryEntry[];
   notes?: string | null;
@@ -2036,22 +2045,31 @@ export async function upsertGovernanceRecord(input: GovernanceUpsertInput): Prom
         ...(input.dueDate !== undefined && { dueDate: input.dueDate }),
         ...(input.summaryNotification !== undefined && { isurv: input.summaryNotification }),
         ...(input.isurvCIN !== undefined && { isurvCIN: input.isurvCIN }),
+        ...(input.isurvName !== undefined && { isurvName: input.isurvName }),
         ...(input.sentToIO !== undefined && { sentToIO: input.sentToIO }),
         ...(input.sentToIOCIN !== undefined && { sentToIOCIN: input.sentToIOCIN }),
+        ...(input.sentToIOName !== undefined && { sentToIOName: input.sentToIOName }),
         ...(input.savedAsWord !== undefined && { savedAsWord: input.savedAsWord }),
         ...(input.savedAsWordCIN !== undefined && { savedAsWordCIN: input.savedAsWordCIN }),
+        ...(input.savedAsWordName !== undefined && { savedAsWordName: input.savedAsWordName }),
         ...(input.savedAsPdf !== undefined && { savedAsPdf: input.savedAsPdf }),
         ...(input.savedAsPdfCIN !== undefined && { savedAsPdfCIN: input.savedAsPdfCIN }),
+        ...(input.savedAsPdfName !== undefined && { savedAsPdfName: input.savedAsPdfName }),
         ...(input.uploadedToPromis !== undefined && { uploadedToPromis: input.uploadedToPromis }),
         ...(input.uploadedToPromisCIN !== undefined && { uploadedToPromisCIN: input.uploadedToPromisCIN }),
+        ...(input.uploadedToPromisName !== undefined && { uploadedToPromisName: input.uploadedToPromisName }),
         ...(input.linked !== undefined && { linked: input.linked }),
         ...(input.linkedCIN !== undefined && { linkedCIN: input.linkedCIN }),
+        ...(input.linkedName !== undefined && { linkedName: input.linkedName }),
         ...(input.savedInOpFolder !== undefined && { savedInOpFolder: input.savedInOpFolder }),
         ...(input.savedInOpFolderCIN !== undefined && { savedInOpFolderCIN: input.savedInOpFolderCIN }),
+        ...(input.savedInOpFolderName !== undefined && { savedInOpFolderName: input.savedInOpFolderName }),
         ...(input.imageryTaken !== undefined && { imageryTaken: input.imageryTaken }),
         ...(input.imageryTakenCIN !== undefined && { imageryTakenCIN: input.imageryTakenCIN }),
+        ...(input.imageryTakenName !== undefined && { imageryTakenName: input.imageryTakenName }),
         ...(input.coverPage !== undefined && { coverPage: input.coverPage }),
         ...(input.coverPageCIN !== undefined && { coverPageCIN: input.coverPageCIN }),
+        ...(input.coverPageName !== undefined && { coverPageName: input.coverPageName }),
         ...(input.sheetCell !== undefined && { sheetCell: input.sheetCell }),
         ...(imageryJson !== undefined && { imageryEntries: imageryJson }),
         ...(input.notes !== undefined && { notes: input.notes }),
@@ -2064,22 +2082,31 @@ export async function upsertGovernanceRecord(input: GovernanceUpsertInput): Prom
       dueDate: input.dueDate ?? null,
       isurv: input.summaryNotification ?? false,
       isurvCIN: input.isurvCIN ?? null,
+      isurvName: input.isurvName ?? null,
       sentToIO: input.sentToIO ?? false,
       sentToIOCIN: input.sentToIOCIN ?? null,
+      sentToIOName: input.sentToIOName ?? null,
       savedAsWord: input.savedAsWord ?? false,
       savedAsWordCIN: input.savedAsWordCIN ?? null,
+      savedAsWordName: input.savedAsWordName ?? null,
       savedAsPdf: input.savedAsPdf ?? false,
       savedAsPdfCIN: input.savedAsPdfCIN ?? null,
+      savedAsPdfName: input.savedAsPdfName ?? null,
       uploadedToPromis: input.uploadedToPromis ?? false,
       uploadedToPromisCIN: input.uploadedToPromisCIN ?? null,
+      uploadedToPromisName: input.uploadedToPromisName ?? null,
       linked: input.linked ?? false,
       linkedCIN: input.linkedCIN ?? null,
+      linkedName: input.linkedName ?? null,
       savedInOpFolder: input.savedInOpFolder ?? false,
       savedInOpFolderCIN: input.savedInOpFolderCIN ?? null,
+      savedInOpFolderName: input.savedInOpFolderName ?? null,
       imageryTaken: input.imageryTaken ?? false,
       imageryTakenCIN: input.imageryTakenCIN ?? null,
+      imageryTakenName: input.imageryTakenName ?? null,
       coverPage: input.coverPage ?? false,
       coverPageCIN: input.coverPageCIN ?? null,
+      coverPageName: input.coverPageName ?? null,
       sheetCell: input.sheetCell ?? null,
       imageryEntries: imageryJson ?? null,
       notes: input.notes ?? null,

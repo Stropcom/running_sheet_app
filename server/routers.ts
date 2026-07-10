@@ -1597,10 +1597,12 @@ export const appRouter = router({
       }))
       .mutation(async ({ input, ctx }) => {
         const userCIN = ctx.user.cin ?? ctx.user.username ?? "Unknown";
-        // Build CIN update: set CIN when ticking, clear when unticking
+        const userName = ctx.user.name ?? ctx.user.username ?? "Unknown";
+        // Build CIN + Name update: set when ticking, clear when unticking
         const cinUpdate: Partial<GovernanceUpsertInput> = {};
         if (input.toggledField && input.toggledValue !== undefined) {
           const cinValue = input.toggledValue ? userCIN : null;
+          const nameValue = input.toggledValue ? userName : null;
           const cinFieldMap: Record<string, keyof GovernanceUpsertInput> = {
             summaryNotification: "isurvCIN",
             sentToIO: "sentToIOCIN",
@@ -1612,8 +1614,21 @@ export const appRouter = router({
             imageryTaken: "imageryTakenCIN",
             coverPage: "coverPageCIN",
           };
+          const nameFieldMap: Record<string, keyof GovernanceUpsertInput> = {
+            summaryNotification: "isurvName",
+            sentToIO: "sentToIOName",
+            savedAsWord: "savedAsWordName",
+            savedAsPdf: "savedAsPdfName",
+            uploadedToPromis: "uploadedToPromisName",
+            linked: "linkedName",
+            savedInOpFolder: "savedInOpFolderName",
+            imageryTaken: "imageryTakenName",
+            coverPage: "coverPageName",
+          };
           const cinField = cinFieldMap[input.toggledField];
+          const nameField = nameFieldMap[input.toggledField];
           if (cinField) (cinUpdate as Record<string, string | null>)[cinField] = cinValue;
+          if (nameField) (cinUpdate as Record<string, string | null>)[nameField] = nameValue;
         }
         const record = await upsertGovernanceRecord({ ...input, ...cinUpdate } as Parameters<typeof upsertGovernanceRecord>[0]);
         return record;

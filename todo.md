@@ -236,15 +236,15 @@
 - [x] Route /governance/:sheetId registered in App.tsx
 
 ## Target Form Overhaul (Round 35)
-- [ ] Add HBF (Home Address Full), V1F (Vehicle 1 Full), V2F (Vehicle 2 Full) columns to targets table schema
-- [ ] Remove WB (Work) column from targets table schema
-- [ ] Update db.ts helpers and routers.ts for new/removed target fields
-- [ ] Make all target form text inputs single-line
-- [ ] Add HBF above HB, V1F above V1, V2F above V2 in target edit form
-- [ ] Remove WB field from target edit form
-- [ ] New fields (HBF, V1F, V2F) appear as shortcuts in observation row form
-- [ ] New fields (HBF, V1F, V2F) appear in target panel on running sheet
-- [ ] Add per-target shortcuts section at bottom of target details form
+- [x] Add HBF (Home Address Full), V1F (Vehicle 1 Full), V2F (Vehicle 2 Full) columns to targets table schema
+- [x] Remove WB (Work) column from targets table schema
+- [x] Update db.ts helpers and routers.ts for new/removed target fields
+- [x] Make all target form text inputs single-line
+- [x] Add HBF above HB, V1F above V1, V2F above V2 in target edit form
+- [x] Remove WB field from target edit form
+- [x] New fields (HBF, V1F, V2F) appear as shortcuts in observation row form
+- [x] New fields (HBF, V1F, V2F) appear in target panel on running sheet
+- [x] Add per-target shortcuts section at bottom of target details form
 
 ## Target Registry (Round 36)
 - [x] Make targets.operationId nullable in schema (targets can exist without an operation)
@@ -275,11 +275,11 @@
 - [x] Update role dropdown descriptions in User Management
 
 ## Governance CIN Tracking (Round 39)
-- [ ] Add tickedByCIN and tickedByName columns to governance_items table in schema.ts
-- [ ] Run migration and apply SQL
-- [ ] Update db.ts: update setGovernanceItemChecked to accept and store tickedByCIN/tickedByName
-- [ ] Update routers.ts: pass ctx.user CIN and name when toggling governance checkbox
-- [ ] Update GovernancePage.tsx / governance UI to display CIN next to each ticked checkbox
+- [x] Add tickedByCIN and tickedByName columns to governance_items table in schema.ts
+- [x] Run migration and apply SQL
+- [x] Update db.ts: update setGovernanceItemChecked to accept and store tickedByCIN/tickedByName
+- [x] Update routers.ts: pass ctx.user CIN and name when toggling governance checkbox
+- [x] Update GovernancePage.tsx / governance UI to display CIN next to each ticked checkbox
 
 ## Close/Reopen Running Sheet (Round 40)
 - [x] Add closedAt (bigint, nullable) and closedByCIN (varchar 50, nullable) columns to running_sheets table in schema.ts
@@ -392,16 +392,16 @@
 - [x] Update Help Guide: add Application Security section (auth, roles, audit log, AES-256-GCM)
 
 ## Recycle Bin (Round 47)
-- [ ] DB: add deletedAt (bigint nullable) and deletedByCIN (varchar nullable) to operations, running_sheets, and targets tables; run migration
-- [ ] Server db.ts: update getOperations, getRunningSheets, getAllTargetsForRegistry to filter out soft-deleted rows
-- [ ] Server db.ts: add softDeleteOperation, softDeleteSheet, softDeleteTarget helpers
-- [ ] Server db.ts: add listDeletedItems, reinstateOperation, reinstateSheet, reinstateTarget, purgeExpiredItems helpers
-- [ ] Server routers.ts: update operation.delete, sheet.delete, target.registry.delete to call soft-delete helpers
-- [ ] Server routers.ts: add recycleBin.list, recycleBin.reinstate, recycleBin.purge procedures
-- [ ] Frontend: RecycleBin.tsx page — banner cards per deleted item with type icon, name, deleted date, days remaining, Reinstate button
-- [ ] Frontend: Add Recycle Bin to sidebar navigation
-- [ ] Frontend: Route /recycle-bin registered in App.tsx
-- [ ] Frontend: purge expired items on RecycleBin page load (call recycleBin.purge)
+- [x] DB: add deletedAt (bigint nullable) and deletedByCIN (varchar nullable) to operations, running_sheets, and targets tables; run migration
+- [x] Server db.ts: update getOperations, getRunningSheets, getAllTargetsForRegistry to filter out soft-deleted rows
+- [x] Server db.ts: add softDeleteOperation, softDeleteSheet, softDeleteTarget helpers
+- [x] Server db.ts: add listDeletedItems, reinstateOperation, reinstateSheet, reinstateTarget, purgeExpiredItems helpers
+- [x] Server routers.ts: update operation.delete, sheet.delete, target.registry.delete to call soft-delete helpers
+- [x] Server routers.ts: add recycleBin.list, recycleBin.reinstate, recycleBin.purge procedures
+- [x] Frontend: RecycleBin.tsx page — banner cards per deleted item with type icon, name, deleted date, days remaining, Reinstate button
+- [x] Frontend: Add Recycle Bin to sidebar navigation
+- [x] Frontend: Route /recycle-bin registered in App.tsx
+- [x] Frontend: purge expired items on RecycleBin page load (call recycleBin.purge)
 
 ## Intelligence Folder Rebuild — 5 Profile Types (Round 48)
 - [x] Server db.ts: getIntelTargetProfile — Direct Links (target card fields) + Operational Links (row-level co-occurrence)
@@ -561,10 +561,10 @@
 - [x] Match bottom map banner quick-link icons to the same coloured sidebar icons
 
 ## Location Sharing Fix (Round 62)
-- [ ] Add unique constraint on (userId, deviceId) in user_locations table via SQL migration
-- [ ] Update schema.ts to reflect the unique index
-- [ ] Clean up duplicate rows in DB before adding constraint
-- [ ] Fix restore-on-navigation: ensure startWatching is called reliably when sharingEnabled=true on mount
+- [x] Add unique constraint on (userId, deviceId) in user_locations table via SQL migration
+- [x] Update schema.ts to reflect the unique index
+- [x] Clean up duplicate rows in DB before adding constraint
+- [x] Fix restore-on-navigation: ensure startWatching is called reliably when sharingEnabled=true on mount
 
 ## Colour-Coded Folder Icons (Round 61)
 - [x] Assign a distinct standout colour to every sidebar folder icon in DashboardLayout

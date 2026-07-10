@@ -50,6 +50,7 @@ function CheckRow({
   info,
   disabled,
   cin,
+  tickedByName,
 }: {
   label: string;
   checked: boolean;
@@ -57,6 +58,7 @@ function CheckRow({
   info?: string;
   disabled?: boolean;
   cin?: string | null;
+  tickedByName?: string | null;
 }) {
   return (
     <div
@@ -76,10 +78,17 @@ function CheckRow({
         <p className="text-sm font-medium">{label}</p>
         {info && <p className="text-xs text-muted-foreground mt-0.5">{info}</p>}
       </div>
-      {checked && cin && (
-        <span className="text-xs font-mono font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded shrink-0">
-          {cin}
-        </span>
+      {checked && (cin || tickedByName) && (
+        <div className="flex flex-col items-end gap-0.5 shrink-0">
+          {cin && (
+            <span className="text-xs font-mono font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded">
+              {cin}
+            </span>
+          )}
+          {tickedByName && (
+            <span className="text-[10px] text-emerald-400/70 font-medium">{tickedByName}</span>
+          )}
+        </div>
       )}
       {disabled && !checked && <Lock className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />}
     </div>
@@ -567,12 +576,14 @@ export default function GovernancePage() {
                 checked={(gov as Record<string, unknown>).summaryNotification as boolean ?? false}
                 onToggle={() => toggle("summaryNotification")}
                 cin={(gov as Record<string, unknown>).isurvCIN as string | null}
+                tickedByName={(gov as Record<string, unknown>).isurvName as string | null}
               />
               <CheckRow
                 label="Sent to IO"
                 checked={gov.sentToIO}
                 onToggle={() => toggle("sentToIO")}
                 cin={(gov as Record<string, unknown>).sentToIOCIN as string | null}
+                tickedByName={(gov as Record<string, unknown>).sentToIOName as string | null}
               />
             </div>
           )}
@@ -630,6 +641,7 @@ export default function GovernancePage() {
                 onToggle={() => toggle("savedAsWord")}
                 disabled={!allSigned}
                 cin={(gov as Record<string, unknown>).savedAsWordCIN as string | null}
+                tickedByName={(gov as Record<string, unknown>).savedAsWordName as string | null}
               />
               <CheckRow
                 label="Saved as PDF"
@@ -637,6 +649,7 @@ export default function GovernancePage() {
                 onToggle={() => toggle("savedAsPdf")}
                 disabled={!allSigned}
                 cin={(gov as Record<string, unknown>).savedAsPdfCIN as string | null}
+                tickedByName={(gov as Record<string, unknown>).savedAsPdfName as string | null}
               />
               <CheckRow
                 label="Uploaded to PROMIS"
@@ -644,6 +657,7 @@ export default function GovernancePage() {
                 onToggle={() => toggle("uploadedToPromis")}
                 disabled={!allSigned}
                 cin={(gov as Record<string, unknown>).uploadedToPromisCIN as string | null}
+                tickedByName={(gov as Record<string, unknown>).uploadedToPromisName as string | null}
               />
               <CheckRow
                 label="Saved in Operation folder"
@@ -651,6 +665,7 @@ export default function GovernancePage() {
                 onToggle={() => toggle("savedInOpFolder")}
                 disabled={!allSigned}
                 cin={(gov as Record<string, unknown>).savedInOpFolderCIN as string | null}
+                tickedByName={(gov as Record<string, unknown>).savedInOpFolderName as string | null}
               />
             </div>
           )}

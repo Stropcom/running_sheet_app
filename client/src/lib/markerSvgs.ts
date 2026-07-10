@@ -9,6 +9,10 @@ export type MarkerIcon =
   | "house_outline"
   | "house_filled"
   | "sedan"
+  | "suv"
+  | "ute"
+  | "van"
+  | "hatchback"
   | "arrow_up"
   | "arrow_right"
   | "arrow_ne"
@@ -40,6 +44,10 @@ export const MARKER_ICON_LABELS: Record<MarkerIcon, string> = {
   house_outline: "House (outline)",
   house_filled: "House (filled)",
   sedan: "Sedan",
+  suv: "SUV / 4WD",
+  ute: "Ute / Pickup",
+  van: "Van / Wagon",
+  hatchback: "Hatchback",
   arrow_up: "Arrow (up)",
   arrow_right: "Arrow (right)",
   arrow_ne: "Arrow (NE)",
@@ -54,7 +62,7 @@ export const MARKER_ICON_LABELS: Record<MarkerIcon, string> = {
 
 export const MARKER_ICON_GROUPS: { label: string; icons: MarkerIcon[] }[] = [
   { label: "Locations", icons: ["house_outline", "house_filled"] },
-  { label: "Vehicles", icons: ["sedan"] },
+  { label: "Vehicles", icons: ["sedan", "suv", "ute", "van", "hatchback"] },
   { label: "Directions", icons: ["arrow_up", "arrow_right", "arrow_ne"] },
   { label: "Surveillance", icons: ["camera_photo", "camera_cctv"] },
   { label: "Points of Interest", icons: ["hazard", "coffee", "toilet", "rv", "boat_cruiser"] },
@@ -80,7 +88,7 @@ export function getMarkerSvg(icon: MarkerIcon, colour: MarkerColour): string {
       </svg>`;
 
     case "sedan":
-      // Top-down (bird's eye) view of a sedan
+      // Top-down (bird's eye) view of a sedan — sleek tapered body
       return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
         <!-- Car body outline (top-down) -->
         <rect x="10" y="5" width="28" height="38" rx="8" fill="${c}" stroke="${dark}" stroke-width="1.5"/>
@@ -104,6 +112,124 @@ export function getMarkerSvg(icon: MarkerIcon, colour: MarkerColour): string {
         <!-- Tail lights (rear) -->
         <rect x="14" y="40" width="7" height="3" rx="1" fill="#ef4444" opacity="0.85"/>
         <rect x="27" y="40" width="7" height="3" rx="1" fill="#ef4444" opacity="0.85"/>
+      </svg>`;
+
+    case "suv":
+      // Top-down bird's eye view of an SUV/4WD — wider, boxier body with chunky tyres
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+        <!-- Wide boxy body -->
+        <rect x="7" y="4" width="34" height="40" rx="6" fill="${c}" stroke="${dark}" stroke-width="1.5"/>
+        <!-- Roof panel -->
+        <rect x="10" y="12" width="28" height="24" rx="3" fill="${dark}" opacity="0.5"/>
+        <!-- Front windscreen (wide) -->
+        <rect x="10" y="6" width="28" height="8" rx="2" fill="${light}" opacity="0.75"/>
+        <!-- Rear windscreen (wide) -->
+        <rect x="10" y="34" width="28" height="8" rx="2" fill="${light}" opacity="0.55"/>
+        <!-- Front-left wheel (chunky) -->
+        <rect x="2" y="7" width="7" height="12" rx="3" fill="#222"/>
+        <!-- Front-right wheel (chunky) -->
+        <rect x="39" y="7" width="7" height="12" rx="3" fill="#222"/>
+        <!-- Rear-left wheel (chunky) -->
+        <rect x="2" y="29" width="7" height="12" rx="3" fill="#222"/>
+        <!-- Rear-right wheel (chunky) -->
+        <rect x="39" y="29" width="7" height="12" rx="3" fill="#222"/>
+        <!-- Headlights (wide strip) -->
+        <rect x="11" y="4" width="10" height="3" rx="1" fill="#FFF9C4" opacity="0.9"/>
+        <rect x="27" y="4" width="10" height="3" rx="1" fill="#FFF9C4" opacity="0.9"/>
+        <!-- Tail lights -->
+        <rect x="11" y="41" width="10" height="3" rx="1" fill="#ef4444" opacity="0.85"/>
+        <rect x="27" y="41" width="10" height="3" rx="1" fill="#ef4444" opacity="0.85"/>
+        <!-- Bull bar / front guard -->
+        <rect x="9" y="3" width="30" height="2" rx="1" fill="${dark}" opacity="0.7"/>
+      </svg>`;
+
+    case "ute":
+      // Top-down bird's eye view of a ute/pickup — cab at front, open tray at rear
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+        <!-- Cab (front half) -->
+        <rect x="8" y="4" width="32" height="22" rx="6" fill="${c}" stroke="${dark}" stroke-width="1.5"/>
+        <!-- Cab roof -->
+        <rect x="11" y="10" width="26" height="12" rx="3" fill="${dark}" opacity="0.5"/>
+        <!-- Front windscreen -->
+        <rect x="11" y="6" width="26" height="7" rx="2" fill="${light}" opacity="0.75"/>
+        <!-- Tray / tub (rear half) — open bed, just outline -->
+        <rect x="8" y="27" width="32" height="17" rx="3" fill="${c}" stroke="${dark}" stroke-width="1.5"/>
+        <!-- Tray interior (open bed) -->
+        <rect x="11" y="29" width="26" height="13" rx="2" fill="${dark}" opacity="0.2"/>
+        <!-- Tray divider line (cab-to-tray) -->
+        <line x1="8" y1="27" x2="40" y2="27" stroke="${dark}" stroke-width="2"/>
+        <!-- Front-left wheel -->
+        <rect x="3" y="7" width="7" height="11" rx="3" fill="#222"/>
+        <!-- Front-right wheel -->
+        <rect x="38" y="7" width="7" height="11" rx="3" fill="#222"/>
+        <!-- Rear-left wheel -->
+        <rect x="3" y="30" width="7" height="11" rx="3" fill="#222"/>
+        <!-- Rear-right wheel -->
+        <rect x="38" y="30" width="7" height="11" rx="3" fill="#222"/>
+        <!-- Headlights -->
+        <rect x="12" y="4" width="8" height="3" rx="1" fill="#FFF9C4" opacity="0.9"/>
+        <rect x="28" y="4" width="8" height="3" rx="1" fill="#FFF9C4" opacity="0.9"/>
+        <!-- Tail lights -->
+        <rect x="12" y="41" width="8" height="3" rx="1" fill="#ef4444" opacity="0.85"/>
+        <rect x="28" y="41" width="8" height="3" rx="1" fill="#ef4444" opacity="0.85"/>
+      </svg>`;
+
+    case "van":
+      // Top-down bird's eye view of a van/wagon — tall rectangular body, no visible windscreen rake
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+        <!-- Boxy van body (nearly full rectangle) -->
+        <rect x="8" y="3" width="32" height="42" rx="4" fill="${c}" stroke="${dark}" stroke-width="1.5"/>
+        <!-- Roof (full length, slightly inset) -->
+        <rect x="11" y="10" width="26" height="28" rx="2" fill="${dark}" opacity="0.45"/>
+        <!-- Front windscreen (narrow rake) -->
+        <rect x="11" y="5" width="26" height="6" rx="2" fill="${light}" opacity="0.75"/>
+        <!-- Rear doors / window -->
+        <rect x="11" y="37" width="26" height="6" rx="2" fill="${light}" opacity="0.5"/>
+        <!-- Side sliding door line (left) -->
+        <line x1="8" y1="20" x2="8" y2="36" stroke="${dark}" stroke-width="1.5" opacity="0.6"/>
+        <!-- Side sliding door line (right) -->
+        <line x1="40" y1="20" x2="40" y2="36" stroke="${dark}" stroke-width="1.5" opacity="0.6"/>
+        <!-- Front-left wheel -->
+        <rect x="3" y="7" width="7" height="11" rx="3" fill="#222"/>
+        <!-- Front-right wheel -->
+        <rect x="38" y="7" width="7" height="11" rx="3" fill="#222"/>
+        <!-- Rear-left wheel -->
+        <rect x="3" y="30" width="7" height="11" rx="3" fill="#222"/>
+        <!-- Rear-right wheel -->
+        <rect x="38" y="30" width="7" height="11" rx="3" fill="#222"/>
+        <!-- Headlights -->
+        <rect x="12" y="3" width="9" height="3" rx="1" fill="#FFF9C4" opacity="0.9"/>
+        <rect x="27" y="3" width="9" height="3" rx="1" fill="#FFF9C4" opacity="0.9"/>
+        <!-- Tail lights -->
+        <rect x="12" y="42" width="9" height="3" rx="1" fill="#ef4444" opacity="0.85"/>
+        <rect x="27" y="42" width="9" height="3" rx="1" fill="#ef4444" opacity="0.85"/>
+      </svg>`;
+
+    case "hatchback":
+      // Top-down bird's eye view of a hatchback — shorter body, steeper rear
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+        <!-- Compact body -->
+        <rect x="11" y="6" width="26" height="36" rx="7" fill="${c}" stroke="${dark}" stroke-width="1.5"/>
+        <!-- Roof panel (shorter) -->
+        <rect x="14" y="14" width="20" height="18" rx="3" fill="${dark}" opacity="0.55"/>
+        <!-- Front windscreen -->
+        <rect x="14" y="8" width="20" height="8" rx="3" fill="${light}" opacity="0.75"/>
+        <!-- Rear hatch window (taller than sedan — hatchback style) -->
+        <rect x="14" y="30" width="20" height="10" rx="3" fill="${light}" opacity="0.6"/>
+        <!-- Front-left wheel -->
+        <rect x="6" y="9" width="7" height="10" rx="3" fill="#222"/>
+        <!-- Front-right wheel -->
+        <rect x="35" y="9" width="7" height="10" rx="3" fill="#222"/>
+        <!-- Rear-left wheel -->
+        <rect x="6" y="29" width="7" height="10" rx="3" fill="#222"/>
+        <!-- Rear-right wheel -->
+        <rect x="35" y="29" width="7" height="10" rx="3" fill="#222"/>
+        <!-- Headlights -->
+        <rect x="15" y="6" width="6" height="3" rx="1" fill="#FFF9C4" opacity="0.9"/>
+        <rect x="27" y="6" width="6" height="3" rx="1" fill="#FFF9C4" opacity="0.9"/>
+        <!-- Tail lights (wider, hatchback style) -->
+        <rect x="14" y="39" width="8" height="3" rx="1" fill="#ef4444" opacity="0.85"/>
+        <rect x="26" y="39" width="8" height="3" rx="1" fill="#ef4444" opacity="0.85"/>
       </svg>`;
 
     case "arrow_up":

@@ -135,6 +135,9 @@ export function MapView({
       zoom: initialZoom,
       center: initialCenter,
       mapTypeControl: true,
+      mapTypeControlOptions: {
+        position: google.maps.ControlPosition.TOP_RIGHT,
+      },
       fullscreenControl: false,
       zoomControl: false,
       streetViewControl: false,

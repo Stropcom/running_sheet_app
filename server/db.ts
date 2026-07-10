@@ -3434,7 +3434,10 @@ export async function getCustomMarkers(operationIds?: number[]): Promise<CustomM
   const db = await getDb();
   if (!db) return [];
   let rows: CustomMapMarker[];
-  if (operationIds && operationIds.length > 0) {
+  if (operationIds !== undefined && operationIds.length === 0) {
+    // No operations selected — return nothing (matches intel layer behaviour)
+    return [];
+  } else if (operationIds && operationIds.length > 0) {
     // Include markers assigned to the selected operations OR markers with no operation (unassigned)
     rows = await db.select().from(customMapMarkers)
       .where(and(
@@ -3443,6 +3446,7 @@ export async function getCustomMarkers(operationIds?: number[]): Promise<CustomM
       ))
       .orderBy(desc(customMapMarkers.createdAt));
   } else {
+    // operationIds is undefined = all-ops view, return all markers
     rows = await db.select().from(customMapMarkers)
       .where(isNull(customMapMarkers.deletedAt))
       .orderBy(desc(customMapMarkers.createdAt));

@@ -894,27 +894,105 @@ export default function IntelligenceMapping() {
         });
         marker.addListener("click", () => {
           if (!infoWindowRef.current) return;
-          const lines: string[] = [];
-          if (cm.label) lines.push(`<strong style="font-size:13px;color:#111">${cm.label}</strong>`);
-          if (cm.address) lines.push(`<div style="font-size:11px;color:#444;margin-top:2px">${cm.address}</div>`);
-          if (cm.note) lines.push(`<div style="margin-top:6px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Notes</span><p style="font-size:12px;color:#111;margin:2px 0 0">${cm.note}</p></div>`);
-          if (cm.assocPersons?.length) lines.push(`<div style="margin-top:6px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Persons</span><p style="font-size:12px;color:#111;margin:2px 0 0">${(cm.assocPersons as string[]).join(", ")}</p></div>`);
-          if (cm.assocVehicles?.length) lines.push(`<div style="margin-top:4px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Vehicles</span><p style="font-size:12px;color:#111;margin:2px 0 0">${(cm.assocVehicles as string[]).join(", ")}</p></div>`);
           const lat = cm.lat;
           const lng = cm.lng;
-          lines.push(`<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
-            <a href="https://waze.com/ul?ll=${lat},${lng}&navigate=yes" target="_blank" style="font-size:11px;padding:4px 10px;background:#00bcd4;color:#fff;border-radius:4px;text-decoration:none">Waze</a>
-            <a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}" target="_blank" style="font-size:11px;padding:4px 10px;background:#4285f4;color:#fff;border-radius:4px;text-decoration:none">Street View</a>
-            <button onclick="window.__editCustomMarker(${cm.id})" style="font-size:11px;padding:4px 10px;background:#16a34a;color:#fff;border-radius:4px;border:none;cursor:pointer">Edit</button>
-            <button onclick="window.__deleteCustomMarker(${cm.id})" style="font-size:11px;padding:4px 10px;background:#ef4444;color:#fff;border-radius:4px;border:none;cursor:pointer">Delete</button>
-          </div>`);
-          infoWindowRef.current.setContent(`<div style="font-family:sans-serif;max-width:240px;color:#111">${lines.join("")}</div>`);
+          const iconLabel = MARKER_ICON_LABELS[cm.markerIcon as MarkerIcon] ?? cm.markerIcon;
+          const currentRotation = cm.rotation ?? 0;
+          const dataUrl = getMarkerDataUrl(cm.markerIcon as MarkerIcon, cm.markerColour as MarkerColour);
+
+          const buildPopupHtml = (rotation: number) => {
+            const lines: string[] = [];
+
+            // Type badge row
+            lines.push(`
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+                <span style="background:#374151;color:#fff;border-radius:4px;font-size:9px;font-weight:700;padding:2px 6px;letter-spacing:0.07em;white-space:nowrap;">MAP MARKER</span>
+                <span style="font-size:10px;color:#6b7280;">${iconLabel}</span>
+              </div>
+            `);
+
+            // Label
+            if (cm.label) lines.push(`<strong style="font-size:13px;color:#111;line-height:1.35;display:block;margin-bottom:2px;">${cm.label}</strong>`);
+
+            // Address
+            if (cm.address) lines.push(`<div style="font-size:11px;color:#444;margin-top:2px;">${cm.address}</div>`);
+
+            // Notes
+            if (cm.note) lines.push(`<div style="margin-top:6px;"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Notes</span><p style="font-size:12px;color:#111;margin:2px 0 0;">${cm.note}</p></div>`);
+
+            // Persons
+            if (cm.assocPersons?.length) lines.push(`<div style="margin-top:6px;"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Persons</span><p style="font-size:12px;color:#111;margin:2px 0 0;">${(cm.assocPersons as string[]).join(", ")}</p></div>`);
+
+            // Vehicles
+            if (cm.assocVehicles?.length) lines.push(`<div style="margin-top:4px;"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Vehicles</span><p style="font-size:12px;color:#111;margin:2px 0 0;">${(cm.assocVehicles as string[]).join(", ")}</p></div>`);
+
+            // Rotation slider
+            lines.push(`
+              <div style="margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <img id="cm-popup-preview-${cm.id}" src="${dataUrl}" style="width:24px;height:24px;object-fit:contain;flex-shrink:0;transform:rotate(${rotation}deg);transition:transform 0.1s;" />
+                  <div style="flex:1;">
+                    <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+                      <span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Rotation</span>
+                      <span id="cm-popup-deg-${cm.id}" style="font-size:10px;color:#374151;font-weight:600;">${rotation}°</span>
+                    </div>
+                    <input id="cm-popup-slider-${cm.id}" type="range" min="0" max="359" step="1" value="${rotation}"
+                      style="width:100%;accent-color:#6366f1;cursor:pointer;"
+                      oninput="window.__cmPopupRotate(${cm.id}, this.value)"
+                    />
+                  </div>
+                </div>
+              </div>
+            `);
+
+            // Action buttons
+            lines.push(`
+              <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
+                <a href="https://waze.com/ul?ll=${lat},${lng}&navigate=yes" target="_blank" style="font-size:11px;padding:4px 10px;background:#00bcd4;color:#fff;border-radius:4px;text-decoration:none;">Waze</a>
+                <a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}" target="_blank" style="font-size:11px;padding:4px 10px;background:#4285f4;color:#fff;border-radius:4px;text-decoration:none;">Street View</a>
+                <button onclick="window.__editCustomMarker(${cm.id})" style="font-size:11px;padding:4px 10px;background:#16a34a;color:#fff;border-radius:4px;border:none;cursor:pointer;">Edit</button>
+                <button onclick="window.__deleteCustomMarker(${cm.id})" style="font-size:11px;padding:4px 10px;background:#ef4444;color:#fff;border-radius:4px;border:none;cursor:pointer;">Delete</button>
+              </div>
+            `);
+
+            return `<div style="font-family:sans-serif;max-width:260px;color:#111;">${lines.join("")}</div>`;
+          };
+
+          infoWindowRef.current.setContent(buildPopupHtml(currentRotation));
           infoWindowRef.current.open(map, marker);
         });
         existing.set(cm.id, marker);
       }
     });
   }, [customMarkers, mapReady]);
+
+  // Global inline rotation handler for custom marker popup slider
+  useEffect(() => {
+    let rotateTimer: ReturnType<typeof setTimeout> | null = null;
+    (window as any).__cmPopupRotate = (id: number, valueStr: string) => {
+      const rotation = Number(valueStr);
+      // Update the live preview image and degree label in the popup DOM
+      const previewImg = document.getElementById(`cm-popup-preview-${id}`) as HTMLImageElement | null;
+      const degLabel = document.getElementById(`cm-popup-deg-${id}`) as HTMLElement | null;
+      if (previewImg) previewImg.style.transform = `rotate(${rotation}deg)`;
+      if (degLabel) degLabel.textContent = `${rotation}°`;
+      // Also rotate the actual map marker element immediately
+      const markerEl = customMarkerMapRefs.current.get(id);
+      if (markerEl?.content instanceof HTMLElement) {
+        const img = markerEl.content.querySelector('img') as HTMLImageElement | null;
+        if (img) img.style.transform = `rotate(${rotation}deg)`;
+      }
+      // Debounce the DB save so we don't fire on every pixel of drag
+      if (rotateTimer) clearTimeout(rotateTimer);
+      rotateTimer = setTimeout(() => {
+        updateCustomMarkerMut.mutate({ id, rotation });
+      }, 400);
+    };
+    return () => {
+      delete (window as any).__cmPopupRotate;
+      if (rotateTimer) clearTimeout(rotateTimer);
+    };
+  }, [updateCustomMarkerMut]);
 
   // Global delete handler for custom marker info window
   useEffect(() => {

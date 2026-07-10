@@ -37,7 +37,11 @@ import {
   ArrowDownAZ,
   Clock,
   Folder,
+  Car,
+  Home,
 } from "lucide-react";
+import { ViewToggle } from "@/components/ViewToggle";
+import { useViewMode } from "@/contexts/ViewModeContext";
 import { cn } from "@/lib/utils";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -494,6 +498,7 @@ export default function TargetRegistryPage() {
   const utils = trpc.useUtils();
   const { data: targets, isLoading } = trpc.target.registry.list.useQuery();
 
+  const { viewMode } = useViewMode();
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"alpha" | "recent" | "operation">("alpha");
   const [showCreate, setShowCreate] = useState(false);
@@ -553,9 +558,12 @@ export default function TargetRegistryPage() {
               All targets are stored here independently. Deleting an operation or running sheet does not remove targets.
             </p>
           </div>
-          <Button className="gap-2" onClick={() => setShowCreate(true)}>
-            <Plus className="h-4 w-4" /> Add Target
-          </Button>
+          <div className="flex items-center gap-2">
+            <ViewToggle />
+            <Button className="gap-2" onClick={() => setShowCreate(true)}>
+              <Plus className="h-4 w-4" /> Add Target
+            </Button>
+          </div>
         </div>
 
         {/* Search + Sort */}
@@ -627,6 +635,66 @@ export default function TargetRegistryPage() {
                 <Plus className="h-4 w-4" /> Add First Target
               </Button>
             )}
+          </div>
+        ) : viewMode === "tile" ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filtered.map(t => (
+              <div
+                key={t.id}
+                className="group flex flex-col gap-3 p-5 rounded-xl border border-border bg-card hover:bg-accent/20 hover:border-primary/30 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 cursor-pointer"
+                onClick={() => setLinkTarget(t as RegistryTarget)}
+              >
+                {/* Header */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="p-2 rounded-lg bg-primary/10 border border-primary/20 shrink-0">
+                    <Target className="w-4 h-4 text-primary" />
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={e => { e.stopPropagation(); setLinkTarget(t as RegistryTarget); }}
+                    title="Link to operations"
+                  >
+                    <Link2 className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+
+                {/* Name */}
+                <p className="font-semibold text-foreground leading-tight line-clamp-2">{t.name}</p>
+
+                {/* Key details */}
+                <div className="flex flex-col gap-1 mt-auto">
+                  {(t.v1f || t.v1) && (
+                    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Car className="w-3 h-3 shrink-0" />
+                      <span className="truncate text-foreground/80">{t.v1f ?? t.v1}</span>
+                    </span>
+                  )}
+                  {(t.hbf || t.hb) && (
+                    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Home className="w-3 h-3 shrink-0" />
+                      <span className="truncate text-foreground/80">{t.hbf ?? t.hb}</span>
+                    </span>
+                  )}
+                </div>
+
+                {/* Linked operations */}
+                {t.linkedOperations.length > 0 && (
+                  <div className="flex flex-wrap gap-1 pt-1 border-t border-border/40">
+                    {t.linkedOperations.slice(0, 2).map(op => (
+                      <Badge key={op.operationId} variant="secondary" className="text-xs gap-1">
+                        <BookOpen className="h-3 w-3" />
+                        {op.operationName ?? `Op #${op.operationId}`}
+                      </Badge>
+                    ))}
+                    {t.linkedOperations.length > 2 && (
+                      <Badge variant="outline" className="text-xs">+{t.linkedOperations.length - 2}</Badge>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         ) : (
           <div className="space-y-3">

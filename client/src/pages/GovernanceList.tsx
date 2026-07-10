@@ -11,6 +11,8 @@ import {
   AlertTriangle,
   CheckCircle2,
 } from "lucide-react";
+import { ViewToggle } from "@/components/ViewToggle";
+import { useViewMode } from "@/contexts/ViewModeContext";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
@@ -155,10 +157,118 @@ function OperationGroup({
   );
 }
 
+// ── Tile Grid ────────────────────────────────────────────────────────────────
+
+function GovernanceTileGrid({
+  operations,
+  onNavigate,
+}: {
+  operations: Array<{ id: number; name: string }>;
+  onNavigate: (path: string) => void;
+}) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {operations.map((op) => (
+        <GovernanceTileCard key={op.id} operationId={op.id} operationName={op.name} onNavigate={onNavigate} />
+      ))}
+    </div>
+  );
+}
+
+function GovernanceTileCard({
+  operationId,
+  operationName,
+  onNavigate,
+}: {
+  operationId: number;
+  operationName: string;
+  onNavigate: (path: string) => void;
+}) {
+  const { data: summaries, isLoading } = trpc.governance.summaryByOperation.useQuery(
+    { operationId },
+    { refetchOnWindowFocus: false }
+  );
+
+  if (isLoading) return <Skeleton className="h-36 w-full rounded-xl" />;
+  if (!summaries || summaries.length === 0) return null;
+
+  const needsAttention = summaries.filter((s) => !s.isComplete).length;
+  const allDone = needsAttention === 0;
+  const anyOverdue = summaries.some((s) => s.isOverdue);
+  const overallPct = summaries.length > 0
+    ? Math.round(summaries.reduce((sum, s) => sum + s.overallPercent, 0) / summaries.length)
+    : 0;
+
+  return (
+    <div className="group flex flex-col gap-3 p-5 rounded-xl border border-border bg-card hover:bg-accent/20 hover:border-primary/30 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="p-2 rounded-lg bg-primary/10 border border-primary/20 shrink-0">
+          <ClipboardCheck className="w-4 h-4 text-primary" />
+        </div>
+        {allDone ? (
+          <Badge className="text-[10px] px-1.5 py-0 bg-emerald-500/15 text-emerald-500 border-emerald-500/30 border shrink-0">
+            <CheckCircle2 className="w-3 h-3 mr-1" />All complete
+          </Badge>
+        ) : (
+          <Badge variant="outline" className={`text-[10px] px-1.5 py-0 shrink-0 ${
+            anyOverdue ? "border-rose-500/40 text-rose-500" : "border-amber-500/40 text-amber-500"
+          }`}>
+            {anyOverdue && <AlertTriangle className="w-3 h-3 mr-1" />}
+            {needsAttention} need attention
+          </Badge>
+        )}
+      </div>
+
+      {/* Name */}
+      <p className="font-semibold text-foreground leading-tight line-clamp-2">{operationName}</p>
+
+      {/* Progress bar */}
+      <div className="mt-auto">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs text-muted-foreground">{summaries.length} sheet{summaries.length !== 1 ? "s" : ""}</span>
+          <span className={`text-xs font-semibold ${
+            overallPct === 100 ? "text-emerald-500" : overallPct >= 50 ? "text-amber-500" : "text-rose-500"
+          }`}>{overallPct}%</span>
+        </div>
+        <div className="w-full h-1.5 rounded-full bg-muted/40 overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all ${
+              overallPct === 100 ? "bg-emerald-500" : overallPct >= 50 ? "bg-amber-500" : "bg-rose-500"
+            }`}
+            style={{ width: `${overallPct}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Sheet list (compact) */}
+      <div className="flex flex-col gap-1 border-t border-border/40 pt-2">
+        {summaries.slice(0, 3).map((s) => (
+          <button
+            key={s.sheetId}
+            onClick={() => onNavigate(`/governance/${s.sheetId}`)}
+            className="flex items-center gap-2 text-left hover:bg-accent/30 rounded px-1 py-0.5 transition-colors"
+          >
+            {s.isComplete
+              ? <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
+              : <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
+            }
+            <span className="text-xs text-foreground/80 truncate">{s.sheetTitle}</span>
+          </button>
+        ))}
+        {summaries.length > 3 && (
+          <p className="text-[10px] text-muted-foreground pl-1">+{summaries.length - 3} more sheets</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function GovernanceListPage() {
   const [, navigate] = useLocation();
+  const { viewMode } = useViewMode();
   const { data: operations, isLoading } = trpc.operation.list.useQuery(undefined);
 
   if (isLoading) {
@@ -181,12 +291,13 @@ export default function GovernanceListPage() {
           <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
             <ClipboardCheck className="w-5 h-5 text-primary" />
           </div>
-          <div>
+          <div className="flex-1">
             <h1 className="text-lg font-semibold text-foreground">Governance</h1>
             <p className="text-xs text-muted-foreground mt-0.5">
               Running sheet write-off checklist — select a sheet to review
             </p>
           </div>
+          <ViewToggle />
         </div>
 
         {!operations || operations.length === 0 ? (
@@ -195,6 +306,8 @@ export default function GovernanceListPage() {
             <p className="text-sm">No operations found.</p>
             <p className="text-xs mt-1">Create an operation and running sheet first.</p>
           </div>
+        ) : viewMode === "tile" ? (
+          <GovernanceTileGrid operations={operations} onNavigate={navigate} />
         ) : (
           <div className="space-y-4">
             {operations.map((op) => (

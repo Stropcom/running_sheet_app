@@ -24,7 +24,10 @@ import {
   Calendar,
   Folder,
   FileText,
+  LayoutGrid,
 } from "lucide-react";
+import { ViewToggle } from "@/components/ViewToggle";
+import { useViewMode } from "@/contexts/ViewModeContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -741,10 +744,12 @@ function OperationsTab({
   entities,
   search,
   sortOrder = "az",
+  tileView = false,
 }: {
   entities: Entity[];
   search: string;
   sortOrder?: "az" | "recent";
+  tileView?: boolean;
 }) {
   const [expandedOpId, setExpandedOpId] = useState<number | null>(null);
   const [, navigate] = useLocation();
@@ -820,6 +825,42 @@ function OperationsTab({
       <div className="text-center py-12 text-muted-foreground">
         <Folder className="w-8 h-8 mx-auto mb-3 opacity-30" />
         <p className="text-sm">No operations found.</p>
+      </div>
+    );
+  }
+
+  if (tileView) {
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {filtered.map((op) => (
+          <div
+            key={op.operationId}
+            className="group flex flex-col gap-3 p-5 rounded-xl border border-border bg-card hover:bg-accent/20 hover:border-primary/30 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 cursor-pointer"
+            onClick={() => navigate(`/intelligence/operation/${op.operationId}`)}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="p-2 rounded-lg bg-primary/10 border border-primary/20 shrink-0">
+                <Folder className="w-4 h-4 text-primary" />
+              </div>
+              <button
+                onClick={(e) => { e.stopPropagation(); navigate(`/intelligence/operation/${op.operationId}`); }}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-500/10 border border-blue-500/20 hover:bg-blue-500/20 transition-colors shrink-0"
+              >
+                <FileText className="w-3 h-3" />
+                <span>Profile</span>
+              </button>
+            </div>
+            <p className="font-semibold text-foreground leading-tight line-clamp-2">{op.operationName}</p>
+            <div className="flex gap-3 mt-auto">
+              <span className="text-xs text-muted-foreground">
+                <span className="font-semibold text-foreground">{op.entityCount}</span> {op.entityCount === 1 ? "entity" : "entities"}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                <span className="font-semibold text-foreground">{op.sheetCount}</span> {op.sheetCount === 1 ? "sheet" : "sheets"}
+              </span>
+            </div>
+          </div>
+        ))}
       </div>
     );
   }
@@ -954,6 +995,7 @@ const TAB_OPTIONS: Array<{ value: TabView; label: string; icon: React.ReactNode 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function IntelligencePage() {
+  const { viewMode } = useViewMode();
   const { data: entities, isLoading } = trpc.intelligence.getEntities.useQuery();
   const [, navigate] = useLocation();
   const [search, setSearch]         = useState("");
@@ -1068,12 +1110,13 @@ export default function IntelligencePage() {
           <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
             <FileText className="w-4 h-4 text-primary" />
           </div>
-          <div>
+          <div className="flex-1">
             <h1 className="text-xl font-semibold text-foreground">Intelligence Folder</h1>
             <p className="text-xs text-muted-foreground mt-0.5">
               {isLoading ? "Loading…" : `${totalEntities} entities extracted from observation records`}
             </p>
           </div>
+          <ViewToggle />
         </div>
 
         {/* Date filter */}
@@ -1222,7 +1265,11 @@ export default function IntelligencePage() {
                 ))}
               </div>
             </div>
-            <OperationsTab entities={filteredEntities} search={search} sortOrder={opSortOrder} />
+            {viewMode === "tile" ? (
+              <OperationsTab entities={filteredEntities} search={search} sortOrder={opSortOrder} tileView />
+            ) : (
+              <OperationsTab entities={filteredEntities} search={search} sortOrder={opSortOrder} />
+            )}
           </>
         )}
 
@@ -1244,6 +1291,52 @@ export default function IntelligencePage() {
                     ? "No entities match your filters."
                     : "No entities found. Entities are extracted automatically from observation text using the (ShortForm) convention."}
                 </p>
+              </div>
+            ) : viewMode === "tile" ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {sortedByTab(filteredByTab).map((entity) => {
+                  const iconColor = entity.isTarget ? TYPE_COLORS.person : TYPE_COLORS[entity.type];
+                  const icon = entity.type === "address" || entity.type === "business"
+                    ? <MapPin className="w-3.5 h-3.5" />
+                    : TYPE_ICONS[entity.type];
+                  const displayShortForm = entity.type === "vehicle"
+                    ? entity.shortForm.replace(/^[aA]\s+/, "")
+                    : entity.shortForm;
+                  const handleClick = () => {
+                    if (entity.isTarget && entity.targetId) navigate(`/intelligence/target/${entity.targetId}`);
+                    else if (entity.type === "vehicle") navigate(`/intelligence/vehicle/${encodeURIComponent(entity.shortForm)}`);
+                    else if (entity.type === "address" || entity.type === "business") navigate(`/intelligence/location/${encodeURIComponent(entity.shortForm)}`);
+                    else navigate(`/intelligence/associate/${encodeURIComponent(entity.shortForm)}`);
+                  };
+                  return (
+                    <button
+                      key={`${entity.isTarget ? "target" : entity.type}::${entity.shortForm}`}
+                      onClick={handleClick}
+                      className="group flex flex-col gap-3 p-5 rounded-xl border border-border bg-card hover:bg-accent/20 hover:border-primary/30 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 text-left w-full"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full border ${iconColor} shrink-0`}>
+                          {icon}
+                        </span>
+                        <div className="text-right shrink-0">
+                          <p className="text-xs font-semibold text-foreground">{entity.occurrences.length}×</p>
+                          <p className="text-[10px] text-muted-foreground">{uniqueSheets(entity.occurrences).length} sheet{uniqueSheets(entity.occurrences).length !== 1 ? "s" : ""}</p>
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-mono text-sm font-semibold text-foreground line-clamp-2">{displayShortForm}</p>
+                        {entity.tgtAlias && (
+                          <span className="inline-flex items-center mt-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                            TGT: {entity.tgtAlias}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-muted-foreground truncate">
+                        {TYPE_LABELS[entity.type]}
+                      </p>
+                    </button>
+                  );
+                })}
               </div>
             ) : (
               <div className="rounded-xl border border-border/60 overflow-hidden bg-card/50">

@@ -21,7 +21,9 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Plus, Search, FolderOpen, ChevronRight, Trash2, Calendar, Hash, Building2, Scale, Archive, WifiOff } from "lucide-react";
+import { Plus, Search, FolderOpen, ChevronRight, Trash2, Calendar, Hash, Building2, Scale, Archive, WifiOff, LayoutGrid } from "lucide-react";
+import { ViewToggle } from "@/components/ViewToggle";
+import { useViewMode } from "@/contexts/ViewModeContext";
 import { Badge } from "@/components/ui/badge";
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
@@ -47,6 +49,7 @@ export default function Home() {
 
   const utils = trpc.useUtils();
 
+  const { viewMode } = useViewMode();
   const { isOnline } = useOffline();
   const [cachedOps, setCachedOps] = useState<CachedOperationSummary[] | null>(null);
 
@@ -155,16 +158,19 @@ export default function Home() {
               </Badge>
             )}
           </div>
-          <Button
-            size="sm"
-            className="gap-2"
-            onClick={() => setCreateOpen(true)}
-            disabled={!isOnline}
-            title={!isOnline ? "Cannot create operations while offline" : undefined}
-          >
-            <Plus className="w-4 h-4" />
-            New Operation
-          </Button>
+          <div className="flex items-center gap-2">
+            <ViewToggle />
+            <Button
+              size="sm"
+              className="gap-2"
+              onClick={() => setCreateOpen(true)}
+              disabled={!isOnline}
+              title={!isOnline ? "Cannot create operations while offline" : undefined}
+            >
+              <Plus className="w-4 h-4" />
+              New Operation
+            </Button>
+          </div>
         </div>
 
         {/* Search */}
@@ -203,6 +209,88 @@ export default function Home() {
                 New Operation
               </Button>
             )}
+          </div>
+        ) : viewMode === "tile" ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filtered.map((op) => (
+              <div
+                key={op.id}
+                className={`group relative flex flex-col gap-3 p-5 rounded-xl border bg-card hover:bg-accent/20 transition-all duration-150 cursor-pointer hover:shadow-md hover:-translate-y-0.5 ${
+                  (op as any).operationStatus && (op as any).operationStatus !== "active"
+                    ? "border-violet-500/30 hover:border-violet-500/50 opacity-80"
+                    : "border-border hover:border-primary/30"
+                }`}
+                onClick={() => {
+                  const status = (op as any).operationStatus;
+                  if (status === "before_court" || status === "archive") {
+                    navigate("/operation-management");
+                  } else {
+                    navigate(`/operation/${op.id}`);
+                  }
+                }}
+              >
+                {/* Card header */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="p-2 rounded-lg bg-primary/10 border border-primary/20 shrink-0">
+                    <LayoutGrid className="w-4 h-4 text-primary" />
+                  </div>
+                  <div className="flex flex-wrap gap-1 justify-end">
+                    {(op as any).operationStatus === "before_court" && (
+                      <Badge className="text-[10px] px-1.5 py-0.5 bg-violet-500/20 text-violet-300 border-violet-500/30 border font-semibold">
+                        <Scale className="w-2.5 h-2.5 mr-1" />Before Court
+                      </Badge>
+                    )}
+                    {(op as any).operationStatus === "archive" && (
+                      <Badge className="text-[10px] px-1.5 py-0.5 bg-slate-500/20 text-slate-400 border-slate-500/30 border font-semibold">
+                        <Archive className="w-2.5 h-2.5 mr-1" />Archive
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+
+                {/* Operation name */}
+                <div>
+                  <p className="font-semibold text-foreground leading-tight line-clamp-2">{op.name}</p>
+                </div>
+
+                {/* Metadata */}
+                <div className="flex flex-col gap-1 mt-auto">
+                  {op.promisNumber && (
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Hash className="w-3 h-3 shrink-0" />
+                      PROMIS: <span className="text-foreground font-medium ml-0.5 truncate">{op.promisNumber}</span>
+                    </span>
+                  )}
+                  {op.imsNumber && (
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Hash className="w-3 h-3 shrink-0" />
+                      IMS: <span className="text-foreground font-medium ml-0.5 truncate">{op.imsNumber}</span>
+                    </span>
+                  )}
+                  {op.investigationUnit && (
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Building2 className="w-3 h-3 shrink-0" />
+                      <span className="text-foreground font-medium truncate">{op.investigationUnit}</span>
+                    </span>
+                  )}
+                  <span className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
+                    <Calendar className="w-3 h-3 shrink-0" />
+                    {format(new Date(op.createdAt), "d MMM yyyy")}
+                  </span>
+                </div>
+
+                {/* Match contexts */}
+                {(op as { matchContexts?: string[] }).matchContexts && (op as { matchContexts?: string[] }).matchContexts!.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {(op as { matchContexts?: string[] }).matchContexts!.slice(0, 2).map((ctx, i) => (
+                      <span key={i} className="inline-flex items-center text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                        {ctx}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         ) : (
           <div className="flex flex-col gap-2">

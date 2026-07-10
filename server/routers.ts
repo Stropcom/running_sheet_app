@@ -2549,7 +2549,31 @@ export const appRouter = router({
     // Run the checker on all observations for a given running sheet
     checkSheet: protectedProcedure
       .input(z.object({ sheetId: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+        // Auto-initialise the guide and seed rules if not yet done
+        const existingGuides = await db.select().from(styleGuides).limit(1);
+        let guideId: number;
+        if (existingGuides.length === 0) {
+          const result = await db.insert(styleGuides).values({
+            name: "Standard RS Writing Guide",
+            uploadedBy: ctx.user.id,
+          });
+          guideId = (result as any).insertId;
+        } else {
+          guideId = existingGuides[0].id;
+        }
+        await seedInitialRules(guideId);
+
+        // Verify rules exist
+        const ruleCount = await db.select({ id: styleRules.id }).from(styleRules)
+          .where(eq(styleRules.guideId, guideId)).limit(1);
+        if (ruleCount.length === 0) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "No style rules configured. Go to Style Checker in the sidebar to initialise rules." });
+        }
+
         const rows = await getRowsBySheetId(input.sheetId);
         const observations = rows
           .filter((r) => r.observation && r.observation.trim().length > 0)

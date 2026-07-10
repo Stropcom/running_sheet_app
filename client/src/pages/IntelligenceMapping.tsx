@@ -313,6 +313,8 @@ export default function IntelligenceMapping() {
   // ── Custom Marker Placement State ────────────────────────────────────────────
   const [placingMarker, setPlacingMarker] = useState(false); // placement mode active
   const [pendingLatLng, setPendingLatLng] = useState<{ lat: number; lng: number } | null>(null);
+  // POI tap: shown when user taps a Google Maps business/POI pin
+  const [poiTap, setPoiTap] = useState<{ lat: number; lng: number; name: string; address: string } | null>(null);
   // Action chooser: shown on tap-and-hold / right-click before user picks RS Quick Entry or Marker/Intel
   // intelLoc is set when the tap is on an intelligence-derived marker (target address / observation)
   const [actionChooser, setActionChooser] = useState<{ lat: number; lng: number; address: string; intelLoc?: IntelMapLocation } | null>(null);
@@ -924,6 +926,31 @@ export default function IntelligenceMapping() {
         const addr = (status === "OK" && results && results[0]) ? results[0].formatted_address : `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
         setActionChooser({ lat, lng, address: addr });
       });
+    });
+
+    // POI tap: intercept clicks on Google Maps business/place pins
+    // The event carries a placeId when the user taps a POI
+    map.addListener("click", (e: google.maps.MapMouseEvent & { placeId?: string }) => {
+      if (!e.placeId || !e.latLng) return;
+      // Prevent the default Google info window from opening
+      e.stop?.();
+      const lat = e.latLng.lat();
+      const lng = e.latLng.lng();
+      // Look up the business details via Places API
+      const service = new google.maps.places.PlacesService(map);
+      service.getDetails(
+        { placeId: e.placeId, fields: ["name", "formatted_address"] },
+        (place, status) => {
+          if (status === google.maps.places.PlacesServiceStatus.OK && place) {
+            setPoiTap({
+              lat,
+              lng,
+              name: place.name ?? "",
+              address: place.formatted_address ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+            });
+          }
+        }
+      );
     });
   }, [locations, renderLocations]);
 
@@ -2177,6 +2204,64 @@ export default function IntelligenceMapping() {
             <p className="text-[11px] text-muted-foreground/60 mt-3 text-center">
               {quickLinks.length}/4 slots used — Home and Operations are always shown
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── POI Tap Bottom Sheet ── */}
+      {poiTap && !pendingLatLng && !mapQeOpen && !actionChooser && (
+        <div
+          className="absolute inset-0 z-40 flex items-end justify-center"
+          style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(3px)" }}
+          onClick={() => setPoiTap(null)}
+        >
+          <div
+            className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-0.5">Business / Place</p>
+                <p className="text-sm font-bold text-foreground leading-snug">{poiTap.name}</p>
+                <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{poiTap.address}</p>
+              </div>
+              <button onClick={() => setPoiTap(null)} className="ml-3 text-muted-foreground hover:text-foreground flex-shrink-0">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {/* RS Quick Entry */}
+              <button
+                onClick={() => {
+                  setMapQeAddress(convertGoogleAddresses(poiTap.address));
+                  setMapQeOpen(true);
+                  setPoiTap(null);
+                }}
+                className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-primary/40 bg-primary/5 hover:bg-primary/10 active:scale-95 transition-all px-4 py-5"
+              >
+                <ClipboardList className="h-7 w-7 text-primary" />
+                <span className="text-sm font-bold text-foreground">RS Quick Entry</span>
+                <span className="text-[10px] text-muted-foreground text-center leading-tight">Add a running sheet entry for this location</span>
+              </button>
+              {/* Add Marker Here */}
+              <button
+                onClick={() => {
+                  const rsAddress = convertGoogleAddresses(poiTap.address);
+                  setCmLabel(poiTap.name);
+                  setCmAddress(rsAddress);
+                  setCmNote(""); setCmPersons([]); setCmVehicles([]); setCmRotation(0);
+                  setCmPersonInput(""); setCmVehicleInput("");
+                  setCmOpId(selectedOpIds.length === 1 ? selectedOpIds[0] : (rsSelectedOpId ?? null));
+                  setPendingLatLng({ lat: poiTap.lat, lng: poiTap.lng });
+                  setPoiTap(null);
+                }}
+                className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-border bg-muted/30 hover:bg-muted/60 active:scale-95 transition-all px-4 py-5"
+              >
+                <MapPin className="h-7 w-7 text-muted-foreground" />
+                <span className="text-sm font-bold text-foreground">Add Marker Here</span>
+                <span className="text-[10px] text-muted-foreground text-center leading-tight">Place a custom marker at this business</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

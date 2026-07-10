@@ -47,6 +47,7 @@ import {
   WifiOff,
   User,
   Network,
+  Search,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -347,6 +348,14 @@ export default function IntelligenceMapping() {
   const [etDep, setEtDep] = useState("");
   const [etArr, setEtArr] = useState("");
   const [etSaving, setEtSaving] = useState(false);
+  // Address search bar state
+  const [addrSearch, setAddrSearch] = useState("");
+  const [addrSuggestions, setAddrSuggestions] = useState<google.maps.places.AutocompletePrediction[]>([]);
+  const [addrSearchOpen, setAddrSearchOpen] = useState(false);
+  const autocompleteServiceRef = useRef<google.maps.places.AutocompleteService | null>(null);
+  const addrSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const addrSearchPinRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
+
   // ref for long-press on mobile
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // custom marker map objects
@@ -912,6 +921,7 @@ export default function IntelligenceMapping() {
     mapRef.current = map;
     geocoderRef.current = new google.maps.Geocoder();
     infoWindowRef.current = new google.maps.InfoWindow();
+    autocompleteServiceRef.current = new google.maps.places.AutocompleteService();
     setMapReady(true); // triggers live marker effect to run now that map is available
     if (locations) {
       renderLocations(locations);
@@ -1737,6 +1747,97 @@ export default function IntelligenceMapping() {
             initialCenter={{ lat: -31.9505, lng: 115.8605 }}
             initialZoom={11}
           />
+
+          {/* Floating address search bar — top-left, next to Map/Satellite toggle */}
+          <div
+            className="absolute z-20 pointer-events-auto"
+            style={{ top: "10px", left: "10px" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="relative">
+              <div className="flex items-center bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden" style={{ height: "40px", minWidth: "200px", maxWidth: "260px" }}>
+                <Search className="w-4 h-4 text-gray-400 ml-3 shrink-0" />
+                <input
+                  type="text"
+                  value={addrSearch}
+                  placeholder="Search address…"
+                  className="flex-1 px-2 text-sm outline-none bg-transparent text-gray-800 placeholder-gray-400"
+                  style={{ height: "40px" }}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setAddrSearch(val);
+                    if (addrSearchDebounceRef.current) clearTimeout(addrSearchDebounceRef.current);
+                    if (!val.trim()) { setAddrSuggestions([]); setAddrSearchOpen(false); return; }
+                    addrSearchDebounceRef.current = setTimeout(() => {
+                      if (!autocompleteServiceRef.current) return;
+                      autocompleteServiceRef.current.getPlacePredictions(
+                        { input: val, componentRestrictions: { country: "au" } },
+                        (predictions, status) => {
+                          if (status === google.maps.places.PlacesServiceStatus.OK && predictions) {
+                            setAddrSuggestions(predictions);
+                            setAddrSearchOpen(true);
+                          } else {
+                            setAddrSuggestions([]);
+                            setAddrSearchOpen(false);
+                          }
+                        }
+                      );
+                    }, 300);
+                  }}
+                  onFocus={() => { if (addrSuggestions.length > 0) setAddrSearchOpen(true); }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") { setAddrSearch(""); setAddrSuggestions([]); setAddrSearchOpen(false); }
+                  }}
+                />
+                {addrSearch && (
+                  <button
+                    className="mr-2 text-gray-400 hover:text-gray-600"
+                    onClick={() => { setAddrSearch(""); setAddrSuggestions([]); setAddrSearchOpen(false); if (addrSearchPinRef.current) { addrSearchPinRef.current.map = null; addrSearchPinRef.current = null; } }}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+              {addrSearchOpen && addrSuggestions.length > 0 && (
+                <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden" style={{ minWidth: "260px", maxWidth: "320px", zIndex: 30 }}>
+                  {addrSuggestions.map((s) => (
+                    <button
+                      key={s.place_id}
+                      className="w-full text-left px-3 py-2.5 text-sm text-gray-800 hover:bg-gray-50 border-b border-gray-100 last:border-0 flex items-start gap-2"
+                      onClick={() => {
+                        setAddrSearch(s.description);
+                        setAddrSuggestions([]);
+                        setAddrSearchOpen(false);
+                        // Geocode the selected place and pan map
+                        if (!geocoderRef.current || !mapRef.current) return;
+                        geocoderRef.current.geocode({ placeId: s.place_id }, (results, status) => {
+                          if (status === "OK" && results && results[0]) {
+                            const loc = results[0].geometry.location;
+                            mapRef.current!.panTo(loc);
+                            mapRef.current!.setZoom(17);
+                            // Drop a temporary search pin
+                            if (addrSearchPinRef.current) { addrSearchPinRef.current.map = null; }
+                            const pinEl = document.createElement("div");
+                            pinEl.innerHTML = `<div style="width:28px;height:28px;background:#4285f4;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.35)"></div>`;
+                            const pin = new google.maps.marker.AdvancedMarkerElement({
+                              map: mapRef.current!,
+                              position: loc,
+                              content: pinEl,
+                              title: s.description,
+                            });
+                            addrSearchPinRef.current = pin;
+                          }
+                        });
+                      }}
+                    >
+                      <MapPin className="w-3.5 h-3.5 text-gray-400 mt-0.5 shrink-0" />
+                      <span className="leading-snug">{s.description}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* RS Actions pane toggle tab — right edge, vertically centred */}

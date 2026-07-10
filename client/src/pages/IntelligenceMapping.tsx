@@ -647,7 +647,7 @@ export default function IntelligenceMapping() {
 
     const img = document.createElement("img");
     img.src = getMarkerDataUrl("house_filled", colour);
-    img.style.cssText = `width:40px;height:40px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4));display:block;`;
+    img.style.cssText = `width:30px;height:30px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4));display:block;`;
     el.appendChild(img);
 
     if (count > 0) {
@@ -875,7 +875,7 @@ export default function IntelligenceMapping() {
       const dataUrl = getMarkerDataUrl(cm.markerIcon as MarkerIcon, cm.markerColour as MarkerColour);
       const rotation = (cm.rotation ?? 0) as number;
       const el = document.createElement("div");
-      el.style.cssText = "width:40px;height:40px;cursor:pointer;";
+      el.style.cssText = "width:30px;height:30px;cursor:pointer;";
       const img = document.createElement("img");
       img.src = dataUrl;
       img.style.cssText = `width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));transform:rotate(${rotation}deg);`;

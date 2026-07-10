@@ -14,10 +14,13 @@ import {
   LockOpen,
 } from "lucide-react";
 import { useLocation } from "wouter";
+import { ViewToggle } from "@/components/ViewToggle";
+import { useViewMode } from "@/contexts/ViewModeContext";
 
 export default function TodoGovernancePage() {
   const { isAuthenticated } = useAuth();
   const [, navigate] = useLocation();
+  const { viewMode } = useViewMode();
 
   const { data: govTodo, isLoading } = trpc.sheet.governanceTodo.useQuery(undefined, {
     enabled: isAuthenticated,
@@ -49,7 +52,7 @@ export default function TodoGovernancePage() {
           <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30">
             <ClipboardCheck className="w-5 h-5 text-amber-400" />
           </div>
-          <div>
+          <div className="flex-1">
             <h1 className="text-xl font-bold text-foreground">RS Governance</h1>
             <p className="text-sm text-muted-foreground">
               Running sheets with outstanding governance tasks
@@ -58,11 +61,12 @@ export default function TodoGovernancePage() {
           {count > 0 && (
             <Badge
               variant="outline"
-              className="ml-auto border-amber-500/40 bg-amber-500/10 text-amber-400 font-semibold"
+              className="border-amber-500/40 bg-amber-500/10 text-amber-400 font-semibold"
             >
               {count} sheet{count !== 1 ? "s" : ""}
             </Badge>
           )}
+          <ViewToggle />
         </div>
 
         {/* Loading */}
@@ -88,7 +92,49 @@ export default function TodoGovernancePage() {
         )}
 
         {/* List */}
-        {!isLoading && count > 0 && (
+        {!isLoading && count > 0 && viewMode === "tile" && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {outstanding.map((item, idx) => (
+              <div
+                key={`${item.sheetId}-${idx}`}
+                onClick={() => navigate(`/governance/${item.sheetId}`)}
+                className="group flex flex-col gap-3 p-5 rounded-xl border border-amber-500/30 bg-card hover:bg-amber-500/5 hover:border-amber-500/50 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 cursor-pointer"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 shrink-0">
+                    <FileText className="w-4 h-4 text-amber-400" />
+                  </div>
+                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide shrink-0 ${
+                    item.role === "teamLeader"
+                      ? "bg-violet-500/15 text-violet-400 border border-violet-500/25"
+                      : "bg-sky-500/15 text-sky-400 border border-sky-500/25"
+                  }`}>
+                    {item.role === "teamLeader" ? "TL" : "Author"}
+                  </span>
+                </div>
+                <p className="font-semibold text-foreground leading-tight line-clamp-2">{item.sheetTitle}</p>
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Building2 className="w-3 h-3 shrink-0" />
+                  <span className="truncate">{item.operationName}</span>
+                </div>
+                <div className="flex flex-col gap-0.5 mt-auto">
+                  {item.outstanding.slice(0, 3).map((task, ti) => (
+                    <span key={ti} className={`flex items-center gap-1 text-xs ${
+                      task === "Ready to close" ? "text-emerald-400" :
+                      task === "Sheet not fully certified" ? "text-amber-400" : "text-rose-400"
+                    }`}>
+                      {task === "Ready to close" ? <LockOpen className="w-3 h-3 shrink-0" /> :
+                       task === "Sheet not fully certified" ? <Lock className="w-3 h-3 shrink-0" /> :
+                       <AlertTriangle className="w-3 h-3 shrink-0" />}
+                      {task}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {!isLoading && count > 0 && viewMode === "folder" && (
           <div className="rounded-xl border border-border/50 overflow-hidden">
             {Object.entries(govByOp).map(([opId, group]) => (
               <div key={opId}>

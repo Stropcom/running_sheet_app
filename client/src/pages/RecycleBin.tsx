@@ -14,8 +14,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Trash2, RotateCcw, FolderOpen, FileText, User, MapPin } from "lucide-react";
+import { Trash2, RotateCcw, FolderOpen, FileText, User, MapPin, Calendar } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { ViewToggle } from "@/components/ViewToggle";
+import { useViewMode } from "@/contexts/ViewModeContext";
 
 type RecycleBinItem = {
   id: number;
@@ -67,6 +69,7 @@ function daysRemaining(expiresAt: number) {
 export default function RecycleBin() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  const { viewMode } = useViewMode();
 
   const utils = trpc.useUtils();
   const { data: items, isLoading } = trpc.recycleBin.list.useQuery(undefined, {
@@ -123,7 +126,8 @@ export default function RecycleBin() {
         {/* Header */}
         <div className="flex items-center gap-3 mb-2">
           <Trash2 className="w-6 h-6 text-muted-foreground" />
-          <h1 className="text-2xl font-bold tracking-tight">Recycle Bin</h1>
+          <h1 className="text-2xl font-bold tracking-tight flex-1">Recycle Bin</h1>
+          <ViewToggle />
         </div>
         <p className="text-sm text-muted-foreground mb-6">
           Deleted items are kept for <strong>7 days</strong> before being permanently removed.
@@ -147,7 +151,58 @@ export default function RecycleBin() {
           </div>
         )}
 
-        {!isLoading && items && items.length > 0 && (
+        {!isLoading && items && items.length > 0 && viewMode === "tile" && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {items.map((item) => {
+              const days = daysRemaining(item.expiresAt);
+              const isExpiringSoon = days <= 1;
+              const isActing = reinstating === item.id || deleting === item.id;
+              return (
+                <div
+                  key={`${item.type}-${item.id}`}
+                  className={`flex flex-col gap-3 p-5 rounded-xl border bg-card hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 ${
+                    isExpiringSoon ? "border-red-400/50 bg-red-50/10" : "border-border hover:border-primary/30"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="shrink-0">{typeIcon(item.type)}</div>
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border shrink-0 ${typeBadgeClass(item.type)}`}>
+                      {typeLabel(item.type)}
+                    </span>
+                  </div>
+                  <p className="font-semibold text-sm text-foreground leading-tight line-clamp-2">{item.label}</p>
+                  {item.sublabel && (
+                    <p className="text-xs text-muted-foreground">{item.sublabel}</p>
+                  )}
+                  <div className="flex items-center gap-1 text-xs mt-auto">
+                    <Calendar className="w-3 h-3 shrink-0 text-muted-foreground" />
+                    <span className={isExpiringSoon ? "text-red-500 font-medium" : "text-muted-foreground"}>
+                      {days === 0 ? "Expires today" : `${days}d remaining`}
+                    </span>
+                  </div>
+                  <div className="flex gap-2 flex-wrap">
+                    <Button variant="outline" size="sm"
+                      className="gap-1 text-xs h-7 border-blue-300 text-blue-700 hover:bg-blue-50"
+                      disabled={isActing} onClick={() => handleReinstate(item)}>
+                      {reinstating === item.id ? <Spinner className="w-3 h-3" /> : <RotateCcw className="w-3 h-3" />}
+                      Reinstate
+                    </Button>
+                    {isAdmin && (
+                      <Button variant="outline" size="sm"
+                        className="gap-1 text-xs h-7 border-red-300 text-red-700 hover:bg-red-50"
+                        disabled={isActing} onClick={() => setConfirmItem(item)}>
+                        {deleting === item.id ? <Spinner className="w-3 h-3" /> : <Trash2 className="w-3 h-3" />}
+                        Delete
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {!isLoading && items && items.length > 0 && viewMode === "folder" && (
           <div className="flex flex-col gap-3">
             {items.map((item) => {
               const days = daysRemaining(item.expiresAt);

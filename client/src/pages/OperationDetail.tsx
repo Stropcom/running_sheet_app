@@ -22,6 +22,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import DashboardLayout from "@/components/DashboardLayout";
+import { ViewToggle } from "@/components/ViewToggle";
+import { useViewMode } from "@/contexts/ViewModeContext";
 import {
   Plus,
   FileText,
@@ -41,6 +43,7 @@ import {
   Search,
   CheckCircle2,
   LockKeyhole,
+  LayoutGrid,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -612,6 +615,7 @@ export default function OperationDetail() {
   const [cinInput, setCinInput] = useState("");
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [sheetSearch, setSheetSearch] = useState("");
+  const { viewMode } = useViewMode();
   // Copy/Move sheet dialog state
   const [copyMoveSheet, setCopyMoveSheet] = useState<{ id: number; title: string } | null>(null);
 
@@ -848,14 +852,17 @@ export default function OperationDetail() {
               </div>
             )}
           </div>
-          <Button
-            size="sm"
-            className="gap-2 shrink-0"
-            onClick={() => setCreateOpen(true)}
-          >
-            <Plus className="w-4 h-4" />
-            New Running Sheet
-          </Button>
+          <div className="flex items-center gap-2 shrink-0">
+            <ViewToggle />
+            <Button
+              size="sm"
+              className="gap-2"
+              onClick={() => setCreateOpen(true)}
+            >
+              <Plus className="w-4 h-4" />
+              New Running Sheet
+            </Button>
+          </div>
         </div>
 
         {/* Main tabs: Running Sheets | Add Target */}
@@ -896,7 +903,18 @@ export default function OperationDetail() {
               New Running Sheet
             </Button>
           </div>
-        ) : (
+        ) : (() => {
+          const filteredSheets = sheets.filter((sheet) => {
+            if (!sheetSearch.trim()) return true;
+            const q = sheetSearch.trim().toLowerCase();
+            if (sheet.title.toLowerCase().includes(q)) return true;
+            const cins: CinEntry[] = (() => { try { return sheet.sheetCins ? JSON.parse(sheet.sheetCins) : []; } catch { return []; } })();
+            if (cins.some((c) => c.cin.toLowerCase().includes(q))) return true;
+            const tgt = operationTargets?.find((t) => t.id === (sheet as { targetId?: number | null }).targetId);
+            if (tgt && tgt.name.toLowerCase().includes(q)) return true;
+            return false;
+          });
+          return (
           <div className="flex flex-col gap-2">
             {/* Search bar */}
             <div className="relative mb-1">
@@ -908,47 +926,100 @@ export default function OperationDetail() {
                 className="pl-8 h-9 text-sm"
               />
             </div>
-            {sheets.filter((sheet) => {
-              if (!sheetSearch.trim()) return true;
-              const q = sheetSearch.trim().toLowerCase();
-              if (sheet.title.toLowerCase().includes(q)) return true;
-              const cins: CinEntry[] = (() => { try { return sheet.sheetCins ? JSON.parse(sheet.sheetCins) : []; } catch { return []; } })();
-              if (cins.some((c) => c.cin.toLowerCase().includes(q))) return true;
-              const tgt = operationTargets?.find((t) => t.id === (sheet as { targetId?: number | null }).targetId);
-              if (tgt && tgt.name.toLowerCase().includes(q)) return true;
-              return false;
-            }).map((sheet) => {
-              const parsedCins: CinEntry[] = (() => {
-                try {
-                  const raw: CinEntry[] = sheet.sheetCins ? JSON.parse(sheet.sheetCins) : [];
-                  return [...raw].sort((a, b) => {
-                    if (a.isTeamLeader && !b.isTeamLeader) return -1;
-                    if (!a.isTeamLeader && b.isTeamLeader) return 1;
-                    const aNum = parseInt(a.cin, 10); const bNum = parseInt(b.cin, 10);
-                    if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
-                    return a.cin.localeCompare(b.cin);
-                  });
-                }
-                catch { return []; }
-              })();
-              const cinNames = parsedCins.map((c) => c.cin);
-              const assignedTarget = operationTargets?.find((t) => t.id === (sheet as { targetId?: number | null }).targetId);
-              return (
-                <SheetCard
-                  key={sheet.id}
-                  sheet={sheet}
-                  cinNames={cinNames}
-                  cinEntries={parsedCins}
-                  isAdmin={user?.role === "admin" || user?.role === "member"}
-                  targetName={assignedTarget?.name ?? null}
-                  onNavigate={() => navigate(`/sheet/${sheet.id}`)}
-                  onDelete={() => setDeleteId(sheet.id)}
-                  onCopyMove={() => setCopyMoveSheet({ id: sheet.id, title: sheet.title })}
-                />
-              );
-            })}
+            {viewMode === "tile" ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredSheets.map((sheet) => {
+                  const parsedCins: CinEntry[] = (() => { try { return sheet.sheetCins ? JSON.parse(sheet.sheetCins) : []; } catch { return []; } })();
+                  const cinNames = parsedCins.map((c) => c.cin);
+                  const assignedTarget = operationTargets?.find((t) => t.id === (sheet as { targetId?: number | null }).targetId);
+                  const isClosed = !!sheet.closedAt;
+                  return (
+                    <div
+                      key={sheet.id}
+                      onClick={() => navigate(`/sheet/${sheet.id}`)}
+                      className={`group flex flex-col gap-3 p-5 rounded-xl border cursor-pointer hover:-translate-y-0.5 transition-all duration-150 ${
+                        isClosed
+                          ? "border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/40 opacity-70"
+                          : "border-border bg-card hover:bg-accent/20 hover:border-primary/30 hover:shadow-md"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className={`p-2 rounded-lg border shrink-0 ${
+                          isClosed ? "bg-slate-200/60 dark:bg-slate-700/40 border-slate-300 dark:border-slate-600" : "bg-primary/10 border-primary/20"
+                        }`}>
+                          {isClosed ? <LockKeyhole className="w-4 h-4 text-slate-400" /> : <FileText className="w-4 h-4 text-primary" />}
+                        </div>
+                        {isClosed && (
+                          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border border-slate-400/50 bg-slate-200/60 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 font-medium shrink-0">
+                            <LockKeyhole className="w-2.5 h-2.5" />CLOSED
+                          </span>
+                        )}
+                        {!isClosed && (
+                          <Button size="icon" variant="ghost" className="w-7 h-7 text-sky-500 hover:bg-sky-500/10 shrink-0"
+                            onClick={(e) => { e.stopPropagation(); setCopyMoveSheet({ id: sheet.id, title: sheet.title }); }}
+                            title="Copy or Move">
+                            <LayoutGrid className="w-3.5 h-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                      <p className="font-semibold text-foreground leading-tight line-clamp-2">{sheet.title}</p>
+                      {assignedTarget && (
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <Target className="w-3 h-3 shrink-0" />
+                          <span className="truncate">{assignedTarget.name}</span>
+                        </div>
+                      )}
+                      {cinNames.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {cinNames.slice(0, 6).map((cin) => (
+                            <span key={cin} className="text-xs px-1.5 py-0.5 rounded-full border border-border font-mono text-muted-foreground">{cin}</span>
+                          ))}
+                          {cinNames.length > 6 && <span className="text-xs text-muted-foreground">+{cinNames.length - 6}</span>}
+                        </div>
+                      )}
+                      <div className="flex items-center gap-1 mt-auto text-xs text-muted-foreground">
+                        <Calendar className="w-3 h-3" />
+                        <span>{format(new Date(sheet.createdAt), "d MMM yyyy")}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              filteredSheets.map((sheet) => {
+                const parsedCins: CinEntry[] = (() => {
+                  try {
+                    const raw: CinEntry[] = sheet.sheetCins ? JSON.parse(sheet.sheetCins) : [];
+                    return [...raw].sort((a, b) => {
+                      if (a.isTeamLeader && !b.isTeamLeader) return -1;
+                      if (!a.isTeamLeader && b.isTeamLeader) return 1;
+                      const aNum = parseInt(a.cin, 10); const bNum = parseInt(b.cin, 10);
+                      if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
+                      return a.cin.localeCompare(b.cin);
+                    });
+                  }
+                  catch { return []; }
+                })();
+                const cinNames = parsedCins.map((c) => c.cin);
+                const assignedTarget = operationTargets?.find((t) => t.id === (sheet as { targetId?: number | null }).targetId);
+                return (
+                  <SheetCard
+                    key={sheet.id}
+                    sheet={sheet}
+                    cinNames={cinNames}
+                    cinEntries={parsedCins}
+                    isAdmin={user?.role === "admin" || user?.role === "member"}
+                    targetName={assignedTarget?.name ?? null}
+                    onNavigate={() => navigate(`/sheet/${sheet.id}`)}
+                    onDelete={() => setDeleteId(sheet.id)}
+                    onCopyMove={() => setCopyMoveSheet({ id: sheet.id, title: sheet.title })}
+                  />
+                );
+              })
+            )}
           </div>
-        )}
+          );
+        })()}
 
         {sheets && sheets.length > 0 && (
           <p className="text-xs text-muted-foreground mt-3 text-right">

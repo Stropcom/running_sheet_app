@@ -46,6 +46,8 @@ import { Input } from "@/components/ui/input";
 import { useLocation } from "wouter";
 import { useState } from "react";
 import { toast } from "sonner";
+import { ViewToggle } from "@/components/ViewToggle";
+import { useViewMode } from "@/contexts/ViewModeContext";
 
 type OpStatus = "before_court" | "archive";
 type TargetStatus = "before_court" | "archive" | "active";
@@ -165,6 +167,84 @@ function OperationCard({
   );
 }
 
+function OpManageTile({
+  op,
+  isAdmin,
+  onMoveToActive,
+  onMoveTo,
+}: {
+  op: { id: number; name: string; status: string; promisNumber?: string | null; imsNumber?: string | null };
+  isAdmin: boolean;
+  onMoveToActive: () => void;
+  onMoveTo: (status: OpStatus) => void;
+}) {
+  const [, navigate] = useLocation();
+  const { data: sheets, isLoading: sheetsLoading } = trpc.sheet.listByOperation.useQuery(
+    { operationId: op.id },
+    { staleTime: 30_000 }
+  );
+  const sheetCount = sheets?.length ?? 0;
+  const closedCount = sheets?.filter((s) => !!s.closedAt).length ?? 0;
+
+  return (
+    <div className="group flex flex-col gap-3 p-5 rounded-xl border border-border bg-card hover:bg-accent/20 hover:border-primary/30 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150">
+      <div className="flex items-start justify-between gap-2">
+        <div className="p-2 rounded-lg bg-primary/10 border border-primary/20 shrink-0">
+          <Building2 className="w-4 h-4 text-primary" />
+        </div>
+        <StatusBadge status={op.status as TargetStatus} />
+      </div>
+      <p className="font-semibold text-foreground leading-tight line-clamp-2">{op.name}</p>
+      {op.promisNumber && (
+        <p className="text-xs text-muted-foreground">PROMIS: {op.promisNumber}</p>
+      )}
+      {sheetsLoading ? (
+        <div className="h-4 w-24 rounded bg-muted/40 animate-pulse" />
+      ) : (
+        <div className="flex gap-3 text-xs text-muted-foreground">
+          <span><span className="font-semibold text-foreground">{sheetCount}</span> sheet{sheetCount !== 1 ? "s" : ""}</span>
+          <span><span className="font-semibold text-emerald-400">{closedCount}</span> closed</span>
+        </div>
+      )}
+      {!sheetsLoading && sheetCount > 0 && (
+        <div className="flex flex-col gap-1 border-t border-border/40 pt-2">
+          {sheets?.slice(0, 3).map((s) => (
+            <button key={s.id} onClick={() => navigate(`/sheet/${s.id}`)}
+              className="flex items-center gap-2 text-left hover:bg-accent/30 rounded px-1 py-0.5 transition-colors">
+              {s.closedAt ? <Lock className="w-3 h-3 text-muted-foreground shrink-0" /> : <FileText className="w-3 h-3 text-muted-foreground shrink-0" />}
+              <span className="text-xs text-foreground/80 truncate">{s.title}</span>
+            </button>
+          ))}
+          {sheetCount > 3 && <p className="text-[10px] text-muted-foreground pl-1">+{sheetCount - 3} more</p>}
+        </div>
+      )}
+      {isAdmin && (
+        <div className="flex flex-wrap gap-2 border-t border-border/40 pt-2 mt-auto">
+          <Button size="sm" variant="outline"
+            className="gap-1 text-xs h-7 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
+            onClick={onMoveToActive}>
+            <RotateCcw className="w-3 h-3" />Active
+          </Button>
+          {op.status === "before_court" && (
+            <Button size="sm" variant="outline"
+              className="gap-1 text-xs h-7 border-slate-500/40 text-slate-400 hover:bg-slate-500/10"
+              onClick={() => onMoveTo("archive")}>
+              <Archive className="w-3 h-3" />Archive
+            </Button>
+          )}
+          {op.status === "archive" && (
+            <Button size="sm" variant="outline"
+              className="gap-1 text-xs h-7 border-violet-500/40 text-violet-400 hover:bg-violet-500/10"
+              onClick={() => onMoveTo("before_court")}>
+              <Scale className="w-3 h-3" />Before Court
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function OperationManagementPage() {
   const [, navigate] = useLocation();
   const { isAuthenticated, user } = useAuth();
@@ -208,6 +288,7 @@ export default function OperationManagementPage() {
   // Picker dialog state: which tab is picking ("before_court" | "archive")
   const [pickerOpen, setPickerOpen] = useState<OpStatus | null>(null);
   const [pickerSearch, setPickerSearch] = useState("");
+  const { viewMode } = useViewMode();
 
   const pickerOps = (activeOps ?? []).filter((op) =>
     op.name.toLowerCase().includes(pickerSearch.toLowerCase())
@@ -229,12 +310,13 @@ export default function OperationManagementPage() {
           <div className="p-2.5 rounded-xl bg-violet-500/15 border border-violet-500/30">
             <ArrowRightLeft className="w-5 h-5 text-violet-400" />
           </div>
-          <div>
+          <div className="flex-1">
             <h1 className="text-xl font-bold text-foreground">Operation Management</h1>
             <p className="text-sm text-muted-foreground">
               Manage operation status — Before Court and Archive
             </p>
           </div>
+          <ViewToggle />
         </div>
 
         {/* Info banner */}
@@ -294,6 +376,14 @@ export default function OperationManagementPage() {
                   Use the button above to move an active operation here.
                 </p>
               </div>
+            ) : viewMode === "tile" ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {beforeCourtOps?.map((op) => (
+                  <OpManageTile key={op.id} op={op} isAdmin={isAdmin}
+                    onMoveToActive={() => setConfirm({ opId: op.id, opName: op.name, targetStatus: "active" })}
+                    onMoveTo={(s) => setConfirm({ opId: op.id, opName: op.name, targetStatus: s })} />
+                ))}
+              </div>
             ) : (
               <div className="flex flex-col gap-4">
                 {beforeCourtOps?.map((op) => (
@@ -342,6 +432,14 @@ export default function OperationManagementPage() {
                 <p className="text-sm text-muted-foreground">
                   Use the button above to move an active operation here.
                 </p>
+              </div>
+            ) : viewMode === "tile" ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {archiveOps?.map((op) => (
+                  <OpManageTile key={op.id} op={op} isAdmin={isAdmin}
+                    onMoveToActive={() => setConfirm({ opId: op.id, opName: op.name, targetStatus: "active" })}
+                    onMoveTo={(s) => setConfirm({ opId: op.id, opName: op.name, targetStatus: s })} />
+                ))}
               </div>
             ) : (
               <div className="flex flex-col gap-4">

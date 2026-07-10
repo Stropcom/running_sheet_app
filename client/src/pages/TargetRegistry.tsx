@@ -155,13 +155,15 @@ function TargetCard({
   target,
   onDeleted,
   onLinkOps,
+  defaultExpanded = false,
 }: {
   target: RegistryTarget;
   onDeleted: () => void;
   onLinkOps: () => void;
+  defaultExpanded?: boolean;
 }) {
   const utils = trpc.useUtils();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded);
 
   // Editable fields
   const [name, setName] = useState(target.name);
@@ -505,6 +507,7 @@ export default function TargetRegistryPage() {
   const [sortBy, setSortBy] = useState<"alpha" | "recent" | "operation">("alpha");
   const [showCreate, setShowCreate] = useState(false);
   const [linkTarget, setLinkTarget] = useState<RegistryTarget | null>(null);
+  const [selectedTileTarget, setSelectedTileTarget] = useState<RegistryTarget | null>(null);
 
   const createMutation = trpc.target.registry.create.useMutation({
     onSuccess: () => { utils.target.registry.list.invalidate(); toast.success("Target added to registry."); },
@@ -644,7 +647,7 @@ export default function TargetRegistryPage() {
               <div
                 key={t.id}
                 className="group flex flex-col gap-3 p-5 rounded-xl border border-border bg-card hover:bg-accent/20 hover:border-primary/30 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 cursor-pointer"
-                onClick={() => navigate(`/intelligence/target/${t.id}`)}
+                onClick={() => setSelectedTileTarget(t as RegistryTarget)}
               >
                 {/* Header */}
                 <div className="flex items-start justify-between gap-2">
@@ -710,6 +713,26 @@ export default function TargetRegistryPage() {
             ))}
           </div>
         )}
+
+      {/* Tile view — target detail dialog */}
+      {selectedTileTarget && (
+        <Dialog open={!!selectedTileTarget} onOpenChange={(open) => { if (!open) setSelectedTileTarget(null); }}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Target className="w-4 h-4 text-primary" />
+                {selectedTileTarget.name}
+              </DialogTitle>
+            </DialogHeader>
+            <TargetCard
+              target={selectedTileTarget}
+              onDeleted={() => { setSelectedTileTarget(null); utils.target.registry.list.invalidate(); }}
+              onLinkOps={() => { setSelectedTileTarget(null); setLinkTarget(selectedTileTarget); }}
+              defaultExpanded
+            />
+          </DialogContent>
+        </Dialog>
+      )}
       </div>
 
       {/* Add Target dialog */}

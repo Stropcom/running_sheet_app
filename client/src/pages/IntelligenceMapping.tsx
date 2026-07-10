@@ -736,19 +736,21 @@ export default function IntelligenceMapping() {
   const placeMarker = useCallback((loc: IntelMapLocation, position: google.maps.LatLngLiteral) => {
     if (!mapRef.current) return;
 
-    // ── Smart merge: check if a house-type custom marker is within 40m ────────────────
+    // ── Smart merge / suppress: check if any custom marker is within 40m ──────────────
     const HOUSE_ICONS: string[] = ["house_outline", "house_filled"];
     const MERGE_RADIUS_M = 40;
-    const nearbyHouseCm = customMarkersDataRef.current.find((cm: any) =>
-      HOUSE_ICONS.includes(cm.markerIcon) &&
+    const nearbyCm = customMarkersDataRef.current.find((cm: any) =>
       haversineMetres(position.lat, position.lng, cm.lat, cm.lng) <= MERGE_RADIUS_M
     );
 
-    if (nearbyHouseCm) {
-      // Suppress the intel pin — store the intel data on the custom marker so its popup can show it
-      const enriched = { ...loc, lat: position.lat, lng: position.lng };
-      mergedIntelRef.current.set(nearbyHouseCm.id, enriched);
-      return; // skip placing the intel pin
+    if (nearbyCm) {
+      // If the nearby marker is a house type, merge intel data into its popup
+      if (HOUSE_ICONS.includes(nearbyCm.markerIcon)) {
+        const enriched = { ...loc, lat: position.lat, lng: position.lng };
+        mergedIntelRef.current.set(nearbyCm.id, enriched);
+      }
+      // For any custom marker type within 40m: suppress the intel pin (no doubling)
+      return;
     }
     // ────────────────────────────────────────────────────────────────────────────────
 
@@ -798,14 +800,13 @@ export default function IntelligenceMapping() {
   }, [clearMarkers, geocodeNext]);
 
   // Keep customMarkersDataRef in sync so placeMarker can access latest data without stale closure
+  // NOTE: Do NOT call renderLocations here — that would create a loop:
+  //   customMarkers changes → renderLocations → geocode → placeMarker stores mergedIntel
+  //   → (nothing triggers re-render, but the 5s poll refetches customMarkers) → loop
+  // The ref is updated synchronously so placeMarker always reads fresh data.
   useEffect(() => {
     customMarkersDataRef.current = (customMarkers as any[] | undefined) ?? [];
-    // When custom markers change, re-run intel rendering so merge decisions are recalculated
-    if (locations && mapRef.current && geocoderRef.current) {
-      mergedIntelRef.current.clear();
-      renderLocations(locations);
-    }
-  }, [customMarkers]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [customMarkers]);
 
   // Re-render location markers when locations change
   useEffect(() => {

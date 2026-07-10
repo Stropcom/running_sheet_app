@@ -294,8 +294,8 @@ export default function IntelligenceMapping() {
   // Inline observation field state
   const [rsInlineLabel, setRsInlineLabel] = useState<string | null>(null); // null = closed
   const [rsInlineText, setRsInlineText] = useState("");
-  const [rsInlineCin, setRsInlineCin] = useState<string | null>(null); // selected CIN for the inline entry
-  const rsInlineCinRef = useRef<string | null>(null); // ref so mutation callback always sees latest
+  const [rsInlineCins, setRsInlineCins] = useState<Set<string>>(new Set()); // selected CINs for the inline entry (multi-select)
+  const rsInlineCinsRef = useRef<Set<string>>(new Set()); // ref so mutation callback always sees latest
   const [rsCountdown, setRsCountdown] = useState<number>(30); // countdown seconds
   const rsInlineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rsCountdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -490,8 +490,14 @@ export default function IntelligenceMapping() {
   );
   // RS Actions pane — create row mutation
   const rsAddMember = trpc.member.add.useMutation();
-
   const rsCreateRow = trpc.row.create.useMutation();
+  // General shortcuts for quick entry buttons
+  const { data: generalShortcuts } = trpc.shortcuts.list.useQuery();
+  // Target shortcuts for the selected sheet's target
+  const { data: targetShortcuts } = trpc.targetShortcuts.list.useQuery(
+    { targetId: rsTargetData?.id! },
+    { enabled: !!rsTargetData?.id }
+  );
 
   // Targets per operation
   const { data: allTargets } = trpc.target.registry.list.useQuery();
@@ -1035,18 +1041,18 @@ export default function IntelligenceMapping() {
     if (rsCountdownIntervalRef.current) clearInterval(rsCountdownIntervalRef.current);
     setRsInlineLabel(null);
     setRsInlineText("");
-    setRsInlineCin(null);
-    rsInlineCinRef.current = null;
+    setRsInlineCins(new Set());
+    rsInlineCinsRef.current = new Set();
     setRsCountdown(30);
   };
 
   const submitInlineField = () => {
     if (!rsInlineLabel) return;
-    const finalText = rsInlineText.trim() ? `${rsInlineLabel} — ${rsInlineText.trim()}` : rsInlineLabel;
-    // Capture CIN BEFORE closeInlineField clears the ref
-    const cinToAttach = rsInlineCinRef.current;
+    const finalText = rsInlineText.trim() ? rsInlineText.trim() : rsInlineLabel;
+    // Capture CINs BEFORE closeInlineField clears the ref
+    const cinsToAttach = new Set(rsInlineCinsRef.current);
     closeInlineField();
-    addQuickRsEntry(finalText, cinToAttach);
+    addQuickRsEntry(finalText, cinsToAttach);
   };
 
   const resetInlineTimer = () => {
@@ -1057,15 +1063,15 @@ export default function IntelligenceMapping() {
     if (!rsSelectedSheetId) return;
     setRsInlineLabel(label);
     setRsInlineText("");
-    setRsInlineCin(null);
-    rsInlineCinRef.current = null;
+    setRsInlineCins(new Set());
+    rsInlineCinsRef.current = new Set();
     // Focus the textarea after render
     setTimeout(() => rsInlineInputRef.current?.focus(), 50);
     // Start auto-submit countdown
     startInlineCountdown();
   };
 
-  const addQuickRsEntry = (observation: string, cinToAttach?: string | null) => {
+  const addQuickRsEntry = (observation: string, cinsToAttach?: Set<string> | null) => {
     if (!rsSelectedSheetId) return;
     const now = new Date();
     const h24 = now.getHours();
@@ -1074,8 +1080,8 @@ export default function IntelligenceMapping() {
     const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
     const timeStr = `${String(h12).padStart(2, "0")}:${String(min).padStart(2, "0")} ${h24 < 12 ? "AM" : "PM"}`;
     setRsAddingRow(true);
-    // Store the CIN in a local variable captured by the mutation callback
-    const cin = cinToAttach ?? null;
+    // Store the CINs in a local variable captured by the mutation callback
+    const cins = cinsToAttach ? Array.from(cinsToAttach) : [];
     rsCreateRow.mutate(
       { sheetId: rsSelectedSheetId, time: timeStr, timeMinutes: totalMins, observation },
       {
@@ -1086,9 +1092,11 @@ export default function IntelligenceMapping() {
           const timeStr2 = `${String(h24b % 12 === 0 ? 12 : h24b % 12).padStart(2, "0")}:${String(minb).padStart(2, "0")} ${h24b < 12 ? "AM" : "PM"}`;
           setRsLastEntry({ label: vars.observation ?? "Entry", time: timeStr2 });
           setRsAddingRow(false);
-          // Attach the CIN if one was selected — use the locally captured variable, not the ref
-          if (cin && (data as any)?.id) {
-            rsAddMember.mutate({ rowId: (data as any).id, memberName: cin });
+          // Attach all selected CINs — use the locally captured variable, not the ref
+          if (cins.length > 0 && (data as any)?.id) {
+            for (const cin of cins) {
+              rsAddMember.mutate({ rowId: (data as any).id, memberName: cin });
+            }
           }
           toast.success("RS entry added");
         },
@@ -1598,7 +1606,16 @@ export default function IntelligenceMapping() {
                       ? JSON.parse(selectedSheet.sheetCins)
                       : selectedSheet.sheetCins;
                     parsed
-                      .sort((a, b) => (b.isTeamLeader ? 1 : 0) - (a.isTeamLeader ? 1 : 0))
+                      .sort((a, b) => {
+                        // TL always first
+                        if (a.isTeamLeader && !b.isTeamLeader) return -1;
+                        if (!a.isTeamLeader && b.isTeamLeader) return 1;
+                        // Then sort numerically (extract leading digits) or alphabetically
+                        const numA = parseInt(a.cin ?? "", 10);
+                        const numB = parseInt(b.cin ?? "", 10);
+                        if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+                        return (a.cin ?? "").localeCompare(b.cin ?? "");
+                      })
                       .forEach(c => { if (c.cin) rosterCins.push(c.cin); });
                   } catch { /* ignore */ }
                 }
@@ -1623,22 +1640,70 @@ export default function IntelligenceMapping() {
                       rows={2}
                       className="w-full resize-none rounded-md border border-border bg-background px-2.5 py-1.5 text-[11px] placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                     />
-                    {/* CIN picker row */}
+                    {/* Shortcut buttons — append expanded text in order */}
+                    {(() => {
+                      const appendText = (text: string) => {
+                        setRsInlineText(prev => prev ? `${prev} ${text}` : text);
+                        resetInlineTimer();
+                        rsInlineInputRef.current?.focus();
+                      };
+                      const findShortcut = (trigger: string) => {
+                        const tgt = (targetShortcuts as any[] | undefined)?.find((s: any) => s.trigger?.toLowerCase() === trigger.toLowerCase());
+                        if (tgt) return tgt.expansion as string;
+                        const gen = (generalShortcuts as any[] | undefined)?.find((s: any) => s.trigger?.toLowerCase() === trigger.toLowerCase());
+                        return gen ? gen.expansion as string : null;
+                      };
+                      const shortcuts: Array<{ label: string; getValue: () => string | null }> = [
+                        { label: "V1", getValue: () => rsTargetData?.v1f ?? rsTargetData?.v1 ?? null },
+                        { label: "V2", getValue: () => rsTargetData?.v2f ?? rsTargetData?.v2 ?? null },
+                        { label: "TGT", getValue: () => rsTargetData?.tgt ?? rsTargetData?.name ?? null },
+                        { label: "DSO", getValue: () => findShortcut("dso") ?? "driver and sole occupant" },
+                        { label: "CV", getValue: () => findShortcut("cv") ?? "continued via" },
+                        { label: "OOS", getValue: () => findShortcut("oos") ?? "out of sight" },
+                        { label: "COOS", getValue: () => findShortcut("coos") ?? "continued out of sight" },
+                      ];
+                      const available = shortcuts.filter(s => s.getValue() !== null);
+                      if (available.length === 0) return null;
+                      return (
+                        <div className="flex flex-wrap gap-1">
+                          {available.map(s => (
+                            <button key={s.label}
+                              onClick={() => { const v = s.getValue(); if (v) appendText(v); }}
+                              className="px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all">
+                              {s.label}
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                    {/* CIN picker row — multi-select */}
                     {rosterCins.length > 0 && (
-                      <div className="flex flex-wrap gap-1">
+                      <div className="flex flex-wrap gap-1.5">
+                        {/* TEAM button — selects all */}
+                        <button
+                          onClick={() => {
+                            const allSelected = rosterCins.every(c => rsInlineCins.has(c));
+                            const next = allSelected ? new Set<string>() : new Set(rosterCins);
+                            setRsInlineCins(next); rsInlineCinsRef.current = next; resetInlineTimer();
+                          }}
+                          className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all active:scale-95 ${
+                            rosterCins.every(c => rsInlineCins.has(c))
+                              ? "bg-amber-500/20 border-amber-500/60 text-amber-400"
+                              : "bg-muted/40 border-amber-500/30 text-amber-500/80 hover:bg-amber-500/10"
+                          }`}
+                        >TEAM</button>
                         {rosterCins.map((cin) => (
                           <button
                             key={cin}
                             onClick={() => {
-                              const next = rsInlineCin === cin ? null : cin;
-                              setRsInlineCin(next);
-                              rsInlineCinRef.current = next;
-                              resetInlineTimer();
+                              const next = new Set(rsInlineCins);
+                              if (next.has(cin)) { next.delete(cin); } else { next.add(cin); }
+                              setRsInlineCins(next); rsInlineCinsRef.current = next; resetInlineTimer();
                             }}
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all active:scale-95 ${
-                              rsInlineCin === cin
+                            className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all active:scale-95 ${
+                              rsInlineCins.has(cin)
                                 ? "bg-primary/20 border-primary/60 text-primary"
-                                : "bg-muted/40 border-border text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                                : "bg-muted/40 border-border text-foreground/80 hover:bg-muted/70 hover:text-foreground"
                             }`}
                           >
                             {cin}
@@ -2028,7 +2093,16 @@ export default function IntelligenceMapping() {
                       const parsed: Array<{ cin: string; isTeamLeader?: boolean }> = typeof selectedSheet.sheetCins === "string"
                         ? JSON.parse(selectedSheet.sheetCins)
                         : selectedSheet.sheetCins;
-                      parsed.sort((a, b) => (b.isTeamLeader ? 1 : 0) - (a.isTeamLeader ? 1 : 0)).forEach(c => { if (c.cin) rosterCins.push(c.cin); });
+                      parsed
+                        .sort((a, b) => {
+                          if (a.isTeamLeader && !b.isTeamLeader) return -1;
+                          if (!a.isTeamLeader && b.isTeamLeader) return 1;
+                          const numA = parseInt(a.cin ?? "", 10);
+                          const numB = parseInt(b.cin ?? "", 10);
+                          if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+                          return (a.cin ?? "").localeCompare(b.cin ?? "");
+                        })
+                        .forEach(c => { if (c.cin) rosterCins.push(c.cin); });
                     } catch { /* ignore */ }
                   }
                   return (
@@ -2046,11 +2120,47 @@ export default function IntelligenceMapping() {
                         rows={2}
                         className="w-full resize-none rounded-md border border-border bg-background px-2.5 py-1.5 text-[11px] placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                       />
+                      {/* Shortcut buttons */}
+                      {(() => {
+                        const appendText = (text: string) => { setRsInlineText(prev => prev ? `${prev} ${text}` : text); resetInlineTimer(); rsInlineInputRef.current?.focus(); };
+                        const findShortcut = (trigger: string) => {
+                          const tgt = (targetShortcuts as any[] | undefined)?.find((s: any) => s.trigger?.toLowerCase() === trigger.toLowerCase());
+                          if (tgt) return tgt.expansion as string;
+                          const gen = (generalShortcuts as any[] | undefined)?.find((s: any) => s.trigger?.toLowerCase() === trigger.toLowerCase());
+                          return gen ? gen.expansion as string : null;
+                        };
+                        const shortcuts: Array<{ label: string; getValue: () => string | null }> = [
+                          { label: "V1", getValue: () => rsTargetData?.v1f ?? rsTargetData?.v1 ?? null },
+                          { label: "V2", getValue: () => rsTargetData?.v2f ?? rsTargetData?.v2 ?? null },
+                          { label: "TGT", getValue: () => rsTargetData?.tgt ?? rsTargetData?.name ?? null },
+                          { label: "DSO", getValue: () => findShortcut("dso") ?? "driver and sole occupant" },
+                          { label: "CV", getValue: () => findShortcut("cv") ?? "continued via" },
+                          { label: "OOS", getValue: () => findShortcut("oos") ?? "out of sight" },
+                          { label: "COOS", getValue: () => findShortcut("coos") ?? "continued out of sight" },
+                        ];
+                        const available = shortcuts.filter(s => s.getValue() !== null);
+                        if (available.length === 0) return null;
+                        return (
+                          <div className="flex flex-wrap gap-1">
+                            {available.map(s => (
+                              <button key={s.label} onClick={() => { const v = s.getValue(); if (v) appendText(v); }}
+                                className="px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all">
+                                {s.label}
+                              </button>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                      {/* CIN picker — multi-select with TEAM */}
                       {rosterCins.length > 0 && (
-                        <div className="flex flex-wrap gap-1">
+                        <div className="flex flex-wrap gap-1.5">
+                          <button
+                            onClick={() => { const allSel = rosterCins.every(c => rsInlineCins.has(c)); const next = allSel ? new Set<string>() : new Set(rosterCins); setRsInlineCins(next); rsInlineCinsRef.current = next; resetInlineTimer(); }}
+                            className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all active:scale-95 ${rosterCins.every(c => rsInlineCins.has(c)) ? "bg-amber-500/20 border-amber-500/60 text-amber-400" : "bg-muted/40 border-amber-500/30 text-amber-500/80 hover:bg-amber-500/10"}`}
+                          >TEAM</button>
                           {rosterCins.map((cin) => (
-                            <button key={cin} onClick={() => { const next = rsInlineCin === cin ? null : cin; setRsInlineCin(next); rsInlineCinRef.current = next; resetInlineTimer(); }}
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all active:scale-95 ${rsInlineCin === cin ? "bg-primary/20 border-primary/60 text-primary" : "bg-muted/40 border-border text-muted-foreground hover:bg-muted/70 hover:text-foreground"}`}>
+                            <button key={cin} onClick={() => { const next = new Set(rsInlineCins); if (next.has(cin)) { next.delete(cin); } else { next.add(cin); } setRsInlineCins(next); rsInlineCinsRef.current = next; resetInlineTimer(); }}
+                              className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all active:scale-95 ${rsInlineCins.has(cin) ? "bg-primary/20 border-primary/60 text-primary" : "bg-muted/40 border-border text-foreground/80 hover:bg-muted/70 hover:text-foreground"}`}>
                               {cin}
                             </button>
                           ))}

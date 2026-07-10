@@ -645,3 +645,12 @@
 - [x] Strip postcode and ", Australia" suffix in converted address
 - [x] Append bracket code in UPPERCASE at end (e.g. "(131 LAKEY ST)")
 - [x] Wire convertGoogleAddresses into mapQeAddress pre-fill in IntelligenceMapping.tsx
+
+## Quick Entry Tile Enhancements (Round 58)
+- [ ] Tile expansion: tapping a tile expands it to show a free-text observation field + shortcut buttons + CIN multi-select
+- [ ] Free-text field: if filled, replaces tile label as the observation; if empty, tile label is used as before
+- [ ] Shortcut buttons in expanded tile (append expanded text in tap order): V1 (target V1F/V1), V2 (target V2F/V2), TGT (target name), DSO (driver and sole occupant), CV (continued via), OOS (out of sight), COOS (continued out of sight)
+- [ ] CIN buttons: order Team Leader first, then remaining CINs in number order
+- [ ] CIN buttons: slightly larger and darker font
+- [ ] CIN buttons: multi-select (tap to toggle, multiple CINs can be selected)
+- [ ] CIN buttons: TEAM shortcut button that selects all CINs at once

@@ -1098,12 +1098,14 @@ export function extractEntitiesFromText(text: string): Array<{
   rawShortForm: string;
   fullDescription: string;
   type: "person" | "vehicle" | "address" | "business" | "unknown";
+  confidence: "high" | "medium" | "low";
 }> {
   const results: Array<{
     shortForm: string;
     rawShortForm: string; // the exact bracketed token before name-recovery
     fullDescription: string;
     type: "person" | "vehicle" | "address" | "business" | "unknown";
+    confidence: "high" | "medium" | "low";
   }> = [];
 
   // Match: some preceding text (fullDescription) immediately followed by (ShortForm)
@@ -1130,10 +1132,17 @@ export function extractEntitiesFromText(text: string): Array<{
     // of whether the word "vehicle" appears elsewhere in the sentence.
     // Also classify airport terminals, train stations, bus stops, ports, and
     // numbered terminals (e.g. "Terminal 2", "Gate 3", "Platform 5") as addresses.
+    // Also handles cnr/corner-of addresses and lot numbers.
+    const STREET_TYPES = /\b(st|street|rd|road|ave|avenue|dr|drive|way|ct|court|pl|place|cl|close|cres|crescent|blvd|boulevard|hwy|highway|fwy|freeway|ln|lane|tce|terrace|pde|parade|cct|circuit|gr|grove|rise|loop|link|walk|track|row|mews|quay|esplanade|promenade)\b/i;
     const addressInFull =
       /\b\d{1,5}\s+\w[\w\s]*(street|road|ave|avenue|drive|way|court|place|close|crescent|boulevard|highway|freeway|lane|terrace|parade|circuit)\b/i.test(fullDescription) ||
-      /\b(street|road|ave|avenue|drive|way|court|place|close|crescent|boulevard|highway|freeway|lane|terrace|parade|circuit)\b/i.test(shortForm) ||
+      STREET_TYPES.test(shortForm) ||
       /^\d{1,5}\s/.test(shortForm) ||
+      // cnr / corner of addresses: "cnr Smith St and Jones Ave"
+      /^(cnr|corner of|corner)\b/i.test(shortForm) ||
+      /^(cnr|corner of|corner)\b/i.test(fullDescription) ||
+      // Lot numbers: "Lot 42 Smith Road"
+      /^lot\s+\d+/i.test(shortForm) ||
       // Google Maps formatted addresses: "131 Lakey St, Southern River WA 6110, Australia"
       // Pattern: number + street name + suburb + STATE + postcode (+ optional ", Australia")
       /\b\d{1,5}[A-Za-z]?\/\d{1,5}\s/.test(shortForm) ||  // unit/number e.g. "3/12 Smith St"
@@ -1147,30 +1156,56 @@ export function extractEntitiesFromText(text: string): Array<{
       /\b(airport|station|terminus|port|wharf|depot|interchange|shopping centre|shopping center|shopping mall|mall|plaza|precinct)\b/i.test(shortForm) ||
       /\b(airport|station|terminus|port|wharf|depot|interchange)\b/i.test(fullDescription);
 
+    // ── WA vehicle registration patterns ─────────────────────────────────────
+    // WA standard: 1ABC234 (digit + 3 letters + 3 digits) or older ABC-123 / ABC 123
+    // Also: 1AB 234, personalised plates (letters only up to 6 chars)
+    const WA_REGO = /^\d[A-Z]{2,3}\d{3}$|^[A-Z]{1,3}[-\s]?\d{3}$|^[A-Z0-9]{2,7}$/.test(shortForm.replace(/\s/g, "").toUpperCase());
+    // Broader vehicle make/model keywords
+    const VEHICLE_MAKES = /\b(toyota|ford|holden|honda|mazda|nissan|mitsubishi|subaru|hyundai|kia|volkswagen|vw|bmw|mercedes|audi|lexus|volvo|jeep|dodge|chevrolet|chevy|ram|gmc|chrysler|fiat|alfa|peugeot|renault|citroen|skoda|seat|suzuki|isuzu|daihatsu|ssangyong|great wall|gwm|haval|mg|byd|tesla|rivian|land rover|range rover|defender|discovery|jaguar|porsche|ferrari|lamborghini|maserati|bentley|rolls royce|aston martin|mclaren|lotus|mini|smart|dacia|lancia|opel|vauxhall|saab|pontiac|buick|cadillac|lincoln|infiniti|acura|genesis|lucid|polestar|scout|rivian)\b/i;
+    const VEHICLE_BODY = /\b(vehicle|car|truck|van|ute|sedan|hatchback|suv|wagon|coupe|convertible|roadster|pickup|4wd|4x4|cab|dual cab|single cab|tray|flatbed|panel van|people mover|minivan|bus|minibus|motorcycle|motorbike|bike|scooter|quad|atv|boat|trailer|caravan|motorhome|rv|bearing|registration|rego|reg|plate|plated)\b/i;
+
+    // ── Confidence scoring ────────────────────────────────────────────────────
+    let confidence: "high" | "medium" | "low" = "low";
+
     if (addressInFull) {
       type = "address";
+      // High confidence if has number + street type or state/postcode; medium for cnr/lot/airport
+      if (/\b\d{1,5}[A-Za-z]?\s+\w/.test(shortForm) && STREET_TYPES.test(shortForm)) confidence = "high";
+      else if (/,\s*[A-Za-z][\w\s]+\s+(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\s+\d{4}/.test(shortForm)) confidence = "high";
+      else confidence = "medium";
     }
-    // Vehicle: preceding text mentions vehicle/car/truck/van/ute/sedan/hatchback/SUV/registration/bearing/reg
+    // Vehicle: preceding text mentions vehicle keywords OR shortForm matches rego/make
     // BUT only when the full description does NOT look like an address
-    else if (
-      /\b(vehicle|car|truck|van|ute|sedan|hatchback|suv|wagon|coupe|bearing|registration|reg|plate)\b/.test(lowerFull)
-    ) {
+    else if (VEHICLE_BODY.test(lowerFull) || VEHICLE_MAKES.test(lowerFull) || VEHICLE_MAKES.test(lowerShort)) {
       type = "vehicle";
+      if (VEHICLE_BODY.test(lowerFull) && (VEHICLE_MAKES.test(lowerFull) || VEHICLE_MAKES.test(lowerShort))) confidence = "high";
+      else confidence = "medium";
+    }
+    // WA rego plate in shortForm — strong vehicle signal
+    else if (WA_REGO && !/^[A-Z]{4,}$/.test(shortForm)) {
+      // Only treat as rego if it doesn't look like an all-caps name (4+ letters)
+      type = "vehicle";
+      confidence = "medium";
     }
     // Person: shortForm is all-caps word(s) with no digits, no street number pattern
-    else if (/^[A-Z][A-Z\s'-]{1,40}$/.test(shortForm) && !/\d/.test(shortForm) && !/street|road|ave|drive|way|court|place|close|crescent/i.test(shortForm)) {
+    else if (/^[A-Z][A-Z\s'-]{1,40}$/.test(shortForm) && !/\d/.test(shortForm) && !STREET_TYPES.test(shortForm)) {
       type = "person";
+      // High confidence if shortForm is 2 words (first + surname) or matches name-recovery
+      const wordCount = shortForm.trim().split(/\s+/).length;
+      confidence = wordCount >= 2 ? "high" : "medium";
     }
-    // Address: shortForm starts with a number or contains street/road/ave/drive etc.
-    else if (
-      /^\d/.test(shortForm) ||
-      /\b(street|road|ave|avenue|drive|way|court|place|close|crescent|boulevard|highway|freeway)\b/i.test(shortForm)
-    ) {
+    // Address: shortForm starts with a number or contains street type
+    else if (/^\d/.test(shortForm) || STREET_TYPES.test(shortForm)) {
       type = "address";
+      confidence = "medium";
     }
     // Business: shortForm contains a proper noun (mixed case or known business words)
-    else if (/[A-Z][a-z]/.test(shortForm) || /\b(hotel|motel|cafe|restaurant|shop|store|centre|center|gym|club|bar|pub)\b/i.test(lowerShort)) {
+    else if (/[A-Z][a-z]/.test(shortForm) || /\b(hotel|motel|cafe|restaurant|shop|store|centre|center|gym|club|bar|pub|servo|service station|petrol|chemist|pharmacy|hospital|clinic|school|college|university|church|mosque|temple|park|reserve|oval|stadium|arena|theatre|cinema|library|museum|gallery|council|police|fire|ambulance|court|prison|jail|detention)\b/i.test(lowerShort)) {
       type = "business";
+      confidence = /\b(hotel|motel|cafe|restaurant|shop|store|centre|center|gym|club|bar|pub|servo|service station|petrol|chemist|pharmacy|hospital|clinic|school|college|university|church|mosque|temple|park|reserve|oval|stadium|arena|theatre|cinema|library|museum|gallery|council|police|fire|ambulance|court|prison|jail|detention)\b/i.test(lowerShort) ? "high" : "medium";
+    } else {
+      // unknown — low confidence
+      confidence = "low";
     }
 
     // For person entities: prefer the full name (fullDescription) over the bracketed
@@ -1213,7 +1248,7 @@ export function extractEntitiesFromText(text: string): Array<{
       if (bestName) displayName = bestName;
     }
 
-    results.push({ shortForm: displayName, rawShortForm: shortForm, fullDescription, type });
+    results.push({ shortForm: displayName, rawShortForm: shortForm, fullDescription, type, confidence });
   }
 
   return results;
@@ -1228,6 +1263,8 @@ export interface IntelligenceEntity {
   tgtAlias?: string | null;
   /** For target entities: the numeric DB id of the target record */
   targetId?: number | null;
+  /** True when at least one occurrence was extracted with low confidence (type=unknown or ambiguous pattern) */
+  lowConfidence?: boolean;
   occurrences: Array<{
     sheetId: number;
     sheetTitle: string;
@@ -1431,7 +1468,7 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
 
   // Helper: register or merge an entity occurrence into entityMap
   function registerOccurrence(
-    e: { shortForm: string; rawShortForm?: string; fullDescription: string; type: "person" | "vehicle" | "address" | "business" | "unknown" },
+    e: { shortForm: string; rawShortForm?: string; fullDescription: string; type: "person" | "vehicle" | "address" | "business" | "unknown"; confidence?: "high" | "medium" | "low" },
     row: { sheetId: number; sheetTitle: string; operationId: number; operationName: string; rowId: number; observation: string | null; timeMinutes: number | null }
   ) {
     if (!row.observation) return;
@@ -1468,6 +1505,10 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
       // Upgrade to longer shortForm if available
       const existing = entityMap.get(key)!;
       if (e.shortForm.length > existing.shortForm.length) existing.shortForm = e.shortForm;
+    }
+    // Flag entity as low-confidence if this occurrence was uncertain
+    if (e.confidence === "low" || e.type === "unknown") {
+      entityMap.get(key)!.lowConfidence = true;
     }
     const snippet = row.observation.slice(0, 80) + (row.observation.length > 80 ? "…" : "");
     entityMap.get(key)!.occurrences.push({

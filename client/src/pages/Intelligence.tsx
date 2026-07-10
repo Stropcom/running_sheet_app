@@ -48,6 +48,7 @@ interface Entity {
   isTarget?: boolean;
   tgtAlias?: string | null;
   targetId?: number | null;
+  lowConfidence?: boolean;
   occurrences: Occurrence[];
 }
 
@@ -1172,6 +1173,11 @@ export default function IntelligencePage() {
                             {entity.tgtAlias && (
                               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 shrink-0">
                                 TGT: {entity.tgtAlias}
+                              </span>
+                            )}
+                            {entity.lowConfidence && (
+                              <span title="Low confidence — classification may need review" className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-yellow-400/15 text-yellow-600 dark:text-yellow-400 border border-yellow-400/30 shrink-0">
+                                ?
                               </span>
                             )}
                           </div>

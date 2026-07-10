@@ -740,9 +740,11 @@ function ProfileDialog({
 function OperationsTab({
   entities,
   search,
+  sortOrder = "az",
 }: {
   entities: Entity[];
   search: string;
+  sortOrder?: "az" | "recent";
 }) {
   const [expandedOpId, setExpandedOpId] = useState<number | null>(null);
   const [, navigate] = useLocation();
@@ -780,8 +782,28 @@ function OperationsTab({
       op.sheetCount = sheetIds.size;
       opList.push(op);
     });
-    return opList.sort((a, b) => a.operationName.localeCompare(b.operationName));
-  }, [entities]);
+    // Separate (Registry) — always pinned to bottom
+    const isRegistry = (op: OperationSummary) =>
+      op.operationId === 0 || op.operationName === "(Registry)";
+    const registry = opList.filter(isRegistry);
+    const normal   = opList.filter((op) => !isRegistry(op));
+    // Get latest sheet title across all entities in an operation (used for recency sort)
+    const getLatestSheet = (op: OperationSummary) => {
+      let best = "";
+      for (const e of op.entities) {
+        for (const occ of e.occurrences) {
+          if (occ.operationId === op.operationId && occ.sheetTitle > best) best = occ.sheetTitle;
+        }
+      }
+      return best;
+    };
+    const sorted = [...normal].sort((a, b) => {
+      if (sortOrder === "recent") return getLatestSheet(b).localeCompare(getLatestSheet(a));
+      return a.operationName.localeCompare(b.operationName); // az (default)
+    });
+    const sortedRegistry = [...registry].sort((a, b) => a.operationName.localeCompare(b.operationName));
+    return [...sorted, ...sortedRegistry];
+  }, [entities, sortOrder]);
 
   const filtered = useMemo(() => {
     if (!search) return operations;
@@ -943,9 +965,13 @@ export default function IntelligencePage() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo]     = useState("");
 
-  // Sort order
+  // Sort order (entity tabs)
   type SortOrder = "frequency" | "az" | "za" | "recent" | "oldest";
   const [sortOrder, setSortOrder] = useState<SortOrder>("frequency");
+
+  // Sort order (operations tab)
+  type OpSortOrder = "az" | "recent";
+  const [opSortOrder, setOpSortOrder] = useState<OpSortOrder>("az");
 
   const dateRange = useMemo(
     () => presetToRange(datePreset, customFrom, customTo),
@@ -1164,7 +1190,40 @@ export default function IntelligencePage() {
 
         {/* Operations tab content */}
         {!isLoading && activeTab === "operations" && (
-          <OperationsTab entities={filteredEntities} search={search} />
+          <>
+            {/* Search + sort bar for operations tab */}
+            <div className="space-y-2 mb-5">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  className="pl-9"
+                  placeholder="Search operations…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-xs text-muted-foreground mr-1">Sort:</span>
+                {([
+                  { value: "az" as const,     label: "A → Z" },
+                  { value: "recent" as const, label: "Most recent" },
+                ] ).map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setOpSortOrder(opt.value)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
+                      opSortOrder === opt.value
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-muted/40 text-muted-foreground border-border/60 hover:bg-muted/70"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <OperationsTab entities={filteredEntities} search={search} sortOrder={opSortOrder} />
+          </>
         )}
 
         {/* Search bar for operations tab (inline, above results) */}

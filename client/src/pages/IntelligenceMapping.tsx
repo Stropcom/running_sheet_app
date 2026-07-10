@@ -48,6 +48,8 @@ import {
   User,
   Network,
   Search,
+  LocateFixed,
+  Navigation2,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -355,6 +357,12 @@ export default function IntelligenceMapping() {
   const autocompleteServiceRef = useRef<google.maps.places.AutocompleteService | null>(null);
   const addrSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const addrSearchPinRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
+
+  // Follow-me mode: keeps own tag centred on map
+  const [followMode, setFollowMode] = useState(false);
+  const followModeRef = useRef(false);
+  // Own position ref — updated whenever liveUsers refreshes
+  const ownPositionRef = useRef<{ lat: number; lng: number } | null>(null);
 
   // ref for long-press on mobile
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -888,6 +896,17 @@ export default function IntelligenceMapping() {
         liveMarkersRef.current.delete(key);
       }
     });
+
+    // Track own position and apply follow-mode pan
+    const ownEntry = (liveUsers as LiveUser[]).find(
+      (u) => u.userId === currentUserId && u.deviceId === currentDeviceId
+    );
+    if (ownEntry) {
+      ownPositionRef.current = { lat: ownEntry.lat, lng: ownEntry.lng };
+      if (followModeRef.current && mapRef.current) {
+        mapRef.current.panTo({ lat: ownEntry.lat, lng: ownEntry.lng });
+      }
+    }
 
     // Add/update markers for visible devices
     for (const liveUser of visibleUsers) {
@@ -1747,6 +1766,54 @@ export default function IntelligenceMapping() {
             initialCenter={{ lat: -31.9505, lng: 115.8605 }}
             initialZoom={11}
           />
+
+          {/* Centre on me / Follow me floating buttons — top-left below search bar */}
+          <div
+            className="absolute z-20 pointer-events-auto flex gap-1"
+            style={{ top: "60px", left: "10px" }}
+          >
+            {/* Centre on me */}
+            <button
+              title="Centre on my location"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!ownPositionRef.current) {
+                  toast.error("Location not available — enable location sharing first");
+                  return;
+                }
+                mapRef.current?.panTo(ownPositionRef.current);
+              }}
+              className="flex items-center justify-center bg-white rounded-lg shadow-md border border-gray-200 hover:bg-gray-50 transition-colors"
+              style={{ width: "40px", height: "40px" }}
+            >
+              <LocateFixed className="w-5 h-5 text-sky-600" />
+            </button>
+            {/* Follow me toggle */}
+            <button
+              title={followMode ? "Stop following my location" : "Follow my location"}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!followMode && !ownPositionRef.current) {
+                  toast.error("Location not available — enable location sharing first");
+                  return;
+                }
+                const next = !followMode;
+                setFollowMode(next);
+                followModeRef.current = next;
+                if (next && ownPositionRef.current) {
+                  mapRef.current?.panTo(ownPositionRef.current);
+                }
+              }}
+              className={`flex items-center justify-center rounded-lg shadow-md border transition-colors ${
+                followMode
+                  ? "bg-sky-600 border-sky-700 hover:bg-sky-700"
+                  : "bg-white border-gray-200 hover:bg-gray-50"
+              }`}
+              style={{ width: "40px", height: "40px" }}
+            >
+              <Navigation2 className={`w-5 h-5 ${ followMode ? "text-white" : "text-sky-600" }`} />
+            </button>
+          </div>
 
           {/* Floating address search bar — top-left, next to Map/Satellite toggle */}
           <div

@@ -219,6 +219,15 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
   return `<div style="font-family:sans-serif;max-width:260px;color:#111">${lines.join("")}</div>`;
 }
 
+// ── Haversine distance helper (metres) ───────────────────────────────────────
+function haversineMetres(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function IntelligenceMapping() {
   const [, setLocation] = useLocation();
@@ -340,6 +349,10 @@ export default function IntelligenceMapping() {
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // custom marker map objects
   const customMarkersRef = useRef<Map<number, google.maps.marker.AdvancedMarkerElement>>(new Map());
+  // Merged intel data: custom marker ID → intel location that was suppressed because it was within 40m
+  const mergedIntelRef = useRef<Map<number, IntelMapLocation>>(new Map());
+  // Latest custom markers data ref — kept in sync so placeMarker can access it without stale closure
+  const customMarkersDataRef = useRef<any[]>([]);
 
   // Map state
   const [mapReady, setMapReady] = useState(false);
@@ -722,6 +735,23 @@ export default function IntelligenceMapping() {
 
   const placeMarker = useCallback((loc: IntelMapLocation, position: google.maps.LatLngLiteral) => {
     if (!mapRef.current) return;
+
+    // ── Smart merge: check if a house-type custom marker is within 40m ────────────────
+    const HOUSE_ICONS: string[] = ["house_outline", "house_filled"];
+    const MERGE_RADIUS_M = 40;
+    const nearbyHouseCm = customMarkersDataRef.current.find((cm: any) =>
+      HOUSE_ICONS.includes(cm.markerIcon) &&
+      haversineMetres(position.lat, position.lng, cm.lat, cm.lng) <= MERGE_RADIUS_M
+    );
+
+    if (nearbyHouseCm) {
+      // Suppress the intel pin — store the intel data on the custom marker so its popup can show it
+      const enriched = { ...loc, lat: position.lat, lng: position.lng };
+      mergedIntelRef.current.set(nearbyHouseCm.id, enriched);
+      return; // skip placing the intel pin
+    }
+    // ────────────────────────────────────────────────────────────────────────────────
+
     const pinEl = createPinElement(loc);
     const marker = new google.maps.marker.AdvancedMarkerElement({
       map: mapRef.current,
@@ -767,9 +797,20 @@ export default function IntelligenceMapping() {
     geocodeTimerRef.current = setTimeout(geocodeNext, 200);
   }, [clearMarkers, geocodeNext]);
 
+  // Keep customMarkersDataRef in sync so placeMarker can access latest data without stale closure
+  useEffect(() => {
+    customMarkersDataRef.current = (customMarkers as any[] | undefined) ?? [];
+    // When custom markers change, re-run intel rendering so merge decisions are recalculated
+    if (locations && mapRef.current && geocoderRef.current) {
+      mergedIntelRef.current.clear();
+      renderLocations(locations);
+    }
+  }, [customMarkers]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Re-render location markers when locations change
   useEffect(() => {
     if (locations && mapRef.current && geocoderRef.current) {
+      mergedIntelRef.current.clear();
       renderLocations(locations);
     }
   }, [locations, renderLocations]);
@@ -899,14 +940,18 @@ export default function IntelligenceMapping() {
           const iconLabel = MARKER_ICON_LABELS[cm.markerIcon as MarkerIcon] ?? cm.markerIcon;
           const currentRotation = cm.rotation ?? 0;
           const dataUrl = getMarkerDataUrl(cm.markerIcon as MarkerIcon, cm.markerColour as MarkerColour);
+          // Check if an intel location has been merged into this marker
+          const mergedIntel = mergedIntelRef.current.get(cm.id);
 
           const buildPopupHtml = (rotation: number) => {
             const lines: string[] = [];
 
             // Type badge row
+            const badgeLabel = mergedIntel ? "MERGED MARKER" : "MAP MARKER";
+            const badgeBg = mergedIntel ? "#0f766e" : "#374151";
             lines.push(`
               <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-                <span style="background:#374151;color:#fff;border-radius:4px;font-size:9px;font-weight:700;padding:2px 6px;letter-spacing:0.07em;white-space:nowrap;">MAP MARKER</span>
+                <span style="background:${badgeBg};color:#fff;border-radius:4px;font-size:9px;font-weight:700;padding:2px 6px;letter-spacing:0.07em;white-space:nowrap;">${badgeLabel}</span>
                 <span style="font-size:10px;color:#6b7280;">${iconLabel}</span>
               </div>
             `);
@@ -920,11 +965,53 @@ export default function IntelligenceMapping() {
             // Notes
             if (cm.note) lines.push(`<div style="margin-top:6px;"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Notes</span><p style="font-size:12px;color:#111;margin:2px 0 0;">${cm.note}</p></div>`);
 
-            // Persons
+            // Persons (from custom marker)
             if (cm.assocPersons?.length) lines.push(`<div style="margin-top:6px;"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Persons</span><p style="font-size:12px;color:#111;margin:2px 0 0;">${(cm.assocPersons as string[]).join(", ")}</p></div>`);
 
-            // Vehicles
+            // Vehicles (from custom marker)
             if (cm.assocVehicles?.length) lines.push(`<div style="margin-top:4px;"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Vehicles</span><p style="font-size:12px;color:#111;margin:2px 0 0;">${(cm.assocVehicles as string[]).join(", ")}</p></div>`);
+
+            // ── Merged intel section ──────────────────────────────────────────────────
+            if (mergedIntel) {
+              const isTarget = mergedIntel.type === "target_address";
+              const accentColor = isTarget ? "#dc2626" : "#7c3aed";
+              const typeLabel = isTarget ? "TARGET ADDRESS" : "OBSERVED LOCATION";
+              lines.push(`
+                <div style="margin-top:8px;padding:8px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;">
+                  <div style="display:flex;align-items:center;gap:5px;margin-bottom:4px;">
+                    <span style="background:${accentColor};color:#fff;border-radius:3px;font-size:9px;font-weight:700;padding:1px 5px;letter-spacing:0.07em;">${typeLabel}</span>
+                  </div>
+                  <div style="font-size:12px;font-weight:700;color:#111;margin-bottom:3px;">${mergedIntel.label}</div>
+              `);
+              // Linked target details
+              if (isTarget && mergedIntel.linkedTargets.length > 0) {
+                for (const t of mergedIntel.linkedTargets) {
+                  lines.push(`<div style="padding:4px 6px;background:#fef2f2;border-left:2px solid #dc2626;border-radius:0 3px 3px 0;margin-bottom:3px;">`);
+                  lines.push(`<div style="font-size:11px;font-weight:700;color:#111;">${t.name}</div>`);
+                  if (t.tgt) lines.push(`<div style="font-size:10px;color:#555;">TGT: ${t.tgt}</div>`);
+                  if (t.hbf) lines.push(`<div style="font-size:10px;color:#555;">HBF: ${t.hbf}</div>`);
+                  if (t.v1f) lines.push(`<div style="font-size:10px;color:#555;">V1F: ${t.v1f}</div>`);
+                  if (t.v2f) lines.push(`<div style="font-size:10px;color:#555;">V2F: ${t.v2f}</div>`);
+                  lines.push(`</div>`);
+                }
+              }
+              // Linked targets for observation
+              if (!isTarget && mergedIntel.linkedTargets.length > 0) {
+                lines.push(`<div style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Linked Targets</div>`);
+                for (const t of mergedIntel.linkedTargets) {
+                  lines.push(`<div style="font-size:11px;color:#111;">${t.name}</div>`);
+                }
+              }
+              // Intel persons/vehicles (if different from custom marker)
+              if (mergedIntel.assocPersons.length > 0) {
+                lines.push(`<div style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;margin-top:3px;">Intel Persons</div><div style="font-size:11px;color:#111;">${mergedIntel.assocPersons.join(", ")}</div>`);
+              }
+              if (mergedIntel.assocVehicles.length > 0) {
+                lines.push(`<div style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;margin-top:2px;">Intel Vehicles</div><div style="font-size:11px;color:#111;">${mergedIntel.assocVehicles.join(", ")}</div>`);
+              }
+              lines.push(`</div>`);
+            }
+            // ─────────────────────────────────────────────────────────────────────────
 
             // Rotation slider
             lines.push(`
@@ -945,17 +1032,31 @@ export default function IntelligenceMapping() {
               </div>
             `);
 
-            // Action buttons
-            lines.push(`
-              <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
-                <a href="https://waze.com/ul?ll=${lat},${lng}&navigate=yes" target="_blank" style="font-size:11px;padding:4px 10px;background:#00bcd4;color:#fff;border-radius:4px;text-decoration:none;">Waze</a>
-                <a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}" target="_blank" style="font-size:11px;padding:4px 10px;background:#4285f4;color:#fff;border-radius:4px;text-decoration:none;">Street View</a>
-                <button onclick="window.__editCustomMarker(${cm.id})" style="font-size:11px;padding:4px 10px;background:#16a34a;color:#fff;border-radius:4px;border:none;cursor:pointer;">Edit</button>
-                <button onclick="window.__deleteCustomMarker(${cm.id})" style="font-size:11px;padding:4px 10px;background:#ef4444;color:#fff;border-radius:4px;border:none;cursor:pointer;">Delete</button>
-              </div>
-            `);
+            // Action buttons — combine both sets
+            const btnRow: string[] = [];
+            btnRow.push(`<a href="https://waze.com/ul?ll=${lat},${lng}&navigate=yes" target="_blank" style="font-size:11px;padding:4px 10px;background:#00bcd4;color:#fff;border-radius:4px;text-decoration:none;">Waze</a>`);
+            btnRow.push(`<a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}" target="_blank" style="font-size:11px;padding:4px 10px;background:#4285f4;color:#fff;border-radius:4px;text-decoration:none;">Street View</a>`);
+            // RS Quick Entry button (merged only)
+            if (mergedIntel) {
+              btnRow.push(`<button onclick="window.__cmRsQuickEntry(${cm.id})" style="font-size:11px;padding:4px 10px;background:#6366f1;color:#fff;border-radius:4px;border:none;cursor:pointer;">RS Quick Entry</button>`);
+            }
+            // Intel-specific buttons
+            if (mergedIntel) {
+              const isTarget = mergedIntel.type === "target_address";
+              if (isTarget && mergedIntel.linkedTargets.length > 0) {
+                for (const t of mergedIntel.linkedTargets) {
+                  btnRow.push(`<button onclick="window.__editTargetFromMap(${t.targetId})" style="font-size:11px;padding:4px 10px;background:#16a34a;color:#fff;border-radius:4px;border:none;cursor:pointer;">Edit ${t.name}</button>`);
+                }
+              } else if (!isTarget) {
+                const encodedLabel = encodeURIComponent(mergedIntel.label);
+                btnRow.push(`<a href="/intelligence/location/${encodedLabel}" style="font-size:11px;padding:4px 10px;background:#7c3aed;color:#fff;border-radius:4px;text-decoration:none;">View Profile</a>`);
+              }
+            }
+            btnRow.push(`<button onclick="window.__editCustomMarker(${cm.id})" style="font-size:11px;padding:4px 10px;background:#16a34a;color:#fff;border-radius:4px;border:none;cursor:pointer;">Edit</button>`);
+            btnRow.push(`<button onclick="window.__deleteCustomMarker(${cm.id})" style="font-size:11px;padding:4px 10px;background:#ef4444;color:#fff;border-radius:4px;border:none;cursor:pointer;">Delete</button>`);
+            lines.push(`<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">${btnRow.join("")}</div>`);
 
-            return `<div style="font-family:sans-serif;max-width:260px;color:#111;">${lines.join("")}</div>`;
+            return `<div style="font-family:sans-serif;max-width:280px;color:#111;">${lines.join("")}</div>`;
           };
 
           infoWindowRef.current.setContent(buildPopupHtml(currentRotation));
@@ -965,6 +1066,19 @@ export default function IntelligenceMapping() {
       }
     });
   }, [customMarkers, mapReady]);
+
+  // Global RS Quick Entry handler for merged marker popup
+  useEffect(() => {
+    (window as any).__cmRsQuickEntry = (id: number) => {
+      infoWindowRef.current?.close();
+      const cm = (customMarkers as any[] | undefined)?.find((m: any) => m.id === id);
+      if (!cm) return;
+      const address = cm.address || cm.label || "";
+      setMapQeAddress(convertGoogleAddresses(address));
+      setMapQeOpen(true);
+    };
+    return () => { delete (window as any).__cmRsQuickEntry; };
+  }, [customMarkers, setMapQeAddress, setMapQeOpen]);
 
   // Global inline rotation handler for custom marker popup slider
   useEffect(() => {

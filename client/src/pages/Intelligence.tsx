@@ -943,6 +943,10 @@ export default function IntelligencePage() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo]     = useState("");
 
+  // Sort order
+  type SortOrder = "frequency" | "az" | "za" | "recent" | "oldest";
+  const [sortOrder, setSortOrder] = useState<SortOrder>("frequency");
+
   const dateRange = useMemo(
     () => presetToRange(datePreset, customFrom, customTo),
     [datePreset, customFrom, customTo]
@@ -968,6 +972,32 @@ export default function IntelligencePage() {
       })
       .filter((e) => e.occurrences.length > 0);
   }, [entities, dateRange]);
+
+  // Sort helper: registry entities (all occurrences from operationId=0 / operationName="(Registry)") pinned to bottom
+  const sortedByTab = useMemo(() => {
+    const isRegistryOnly = (e: Entity) =>
+      e.occurrences.length > 0 && e.occurrences.every((o) => o.operationId === 0 || o.operationName === "(Registry)");
+    const getLatestTime = (e: Entity) =>
+      Math.max(...e.occurrences.map((o) => o.timeMinutes ?? 0));
+    const getLatestSheet = (e: Entity) =>
+      e.occurrences.reduce((best, o) => (o.sheetTitle > best ? o.sheetTitle : best), "");
+
+    return (list: Entity[]) => {
+      const registry = list.filter(isRegistryOnly);
+      const normal   = list.filter((e) => !isRegistryOnly(e));
+      const sorted = [...normal].sort((a, b) => {
+        if (sortOrder === "az")      return a.shortForm.localeCompare(b.shortForm);
+        if (sortOrder === "za")      return b.shortForm.localeCompare(a.shortForm);
+        if (sortOrder === "recent")  return getLatestSheet(b).localeCompare(getLatestSheet(a)) || getLatestTime(b) - getLatestTime(a);
+        if (sortOrder === "oldest")  return getLatestSheet(a).localeCompare(getLatestSheet(b)) || getLatestTime(a) - getLatestTime(b);
+        // default: frequency
+        return b.occurrences.length - a.occurrences.length;
+      });
+      // Registry entries sorted A-Z within themselves, always at bottom
+      const sortedRegistry = [...registry].sort((a, b) => a.shortForm.localeCompare(b.shortForm));
+      return [...sorted, ...sortedRegistry];
+    };
+  }, [sortOrder]);
 
   // For entity-type tabs: also apply search + type filter
   const filteredByTab = useMemo(() => {
@@ -1086,16 +1116,40 @@ export default function IntelligencePage() {
           })}
         </div>
 
-        {/* Search bar (shown for entity tabs, not operations) */}
+        {/* Search bar + sort control (shown for entity tabs, not operations) */}
         {activeTab !== "operations" && (
-          <div className="relative mb-5">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              className="pl-9"
-              placeholder="Search entities, descriptions, observations…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+          <div className="space-y-2 mb-5">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                className="pl-9"
+                placeholder="Search entities, descriptions, observations…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-xs text-muted-foreground mr-1">Sort:</span>
+              {([
+                { value: "frequency", label: "Most frequent" },
+                { value: "az",        label: "A → Z" },
+                { value: "za",        label: "Z → A" },
+                { value: "recent",    label: "Most recent" },
+                { value: "oldest",    label: "Oldest first" },
+              ] as const).map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setSortOrder(opt.value)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
+                    sortOrder === opt.value
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-muted/40 text-muted-foreground border-border/60 hover:bg-muted/70"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
@@ -1134,8 +1188,7 @@ export default function IntelligencePage() {
               </div>
             ) : (
               <div className="rounded-xl border border-border/60 overflow-hidden bg-card/50">
-                {filteredByTab
-                  .sort((a, b) => b.occurrences.length - a.occurrences.length)
+                {sortedByTab(filteredByTab)
                   .map((entity, idx) => {
                     const iconColor = entity.isTarget ? TYPE_COLORS.person : TYPE_COLORS[entity.type];
                     const icon = entity.type === "address" || entity.type === "business"

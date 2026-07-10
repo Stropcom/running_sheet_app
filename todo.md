@@ -658,3 +658,13 @@
 ## Google Address Bulk Backfill (Round N)
 - [x] Add bulk backfill tRPC procedure to convert Google-formatted addresses in all existing observation rows to RS format
 - [x] Add "Fix Google Addresses" button in admin/settings area with result summary (rows scanned, rows updated)
+
+## RS Writing Style Checker — Option B (Rule-Based, Fully Local)
+- [ ] DB: add style_guides table (id, name, rawText, uploadedBy, createdAt) and style_rules table (id, ruleType, pattern, suggestion, isActive, sortOrder, createdAt)
+- [ ] Backend: parse uploaded document text into structured writing rules (no names/locations/dates stored)
+- [ ] Backend: tRPC procedures for style guide upload, rule list/update/toggle/delete
+- [ ] Backend: fully local rule-based checker engine — scans observation text against active rules
+- [ ] Frontend: Settings page — style guide upload section with rule management UI
+- [ ] Frontend: "Check Writing" button on running sheet detail page
+- [ ] Frontend: Review panel — side-by-side original vs suggested, diff highlighting, Accept/Reject/Edit per entry
+- [ ] Seed initial rule set extracted from uploaded pro forma PDF

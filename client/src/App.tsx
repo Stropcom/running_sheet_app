@@ -35,6 +35,7 @@ import IntelligenceLocationProfile from "@/pages/IntelligenceLocationProfile";
 import IntelligenceMapping from "@/pages/IntelligenceMapping";
 import DraftSheetPage from "@/pages/DraftSheetPage";
 import { DraftModeBanner } from "@/components/DraftModeBanner";
+import StyleCheckerPage from "@/pages/StyleCheckerPage";
 
 function Router() {
   return (
@@ -70,6 +71,7 @@ function Router() {
       <Route path="/draft/sheet/:localId" component={DraftSheetPage} />
       <Route path="/audit" component={AuditLogPage} />
       <Route path="/admin" component={AdminPage} />
+      <Route path="/style-checker" component={StyleCheckerPage} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

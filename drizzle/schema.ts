@@ -450,3 +450,47 @@ export const userLocations = mysqlTable("user_locations", {
 
 export type UserLocation = typeof userLocations.$inferSelect;
 export type InsertUserLocation = typeof userLocations.$inferInsert;
+
+// ─── Style Guide & Writing Rules ─────────────────────────────────────────────
+// Stores the uploaded pro forma style guide (raw text only — no names/locations
+// are retained) and the extracted writing rules used by the local checker engine.
+
+export const styleGuides = mysqlTable("style_guides", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  uploadedBy: int("uploadedBy").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type StyleGuide = typeof styleGuides.$inferSelect;
+export type InsertStyleGuide = typeof styleGuides.$inferInsert;
+
+export const styleRules = mysqlTable("style_rules", {
+  id: int("id").autoincrement().primaryKey(),
+  guideId: int("guideId").notNull(),
+  ruleType: mysqlEnum("ruleType", [
+    "abbreviation",      // banned abbreviation → full word
+    "phrase_required",   // observation type must contain a required phrase
+    "sentence_start",    // observation must start with a specific pattern
+    "article_missing",   // missing article (the/a/an) before a noun
+    "passive_voice",     // passive voice pattern to flag
+    "tense",             // wrong tense pattern
+    "punctuation",       // missing punctuation (e.g. full stop at end)
+    "capitalisation",    // suburb/place name must be ALL CAPS
+    "custom",            // free-form custom rule
+  ]).notNull(),
+  // What to detect (regex pattern or plain text trigger)
+  pattern: varchar("pattern", { length: 512 }).notNull(),
+  // Human-readable description of the rule
+  description: varchar("description", { length: 512 }).notNull(),
+  // Suggested replacement or correction hint
+  suggestion: varchar("suggestion", { length: 512 }),
+  isActive: boolean("isActive").default(true).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type StyleRule = typeof styleRules.$inferSelect;
+export type InsertStyleRule = typeof styleRules.$inferInsert;

@@ -113,6 +113,10 @@ import {
 } from "./db";
 
 import { generateStatDecDocx } from "./statDecGenerator";
+import { checkObservations, seedInitialRules } from "./styleChecker";
+import { getDb } from "./db";
+import { styleGuides, styleRules } from "../drizzle/schema";
+import { eq, asc } from "drizzle-orm";
 import { generateWipcRequestDocx } from "./wipcRequestGenerator";
 import { vaultEncrypt, vaultDecrypt } from "./wipcVault";
 import {
@@ -2475,6 +2479,83 @@ export const appRouter = router({
         const cin = ctx.user.cin ?? ctx.user.name ?? "unknown";
         await softDeleteCustomMarker(input.id, cin);
         return { success: true };
+      }),
+  }),
+
+  // ─── Style Checker ─────────────────────────────────────────────────────────
+  styleChecker: router({
+    // Get the active style guide and its rules
+    getGuide: protectedProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) return null;
+      const guides = await db.select().from(styleGuides).limit(1);
+      if (guides.length === 0) return null;
+      const guide = guides[0];
+      const rules = await db
+        .select()
+        .from(styleRules)
+        .where(eq(styleRules.guideId, guide.id))
+        .orderBy(asc(styleRules.sortOrder));
+      return { guide, rules };
+    }),
+
+    // Initialise the style guide (creates it and seeds rules if not already done)
+    initGuide: protectedProcedure.mutation(async ({ ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const existing = await db.select().from(styleGuides).limit(1);
+      let guideId: number;
+      if (existing.length === 0) {
+        const result = await db.insert(styleGuides).values({
+          name: "Standard RS Writing Guide",
+          uploadedBy: ctx.user.id,
+        });
+        guideId = (result as any).insertId;
+      } else {
+        guideId = existing[0].id;
+      }
+      await seedInitialRules(guideId);
+      return { guideId };
+    }),
+
+    // Toggle a rule on/off
+    toggleRule: protectedProcedure
+      .input(z.object({ ruleId: z.number(), isActive: z.boolean() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        await db
+          .update(styleRules)
+          .set({ isActive: input.isActive })
+          .where(eq(styleRules.id, input.ruleId));
+        return { success: true };
+      }),
+
+    // Update a rule's suggestion text
+    updateRule: protectedProcedure
+      .input(z.object({
+        ruleId: z.number(),
+        description: z.string().optional(),
+        suggestion: z.string().nullable().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { ruleId, ...rest } = input;
+        await db.update(styleRules).set(rest).where(eq(styleRules.id, ruleId));
+        return { success: true };
+      }),
+
+    // Run the checker on all observations for a given running sheet
+    checkSheet: protectedProcedure
+      .input(z.object({ sheetId: z.number() }))
+      .mutation(async ({ input }) => {
+        const rows = await getRowsBySheetId(input.sheetId);
+        const observations = rows
+          .filter((r) => r.observation && r.observation.trim().length > 0)
+          .map((r) => ({ id: r.id, observation: r.observation ?? "" }));
+        const results = await checkObservations(observations);
+        return results;
       }),
   }),
 

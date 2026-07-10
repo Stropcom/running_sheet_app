@@ -1877,6 +1877,12 @@ export default function IntelligenceMapping() {
                               title: s.description,
                             });
                             addrSearchPinRef.current = pin;
+                            // Clicking the blue pin opens the action chooser
+                            pin.addListener("gmp-click", () => {
+                              const lat2 = loc.lat();
+                              const lng2 = loc.lng();
+                              setActionChooser({ lat: lat2, lng: lng2, address: s.description });
+                            });
                           }
                         });
                       }}
@@ -2403,6 +2409,17 @@ export default function IntelligenceMapping() {
                 <span className="text-[10px] text-muted-foreground text-center leading-tight">Place a custom marker at this business</span>
               </button>
             </div>
+            {/* Navigate with Waze — full-width below the grid */}
+            <a
+              href={`https://waze.com/ul?ll=${poiTap?.lat},${poiTap?.lng}&navigate=yes`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => setPoiTap(null)}
+              className="mt-3 flex items-center justify-center gap-2 w-full rounded-xl border-2 border-cyan-500/40 bg-cyan-500/5 hover:bg-cyan-500/10 active:scale-95 transition-all px-4 py-3"
+            >
+              <Navigation2 className="h-5 w-5 text-cyan-400" />
+              <span className="text-sm font-bold text-foreground">Navigate with Waze</span>
+            </a>
           </div>
         </div>
       )}

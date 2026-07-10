@@ -1336,25 +1336,9 @@ export default function IntelligenceMapping() {
   // ── RS Quick-entry helper ────────────────────────────────────────────────────
   // Helper: start/restart the 30-second countdown + auto-submit timer
   const startInlineCountdown = () => {
-    // Clear existing timers
+    // Countdown/auto-submit removed — no timer
     if (rsInlineTimerRef.current) clearTimeout(rsInlineTimerRef.current);
     if (rsCountdownIntervalRef.current) clearInterval(rsCountdownIntervalRef.current);
-    // Reset countdown display
-    setRsCountdown(30);
-    // Tick every second
-    rsCountdownIntervalRef.current = setInterval(() => {
-      setRsCountdown(prev => {
-        if (prev <= 1) {
-          if (rsCountdownIntervalRef.current) clearInterval(rsCountdownIntervalRef.current);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    // Auto-submit after 30 s
-    rsInlineTimerRef.current = setTimeout(() => {
-      submitInlineField();
-    }, 30000);
   };
 
   const closeInlineField = () => {
@@ -2173,21 +2157,7 @@ export default function IntelligenceMapping() {
                         ))}
                       </div>
                     )}
-                    <div className="flex items-center justify-between gap-2">
-                      {/* Countdown ring */}
-                      <div className="flex items-center gap-1.5">
-                        <svg className="h-5 w-5 -rotate-90" viewBox="0 0 20 20">
-                          <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted-foreground/20" />
-                          <circle
-                            cx="10" cy="10" r="8" fill="none" stroke="currentColor" strokeWidth="2"
-                            strokeDasharray={`${2 * Math.PI * 8}`}
-                            strokeDashoffset={`${2 * Math.PI * 8 * (1 - rsCountdown / 30)}`}
-                            className={rsCountdown <= 10 ? "text-red-400" : "text-primary"}
-                            style={{ transition: "stroke-dashoffset 1s linear" }}
-                          />
-                        </svg>
-                        <span className={`text-[10px] font-mono tabular-nums ${rsCountdown <= 10 ? "text-red-400" : "text-muted-foreground"}`}>{rsCountdown}s</span>
-                      </div>
+                    <div className="flex items-center justify-end gap-2">
                       <button
                         onClick={submitInlineField}
                         disabled={rsAddingRow}
@@ -2789,19 +2759,7 @@ export default function IntelligenceMapping() {
                           ))}
                         </div>
                       )}
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5">
-                          <svg className="h-5 w-5 -rotate-90" viewBox="0 0 20 20">
-                            <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted-foreground/20" />
-                            <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" strokeWidth="2"
-                              strokeDasharray={`${2 * Math.PI * 8}`}
-                              strokeDashoffset={`${2 * Math.PI * 8 * (1 - rsCountdown / 30)}`}
-                              className={rsCountdown <= 10 ? "text-red-400" : "text-primary"}
-                              style={{ transition: "stroke-dashoffset 1s linear" }}
-                            />
-                          </svg>
-                          <span className={`text-[10px] font-mono tabular-nums ${rsCountdown <= 10 ? "text-red-400" : "text-muted-foreground"}`}>{rsCountdown}s</span>
-                        </div>
+                      <div className="flex items-center justify-end gap-2">
                         <button onClick={submitInlineField} disabled={rsAddingRow}
                           className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-[10px] font-semibold text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-50">
                           {rsAddingRow ? <Spinner className="h-3 w-3" /> : <Send className="h-3 w-3" />}

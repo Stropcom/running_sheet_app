@@ -687,17 +687,17 @@ export default function IntelligenceMapping() {
 
     const img = document.createElement("img");
     img.src = getMarkerDataUrl("house_filled", colour);
-    img.style.cssText = `width:30px;height:30px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4));display:block;`;
+    img.style.cssText = `width:40px;height:40px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4));display:block;`;
     el.appendChild(img);
 
     if (count > 0) {
       const badge = document.createElement("div");
       badge.style.cssText = `
-        position:absolute;top:-4px;right:-4px;
+        position:absolute;top:-5px;right:-5px;
         background:${isTarget ? "#dc2626" : "#7c3aed"};
-        color:#fff;font-size:10px;font-weight:700;
-        min-width:16px;height:16px;
-        border-radius:8px;padding:0 3px;
+        color:#fff;font-size:11px;font-weight:700;
+        min-width:18px;height:18px;
+        border-radius:9px;padding:0 3px;
         display:flex;align-items:center;justify-content:center;
         border:1.5px solid #fff;
         box-shadow:0 1px 3px rgba(0,0,0,0.3);
@@ -1007,7 +1007,7 @@ export default function IntelligenceMapping() {
       const dataUrl = getMarkerDataUrl(cm.markerIcon as MarkerIcon, cm.markerColour as MarkerColour);
       const rotation = (cm.rotation ?? 0) as number;
       const el = document.createElement("div");
-      el.style.cssText = "width:30px;height:30px;cursor:pointer;";
+      el.style.cssText = "width:40px;height:40px;cursor:pointer;";
       const img = document.createElement("img");
       img.src = dataUrl;
       img.style.cssText = `width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));transform:rotate(${rotation}deg);`;
@@ -1869,7 +1869,7 @@ export default function IntelligenceMapping() {
                             // Drop a temporary search pin
                             if (addrSearchPinRef.current) { addrSearchPinRef.current.map = null; }
                             const pinEl = document.createElement("div");
-                            pinEl.innerHTML = `<div style="width:28px;height:28px;background:#4285f4;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.35)"></div>`;
+                            pinEl.innerHTML = `<div style="width:36px;height:36px;background:#4285f4;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.35)"></div>`;
                             const pin = new google.maps.marker.AdvancedMarkerElement({
                               map: mapRef.current!,
                               position: loc,
@@ -2248,10 +2248,10 @@ export default function IntelligenceMapping() {
         {/* Permanent: Operations */}
         <button
           onClick={() => setLocation("/")}
-          className="flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-lg hover:bg-white/10 active:scale-95 transition-all min-w-[52px]"
+          className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 rounded-lg hover:bg-white/10 active:scale-95 transition-all min-w-[56px]"
         >
-          <FileText className="h-4 w-4 text-blue-400" />
-          <span className="text-[10px] font-semibold text-blue-300/80 leading-none">Operations</span>
+          <FileText className="h-5 w-5 text-blue-400" />
+          <span className="text-[11px] font-semibold text-blue-300/80 leading-none">Operations</span>
         </button>
 
         <div className="w-px h-6 bg-white/10 mx-0.5" />
@@ -2265,10 +2265,10 @@ export default function IntelligenceMapping() {
             <button
               key={idx}
               onClick={() => setLocation(ql.path)}
-              className="flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-lg hover:bg-white/10 active:scale-95 transition-all min-w-[52px]"
+              className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 rounded-lg hover:bg-white/10 active:scale-95 transition-all min-w-[56px]"
             >
-              <IconComp className={`h-4 w-4 ${iconColour}`} />
-              <span className="text-[10px] font-medium text-white/55 leading-none truncate max-w-[56px]">{ql.label}</span>
+              <IconComp className={`h-5 w-5 ${iconColour}`} />
+              <span className="text-[11px] font-medium text-white/55 leading-none truncate max-w-[60px]">{ql.label}</span>
             </button>
           );
         })}
@@ -2278,11 +2278,11 @@ export default function IntelligenceMapping() {
         {/* Edit button */}
         <button
           onClick={() => setEditingQuickLinks(true)}
-          className="flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-lg hover:bg-white/10 active:scale-95 transition-all min-w-[44px]"
+          className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 rounded-lg hover:bg-white/10 active:scale-95 transition-all min-w-[48px]"
           title="Customise quick links"
         >
-          <Pencil className="h-3.5 w-3.5 text-white/40" />
-          <span className="text-[10px] text-white/35 leading-none">Edit</span>
+          <Pencil className="h-4.5 w-4.5 text-white/40" />
+          <span className="text-[11px] text-white/35 leading-none">Edit</span>
         </button>
       </div>
 

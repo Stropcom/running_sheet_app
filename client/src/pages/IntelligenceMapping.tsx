@@ -1945,8 +1945,8 @@ export default function IntelligenceMapping() {
                         return gen ? gen.expansion as string : null;
                       };
                       const shortcuts: Array<{ label: string; getValue: () => string | null }> = [
-                        { label: "V1", getValue: () => rsTargetData?.v1f ?? rsTargetData?.v1 ?? null },
-                        { label: "V2", getValue: () => rsTargetData?.v2f ?? rsTargetData?.v2 ?? null },
+                        { label: "V1", getValue: () => rsTargetData?.v1 ?? rsTargetData?.v1f ?? null },
+                        { label: "V2", getValue: () => rsTargetData?.v2 ?? rsTargetData?.v2f ?? null },
                         { label: "TGT", getValue: () => rsTargetData?.tgt ?? rsTargetData?.name ?? null },
                         { label: "DSO", getValue: () => findShortcut("dso") ?? "driver and sole occupant" },
                         { label: "CV", getValue: () => findShortcut("cv") ?? "continued via" },
@@ -2551,8 +2551,8 @@ export default function IntelligenceMapping() {
                           return gen ? gen.expansion as string : null;
                         };
                         const shortcuts: Array<{ label: string; getValue: () => string | null }> = [
-                          { label: "V1", getValue: () => rsTargetData?.v1f ?? rsTargetData?.v1 ?? null },
-                          { label: "V2", getValue: () => rsTargetData?.v2f ?? rsTargetData?.v2 ?? null },
+                          { label: "V1", getValue: () => rsTargetData?.v1 ?? rsTargetData?.v1f ?? null },
+                          { label: "V2", getValue: () => rsTargetData?.v2 ?? rsTargetData?.v2f ?? null },
                           { label: "TGT", getValue: () => rsTargetData?.tgt ?? rsTargetData?.name ?? null },
                           { label: "DSO", getValue: () => findShortcut("dso") ?? "driver and sole occupant" },
                           { label: "CV", getValue: () => findShortcut("cv") ?? "continued via" },

@@ -26,7 +26,7 @@ import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useTheme } from "@/contexts/ThemeContext";
 import {
-  FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen, Scale, FolderOpen, ChevronDown, ChevronRight, CalendarDays, Shield, ClipboardCheck as GovIcon, Map, ArrowRightLeft, HelpCircle, Trash2, WifiOff, SpellCheck } from "lucide-react";
+  FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen, Scale, FolderOpen, ChevronDown, ChevronRight, CalendarDays, Shield, ClipboardCheck as GovIcon, Map, ArrowRightLeft, HelpCircle, Trash2, WifiOff } from "lucide-react";
 import React, { CSSProperties, useEffect, useRef, useState } from "react";
 import { useObservationFocus } from "@/contexts/ObservationFocusContext";
 import { useLocation } from "wouter";
@@ -154,7 +154,6 @@ function DashboardLayoutContent({
     { icon: ScrollText, label: "Audit Log", path: "/audit", color: "text-foreground" },
     { icon: WifiOff, label: "Draft Mode", path: "/draft", badge: draftCounts.total > 0 ? draftCounts.total : undefined, color: "text-foreground" },
     { icon: Trash2, label: "Recycle Bin", path: "/recycle-bin", color: "text-foreground" },
-    { icon: SpellCheck, label: "Style Checker", path: "/style-checker", color: "text-foreground" },
     { icon: HelpCircle, label: "Help", path: "/help", color: "text-foreground" },
     { icon: User, label: "My Profile", path: "/profile", color: "text-foreground" },
     ...(user?.role === "admin" ? [

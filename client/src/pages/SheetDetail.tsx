@@ -45,11 +45,6 @@ import {
   ClipboardCheck,
   LockKeyhole,
   LockKeyholeOpen,
-  SpellCheck,
-  CheckCircle,
-  AlertCircle,
-  ChevronDown,
-  ChevronUp,
 } from "lucide-react";
 import {
   Select,
@@ -1684,37 +1679,6 @@ export default function SheetDetail() {
     onError: (e) => toast.error(e.message),
   });
 
-  // ── Style Checker ────────────────────────────────────────────────────────
-  const [styleCheckerOpen, setStyleCheckerOpen] = useState(false);
-  const [styleResults, setStyleResults] = useState<Array<{
-    observationId: number;
-    originalText: string;
-    issues: Array<{ ruleId: number; ruleType: string; description: string; matchedText: string; suggestion: string | null; startIndex: number; endIndex: number }>;
-    suggestedText: string;
-  }>>([]);
-  const [acceptedIds, setAcceptedIds] = useState<Set<number>>(new Set());
-  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
-
-  const checkWriting = trpc.styleChecker.checkSheet.useMutation({
-    onSuccess: (results) => {
-      const withIssues = results.filter((r) => r.issues.length > 0);
-      setStyleResults(withIssues);
-      setAcceptedIds(new Set());
-      setExpandedIds(new Set(withIssues.map((r) => r.observationId)));
-      setStyleCheckerOpen(true);
-      if (withIssues.length === 0) toast.success("No writing issues found — great work!");
-    },
-    onError: (e) => toast.error(e.message || "Style check failed"),
-  });
-
-  const applyStyleFix = trpc.row.update.useMutation({
-    onSuccess: (_, vars) => {
-      setAcceptedIds((prev) => { const next = new Set(prev); next.add(vars.id); return next; });
-      utils.row.list.invalidate({ sheetId });
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
   const [pendingExportType, setPendingExportType] = useState<"pdf" | null>(null);
   const [exportEnabled, setExportEnabled] = useState(false);
   const { data: exportData, isFetching: exportFetching, refetch: refetchExport } = trpc.export.sheetData.useQuery(
@@ -1950,29 +1914,6 @@ export default function SheetDetail() {
                 </Tooltip>
               )
             )}
-            {/* Check Writing button */}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-2"
-                  onClick={() => {
-                    if (!sheetId) return;
-                    checkWriting.mutate({ sheetId });
-                  }}
-                  disabled={checkWriting.isPending}
-                >
-                  {checkWriting.isPending ? (
-                    <><SpellCheck className="w-4 h-4 animate-pulse" /> Checking…</>
-                  ) : (
-                    <><SpellCheck className="w-4 h-4" /> Check Writing</>
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Check observation writing style against the pro forma rules</TooltipContent>
-            </Tooltip>
-
             {/* Export dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -2624,162 +2565,6 @@ export default function SheetDetail() {
             >
               {updateSheet.isPending ? "Saving…" : "Save TEAM"}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* ── Style Checker Review Dialog ─────────────────────────────────── */}
-      <Dialog open={styleCheckerOpen} onOpenChange={setStyleCheckerOpen}>
-        <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <SpellCheck className="w-5 h-5 text-sky-400" />
-              Writing Style Check Results
-            </DialogTitle>
-          </DialogHeader>
-          <div className="text-sm text-muted-foreground mb-2">
-            {styleResults.length === 0
-              ? "No issues found."
-              : `${styleResults.length} observation${styleResults.length !== 1 ? "s" : ""} with writing issues. Review each suggestion and accept or skip.`}
-          </div>
-          <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-            {styleResults.map((result) => {
-              const isAccepted = acceptedIds.has(result.observationId);
-              const isExpanded = expandedIds.has(result.observationId);
-              return (
-                <div
-                  key={result.observationId}
-                  className={`rounded-lg border p-3 transition-opacity ${
-                    isAccepted ? "opacity-50 border-emerald-500/30 bg-emerald-500/5" : "border-border bg-card"
-                  }`}
-                >
-                  {/* Header row */}
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <div className="flex items-center gap-2">
-                      {isAccepted ? (
-                        <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
-                      ) : (
-                        <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
-                      )}
-                      <span className="text-xs font-medium text-muted-foreground">
-                        {result.issues.length} issue{result.issues.length !== 1 ? "s" : ""} found
-                      </span>
-                      <div className="flex flex-wrap gap-1">
-                        {Array.from(new Set(result.issues.map((i) => i.ruleType))).map((rt) => (
-                          <span key={rt} className="text-[10px] px-1.5 py-0.5 rounded bg-muted/50 text-muted-foreground border border-border">
-                            {rt.replace(/_/g, " ")}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                    <button
-                      className="text-muted-foreground hover:text-foreground transition-colors"
-                      onClick={() => setExpandedIds((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(result.observationId)) next.delete(result.observationId);
-                        else next.add(result.observationId);
-                        return next;
-                      })}
-                    >
-                      {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                    </button>
-                  </div>
-
-                  {isExpanded && (
-                    <div className="space-y-2">
-                      {/* Side by side */}
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">Original</div>
-                          <div className="text-xs bg-muted/30 rounded p-2 text-foreground/80 leading-relaxed">
-                            {result.originalText}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-[10px] font-medium text-sky-400 uppercase tracking-wide mb-1">Suggested</div>
-                          <div className="text-xs bg-sky-500/5 border border-sky-500/20 rounded p-2 text-foreground leading-relaxed">
-                            {result.suggestedText}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Issues list */}
-                      <div className="space-y-1">
-                        {result.issues.map((issue, idx) => (
-                          <div key={idx} className="text-xs flex items-start gap-2 text-muted-foreground">
-                            <span className="text-amber-400 mt-0.5">•</span>
-                            <span>
-                              <span className="font-medium text-foreground">{issue.description}</span>
-                              {issue.matchedText && (
-                                <> — found: <code className="bg-muted/50 px-1 rounded font-mono">{issue.matchedText}</code></>
-                              )}
-                              {issue.suggestion && (
-                                <> → <span className="text-sky-400">{issue.suggestion}</span></>
-                              )}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Actions */}
-                      {!isAccepted && (
-                        <div className="flex gap-2 pt-1">
-                          <Button
-                            size="sm"
-                            className="gap-1.5 text-xs h-7 bg-emerald-600 hover:bg-emerald-700 text-white"
-                            onClick={() =>
-                              applyStyleFix.mutate({
-                                id: result.observationId,
-                                observation: result.suggestedText,
-                              })
-                            }
-                            disabled={applyStyleFix.isPending}
-                          >
-                            <CheckCircle className="w-3.5 h-3.5" />
-                            Accept suggestion
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="gap-1.5 text-xs h-7"
-                            onClick={() =>
-                              setAcceptedIds((prev) => { const next = new Set(prev); next.add(result.observationId); return next; })
-                            }
-                          >
-                            Skip
-                          </Button>
-                        </div>
-                      )}
-                      {isAccepted && (
-                        <div className="flex items-center gap-1.5 text-xs text-emerald-400 pt-1">
-                          <CheckCircle className="w-3.5 h-3.5" />
-                          Applied
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          <DialogFooter className="pt-3">
-            <Button variant="outline" onClick={() => setStyleCheckerOpen(false)}>Close</Button>
-            {styleResults.length > 0 && (
-              <Button
-                onClick={() => {
-                  // Accept all remaining
-                  const pending = styleResults.filter((r) => !acceptedIds.has(r.observationId));
-                  pending.forEach((r) =>
-                    applyStyleFix.mutate({ id: r.observationId, observation: r.suggestedText })
-                  );
-                }}
-                disabled={applyStyleFix.isPending || styleResults.every((r) => acceptedIds.has(r.observationId))}
-                className="gap-2"
-              >
-                <CheckCircle className="w-4 h-4" />
-                Accept All
-              </Button>
-            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

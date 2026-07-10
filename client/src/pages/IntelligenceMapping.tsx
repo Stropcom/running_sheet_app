@@ -2488,6 +2488,17 @@ export default function IntelligenceMapping() {
                 </button>
               )}
             </div>
+            {/* Navigate with Waze — full-width below the grid */}
+            <a
+              href={`https://waze.com/ul?ll=${actionChooser?.lat},${actionChooser?.lng}&navigate=yes`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => setActionChooser(null)}
+              className="mt-3 flex items-center justify-center gap-2 w-full rounded-xl border-2 border-cyan-500/40 bg-cyan-500/5 hover:bg-cyan-500/10 active:scale-95 transition-all px-4 py-3"
+            >
+              <Navigation2 className="h-5 w-5 text-cyan-400" />
+              <span className="text-sm font-bold text-foreground">Navigate with Waze</span>
+            </a>
           </div>
         </div>
       )}

@@ -905,6 +905,8 @@ export async function ensureDefaultShortcuts(systemUserId: number) {
     { trigger: 'coos', expansion: 'Continued out of sight' },
     { trigger: 'pt',   expansion: 'PHOTOGRAPH/S TAKEN' },
     { trigger: 'dso',  expansion: 'driver and sole occupant' },
+    { trigger: 'd',    expansion: 'departed and' },
+    { trigger: 'ar',   expansion: 'arrived and' },
   ];
   const existing = await db.select({ trigger: shortcuts.trigger }).from(shortcuts);
   const existingTriggers = new Set(existing.map((s) => s.trigger.toLowerCase()));

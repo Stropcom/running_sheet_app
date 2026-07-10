@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getMarkerDataUrl, getMarkerSvg, MARKER_COLOURS, MARKER_COLOUR_LABELS, MARKER_ICON_GROUPS, MARKER_ICON_LABELS, type MarkerColour, type MarkerIcon } from "@/lib/markerSvgs";
+import { convertGoogleAddresses } from "@/lib/addressFormat";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -1876,7 +1877,7 @@ export default function IntelligenceMapping() {
               {/* RS Quick Entry — always shown */}
               <button
                 onClick={() => {
-                  setMapQeAddress(actionChooser.address);
+                  setMapQeAddress(convertGoogleAddresses(actionChooser.address));
                   setMapQeOpen(true);
                   setActionChooser(null);
                 }}

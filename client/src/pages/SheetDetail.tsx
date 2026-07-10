@@ -55,6 +55,7 @@ import {
 } from "@/components/ui/select";
 import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useObservationFocus } from "@/contexts/ObservationFocusContext";
+import { convertGoogleAddresses } from "@/lib/addressFormat";
 import {
   DndContext,
   closestCenter,
@@ -1073,8 +1074,21 @@ function EditableCell({
           autoFocus
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
+          onPaste={(e) => {
+            // Auto-convert Google Maps addresses pasted into the observation field
+            const pasted = e.clipboardData.getData("text");
+            const converted = convertGoogleAddresses(pasted);
+            if (converted !== pasted) {
+              e.preventDefault();
+              const ta = e.currentTarget;
+              const start = ta.selectionStart ?? draft.length;
+              const end = ta.selectionEnd ?? draft.length;
+              const newText = draft.slice(0, start) + converted + draft.slice(end);
+              setDraft(newText);
+            }
+          }}
           onFocus={notifyObservationFocus}
-          onBlur={() => { notifyObservationBlur(); commit(); }}
+          onBlur={() => { notifyObservationBlur(); const conv = convertGoogleAddresses(draft); if (conv !== draft) setDraft(conv); commit(); }}
           onKeyDown={(e) => {
             handleShortcutKeyDown(e as React.KeyboardEvent<HTMLTextAreaElement>);
             if (e.key === "Escape") { setDraft(value ?? ""); setEditing(false); }

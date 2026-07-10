@@ -636,3 +636,12 @@
 - [ ] Fix single-tap map icon popup text to black (currently hard to read)
 - [x] Differentiate action chooser for intel markers (target address / observation): show "RS Quick Entry" + "Intel" (opens existing info popup, data untouched) instead of "RS Quick Entry" + "Marker"
 - [x] Blank map tap-and-hold continues to show "RS Quick Entry" + "Marker" as before
+
+## Google Address Auto-Conversion (Round 57)
+- [x] Build convertGoogleAddresses() utility in client/src/lib/addressFormat.ts
+- [x] Auto-convert Google Maps addresses on paste in running sheet observation textarea (SheetDetail.tsx)
+- [x] Auto-convert Google Maps addresses on blur in running sheet observation textarea (SheetDetail.tsx)
+- [x] Preserve leading business name when converting (e.g. "McDonald's, 131 Lakey St...")
+- [x] Strip postcode and ", Australia" suffix in converted address
+- [x] Append bracket code in UPPERCASE at end (e.g. "(131 LAKEY ST)")
+- [x] Wire convertGoogleAddresses into mapQeAddress pre-fill in IntelligenceMapping.tsx

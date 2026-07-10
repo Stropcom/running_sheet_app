@@ -417,6 +417,7 @@ export const customMapMarkers = mysqlTable("custom_map_markers", {
   assocPersons: text("assocPersons"),             // JSON array of person label strings
   assocVehicles: text("assocVehicles"),           // JSON array of vehicle label strings
   rotation: int("rotation").default(0).notNull(), // degrees 0-359
+  linkedIntelLabel: varchar("linkedIntelLabel", { length: 512 }), // manually merged intel pin label (null = no merge)
   deletedAt: bigint("deletedAt", { mode: "number" }),  // soft-delete timestamp
   deletedByCIN: varchar("deletedByCIN", { length: 32 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

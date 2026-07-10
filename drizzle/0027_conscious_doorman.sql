@@ -1,0 +1,1 @@
+ALTER TABLE `custom_map_markers` ADD `linkedIntelLabel` varchar(512);

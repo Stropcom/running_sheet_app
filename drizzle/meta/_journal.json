@@ -190,6 +190,13 @@
       "when": 1783607370311,
       "tag": "0026_known_maginty",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "5",
+      "when": 1783668995174,
+      "tag": "0027_conscious_doorman",
+      "breakpoints": true
     }
   ]
 }

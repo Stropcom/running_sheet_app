@@ -3415,6 +3415,7 @@ export interface CustomMarkerRow {
   assocPersons: string[];   // parsed from JSON
   assocVehicles: string[];  // parsed from JSON
   rotation: number;
+  linkedIntelLabel: string | null;
   deletedAt: number | null;
   deletedByCIN: string | null;
   createdAt: Date;
@@ -3426,7 +3427,7 @@ function parseMarkerRow(row: CustomMapMarker): CustomMarkerRow {
   let vehicles: string[] = [];
   try { persons = JSON.parse(row.assocPersons || "[]"); } catch { persons = []; }
   try { vehicles = JSON.parse(row.assocVehicles || "[]"); } catch { vehicles = []; }
-  return { ...row, assocPersons: persons, assocVehicles: vehicles, rotation: row.rotation ?? 0, deletedAt: row.deletedAt ?? null, deletedByCIN: row.deletedByCIN ?? null };
+  return { ...row, assocPersons: persons, assocVehicles: vehicles, rotation: row.rotation ?? 0, linkedIntelLabel: row.linkedIntelLabel ?? null, deletedAt: row.deletedAt ?? null, deletedByCIN: row.deletedByCIN ?? null };
 }
 
 export async function getCustomMarkers(operationIds?: number[]): Promise<CustomMarkerRow[]> {
@@ -3508,6 +3509,7 @@ export async function updateCustomMarker(id: number, data: {
   if (data.assocPersons !== undefined) update.assocPersons = JSON.stringify(data.assocPersons);
   if (data.assocVehicles !== undefined) update.assocVehicles = JSON.stringify(data.assocVehicles);
   if ((data as any).rotation !== undefined) (update as any).rotation = (data as any).rotation;
+  if ((data as any).linkedIntelLabel !== undefined) (update as any).linkedIntelLabel = (data as any).linkedIntelLabel;
   if (Object.keys(update).length > 0) {
     await db.update(customMapMarkers).set(update).where(eq(customMapMarkers.id, id));
   }

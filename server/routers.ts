@@ -2461,6 +2461,7 @@ export const appRouter = router({
         assocPersons: z.array(z.string()).optional(),
         assocVehicles: z.array(z.string()).optional(),
         rotation: z.number().min(0).max(359).optional(),
+        linkedIntelLabel: z.string().optional().nullable(),
       }))
       .mutation(async ({ input }) => {
         const { id, ...rest } = input;

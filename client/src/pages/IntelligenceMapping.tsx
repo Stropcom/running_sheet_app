@@ -796,7 +796,28 @@ export default function IntelligenceMapping() {
         const pos = results[0].geometry.location;
         placeMarker(loc, { lat: pos.lat(), lng: pos.lng() });
       }
-      geocodeTimerRef.current = setTimeout(geocodeNext, 50);
+      // Check if this was the last item in the queue
+      const isLast = geocodeIndexRef.current >= geocodeQueueRef.current.length;
+      if (isLast) {
+        // Restore persisted linkedIntelLabel merges for custom markers that have one saved
+        const allIntel = geocodedIntelRef.current;
+        customMarkersDataRef.current.forEach((cm: any) => {
+          if (cm.linkedIntelLabel && !mergedIntelRef.current.has(cm.id)) {
+            const entry = allIntel.get(cm.linkedIntelLabel);
+            if (entry) {
+              // Remove the intel pin from the map and merge its data into the custom marker
+              const pinIdx = markersRef.current.findIndex((m: any) => m.title === cm.linkedIntelLabel);
+              if (pinIdx !== -1) {
+                markersRef.current[pinIdx].map = null;
+                markersRef.current.splice(pinIdx, 1);
+              }
+              mergedIntelRef.current.set(cm.id, { ...entry.loc, lat: entry.position.lat, lng: entry.position.lng });
+            }
+          }
+        });
+      } else {
+        geocodeTimerRef.current = setTimeout(geocodeNext, 50);
+      }
     });
   }, [placeMarker]);
 
@@ -819,6 +840,8 @@ export default function IntelligenceMapping() {
   }, [customMarkers]);
 
   // Re-render location markers when locations change
+  // After geocoding completes, persisted linkedIntelLabel merges are restored in a second pass
+  // (see the geocodeNext callback which calls restorePersistedMerges after the queue drains)
   useEffect(() => {
     if (locations && mapRef.current && geocoderRef.current) {
       mergedIntelRef.current.clear();
@@ -2291,6 +2314,8 @@ export default function IntelligenceMapping() {
                       }
                       // Also remove from geocodedIntelRef so it doesn't show in future merge pickers
                       geocodedIntelRef.current.delete(c.loc.label);
+                      // Persist the merge to the database so it survives page reloads
+                      updateCustomMarkerMut.mutate({ id: manualMergePicker.cmId, linkedIntelLabel: c.loc.label });
                       setManualMergePicker(null);
                     }}
                     className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/30 hover:bg-muted/60 active:scale-[0.98] transition-all px-4 py-3 text-left"

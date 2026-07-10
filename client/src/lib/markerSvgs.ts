@@ -80,21 +80,30 @@ export function getMarkerSvg(icon: MarkerIcon, colour: MarkerColour): string {
       </svg>`;
 
     case "sedan":
+      // Top-down (bird's eye) view of a sedan
       return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
-        <!-- Body -->
-        <rect x="6" y="18" width="36" height="16" rx="4" fill="${c}"/>
-        <!-- Roof -->
-        <rect x="13" y="10" width="22" height="12" rx="4" fill="${dark}"/>
-        <!-- Windscreen -->
-        <rect x="14" y="11" width="20" height="10" rx="2" fill="${light}" opacity="0.7"/>
-        <!-- Wheels -->
-        <circle cx="13" cy="34" r="5" fill="#222"/>
-        <circle cx="13" cy="34" r="2.5" fill="#555"/>
-        <circle cx="35" cy="34" r="5" fill="#222"/>
-        <circle cx="35" cy="34" r="2.5" fill="#555"/>
-        <!-- Headlights -->
-        <rect x="6" y="20" width="4" height="3" rx="1" fill="#FFF9C4"/>
-        <rect x="38" y="20" width="4" height="3" rx="1" fill="#FFF9C4"/>
+        <!-- Car body outline (top-down) -->
+        <rect x="10" y="5" width="28" height="38" rx="8" fill="${c}" stroke="${dark}" stroke-width="1.5"/>
+        <!-- Roof panel (darker centre rectangle) -->
+        <rect x="13" y="14" width="22" height="20" rx="4" fill="${dark}" opacity="0.55"/>
+        <!-- Front windscreen -->
+        <rect x="13" y="8" width="22" height="8" rx="3" fill="${light}" opacity="0.75"/>
+        <!-- Rear windscreen -->
+        <rect x="13" y="32" width="22" height="8" rx="3" fill="${light}" opacity="0.55"/>
+        <!-- Front-left wheel -->
+        <rect x="5" y="8" width="7" height="10" rx="3" fill="#222"/>
+        <!-- Front-right wheel -->
+        <rect x="36" y="8" width="7" height="10" rx="3" fill="#222"/>
+        <!-- Rear-left wheel -->
+        <rect x="5" y="30" width="7" height="10" rx="3" fill="#222"/>
+        <!-- Rear-right wheel -->
+        <rect x="36" y="30" width="7" height="10" rx="3" fill="#222"/>
+        <!-- Headlights (front) -->
+        <rect x="14" y="5" width="7" height="3" rx="1" fill="#FFF9C4" opacity="0.9"/>
+        <rect x="27" y="5" width="7" height="3" rx="1" fill="#FFF9C4" opacity="0.9"/>
+        <!-- Tail lights (rear) -->
+        <rect x="14" y="40" width="7" height="3" rx="1" fill="#ef4444" opacity="0.85"/>
+        <rect x="27" y="40" width="7" height="3" rx="1" fill="#ef4444" opacity="0.85"/>
       </svg>`;
 
     case "arrow_up":

@@ -353,6 +353,13 @@ export default function IntelligenceMapping() {
   const mergedIntelRef = useRef<Map<number, IntelMapLocation>>(new Map());
   // Latest custom markers data ref — kept in sync so placeMarker can access it without stale closure
   const customMarkersDataRef = useRef<any[]>([]);
+  // All geocoded intel locations (label → {loc, position}) for manual merge lookup
+  const geocodedIntelRef = useRef<Map<string, { loc: IntelMapLocation; position: google.maps.LatLngLiteral }>>(new Map());
+  // Manual merge picker state: which custom marker is being merged, and nearby intel candidates
+  const [manualMergePicker, setManualMergePicker] = useState<{
+    cmId: number;
+    candidates: Array<{ loc: IntelMapLocation; position: google.maps.LatLngLiteral; distanceM: number }>;
+  } | null>(null);
 
   // Map state
   const [mapReady, setMapReady] = useState(false);
@@ -736,22 +743,24 @@ export default function IntelligenceMapping() {
   const placeMarker = useCallback((loc: IntelMapLocation, position: google.maps.LatLngLiteral) => {
     if (!mapRef.current) return;
 
-    // ── Smart merge / suppress: check if any custom marker is within 40m ──────────────
+    // ── Smart merge: only merge/suppress when a HOUSE-type custom marker is within 40m ──
+    // Non-house markers (cars, arrows, cameras, etc.) let the intel pin render normally.
     const HOUSE_ICONS: string[] = ["house_outline", "house_filled"];
     const MERGE_RADIUS_M = 40;
-    const nearbyCm = customMarkersDataRef.current.find((cm: any) =>
+    const nearbyHouseCm = customMarkersDataRef.current.find((cm: any) =>
+      HOUSE_ICONS.includes(cm.markerIcon) &&
       haversineMetres(position.lat, position.lng, cm.lat, cm.lng) <= MERGE_RADIUS_M
     );
 
-    if (nearbyCm) {
-      // If the nearby marker is a house type, merge intel data into its popup
-      if (HOUSE_ICONS.includes(nearbyCm.markerIcon)) {
-        const enriched = { ...loc, lat: position.lat, lng: position.lng };
-        mergedIntelRef.current.set(nearbyCm.id, enriched);
-      }
-      // For any custom marker type within 40m: suppress the intel pin (no doubling)
-      return;
+    if (nearbyHouseCm) {
+      // Merge intel data into the house custom marker's popup and suppress the intel pin
+      const enriched = { ...loc, lat: position.lat, lng: position.lng };
+      mergedIntelRef.current.set(nearbyHouseCm.id, enriched);
+      return; // suppress intel pin — the house marker absorbs it
     }
+
+    // Store geocoded position for manual merge lookup (all non-suppressed intel pins)
+    geocodedIntelRef.current.set(loc.label, { loc, position });
     // ────────────────────────────────────────────────────────────────────────────────
 
     const pinEl = createPinElement(loc);
@@ -793,6 +802,7 @@ export default function IntelligenceMapping() {
 
   const renderLocations = useCallback((locs: IntelMapLocation[]) => {
     clearMarkers();
+    geocodedIntelRef.current.clear(); // reset geocoded positions so manual merge sees fresh data
     if (!locs || locs.length === 0 || !geocoderRef.current) return;
     geocodeQueueRef.current = locs;
     geocodeIndexRef.current = 0;
@@ -1033,29 +1043,46 @@ export default function IntelligenceMapping() {
               </div>
             `);
 
-            // Action buttons — combine both sets
-            const btnRow: string[] = [];
-            btnRow.push(`<a href="https://waze.com/ul?ll=${lat},${lng}&navigate=yes" target="_blank" style="font-size:11px;padding:4px 10px;background:#00bcd4;color:#fff;border-radius:4px;text-decoration:none;">Waze</a>`);
-            btnRow.push(`<a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}" target="_blank" style="font-size:11px;padding:4px 10px;background:#4285f4;color:#fff;border-radius:4px;text-decoration:none;">Street View</a>`);
-            // RS Quick Entry button (merged only)
+            // ── Action buttons: symmetric grid layout ─────────────────────────────
+            const btnBase = "font-size:12px;font-weight:600;padding:7px 0;border-radius:6px;cursor:pointer;text-align:center;text-decoration:none;display:block;width:100%;box-sizing:border-box;";
+            const sections: string[] = [];
+
+            // Row 1: Intel actions (full-width, larger) — only in merged mode
             if (mergedIntel) {
-              btnRow.push(`<button onclick="window.__cmRsQuickEntry(${cm.id})" style="font-size:11px;padding:4px 10px;background:#6366f1;color:#fff;border-radius:4px;border:none;cursor:pointer;">RS Quick Entry</button>`);
-            }
-            // Intel-specific buttons
-            if (mergedIntel) {
+              const intelBtns: string[] = [];
+              intelBtns.push(`<button onclick="window.__cmRsQuickEntry(${cm.id})" style="${btnBase}background:#6366f1;color:#fff;border:none;font-size:13px;padding:9px 0;">RS Quick Entry</button>`);
               const isTarget = mergedIntel.type === "target_address";
               if (isTarget && mergedIntel.linkedTargets.length > 0) {
                 for (const t of mergedIntel.linkedTargets) {
-                  btnRow.push(`<button onclick="window.__editTargetFromMap(${t.targetId})" style="font-size:11px;padding:4px 10px;background:#16a34a;color:#fff;border-radius:4px;border:none;cursor:pointer;">Edit ${t.name}</button>`);
+                  intelBtns.push(`<button onclick="window.__editTargetFromMap(${t.targetId})" style="${btnBase}background:#0f766e;color:#fff;border:none;font-size:13px;padding:9px 0;">Edit ${t.name}</button>`);
                 }
               } else if (!isTarget) {
                 const encodedLabel = encodeURIComponent(mergedIntel.label);
-                btnRow.push(`<a href="/intelligence/location/${encodedLabel}" style="font-size:11px;padding:4px 10px;background:#7c3aed;color:#fff;border-radius:4px;text-decoration:none;">View Profile</a>`);
+                intelBtns.push(`<a href="/intelligence/location/${encodedLabel}" style="${btnBase}background:#7c3aed;color:#fff;font-size:13px;padding:9px 0;">View Profile</a>`);
               }
+              sections.push(`<div style="display:grid;grid-template-columns:1fr;gap:5px;margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;">${intelBtns.join("")}</div>`);
             }
-            btnRow.push(`<button onclick="window.__editCustomMarker(${cm.id})" style="font-size:11px;padding:4px 10px;background:#16a34a;color:#fff;border-radius:4px;border:none;cursor:pointer;">Edit</button>`);
-            btnRow.push(`<button onclick="window.__deleteCustomMarker(${cm.id})" style="font-size:11px;padding:4px 10px;background:#ef4444;color:#fff;border-radius:4px;border:none;cursor:pointer;">Delete</button>`);
-            lines.push(`<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">${btnRow.join("")}</div>`);
+
+            // Row 2: Navigation — Waze | Street View (2 columns)
+            const navBtns = [
+              `<a href="https://waze.com/ul?ll=${lat},${lng}&navigate=yes" target="_blank" style="${btnBase}background:#00bcd4;color:#fff;">Waze</a>`,
+              `<a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}" target="_blank" style="${btnBase}background:#4285f4;color:#fff;">Street View</a>`,
+            ];
+            sections.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:${mergedIntel ? '6' : '10'}px;${!mergedIntel ? 'padding-top:8px;border-top:1px solid #e5e7eb;' : ''}">${navBtns.join("")}</div>`);
+
+            // Row 3: Edit | Delete (2 columns)
+            const editBtns = [
+              `<button onclick="window.__editCustomMarker(${cm.id})" style="${btnBase}background:#16a34a;color:#fff;border:none;">Edit</button>`,
+              `<button onclick="window.__deleteCustomMarker(${cm.id})" style="${btnBase}background:#ef4444;color:#fff;border:none;">Delete</button>`,
+            ];
+            sections.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;">${editBtns.join("")}</div>`);
+
+            // Row 4: Manual merge button (only when not already auto-merged)
+            if (!mergedIntel) {
+              sections.push(`<div style="margin-top:5px;"><button onclick="window.__cmOpenMergePicker(${cm.id})" style="${btnBase}background:#78716c;color:#fff;border:none;font-size:11px;padding:6px 0;">Merge with Intel Pin…</button></div>`);
+            }
+
+            lines.push(sections.join(""));
 
             return `<div style="font-family:sans-serif;max-width:280px;color:#111;">${lines.join("")}</div>`;
           };
@@ -1080,6 +1107,27 @@ export default function IntelligenceMapping() {
     };
     return () => { delete (window as any).__cmRsQuickEntry; };
   }, [customMarkers, setMapQeAddress, setMapQeOpen]);
+
+  // Global manual merge picker handler — opens the merge picker bottom sheet
+  useEffect(() => {
+    (window as any).__cmOpenMergePicker = (id: number) => {
+      infoWindowRef.current?.close();
+      const cm = (customMarkersDataRef.current as any[]).find((m: any) => m.id === id);
+      if (!cm) return;
+      // Find all geocoded intel pins within 150m of this custom marker
+      const MANUAL_MERGE_RADIUS_M = 150;
+      const candidates: Array<{ loc: IntelMapLocation; position: google.maps.LatLngLiteral; distanceM: number }> = [];
+      geocodedIntelRef.current.forEach(({ loc, position }) => {
+        const d = haversineMetres(cm.lat, cm.lng, position.lat, position.lng);
+        if (d <= MANUAL_MERGE_RADIUS_M) {
+          candidates.push({ loc, position, distanceM: Math.round(d) });
+        }
+      });
+      candidates.sort((a, b) => a.distanceM - b.distanceM);
+      setManualMergePicker({ cmId: id, candidates });
+    };
+    return () => { delete (window as any).__cmOpenMergePicker; };
+  }, []);
 
   // Global inline rotation handler for custom marker popup slider
   useEffect(() => {
@@ -2191,6 +2239,76 @@ export default function IntelligenceMapping() {
                 </button>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Manual Merge Picker ── */}
+      {manualMergePicker && (
+        <div
+          className="absolute inset-0 z-40 flex items-end justify-center"
+          style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(3px)" }}
+          onClick={() => setManualMergePicker(null)}
+        >
+          <div
+            className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8 max-h-[80vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-0.5">Manual Merge</p>
+                <p className="text-sm font-semibold text-foreground">Select an Intel Pin to merge with</p>
+              </div>
+              <button onClick={() => setManualMergePicker(null)} className="ml-3 text-muted-foreground hover:text-foreground flex-shrink-0">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            {manualMergePicker.candidates.length === 0 ? (
+              <div className="text-center py-6">
+                <p className="text-sm text-muted-foreground">No intel pins found within 150m of this marker.</p>
+                <p className="text-xs text-muted-foreground mt-1">Intel pins must be visible on the map (not already merged) to appear here.</p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {manualMergePicker.candidates.map((c) => (
+                  <button
+                    key={c.loc.label}
+                    onClick={() => {
+                      // Perform the merge: store intel data on the custom marker, remove the intel pin from the map
+                      const enriched = { ...c.loc, lat: c.position.lat, lng: c.position.lng };
+                      mergedIntelRef.current.set(manualMergePicker.cmId, enriched);
+                      // Remove the intel pin from the map
+                      const pinIdx = markersRef.current.findIndex((m) => {
+                        const pos = m.position as google.maps.LatLng | google.maps.LatLngLiteral | null;
+                        if (!pos) return false;
+                        const lat = typeof (pos as any).lat === 'function' ? (pos as any).lat() : (pos as any).lat;
+                        const lng = typeof (pos as any).lng === 'function' ? (pos as any).lng() : (pos as any).lng;
+                        return Math.abs(lat - c.position.lat) < 0.00001 && Math.abs(lng - c.position.lng) < 0.00001;
+                      });
+                      if (pinIdx !== -1) {
+                        markersRef.current[pinIdx].map = null;
+                        markersRef.current.splice(pinIdx, 1);
+                      }
+                      // Also remove from geocodedIntelRef so it doesn't show in future merge pickers
+                      geocodedIntelRef.current.delete(c.loc.label);
+                      setManualMergePicker(null);
+                    }}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/30 hover:bg-muted/60 active:scale-[0.98] transition-all px-4 py-3 text-left"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-0.5">
+                        {c.loc.type === "target_address" ? "Target Address" : "Observed Location"}
+                      </p>
+                      <p className="text-sm font-semibold text-foreground truncate">{c.loc.label}</p>
+                      {c.loc.linkedTargets?.length > 0 && (
+                        <p className="text-xs text-muted-foreground mt-0.5">{c.loc.linkedTargets.map((t: any) => t.name).join(", ")}</p>
+                      )}
+                    </div>
+                    <span className="text-xs text-muted-foreground flex-shrink-0">{c.distanceM}m away</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

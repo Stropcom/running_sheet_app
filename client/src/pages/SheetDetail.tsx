@@ -2054,36 +2054,34 @@ export default function SheetDetail() {
           const hasAnyField = fields.some((f) => f.value);
           return (
             <div className="mb-4 rounded-lg border border-border bg-card/60 overflow-hidden">
-              {/* Header — always visible, tap to collapse/expand */}
-              <button
-                className="w-full flex items-center gap-2 px-4 py-3 hover:bg-muted/20 active:bg-muted/30 transition-colors select-none text-left"
-                onClick={() => setTargetPanelExpanded(v => {
-                  const next = !v;
-                  try { localStorage.setItem("runsheet_target_panel_expanded", String(next)); } catch {}
-                  return next;
-                })}
-              >
-                <Target className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex-1">TARGET — {t.name}</span>
-                <ChevronDown
-                  className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 ${targetPanelExpanded ? "" : "-rotate-90"}`}
-                />
-              </button>
+              {/* Header — always visible. Tapping the main area toggles collapse; pencil navigates to edit */}
+              <div className="flex items-center">
+                <button
+                  className="flex-1 flex items-center gap-2 px-4 py-3 hover:bg-muted/20 active:bg-muted/30 transition-colors select-none text-left min-w-0"
+                  onClick={() => setTargetPanelExpanded(v => {
+                    const next = !v;
+                    try { localStorage.setItem("runsheet_target_panel_expanded", String(next)); } catch {}
+                    return next;
+                  })}
+                >
+                  <Target className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground truncate flex-1">TARGET — {t.name}</span>
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 shrink-0 ${targetPanelExpanded ? "" : "-rotate-90"}`}
+                  />
+                </button>
+                {/* Edit pencil — independent tap zone, doesn't trigger collapse */}
+                <button
+                  className="px-3 py-3 text-muted-foreground hover:text-foreground active:scale-95 transition-all shrink-0 border-l border-border/30"
+                  onClick={() => navigate(`/operation/${sheet!.operationId}?tab=target&targetId=${t.id}&fromSheet=${sheetId}`)}
+                  title="Edit Target"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+              </div>
               {/* Collapsible details */}
               {targetPanelExpanded && (
                 <div className="px-4 pb-3 border-t border-border/40">
-                  <div className="flex items-center justify-end pt-2 mb-2">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="gap-1.5 text-xs text-muted-foreground hover:text-foreground h-7 px-2"
-                      onClick={(e) => { e.stopPropagation(); navigate(`/operation/${sheet!.operationId}?tab=target&targetId=${t.id}&fromSheet=${sheetId}`); }}
-                      title="Edit Target"
-                    >
-                      <Pencil className="w-3 h-3" />
-                      Edit
-                    </Button>
-                  </div>
                   {hasAnyField && (
                     <div className="flex flex-wrap gap-x-6 gap-y-1">
                       {fields.filter((f) => f.value).map((f) => {

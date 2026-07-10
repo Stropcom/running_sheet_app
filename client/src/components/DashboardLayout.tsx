@@ -518,17 +518,17 @@ function DashboardLayoutContent({
           <div className="flex border-b border-border h-14 items-center justify-between bg-background/95 px-3 backdrop-blur sticky top-0 z-40">
             <div className="flex items-center gap-2">
               <SidebarTrigger className="h-9 w-9 rounded-lg" />
-              <span className="text-sm font-medium text-foreground">
+              <span className="text-base font-semibold text-foreground">
                 {activeMenuItem?.label ?? "Running Sheet"}
               </span>
             </div>
             {location !== "/intelligence/mapping" && (
               <button
                 onClick={() => setLocation("/intelligence/mapping")}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-base font-semibold text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
                 title="Back to Map"
               >
-                <Network className="h-3.5 w-3.5" />
+                <Network className="h-5 w-5" />
                 <span>Map</span>
               </button>
             )}

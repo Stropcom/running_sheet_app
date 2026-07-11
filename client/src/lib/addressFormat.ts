@@ -258,7 +258,11 @@ export function formatIntelVehicle(shortForm: string, fullObservation?: string):
     if (descMatch) {
       const rawDesc = descMatch[1].trim();
       // Clean up: remove leading "a " or "A "
-      const desc = rawDesc.replace(/^[aA]\s+/, "").trim();
+      // Also strip shortcut prefixes like "V1F:", "V2F:", "V1:", "V2:"
+      const desc = rawDesc
+        .replace(/^[aA]\s+/, "")
+        .replace(/^V\d[A-Z]?:\s*/i, "")
+        .trim();
       if (desc && desc.toLowerCase() !== "vehicle") {
         return `${rego} ${desc}`;
       }

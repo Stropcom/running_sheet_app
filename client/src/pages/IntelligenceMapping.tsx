@@ -1014,7 +1014,9 @@ export default function IntelligenceMapping() {
       const secondaryLocs = (entry as any)?.secondaryLocs ?? [];
       const fullEnriched = { ...enriched, secondaryLocs };
       if (!infoWindowRef.current) {
-        infoWindowRef.current = new google.maps.InfoWindow();
+        infoWindowRef.current = new google.maps.InfoWindow({
+          pixelOffset: new google.maps.Size(0, -40),
+        });
       }
       infoWindowRef.current.setContent(buildInfoWindowContent(fullEnriched));
       infoWindowRef.current.setPosition({ lat: position.lat, lng: position.lng });
@@ -1173,7 +1175,9 @@ export default function IntelligenceMapping() {
   const handleMapReady = useCallback((map: google.maps.Map) => {
     mapRef.current = map;
     geocoderRef.current = new google.maps.Geocoder();
-    infoWindowRef.current = new google.maps.InfoWindow();
+    infoWindowRef.current = new google.maps.InfoWindow({
+      pixelOffset: new google.maps.Size(0, -40),
+    });
     autocompleteServiceRef.current = new google.maps.places.AutocompleteService();
     setMapReady(true); // triggers live marker effect to run now that map is available
     if (locations) {

@@ -437,8 +437,13 @@ export default function RSMapping() {
   }, []);
 
   // ── Geocode queue ─────────────────────────────────────────────────────────────
+  // Use a ref so the recursive setTimeout always calls the *latest* closure —
+  // avoids stale-closure bugs where updatePolyline / runTraceRoute captured at
+  // mount time point to no-ops.
 
-  const geocodeNext = useCallback(() => {
+  const geocodeNextRef = useRef<() => void>(() => {});
+
+  const geocodeNextImpl = () => {
     const queue = geocodeQueueRef.current;
     const idx = geocodeIndexRef.current;
 
@@ -467,13 +472,13 @@ export default function RSMapping() {
     // If row has a persisted lat/lng, use it directly
     if (row.lat != null && row.lng != null) {
       placeWaypointMarker(row, row.lat, row.lng);
-      geocodeTimerRef.current = setTimeout(geocodeNext, 0);
+      geocodeTimerRef.current = setTimeout(() => geocodeNextRef.current(), 0);
       return;
     }
 
     const addressQuery = row.addressFull || row.address || "";
     if (!addressQuery || !geocoderRef.current) {
-      geocodeTimerRef.current = setTimeout(geocodeNext, GEOCODE_DELAY_MS);
+      geocodeTimerRef.current = setTimeout(() => geocodeNextRef.current(), GEOCODE_DELAY_MS);
       return;
     }
 
@@ -482,10 +487,15 @@ export default function RSMapping() {
         const pos = results[0].geometry.location;
         placeWaypointMarker(row, pos.lat(), pos.lng());
       }
-      geocodeTimerRef.current = setTimeout(geocodeNext, GEOCODE_DELAY_MS);
+      geocodeTimerRef.current = setTimeout(() => geocodeNextRef.current(), GEOCODE_DELAY_MS);
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [updatePolyline, traceRouteEnabled]);
+  };
+
+  // Keep the ref pointing at the latest impl on every render (cheap)
+  geocodeNextRef.current = geocodeNextImpl;
+
+  // Stable entry-point used by the start-geocoding useEffect
+  const geocodeNext = useCallback(() => geocodeNextRef.current(), []);
 
   function placeWaypointMarker(row: WaypointRow, lat: number, lng: number) {
     if (!mapRef.current) return;

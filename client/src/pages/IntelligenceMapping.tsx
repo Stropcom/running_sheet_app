@@ -2437,8 +2437,8 @@ export default function IntelligenceMapping() {
           );
         })() : null}
 
-        {/* 4 flexible quick-link slots */}
-        {quickLinks.slice(0, 4).map((ql, idx) => {
+        {/* 2 flexible quick-link slots */}
+        {quickLinks.slice(0, 2).map((ql, idx) => {
           const iconEntry = ICON_MAP[ql.icon];
           const IconComp = iconEntry?.Icon ?? FolderSearch;
           const iconColour = iconEntry?.colour ?? "text-white/60";
@@ -2530,7 +2530,7 @@ export default function IntelligenceMapping() {
             </div>
 
             <p className="text-[11px] text-muted-foreground/60 mt-3 text-center">
-              {quickLinks.length}/4 slots used — Home and Operations are always shown
+              {quickLinks.length}/2 slots used — Operations and active sheet are always shown
             </p>
           </div>
         </div>

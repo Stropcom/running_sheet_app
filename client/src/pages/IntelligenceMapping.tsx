@@ -50,6 +50,7 @@ import {
   Search,
   LocateFixed,
   Navigation2,
+  ExternalLink,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -3218,10 +3219,14 @@ export default function IntelligenceMapping() {
                   {rsSheetsData && (() => {
                     const sheet = (rsSheetsData as any[]).find((s: any) => s.id === rsSelectedSheetId);
                     return sheet ? (
-                      <div className="flex-1 flex items-center gap-1.5 px-2 py-1.5 rounded-md border border-primary/30 bg-primary/5 min-w-0">
+                      <button
+                        onClick={() => { setMapQeOpen(false); setMapQeAddress(""); closeInlineField(); setLocation(`/sheet/${rsSelectedSheetId}`); }}
+                        className="flex-1 flex items-center gap-1.5 px-2 py-1.5 rounded-md border border-primary/40 bg-primary/10 hover:bg-primary/20 active:scale-[0.98] transition-all min-w-0"
+                      >
                         <MapIcon className="h-3 w-3 text-primary flex-shrink-0" />
                         <span className="text-[11px] font-semibold text-primary truncate">{sheet.title || `Sheet #${sheet.id}`}</span>
-                      </div>
+                        <ExternalLink className="h-3 w-3 text-primary/60 flex-shrink-0 ml-auto" />
+                      </button>
                     ) : null;
                   })()}
                   {rsTargetData && (

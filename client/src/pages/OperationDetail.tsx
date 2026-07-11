@@ -598,6 +598,7 @@ function SheetTileCard({
   cinNames,
   cinEntries,
   targetName,
+  isAdmin,
   onNavigate,
   onCopyMove,
 }: {
@@ -605,6 +606,7 @@ function SheetTileCard({
   cinNames: string[];
   cinEntries?: CinEntry[];
   targetName?: string | null;
+  isAdmin: boolean;
   onNavigate: () => void;
   onCopyMove: () => void;
 }) {
@@ -653,11 +655,11 @@ function SheetTileCard({
               ✓ CERTIFIED
             </span>
           )}
-          {!isClosed && (
-            <Button size="icon" variant="ghost" className="w-7 h-7 text-sky-500 hover:bg-sky-500/10"
+          {isAdmin && (
+            <Button size="icon" variant="ghost" className="w-7 h-7 text-sky-500 hover:text-sky-400 hover:bg-sky-500/10"
               onClick={(e) => { e.stopPropagation(); onCopyMove(); }}
-              title="Copy or Move">
-              <LayoutGrid className="w-3.5 h-3.5" />
+              title="Copy or Move sheet">
+              <CopyPlus className="w-3.5 h-3.5" />
             </Button>
           )}
         </div>
@@ -1073,6 +1075,7 @@ export default function OperationDetail() {
                       cinNames={cinNames}
                       cinEntries={parsedCins}
                       targetName={assignedTarget?.name}
+                      isAdmin={user?.role === "admin" || user?.role === "member"}
                       onNavigate={() => navigate(`/sheet/${sheet.id}`)}
                       onCopyMove={() => setCopyMoveSheet({ id: sheet.id, title: sheet.title })}
                     />

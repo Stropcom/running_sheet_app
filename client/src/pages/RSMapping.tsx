@@ -443,14 +443,137 @@ export default function RSMapping() {
 
   const geocodeNextRef = useRef<() => void>(() => {});
 
+  // ── Group co-located waypoints into horizontal pill markers ──────────────────
+  //
+  // After geocoding, any waypoints within ~15m of each other are merged into a
+  // single AdvancedMarkerElement whose content is a horizontal row of numbered
+  // circles. Each circle is individually clickable and opens the normal popup.
+
+  function groupNearbyMarkers() {
+    if (!mapRef.current) return;
+    const wps = placedWaypointsRef.current;
+    if (wps.length === 0) return;
+
+    // ~15m in degrees latitude ≈ 0.000135
+    const THRESHOLD = 0.000135;
+
+    const visited = new Set<number>();
+    const sheetId = selectedSheetId!;
+
+    for (let i = 0; i < wps.length; i++) {
+      if (visited.has(i)) continue;
+
+      // Find all waypoints within threshold of wps[i]
+      const group: number[] = [i];
+      for (let j = i + 1; j < wps.length; j++) {
+        if (visited.has(j)) continue;
+        const dlat = Math.abs(wps[j].lat - wps[i].lat);
+        const dlng = Math.abs(wps[j].lng - wps[i].lng);
+        if (dlat < THRESHOLD && dlng < THRESHOLD) {
+          group.push(j);
+        }
+      }
+
+      group.forEach((idx) => visited.add(idx));
+
+      if (group.length < 2) continue; // nothing to merge
+
+      // Sort group by waypoint index (sequence order)
+      group.sort((a, b) => wps[a].index - wps[b].index);
+
+      // Compute centroid
+      const centLat = group.reduce((s, idx) => s + wps[idx].lat, 0) / group.length;
+      const centLng = group.reduce((s, idx) => s + wps[idx].lng, 0) / group.length;
+
+      // Remove individual markers from the map
+      group.forEach((idx) => {
+        wps[idx].marker.map = null;
+        // Remove from markersRef
+        const mi = markersRef.current.indexOf(wps[idx].marker);
+        if (mi !== -1) markersRef.current.splice(mi, 1);
+      });
+
+      // Build a horizontal pill element
+      const pill = document.createElement("div");
+      pill.style.cssText = [
+        "display:flex",
+        "align-items:center",
+        "gap:0",
+        "background:rgba(255,255,255,0.92)",
+        "border-radius:20px",
+        "padding:2px",
+        "box-shadow:0 2px 8px rgba(0,0,0,0.35)",
+        "border:2px solid #fff",
+      ].join(";");
+
+      group.forEach((wpIdx, pillIdx) => {
+        const wp = wps[wpIdx];
+        const total = geocodeQueueRef.current.length;
+        const isFirst = wp.index === 1;
+        const isLast = wp.index === total;
+        let bg = "#6366f1";
+        if (isFirst) bg = "#16a34a";
+        if (isLast) bg = "#dc2626";
+
+        // Connector line between circles
+        if (pillIdx > 0) {
+          const connector = document.createElement("div");
+          connector.style.cssText = "width:6px;height:3px;background:#d1d5db;flex-shrink:0;";
+          pill.appendChild(connector);
+        }
+
+        const circle = document.createElement("div");
+        circle.style.cssText = [
+          "width:28px",
+          "height:28px",
+          "border-radius:50%",
+          `background:${bg}`,
+          "color:#fff",
+          "font-size:11px",
+          "font-weight:700",
+          "display:flex",
+          "align-items:center",
+          "justify-content:center",
+          "cursor:pointer",
+          "user-select:none",
+          "flex-shrink:0",
+        ].join(";");
+        circle.textContent = String(wp.index);
+        circle.addEventListener("click", (e) => {
+          e.stopPropagation();
+          openPopup(wp, sheetId);
+        });
+        pill.appendChild(circle);
+      });
+
+      // Create a single marker for the group, centred on the centroid
+      const groupMarker = new google.maps.marker.AdvancedMarkerElement({
+        map: mapRef.current,
+        position: { lat: centLat, lng: centLng },
+        content: pill,
+        gmpDraggable: false,
+        title: group.map((idx) => wps[idx].address).join(" / "),
+      });
+
+      // Update each wp's marker reference so Move still works
+      group.forEach((idx) => {
+        wps[idx].marker = groupMarker;
+        wps[idx].lat = centLat;
+        wps[idx].lng = centLng;
+      });
+
+      markersRef.current.push(groupMarker);
+    }
+  }
+
   const geocodeNextImpl = () => {
     const queue = geocodeQueueRef.current;
     const idx = geocodeIndexRef.current;
 
     if (idx >= queue.length) {
       setGeocoding(false);
-      // Update waypointCount state here (not per-marker) so it fires on the
-      // stable geocodeNext callback and always reflects the final placed count
+      // Group co-located waypoints into horizontal pill markers
+      groupNearbyMarkers();
       setWaypointCount(placedWaypointsRef.current.length);
       updatePolyline();
       // Fit bounds

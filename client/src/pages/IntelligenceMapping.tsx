@@ -369,8 +369,10 @@ export default function IntelligenceMapping() {
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // custom marker map objects
   const customMarkersRef = useRef<Map<number, google.maps.marker.AdvancedMarkerElement>>(new Map());
-  // Merged intel data: custom marker ID → intel location that was suppressed because it was within 40m
-  const mergedIntelRef = useRef<Map<number, IntelMapLocation>>(new Map());
+  // Merged intel data: custom marker ID → array of intel locations merged into this marker
+  // Multiple intel pins (e.g. target_address + observation) can merge into the same house marker.
+  // The array is always sorted with target_address entries first (red takes priority).
+  const mergedIntelRef = useRef<Map<number, IntelMapLocation[]>>(new Map());
   // Latest custom markers data ref — kept in sync so placeMarker can access it without stale closure
   const customMarkersDataRef = useRef<any[]>([]);
   // All geocoded intel locations (label → {loc, position}) for manual merge lookup
@@ -778,9 +780,22 @@ export default function IntelligenceMapping() {
     );
 
     if (nearbyHouseCm) {
-      // Merge intel data into the house custom marker's popup and suppress the intel pin
+      // Merge intel data into the house custom marker's popup and suppress the intel pin.
+      // Multiple intel pins can merge into the same house marker (e.g. target_address + observation).
+      // target_address entries always sort first so red takes priority in the popup.
       const enriched = { ...loc, lat: position.lat, lng: position.lng };
-      mergedIntelRef.current.set(nearbyHouseCm.id, enriched);
+      const existing = mergedIntelRef.current.get(nearbyHouseCm.id) ?? [];
+      // Avoid duplicates by label
+      if (!existing.find(e => e.label === enriched.label)) {
+        existing.push(enriched);
+        // Sort: target_address first, then observation
+        existing.sort((a, b) => {
+          if (a.type === 'target_address' && b.type !== 'target_address') return -1;
+          if (a.type !== 'target_address' && b.type === 'target_address') return 1;
+          return 0;
+        });
+        mergedIntelRef.current.set(nearbyHouseCm.id, existing);
+      }
       return; // suppress intel pin — the house marker absorbs it
     }
 
@@ -827,16 +842,26 @@ export default function IntelligenceMapping() {
         // Restore persisted linkedIntelLabel merges for custom markers that have one saved
         const allIntel = geocodedIntelRef.current;
         customMarkersDataRef.current.forEach((cm: any) => {
-          if (cm.linkedIntelLabel && !mergedIntelRef.current.has(cm.id)) {
+          if (cm.linkedIntelLabel) {
             const entry = allIntel.get(cm.linkedIntelLabel);
             if (entry) {
-              // Remove the intel pin from the map and merge its data into the custom marker
-              const pinIdx = markersRef.current.findIndex((m: any) => m.title === cm.linkedIntelLabel);
-              if (pinIdx !== -1) {
-                markersRef.current[pinIdx].map = null;
-                markersRef.current.splice(pinIdx, 1);
+              const existing = mergedIntelRef.current.get(cm.id) ?? [];
+              const enriched = { ...entry.loc, lat: entry.position.lat, lng: entry.position.lng };
+              if (!existing.find(e => e.label === enriched.label)) {
+                // Remove the intel pin from the map and merge its data into the custom marker
+                const pinIdx = markersRef.current.findIndex((m: any) => m.title === cm.linkedIntelLabel);
+                if (pinIdx !== -1) {
+                  markersRef.current[pinIdx].map = null;
+                  markersRef.current.splice(pinIdx, 1);
+                }
+                existing.push(enriched);
+                existing.sort((a, b) => {
+                  if (a.type === 'target_address' && b.type !== 'target_address') return -1;
+                  if (a.type !== 'target_address' && b.type === 'target_address') return 1;
+                  return 0;
+                });
+                mergedIntelRef.current.set(cm.id, existing);
               }
-              mergedIntelRef.current.set(cm.id, { ...entry.loc, lat: entry.position.lat, lng: entry.position.lng });
             }
           }
         });
@@ -1036,15 +1061,18 @@ export default function IntelligenceMapping() {
           const iconLabel = MARKER_ICON_LABELS[cm.markerIcon as MarkerIcon] ?? cm.markerIcon;
           const currentRotation = cm.rotation ?? 0;
           const dataUrl = getMarkerDataUrl(cm.markerIcon as MarkerIcon, cm.markerColour as MarkerColour);
-          // Check if an intel location has been merged into this marker
-          const mergedIntel = mergedIntelRef.current.get(cm.id);
+          // Check if intel locations have been merged into this marker (array, target_address first)
+          const mergedIntelList = mergedIntelRef.current.get(cm.id) ?? [];
+          // Primary merged intel = first entry (target_address if present, else observation)
+          const mergedIntel = mergedIntelList.length > 0 ? mergedIntelList[0] : null;
 
           const buildPopupHtml = (rotation: number) => {
             const lines: string[] = [];
 
             // Type badge row
-            const badgeLabel = mergedIntel ? "MERGED MARKER" : "MAP MARKER";
-            const badgeBg = mergedIntel ? "#0f766e" : "#374151";
+            const hasMerged = mergedIntelList.length > 0;
+            const badgeLabel = hasMerged ? "MERGED MARKER" : "MAP MARKER";
+            const badgeBg = hasMerged ? "#0f766e" : "#374151";
             lines.push(`
               <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
                 <span style="background:${badgeBg};color:#fff;border-radius:4px;font-size:9px;font-weight:700;padding:2px 6px;letter-spacing:0.07em;white-space:nowrap;">${badgeLabel}</span>
@@ -1067,21 +1095,21 @@ export default function IntelligenceMapping() {
             // Vehicles (from custom marker)
             if (cm.assocVehicles?.length) lines.push(`<div style="margin-top:4px;"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Vehicles</span><p style="font-size:12px;color:#111;margin:2px 0 0;">${(cm.assocVehicles as string[]).join(", ")}</p></div>`);
 
-            // ── Merged intel section ──────────────────────────────────────────────────
-            if (mergedIntel) {
-              const isTarget = mergedIntel.type === "target_address";
+            // ── Merged intel section: render each merged entry (target_address first) ──
+            for (const intel of mergedIntelList) {
+              const isTarget = intel.type === "target_address";
               const accentColor = isTarget ? "#dc2626" : "#7c3aed";
               const typeLabel = isTarget ? "TARGET ADDRESS" : "OBSERVED LOCATION";
               lines.push(`
-                <div style="margin-top:8px;padding:8px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;">
+                <div style="margin-top:8px;padding:8px;background:${isTarget ? '#fff5f5' : '#f8fafc'};border:1px solid ${isTarget ? '#fca5a5' : '#e2e8f0'};border-radius:6px;">
                   <div style="display:flex;align-items:center;gap:5px;margin-bottom:4px;">
                     <span style="background:${accentColor};color:#fff;border-radius:3px;font-size:9px;font-weight:700;padding:1px 5px;letter-spacing:0.07em;">${typeLabel}</span>
                   </div>
-                  <div style="font-size:12px;font-weight:700;color:#111;margin-bottom:3px;">${formatIntelAddress(mergedIntel.label)}</div>
+                  <div style="font-size:12px;font-weight:700;color:#111;margin-bottom:3px;">${formatIntelAddress(intel.label)}</div>
               `);
               // Linked target details
-              if (isTarget && mergedIntel.linkedTargets.length > 0) {
-                for (const t of mergedIntel.linkedTargets) {
+              if (isTarget && intel.linkedTargets.length > 0) {
+                for (const t of intel.linkedTargets) {
                   lines.push(`<div style="padding:4px 6px;background:#fef2f2;border-left:2px solid #dc2626;border-radius:0 3px 3px 0;margin-bottom:3px;">`);
                   lines.push(`<div style="font-size:11px;font-weight:700;color:#111;">${t.name}</div>`);
                   if (t.tgt) lines.push(`<div style="font-size:10px;color:#555;">TGT: ${t.tgt}</div>`);
@@ -1092,18 +1120,18 @@ export default function IntelligenceMapping() {
                 }
               }
               // Linked targets for observation
-              if (!isTarget && mergedIntel.linkedTargets.length > 0) {
+              if (!isTarget && intel.linkedTargets.length > 0) {
                 lines.push(`<div style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Linked Targets</div>`);
-                for (const t of mergedIntel.linkedTargets) {
+                for (const t of intel.linkedTargets) {
                   lines.push(`<div style="font-size:11px;color:#111;">${t.name}</div>`);
                 }
               }
-              // Intel persons/vehicles (if different from custom marker)
-              if (mergedIntel.assocPersons.length > 0) {
-                lines.push(`<div style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;margin-top:3px;">Intel Persons</div><div style="font-size:11px;color:#111;">${mergedIntel.assocPersons.join(", ")}</div>`);
+              // Intel persons/vehicles
+              if (intel.assocPersons.length > 0) {
+                lines.push(`<div style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;margin-top:3px;">Intel Persons</div><div style="font-size:11px;color:#111;">${intel.assocPersons.join(", ")}</div>`);
               }
-              if (mergedIntel.assocVehicles.length > 0) {
-                lines.push(`<div style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;margin-top:2px;">Intel Vehicles</div><div style="font-size:11px;color:#111;">${mergedIntel.assocVehicles.join(", ")}</div>`);
+              if (intel.assocVehicles.length > 0) {
+                lines.push(`<div style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;margin-top:2px;">Intel Vehicles</div><div style="font-size:11px;color:#111;">${intel.assocVehicles.join(", ")}</div>`);
               }
               lines.push(`</div>`);
             }
@@ -1141,9 +1169,13 @@ export default function IntelligenceMapping() {
                 for (const t of mergedIntel.linkedTargets) {
                   intelBtns.push(`<button onclick="window.__editTargetFromMap(${t.targetId})" style="${btnBase}background:#0f766e;color:#fff;border:none;font-size:13px;padding:9px 0;">Edit ${t.name}</button>`);
                 }
-              } else if (!isTarget) {
-                const encodedLabel = encodeURIComponent(mergedIntel.label);
-                intelBtns.push(`<a href="/intelligence/location/${encodedLabel}" style="${btnBase}background:#7c3aed;color:#fff;font-size:13px;padding:9px 0;">View Profile</a>`);
+              }
+              // Also add View Profile for any observation entries
+              for (const intel of mergedIntelList) {
+                if (intel.type !== 'target_address') {
+                  const encodedLabel = encodeURIComponent(intel.label);
+                  intelBtns.push(`<a href="/intelligence/location/${encodedLabel}" style="${btnBase}background:#7c3aed;color:#fff;font-size:13px;padding:9px 0;">View Observation Profile</a>`);
+                }
               }
               sections.push(`<div style="display:grid;grid-template-columns:1fr;gap:5px;margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;">${intelBtns.join("")}</div>`);
             }
@@ -2594,9 +2626,18 @@ export default function IntelligenceMapping() {
                   <button
                     key={c.loc.label}
                     onClick={() => {
-                      // Perform the merge: store intel data on the custom marker, remove the intel pin from the map
+                      // Perform the merge: append intel data to the custom marker's merged list
                       const enriched = { ...c.loc, lat: c.position.lat, lng: c.position.lng };
-                      mergedIntelRef.current.set(manualMergePicker.cmId, enriched);
+                      const existingList = mergedIntelRef.current.get(manualMergePicker.cmId) ?? [];
+                      if (!existingList.find(e => e.label === enriched.label)) {
+                        existingList.push(enriched);
+                        existingList.sort((a, b) => {
+                          if (a.type === 'target_address' && b.type !== 'target_address') return -1;
+                          if (a.type !== 'target_address' && b.type === 'target_address') return 1;
+                          return 0;
+                        });
+                        mergedIntelRef.current.set(manualMergePicker.cmId, existingList);
+                      }
                       // Remove the intel pin from the map
                       const pinIdx = markersRef.current.findIndex((m) => {
                         const pos = m.position as google.maps.LatLng | google.maps.LatLngLiteral | null;

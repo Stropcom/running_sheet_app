@@ -1007,16 +1007,20 @@ export default function IntelligenceMapping() {
       title: loc.label,
     });
     marker.addListener("click", () => {
-      // Show the two-option action chooser (RS Quick Entry | Intel)
-      // The Intel option will open the existing info popup with all data intact
+      // Go straight to the intel info popup (no intermediate action chooser)
       const enriched = { ...loc, lat: position.lat, lng: position.lng };
-      // Include any secondary (observation) locs merged into this pin
       const entry = geocodedIntelRef.current.get(loc.label);
       const secondaryLocs = (entry as any)?.secondaryLocs ?? [];
-      setActionChooser({ lat: position.lat, lng: position.lng, address: loc.label, intelLoc: { ...enriched, secondaryLocs } });
+      const fullEnriched = { ...enriched, secondaryLocs };
+      if (!infoWindowRef.current) {
+        infoWindowRef.current = new google.maps.InfoWindow();
+      }
+      infoWindowRef.current.setContent(buildInfoWindowContent(fullEnriched));
+      infoWindowRef.current.setPosition({ lat: position.lat, lng: position.lng });
+      infoWindowRef.current.open(mapRef.current!);
     });
     markersRef.current.push(marker);
-  }, [createPinElement, setActionChooser]);
+  }, [createPinElement, buildInfoWindowContent]);
 
   const geocodeNext = useCallback(() => {
     const queue = geocodeQueueRef.current;
@@ -1174,16 +1178,16 @@ export default function IntelligenceMapping() {
     if (locations) {
       renderLocations(locations);
     }
-    // Right-click / tap-and-hold: show action chooser (RS Quick Entry or Marker)
+    // Right-click / tap-and-hold: go straight to RS Quick Entry
     map.addListener("rightclick", (e: google.maps.MapMouseEvent) => {
       if (!e.latLng) return;
       const lat = e.latLng.lat();
       const lng = e.latLng.lng();
-      // Reverse geocode to get address, then show chooser
       const geocoder = new google.maps.Geocoder();
       geocoder.geocode({ location: { lat, lng } }, (results, status) => {
         const addr = (status === "OK" && results && results[0]) ? results[0].formatted_address : `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-        setActionChooser({ lat, lng, address: addr });
+        setMapQeAddress(convertGoogleAddresses(addr));
+        setMapQeOpen(true);
       });
     });
 
@@ -2102,11 +2106,12 @@ export default function IntelligenceMapping() {
               const mapHeight = rect.height;
               const lng = sw.lng() + (x / mapWidth) * (ne.lng() - sw.lng());
               const lat = ne.lat() - (y / mapHeight) * (ne.lat() - sw.lat());
-              // Reverse geocode, then show action chooser
+              // Reverse geocode, then open RS Quick Entry directly
               const geocoder = new google.maps.Geocoder();
               geocoder.geocode({ location: { lat, lng } }, (results, status) => {
                 const addr = (status === "OK" && results && results[0]) ? results[0].formatted_address : `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-                setActionChooser({ lat, lng, address: addr });
+                setMapQeAddress(convertGoogleAddresses(addr));
+                setMapQeOpen(true);
               });
             }, 600);
           }}
@@ -2250,11 +2255,10 @@ export default function IntelligenceMapping() {
                               title: s.description,
                             });
                             addrSearchPinRef.current = pin;
-                            // Clicking the blue pin opens the action chooser
+                            // Clicking the blue pin opens RS Quick Entry directly
                             pin.addListener("gmp-click", () => {
-                              const lat2 = loc.lat();
-                              const lng2 = loc.lng();
-                              setActionChooser({ lat: lat2, lng: lng2, address: s.description });
+                              setMapQeAddress(convertGoogleAddresses(s.description));
+                              setMapQeOpen(true);
                             });
                           }
                         });
@@ -2376,46 +2380,21 @@ export default function IntelligenceMapping() {
               <div className="border-t border-border" />
 
               {/* DEP / ARR — shown if target has them */}
-              {(rsTargetData?.dep || rsTargetData?.arr) && (
-                <div className="grid grid-cols-2 gap-1.5">
-                  {rsTargetData?.dep && (
-                    <button
-                      disabled={rsAddingRow}
-                      onClick={() => {
-                        if (rsInlineLabel === rsTargetData!.dep!) {
-                          closeInlineField();
-                        } else {
-                          openInlineField(rsTargetData!.dep!);
-                        }
-                      }}
-                      className={`flex flex-col items-start gap-0.5 rounded-md border border-orange-500/30 bg-orange-500/5 hover:bg-orange-500/10 active:scale-95 transition-all px-2.5 py-2 disabled:opacity-50 ${rsInlineLabel === rsTargetData!.dep! ? "ring-1 ring-orange-400" : ""}`}
-                    >
-                      <span className="text-[9px] font-bold uppercase tracking-wide text-orange-400">DEP</span>
-                      <span className="text-[10px] text-foreground font-mono leading-tight line-clamp-2">{rsTargetData.dep}</span>
-                    </button>
-                  )}
-                  {rsTargetData?.arr && (
-                    <button
-                      disabled={rsAddingRow}
-                      onClick={() => {
-                        if (rsInlineLabel === rsTargetData!.arr!) {
-                          closeInlineField();
-                        } else {
-                          openInlineField(rsTargetData!.arr!);
-                        }
-                      }}
-                      className={`flex flex-col items-start gap-0.5 rounded-md border border-green-500/30 bg-green-500/5 hover:bg-green-500/10 active:scale-95 transition-all px-2.5 py-2 disabled:opacity-50 ${rsInlineLabel === rsTargetData!.arr! ? "ring-1 ring-green-400" : ""}`}
-                    >
-                      <span className="text-[9px] font-bold uppercase tracking-wide text-green-400">ARR</span>
-                      <span className="text-[10px] text-foreground font-mono leading-tight line-clamp-2">{rsTargetData.arr}</span>
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {/* No target / no DEP+ARR notice */}
-              {!rsTargetData && (
-                <p className="text-[11px] text-muted-foreground text-center py-1">No target linked — DEP/ARR unavailable.</p>
+              {rsTargetData?.arr && (
+                <button
+                  disabled={rsAddingRow}
+                  onClick={() => {
+                    if (rsInlineLabel === rsTargetData!.arr!) {
+                      closeInlineField();
+                    } else {
+                      openInlineField(rsTargetData!.arr!);
+                    }
+                  }}
+                  className={`flex flex-col items-start gap-0.5 rounded-md border border-green-500/30 bg-green-500/5 hover:bg-green-500/10 active:scale-95 transition-all px-2.5 py-2 disabled:opacity-50 ${rsInlineLabel === rsTargetData!.arr! ? "ring-1 ring-green-400" : ""}`}
+                >
+                  <span className="text-[9px] font-bold uppercase tracking-wide text-green-400">ARR</span>
+                  <span className="text-[10px] text-foreground font-mono leading-tight line-clamp-2">{rsTargetData.arr}</span>
+                </button>
               )}
 
               {/* Inline observation field — shown when a quick action button is tapped */}
@@ -2550,42 +2529,7 @@ export default function IntelligenceMapping() {
                 );
               })()}
 
-              {/* Quick action buttons — 2-column grid */}
-              <div className="grid grid-cols-2 gap-1.5">
-                {([
-                  { label: "Vehicle Arrive",  text: "Vehicle arrive",  colour: "blue" },
-                  { label: "Vehicle Depart",  text: "Vehicle depart",  colour: "purple" },
-                  { label: "Person Arrive",   text: "Person arrive",   colour: "teal" },
-                  { label: "Person Depart",   text: "Person depart",   colour: "rose" },
-                  { label: "Other Entry",     text: "Other entry",     colour: "slate" },
-                ] as const).map(({ label, text, colour }) => {
-                  const colourMap: Record<string, string> = {
-                    blue:   "border-blue-500/30 bg-blue-500/5 hover:bg-blue-500/10 text-blue-400",
-                    purple: "border-purple-500/30 bg-purple-500/5 hover:bg-purple-500/10 text-purple-400",
-                    teal:   "border-teal-500/30 bg-teal-500/5 hover:bg-teal-500/10 text-teal-400",
-                    rose:   "border-rose-500/30 bg-rose-500/5 hover:bg-rose-500/10 text-rose-400",
-                    slate:  "border-border bg-muted/30 hover:bg-muted/60 text-muted-foreground",
-                  };
-                  const isActive = rsInlineLabel === text;
-                  return (
-                    <button
-                      key={label}
-                      disabled={rsAddingRow}
-                      onClick={() => {
-                        if (isActive) {
-                          closeInlineField();
-                        } else {
-                          openInlineField(text);
-                        }
-                      }}
-                      className={`flex flex-col items-center justify-center gap-0.5 rounded-md border active:scale-95 transition-all px-2 py-2.5 disabled:opacity-50 ${colourMap[colour]} ${isActive ? "ring-1 ring-current" : ""}`}
-                    >
-                      {rsAddingRow && isActive ? <Spinner className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
-                      <span className="text-[10px] font-semibold leading-tight text-center">{label}</span>
-                    </button>
-                  );
-                })}
-              </div>
+              {/* Quick action buttons removed per user request */}
 
               {/* Last entry confirmation */}
               {rsLastEntry && (
@@ -2818,100 +2762,7 @@ export default function IntelligenceMapping() {
       )}
 
       {/* ── Action Chooser Bottom Sheet ── */}
-      {actionChooser && !pendingLatLng && !mapQeOpen && (
-        <div
-          className="absolute inset-0 z-40 flex items-end justify-center"
-          style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(3px)" }}
-          onClick={() => setActionChooser(null)}
-        >
-          <div
-            className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Address preview */}
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex-1 min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-0.5">Tapped Location</p>
-                <p className="text-sm font-semibold text-foreground leading-snug">{actionChooser.address}</p>
-              </div>
-              <button onClick={() => setActionChooser(null)} className="ml-3 text-muted-foreground hover:text-foreground flex-shrink-0">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              {/* RS Quick Entry — always shown */}
-              <button
-                onClick={() => {
-                  setMapQeAddress(convertGoogleAddresses(actionChooser.address));
-                  setMapQeOpen(true);
-                  setActionChooser(null);
-                }}
-                className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-primary/40 bg-primary/5 hover:bg-primary/10 active:scale-95 transition-all px-4 py-5"
-              >
-                <ClipboardList className="h-7 w-7 text-primary" />
-                <span className="text-sm font-bold text-foreground">RS Quick Entry</span>
-                <span className="text-[10px] text-muted-foreground text-center leading-tight">Add a running sheet entry for this location</span>
-              </button>
-
-              {/* Intel — shown for intelligence-derived markers (target address / observation) */}
-              {actionChooser.intelLoc ? (
-                <button
-                  onClick={() => {
-                    const enriched = actionChooser.intelLoc!;
-                    if (!infoWindowRef.current) {
-                      infoWindowRef.current = new google.maps.InfoWindow();
-                    }
-                    infoWindowRef.current.setContent(buildInfoWindowContent(enriched));
-                    infoWindowRef.current.setPosition({ lat: enriched.lat!, lng: enriched.lng! });
-                    infoWindowRef.current.open(mapRef.current!);
-                    setActionChooser(null);
-                  }}
-                  className={`flex flex-col items-center justify-center gap-2 rounded-xl border-2 active:scale-95 transition-all px-4 py-5 ${
-                    actionChooser.intelLoc.type === "target_address"
-                      ? "border-red-500/40 bg-red-500/5 hover:bg-red-500/10"
-                      : "border-purple-500/40 bg-purple-500/5 hover:bg-purple-500/10"
-                  }`}
-                >
-                  <FolderSearch className={`h-7 w-7 ${actionChooser.intelLoc.type === "target_address" ? "text-red-500" : "text-purple-500"}`} />
-                  <span className="text-sm font-bold text-foreground">Intel</span>
-                  <span className="text-[10px] text-muted-foreground text-center leading-tight">
-                    {actionChooser.intelLoc.type === "target_address" ? "View target address info" : "View observed location info"}
-                  </span>
-                </button>
-              ) : (
-                /* Marker — shown for blank map taps */
-                <button
-                  onClick={() => {
-                    const { lat, lng, address } = actionChooser;
-                    setCmLabel(""); setCmAddress(address); setCmNote(""); setCmPersons([]); setCmVehicles([]); setCmRotation(0);
-                    setCmPersonInput(""); setCmVehicleInput("");
-                    // Pre-fill operation from the active filter so the marker appears in the list
-                    setCmOpId(selectedOpIds.length === 1 ? selectedOpIds[0] : (rsSelectedOpId ?? null));
-                    setPendingLatLng({ lat, lng });
-                    setActionChooser(null);
-                  }}
-                  className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-border bg-muted/30 hover:bg-muted/60 active:scale-95 transition-all px-4 py-5"
-                >
-                  <MapPin className="h-7 w-7 text-muted-foreground" />
-                  <span className="text-sm font-bold text-foreground">Marker</span>
-                  <span className="text-[10px] text-muted-foreground text-center leading-tight">Place a custom map marker here</span>
-                </button>
-              )}
-            </div>
-            {/* Navigate with Waze — full-width below the grid */}
-            <a
-              href={`https://waze.com/ul?ll=${actionChooser?.lat},${actionChooser?.lng}&navigate=yes`}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => setActionChooser(null)}
-              className="mt-3 flex items-center justify-center gap-2 w-full rounded-xl border-2 border-cyan-500/40 bg-cyan-500/5 hover:bg-cyan-500/10 active:scale-95 transition-all px-4 py-3"
-            >
-              <Navigation2 className="h-5 w-5 text-cyan-400" />
-              <span className="text-sm font-bold text-foreground">Navigate with Waze</span>
-            </a>
-          </div>
-        </div>
-      )}
+      {/* Action chooser removed — tap/hold/right-click/search pin now go straight to RS Quick Entry */}
 
       {/* ── Manual Merge Picker ── */}
       {manualMergePicker && (
@@ -3363,35 +3214,18 @@ export default function IntelligenceMapping() {
                 <div className="border-t border-border" />
 
                 {/* DEP / ARR */}
-                {(rsTargetData?.dep || rsTargetData?.arr) && (
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {rsTargetData?.dep && (
-                      <button
-                        disabled={rsAddingRow}
-                        onClick={() => {
-                          const obs = `${rsTargetData!.dep!} — ${mapQeAddress}`;
-                          if (rsInlineLabel === obs) { closeInlineField(); } else { openInlineField(obs); }
-                        }}
-                        className={`flex flex-col items-start gap-0.5 rounded-md border border-orange-500/30 bg-orange-500/5 hover:bg-orange-500/10 active:scale-95 transition-all px-2.5 py-2 disabled:opacity-50 ${rsInlineLabel?.startsWith(rsTargetData!.dep!) ? "ring-1 ring-orange-400" : ""}`}
-                      >
-                        <span className="text-[9px] font-bold uppercase tracking-wide text-orange-400">DEP</span>
-                        <span className="text-[10px] text-foreground font-mono leading-tight line-clamp-2">{rsTargetData.dep}</span>
-                      </button>
-                    )}
-                    {rsTargetData?.arr && (
-                      <button
-                        disabled={rsAddingRow}
-                        onClick={() => {
-                          const obs = `${rsTargetData!.arr!} — ${mapQeAddress}`;
-                          if (rsInlineLabel === obs) { closeInlineField(); } else { openInlineField(obs); }
-                        }}
-                        className={`flex flex-col items-start gap-0.5 rounded-md border border-green-500/30 bg-green-500/5 hover:bg-green-500/10 active:scale-95 transition-all px-2.5 py-2 disabled:opacity-50 ${rsInlineLabel?.startsWith(rsTargetData!.arr!) ? "ring-1 ring-green-400" : ""}`}
-                      >
-                        <span className="text-[9px] font-bold uppercase tracking-wide text-green-400">ARR</span>
-                        <span className="text-[10px] text-foreground font-mono leading-tight line-clamp-2">{rsTargetData.arr}</span>
-                      </button>
-                    )}
-                  </div>
+                {rsTargetData?.arr && (
+                  <button
+                    disabled={rsAddingRow}
+                    onClick={() => {
+                      const obs = `${rsTargetData!.arr!} — ${mapQeAddress}`;
+                      if (rsInlineLabel === obs) { closeInlineField(); } else { openInlineField(obs); }
+                    }}
+                    className={`flex flex-col items-start gap-0.5 rounded-md border border-green-500/30 bg-green-500/5 hover:bg-green-500/10 active:scale-95 transition-all px-2.5 py-2 disabled:opacity-50 ${rsInlineLabel?.startsWith(rsTargetData!.arr!) ? "ring-1 ring-green-400" : ""}`}
+                  >
+                    <span className="text-[9px] font-bold uppercase tracking-wide text-green-400">ARR</span>
+                    <span className="text-[10px] text-foreground font-mono leading-tight line-clamp-2">{rsTargetData.arr}</span>
+                  </button>
                 )}
 
                 {/* Inline observation field */}
@@ -3518,35 +3352,7 @@ export default function IntelligenceMapping() {
                   );
                 })()}
 
-                {/* Quick action buttons */}
-                <div className="grid grid-cols-2 gap-1.5">
-                  {([
-                    { label: "Vehicle Arrive",  text: "Vehicle arrive",  colour: "blue" },
-                    { label: "Vehicle Depart",  text: "Vehicle depart",  colour: "purple" },
-                    { label: "Person Arrive",   text: "Person arrive",   colour: "teal" },
-                    { label: "Person Depart",   text: "Person depart",   colour: "rose" },
-                    { label: "Other Entry",     text: "Other entry",     colour: "slate" },
-                  ] as const).map(({ label, text, colour }) => {
-                    const colourMap: Record<string, string> = {
-                      blue:   "border-blue-500/30 bg-blue-500/5 hover:bg-blue-500/10 text-blue-400",
-                      purple: "border-purple-500/30 bg-purple-500/5 hover:bg-purple-500/10 text-purple-400",
-                      teal:   "border-teal-500/30 bg-teal-500/5 hover:bg-teal-500/10 text-teal-400",
-                      rose:   "border-rose-500/30 bg-rose-500/5 hover:bg-rose-500/10 text-rose-400",
-                      slate:  "border-border bg-muted/30 hover:bg-muted/60 text-muted-foreground",
-                    };
-                    // Pre-append address to the observation text
-                    const obsText = `${text} — ${mapQeAddress}`;
-                    const isActive = rsInlineLabel === obsText;
-                    return (
-                      <button key={label} disabled={rsAddingRow}
-                        onClick={() => { if (isActive) { closeInlineField(); } else { openInlineField(obsText); } }}
-                        className={`flex flex-col items-center justify-center gap-0.5 rounded-md border active:scale-95 transition-all px-2 py-2.5 disabled:opacity-50 ${colourMap[colour]} ${isActive ? "ring-1 ring-current" : ""}`}>
-                        {rsAddingRow && isActive ? <Spinner className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
-                        <span className="text-[10px] font-semibold leading-tight text-center">{label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+                {/* Quick action buttons removed per user request */}
 
                 {/* Last entry confirmation */}
                 {rsLastEntry && (

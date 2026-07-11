@@ -3819,12 +3819,68 @@ export interface RsWaypointRow {
   markerColour: string | null;
   markerRotation: number | null;
   waypointId: number | null;
+  /**
+   * Route segment type for the path AFTER this waypoint:
+   * - 'normal'        — straight line to next waypoint (no via data)
+   * - 'continued_via' — the NEXT row is a "continued via:" row; viaStreets holds the parsed streets
+   * - 'coos'          — the NEXT row is a COOS/OOS row; draw dashed line
+   */
+  segmentType: 'normal' | 'continued_via' | 'coos';
+  /**
+   * Ordered list of street names/intersections extracted from the following
+   * "continued via:" row. Empty when segmentType !== 'continued_via'.
+   */
+  viaStreets: string[];
+  /**
+   * Suburb context inferred from this waypoint's address (used to help geocode viaStreets).
+   */
+  suburbContext: string | null;
 }
 
 /**
  * Return all sheet rows that contain a bracketed address entity,
  * merged with any persisted waypoint overrides (comment / moved position).
  */
+/**
+ * Parse a "continued via:" or "continued via;" observation text into an ordered
+ * list of street names / intersection tokens.
+ *
+ * Handles separators:  →  |  ->  |  ,  |  then  |  via  (as conjunction)
+ * Strips bracketed short-forms, leading/trailing whitespace, and common filler
+ * words so only the actual street names remain.
+ */
+function parseViaStreets(obs: string): string[] {
+  // Strip the leading "continued via:" or "continued via;" prefix
+  const body = obs.replace(/^continued\s+via[;:]/i, "").trim();
+  if (!body) return [];
+
+  // Split on common separators: →, ->, then, via (as conjunction), comma, semicolon
+  const parts = body
+    .split(/\s*(?:→|->|,|;|\bthen\b|\bvia\b)\s*/i)
+    .map((p) => {
+      // Strip bracketed short-forms like (CV) (OOS) etc.
+      return p.replace(/\([^)]*\)/g, "").trim();
+    })
+    .filter((p) => p.length > 2); // discard empty / very short tokens
+
+  return parts;
+}
+
+/**
+ * Extract suburb/city context from an address string.
+ * Returns the suburb portion (e.g. "FREMANTLE" from "1 Smith St, FREMANTLE WA").
+ */
+function extractSuburb(address: string): string | null {
+  // Try to match suburb from common Australian address formats
+  // "1 Smith St, FREMANTLE WA 6160" → "FREMANTLE WA"
+  const m = address.match(/,\s*([A-Z][A-Za-z\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\s*\d{0,4})/);
+  if (m) return m[1].trim();
+  // Fallback: last word-group after a comma
+  const parts = address.split(",");
+  if (parts.length >= 2) return parts[parts.length - 1].trim();
+  return null;
+}
+
 export async function getRsMappingWaypoints(sheetId: number): Promise<RsWaypointRow[]> {
   const db = await getDb();
   if (!db) return [];
@@ -3848,24 +3904,67 @@ export async function getRsMappingWaypoints(sheetId: number): Promise<RsWaypoint
 
   const overrideMap = new Map(overrides.map((o) => [o.rowId, o]));
 
-  const result: RsWaypointRow[] = [];
-
+  // ── First pass: collect all address-bearing rows ──────────────────────────
+  interface RawWaypoint {
+    row: typeof rows[number];
+    address: string;
+    addressFull: string;
+  }
+  const addressRows: RawWaypoint[] = [];
   for (const row of rows) {
     if (!row.observation) continue;
     const entities = extractEntitiesFromText(row.observation);
-    // Take the first address entity found in this row
     const addrEntity = entities.find((e) => e.type === "address");
     if (!addrEntity) continue;
+    addressRows.push({ row, address: addrEntity.shortForm, addressFull: addrEntity.fullDescription });
+  }
 
+  // ── Build a rowId → index map for the sorted full row list ───────────────
+  const rowIndexMap = new Map(rows.map((r, i) => [r.id, i]));
+
+  // ── Second pass: annotate each address row with segment type ─────────────
+  const result: RsWaypointRow[] = [];
+
+  for (let wi = 0; wi < addressRows.length; wi++) {
+    const { row, address, addressFull } = addressRows[wi];
     const override = overrideMap.get(row.id);
+
+    // Determine what comes between this waypoint and the next in the full row list
+    let segmentType: RsWaypointRow['segmentType'] = 'normal';
+    let viaStreets: string[] = [];
+    const suburbContext = extractSuburb(addressFull || address);
+
+    // Look at rows that fall between this address row and the next address row
+    const thisRowIdx = rowIndexMap.get(row.id) ?? -1;
+    const nextWpRow = addressRows[wi + 1];
+    const nextRowIdx = nextWpRow ? (rowIndexMap.get(nextWpRow.row.id) ?? rows.length) : rows.length;
+
+    // Scan the rows between the two waypoints
+    for (let ri = thisRowIdx + 1; ri < nextRowIdx; ri++) {
+      const between = rows[ri];
+      if (!between.observation) continue;
+      const obs = between.observation.trim();
+
+      if (/^continued\s+via[;:]/i.test(obs)) {
+        segmentType = 'continued_via';
+        viaStreets = parseViaStreets(obs);
+        break; // continued via takes priority
+      }
+      // COOS / OOS patterns (out of sight)
+      if (/continued\s+out\s+of\s+sight|\bcoos\b|\boos\b/i.test(obs)) {
+        segmentType = 'coos';
+        // don't break — a continued_via later in the gap would override
+      }
+    }
+
     result.push({
       rowId: row.id,
       rowNumber: row.rowNumber,
       time: row.time ?? null,
       timeMinutes: row.timeMinutes ?? null,
       observation: row.observation,
-      address: addrEntity.shortForm,
-      addressFull: addrEntity.fullDescription,
+      address,
+      addressFull,
       lat: override?.lat ?? null,
       lng: override?.lng ?? null,
       comment: override?.comment ?? null,
@@ -3873,6 +3972,9 @@ export async function getRsMappingWaypoints(sheetId: number): Promise<RsWaypoint
       markerColour: override?.markerColour ?? null,
       markerRotation: override?.markerRotation ?? null,
       waypointId: override?.id ?? null,
+      segmentType,
+      viaStreets,
+      suburbContext,
     });
   }
 

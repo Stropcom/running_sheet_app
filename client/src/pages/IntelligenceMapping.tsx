@@ -210,11 +210,7 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
     btnRow.push(`<a href="https://waze.com/ul?ll=${lat},${lng}&navigate=yes" target="_blank" style="font-size:11px;padding:4px 10px;background:#00bcd4;color:#fff;border-radius:4px;text-decoration:none">Waze</a>`);
     btnRow.push(`<a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}" target="_blank" style="font-size:11px;padding:4px 10px;background:#4285f4;color:#fff;border-radius:4px;text-decoration:none">Street View</a>`);
   }
-  if (isTarget && loc.linkedTargets.length > 0) {
-    for (const t of loc.linkedTargets) {
-      btnRow.push(`<button onclick="window.__editTargetFromMap(${t.targetId})" style="font-size:11px;padding:4px 10px;background:#16a34a;color:#fff;border-radius:4px;border:none;cursor:pointer">Edit ${t.name}</button>`);
-    }
-  } else if (!isTarget) {
+  if (!isTarget) {
     const encodedLabel = encodeURIComponent(loc.label);
     btnRow.push(`<a href="/intelligence/location/${encodedLabel}" style="font-size:11px;padding:4px 10px;background:#7c3aed;color:#fff;border-radius:4px;text-decoration:none">View Profile</a>`);
   }

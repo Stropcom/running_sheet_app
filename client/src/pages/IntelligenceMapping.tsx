@@ -381,6 +381,10 @@ export default function IntelligenceMapping() {
     candidates: Array<{ loc: IntelMapLocation; position: google.maps.LatLngLiteral; distanceM: number }>;
   } | null>(null);
 
+  // Move marker state: which marker is being dragged to a new position
+  const [movingMarkerId, setMovingMarkerId] = useState<number | null>(null);
+  const [pendingMoveAddress, setPendingMoveAddress] = useState<{ lat: number; lng: number; address: string } | null>(null);
+
   // Map state
   const [mapReady, setMapReady] = useState(false);
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -1163,6 +1167,9 @@ export default function IntelligenceMapping() {
               sections.push(`<div style="margin-top:5px;"><button onclick="window.__cmOpenMergePicker(${cm.id})" style="${btnBase}background:#78716c;color:#fff;border:none;font-size:11px;padding:6px 0;">Merge with Intel Pin…</button></div>`);
             }
 
+            // Row 5: Move button (always visible)
+            sections.push(`<div style="margin-top:5px;"><button onclick="window.__cmStartMove(${cm.id})" style="${btnBase}background:#0369a1;color:#fff;border:none;font-size:11px;padding:6px 0;">Move Marker…</button></div>`);
+
             lines.push(sections.join(""));
 
             return `<div style="font-family:sans-serif;max-width:280px;color:#111;">${lines.join("")}</div>`;
@@ -1209,6 +1216,41 @@ export default function IntelligenceMapping() {
     };
     return () => { delete (window as any).__cmOpenMergePicker; };
   }, []);
+
+  // Global move marker handler — makes the marker draggable and enters move mode
+  useEffect(() => {
+    (window as any).__cmStartMove = (id: number) => {
+      infoWindowRef.current?.close();
+      const marker = customMarkerMapRefs.current.get(id);
+      if (!marker) return;
+      // Store original position for cancel rollback
+      const origPos = marker.position as google.maps.LatLngLiteral | null;
+      if (!origPos) return;
+      const origLat = typeof (origPos as any).lat === 'function' ? (origPos as any).lat() : (origPos as any).lat;
+      const origLng = typeof (origPos as any).lng === 'function' ? (origPos as any).lng() : (origPos as any).lng;
+      // Make marker draggable
+      (marker as any).gmpDraggable = true;
+      setMovingMarkerId(id);
+      setPendingMoveAddress(null);
+      // Listen for drag end to reverse geocode new position
+      const dragEndListener = marker.addListener('dragend', () => {
+        const newPos = marker.position as google.maps.LatLngLiteral | null;
+        if (!newPos || !geocoderRef.current) return;
+        const newLat = typeof (newPos as any).lat === 'function' ? (newPos as any).lat() : (newPos as any).lat;
+        const newLng = typeof (newPos as any).lng === 'function' ? (newPos as any).lng() : (newPos as any).lng;
+        geocoderRef.current.geocode({ location: { lat: newLat, lng: newLng } }, (results, status) => {
+          const rawAddr = (status === 'OK' && results && results[0]) ? results[0].formatted_address : `${newLat.toFixed(6)}, ${newLng.toFixed(6)}`;
+          const addr = convertGoogleAddresses(rawAddr);
+          setPendingMoveAddress({ lat: newLat, lng: newLng, address: addr });
+        });
+        // Remove this one-time listener
+        google.maps.event.removeListener(dragEndListener);
+      });
+      // Store original position on the window object for cancel rollback
+      (window as any).__cmMoveOrigPos = { id, lat: origLat, lng: origLng };
+    };
+    return () => { delete (window as any).__cmStartMove; };
+  }, [customMarkerMapRefs, geocoderRef, setMovingMarkerId, setPendingMoveAddress]);
 
   // Global inline rotation handler for custom marker popup slider
   useEffect(() => {
@@ -2587,6 +2629,91 @@ export default function IntelligenceMapping() {
                     <span className="text-xs text-muted-foreground flex-shrink-0">{c.distanceM}m away</span>
                   </button>
                 ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Move Marker Banner ── */}
+      {movingMarkerId !== null && (
+        <div
+          className="absolute top-0 left-0 right-0 z-50 flex justify-center px-3 pt-3 pointer-events-none"
+        >
+          <div
+            className="pointer-events-auto w-full max-w-md rounded-2xl shadow-2xl border border-border overflow-hidden"
+            style={{ background: "rgba(3,105,161,0.97)" }}
+          >
+            {pendingMoveAddress === null ? (
+              /* Phase 1: dragging */
+              <div className="flex items-center justify-between gap-3 px-4 py-3">
+                <p className="text-sm font-semibold text-white">Drag marker to new position</p>
+                <button
+                  onClick={() => {
+                    // Cancel: snap marker back to original position
+                    const orig = (window as any).__cmMoveOrigPos;
+                    if (orig && orig.id === movingMarkerId) {
+                      const marker = customMarkerMapRefs.current.get(orig.id);
+                      if (marker) {
+                        marker.position = { lat: orig.lat, lng: orig.lng };
+                        (marker as any).gmpDraggable = false;
+                      }
+                    }
+                    setMovingMarkerId(null);
+                    setPendingMoveAddress(null);
+                    delete (window as any).__cmMoveOrigPos;
+                  }}
+                  className="flex-shrink-0 text-white/80 hover:text-white text-xs font-medium bg-white/20 hover:bg-white/30 rounded-lg px-3 py-1.5 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              /* Phase 2: confirm new address */
+              <div className="px-4 py-3">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-white/70 mb-0.5">Move to</p>
+                <p className="text-sm font-semibold text-white mb-3 leading-snug">{pendingMoveAddress.address}</p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      if (movingMarkerId === null || pendingMoveAddress === null) return;
+                      updateCustomMarkerMut.mutate({
+                        id: movingMarkerId,
+                        lat: pendingMoveAddress.lat,
+                        lng: pendingMoveAddress.lng,
+                        address: pendingMoveAddress.address,
+                      });
+                      const marker = customMarkerMapRefs.current.get(movingMarkerId);
+                      if (marker) (marker as any).gmpDraggable = false;
+                      setMovingMarkerId(null);
+                      setPendingMoveAddress(null);
+                      delete (window as any).__cmMoveOrigPos;
+                      toast.success("Marker moved");
+                    }}
+                    className="flex-1 text-sm font-semibold text-white bg-white/25 hover:bg-white/35 rounded-xl py-2 transition-colors"
+                  >
+                    Accept
+                  </button>
+                  <button
+                    onClick={() => {
+                      // Cancel: snap marker back to original position
+                      const orig = (window as any).__cmMoveOrigPos;
+                      if (orig && orig.id === movingMarkerId) {
+                        const marker = customMarkerMapRefs.current.get(orig.id);
+                        if (marker) {
+                          marker.position = { lat: orig.lat, lng: orig.lng };
+                          (marker as any).gmpDraggable = false;
+                        }
+                      }
+                      setMovingMarkerId(null);
+                      setPendingMoveAddress(null);
+                      delete (window as any).__cmMoveOrigPos;
+                    }}
+                    className="flex-1 text-sm font-semibold text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-xl py-2 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             )}
           </div>

@@ -3611,6 +3611,8 @@ export async function createCustomMarker(data: {
 export async function updateCustomMarker(id: number, data: {
   label?: string | null;
   address?: string | null;
+  lat?: number;
+  lng?: number;
   markerIcon?: string;
   markerColour?: string;
   note?: string | null;
@@ -3624,6 +3626,8 @@ export async function updateCustomMarker(id: number, data: {
   const update: Partial<InsertCustomMapMarker> = {};
   if (data.label !== undefined) update.label = data.label;
   if (data.address !== undefined) update.address = data.address;
+  if (data.lat !== undefined) (update as any).lat = data.lat;
+  if (data.lng !== undefined) (update as any).lng = data.lng;
   if (data.markerIcon !== undefined) update.markerIcon = data.markerIcon;
   if (data.markerColour !== undefined) update.markerColour = data.markerColour;
   if (data.note !== undefined) update.note = data.note;

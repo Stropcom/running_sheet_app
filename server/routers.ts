@@ -2468,6 +2468,8 @@ export const appRouter = router({
         id: z.number(),
         label: z.string().optional().nullable(),
         address: z.string().optional().nullable(),
+        lat: z.number().optional(),
+        lng: z.number().optional(),
         markerIcon: z.string().optional(),
         markerColour: z.string().optional(),
         note: z.string().optional().nullable(),

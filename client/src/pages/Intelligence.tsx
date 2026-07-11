@@ -142,7 +142,7 @@ function buildProfileHtml(entity: Entity, allEntities: Entity[]) {
   const stripVehicleA = (s: string, type: string) =>
     type === "vehicle" ? s.replace(/^[aA]\s+/, "") : s;
   const entityName = esc(
-    entity.type === "vehicle" ? formatIntelVehicle(entity.shortForm)
+    entity.type === "vehicle" ? formatIntelVehicle(entity.shortForm, entity.occurrences[0]?.fullDescription)
     : (entity.type === "address" || entity.type === "business") ? formatIntelAddress(entity.shortForm)
     : entity.shortForm
   );
@@ -623,7 +623,7 @@ function ProfileDialog({
               {TYPE_ICONS[entity.type]}
               {TYPE_LABELS[entity.type]}
             </span>
-            <span className="font-mono text-lg">{entity.type === "vehicle" ? formatIntelVehicle(entity.shortForm) : (entity.type === "address" || entity.type === "business") ? formatIntelAddress(entity.shortForm) : entity.shortForm}</span>
+            <span className="font-mono text-lg">{entity.type === "vehicle" ? formatIntelVehicle(entity.shortForm, entity.occurrences[0]?.fullDescription) : (entity.type === "address" || entity.type === "business") ? formatIntelAddress(entity.shortForm) : entity.shortForm}</span>
           </DialogTitle>
         </DialogHeader>
 
@@ -670,7 +670,7 @@ function ProfileDialog({
                   onClick={() => onNavigate(v)}
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity ${TYPE_COLORS.vehicle}`}
                 >
-                  <Car className="w-3 h-3" />{v.shortForm.replace(/^[aA]\s+/, "")}<span className="opacity-60">×{v.occurrences.length}</span>
+                  <Car className="w-3 h-3" />{formatIntelVehicle(v.shortForm, v.occurrences[0]?.fullDescription)}<span className="opacity-60">×{v.occurrences.length}</span>
                 </button>
               ))}
             </div>
@@ -688,7 +688,7 @@ function ProfileDialog({
                   onClick={() => onNavigate(a)}
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity ${TYPE_COLORS.address}`}
                 >
-                  <MapPin className="w-3 h-3" />{a.shortForm}<span className="opacity-60">×{a.occurrences.length}</span>
+                  <MapPin className="w-3 h-3" />{formatIntelAddress(a.shortForm)}<span className="opacity-60">×{a.occurrences.length}</span>
                 </button>
               ))}
             </div>
@@ -724,7 +724,7 @@ function ProfileDialog({
                   onClick={() => onNavigate(b)}
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity ${TYPE_COLORS.business}`}
                 >
-                  <Building2 className="w-3 h-3" />{b.shortForm}<span className="opacity-60">×{b.occurrences.length}</span>
+                  <Building2 className="w-3 h-3" />{formatIntelAddress(b.shortForm)}<span className="opacity-60">×{b.occurrences.length}</span>
                 </button>
               ))}
             </div>
@@ -936,7 +936,7 @@ function OperationsTab({
                                 {TYPE_ICONS[type]}
                               </span>
                               <div className="flex-1 min-w-0">
-                                <p className="font-mono text-xs font-medium text-foreground truncate">{entity.type === "vehicle" ? formatIntelVehicle(entity.shortForm) : (entity.type === "address" || entity.type === "business") ? formatIntelAddress(entity.shortForm) : entity.shortForm}</p>
+                                <p className="font-mono text-xs font-medium text-foreground truncate">{entity.type === "vehicle" ? formatIntelVehicle(entity.shortForm, entity.occurrences[0]?.fullDescription) : (entity.type === "address" || entity.type === "business") ? formatIntelAddress(entity.shortForm) : entity.shortForm}</p>
                               </div>
                               <div className="text-right shrink-0">
                                 <p className="text-xs font-medium text-foreground">{opOccs.length}×</p>
@@ -1305,7 +1305,7 @@ export default function IntelligencePage() {
                     ? <MapPin className="w-3.5 h-3.5" />
                     : TYPE_ICONS[entity.type];
                   const displayShortForm = entity.type === "vehicle"
-                    ? formatIntelVehicle(entity.shortForm)
+                    ? formatIntelVehicle(entity.shortForm, entity.occurrences[0]?.fullDescription)
                     : (entity.type === "address" || entity.type === "business")
                     ? formatIntelAddress(entity.shortForm)
                     : entity.shortForm;
@@ -1354,7 +1354,7 @@ export default function IntelligencePage() {
                       ? <MapPin className="w-3.5 h-3.5" />
                       : TYPE_ICONS[entity.type];
                     const displayShortForm = entity.type === "vehicle"
-                      ? formatIntelVehicle(entity.shortForm)
+                      ? formatIntelVehicle(entity.shortForm, entity.occurrences[0]?.fullDescription)
                       : (entity.type === "address" || entity.type === "business")
                       ? formatIntelAddress(entity.shortForm)
                       : entity.shortForm;

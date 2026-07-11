@@ -2741,6 +2741,7 @@ export interface IntelAssociateProfile {
 
 export interface IntelVehicleProfile {
   label: string;
+  firstObservation: string | null;
   linkedTarget: { targetId: number; name: string } | null;
   linkedOperations: Array<{ id: number; name: string }>;
   linkedSheets: Array<{ id: number; title: string; operationId: number; operationName: string }>;
@@ -3082,8 +3083,12 @@ export async function getIntelVehicleProfile(label: string): Promise<IntelVehicl
     else if (other.type === "address" || other.type === "business") assocLocationsMap.set(key, profileEntity);
   }
 
+  // Find the first observation text that contains the full vehicle description
+  const firstObservation = entity.occurrences.find(o => o.fullDescription)?.fullDescription ?? null;
+
   return {
     label: entity.shortForm,
+    firstObservation,
     linkedTarget,
     linkedOperations: Array.from(opMap.values()),
     linkedSheets: Array.from(sheetMap.values()),

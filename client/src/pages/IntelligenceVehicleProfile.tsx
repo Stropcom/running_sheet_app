@@ -9,6 +9,7 @@ import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
 interface IntelProfileEntity { id: string; label: string; type: string; rowCount: number; sheetIds: number[]; operationIds: number[] }
 interface IntelVehicleProfile {
   label: string;
+  firstObservation: string | null;
   linkedTarget: { targetId: number; name: string } | null;
   linkedOperations: Array<{ id: number; name: string }>;
   linkedSheets: Array<{ id: number; title: string; operationId: number; operationName: string }>;
@@ -63,7 +64,7 @@ function buildVehicleProfileHtml(profile: IntelVehicleProfile) {
     return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:9999px;font-size:10px;font-weight:600;${style};margin:2px">${esc(displayLabel)} <span style="opacity:0.6">×${count}</span></span>`;
   };
   const generatedAt = new Date().toLocaleString("en-AU", { dateStyle: "long", timeStyle: "short" });
-  const displayLabel = formatIntelVehicle(profile.label);
+  const displayLabel = formatIntelVehicle(profile.label, profile.firstObservation ?? undefined);
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>RunLog — Vehicle Profile: ${esc(displayLabel)}</title>
 <style>* { box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; } body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.6; color:${GREY_TEXT}; background:#fff; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 .cover-header { background:${BLUE_DARK} !important; color:#fff !important; padding:28px 32px 22px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
@@ -132,7 +133,7 @@ export default function IntelligenceVehicleProfile() {
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 border border-white/30 mb-3">
                       <Car className="w-3 h-3" /> Vehicle
                     </span>
-                    <h1 className="text-2xl font-bold tracking-tight">{formatIntelVehicle(profile.label)}</h1>
+                    <h1 className="text-2xl font-bold tracking-tight">{formatIntelVehicle(profile.label, profile.firstObservation ?? undefined)}</h1>
                     {profile.linkedTarget && (
                       <p className="text-sm opacity-75 mt-1">Registered to: {profile.linkedTarget.name}</p>
                     )}

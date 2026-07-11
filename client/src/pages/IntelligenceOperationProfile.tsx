@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { ArrowLeft, FileDown, User, Car, MapPin, FileText, ChevronRight } from "lucide-react";
-import { formatIntelAddress } from "@/lib/addressFormat";
+import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
 
 // ─── Types (mirrors server IntelOperationProfile) ──────────────────────────
 interface IntelProfileEntity { id: string; label: string; type: string; rowCount: number; sheetIds: number[]; operationIds: number[] }
@@ -36,7 +36,7 @@ function EntityChip({ item, onClick }: { item: IntelProfileEntity; onClick?: () 
   const cls = CHIP[item.type] ?? "bg-muted text-muted-foreground border-border";
   const icon = item.type === "vehicle" ? <Car className="w-3 h-3" /> : item.type === "address" || item.type === "business" ? <MapPin className="w-3 h-3" /> : <User className="w-3 h-3" />;
   const label = item.type === "vehicle"
-    ? item.label.replace(/^[aA]\s+/, "")
+    ? formatIntelVehicle(item.label)
     : (item.type === "address" || item.type === "business")
     ? formatIntelAddress(item.label)
     : item.label;
@@ -62,7 +62,7 @@ function buildOperationProfileHtml(profile: IntelOperationProfile) {
     };
     const style = colors[type] ?? "background:#f1f5f9;color:#475569;border:1px solid #cbd5e1";
     const displayLabel = type === "vehicle"
-      ? label.replace(/^[aA]\s+/, "")
+      ? formatIntelVehicle(label)
       : (type === "address" || type === "business")
       ? formatIntelAddress(label)
       : label;

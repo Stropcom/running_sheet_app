@@ -212,3 +212,59 @@ export function formatIntelAddress(shortForm: string): string {
 export function formatMapPopupAddress(shortForm: string): string {
   return formatIntelAddress(shortForm);
 }
+
+/**
+ * Format a vehicle for display in the Intelligence section and map pop-ups.
+ *
+ * The RS shortForm is what's inside the brackets in an observation, e.g.:
+ *   "Vehicle 1ABC123"   → extracted from "red Mercedes Benz sedan, bearing WA registration 1ABC123 (Vehicle 1ABC123)"
+ *
+ * The Intel display format is: "[registration] [description]"
+ * e.g. "1ABC123 red Mercedes Benz sedan"
+ *
+ * Rules:
+ *  1. If shortForm starts with "Vehicle " (case-insensitive), strip that prefix
+ *     to get the registration: "Vehicle 1ABC123" → "1ABC123"
+ *  2. If fullObservation is provided, extract the vehicle description from it:
+ *     look for text before "bearing ... registration REGO" or before "(Vehicle REGO)"
+ *  3. Combine as "[rego] [description]" — e.g. "1ABC123 red Mercedes Benz sedan"
+ *  4. If no description can be found, return just the registration
+ *  5. If shortForm doesn't look like a vehicle reference, return it as-is
+ *    (stripped of leading "a " or "A ")
+ */
+export function formatIntelVehicle(shortForm: string, fullObservation?: string): string {
+  if (!shortForm) return shortForm;
+
+  // Strip leading "a " or "A " (legacy normalisation)
+  let cleaned = shortForm.replace(/^[aA]\s+/, "").trim();
+
+  // Extract registration from "Vehicle REGO" pattern
+  const vehiclePrefix = cleaned.match(/^[Vv]ehicle\s+(.+)$/i);
+  if (!vehiclePrefix) {
+    // Not a "Vehicle REGO" format — return as-is (already normalised above)
+    return cleaned;
+  }
+
+  const rego = vehiclePrefix[1].trim().toUpperCase();
+
+  // Try to extract description from the full observation text
+  if (fullObservation) {
+    // Pattern: "[description], bearing [jurisdiction] registration REGO (Vehicle REGO)"
+    // or:      "[description] bearing [jurisdiction] registration REGO"
+    // or:      "[description] bearing registration REGO"
+    const descMatch = fullObservation.match(
+      /^(.+?),?\s+bearing\s+(?:[A-Z]{2,3}\s+)?registration\s+[\w\s-]+/i
+    );
+    if (descMatch) {
+      const rawDesc = descMatch[1].trim();
+      // Clean up: remove leading "a " or "A "
+      const desc = rawDesc.replace(/^[aA]\s+/, "").trim();
+      if (desc && desc.toLowerCase() !== "vehicle") {
+        return `${rego} ${desc}`;
+      }
+    }
+  }
+
+  // No description available — return just the registration
+  return rego;
+}

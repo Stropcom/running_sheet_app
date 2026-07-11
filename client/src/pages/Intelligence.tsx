@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import { ViewToggle } from "@/components/ViewToggle";
 import { useViewMode } from "@/contexts/ViewModeContext";
-import { formatIntelAddress } from "@/lib/addressFormat";
+import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -619,7 +619,7 @@ function ProfileDialog({
               {TYPE_ICONS[entity.type]}
               {TYPE_LABELS[entity.type]}
             </span>
-            <span className="font-mono text-lg">{entity.type === "vehicle" ? entity.shortForm.replace(/^[aA]\s+/, "") : entity.shortForm}</span>
+            <span className="font-mono text-lg">{entity.type === "vehicle" ? formatIntelVehicle(entity.shortForm) : entity.shortForm}</span>
           </DialogTitle>
         </DialogHeader>
 
@@ -932,7 +932,7 @@ function OperationsTab({
                                 {TYPE_ICONS[type]}
                               </span>
                               <div className="flex-1 min-w-0">
-                                <p className="font-mono text-xs font-medium text-foreground truncate">{entity.type === "vehicle" ? entity.shortForm.replace(/^[aA]\s+/, "") : entity.shortForm}</p>
+                                <p className="font-mono text-xs font-medium text-foreground truncate">{entity.type === "vehicle" ? formatIntelVehicle(entity.shortForm) : entity.shortForm}</p>
                               </div>
                               <div className="text-right shrink-0">
                                 <p className="text-xs font-medium text-foreground">{opOccs.length}×</p>
@@ -1301,7 +1301,7 @@ export default function IntelligencePage() {
                     ? <MapPin className="w-3.5 h-3.5" />
                     : TYPE_ICONS[entity.type];
                   const displayShortForm = entity.type === "vehicle"
-                    ? entity.shortForm.replace(/^[aA]\s+/, "")
+                    ? formatIntelVehicle(entity.shortForm)
                     : (entity.type === "address" || entity.type === "business")
                     ? formatIntelAddress(entity.shortForm)
                     : entity.shortForm;
@@ -1349,9 +1349,8 @@ export default function IntelligencePage() {
                     const icon = entity.type === "address" || entity.type === "business"
                       ? <MapPin className="w-3.5 h-3.5" />
                       : TYPE_ICONS[entity.type];
-                    // Strip leading 'a ' or 'A ' from vehicle display names
                     const displayShortForm = entity.type === "vehicle"
-                      ? entity.shortForm.replace(/^[aA]\s+/, "")
+                      ? formatIntelVehicle(entity.shortForm)
                       : (entity.type === "address" || entity.type === "business")
                       ? formatIntelAddress(entity.shortForm)
                       : entity.shortForm;

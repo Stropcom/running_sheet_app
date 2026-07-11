@@ -4,7 +4,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, FileDown, User, Car, MapPin, FileText } from "lucide-react";
-import { formatIntelAddress } from "@/lib/addressFormat";
+import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
 
 interface IntelProfileEntity { id: string; label: string; type: string; rowCount: number; sheetIds: number[]; operationIds: number[] }
 interface IntelVehicleProfile {
@@ -28,7 +28,7 @@ function EntityChip({ item, onClick }: { item: IntelProfileEntity; onClick?: () 
   const cls = CHIP[item.type] ?? "bg-muted text-muted-foreground border-border";
   const icon = item.type === "vehicle" ? <Car className="w-3 h-3" /> : item.type === "address" || item.type === "business" ? <MapPin className="w-3 h-3" /> : <User className="w-3 h-3" />;
   const label = item.type === "vehicle"
-    ? item.label.replace(/^[aA]\s+/, "")
+    ? formatIntelVehicle(item.label)
     : (item.type === "address" || item.type === "business")
     ? formatIntelAddress(item.label)
     : item.label;
@@ -56,14 +56,14 @@ function buildVehicleProfileHtml(profile: IntelVehicleProfile) {
     const colors: Record<string, string> = { person: "background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd", vehicle: "background:#fef3c7;color:#d97706;border:1px solid #fcd34d", address: "background:#d1fae5;color:#059669;border:1px solid #6ee7b7", business: "background:#ede9fe;color:#7c3aed;border:1px solid #c4b5fd", target: "background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd" };
     const style = colors[type] ?? "background:#f1f5f9;color:#475569;border:1px solid #cbd5e1";
     const displayLabel = type === "vehicle"
-      ? label.replace(/^[aA]\s+/, "")
+      ? formatIntelVehicle(label)
       : (type === "address" || type === "business")
       ? formatIntelAddress(label)
       : label;
     return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:9999px;font-size:10px;font-weight:600;${style};margin:2px">${esc(displayLabel)} <span style="opacity:0.6">×${count}</span></span>`;
   };
   const generatedAt = new Date().toLocaleString("en-AU", { dateStyle: "long", timeStyle: "short" });
-  const displayLabel = profile.label.replace(/^[aA]\s+/, "");
+  const displayLabel = formatIntelVehicle(profile.label);
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>RunLog — Vehicle Profile: ${esc(displayLabel)}</title>
 <style>* { box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; } body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.6; color:${GREY_TEXT}; background:#fff; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 .cover-header { background:${BLUE_DARK} !important; color:#fff !important; padding:28px 32px 22px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
@@ -132,7 +132,7 @@ export default function IntelligenceVehicleProfile() {
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 border border-white/30 mb-3">
                       <Car className="w-3 h-3" /> Vehicle
                     </span>
-                    <h1 className="text-2xl font-bold tracking-tight">{profile.label.replace(/^[aA]\s+/, "")}</h1>
+                    <h1 className="text-2xl font-bold tracking-tight">{formatIntelVehicle(profile.label)}</h1>
                     {profile.linkedTarget && (
                       <p className="text-sm opacity-75 mt-1">Registered to: {profile.linkedTarget.name}</p>
                     )}

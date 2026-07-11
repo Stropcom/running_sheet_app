@@ -1,7 +1,7 @@
 import { useRoute, useLocation } from "wouter";
 import { useRef } from "react";
 import { trpc } from "@/lib/trpc";
-import { formatIntelAddress } from "@/lib/addressFormat";
+import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -29,7 +29,7 @@ const CHIP: Record<string, string> = {
 function EntityChip({ item, onClick }: { item: IntelProfileEntity; onClick?: () => void }) {
   const cls = CHIP[item.type] ?? "bg-muted text-muted-foreground border-border";
   const icon = item.type === "vehicle" ? <Car className="w-3 h-3" /> : item.type === "address" || item.type === "business" ? <MapPin className="w-3 h-3" /> : <User className="w-3 h-3" />;
-  const label = item.type === "vehicle" ? item.label.replace(/^[aA]\s+/, "") : item.label;
+  const label = item.type === "vehicle" ? formatIntelVehicle(item.label) : item.label;
   return (
     <button onClick={onClick} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-opacity hover:opacity-80 ${cls}`}>
       {icon}{label}<span className="opacity-60">×{item.rowCount}</span>
@@ -53,7 +53,7 @@ function buildLocationProfileHtml(profile: IntelLocationProfile) {
   const chipHtml = (label: string, type: string, count: number) => {
     const colors: Record<string, string> = { person: "background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd", vehicle: "background:#fef3c7;color:#d97706;border:1px solid #fcd34d", address: "background:#d1fae5;color:#059669;border:1px solid #6ee7b7", business: "background:#ede9fe;color:#7c3aed;border:1px solid #c4b5fd", target: "background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd" };
     const style = colors[type] ?? "background:#f1f5f9;color:#475569;border:1px solid #cbd5e1";
-    const displayLabel = type === "vehicle" ? label.replace(/^[aA]\s+/, "") : label;
+    const displayLabel = type === "vehicle" ? formatIntelVehicle(label) : label;
     return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:9999px;font-size:10px;font-weight:600;${style};margin:2px">${esc(displayLabel)} <span style="opacity:0.6">×${count}</span></span>`;
   };
   const generatedAt = new Date().toLocaleString("en-AU", { dateStyle: "long", timeStyle: "short" });

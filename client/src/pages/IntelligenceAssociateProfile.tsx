@@ -4,7 +4,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, FileDown, User, Car, MapPin, FileText, Folder } from "lucide-react";
-import { formatIntelAddress } from "@/lib/addressFormat";
+import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
 
 interface IntelProfileEntity { id: string; label: string; type: string; rowCount: number; sheetIds: number[]; operationIds: number[] }
 interface IntelAssociateProfile {
@@ -26,7 +26,7 @@ function EntityChip({ item, onClick }: { item: IntelProfileEntity; onClick?: () 
   const cls = CHIP[item.type] ?? "bg-muted text-muted-foreground border-border";
   const icon = item.type === "vehicle" ? <Car className="w-3 h-3" /> : item.type === "address" || item.type === "business" ? <MapPin className="w-3 h-3" /> : <User className="w-3 h-3" />;
   const label = item.type === "vehicle"
-    ? item.label.replace(/^[aA]\s+/, "")
+    ? formatIntelVehicle(item.label)
     : (item.type === "address" || item.type === "business")
     ? formatIntelAddress(item.label)
     : item.label;
@@ -54,7 +54,7 @@ function buildAssociateProfileHtml(profile: IntelAssociateProfile) {
     const colors: Record<string, string> = { person: "background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd", vehicle: "background:#fef3c7;color:#d97706;border:1px solid #fcd34d", address: "background:#d1fae5;color:#059669;border:1px solid #6ee7b7", business: "background:#ede9fe;color:#7c3aed;border:1px solid #c4b5fd", target: "background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd" };
     const style = colors[type] ?? "background:#f1f5f9;color:#475569;border:1px solid #cbd5e1";
     const displayLabel = type === "vehicle"
-      ? label.replace(/^[aA]\s+/, "")
+      ? formatIntelVehicle(label)
       : (type === "address" || type === "business")
       ? formatIntelAddress(label)
       : label;

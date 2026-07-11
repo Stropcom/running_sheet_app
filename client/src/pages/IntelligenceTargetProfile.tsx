@@ -7,7 +7,7 @@ import { Separator } from "@/components/ui/separator";
 import {
   ArrowLeft, FileDown, User, Car, MapPin, Building2, FileText, Folder,
 } from "lucide-react";
-import { formatIntelAddress } from "@/lib/addressFormat";
+import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
 
 // ─── Colour palette (matches Intelligence.tsx) ─────────────────────────────
 const CHIP = {
@@ -28,7 +28,7 @@ function EntityChip({ item, onClick }: { item: EntityItem; onClick?: () => void 
     ? <MapPin className="w-3 h-3" />
     : <User className="w-3 h-3" />;
   const label = item.type === "vehicle"
-    ? item.label.replace(/^[aA]\s+/, "")
+    ? formatIntelVehicle(item.label)
     : (item.type === "address" || item.type === "business")
     ? formatIntelAddress(item.label)
     : item.label;
@@ -70,7 +70,7 @@ function buildTargetProfileHtml(profile: NonNullable<ReturnType<typeof useTarget
       target:   "background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd",
     };
     const style = colors[type] ?? "background:#f1f5f9;color:#475569;border:1px solid #cbd5e1";
-    const displayLabel = type === "vehicle" ? label.replace(/^[aA]\s+/, "") : label;
+    const displayLabel = type === "vehicle" ? formatIntelVehicle(label) : label;
     return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:9999px;font-size:10px;font-weight:600;${style};margin:2px">${esc(displayLabel)} <span style="opacity:0.6">×${count}</span></span>`;
   };
 

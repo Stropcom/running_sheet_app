@@ -3389,7 +3389,13 @@ export async function getIntelMappingLocations(
     result.push(loc);
   }
 
-  return result.sort((a, b) => a.label.localeCompare(b.label));
+  // Sort: target_address entries first (so they geocode before observations and win proximity merge),
+  // then alphabetically within each type
+  return result.sort((a, b) => {
+    if (a.type === 'target_address' && b.type !== 'target_address') return -1;
+    if (a.type !== 'target_address' && b.type === 'target_address') return 1;
+    return a.label.localeCompare(b.label);
+  });
 }
 
 // ─── User Location Helpers ────────────────────────────────────────────────────

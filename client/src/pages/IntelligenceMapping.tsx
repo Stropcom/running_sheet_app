@@ -71,6 +71,8 @@ interface IntelMapLocation {
   linkCount: number;
   lat?: number;
   lng?: number;
+  /** Observation intel locations that were absorbed into this target_address pin at the same geocoded position */
+  secondaryLocs?: IntelMapLocation[];
 }
 
 interface LiveUser {
@@ -218,6 +220,37 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
   }
   if (btnRow.length > 0) {
     lines.push(`<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${btnRow.join("")}</div>`);
+  }
+
+  // ── Secondary (observation) locs absorbed into this target_address pin ──
+  if (isTarget && loc.secondaryLocs && loc.secondaryLocs.length > 0) {
+    for (const sec of loc.secondaryLocs) {
+      const secLabel = formatIntelAddress(sec.label);
+      lines.push(`<div style="margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;">`);
+      lines.push(`
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <span style="background:#7c3aed;color:#fff;border-radius:4px;font-size:9px;font-weight:700;padding:2px 6px;letter-spacing:0.07em;white-space:nowrap;">OBSERVED LOCATION</span>
+        </div>
+        <strong style="font-size:12px;color:#111;line-height:1.35;display:block;margin-bottom:2px;">${secLabel}</strong>
+      `);
+      if (sec.linkedTargets.length > 0) {
+        lines.push(`<div style="margin-top:4px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Linked Targets</span>`);
+        for (const t of sec.linkedTargets) {
+          lines.push(`<div style="font-size:12px;color:#111;padding:1px 0;">${t.name}</div>`);
+        }
+        lines.push(`</div>`);
+      }
+      if (sec.assocPersons.length > 0) {
+        lines.push(`<div style="margin-top:4px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Persons</span><p style="font-size:12px;color:#111;margin:2px 0 0">${sec.assocPersons.join(", ")}</p></div>`);
+      }
+      if (sec.assocVehicles.length > 0) {
+        lines.push(`<div style="margin-top:4px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Vehicles</span><p style="font-size:12px;color:#111;margin:2px 0 0">${sec.assocVehicles.join(", ")}</p></div>`);
+      }
+      // View Profile button for the observation
+      const encodedSecLabel = encodeURIComponent(sec.label);
+      lines.push(`<div style="margin-top:6px"><a href="/intelligence/location/${encodedSecLabel}" style="font-size:11px;padding:4px 10px;background:#7c3aed;color:#fff;border-radius:4px;text-decoration:none">View Observation Profile</a></div>`);
+      lines.push(`</div>`);
+    }
   }
 
   return `<div style="font-family:sans-serif;max-width:260px;color:#111">${lines.join("")}</div>`;
@@ -375,8 +408,8 @@ export default function IntelligenceMapping() {
   const mergedIntelRef = useRef<Map<number, IntelMapLocation[]>>(new Map());
   // Latest custom markers data ref — kept in sync so placeMarker can access it without stale closure
   const customMarkersDataRef = useRef<any[]>([]);
-  // All geocoded intel locations (label → {loc, position}) for manual merge lookup
-  const geocodedIntelRef = useRef<Map<string, { loc: IntelMapLocation; position: google.maps.LatLngLiteral }>>(new Map());
+  // All geocoded intel locations (label → {loc, position, secondaryLocs?}) for manual merge lookup
+  const geocodedIntelRef = useRef<Map<string, { loc: IntelMapLocation; position: google.maps.LatLngLiteral; secondaryLocs?: IntelMapLocation[] }>>(new Map());
   // Manual merge picker state: which custom marker is being merged, and nearby intel candidates
   const [manualMergePicker, setManualMergePicker] = useState<{
     cmId: number;
@@ -799,6 +832,60 @@ export default function IntelligenceMapping() {
       return; // suppress intel pin — the house marker absorbs it
     }
 
+    // ── Intel-pin same-position deduplication ────────────────────────────────────
+    // When a target_address pin has already been placed at this location, absorb any
+    // incoming observation pin into it (merge data + update badge) rather than
+    // placing a second overlapping purple pin. The target_address pin always wins.
+    // Because the server now sorts target_address first, the red pin is always placed
+    // before the purple one arrives.
+    const INTEL_DEDUP_RADIUS_M = 20;
+    if (loc.type === 'observation') {
+      const nearbyTargetMarkerIdx = markersRef.current.findIndex((m: any) => {
+        const pos = m.position as google.maps.LatLng | google.maps.LatLngLiteral | null;
+        if (!pos) return false;
+        const mLat = typeof (pos as any).lat === 'function' ? (pos as any).lat() : (pos as any).lat;
+        const mLng = typeof (pos as any).lng === 'function' ? (pos as any).lng() : (pos as any).lng;
+        // Check if this marker is a target_address intel pin (stored in geocodedIntelRef)
+        const entry = geocodedIntelRef.current.get(m.title ?? '');
+        return entry?.loc.type === 'target_address' &&
+          haversineMetres(position.lat, position.lng, mLat, mLng) <= INTEL_DEDUP_RADIUS_M;
+      });
+
+      if (nearbyTargetMarkerIdx !== -1) {
+        const targetMarker = markersRef.current[nearbyTargetMarkerIdx];
+        const targetEntry = geocodedIntelRef.current.get(targetMarker.title ?? '');
+        if (targetEntry) {
+          // Merge observation data into the target_address loc
+          const merged = targetEntry.loc;
+          // Merge assocPersons
+          for (const p of loc.assocPersons) {
+            if (!merged.assocPersons.includes(p)) merged.assocPersons.push(p);
+          }
+          // Merge assocVehicles
+          for (const v of loc.assocVehicles) {
+            if (!merged.assocVehicles.includes(v)) merged.assocVehicles.push(v);
+          }
+          // Merge linkedTargets
+          for (const t of loc.linkedTargets) {
+            if (!merged.linkedTargets.find(lt => lt.targetId === t.targetId)) {
+              merged.linkedTargets.push(t);
+            }
+          }
+          // Store the observation as a secondary merged entry on the target pin
+          if (!targetEntry.secondaryLocs) targetEntry.secondaryLocs = [];
+          (targetEntry as any).secondaryLocs.push({ ...loc, lat: position.lat, lng: position.lng });
+          // Recompute linkCount and update the badge on the existing marker
+          merged.linkCount = merged.linkedTargets.length + merged.assocPersons.length + merged.assocVehicles.length;
+          const newPinEl = createPinElement(merged);
+          targetMarker.content = newPinEl;
+          // Update geocodedIntelRef so the click handler has fresh data
+          geocodedIntelRef.current.set(targetMarker.title ?? '', { loc: merged, position: targetEntry.position, secondaryLocs: (targetEntry as any).secondaryLocs });
+        }
+        return; // suppress the observation pin
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────────
+
     // Store geocoded position for manual merge lookup (all non-suppressed intel pins)
     geocodedIntelRef.current.set(loc.label, { loc, position });
     // ────────────────────────────────────────────────────────────────────────────────
@@ -814,7 +901,10 @@ export default function IntelligenceMapping() {
       // Show the two-option action chooser (RS Quick Entry | Intel)
       // The Intel option will open the existing info popup with all data intact
       const enriched = { ...loc, lat: position.lat, lng: position.lng };
-      setActionChooser({ lat: position.lat, lng: position.lng, address: loc.label, intelLoc: enriched });
+      // Include any secondary (observation) locs merged into this pin
+      const entry = geocodedIntelRef.current.get(loc.label);
+      const secondaryLocs = (entry as any)?.secondaryLocs ?? [];
+      setActionChooser({ lat: position.lat, lng: position.lng, address: loc.label, intelLoc: { ...enriched, secondaryLocs } });
     });
     markersRef.current.push(marker);
   }, [createPinElement, setActionChooser]);

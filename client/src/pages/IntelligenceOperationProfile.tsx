@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { ArrowLeft, FileDown, User, Car, MapPin, FileText, ChevronRight } from "lucide-react";
+import { formatIntelAddress } from "@/lib/addressFormat";
 
 // ─── Types (mirrors server IntelOperationProfile) ──────────────────────────
 interface IntelProfileEntity { id: string; label: string; type: string; rowCount: number; sheetIds: number[]; operationIds: number[] }
@@ -34,7 +35,11 @@ const CHIP: Record<string, string> = {
 function EntityChip({ item, onClick }: { item: IntelProfileEntity; onClick?: () => void }) {
   const cls = CHIP[item.type] ?? "bg-muted text-muted-foreground border-border";
   const icon = item.type === "vehicle" ? <Car className="w-3 h-3" /> : item.type === "address" || item.type === "business" ? <MapPin className="w-3 h-3" /> : <User className="w-3 h-3" />;
-  const label = item.type === "vehicle" ? item.label.replace(/^[aA]\s+/, "") : item.label;
+  const label = item.type === "vehicle"
+    ? item.label.replace(/^[aA]\s+/, "")
+    : (item.type === "address" || item.type === "business")
+    ? formatIntelAddress(item.label)
+    : item.label;
   return (
     <button onClick={onClick} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-opacity hover:opacity-80 ${cls}`}>
       {icon}{label}<span className="opacity-60">×{item.rowCount}</span>
@@ -56,7 +61,11 @@ function buildOperationProfileHtml(profile: IntelOperationProfile) {
       target: "background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd",
     };
     const style = colors[type] ?? "background:#f1f5f9;color:#475569;border:1px solid #cbd5e1";
-    const displayLabel = type === "vehicle" ? label.replace(/^[aA]\s+/, "") : label;
+    const displayLabel = type === "vehicle"
+      ? label.replace(/^[aA]\s+/, "")
+      : (type === "address" || type === "business")
+      ? formatIntelAddress(label)
+      : label;
     return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:9999px;font-size:10px;font-weight:600;${style};margin:2px">${esc(displayLabel)} <span style="opacity:0.6">×${count}</span></span>`;
   };
   const generatedAt = new Date().toLocaleString("en-AU", { dateStyle: "long", timeStyle: "short" });
@@ -67,7 +76,7 @@ function buildOperationProfileHtml(profile: IntelOperationProfile) {
         <strong style="font-size:12px;color:${BLUE_DARK}">${esc(t.name)}</strong>${t.tgt ? ` <span style="font-size:10px;color:#64748b;margin-left:8px">TGT: ${esc(t.tgt)}</span>` : ""}
       </div>
       <div style="padding:10px 14px">
-        ${t.hbf ? `<p style="font-size:10px;margin-bottom:4px"><span style="color:#64748b;font-weight:600">Home:</span> ${esc(t.hbf)}</p>` : ""}
+        ${t.hbf ? `<p style="font-size:10px;margin-bottom:4px"><span style="color:#64748b;font-weight:600">Home:</span> ${esc(formatIntelAddress(t.hbf))}</p>` : ""}
         ${t.v1f ? `<p style="font-size:10px;margin-bottom:4px"><span style="color:#64748b;font-weight:600">Vehicle 1:</span> ${esc(t.v1f)}</p>` : ""}
         ${t.v2f ? `<p style="font-size:10px;margin-bottom:4px"><span style="color:#64748b;font-weight:600">Vehicle 2:</span> ${esc(t.v2f)}</p>` : ""}
         ${t.linkedSheets.length ? `<p style="font-size:10px;color:#64748b;margin-top:6px;margin-bottom:4px;font-weight:600">Running Sheets:</p>${t.linkedSheets.map(s => `<p style="font-size:10px;padding-left:12px">• ${esc(s.title)}</p>`).join("")}` : ""}
@@ -208,7 +217,7 @@ export default function IntelligenceOperationProfile() {
                           <div>
                             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Registered Details</p>
                             <div className="space-y-1 text-xs">
-                              {target.hbf && <div className="flex gap-2"><span className="text-muted-foreground w-20 shrink-0">Home</span><span className="font-mono">{target.hbf}</span></div>}
+                              {target.hbf && <div className="flex gap-2"><span className="text-muted-foreground w-20 shrink-0">Home</span><span className="font-mono">{formatIntelAddress(target.hbf)}</span></div>}
                               {target.v1f && <div className="flex gap-2"><span className="text-muted-foreground w-20 shrink-0">Vehicle 1</span><span className="font-mono">{target.v1f}</span></div>}
                               {target.v2f && <div className="flex gap-2"><span className="text-muted-foreground w-20 shrink-0">Vehicle 2</span><span className="font-mono">{target.v2f}</span></div>}
                             </div>

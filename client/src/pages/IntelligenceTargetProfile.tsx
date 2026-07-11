@@ -7,6 +7,7 @@ import { Separator } from "@/components/ui/separator";
 import {
   ArrowLeft, FileDown, User, Car, MapPin, Building2, FileText, Folder,
 } from "lucide-react";
+import { formatIntelAddress } from "@/lib/addressFormat";
 
 // ─── Colour palette (matches Intelligence.tsx) ─────────────────────────────
 const CHIP = {
@@ -26,7 +27,11 @@ function EntityChip({ item, onClick }: { item: EntityItem; onClick?: () => void 
     : item.type === "address" || item.type === "business"
     ? <MapPin className="w-3 h-3" />
     : <User className="w-3 h-3" />;
-  const label = item.type === "vehicle" ? item.label.replace(/^[aA]\s+/, "") : item.label;
+  const label = item.type === "vehicle"
+    ? item.label.replace(/^[aA]\s+/, "")
+    : (item.type === "address" || item.type === "business")
+    ? formatIntelAddress(item.label)
+    : item.label;
   return (
     <button
       onClick={onClick}
@@ -264,7 +269,7 @@ export default function IntelligenceTargetProfile() {
                   {profile.hbf && (
                     <div className="flex gap-3 items-start">
                       <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">Home Address</span>
-                      <span className="font-mono text-xs text-foreground">{profile.hbf}{profile.hb ? ` (${profile.hb})` : ""}</span>
+                      <span className="font-mono text-xs text-foreground">{formatIntelAddress(profile.hbf)}</span>
                     </div>
                   )}
                   {profile.v1f && (

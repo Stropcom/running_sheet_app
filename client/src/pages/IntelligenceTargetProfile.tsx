@@ -70,7 +70,7 @@ function buildTargetProfileHtml(profile: NonNullable<ReturnType<typeof useTarget
       target:   "background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd",
     };
     const style = colors[type] ?? "background:#f1f5f9;color:#475569;border:1px solid #cbd5e1";
-    const displayLabel = type === "vehicle" ? formatIntelVehicle(label) : label;
+    const displayLabel = type === "vehicle" ? formatIntelVehicle(label) : (type === "address" || type === "business") ? formatIntelAddress(label) : label;
     return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:9999px;font-size:10px;font-weight:600;${style};margin:2px">${esc(displayLabel)} <span style="opacity:0.6">×${count}</span></span>`;
   };
 
@@ -139,9 +139,9 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
   <div class="section">
     <div class="section-title">Registered Details</div>
     <div class="detail-grid">
-      ${profile.hbf ? `<span class="detail-label">Home Address</span><span class="detail-value">${esc(profile.hbf)}${profile.hb ? ` (${esc(profile.hb)})` : ""}</span>` : ""}
-      ${profile.v1f ? `<span class="detail-label">Vehicle 1</span><span class="detail-value">${esc(profile.v1f)}${profile.v1 ? ` (${esc(profile.v1)})` : ""}</span>` : ""}
-      ${profile.v2f ? `<span class="detail-label">Vehicle 2</span><span class="detail-value">${esc(profile.v2f)}${profile.v2 ? ` (${esc(profile.v2)})` : ""}</span>` : ""}
+      ${profile.hbf ? `<span class="detail-label">Home Address</span><span class="detail-value">${esc(formatIntelAddress(profile.hbf))}</span>` : ""}
+      ${profile.v1f ? `<span class="detail-label">Vehicle 1</span><span class="detail-value">${esc(formatIntelVehicle(profile.v1f))}</span>` : ""}
+      ${profile.v2f ? `<span class="detail-label">Vehicle 2</span><span class="detail-value">${esc(formatIntelVehicle(profile.v2f))}</span>` : ""}
     </div>
   </div>` : ""}
 
@@ -275,13 +275,13 @@ export default function IntelligenceTargetProfile() {
                   {profile.v1f && (
                     <div className="flex gap-3 items-start">
                       <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">Vehicle 1</span>
-                      <span className="font-mono text-xs text-foreground">{profile.v1f}{profile.v1 ? ` (${profile.v1})` : ""}</span>
+                      <span className="font-mono text-xs text-foreground">{formatIntelVehicle(profile.v1f)}</span>
                     </div>
                   )}
                   {profile.v2f && (
                     <div className="flex gap-3 items-start">
                       <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">Vehicle 2</span>
-                      <span className="font-mono text-xs text-foreground">{profile.v2f}{profile.v2 ? ` (${profile.v2})` : ""}</span>
+                      <span className="font-mono text-xs text-foreground">{formatIntelVehicle(profile.v2f)}</span>
                     </div>
                   )}
                 </div>

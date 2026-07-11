@@ -53,7 +53,7 @@ function buildLocationProfileHtml(profile: IntelLocationProfile) {
   const chipHtml = (label: string, type: string, count: number) => {
     const colors: Record<string, string> = { person: "background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd", vehicle: "background:#fef3c7;color:#d97706;border:1px solid #fcd34d", address: "background:#d1fae5;color:#059669;border:1px solid #6ee7b7", business: "background:#ede9fe;color:#7c3aed;border:1px solid #c4b5fd", target: "background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd" };
     const style = colors[type] ?? "background:#f1f5f9;color:#475569;border:1px solid #cbd5e1";
-    const displayLabel = type === "vehicle" ? formatIntelVehicle(label) : label;
+    const displayLabel = type === "vehicle" ? formatIntelVehicle(label) : (type === "address" || type === "business") ? formatIntelAddress(label) : label;
     return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:9999px;font-size:10px;font-weight:600;${style};margin:2px">${esc(displayLabel)} <span style="opacity:0.6">×${count}</span></span>`;
   };
   const generatedAt = new Date().toLocaleString("en-AU", { dateStyle: "long", timeStyle: "short" });

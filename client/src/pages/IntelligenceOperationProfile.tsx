@@ -77,8 +77,8 @@ function buildOperationProfileHtml(profile: IntelOperationProfile) {
       </div>
       <div style="padding:10px 14px">
         ${t.hbf ? `<p style="font-size:10px;margin-bottom:4px"><span style="color:#64748b;font-weight:600">Home:</span> ${esc(formatIntelAddress(t.hbf))}</p>` : ""}
-        ${t.v1f ? `<p style="font-size:10px;margin-bottom:4px"><span style="color:#64748b;font-weight:600">Vehicle 1:</span> ${esc(t.v1f)}</p>` : ""}
-        ${t.v2f ? `<p style="font-size:10px;margin-bottom:4px"><span style="color:#64748b;font-weight:600">Vehicle 2:</span> ${esc(t.v2f)}</p>` : ""}
+        ${t.v1f ? `<p style="font-size:10px;margin-bottom:4px"><span style="color:#64748b;font-weight:600">Vehicle 1:</span> ${esc(formatIntelVehicle(t.v1f))}</p>` : ""}
+        ${t.v2f ? `<p style="font-size:10px;margin-bottom:4px"><span style="color:#64748b;font-weight:600">Vehicle 2:</span> ${esc(formatIntelVehicle(t.v2f))}</p>` : ""}
         ${t.linkedSheets.length ? `<p style="font-size:10px;color:#64748b;margin-top:6px;margin-bottom:4px;font-weight:600">Running Sheets:</p>${t.linkedSheets.map(s => `<p style="font-size:10px;padding-left:12px">• ${esc(s.title)}</p>`).join("")}` : ""}
         ${t.assocPersons.length ? `<p style="font-size:10px;color:#64748b;margin-top:8px;margin-bottom:4px;font-weight:600">Associated Persons:</p><div style="display:flex;flex-wrap:wrap;gap:4px">${t.assocPersons.map(p => chipHtml(p.label, p.type, p.rowCount)).join("")}</div>` : ""}
         ${t.assocVehicles.length ? `<p style="font-size:10px;color:#64748b;margin-top:8px;margin-bottom:4px;font-weight:600">Associated Vehicles:</p><div style="display:flex;flex-wrap:wrap;gap:4px">${t.assocVehicles.map(v => chipHtml(v.label, v.type, v.rowCount)).join("")}</div>` : ""}
@@ -218,8 +218,8 @@ export default function IntelligenceOperationProfile() {
                             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Registered Details</p>
                             <div className="space-y-1 text-xs">
                               {target.hbf && <div className="flex gap-2"><span className="text-muted-foreground w-20 shrink-0">Home</span><span className="font-mono">{formatIntelAddress(target.hbf)}</span></div>}
-                              {target.v1f && <div className="flex gap-2"><span className="text-muted-foreground w-20 shrink-0">Vehicle 1</span><span className="font-mono">{target.v1f}</span></div>}
-                              {target.v2f && <div className="flex gap-2"><span className="text-muted-foreground w-20 shrink-0">Vehicle 2</span><span className="font-mono">{target.v2f}</span></div>}
+                              {target.v1f && <div className="flex gap-2"><span className="text-muted-foreground w-20 shrink-0">Vehicle 1</span><span className="font-mono">{formatIntelVehicle(target.v1f)}</span></div>}
+                              {target.v2f && <div className="flex gap-2"><span className="text-muted-foreground w-20 shrink-0">Vehicle 2</span><span className="font-mono">{formatIntelVehicle(target.v2f)}</span></div>}
                             </div>
                             <Separator className="mt-3" />
                           </div>

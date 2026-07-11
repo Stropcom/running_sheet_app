@@ -141,7 +141,11 @@ function buildProfileHtml(entity: Entity, allEntities: Entity[]) {
   // Strip leading 'a ' or 'A ' from vehicle descriptions
   const stripVehicleA = (s: string, type: string) =>
     type === "vehicle" ? s.replace(/^[aA]\s+/, "") : s;
-  const entityName = esc(stripVehicleA(entity.shortForm, entity.type));
+  const entityName = esc(
+    entity.type === "vehicle" ? formatIntelVehicle(entity.shortForm)
+    : (entity.type === "address" || entity.type === "business") ? formatIntelAddress(entity.shortForm)
+    : entity.shortForm
+  );
 
   let html = `<!DOCTYPE html>
 <html>
@@ -513,7 +517,7 @@ ${sheets.map(sheet => `<span class="assoc-chip">${esc(sheet.sheetTitle)}</span>`
 </div>
 <div class="assoc-list">`;
     for (const v of relatedVehicles) {
-      html += `<span class="assoc-chip">${esc(stripVehicleA(v.shortForm, v.type))}<span class="chip-count">×${v.occurrences.length}</span></span>`;
+      html += `<span class="assoc-chip">${esc(formatIntelVehicle(v.shortForm))}<span class="chip-count">×${v.occurrences.length}</span></span>`;
     }
     html += `</div>`;
   }
@@ -528,7 +532,7 @@ ${sheets.map(sheet => `<span class="assoc-chip">${esc(sheet.sheetTitle)}</span>`
 </div>
 <div class="assoc-list">`;
     for (const a of relatedAddresses) {
-      html += `<span class="assoc-chip">${esc(a.shortForm)}<span class="chip-count">×${a.occurrences.length}</span></span>`;
+      html += `<span class="assoc-chip">${esc(formatIntelAddress(a.shortForm))}<span class="chip-count">×${a.occurrences.length}</span></span>`;
     }
     html += `</div>`;
   }
@@ -558,7 +562,7 @@ ${sheets.map(sheet => `<span class="assoc-chip">${esc(sheet.sheetTitle)}</span>`
 </div>
 <div class="assoc-list">`;
     for (const b of relatedBusinesses) {
-      html += `<span class="assoc-chip">${esc(b.shortForm)}<span class="chip-count">×${b.occurrences.length}</span></span>`;
+      html += `<span class="assoc-chip">${esc(formatIntelAddress(b.shortForm))}<span class="chip-count">×${b.occurrences.length}</span></span>`;
     }
     html += `</div>`;
   }
@@ -619,7 +623,7 @@ function ProfileDialog({
               {TYPE_ICONS[entity.type]}
               {TYPE_LABELS[entity.type]}
             </span>
-            <span className="font-mono text-lg">{entity.type === "vehicle" ? formatIntelVehicle(entity.shortForm) : entity.shortForm}</span>
+            <span className="font-mono text-lg">{entity.type === "vehicle" ? formatIntelVehicle(entity.shortForm) : (entity.type === "address" || entity.type === "business") ? formatIntelAddress(entity.shortForm) : entity.shortForm}</span>
           </DialogTitle>
         </DialogHeader>
 
@@ -932,7 +936,7 @@ function OperationsTab({
                                 {TYPE_ICONS[type]}
                               </span>
                               <div className="flex-1 min-w-0">
-                                <p className="font-mono text-xs font-medium text-foreground truncate">{entity.type === "vehicle" ? formatIntelVehicle(entity.shortForm) : entity.shortForm}</p>
+                                <p className="font-mono text-xs font-medium text-foreground truncate">{entity.type === "vehicle" ? formatIntelVehicle(entity.shortForm) : (entity.type === "address" || entity.type === "business") ? formatIntelAddress(entity.shortForm) : entity.shortForm}</p>
                               </div>
                               <div className="text-right shrink-0">
                                 <p className="text-xs font-medium text-foreground">{opOccs.length}×</p>

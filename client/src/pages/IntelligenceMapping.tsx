@@ -2417,6 +2417,26 @@ export default function IntelligenceMapping() {
 
         <div className="w-px h-6 bg-white/10 mx-0.5" />
 
+        {/* Active Running Sheet slot — shows the sheet currently selected in the right pane */}
+        {rsSelectedSheetId !== null && rsSheetsData ? (() => {
+          const activeSheet = (rsSheetsData as any[]).find((s: any) => s.id === rsSelectedSheetId);
+          if (!activeSheet) return null;
+          const sheetTitle = activeSheet.title || `Sheet #${activeSheet.id}`;
+          return (
+            <>
+              <button
+                onClick={() => setLocation(`/sheet/${rsSelectedSheetId}`)}
+                className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 rounded-lg hover:bg-white/10 active:scale-95 transition-all min-w-[56px] max-w-[90px]"
+                title={`Open: ${sheetTitle}`}
+              >
+                <ClipboardList className="h-5 w-5 text-emerald-400 flex-shrink-0" />
+                <span className="text-[11px] font-semibold text-emerald-300/90 leading-none truncate max-w-[80px]">{sheetTitle}</span>
+              </button>
+              <div className="w-px h-6 bg-white/10 mx-0.5" />
+            </>
+          );
+        })() : null}
+
         {/* 4 flexible quick-link slots */}
         {quickLinks.slice(0, 4).map((ql, idx) => {
           const iconEntry = ICON_MAP[ql.icon];

@@ -444,6 +444,9 @@ export default function RSMapping() {
 
     if (idx >= queue.length) {
       setGeocoding(false);
+      // Update waypointCount state here (not per-marker) so it fires on the
+      // stable geocodeNext callback and always reflects the final placed count
+      setWaypointCount(placedWaypointsRef.current.length);
       updatePolyline();
       // Fit bounds
       if (mapRef.current && placedWaypointsRef.current.length > 0) {
@@ -519,7 +522,6 @@ export default function RSMapping() {
 
     placedWaypointsRef.current.push(wp);
     markersRef.current.push(marker);
-    setWaypointCount(placedWaypointsRef.current.length);
 
     // Capture sheetId in closure
     const sheetId = selectedSheetId!;

@@ -1533,11 +1533,11 @@ export default function IntelligenceMapping() {
             )}
           </div>
 
-          {/* ── Field Units (Live Location) ── */}
+          {/* ── TEAMS (Live Location) ── */}
           <div className="px-3 py-3 border-b border-border/50">
             <div className="flex items-center gap-2 mb-3">
               <Radio className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Field Units</span>
+              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">TEAMS</span>
             </div>
 
             {/* Share my location toggle (also shows own pin) */}

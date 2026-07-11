@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getMarkerDataUrl, getMarkerSvg, MARKER_COLOURS, MARKER_COLOUR_LABELS, MARKER_ICON_GROUPS, MARKER_ICON_LABELS, type MarkerColour, type MarkerIcon } from "@/lib/markerSvgs";
-import { convertGoogleAddresses } from "@/lib/addressFormat";
+import { convertGoogleAddresses, buildPoiAddress } from "@/lib/addressFormat";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -2380,7 +2380,7 @@ export default function IntelligenceMapping() {
               {/* RS Quick Entry */}
               <button
                 onClick={() => {
-                  setMapQeAddress(convertGoogleAddresses(poiTap.address));
+                  setMapQeAddress(buildPoiAddress(poiTap.name, poiTap.address));
                   setMapQeOpen(true);
                   setPoiTap(null);
                 }}
@@ -2393,7 +2393,7 @@ export default function IntelligenceMapping() {
               {/* Add Marker Here */}
               <button
                 onClick={() => {
-                  const rsAddress = convertGoogleAddresses(poiTap.address);
+                  const rsAddress = buildPoiAddress(poiTap.name, poiTap.address);
                   setCmLabel(poiTap.name);
                   setCmAddress(rsAddress);
                   setCmNote(""); setCmPersons([]); setCmVehicles([]); setCmRotation(0);

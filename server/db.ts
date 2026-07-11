@@ -3563,10 +3563,12 @@ export async function getCustomMarkers(operationIds?: number[]): Promise<CustomM
     // No operations selected — return nothing (matches intel layer behaviour)
     return [];
   } else if (operationIds && operationIds.length > 0) {
-    // Include markers assigned to the selected operations OR markers with no operation (unassigned)
+    // Only include markers explicitly assigned to the selected operations.
+    // Markers with no operation (null) are excluded when a specific op filter is active
+    // — they only appear in the all-ops view (no filter selected).
     rows = await db.select().from(customMapMarkers)
       .where(and(
-        or(inArray(customMapMarkers.operationId, operationIds), isNull(customMapMarkers.operationId)),
+        inArray(customMapMarkers.operationId, operationIds),
         isNull(customMapMarkers.deletedAt)
       ))
       .orderBy(desc(customMapMarkers.createdAt));

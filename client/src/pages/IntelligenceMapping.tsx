@@ -456,10 +456,10 @@ export default function IntelligenceMapping() {
 
   // Data
   const { data: operations, isLoading: opsLoading } = trpc.operation.list.useQuery();
-  const { data: locations, isLoading: locsLoading } = trpc.intelligence.mappingLocations.useQuery({
+  const { data: locations, isLoading: locsLoading, refetch: refetchLocations } = trpc.intelligence.mappingLocations.useQuery({
     operationIds: selectedOpIds.length > 0 ? selectedOpIds : undefined,
     targetIds: selectedTargetIds.length > 0 ? selectedTargetIds : undefined,
-  });
+  }, { refetchInterval: 30_000 });
 
   // Live user locations — poll every 1 second
   const { data: liveUsers } = trpc.intelligence.userLocations.useQuery(
@@ -1246,10 +1246,12 @@ export default function IntelligenceMapping() {
             const btnBase = "font-size:12px;font-weight:600;padding:7px 0;border-radius:6px;cursor:pointer;text-align:center;text-decoration:none;display:block;width:100%;box-sizing:border-box;";
             const sections: string[] = [];
 
-            // Row 1: Intel actions (full-width, larger) — only in merged mode
+            // Row 0: RS Quick Entry — always at top, full width
+            sections.push(`<div style="margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;"><button onclick="window.__cmRsQuickEntry(${cm.id})" style="${btnBase}background:#6366f1;color:#fff;border:none;font-size:13px;padding:9px 0;">RS Quick Entry</button></div>`);
+
+            // Row 1: Intel actions (full-width) — only in merged mode (excluding RS Quick Entry which moved to top)
             if (mergedIntel) {
               const intelBtns: string[] = [];
-              intelBtns.push(`<button onclick="window.__cmRsQuickEntry(${cm.id})" style="${btnBase}background:#6366f1;color:#fff;border:none;font-size:13px;padding:9px 0;">RS Quick Entry</button>`);
               const isTarget = mergedIntel.type === "target_address";
               if (isTarget && mergedIntel.linkedTargets.length > 0) {
                 for (const t of mergedIntel.linkedTargets) {
@@ -1263,7 +1265,9 @@ export default function IntelligenceMapping() {
                   intelBtns.push(`<a href="/intelligence/location/${encodedLabel}" style="${btnBase}background:#7c3aed;color:#fff;font-size:13px;padding:9px 0;">View Observation Profile</a>`);
                 }
               }
-              sections.push(`<div style="display:grid;grid-template-columns:1fr;gap:5px;margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;">${intelBtns.join("")}</div>`);
+              if (intelBtns.length > 0) {
+                sections.push(`<div style="display:grid;grid-template-columns:1fr;gap:5px;margin-top:5px;">${intelBtns.join("")}</div>`);
+              }
             }
 
             // Row 2: Navigation — Waze | Street View (2 columns)
@@ -1271,7 +1275,7 @@ export default function IntelligenceMapping() {
               `<a href="https://waze.com/ul?ll=${lat},${lng}&navigate=yes" target="_blank" style="${btnBase}background:#00bcd4;color:#fff;">Waze</a>`,
               `<a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}" target="_blank" style="${btnBase}background:#4285f4;color:#fff;">Street View</a>`,
             ];
-            sections.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:${mergedIntel ? '6' : '10'}px;${!mergedIntel ? 'padding-top:8px;border-top:1px solid #e5e7eb;' : ''}">${navBtns.join("")}</div>`);
+            sections.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;">${navBtns.join("")}</div>`);
 
             // Row 3: Edit | Delete (2 columns)
             const editBtns = [
@@ -1280,13 +1284,12 @@ export default function IntelligenceMapping() {
             ];
             sections.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;">${editBtns.join("")}</div>`);
 
-            // Row 4: Manual merge button (only when not already auto-merged)
-            if (!mergedIntel) {
-              sections.push(`<div style="margin-top:5px;"><button onclick="window.__cmOpenMergePicker(${cm.id})" style="${btnBase}background:#78716c;color:#fff;border:none;font-size:11px;padding:6px 0;">Merge with Intel Pin…</button></div>`);
-            }
-
-            // Row 5: Move button (always visible)
-            sections.push(`<div style="margin-top:5px;"><button onclick="window.__cmStartMove(${cm.id})" style="${btnBase}background:#0369a1;color:#fff;border:none;font-size:11px;padding:6px 0;">Move Marker…</button></div>`);
+            // Row 4: Merge | Move — same size as Edit/Delete, 2 columns
+            const mergeBtn = !mergedIntel
+              ? `<button onclick="window.__cmOpenMergePicker(${cm.id})" style="${btnBase}background:#78716c;color:#fff;border:none;">Merge…</button>`
+              : `<button disabled style="${btnBase}background:#78716c;color:#fff;border:none;opacity:0.4;cursor:default;">Merge…</button>`;
+            const moveBtn = `<button onclick="window.__cmStartMove(${cm.id})" style="${btnBase}background:#0369a1;color:#fff;border:none;">Move…</button>`;
+            sections.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;">${mergeBtn}${moveBtn}</div>`);
 
             lines.push(sections.join(""));
 
@@ -1565,6 +1568,8 @@ export default function IntelligenceMapping() {
             }
           }
           toast.success("RS entry added");
+          // Refetch intel pins so any new address in this observation appears on the map
+          void refetchLocations();
         },
         onError: (e) => {
           setRsAddingRow(false);

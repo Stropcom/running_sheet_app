@@ -82,9 +82,7 @@ interface PlacedWaypoint {
 const PERTH_CENTER = { lat: -31.9505, lng: 115.8605 };
 const GEOCODE_DELAY_MS = 220;
 /** Two waypoints within this many metres are considered "stacked" */
-const SPIDER_THRESHOLD_M = 30;
-/** Radius (in metres) to fan out stacked pins */
-const SPIDER_RADIUS_M = 60;
+const SPIDER_THRESHOLD_M = 100;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -321,8 +319,8 @@ export default function RSMappingEmbedded() {
     const idx = geocodeIndexRef.current;
     if (idx >= queue.length) {
       setGeocoding(false);
-      // Spider stacked pins before drawing polyline
-      spiderStackedPins();
+      // Group co-located pins into horizontal pills before drawing polyline
+      groupNearbyMarkers();
       updatePolyline();
       if (mapRef.current && placedWaypointsRef.current.length > 0) {
         const bounds = new google.maps.LatLngBounds();
@@ -408,16 +406,23 @@ export default function RSMappingEmbedded() {
    * After all pins are placed, detect groups of pins within SPIDER_THRESHOLD_M
    * of each other and fan them out radially so every number is visible.
    */
-  function spiderStackedPins() {
+  function groupNearbyMarkers() {
+    if (!mapRef.current) return;
     const placed = placedWaypointsRef.current;
+    const normalise = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
     const visited = new Set<number>();
+    const sheetId = selectedSheetId!;
 
     for (let i = 0; i < placed.length; i++) {
       if (visited.has(i)) continue;
+      const normI = normalise(placed[i].address);
       const group: number[] = [i];
+
       for (let j = i + 1; j < placed.length; j++) {
         if (visited.has(j)) continue;
-        if (distanceM(placed[i], placed[j]) < SPIDER_THRESHOLD_M) {
+        const sameAddr = normI.length > 0 && normalise(placed[j].address) === normI;
+        const nearby = distanceM(placed[i], placed[j]) < SPIDER_THRESHOLD_M;
+        if (sameAddr || nearby) {
           group.push(j);
           visited.add(j);
         }
@@ -425,14 +430,85 @@ export default function RSMappingEmbedded() {
       visited.add(i);
       if (group.length < 2) continue;
 
-      // Fan out radially
-      const angleStep = (2 * Math.PI) / group.length;
-      group.forEach((idx, k) => {
-        const angle = k * angleStep - Math.PI / 2;
-        const dx = SPIDER_RADIUS_M * Math.cos(angle);
-        const dy = SPIDER_RADIUS_M * Math.sin(angle);
-        const newPos = offsetLatLng(placed[idx].lat, placed[idx].lng, dx, dy);
-        placed[idx].marker.position = newPos;
+      // Sort by sequence order
+      group.sort((a, b) => placed[a].index - placed[b].index);
+
+      // Compute centroid
+      const centLat = group.reduce((s, idx) => s + placed[idx].lat, 0) / group.length;
+      const centLng = group.reduce((s, idx) => s + placed[idx].lng, 0) / group.length;
+
+      // Remove individual markers
+      group.forEach((idx) => {
+        placed[idx].marker.map = null;
+        const mi = markersRef.current.indexOf(placed[idx].marker);
+        if (mi !== -1) markersRef.current.splice(mi, 1);
+      });
+
+      // Build horizontal pill
+      const pill = document.createElement("div");
+      pill.style.cssText = [
+        "display:flex",
+        "align-items:center",
+        "gap:0",
+        "background:rgba(255,255,255,0.92)",
+        "border-radius:20px",
+        "padding:2px",
+        "box-shadow:0 2px 8px rgba(0,0,0,0.35)",
+        "border:2px solid #fff",
+      ].join(";");
+
+      group.forEach((wpIdx, pillIdx) => {
+        const wp = placed[wpIdx];
+        const total = geocodeQueueRef.current.length;
+        const isFirst = wp.index === 1;
+        const isLast = wp.index === total;
+        let bg = "#6366f1";
+        if (isFirst) bg = "#16a34a";
+        if (isLast) bg = "#dc2626";
+
+        if (pillIdx > 0) {
+          const connector = document.createElement("div");
+          connector.style.cssText = "width:6px;height:3px;background:#d1d5db;flex-shrink:0;";
+          pill.appendChild(connector);
+        }
+
+        const circle = document.createElement("div");
+        circle.style.cssText = [
+          "width:28px",
+          "height:28px",
+          "border-radius:50%",
+          `background:${bg}`,
+          "color:#fff",
+          "font-size:11px",
+          "font-weight:700",
+          "display:flex",
+          "align-items:center",
+          "justify-content:center",
+          "cursor:pointer",
+          "user-select:none",
+          "flex-shrink:0",
+        ].join(";");
+        circle.textContent = String(wp.index);
+        circle.addEventListener("click", (e) => {
+          e.stopPropagation();
+          openPopup(wp, sheetId);
+        });
+        pill.appendChild(circle);
+      });
+
+      // Place single group marker at centroid
+      const groupMarker = new google.maps.marker.AdvancedMarkerElement({
+        map: mapRef.current,
+        position: { lat: centLat, lng: centLng },
+        content: pill,
+        gmpDraggable: false,
+        title: group.map((idx) => placed[idx].address).join(" / "),
+      });
+      markersRef.current.push(groupMarker);
+
+      // Update each wp's marker reference so Move still works
+      group.forEach((idx) => {
+        placed[idx].marker = groupMarker;
       });
     }
   }

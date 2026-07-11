@@ -452,6 +452,8 @@ export default function RSMapping() {
   function groupNearbyMarkers() {
     if (!mapRef.current) return;
     const wps = placedWaypointsRef.current;
+    console.log('[RSMapping] groupNearbyMarkers called, wps count:', wps.length);
+    wps.forEach((w) => console.log(`  wp#${w.index} addr="${w.address}" lat=${w.lat.toFixed(6)} lng=${w.lng.toFixed(6)}`));
     if (wps.length === 0) return;
 
     // Group by same normalised address OR within ~100m (0.0009°)
@@ -481,6 +483,7 @@ export default function RSMapping() {
 
       group.forEach((idx) => visited.add(idx));
 
+      console.log('[RSMapping] group found:', group.map((idx) => `wp#${wps[idx].index}`).join(', '));
       if (group.length < 2) continue; // nothing to merge
 
       // Sort group by waypoint index (sequence order)

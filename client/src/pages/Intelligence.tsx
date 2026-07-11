@@ -25,7 +25,9 @@ import {
   Folder,
   FileText,
   LayoutGrid,
+  Route,
 } from "lucide-react";
+import RSMappingEmbedded from "@/pages/RSMappingEmbedded";
 import { ViewToggle } from "@/components/ViewToggle";
 import { useViewMode } from "@/contexts/ViewModeContext";
 import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
@@ -33,7 +35,7 @@ import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type EntityType = "person" | "vehicle" | "address" | "business" | "unknown";
-type TabView = "operations" | "targets" | "associates" | "vehicle" | "locations" | "all";
+type TabView = "operations" | "targets" | "associates" | "vehicle" | "locations" | "all" | "rs-mapping";
 
 interface Occurrence {
   sheetId: number;
@@ -995,6 +997,7 @@ const TAB_OPTIONS: Array<{ value: TabView; label: string; icon: React.ReactNode 
   { value: "associates", label: "Associates", icon: <User className="w-3.5 h-3.5" /> },
   { value: "vehicle",    label: "Vehicles",   icon: <Car className="w-3.5 h-3.5" /> },
   { value: "locations",  label: "Locations",  icon: <MapPin className="w-3.5 h-3.5" /> },
+  { value: "rs-mapping", label: "RS Mapping",  icon: <Route className="w-3.5 h-3.5" /> },
 ];
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
@@ -1285,8 +1288,15 @@ export default function IntelligencePage() {
           </div>
         )}
 
+        {/* RS Mapping tab content */}
+        {activeTab === "rs-mapping" && (
+          <div className="-mx-4 -mb-4 flex-1" style={{ height: "calc(100vh - 220px)" }}>
+            <RSMappingEmbedded />
+          </div>
+        )}
+
         {/* Entity type tab content */}
-        {!isLoading && activeTab !== "operations" && (
+        {!isLoading && activeTab !== "operations" && activeTab !== "rs-mapping" && (
           <>
             {filteredByTab.length === 0 ? (
               <div className="text-center py-16 text-muted-foreground">

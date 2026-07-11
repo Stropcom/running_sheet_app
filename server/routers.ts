@@ -2511,6 +2511,9 @@ export const appRouter = router({
         lat: z.number().optional().nullable(),
         lng: z.number().optional().nullable(),
         comment: z.string().optional().nullable(),
+        markerIcon: z.string().optional().nullable(),
+        markerColour: z.string().optional().nullable(),
+        markerRotation: z.number().optional().nullable(),
       }))
       .mutation(async ({ input, ctx }) => {
         const id = await upsertRsMappingWaypoint({
@@ -2520,6 +2523,9 @@ export const appRouter = router({
           lat: input.lat,
           lng: input.lng,
           comment: input.comment,
+          markerIcon: input.markerIcon,
+          markerColour: input.markerColour,
+          markerRotation: input.markerRotation,
         });
         return { id };
       }),

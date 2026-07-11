@@ -518,6 +518,10 @@ export const rsMappingWaypoints = mysqlTable("rs_mapping_waypoints", {
   lng: double("lng"),
   // Free-text comment added via the popup
   comment: text("comment"),
+  // Marker appearance (set via the Edit dialog in the popup)
+  markerIcon: varchar("markerIcon", { length: 40 }),
+  markerColour: varchar("markerColour", { length: 20 }),
+  markerRotation: int("markerRotation"),
   createdBy: int("createdBy").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

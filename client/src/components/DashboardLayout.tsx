@@ -315,20 +315,6 @@ function DashboardLayoutContent({
                         </SidebarMenuButton>
                       </SidebarMenuItem>
 
-                      {/* RS Mapping — sub-item under Mapping */}
-                      <SidebarMenuItem key="rs-mapping-folder">
-                        <SidebarMenuButton
-                          isActive={location === "/intelligence/rs-mapping"}
-                          onClick={() => setLocation("/intelligence/rs-mapping")}
-                          tooltip="RS Mapping"
-                          className="h-9 font-normal transition-all pl-8"
-                        >
-                          <ClipboardList className={`h-3.5 w-3.5 text-foreground`} />
-                          <span className={`flex-1 text-sm ${location === "/intelligence/rs-mapping" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/70"}`}>
-                            RS Mapping
-                          </span>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
                       </>
                     )}
 
@@ -411,7 +397,7 @@ function DashboardLayoutContent({
                     {isIntelligenceItem && (
                       <SidebarMenuItem key="intel-folder">
                         <SidebarMenuButton
-                          isActive={location === "/intelligence" || (location.startsWith("/intelligence") && !location.startsWith("/intelligence/mapping") && !location.startsWith("/intelligence/rs-mapping"))}
+                          isActive={location === "/intelligence" || (location.startsWith("/intelligence") && !location.startsWith("/intelligence/mapping"))}
                           onClick={() => setLocation("/intelligence")}
                           tooltip="Intelligence"
                           className="h-10 font-normal transition-all"

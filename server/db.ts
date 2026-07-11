@@ -3738,6 +3738,10 @@ export interface RsWaypointRow {
   lng: number | null;
   /** User comment */
   comment: string | null;
+  /** Marker appearance overrides */
+  markerIcon: string | null;
+  markerColour: string | null;
+  markerRotation: number | null;
   waypointId: number | null;
 }
 
@@ -3789,6 +3793,9 @@ export async function getRsMappingWaypoints(sheetId: number): Promise<RsWaypoint
       lat: override?.lat ?? null,
       lng: override?.lng ?? null,
       comment: override?.comment ?? null,
+      markerIcon: override?.markerIcon ?? null,
+      markerColour: override?.markerColour ?? null,
+      markerRotation: override?.markerRotation ?? null,
       waypointId: override?.id ?? null,
     });
   }
@@ -3803,6 +3810,9 @@ export async function upsertRsMappingWaypoint(input: {
   lat?: number | null;
   lng?: number | null;
   comment?: string | null;
+  markerIcon?: string | null;
+  markerColour?: string | null;
+  markerRotation?: number | null;
 }): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -3826,6 +3836,9 @@ export async function upsertRsMappingWaypoint(input: {
         lat: input.lat ?? null,
         lng: input.lng ?? null,
         comment: input.comment ?? null,
+        markerIcon: input.markerIcon ?? null,
+        markerColour: input.markerColour ?? null,
+        markerRotation: input.markerRotation ?? null,
       })
       .where(eq(rsMappingWaypoints.id, existing[0].id));
     return existing[0].id;
@@ -3837,6 +3850,9 @@ export async function upsertRsMappingWaypoint(input: {
       lat: input.lat ?? null,
       lng: input.lng ?? null,
       comment: input.comment ?? null,
+      markerIcon: input.markerIcon ?? null,
+      markerColour: input.markerColour ?? null,
+      markerRotation: input.markerRotation ?? null,
     });
     return (res as any).insertId as number;
   }

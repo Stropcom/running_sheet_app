@@ -33,6 +33,7 @@ import IntelligenceAssociateProfile from "@/pages/IntelligenceAssociateProfile";
 import IntelligenceVehicleProfile from "@/pages/IntelligenceVehicleProfile";
 import IntelligenceLocationProfile from "@/pages/IntelligenceLocationProfile";
 import IntelligenceMapping from "@/pages/IntelligenceMapping";
+import RSMapping from "@/pages/RSMapping";
 import DraftSheetPage from "@/pages/DraftSheetPage";
 import { DraftModeBanner } from "@/components/DraftModeBanner";
 
@@ -56,6 +57,7 @@ function Router() {
       <Route path="/intelligence/vehicle/:label" component={IntelligenceVehicleProfile} />
       <Route path="/intelligence/location/:label" component={IntelligenceLocationProfile} />
       <Route path="/intelligence/mapping" component={IntelligenceMapping} />
+      <Route path="/intelligence/rs-mapping" component={RSMapping} />
       <Route path="/governance" component={GovernanceListPage} />
       <Route path="/governance/:sheetId" component={GovernancePage} />
       <Route path="/target-registry" component={TargetRegistryPage} />

@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, inArray, isNotNull, isNull, like, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, like, lt, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { vaultEncrypt, vaultDecrypt } from "./wipcVault";
 import {
@@ -34,6 +34,7 @@ import {
   customMapMarkers,
   CustomMapMarker,
   InsertCustomMapMarker,
+  rsMappingWaypoints,
 } from "../drizzle/schema";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -3716,4 +3717,127 @@ export async function backfillGoogleAddressesInObservations(): Promise<{ scanned
   }
 
   return { scanned: rows.length, updated };
+}
+
+// ─── RS Mapping Waypoints ─────────────────────────────────────────────────────
+
+
+export interface RsWaypointRow {
+  rowId: number;
+  rowNumber: number;
+  time: string | null;
+  timeMinutes: number | null;
+  observation: string | null;
+  /** Extracted address short-form (from brackets) */
+  address: string | null;
+  /** Full description preceding the bracket */
+  addressFull: string | null;
+  /** Manual lat override (null = use geocoded position) */
+  lat: number | null;
+  /** Manual lng override (null = use geocoded position) */
+  lng: number | null;
+  /** User comment */
+  comment: string | null;
+  waypointId: number | null;
+}
+
+/**
+ * Return all sheet rows that contain a bracketed address entity,
+ * merged with any persisted waypoint overrides (comment / moved position).
+ */
+export async function getRsMappingWaypoints(sheetId: number): Promise<RsWaypointRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  // Load all rows for the sheet (sorted chronologically)
+  const rows = await db
+    .select()
+    .from(sheetRows)
+    .where(eq(sheetRows.sheetId, sheetId))
+    .orderBy(
+      sql`ISNULL(${sheetRows.timeMinutes})`,
+      asc(sheetRows.timeMinutes),
+      asc(sheetRows.rowNumber)
+    );
+
+  // Load persisted waypoint overrides
+  const overrides = await db
+    .select()
+    .from(rsMappingWaypoints)
+    .where(eq(rsMappingWaypoints.sheetId, sheetId));
+
+  const overrideMap = new Map(overrides.map((o) => [o.rowId, o]));
+
+  const result: RsWaypointRow[] = [];
+
+  for (const row of rows) {
+    if (!row.observation) continue;
+    const entities = extractEntitiesFromText(row.observation);
+    // Take the first address entity found in this row
+    const addrEntity = entities.find((e) => e.type === "address");
+    if (!addrEntity) continue;
+
+    const override = overrideMap.get(row.id);
+    result.push({
+      rowId: row.id,
+      rowNumber: row.rowNumber,
+      time: row.time ?? null,
+      timeMinutes: row.timeMinutes ?? null,
+      observation: row.observation,
+      address: addrEntity.shortForm,
+      addressFull: addrEntity.fullDescription,
+      lat: override?.lat ?? null,
+      lng: override?.lng ?? null,
+      comment: override?.comment ?? null,
+      waypointId: override?.id ?? null,
+    });
+  }
+
+  return result;
+}
+
+export async function upsertRsMappingWaypoint(input: {
+  sheetId: number;
+  rowId: number;
+  createdBy: number;
+  lat?: number | null;
+  lng?: number | null;
+  comment?: string | null;
+}): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Check if a waypoint already exists for this row
+  const existing = await db
+    .select({ id: rsMappingWaypoints.id })
+    .from(rsMappingWaypoints)
+    .where(
+      and(
+        eq(rsMappingWaypoints.sheetId, input.sheetId),
+        eq(rsMappingWaypoints.rowId, input.rowId)
+      )
+    )
+    .limit(1);
+
+  if (existing.length > 0) {
+    await db
+      .update(rsMappingWaypoints)
+      .set({
+        lat: input.lat ?? null,
+        lng: input.lng ?? null,
+        comment: input.comment ?? null,
+      })
+      .where(eq(rsMappingWaypoints.id, existing[0].id));
+    return existing[0].id;
+  } else {
+    const [res] = await db.insert(rsMappingWaypoints).values({
+      sheetId: input.sheetId,
+      rowId: input.rowId,
+      createdBy: input.createdBy,
+      lat: input.lat ?? null,
+      lng: input.lng ?? null,
+      comment: input.comment ?? null,
+    });
+    return (res as any).insertId as number;
+  }
 }

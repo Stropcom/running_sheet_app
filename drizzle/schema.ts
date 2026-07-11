@@ -503,3 +503,25 @@ export const styleRules = mysqlTable("style_rules", {
 
 export type StyleRule = typeof styleRules.$inferSelect;
 export type InsertStyleRule = typeof styleRules.$inferInsert;
+
+// ─── RS Map Waypoints ────────────────────────────────────────────────────────
+// Persists per-waypoint overrides for the RS Mapping feature.
+// One row per (sheetId, rowId) pair — stores any manual position adjustments
+// and free-text comments added by the user in the RS Mapping popup.
+
+export const rsMappingWaypoints = mysqlTable("rs_mapping_waypoints", {
+  id: int("id").autoincrement().primaryKey(),
+  sheetId: int("sheetId").notNull(),       // FK → running_sheets.id
+  rowId: int("rowId").notNull(),           // FK → sheet_rows.id
+  // Optional manual position override (set when user drags the waypoint)
+  lat: double("lat"),
+  lng: double("lng"),
+  // Free-text comment added via the popup
+  comment: text("comment"),
+  createdBy: int("createdBy").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type RsMappingWaypoint = typeof rsMappingWaypoints.$inferSelect;
+export type InsertRsMappingWaypoint = typeof rsMappingWaypoints.$inferInsert;

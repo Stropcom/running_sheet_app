@@ -110,6 +110,8 @@ import {
   reinstateCustomMarker,
   hardDeleteCustomMarker,
   backfillGoogleAddressesInObservations,
+  getRsMappingWaypoints,
+  upsertRsMappingWaypoint,
 } from "./db";
 
 import { generateStatDecDocx } from "./statDecGenerator";
@@ -2495,6 +2497,33 @@ export const appRouter = router({
       }),
   }),
 
+  // ─── RS Mapping ──────────────────────────────────────────────────────────────────
+  rsMapping: router({
+    getWaypoints: protectedProcedure
+      .input(z.object({ sheetId: z.number() }))
+      .query(async ({ input }) => {
+        return getRsMappingWaypoints(input.sheetId);
+      }),
+    upsertWaypoint: protectedProcedure
+      .input(z.object({
+        sheetId: z.number(),
+        rowId: z.number(),
+        lat: z.number().optional().nullable(),
+        lng: z.number().optional().nullable(),
+        comment: z.string().optional().nullable(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const id = await upsertRsMappingWaypoint({
+          sheetId: input.sheetId,
+          rowId: input.rowId,
+          createdBy: ctx.user.id,
+          lat: input.lat,
+          lng: input.lng,
+          comment: input.comment,
+        });
+        return { id };
+      }),
+  }),
   // ─── Admin Utilities ────────────────────────────────────────────────────────
   adminUtils: router({
     backfillGoogleAddresses: adminProcedure.mutation(async () => {

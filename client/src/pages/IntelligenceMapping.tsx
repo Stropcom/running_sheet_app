@@ -1751,6 +1751,26 @@ export default function IntelligenceMapping() {
     startInlineCountdown();
   };
 
+  // Auto-open the inline observation field whenever the RS Quick Entry sheet opens
+  // (replaces the old trigger buttons — the full form appears immediately)
+  useEffect(() => {
+    if (mapQeOpen && rsSelectedSheetId) {
+      // Use a small delay so the sheet has rendered before we set focus
+      setTimeout(() => {
+        setRsInlineLabel("Entry");
+        setRsInlineText("");
+        setRsInlineCins(new Set());
+        rsInlineCinsRef.current = new Set();
+        setTimeout(() => rsInlineInputRef.current?.focus(), 80);
+      }, 50);
+    }
+    if (!mapQeOpen) {
+      // Clear the inline field when the sheet closes
+      setRsInlineLabel(null);
+      setRsInlineText("");
+    }
+  }, [mapQeOpen, rsSelectedSheetId]);
+
   const addQuickRsEntry = (observation: string, cinsToAttach?: Set<string> | null) => {
     if (!rsSelectedSheetId) return;
     const now = new Date();
@@ -3252,8 +3272,7 @@ export default function IntelligenceMapping() {
                   return (
                     <div className="rounded-lg border border-border bg-muted/40 p-2.5 flex flex-col gap-2" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{rsInlineLabel}</span>
-                        <button onClick={closeInlineField} className="text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
+                        <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Observation</span>
                       </div>
                       <textarea
                         ref={rsInlineInputRef}

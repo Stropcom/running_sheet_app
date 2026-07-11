@@ -201,6 +201,25 @@ export function formatIntelAddress(shortForm: string): string {
     }
   }
 
+  // Step 4: if the street segment (everything before the last comma) is ALL-CAPS
+  // (e.g. "4 GLYDE ST" from an old entity), title-case it.
+  // This is a safety net for entities stored before the server-side fix.
+  const finalParts = text.split(",");
+  if (finalParts.length >= 1) {
+    const streetSegment = finalParts[0].trim();
+    // Detect all-caps street segment: all non-digit characters are uppercase
+    const nonDigitChars = streetSegment.replace(/[\d\s/]/g, "");
+    if (nonDigitChars.length > 0 && nonDigitChars === nonDigitChars.toUpperCase() && /[A-Z]{2}/.test(nonDigitChars)) {
+      // Title-case the street segment
+      finalParts[0] = " " + streetSegment.replace(/\b(\w+)/g, (w) => {
+        if (/^\d+$/.test(w)) return w;
+        if (/^(WA|NSW|VIC|QLD|SA|TAS|NT|ACT|HWY|RD|ST|AVE|DR|CT|PL|CL|CRES|BLVD|FWY|LN|TCE|PDE|CCT|GR|CNR)$/i.test(w)) return w.toUpperCase();
+        return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+      });
+      text = finalParts.join(",").trim();
+    }
+  }
+
   return text.trim();
 }
 

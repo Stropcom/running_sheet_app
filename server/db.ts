@@ -1252,8 +1252,84 @@ export function extractEntitiesFromText(text: string): Array<{
     // shortForm. E.g. "Jason JOHNSON (JOHNSON)" → use "Jason JOHNSON", not "JOHNSON".
     // Only apply when fullDescription looks like a name: 2–5 words, letters/spaces/hyphens/apostrophes only,
     // and the shortForm is a suffix/subset of the fullDescription.
+    //
+    // For address entities: recover the properly-formatted address from fullDescription.
+    // The bracket short form is always ALL-CAPS abbreviated (e.g. "4 GLYDE ST") which is
+    // correct for geocoding but wrong for display. We extract the address from the text
+    // before the bracket and format it as "4 Glyde Street, EAST FREMANTLE".
     let displayName = shortForm;
-    if (type === "person") {
+    if (type === "address") {
+      // Try to extract a properly-formatted address from fullDescription.
+      // fullDescription is the text immediately before the bracket, e.g.:
+      //   "...arrived at 4 Glyde St, East Fremantle WA"
+      //   "Vehicle 1FAB007, REID driver and sole occupant, arrived at 146 Marine Parade, Cottesloe WA"
+      // Strategy: find the last occurrence of a street-number pattern in fullDescription
+      // and take everything from there to the end as the address.
+      const AU_STATES_ADDR = /\b(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\b/;
+
+      // Title-case a word in a street name context:
+      //  - State codes (WA, NSW, etc.) stay ALL-CAPS
+      //  - Street type abbreviations (St, Rd, Ave, etc.) become Title Case
+      //  - All other words become Title Case
+      const titleCaseStreetWord = (w: string): string => {
+        if (/^\d+$/.test(w)) return w; // digits unchanged
+        if (/^(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)$/i.test(w)) return w.toUpperCase(); // state codes
+        // Street type abbreviations → Title Case (e.g. ST→St, RD→Rd, AVE→Ave)
+        if (/^(ST|RD|AVE|DR|CT|PL|CL|CRES|BLVD|HWY|FWY|LN|TCE|PDE|CCT|GR|CNR|WY|LOOP|RISE|RIDGE|GROVE|MEWS|CLOSE|PLACE|COURT|LANE|TERRACE|PARADE|CIRCUIT|GREEN|CORNER)$/i.test(w)) {
+          return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+        }
+        return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+      };
+
+      // Find the last address-like segment in fullDescription.
+      // Supports standard addresses AND intersections (e.g. "Kent St & Queens Park Rd, Wilson WA").
+      // Two patterns tried in order:
+      //  1. Standard: starts with a street number or cnr/corner prefix
+      //  2. Intersection: "Street Type & Street Type, Suburb STATE"
+      const STREET_TYPES_RE = "(?:St|Rd|Ave|Dr|Hwy|Fwy|Tce|Pde|Cct|Gr|Ln|Pl|Ct|Cl|Cres|Blvd|Way|Loop|Rise|Mews|Close|Place|Court|Lane|Terrace|Parade|Circuit|Green|Corner)";
+      const standardAddrRe = /(?:(?:cnr\s+of\s+|cnr\s+|corner\s+of\s+|lot\s+\d+\s+|\d{1,5}[A-Za-z]?\/\d{1,5}\s+|\d{1,5}[A-Za-z]?\s+)[A-Za-z][\w\s&]*(?:,\s*[A-Za-z][\w\s]+)?(?:\s+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))?(?:\s+\d{4})?(?:,\s*Australia)?)$/i;
+      const intersectionAddrRe = new RegExp(
+        `[A-Za-z][\\w\\s]+\\s+${STREET_TYPES_RE}\\s*&\\s*[A-Za-z][\\w\\s]+\\s+${STREET_TYPES_RE}(?:,\\s*[A-Za-z][\\w\\s]+)?(?:\\s+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))?(?:\\s+\\d{4})?(?:,\\s*Australia)?$`,
+        "i"
+      );
+      const addrMatch = fullDescription.match(standardAddrRe) || fullDescription.match(intersectionAddrRe);
+      if (addrMatch) {
+        let addrText = addrMatch[0].trim();
+        // Strip postcode and ", Australia"
+        addrText = addrText.replace(/,?\s*Australia\s*$/i, "").trim();
+        addrText = addrText.replace(/\s+\d{4}\s*$/, "").trim();
+        // Split into parts: street part(s) and suburb+state part
+        const commaParts = addrText.split(",");
+        if (commaParts.length >= 2) {
+          const lastPart = commaParts[commaParts.length - 1].trim();
+          const stateMatch = lastPart.match(/^(.+?)\s+(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)$/i);
+          if (stateMatch) {
+            // Title-case the street part(s), CAPS the suburb
+            const streetParts = commaParts.slice(0, -1).map(p =>
+              p.trim().replace(/\b(\w+)/g, titleCaseStreetWord)
+            );
+            const suburb = stateMatch[1].trim().toUpperCase();
+            displayName = [...streetParts, " " + suburb].join(",");
+          } else if (AU_STATES_ADDR.test(lastPart)) {
+            // Last part is just a state — drop it
+            const streetParts = commaParts.slice(0, -1).map(p =>
+              p.trim().replace(/\b(\w+)/g, titleCaseStreetWord)
+            );
+            displayName = streetParts.join(",").trim();
+          } else {
+            // No state found — just title-case the whole thing
+            displayName = addrText.replace(/\b(\w+)/g, titleCaseStreetWord);
+          }
+        } else {
+          // Single part (no comma) — title-case it
+          displayName = addrText.replace(/\b(\w+)/g, titleCaseStreetWord);
+        }
+      } else {
+        // Fallback: title-case the shortForm itself (it's all-caps abbreviated)
+        // e.g. "4 GLYDE ST" → "4 Glyde St"
+        displayName = shortForm.replace(/\b(\w+)/g, titleCaseStreetWord);
+      }
+    } else if (type === "person") {
       // Extract the last 2-4 words immediately before the bracket — these are most
       // likely to be the full name. E.g. "Observed Jason JOHNSON (JOHNSON)" →
       // fullDescription = "Observed Jason JOHNSON", last 2 words = "Jason JOHNSON".

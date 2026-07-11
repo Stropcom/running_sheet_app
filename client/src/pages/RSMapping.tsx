@@ -130,6 +130,8 @@ export default function RSMapping() {
 
   // Loading state
   const [geocoding, setGeocoding] = useState(false);
+  // Track placed waypoint count as state so the Trace Route button renders
+  const [waypointCount, setWaypointCount] = useState(0);
 
   // ── Queries ──────────────────────────────────────────────────────────────────
 
@@ -184,6 +186,7 @@ export default function RSMapping() {
     polylineRef.current = null;
     clearTraceLines();
     infoWindowRef.current?.close();
+    setWaypointCount(0);
   }, [clearTraceLines]);
 
   // ── Polyline update (straight-line fallback) ─────────────────────────────────
@@ -516,6 +519,7 @@ export default function RSMapping() {
 
     placedWaypointsRef.current.push(wp);
     markersRef.current.push(marker);
+    setWaypointCount(placedWaypointsRef.current.length);
 
     // Capture sheetId in closure
     const sheetId = selectedSheetId!;
@@ -650,12 +654,15 @@ export default function RSMapping() {
   const selectedSheet = activeSheets.find((s: any) => s.id === selectedSheetId);
 
   // Count how many waypoints have via-street data (for the toggle label)
-  const viaSegmentCount = placedWaypointsRef.current.filter(
+  // waypointCount is used as a dependency to ensure these recompute after geocoding
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const viaSegmentCount = waypointCount > 0 ? placedWaypointsRef.current.filter(
     (w) => w.segmentType === "continued_via" && w.viaStreets.length > 0
-  ).length;
-  const coosSegmentCount = placedWaypointsRef.current.filter(
+  ).length : 0;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const coosSegmentCount = waypointCount > 0 ? placedWaypointsRef.current.filter(
     (w) => w.segmentType === "coos"
-  ).length;
+  ).length : 0;
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
@@ -728,7 +735,7 @@ export default function RSMapping() {
           )}
 
           {/* Trace Route toggle — only shown when waypoints are loaded */}
-          {selectedSheetId && !geocoding && placedWaypointsRef.current.length >= 2 && (
+          {selectedSheetId && !geocoding && waypointCount >= 2 && (
             <button
               onClick={() => setTraceRouteEnabled((v) => !v)}
               disabled={tracing}
@@ -745,9 +752,9 @@ export default function RSMapping() {
           )}
 
           {selectedSheetId && !geocoding && !traceRouteEnabled && (
-            <div className={`${placedWaypointsRef.current.length >= 2 ? "" : "ml-auto"} flex items-center gap-1.5 text-xs text-muted-foreground`}>
+            <div className={`${waypointCount >= 2 ? "" : "ml-auto"} flex items-center gap-1.5 text-xs text-muted-foreground`}>
               <MapPin className="h-3.5 w-3.5 text-indigo-500" />
-              <span>{placedWaypointsRef.current.length} waypoints</span>
+              <span>{waypointCount} waypoints</span>
             </div>
           )}
         </div>
@@ -815,7 +822,7 @@ export default function RSMapping() {
           )}
 
           {/* No-waypoints notice */}
-          {!wpLoading && selectedSheetId && !geocoding && placedWaypointsRef.current.length === 0 && (waypoints as any[])?.length === 0 && (
+          {!wpLoading && selectedSheetId && !geocoding && waypointCount === 0 && (waypoints as any[])?.length === 0 && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/60 backdrop-blur-sm pointer-events-none">
               <MapPin className="h-10 w-10 text-muted-foreground/40 mb-3" />
               <p className="text-sm font-medium text-muted-foreground">No location entries found</p>
@@ -824,7 +831,7 @@ export default function RSMapping() {
           )}
 
           {/* Legend */}
-          {placedWaypointsRef.current.length > 0 && !geocoding && (
+          {waypointCount > 0 && !geocoding && (
             <div className="absolute bottom-4 left-4 bg-card/90 backdrop-blur-sm border border-border rounded-xl px-3 py-2 shadow-md">
               <div className="flex flex-col gap-1.5 text-xs text-muted-foreground">
                 <div className="flex items-center gap-3">
@@ -862,7 +869,7 @@ export default function RSMapping() {
           )}
 
           {/* Trace route info banner */}
-          {traceRouteEnabled && !tracing && placedWaypointsRef.current.length >= 2 && (
+          {traceRouteEnabled && !tracing && waypointCount >= 2 && (
             <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-amber-500/95 text-white text-xs font-semibold px-4 py-2 rounded-full shadow-lg flex items-center gap-2 pointer-events-none">
               <GitBranch className="h-3.5 w-3.5" />
               Route traced from running sheet

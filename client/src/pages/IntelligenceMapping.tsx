@@ -1196,10 +1196,13 @@ export default function IntelligenceMapping() {
       });
     });
 
-    // POI tap: intercept clicks on Google Maps business/place pins
-    // The event carries a placeId when the user taps a POI
+    // Tap anywhere on the map (not on a marker/POI) → close the InfoWindow
     map.addListener("click", (e: google.maps.MapMouseEvent & { placeId?: string }) => {
-      if (!e.placeId || !e.latLng) return;
+      if (!e.placeId) {
+        infoWindowRef.current?.close();
+        return;
+      }
+      if (!e.latLng) return;
       // Prevent the default Google info window from opening
       e.stop?.();
       const lat = e.latLng.lat();

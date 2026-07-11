@@ -1805,6 +1805,13 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
               existingKeys.add(occKey);
             }
           }
+          // For vehicles: if the shorter form is a "Vehicle REGO" style shortForm
+          // (e.g. "Vehicle 1ICW519"), prefer it as the canonical shortForm over
+          // the full description text (e.g. "Silver Hyundai Santa Fe, bearing...").
+          // This ensures the intel display gets a clean shortForm to format.
+          if (entityType === "vehicle" && /^vehicle\s+/i.test(shorter.shortForm)) {
+            longer.shortForm = shorter.shortForm;
+          }
           absorbed.add(shorterLower);
         }
       }

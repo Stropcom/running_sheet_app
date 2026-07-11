@@ -454,8 +454,9 @@ export default function RSMapping() {
     const wps = placedWaypointsRef.current;
     if (wps.length === 0) return;
 
-    // ~15m in degrees latitude ≈ 0.000135
-    const THRESHOLD = 0.000135;
+    // Group by same normalised address OR within ~100m (0.0009°)
+    const THRESHOLD = 0.0009;
+    const normalise = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 
     const visited = new Set<number>();
     const sheetId = selectedSheetId!;
@@ -463,13 +464,17 @@ export default function RSMapping() {
     for (let i = 0; i < wps.length; i++) {
       if (visited.has(i)) continue;
 
-      // Find all waypoints within threshold of wps[i]
+      const normI = normalise(wps[i].address);
+
+      // Find all waypoints that share the same address OR are within threshold
       const group: number[] = [i];
       for (let j = i + 1; j < wps.length; j++) {
         if (visited.has(j)) continue;
+        const sameAddr = normI.length > 0 && normalise(wps[j].address) === normI;
         const dlat = Math.abs(wps[j].lat - wps[i].lat);
         const dlng = Math.abs(wps[j].lng - wps[i].lng);
-        if (dlat < THRESHOLD && dlng < THRESHOLD) {
+        const nearby = dlat < THRESHOLD && dlng < THRESHOLD;
+        if (sameAddr || nearby) {
           group.push(j);
         }
       }

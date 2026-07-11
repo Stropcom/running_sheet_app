@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getMarkerDataUrl, getMarkerSvg, MARKER_COLOURS, MARKER_COLOUR_LABELS, MARKER_ICON_GROUPS, MARKER_ICON_LABELS, type MarkerColour, type MarkerIcon } from "@/lib/markerSvgs";
-import { convertGoogleAddresses, buildPoiAddress } from "@/lib/addressFormat";
+import { convertGoogleAddresses, buildPoiAddress, formatIntelAddress } from "@/lib/addressFormat";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -155,6 +155,7 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
   const isTarget = loc.type === "target_address";
   const accentColor = isTarget ? "#dc2626" : "#7c3aed";
   const typeLabel = isTarget ? "TARGET ADDRESS" : "OBSERVED LOCATION";
+  const displayLabel = formatIntelAddress(loc.label);
 
   const lines: string[] = [];
 
@@ -163,7 +164,7 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
       <span style="background:${accentColor};color:#fff;border-radius:4px;font-size:9px;font-weight:700;padding:2px 6px;letter-spacing:0.07em;white-space:nowrap;">${typeLabel}</span>
     </div>
-    <strong style="font-size:13px;color:#111;line-height:1.35;display:block;margin-bottom:2px;">${loc.label}</strong>
+    <strong style="font-size:13px;color:#111;line-height:1.35;display:block;margin-bottom:2px;">${displayLabel}</strong>
   `);
 
   // Linked target details (for target_address)
@@ -1072,7 +1073,7 @@ export default function IntelligenceMapping() {
                   <div style="display:flex;align-items:center;gap:5px;margin-bottom:4px;">
                     <span style="background:${accentColor};color:#fff;border-radius:3px;font-size:9px;font-weight:700;padding:1px 5px;letter-spacing:0.07em;">${typeLabel}</span>
                   </div>
-                  <div style="font-size:12px;font-weight:700;color:#111;margin-bottom:3px;">${mergedIntel.label}</div>
+                  <div style="font-size:12px;font-weight:700;color:#111;margin-bottom:3px;">${formatIntelAddress(mergedIntel.label)}</div>
               `);
               // Linked target details
               if (isTarget && mergedIntel.linkedTargets.length > 0) {
@@ -2578,7 +2579,7 @@ export default function IntelligenceMapping() {
                       <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-0.5">
                         {c.loc.type === "target_address" ? "Target Address" : "Observed Location"}
                       </p>
-                      <p className="text-sm font-semibold text-foreground truncate">{c.loc.label}</p>
+                      <p className="text-sm font-semibold text-foreground truncate">{formatIntelAddress(c.loc.label)}</p>
                       {c.loc.linkedTargets?.length > 0 && (
                         <p className="text-xs text-muted-foreground mt-0.5">{c.loc.linkedTargets.map((t: any) => t.name).join(", ")}</p>
                       )}

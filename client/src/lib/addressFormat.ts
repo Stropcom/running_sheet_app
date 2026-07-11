@@ -152,3 +152,63 @@ export function buildPoiAddress(name: string, address: string): string {
   // Prepend business name
   return `${name}, ${converted}`;
 }
+
+/**
+ * Format an address for display in the Intelligence section and map pop-ups.
+ *
+ * Input is the RS shortForm (what's inside the brackets in an observation), e.g.:
+ *   "1 Smith Street"                         → "1 Smith Street, MELVILLE"
+ *   "1 Smith Street, MELVILLE WA"            → "1 Smith Street, MELVILLE"
+ *   "1 Smith Street, MELVILLE WA (1 Smith Street)" → "1 Smith Street, MELVILLE"
+ *   "Blend Cafe, 1 Smith Street, MELVILLE WA" → "Blend Cafe, 1 Smith Street, MELVILLE"
+ *   "Blend Cafe"                             → "Blend Cafe"  (no address info, returned as-is)
+ *   "Kent St & Queens Park Rd, WILSON WA"    → "Kent St & Queens Park Rd, WILSON"
+ *
+ * Rules:
+ *  1. Strip any trailing bracket code e.g. " (1 SMITH STREET)"
+ *  2. Strip the state abbreviation (WA, NSW, etc.) from the suburb+state segment
+ *  3. Strip the postcode and ", Australia"
+ *  4. Uppercase the suburb name
+ *  5. If no suburb is detectable, return the address as-is (cleaned)
+ */
+export function formatIntelAddress(shortForm: string): string {
+  if (!shortForm) return shortForm;
+
+  // Step 1: strip trailing bracket code " (ANYTHING)"
+  let text = shortForm.replace(/\s*\([^)]{1,80}\)\s*$/, "").trim();
+
+  // Step 2: strip ", Australia" and postcode
+  text = text.replace(/,?\s*Australia\s*$/i, "").trim();
+  text = text.replace(/\s+\d{4}\s*$/, "").trim();
+
+  // Step 3: detect and reformat "..., Suburb STATE" → "..., SUBURB"
+  // Match the trailing ", Suburb STATE" pattern
+  const AU_STATES_RE = /^(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)$/i;
+  const parts = text.split(",");
+  if (parts.length >= 2) {
+    const lastPart = parts[parts.length - 1].trim();
+    // Check if lastPart ends with a state abbreviation: "Southern River WA" or "MELVILLE WA"
+    const stateMatch = lastPart.match(/^(.*?)\s+(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)$/i);
+    if (stateMatch) {
+      const suburb = stateMatch[1].trim();
+      // Uppercase the suburb
+      parts[parts.length - 1] = " " + suburb.toUpperCase();
+      text = parts.join(",");
+    } else if (AU_STATES_RE.test(lastPart)) {
+      // The last part is just a state abbreviation — remove it entirely
+      parts.pop();
+      text = parts.join(",").trim();
+    }
+  }
+
+  return text.trim();
+}
+
+/**
+ * Format an address for map marker pop-up display.
+ * Same as formatIntelAddress — produces "1 Smith Street, MELVILLE" or
+ * "Blend Cafe, 1 Smith Street, MELVILLE".
+ */
+export function formatMapPopupAddress(shortForm: string): string {
+  return formatIntelAddress(shortForm);
+}

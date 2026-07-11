@@ -1,6 +1,7 @@
 import { useRoute, useLocation } from "wouter";
 import { useRef } from "react";
 import { trpc } from "@/lib/trpc";
+import { formatIntelAddress } from "@/lib/addressFormat";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -93,6 +94,7 @@ export default function IntelligenceLocationProfile() {
   const [, params] = useRoute("/intelligence/location/:label");
   const [, navigate] = useLocation();
   const label = decodeURIComponent(params?.label ?? "");
+  const displayLabel = formatIntelAddress(label);
   const { data, isLoading, error } = trpc.intelligence.locationProfile.useQuery({ label }, { enabled: !!label });
   const profile = data as IntelLocationProfile | undefined;
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -119,7 +121,7 @@ export default function IntelligenceLocationProfile() {
 
   function exportPdf() {
     if (!profile) return;
-    const html = buildLocationProfileHtml(profile);
+    const html = buildLocationProfileHtml({ ...profile, label: displayLabel });
     const win = window.open("", "_blank");
     if (!win) return;
     win.document.write(html);
@@ -144,7 +146,7 @@ export default function IntelligenceLocationProfile() {
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 border border-white/30 mb-3">
                       <MapPin className="w-3 h-3" /> Location
                     </span>
-                    <h1 className="text-2xl font-bold tracking-tight">{profile.label}</h1>
+                    <h1 className="text-2xl font-bold tracking-tight">{displayLabel}</h1>
                   </div>
                   <Button variant="outline" size="sm" onClick={exportPdf} className="bg-white/10 border-white/30 text-white hover:bg-white/20 shrink-0">
                     <FileDown className="w-4 h-4 mr-1.5" /> Export PDF

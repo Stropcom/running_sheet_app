@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { ViewToggle } from "@/components/ViewToggle";
 import { useViewMode } from "@/contexts/ViewModeContext";
+import { formatIntelAddress } from "@/lib/addressFormat";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1301,6 +1302,8 @@ export default function IntelligencePage() {
                     : TYPE_ICONS[entity.type];
                   const displayShortForm = entity.type === "vehicle"
                     ? entity.shortForm.replace(/^[aA]\s+/, "")
+                    : (entity.type === "address" || entity.type === "business")
+                    ? formatIntelAddress(entity.shortForm)
                     : entity.shortForm;
                   const handleClick = () => {
                     if (entity.isTarget && entity.targetId) navigate(`/intelligence/target/${entity.targetId}`);
@@ -1349,6 +1352,8 @@ export default function IntelligencePage() {
                     // Strip leading 'a ' or 'A ' from vehicle display names
                     const displayShortForm = entity.type === "vehicle"
                       ? entity.shortForm.replace(/^[aA]\s+/, "")
+                      : (entity.type === "address" || entity.type === "business")
+                      ? formatIntelAddress(entity.shortForm)
                       : entity.shortForm;
                     return (
                       <button

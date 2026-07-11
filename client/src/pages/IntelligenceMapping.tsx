@@ -158,6 +158,21 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
   const accentColor = isTarget ? "#dc2626" : "#7c3aed";
   const typeLabel = isTarget ? "TARGET ADDRESS" : "OBSERVED LOCATION";
   const displayLabel = formatIntelAddress(loc.label);
+  const encodedLabel = encodeURIComponent(loc.label);
+
+  // Load persisted appearance for this intel pin from localStorage
+  let intelIcon: string = "house_filled";
+  let intelColour: string = isTarget ? "red" : "purple";
+  let intelRotation: number = 0;
+  try {
+    const stored = localStorage.getItem(`runlog_intel_appearance_${loc.label}`);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (parsed.icon) intelIcon = parsed.icon;
+      if (parsed.colour) intelColour = parsed.colour;
+      if (typeof parsed.rotation === "number") intelRotation = parsed.rotation;
+    }
+  } catch { /* ignore */ }
 
   const lines: string[] = [];
 
@@ -202,26 +217,88 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
     lines.push(`<div style="margin-top:4px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Vehicles</span><p style="font-size:12px;color:#111;margin:2px 0 0">${loc.assocVehicles.join(", ")}</p></div>`);
   }
 
-  // Action buttons row
-  const btnRow: string[] = [];
-  if (loc.lat != null && loc.lng != null) {
-    const lat = loc.lat;
-    const lng = loc.lng;
-    btnRow.push(`<a href="https://waze.com/ul?ll=${lat},${lng}&navigate=yes" target="_blank" style="font-size:11px;padding:4px 10px;background:#00bcd4;color:#fff;border-radius:4px;text-decoration:none">Waze</a>`);
-    btnRow.push(`<a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}" target="_blank" style="font-size:11px;padding:4px 10px;background:#4285f4;color:#fff;border-radius:4px;text-decoration:none">Street View</a>`);
-  }
+  // ── Action buttons (observed location only — same layout as custom marker popup) ──
   if (!isTarget) {
-    const encodedLabel = encodeURIComponent(loc.label);
-    btnRow.push(`<a href="/intelligence/location/${encodedLabel}" style="font-size:11px;padding:4px 10px;background:#7c3aed;color:#fff;border-radius:4px;text-decoration:none">View Profile</a>`);
-  }
-  if (btnRow.length > 0) {
-    lines.push(`<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${btnRow.join("")}</div>`);
+    const btnBase = "font-size:12px;font-weight:600;padding:7px 0;border-radius:6px;cursor:pointer;text-align:center;text-decoration:none;display:block;width:100%;box-sizing:border-box;";
+    const sections: string[] = [];
+
+    // Rotation slider (at top, above buttons)
+    const safeLabel = loc.label.replace(/'/g, "\\'");
+    sections.push(`
+      <div style="margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <img id="intel-popup-preview-${encodedLabel}" src="data:image/svg+xml;base64,${btoa(getMarkerSvg(intelIcon as any, intelColour as any))}" style="width:24px;height:24px;object-fit:contain;flex-shrink:0;transform:rotate(${intelRotation}deg);transition:transform 0.1s;" />
+          <div style="flex:1;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+              <span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Rotation</span>
+              <span id="intel-popup-deg-${encodedLabel}" style="font-size:10px;color:#374151;font-weight:600;">${intelRotation}°</span>
+            </div>
+            <input id="intel-popup-slider-${encodedLabel}" type="range" min="0" max="359" step="1" value="${intelRotation}"
+              style="width:100%;accent-color:#6366f1;cursor:pointer;"
+              oninput="window.__intelPopupRotate('${safeLabel}', this.value)"
+            />
+          </div>
+        </div>
+      </div>
+    `);
+
+    // Row 0: RS Quick Entry — full width, indigo
+    sections.push(`<div style="margin-top:5px;"><button onclick="window.__intelRsQuickEntry('${safeLabel}')" style="${btnBase}background:#6366f1;color:#fff;border:none;font-size:13px;padding:9px 0;">RS Quick Entry</button></div>`);
+
+    // Row 1: View Observation Profile — full width, purple
+    sections.push(`<div style="margin-top:5px;"><a href="/intelligence/location/${encodedLabel}" style="${btnBase}background:#7c3aed;color:#fff;font-size:13px;padding:9px 0;">View Observation Profile</a></div>`);
+
+    // Row 2: Waze | Street View
+    if (loc.lat != null && loc.lng != null) {
+      const lat = loc.lat;
+      const lng = loc.lng;
+      const navBtns = [
+        `<a href="https://waze.com/ul?ll=${lat},${lng}&navigate=yes" target="_blank" style="${btnBase}background:#00bcd4;color:#fff;">Waze</a>`,
+        `<a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}" target="_blank" style="${btnBase}background:#4285f4;color:#fff;">Street View</a>`,
+      ];
+      sections.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;">${navBtns.join("")}</div>`);
+    }
+
+    // Row 3: Edit | Move
+    const editBtn = `<button onclick="window.__intelOpenEditDialog('${safeLabel}')" style="${btnBase}background:#16a34a;color:#fff;border:none;">Edit</button>`;
+    const moveBtn = `<button onclick="window.__intelStartMove('${safeLabel}')" style="${btnBase}background:#0369a1;color:#fff;border:none;">Move…</button>`;
+    sections.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;">${editBtn}${moveBtn}</div>`);
+
+    lines.push(sections.join(""));
+  } else {
+    // Target address: keep original simple nav buttons
+    if (loc.lat != null && loc.lng != null) {
+      const lat = loc.lat;
+      const lng = loc.lng;
+      const btnRow = [
+        `<a href="https://waze.com/ul?ll=${lat},${lng}&navigate=yes" target="_blank" style="font-size:11px;padding:4px 10px;background:#00bcd4;color:#fff;border-radius:4px;text-decoration:none">Waze</a>`,
+        `<a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}" target="_blank" style="font-size:11px;padding:4px 10px;background:#4285f4;color:#fff;border-radius:4px;text-decoration:none">Street View</a>`,
+      ];
+      lines.push(`<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${btnRow.join("")}</div>`);
+    }
   }
 
   // ── Secondary (observation) locs absorbed into this target_address pin ──
   if (isTarget && loc.secondaryLocs && loc.secondaryLocs.length > 0) {
     for (const sec of loc.secondaryLocs) {
       const secLabel = formatIntelAddress(sec.label);
+      const secEncodedLabel = encodeURIComponent(sec.label);
+      const secSafeLabel = sec.label.replace(/'/g, "\\'");
+
+      // Load persisted appearance for secondary pin
+      let secIcon: string = "house_filled";
+      let secColour: string = "purple";
+      let secRotation: number = 0;
+      try {
+        const stored = localStorage.getItem(`runlog_intel_appearance_${sec.label}`);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed.icon) secIcon = parsed.icon;
+          if (parsed.colour) secColour = parsed.colour;
+          if (typeof parsed.rotation === "number") secRotation = parsed.rotation;
+        }
+      } catch { /* ignore */ }
+
       lines.push(`<div style="margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;">`);
       lines.push(`
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
@@ -242,14 +319,40 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
       if (sec.assocVehicles.length > 0) {
         lines.push(`<div style="margin-top:4px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Vehicles</span><p style="font-size:12px;color:#111;margin:2px 0 0">${sec.assocVehicles.join(", ")}</p></div>`);
       }
-      // View Profile button for the observation
-      const encodedSecLabel = encodeURIComponent(sec.label);
-      lines.push(`<div style="margin-top:6px"><a href="/intelligence/location/${encodedSecLabel}" style="font-size:11px;padding:4px 10px;background:#7c3aed;color:#fff;border-radius:4px;text-decoration:none">View Observation Profile</a></div>`);
+
+      // Action buttons for secondary observation (same as standalone observation)
+      const secBtnBase = "font-size:12px;font-weight:600;padding:7px 0;border-radius:6px;cursor:pointer;text-align:center;text-decoration:none;display:block;width:100%;box-sizing:border-box;";
+      // Rotation slider
+      lines.push(`
+        <div style="margin-top:8px;padding-top:6px;border-top:1px dashed #e5e7eb;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <img id="intel-popup-preview-${secEncodedLabel}" src="data:image/svg+xml;base64,${btoa(getMarkerSvg(secIcon as any, secColour as any))}" style="width:24px;height:24px;object-fit:contain;flex-shrink:0;transform:rotate(${secRotation}deg);transition:transform 0.1s;" />
+            <div style="flex:1;">
+              <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+                <span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Rotation</span>
+                <span id="intel-popup-deg-${secEncodedLabel}" style="font-size:10px;color:#374151;font-weight:600;">${secRotation}°</span>
+              </div>
+              <input id="intel-popup-slider-${secEncodedLabel}" type="range" min="0" max="359" step="1" value="${secRotation}"
+                style="width:100%;accent-color:#6366f1;cursor:pointer;"
+                oninput="window.__intelPopupRotate('${secSafeLabel}', this.value)"
+              />
+            </div>
+          </div>
+        </div>
+      `);
+      lines.push(`<div style="margin-top:5px;"><button onclick="window.__intelRsQuickEntry('${secSafeLabel}')" style="${secBtnBase}background:#6366f1;color:#fff;border:none;font-size:13px;padding:9px 0;">RS Quick Entry</button></div>`);
+      lines.push(`<div style="margin-top:5px;"><a href="/intelligence/location/${secEncodedLabel}" style="${secBtnBase}background:#7c3aed;color:#fff;font-size:13px;padding:9px 0;">View Observation Profile</a></div>`);
+      if (sec.lat != null && sec.lng != null) {
+        const sLat = sec.lat;
+        const sLng = sec.lng;
+        lines.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;"><a href="https://waze.com/ul?ll=${sLat},${sLng}&navigate=yes" target="_blank" style="${secBtnBase}background:#00bcd4;color:#fff;">Waze</a><a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${sLat},${sLng}" target="_blank" style="${secBtnBase}background:#4285f4;color:#fff;">Street View</a></div>`);
+      }
+      lines.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;"><button onclick="window.__intelOpenEditDialog('${secSafeLabel}')" style="${secBtnBase}background:#16a34a;color:#fff;border:none;">Edit</button><button onclick="window.__intelStartMove('${secSafeLabel}')" style="${secBtnBase}background:#0369a1;color:#fff;border:none;">Move…</button></div>`);
       lines.push(`</div>`);
     }
   }
 
-  return `<div style="font-family:sans-serif;max-width:260px;color:#111">${lines.join("")}</div>`;
+  return `<div style="font-family:sans-serif;max-width:280px;color:#111">${lines.join("")}</div>`;
 }
 
 // ── Haversine distance helper (metres) ───────────────────────────────────────
@@ -415,6 +518,16 @@ export default function IntelligenceMapping() {
   // Move marker state: which marker is being dragged to a new position
   const [movingMarkerId, setMovingMarkerId] = useState<number | null>(null);
   const [pendingMoveAddress, setPendingMoveAddress] = useState<{ lat: number; lng: number; address: string } | null>(null);
+
+  // Intel pin move state (separate from custom marker move — intel pins are not persisted to DB)
+  const [movingIntelLabel, setMovingIntelLabel] = useState<string | null>(null);
+  const [pendingIntelMoveAddress, setPendingIntelMoveAddress] = useState<{ lat: number; lng: number; address: string } | null>(null);
+
+  // Intel pin edit dialog state (appearance only — persisted to localStorage)
+  const [editingIntelLabel, setEditingIntelLabel] = useState<string | null>(null);
+  const [intelEditIcon, setIntelEditIcon] = useState<MarkerIcon>("house_filled");
+  const [intelEditColour, setIntelEditColour] = useState<MarkerColour>("purple");
+  const [intelEditRotation, setIntelEditRotation] = useState<number>(0);
 
   // Map state
   const [mapReady, setMapReady] = useState(false);
@@ -1460,6 +1573,100 @@ export default function IntelligenceMapping() {
     };
     return () => { delete (window as any).__editCustomMarker; };
   }, [customMarkers]);
+
+  // ── Intel pin global handlers ─────────────────────────────────────────────────
+
+  // RS Quick Entry from intel pin popup
+  useEffect(() => {
+    (window as any).__intelRsQuickEntry = (label: string) => {
+      infoWindowRef.current?.close();
+      setMapQeAddress(label);
+      setMapQeOpen(true);
+    };
+    return () => { delete (window as any).__intelRsQuickEntry; };
+  }, [setMapQeAddress, setMapQeOpen]);
+
+  // Open edit dialog for intel pin (icon/colour/rotation only)
+  useEffect(() => {
+    (window as any).__intelOpenEditDialog = (label: string) => {
+      infoWindowRef.current?.close();
+      // Load current appearance from localStorage
+      let icon: MarkerIcon = "house_filled";
+      let colour: MarkerColour = "purple";
+      let rotation = 0;
+      try {
+        const stored = localStorage.getItem(`runlog_intel_appearance_${label}`);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed.icon) icon = parsed.icon as MarkerIcon;
+          if (parsed.colour) colour = parsed.colour as MarkerColour;
+          if (typeof parsed.rotation === "number") rotation = parsed.rotation;
+        }
+      } catch { /* ignore */ }
+      setIntelEditIcon(icon);
+      setIntelEditColour(colour);
+      setIntelEditRotation(rotation);
+      setEditingIntelLabel(label);
+    };
+    return () => { delete (window as any).__intelOpenEditDialog; };
+  }, []);
+
+  // Inline rotation handler for intel pin popup slider
+  useEffect(() => {
+    (window as any).__intelPopupRotate = (label: string, valueStr: string) => {
+      const rotation = Number(valueStr);
+      const encodedLabel = encodeURIComponent(label);
+      // Update popup preview image and degree label
+      const previewImg = document.getElementById(`intel-popup-preview-${encodedLabel}`) as HTMLImageElement | null;
+      const degLabel = document.getElementById(`intel-popup-deg-${encodedLabel}`) as HTMLElement | null;
+      if (previewImg) previewImg.style.transform = `rotate(${rotation}deg)`;
+      if (degLabel) degLabel.textContent = `${rotation}°`;
+      // Update the actual map marker element
+      const markerEntry = markersRef.current.find((m: any) => m.title === label);
+      if (markerEntry?.content instanceof HTMLElement) {
+        const img = markerEntry.content.querySelector('img') as HTMLImageElement | null;
+        if (img) img.style.transform = `rotate(${rotation}deg) drop-shadow(0 2px 4px rgba(0,0,0,0.4))`;
+      }
+      // Persist to localStorage immediately
+      try {
+        const stored = localStorage.getItem(`runlog_intel_appearance_${label}`);
+        const parsed = stored ? JSON.parse(stored) : {};
+        parsed.rotation = rotation;
+        localStorage.setItem(`runlog_intel_appearance_${label}`, JSON.stringify(parsed));
+      } catch { /* ignore */ }
+    };
+    return () => { delete (window as any).__intelPopupRotate; };
+  }, []);
+
+  // Move intel pin handler
+  useEffect(() => {
+    (window as any).__intelStartMove = (label: string) => {
+      infoWindowRef.current?.close();
+      const marker = markersRef.current.find((m: any) => m.title === label);
+      if (!marker) return;
+      const origPos = marker.position as google.maps.LatLngLiteral | null;
+      if (!origPos) return;
+      const origLat = typeof (origPos as any).lat === 'function' ? (origPos as any).lat() : (origPos as any).lat;
+      const origLng = typeof (origPos as any).lng === 'function' ? (origPos as any).lng() : (origPos as any).lng;
+      (marker as any).gmpDraggable = true;
+      setMovingIntelLabel(label);
+      setPendingIntelMoveAddress(null);
+      const dragEndListener = marker.addListener('dragend', () => {
+        const newPos = marker.position as google.maps.LatLngLiteral | null;
+        if (!newPos || !geocoderRef.current) return;
+        const newLat = typeof (newPos as any).lat === 'function' ? (newPos as any).lat() : (newPos as any).lat;
+        const newLng = typeof (newPos as any).lng === 'function' ? (newPos as any).lng() : (newPos as any).lng;
+        geocoderRef.current.geocode({ location: { lat: newLat, lng: newLng } }, (results, status) => {
+          const rawAddr = (status === 'OK' && results && results[0]) ? results[0].formatted_address : `${newLat.toFixed(6)}, ${newLng.toFixed(6)}`;
+          const addr = convertGoogleAddresses(rawAddr);
+          setPendingIntelMoveAddress({ lat: newLat, lng: newLng, address: addr });
+        });
+        google.maps.event.removeListener(dragEndListener);
+      });
+      (window as any).__intelMoveOrigPos = { label, lat: origLat, lng: origLng };
+    };
+    return () => { delete (window as any).__intelStartMove; };
+  }, []);
 
   // ── Stats ────────────────────────────────────────────────────────────────────
   const targetPins = locations?.filter(l => l.type === "target_address").length ?? 0;
@@ -2868,6 +3075,239 @@ export default function IntelligenceMapping() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Intel Pin Move Banner ── */}
+      {movingIntelLabel !== null && (
+        <div
+          className="absolute top-0 left-0 right-0 z-50 flex justify-center px-3 pt-3 pointer-events-none"
+        >
+          <div
+            className="pointer-events-auto w-full max-w-md rounded-2xl shadow-2xl border border-border overflow-hidden"
+            style={{ background: "rgba(3,105,161,0.97)" }}
+          >
+            {pendingIntelMoveAddress === null ? (
+              /* Phase 1: dragging */
+              <div className="flex items-center justify-between gap-3 px-4 py-3">
+                <p className="text-sm font-semibold text-white">Drag marker to new position</p>
+                <button
+                  onClick={() => {
+                    // Cancel: snap marker back to original position
+                    const orig = (window as any).__intelMoveOrigPos;
+                    if (orig && orig.label === movingIntelLabel) {
+                      const marker = markersRef.current.find((m: any) => m.title === orig.label);
+                      if (marker) {
+                        marker.position = { lat: orig.lat, lng: orig.lng };
+                        (marker as any).gmpDraggable = false;
+                      }
+                    }
+                    setMovingIntelLabel(null);
+                    setPendingIntelMoveAddress(null);
+                    delete (window as any).__intelMoveOrigPos;
+                  }}
+                  className="flex-shrink-0 text-white/80 hover:text-white text-xs font-medium bg-white/20 hover:bg-white/30 rounded-lg px-3 py-1.5 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              /* Phase 2: confirm new address */
+              <div className="px-4 py-3">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-white/70 mb-0.5">Move to</p>
+                <p className="text-sm font-semibold text-white mb-3 leading-snug">{pendingIntelMoveAddress.address}</p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      if (movingIntelLabel === null || pendingIntelMoveAddress === null) return;
+                      // Accept: update geocodedIntelRef so the new position is used next time
+                      const entry = geocodedIntelRef.current.get(movingIntelLabel);
+                      if (entry) {
+                        geocodedIntelRef.current.set(movingIntelLabel, {
+                          ...entry,
+                          position: { lat: pendingIntelMoveAddress.lat, lng: pendingIntelMoveAddress.lng },
+                        });
+                      }
+                      const marker = markersRef.current.find((m: any) => m.title === movingIntelLabel);
+                      if (marker) (marker as any).gmpDraggable = false;
+                      setMovingIntelLabel(null);
+                      setPendingIntelMoveAddress(null);
+                      delete (window as any).__intelMoveOrigPos;
+                      toast.success("Marker moved");
+                    }}
+                    className="flex-1 text-sm font-semibold text-white bg-white/25 hover:bg-white/35 rounded-xl py-2 transition-colors"
+                  >
+                    Accept
+                  </button>
+                  <button
+                    onClick={() => {
+                      const orig = (window as any).__intelMoveOrigPos;
+                      if (orig && orig.label === movingIntelLabel) {
+                        const marker = markersRef.current.find((m: any) => m.title === orig.label);
+                        if (marker) {
+                          marker.position = { lat: orig.lat, lng: orig.lng };
+                          (marker as any).gmpDraggable = false;
+                        }
+                      }
+                      setMovingIntelLabel(null);
+                      setPendingIntelMoveAddress(null);
+                      delete (window as any).__intelMoveOrigPos;
+                    }}
+                    className="flex-1 text-sm font-semibold text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-xl py-2 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Intel Pin Edit Dialog ── */}
+      {editingIntelLabel !== null && (
+        <div
+          className="absolute inset-0 z-40 flex items-end justify-center"
+          style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}
+          onClick={() => setEditingIntelLabel(null)}
+        >
+          <div
+            className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-sm font-bold text-foreground">Edit Marker Appearance</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5 truncate max-w-[260px]">{editingIntelLabel}</p>
+              </div>
+              <button onClick={() => setEditingIntelLabel(null)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Icon picker */}
+            <div className="mb-4">
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">Marker Icon</p>
+              <div className="space-y-3">
+                {MARKER_ICON_GROUPS.map((group) => (
+                  <div key={group.label}>
+                    <p className="text-[10px] text-muted-foreground/70 mb-1.5">{group.label}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {group.icons.map((iconKey) => (
+                        <button
+                          key={iconKey}
+                          onClick={() => setIntelEditIcon(iconKey as MarkerIcon)}
+                          title={MARKER_ICON_LABELS[iconKey as MarkerIcon]}
+                          className={`w-10 h-10 rounded-lg border-2 flex items-center justify-center transition-all ${
+                            intelEditIcon === iconKey
+                              ? "border-primary bg-primary/10 scale-110"
+                              : "border-border bg-accent/30 hover:border-primary/50"
+                          }`}
+                        >
+                          <img
+                            src={getMarkerDataUrl(iconKey as MarkerIcon, intelEditColour)}
+                            alt={MARKER_ICON_LABELS[iconKey as MarkerIcon]}
+                            className="w-7 h-7 object-contain"
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Colour picker */}
+            <div className="mb-4">
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">Colour</p>
+              <div className="flex gap-2">
+                {(Object.keys(MARKER_COLOURS) as MarkerColour[]).map((col) => (
+                  <button
+                    key={col}
+                    onClick={() => setIntelEditColour(col)}
+                    title={MARKER_COLOUR_LABELS[col]}
+                    className={`w-8 h-8 rounded-full border-2 transition-all ${
+                      intelEditColour === col ? "border-foreground scale-110" : "border-transparent hover:border-foreground/40"
+                    }`}
+                    style={{ background: MARKER_COLOURS[col] }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Rotation */}
+            <div className="mb-4">
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">Rotation — {intelEditRotation}°</p>
+              <div className="flex items-center gap-3">
+                <div className="shrink-0 w-10 h-10 flex items-center justify-center">
+                  <img
+                    src={getMarkerDataUrl(intelEditIcon, intelEditColour)}
+                    alt="preview"
+                    className="w-8 h-8 object-contain transition-transform"
+                    style={{ transform: `rotate(${intelEditRotation}deg)` }}
+                  />
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={359}
+                  step={1}
+                  value={intelEditRotation}
+                  onChange={(e) => setIntelEditRotation(Number(e.target.value))}
+                  className="flex-1 accent-primary"
+                />
+                <div className="flex gap-1">
+                  {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => (
+                    <button
+                      key={deg}
+                      onClick={() => setIntelEditRotation(deg)}
+                      title={`${deg}°`}
+                      className={`w-6 h-6 text-[9px] rounded border transition-all ${
+                        intelEditRotation === deg ? "bg-primary text-primary-foreground border-primary" : "border-border hover:border-primary/50 text-muted-foreground"
+                      }`}
+                    >
+                      {deg === 0 ? "N" : deg === 45 ? "NE" : deg === 90 ? "E" : deg === 135 ? "SE" : deg === 180 ? "S" : deg === 225 ? "SW" : deg === 270 ? "W" : "NW"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Save / Cancel */}
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => setEditingIntelLabel(null)}>
+                Cancel
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={() => {
+                  if (!editingIntelLabel) return;
+                  // Persist to localStorage
+                  try {
+                    localStorage.setItem(`runlog_intel_appearance_${editingIntelLabel}`, JSON.stringify({
+                      icon: intelEditIcon,
+                      colour: intelEditColour,
+                      rotation: intelEditRotation,
+                    }));
+                  } catch { /* ignore */ }
+                  // Update the actual map marker element immediately
+                  const markerEntry = markersRef.current.find((m: any) => m.title === editingIntelLabel);
+                  if (markerEntry?.content instanceof HTMLElement) {
+                    const img = markerEntry.content.querySelector('img') as HTMLImageElement | null;
+                    if (img) {
+                      img.src = getMarkerDataUrl(intelEditIcon, intelEditColour);
+                      img.style.transform = `rotate(${intelEditRotation}deg)`;
+                    }
+                  }
+                  setEditingIntelLabel(null);
+                  toast.success("Marker appearance saved");
+                }}
+              >
+                Save Changes
+              </Button>
+            </div>
           </div>
         </div>
       )}

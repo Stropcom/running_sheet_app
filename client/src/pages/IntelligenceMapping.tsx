@@ -51,6 +51,9 @@ import {
   LocateFixed,
   Navigation2,
   ExternalLink,
+  Shield,
+  Users,
+  ShieldCheck,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -1823,238 +1826,57 @@ export default function IntelligenceMapping() {
       <div
         ref={panelRef}
         className={`flex flex-col border-r border-border bg-card transition-all duration-200 ${
-          sidebarOpen ? "w-72 min-w-[18rem]" : "w-0 min-w-0 overflow-hidden"
+          sidebarOpen ? "w-64 min-w-[16rem]" : "w-0 min-w-0 overflow-hidden"
         }`}
       >
         {/* Panel Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
           <div className="flex items-center gap-2">
-            <Settings2 className="h-4 w-4 text-muted-foreground" />
-            <span className="font-semibold text-sm">Map Settings</span>
+            <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+            <span className="font-semibold text-sm">Running Sheet</span>
           </div>
           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setSidebarOpen(false)}>
             <X className="h-3.5 w-3.5" />
           </Button>
         </div>
 
-        {/* Back link */}
-        <div className="px-3 py-2 border-b border-border/50">
-          <button
-            onClick={() => setLocation("/intelligence")}
-            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ArrowLeft className="h-3 w-3" />
-            Intel Profiles
-          </button>
-        </div>
-
-        {/* Stats */}
-        {locations && (
-          <div className="px-4 py-2 border-b border-border/50 flex gap-3">
-            <div className="flex items-center gap-1.5">
-              <div className="w-2.5 h-2.5 rounded-full bg-red-500" />
-              <span className="text-xs text-muted-foreground">{targetPins} target</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <div className="w-2.5 h-2.5 rounded-full bg-purple-600" />
-              <span className="text-xs text-muted-foreground">{obsPins} observed</span>
-            </div>
-          </div>
-        )}
-
-        {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto">
-
-          {/* ── Operations / Target selectors ── */}
-          <div className="px-3 py-2 border-b border-border/50">
-            {opsLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <Spinner className="h-5 w-5" />
-              </div>
-            ) : !operations || operations.length === 0 ? (
-              <p className="text-xs text-muted-foreground text-center py-6">No operations found.</p>
-            ) : (
-              <>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Operations</span>
-                  <div className="flex gap-2">
-                    <button onClick={selectAllOps} className="text-[10px] text-blue-400 hover:text-blue-300">All</button>
-                    <button onClick={clearAll} className="text-[10px] text-muted-foreground hover:text-foreground">Clear</button>
-                  </div>
-                </div>
-                <div className="flex flex-col gap-0.5">
-                  {(operations as any[]).map((op) => {
-                    const opTargets = opTargetMap.get(op.id) ?? [];
-                    const isOpSelected = selectedOpIds.includes(op.id);
-                    const isExpanded = opExpanded.has(op.id);
-                    return (
-                      <div key={op.id}>
-                        <div className="flex items-center gap-2 px-1 py-1.5 rounded-md hover:bg-accent/50 transition-colors">
-                          <Checkbox
-                            id={`op-${op.id}`}
-                            checked={isOpSelected}
-                            onCheckedChange={() => toggleOp(op.id)}
-                            className="h-3.5 w-3.5"
-                          />
-                          <label htmlFor={`op-${op.id}`} className="flex-1 text-sm cursor-pointer truncate">
-                            {op.name}
-                          </label>
-                          {opTargets.length > 0 && (
-                            <button
-                              onClick={() => setOpExpanded(prev => {
-                                const next = new Set(prev);
-                                next.has(op.id) ? next.delete(op.id) : next.add(op.id);
-                                return next;
-                              })}
-                              className="text-muted-foreground hover:text-foreground"
-                            >
-                              {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                            </button>
-                          )}
-                        </div>
-                        {isExpanded && opTargets.length > 0 && (
-                          <div className="ml-5 pl-2 border-l border-border/50 flex flex-col gap-0.5 mb-1">
-                            {opTargets.map((t) => (
-                              <div key={t.id} className="flex items-center gap-2 px-1 py-1 rounded-md hover:bg-accent/40 transition-colors">
-                                <Checkbox
-                                  id={`tgt-${t.id}`}
-                                  checked={selectedTargetIds.includes(t.id)}
-                                  onCheckedChange={() => toggleTarget(t.id)}
-                                  className="h-3 w-3"
-                                />
-                                <label htmlFor={`tgt-${t.id}`} className="text-xs cursor-pointer truncate text-muted-foreground">
-                                  {t.name}
-                                </label>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* ── TEAMS (Live Location) ── */}
-          <div className="px-3 py-3 border-b border-border/50">
-            <div className="flex items-center gap-2 mb-3">
-              <Radio className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">TEAMS</span>
-            </div>
-
-            {/* Share my location toggle (also shows own pin) */}
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-foreground">Share &amp; show my location</span>
-              <Switch
-                checked={sharingEnabled}
-                onCheckedChange={handleSharingToggle}
-                className="scale-90"
-              />
-            </div>
-
-            {/* GPS error / desktop warning */}
-            {gpsError && (
-              <div className="flex items-start gap-1.5 mb-3 p-2 rounded bg-amber-500/10 border border-amber-500/30">
-                <AlertTriangle className="h-3 w-3 text-amber-500 mt-0.5 flex-shrink-0" />
-                <span className="text-[10px] text-amber-400 leading-tight">{gpsError}</span>
-              </div>
-            )}
-
-            {/* Team colour legend + per-team/user toggles */}
-            {[
-              { key: "TEAM1", label: "Team 1", colour: TEAM_COLOURS.TEAM1, users: liveUsersByTeam.TEAM1 },
-              { key: "TEAM2", label: "Team 2", colour: TEAM_COLOURS.TEAM2, users: liveUsersByTeam.TEAM2 },
-              { key: "PTT",   label: "PTT",    colour: TEAM_COLOURS.PTT,   users: liveUsersByTeam.PTT },
-            ].map(({ key, label, colour, users: teamUsers }) => (
-              <div key={key} className="mb-2">
-                {/* Team header row */}
-                <div className="flex items-center justify-between py-1">
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: colour }} />
-                    <span className="text-[11px] font-semibold" style={{ color: colour }}>{label}</span>
-                    {teamUsers.length > 0 && (
-                      <span className="text-[10px] text-muted-foreground">({teamUsers.length})</span>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => toggleTeamVisibility(key)}
-                    className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    {hiddenTeams.has(key) ? "Show" : "Hide"}
-                  </button>
-                </div>
-
-                {/* Per-user rows */}
-                {teamUsers.length > 0 && !hiddenTeams.has(key) && (
-                  <div className="ml-4 flex flex-col gap-0.5">
-                    {teamUsers.map((u) => (
-                      <div key={u.userId} className="flex items-center justify-between px-1 py-0.5 rounded hover:bg-accent/30">
-                        <span className="text-[11px] text-foreground font-medium truncate">
-                          {u.name.toUpperCase()}
-                          {u.userId === user?.id && (
-                            <span className="ml-1 text-[9px] text-muted-foreground">(you)</span>
-                          )}
-                        </span>
-                        <button
-                          onClick={() => toggleUserVisibility(u.userId)}
-                          className="text-[10px] text-muted-foreground hover:text-foreground transition-colors ml-2 flex-shrink-0"
-                        >
-                          {hiddenUsers.has(u.userId) ? "Show" : "Hide"}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* No users online in this team */}
-                {teamUsers.length === 0 && (
-                  <div className="ml-4 text-[10px] text-muted-foreground/50 italic pb-0.5">No units online</div>
-                )}
-              </div>
-            ))}
-
-            {/* Unassigned users */}
-            {liveUsersByTeam.unassigned.length > 0 && (
-              <div className="mb-2">
-                <div className="flex items-center justify-between py-1">
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-2.5 h-2.5 rounded-full bg-gray-500 flex-shrink-0" />
-                    <span className="text-[11px] font-semibold text-muted-foreground">Unassigned</span>
-                    <span className="text-[10px] text-muted-foreground">({liveUsersByTeam.unassigned.length})</span>
-                  </div>
-                  <button
-                    onClick={() => toggleTeamVisibility("null")}
-                    className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    {hiddenTeams.has("null") ? "Show" : "Hide"}
-                  </button>
-                </div>
-                {!hiddenTeams.has("null") && (
-                  <div className="ml-4 flex flex-col gap-0.5">
-                    {liveUsersByTeam.unassigned.map((u) => (
-                      <div key={u.userId} className="flex items-center justify-between px-1 py-0.5 rounded hover:bg-accent/30">
-                        <span className="text-[11px] text-foreground font-medium truncate">
-                          {u.name.toUpperCase()}
-                          {u.userId === user?.id && (
-                            <span className="ml-1 text-[9px] text-muted-foreground">(you)</span>
-                          )}
-                        </span>
-                        <button
-                          onClick={() => toggleUserVisibility(u.userId)}
-                          className="text-[10px] text-muted-foreground hover:text-foreground transition-colors ml-2 flex-shrink-0"
-                        >
-                          {hiddenUsers.has(u.userId) ? "Show" : "Hide"}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
+        {/* App Navigation Menu */}
+        <div className="flex-1 overflow-y-auto py-2">
+          {[
+            { icon: FileText, label: "Operations", path: "/" },
+            { icon: ClipboardCheck, label: "Governance", path: "/governance" },
+            { icon: ClipboardList, label: "To-Do", path: "/todo" },
+            { icon: MapIcon, label: "Mapping", path: "/intelligence/mapping" },
+            { icon: CalendarDays, label: "Calendar", path: "/calendar" },
+            { icon: Zap, label: "Shortcuts", path: "/shortcuts" },
+            { icon: FolderSearch, label: "Intelligence", path: "/intelligence" },
+            { icon: BookOpen, label: "Target Registry", path: "/target-registry" },
+            { icon: ArrowRightLeft, label: "Operation Management", path: "/operation-management" },
+            { icon: Scale, label: "Court", path: "/court/statements" },
+            { icon: ScrollText, label: "Audit Log", path: "/audit" },
+            { icon: WifiOff, label: "Draft Mode", path: "/draft" },
+            { icon: Trash2, label: "Recycle Bin", path: "/recycle-bin" },
+            { icon: HelpCircle, label: "Help", path: "/help" },
+            { icon: User, label: "My Profile", path: "/profile" },
+            ...(user?.role === "admin" ? [{ icon: Users, label: "User Management", path: "/admin" }] : []),
+          ].map(({ icon: Icon, label, path }) => {
+            const curPath = window.location.pathname;
+            const isActive = path === "/"
+              ? curPath === "/" || curPath.startsWith("/operation/") || curPath.startsWith("/sheet/")
+              : curPath === path || curPath.startsWith(path);
+            return (
+              <button
+                key={path}
+                onClick={() => { setSidebarOpen(false); setLocation(path); }}
+                className={`flex items-center gap-3 w-full px-4 py-2.5 text-sm transition-colors hover:bg-accent/60 ${
+                  isActive ? "bg-accent text-foreground font-medium" : "text-foreground/80"
+                }`}
+              >
+                <Icon className="h-4 w-4 flex-shrink-0" />
+                <span className="truncate">{label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -2327,61 +2149,233 @@ export default function IntelligenceMapping() {
         {/* Pane Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
           <div className="flex items-center gap-2">
-            <ClipboardList className="h-4 w-4 text-muted-foreground" />
-            <span className="font-semibold text-sm">RS Actions</span>
+            <Settings2 className="h-4 w-4 text-muted-foreground" />
+            <span className="font-semibold text-sm">Map Settings</span>
           </div>
           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setRsActionsPaneOpen(false)}>
             <X className="h-3.5 w-3.5" />
           </Button>
         </div>
 
-        {/* Pane Body — compact layout */}
-        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3" onClick={() => { if (rsInlineLabel) closeInlineField(); }}>
+        {/* Pane Body */}
+        <div className="flex-1 overflow-y-auto" onClick={() => { if (rsInlineLabel) closeInlineField(); }}>
 
-          {/* Step 1 + 2: selectors in a compact stack */}
-          <div className="space-y-2">
-            <Select
-              value={rsSelectedOpId !== null ? String(rsSelectedOpId) : ""}
-              onValueChange={(val) => {
-                setRsSelectedOpId(Number(val));
-                setRsSelectedSheetId(null);
-                setRsLastEntry(null);
-              }}
-            >
-              <SelectTrigger className="w-full h-8 text-xs">
-                <SelectValue placeholder="1. Choose operation…" />
-              </SelectTrigger>
-              <SelectContent>
-                {(operations ?? []).map((op: any) => (
-                  <SelectItem key={op.id} value={String(op.id)} className="text-xs">{op.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          {/* ── OPERATIONS section ── */}
+          <div className="px-3 py-3 border-b border-border/50">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Operations</span>
+              <div className="flex gap-2">
+                <button onClick={selectAllOps} className="text-[10px] text-blue-400 hover:text-blue-300">All</button>
+                <button onClick={clearAll} className="text-[10px] text-muted-foreground hover:text-foreground">Clear</button>
+              </div>
+            </div>
+            {opsLoading ? (
+              <div className="flex items-center justify-center py-4"><Spinner className="h-4 w-4" /></div>
+            ) : !operations || operations.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-4">No operations found.</p>
+            ) : (
+              <div className="flex flex-col gap-0.5">
+                {(operations as any[]).map((op) => {
+                  const opTargets = opTargetMap.get(op.id) ?? [];
+                  const isOpSelected = selectedOpIds.includes(op.id);
+                  const isExpanded = opExpanded.has(op.id);
+                  return (
+                    <div key={op.id}>
+                      <div className="flex items-center gap-2 px-1 py-1.5 rounded-md hover:bg-accent/50 transition-colors">
+                        <Checkbox
+                          id={`rp-op-${op.id}`}
+                          checked={isOpSelected}
+                          onCheckedChange={() => toggleOp(op.id)}
+                          className="h-3.5 w-3.5"
+                        />
+                        <label htmlFor={`rp-op-${op.id}`} className="flex-1 text-sm cursor-pointer truncate">{op.name}</label>
+                        {opTargets.length > 0 && (
+                          <button
+                            onClick={() => setOpExpanded(prev => {
+                              const next = new Set(prev);
+                              next.has(op.id) ? next.delete(op.id) : next.add(op.id);
+                              return next;
+                            })}
+                            className="text-muted-foreground hover:text-foreground"
+                          >
+                            {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                          </button>
+                        )}
+                      </div>
+                      {isExpanded && opTargets.length > 0 && (
+                        <div className="ml-5 pl-2 border-l border-border/50 flex flex-col gap-0.5 mb-1">
+                          {opTargets.map((t) => (
+                            <div key={t.id} className="flex items-center gap-2 px-1 py-1 rounded-md hover:bg-accent/40 transition-colors">
+                              <Checkbox
+                                id={`rp-tgt-${t.id}`}
+                                checked={selectedTargetIds.includes(t.id)}
+                                onCheckedChange={() => toggleTarget(t.id)}
+                                className="h-3 w-3"
+                              />
+                              <label htmlFor={`rp-tgt-${t.id}`} className="text-xs cursor-pointer truncate text-muted-foreground">{t.name}</label>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
-            {rsSelectedOpId !== null && (
+          {/* ── RS SELECTION section ── */}
+          <div className="px-3 py-3 border-b border-border/50 space-y-2">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">RS Selection</span>
+
+            {/* Step 1 + 2: selectors in a compact stack */}
+            <div className="space-y-2">
               <Select
-                value={rsSelectedSheetId !== null ? String(rsSelectedSheetId) : ""}
+                value={rsSelectedOpId !== null ? String(rsSelectedOpId) : ""}
                 onValueChange={(val) => {
-                  setRsSelectedSheetId(Number(val));
+                  setRsSelectedOpId(Number(val));
+                  setRsSelectedSheetId(null);
                   setRsLastEntry(null);
                 }}
               >
                 <SelectTrigger className="w-full h-8 text-xs">
-                  <SelectValue placeholder="2. Choose running sheet…" />
+                  <SelectValue placeholder="1. Choose operation…" />
                 </SelectTrigger>
                 <SelectContent>
-                  {(rsSheetsData ?? []).filter((s: any) => !s.closedAt && !s.deletedAt).map((s: any) => (
-                    <SelectItem key={s.id} value={String(s.id)} className="text-xs">{s.title || `Sheet #${s.id}`}</SelectItem>
+                  {(operations ?? []).map((op: any) => (
+                    <SelectItem key={op.id} value={String(op.id)} className="text-xs">{op.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            )}
-          </div>
 
-          {/* Sheet selected — show actions */}
+              {rsSelectedOpId !== null && (
+                <Select
+                  value={rsSelectedSheetId !== null ? String(rsSelectedSheetId) : ""}
+                  onValueChange={(val) => {
+                    setRsSelectedSheetId(Number(val));
+                    setRsLastEntry(null);
+                  }}
+                >
+                  <SelectTrigger className="w-full h-8 text-xs">
+                    <SelectValue placeholder="2. Choose running sheet…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(rsSheetsData ?? []).filter((s: any) => !s.closedAt && !s.deletedAt).map((s: any) => (
+                      <SelectItem key={s.id} value={String(s.id)} className="text-xs">{s.title || `Sheet #${s.id}`}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+
+            {/* RS Quick Entry button — shown when sheet is selected */}
+            {rsSelectedSheetId !== null && (
+              <button
+                onClick={() => {
+                  setMapQeAddress("");
+                  setMapQeOpen(true);
+                }}
+                className="flex items-center gap-2 w-full px-3 py-2 rounded-md bg-primary/10 border border-primary/30 hover:bg-primary/20 active:scale-[0.98] transition-all text-primary"
+              >
+                <Plus className="h-3.5 w-3.5 flex-shrink-0" />
+                <span className="text-xs font-semibold">RS Quick Entry</span>
+              </button>
+            )}
+          </div>{/* end RS Selection */}
+
+          {/* ── TEAMS (Live Location) ── */}
+          <div className="px-3 py-3">
+            <div className="flex items-center gap-2 mb-3">
+              <Radio className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">TEAMS</span>
+            </div>
+
+            {/* Share my location toggle */}
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-foreground">Share &amp; show my location</span>
+              <Switch checked={sharingEnabled} onCheckedChange={handleSharingToggle} className="scale-90" />
+            </div>
+
+            {/* GPS error */}
+            {gpsError && (
+              <div className="flex items-start gap-1.5 mb-3 p-2 rounded bg-amber-500/10 border border-amber-500/30">
+                <AlertTriangle className="h-3 w-3 text-amber-500 mt-0.5 flex-shrink-0" />
+                <span className="text-[10px] text-amber-400 leading-tight">{gpsError}</span>
+              </div>
+            )}
+
+            {/* Team rows */}
+            {[
+              { key: "TEAM1", label: "Team 1", colour: TEAM_COLOURS.TEAM1, users: liveUsersByTeam.TEAM1 },
+              { key: "TEAM2", label: "Team 2", colour: TEAM_COLOURS.TEAM2, users: liveUsersByTeam.TEAM2 },
+              { key: "PTT",   label: "PTT",    colour: TEAM_COLOURS.PTT,   users: liveUsersByTeam.PTT },
+            ].map(({ key, label, colour, users: teamUsers }) => (
+              <div key={key} className="mb-2">
+                <div className="flex items-center justify-between py-1">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: colour }} />
+                    <span className="text-[11px] font-semibold" style={{ color: colour }}>{label}</span>
+                    {teamUsers.length > 0 && <span className="text-[10px] text-muted-foreground">({teamUsers.length})</span>}
+                  </div>
+                  <button onClick={() => toggleTeamVisibility(key)} className="text-[10px] text-muted-foreground hover:text-foreground">
+                    {hiddenTeams.has(key) ? "Show" : "Hide"}
+                  </button>
+                </div>
+                {teamUsers.length > 0 && !hiddenTeams.has(key) && (
+                  <div className="ml-4 flex flex-col gap-0.5">
+                    {teamUsers.map((u) => (
+                      <div key={u.userId} className="flex items-center justify-between px-1 py-0.5 rounded hover:bg-accent/30">
+                        <span className="text-[11px] text-foreground font-medium truncate">
+                          {u.name.toUpperCase()}
+                          {u.userId === user?.id && <span className="ml-1 text-[9px] text-muted-foreground">(you)</span>}
+                        </span>
+                        <button onClick={() => toggleUserVisibility(u.userId)} className="text-[10px] text-muted-foreground hover:text-foreground ml-2 flex-shrink-0">
+                          {hiddenUsers.has(u.userId) ? "Show" : "Hide"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {teamUsers.length === 0 && <div className="ml-4 text-[10px] text-muted-foreground/50 italic pb-0.5">No units online</div>}
+              </div>
+            ))}
+
+            {/* Unassigned users */}
+            {liveUsersByTeam.unassigned.length > 0 && (
+              <div className="mb-2">
+                <div className="flex items-center justify-between py-1">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-full bg-gray-500 flex-shrink-0" />
+                    <span className="text-[11px] font-semibold text-muted-foreground">Unassigned</span>
+                    <span className="text-[10px] text-muted-foreground">({liveUsersByTeam.unassigned.length})</span>
+                  </div>
+                  <button onClick={() => toggleTeamVisibility("null")} className="text-[10px] text-muted-foreground hover:text-foreground">
+                    {hiddenTeams.has("null") ? "Show" : "Hide"}
+                  </button>
+                </div>
+                {!hiddenTeams.has("null") && (
+                  <div className="ml-4 flex flex-col gap-0.5">
+                    {liveUsersByTeam.unassigned.map((u) => (
+                      <div key={u.userId} className="flex items-center justify-between px-1 py-0.5 rounded hover:bg-accent/30">
+                        <span className="text-[11px] text-foreground font-medium truncate">
+                          {u.name.toUpperCase()}
+                          {u.userId === user?.id && <span className="ml-1 text-[9px] text-muted-foreground">(you)</span>}
+                        </span>
+                        <button onClick={() => toggleUserVisibility(u.userId)} className="text-[10px] text-muted-foreground hover:text-foreground ml-2 flex-shrink-0">
+                          {hiddenUsers.has(u.userId) ? "Show" : "Hide"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>{/* end TEAMS */}
+
+          {/* Sheet selected — show ARR button and inline entry */}
           {rsSelectedSheetId !== null && (
-            <div className="space-y-2">
-              {/* Sheet link + target strip in one compact row */}
+            <div className="px-3 py-3 border-t border-border/50 space-y-2">
+              {/* Sheet link */}
               <div className="flex items-center gap-2">
                 {rsSheetsData && (() => {
                   const sheet = (rsSheetsData as any[]).find((s: any) => s.id === rsSelectedSheetId);

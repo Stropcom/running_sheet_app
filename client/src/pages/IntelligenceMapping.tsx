@@ -1183,7 +1183,7 @@ export default function IntelligenceMapping() {
     if (locations) {
       renderLocations(locations);
     }
-    // Right-click / tap-and-hold: go straight to RS Quick Entry
+    // Right-click: show action chooser (RS Quick Entry | Add Marker Here | Navigate with Waze)
     map.addListener("rightclick", (e: google.maps.MapMouseEvent) => {
       if (!e.latLng) return;
       const lat = e.latLng.lat();
@@ -1191,8 +1191,7 @@ export default function IntelligenceMapping() {
       const geocoder = new google.maps.Geocoder();
       geocoder.geocode({ location: { lat, lng } }, (results, status) => {
         const addr = (status === "OK" && results && results[0]) ? results[0].formatted_address : `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-        setMapQeAddress(convertGoogleAddresses(addr));
-        setMapQeOpen(true);
+        setActionChooser({ lat, lng, address: convertGoogleAddresses(addr) });
       });
     });
 
@@ -2134,12 +2133,11 @@ export default function IntelligenceMapping() {
               const mapHeight = rect.height;
               const lng = sw.lng() + (x / mapWidth) * (ne.lng() - sw.lng());
               const lat = ne.lat() - (y / mapHeight) * (ne.lat() - sw.lat());
-              // Reverse geocode, then open RS Quick Entry directly
+              // Reverse geocode, then show action chooser
               const geocoder = new google.maps.Geocoder();
               geocoder.geocode({ location: { lat, lng } }, (results, status) => {
                 const addr = (status === "OK" && results && results[0]) ? results[0].formatted_address : `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-                setMapQeAddress(convertGoogleAddresses(addr));
-                setMapQeOpen(true);
+                setActionChooser({ lat, lng, address: convertGoogleAddresses(addr) });
               });
             }, 600);
           }}
@@ -2283,10 +2281,9 @@ export default function IntelligenceMapping() {
                               title: s.description,
                             });
                             addrSearchPinRef.current = pin;
-                            // Clicking the blue pin opens RS Quick Entry directly
+                            // Clicking the blue pin shows the action chooser
                             pin.addListener("gmp-click", () => {
-                              setMapQeAddress(convertGoogleAddresses(s.description));
-                              setMapQeOpen(true);
+                              setActionChooser({ lat: loc.lat(), lng: loc.lng(), address: convertGoogleAddresses(s.description) });
                             });
                           }
                         });
@@ -2790,7 +2787,71 @@ export default function IntelligenceMapping() {
       )}
 
       {/* ── Action Chooser Bottom Sheet ── */}
-      {/* Action chooser removed — tap/hold/right-click/search pin now go straight to RS Quick Entry */}
+      {actionChooser && (
+        <div
+          className="absolute inset-0 z-40 flex items-end justify-center"
+          style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(3px)" }}
+          onClick={() => setActionChooser(null)}
+        >
+          <div
+            className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-0.5">Map Location</p>
+                <p className="text-xs text-muted-foreground leading-snug">{actionChooser.address}</p>
+              </div>
+              <button onClick={() => setActionChooser(null)} className="ml-3 text-muted-foreground hover:text-foreground flex-shrink-0">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {/* RS Quick Entry */}
+              <button
+                onClick={() => {
+                  setMapQeAddress(actionChooser.address);
+                  setMapQeOpen(true);
+                  setActionChooser(null);
+                }}
+                className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-primary/40 bg-primary/5 hover:bg-primary/10 active:scale-95 transition-all px-4 py-5"
+              >
+                <ClipboardList className="h-7 w-7 text-primary" />
+                <span className="text-sm font-bold text-foreground">RS Quick Entry</span>
+                <span className="text-[10px] text-muted-foreground text-center leading-tight">Add a running sheet entry for this location</span>
+              </button>
+              {/* Add Marker Here */}
+              <button
+                onClick={() => {
+                  setCmLabel("");
+                  setCmAddress(actionChooser.address);
+                  setCmNote(""); setCmPersons([]); setCmVehicles([]); setCmRotation(0);
+                  setCmPersonInput(""); setCmVehicleInput("");
+                  setCmOpId(selectedOpIds.length === 1 ? selectedOpIds[0] : (rsSelectedOpId ?? null));
+                  setPendingLatLng({ lat: actionChooser.lat, lng: actionChooser.lng });
+                  setActionChooser(null);
+                }}
+                className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-border bg-muted/30 hover:bg-muted/60 active:scale-95 transition-all px-4 py-5"
+              >
+                <MapPin className="h-7 w-7 text-muted-foreground" />
+                <span className="text-sm font-bold text-foreground">Add Marker Here</span>
+                <span className="text-[10px] text-muted-foreground text-center leading-tight">Place a custom marker at this location</span>
+              </button>
+            </div>
+            {/* Navigate with Waze — full-width below the grid */}
+            <a
+              href={`https://waze.com/ul?ll=${actionChooser.lat},${actionChooser.lng}&navigate=yes`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => setActionChooser(null)}
+              className="mt-3 flex items-center justify-center gap-2 w-full rounded-xl border-2 border-cyan-500/40 bg-cyan-500/5 hover:bg-cyan-500/10 active:scale-95 transition-all px-4 py-3"
+            >
+              <Navigation2 className="h-5 w-5 text-cyan-400" />
+              <span className="text-sm font-bold text-foreground">Navigate with Waze</span>
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* ── Manual Merge Picker ── */}
       {manualMergePicker && (

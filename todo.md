@@ -658,3 +658,13 @@
 ## Google Address Bulk Backfill (Round N)
 - [x] Add bulk backfill tRPC procedure to convert Google-formatted addresses in all existing observation rows to RS format
 - [x] Add "Fix Google Addresses" button in admin/settings area with result summary (rows scanned, rows updated)
+
+## Visual RS + Intelligence Mapping Rename (Round 59)
+- [ ] Rename "RS Mapping" to "Intelligence Mapping" in DashboardLayout sidebar
+- [ ] Rename "RS Mapping" to "Intelligence Mapping" in IntelligenceMapping.tsx page title/header
+- [ ] Rename "RS Mapping" to "Intelligence Mapping" in map Navigate sidebar panel
+- [ ] Add Visual RS toggle button to Intelligence Mapping top bar (next to Operation/RS selectors)
+- [ ] When Visual RS is ON: show persistent popup card on every RS waypoint pin (Time | Address | Observation truncated ~50 chars)
+- [ ] When Visual RS is OFF: hide all popup cards, return to normal numbered-pin view
+- [ ] Add Export PDF button (visible when Visual RS is ON): captures map screenshot + RS entries table below
+- [ ] PDF: map screenshot at top (landscape), RS entries table (Time / Address / Observation) below on same page

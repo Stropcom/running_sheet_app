@@ -30,6 +30,9 @@ import {
   X,
   Check,
   Route,
+  Eye,
+  EyeOff,
+  FileDown,
 } from "lucide-react";
 import {
   MARKER_COLOURS,
@@ -196,6 +199,10 @@ export default function RSMappingEmbedded() {
   const [editColour, setEditColour] = useState<MarkerColour>("blue");
   const [editRotation, setEditRotation] = useState(0);
   const [editSaving, setEditSaving] = useState(false);
+
+  // Visual RS mode
+  const [visualRsMode, setVisualRsMode] = useState(false);
+  const visualOverlaysRef = useRef<google.maps.OverlayView[]>([]);
 
   // Loading state
   const [geocoding, setGeocoding] = useState(false);
@@ -697,6 +704,168 @@ export default function RSMappingEmbedded() {
     );
   }, [editDialog, editIcon, editColour, editRotation, upsertWaypoint, openPopup]);
 
+  // ── Visual RS overlays ────────────────────────────────────────────────────────
+
+  const clearVisualOverlays = useCallback(() => {
+    visualOverlaysRef.current.forEach((ov) => ov.setMap(null));
+    visualOverlaysRef.current = [];
+  }, []);
+
+  const buildVisualOverlays = useCallback(() => {
+    if (!mapRef.current) return;
+    clearVisualOverlays();
+    const placed = placedWaypointsRef.current;
+    if (placed.length === 0) return;
+
+    placed.forEach((wp) => {
+      const overlay = new google.maps.OverlayView();
+      const lat = wp.lat;
+      const lng = wp.lng;
+      const time = wp.time ?? "—";
+      const address = wp.address;
+      const obs = wp.observation ? wp.observation.substring(0, 50) + (wp.observation.length > 50 ? "…" : "") : "";
+      const index = wp.index;
+      const total = placed.length;
+      const isFirst = index === 1;
+      const isLast = index === total;
+      const badgeColor = isFirst ? "#16a34a" : isLast ? "#dc2626" : "#6366f1";
+
+      let div: HTMLDivElement | null = null;
+
+      overlay.onAdd = function () {
+        div = document.createElement("div");
+        div.style.cssText = [
+          "position:absolute",
+          "background:rgba(255,255,255,0.97)",
+          "border:1.5px solid " + badgeColor,
+          "border-radius:8px",
+          "padding:5px 8px",
+          "font-family:system-ui,sans-serif",
+          "font-size:10px",
+          "line-height:1.4",
+          "max-width:160px",
+          "min-width:100px",
+          "box-shadow:0 2px 8px rgba(0,0,0,0.18)",
+          "pointer-events:none",
+          "white-space:normal",
+          "word-break:break-word",
+          "z-index:10",
+          "transform:translate(-50%, calc(-100% - 16px))",
+        ].join(";");
+        div.innerHTML = [
+          `<div style="font-weight:700;color:${badgeColor};font-size:9px;margin-bottom:2px;">#${index} · ${time}</div>`,
+          `<div style="font-weight:600;color:#111;font-size:9.5px;margin-bottom:2px;">${address}</div>`,
+          obs ? `<div style="color:#555;font-size:9px;">${obs}</div>` : "",
+        ].join("");
+        const panes = this.getPanes()!;
+        panes.floatPane.appendChild(div);
+      };
+
+      overlay.draw = function () {
+        if (!div) return;
+        const proj = this.getProjection();
+        if (!proj) return;
+        const point = proj.fromLatLngToDivPixel(new google.maps.LatLng(lat, lng));
+        if (!point) return;
+        div.style.left = point.x + "px";
+        div.style.top = point.y + "px";
+      };
+
+      overlay.onRemove = function () {
+        if (div && div.parentNode) div.parentNode.removeChild(div);
+        div = null;
+      };
+
+      overlay.setMap(mapRef.current!);
+      visualOverlaysRef.current.push(overlay);
+    });
+  }, [clearVisualOverlays]);
+
+  // Toggle Visual RS mode
+  useEffect(() => {
+    if (visualRsMode) {
+      buildVisualOverlays();
+    } else {
+      clearVisualOverlays();
+    }
+  }, [visualRsMode, buildVisualOverlays, clearVisualOverlays]);
+
+  // Rebuild overlays when waypoints change while Visual RS is active
+  useEffect(() => {
+    if (visualRsMode && !geocoding) {
+      buildVisualOverlays();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [geocoding]);
+
+  // ── PDF export for Visual RS ──────────────────────────────────────────────────
+
+  const exportVisualRsPdf = useCallback(() => {
+    const placed = placedWaypointsRef.current;
+    if (placed.length === 0) { toast.error("No waypoints to export"); return; }
+
+    const rows = placed.map((wp) => ({
+      index: wp.index,
+      time: wp.time ?? "—",
+      address: wp.address,
+      observation: wp.observation ?? "",
+    }));
+
+    const sheetTitle = (sheetsData as any[] | undefined)?.find((s: any) => s.id === selectedSheetId)?.title ?? "Running Sheet";
+    const opName = (operations as any[] | undefined)?.find((o: any) => o.id === selectedOpId)?.name ?? "";
+    const generatedAt = new Date().toLocaleString("en-AU", { dateStyle: "long", timeStyle: "short" });
+
+    const tableRows = rows.map((r) => `
+      <tr>
+        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-weight:700;color:#6366f1;text-align:center;white-space:nowrap;">${r.index}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;white-space:nowrap;font-weight:600;">${r.time}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;">${r.address}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;color:#374151;">${r.observation.substring(0, 200)}${r.observation.length > 200 ? "…" : ""}</td>
+      </tr>
+    `).join("");
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Visual RS — ${sheetTitle}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; font-size: 11px; color: #111; background: #fff; }
+  .header { background: #1e1b4b; color: #fff; padding: 16px 24px; }
+  .header h1 { font-size: 16px; font-weight: 700; margin-bottom: 2px; }
+  .header p { font-size: 10px; color: rgba(255,255,255,0.65); }
+  .map-placeholder { background: #f3f4f6; border: 2px dashed #d1d5db; margin: 20px 24px; border-radius: 8px; height: 280px; display: flex; align-items: center; justify-content: center; color: #9ca3af; font-size: 12px; }
+  .table-section { padding: 0 24px 24px; }
+  .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #6366f1; margin: 16px 0 8px; }
+  table { width: 100%; border-collapse: collapse; }
+  thead th { background: #1e1b4b; color: #fff; padding: 8px 10px; text-align: left; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
+  tbody tr:nth-child(even) { background: #f9fafb; }
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } @page { size: A4 landscape; margin: 10mm; } }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>Visual RS — ${sheetTitle}</h1>
+  <p>${opName} · Generated: ${generatedAt}</p>
+</div>
+<div class="map-placeholder">📍 Map screenshot — use browser Print to capture the map view above this document</div>
+<div class="table-section">
+  <div class="section-title">Running Sheet Entries (${rows.length} waypoints)</div>
+  <table>
+    <thead><tr><th style="width:40px">#</th><th style="width:60px">Time</th><th style="width:35%">Address</th><th>Observation</th></tr></thead>
+    <tbody>${tableRows}</tbody>
+  </table>
+</div>
+</body></html>`;
+
+    const win = window.open("", "_blank");
+    if (!win) { toast.error("Popup blocked — allow popups and try again"); return; }
+    win.document.write(html);
+    win.document.close();
+    setTimeout(() => win.print(), 600);
+  }, [placedWaypointsRef, sheetsData, selectedSheetId, operations, selectedOpId]);
+
   // ── Derived ───────────────────────────────────────────────────────────────────
 
   const activeSheets = (sheetsData as any[] | undefined)?.filter((s: any) => !s.deletedAt) ?? [];
@@ -759,9 +928,35 @@ export default function RSMappingEmbedded() {
         )}
 
         {selectedSheetId && !geocoding && (
-          <div className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
-            <MapPin className="h-3.5 w-3.5 text-indigo-500" />
-            <span>{waypointCount} waypoints</span>
+          <div className="ml-auto flex items-center gap-2">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <MapPin className="h-3.5 w-3.5 text-indigo-500" />
+              <span>{waypointCount} waypoints</span>
+            </div>
+            {waypointCount > 0 && (
+              <>
+                <button
+                  onClick={() => setVisualRsMode((v) => !v)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                    visualRsMode
+                      ? "bg-indigo-600 text-white border-indigo-600 shadow-md"
+                      : "bg-card text-foreground border-border hover:bg-accent"
+                  }`}
+                >
+                  {visualRsMode ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  Visual RS
+                </button>
+                {visualRsMode && (
+                  <button
+                    onClick={exportVisualRsPdf}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border bg-card text-foreground border-border hover:bg-accent transition-all"
+                  >
+                    <FileDown className="h-3.5 w-3.5" />
+                    Export PDF
+                  </button>
+                )}
+              </>
+            )}
           </div>
         )}
       </div>

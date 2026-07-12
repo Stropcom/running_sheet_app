@@ -997,7 +997,7 @@ const TAB_OPTIONS: Array<{ value: TabView; label: string; icon: React.ReactNode 
   { value: "associates", label: "Associates", icon: <User className="w-3.5 h-3.5" /> },
   { value: "vehicle",    label: "Vehicles",   icon: <Car className="w-3.5 h-3.5" /> },
   { value: "locations",  label: "Locations",  icon: <MapPin className="w-3.5 h-3.5" /> },
-  { value: "rs-mapping", label: "RS Mapping",  icon: <Route className="w-3.5 h-3.5" /> },
+  { value: "rs-mapping", label: "Intelligence Mapping",  icon: <Route className="w-3.5 h-3.5" /> },
 ];
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
@@ -1288,7 +1288,7 @@ export default function IntelligencePage() {
           </div>
         )}
 
-        {/* RS Mapping tab content */}
+        {/* Intelligence Mapping tab content */}
         {activeTab === "rs-mapping" && (
           <div className="-mx-4 -mb-4 flex-1" style={{ height: "calc(100vh - 220px)" }}>
             <RSMappingEmbedded />

@@ -823,7 +823,7 @@ export default function RSMapping() {
           </button>
           <div className="flex items-center gap-2">
             <Route className="h-5 w-5 text-indigo-500" />
-            <h1 className="text-base font-semibold">RS Mapping</h1>
+            <h1 className="text-base font-semibold">Intelligence Mapping</h1>
           </div>
           {selectedSheet && (
             <span className="text-xs text-muted-foreground truncate max-w-[200px]">{selectedSheet.title}</span>

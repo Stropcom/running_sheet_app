@@ -2409,11 +2409,11 @@ export default function IntelligenceMapping() {
                     { label: "Other Entry",    short: "OE", colour: "violet" },
                   ] as const;
                   const qeColourMap: Record<string, { border: string; bg: string; activeBg: string; text: string; ring: string }> = {
-                    emerald: { border: "border-emerald-500/40", bg: "bg-emerald-500/5", activeBg: "bg-emerald-500/15", text: "text-emerald-400", ring: "ring-emerald-400" },
-                    rose:    { border: "border-rose-500/40",    bg: "bg-rose-500/5",    activeBg: "bg-rose-500/15",    text: "text-rose-400",    ring: "ring-rose-400" },
-                    sky:     { border: "border-sky-500/40",     bg: "bg-sky-500/5",     activeBg: "bg-sky-500/15",     text: "text-sky-400",     ring: "ring-sky-400" },
-                    orange:  { border: "border-orange-500/40",  bg: "bg-orange-500/5",  activeBg: "bg-orange-500/15",  text: "text-orange-400",  ring: "ring-orange-400" },
-                    violet:  { border: "border-violet-500/40",  bg: "bg-violet-500/5",  activeBg: "bg-violet-500/15",  text: "text-violet-400",  ring: "ring-violet-400" },
+                    emerald: { border: "border-emerald-500", bg: "bg-background", activeBg: "bg-emerald-500/10", text: "text-emerald-500", ring: "ring-emerald-500" },
+                    rose:    { border: "border-rose-500",    bg: "bg-background", activeBg: "bg-rose-500/10",    text: "text-rose-500",    ring: "ring-rose-500" },
+                    sky:     { border: "border-sky-500",     bg: "bg-background", activeBg: "bg-sky-500/10",     text: "text-sky-500",     ring: "ring-sky-500" },
+                    orange:  { border: "border-orange-500",  bg: "bg-background", activeBg: "bg-orange-500/10",  text: "text-orange-500",  ring: "ring-orange-500" },
+                    violet:  { border: "border-violet-500",  bg: "bg-background", activeBg: "bg-violet-500/10",  text: "text-violet-500",  ring: "ring-violet-500" },
                   };
                   const submitQeEntry = () => {
                     const obs = rsQeText.trim() || (rsQeSelectedTile ?? "Entry");
@@ -2426,10 +2426,11 @@ export default function IntelligenceMapping() {
                   return (
                     <div className="px-3 py-3 border-t border-border bg-card space-y-2.5">
                       {/* Tile grid */}
-                      <div className="grid grid-cols-5 gap-1.5">
+                      <div className="grid grid-cols-5 gap-2">
                         {qeTiles.map(({ label, short, colour }) => {
                           const c = qeColourMap[colour];
                           const isActive = rsQeSelectedTile === label;
+                          const [word1, word2] = label.split(" ");
                           return (
                             <button
                               key={label}
@@ -2446,14 +2447,15 @@ export default function IntelligenceMapping() {
                                   setTimeout(() => rsQeInputRef.current?.focus(), 50);
                                 }
                               }}
-                              className={`flex flex-col items-center justify-center gap-0.5 rounded-xl border-2 py-2.5 px-1 transition-all active:scale-95 disabled:opacity-50 ${
+                              className={`flex flex-col items-center justify-center gap-1 rounded-2xl border-2 py-4 px-1 transition-all active:scale-95 disabled:opacity-50 ${
                                 isActive
-                                  ? `${c.border} ${c.activeBg} ring-1 ${c.ring}`
+                                  ? `${c.border} ${c.activeBg} ring-2 ${c.ring}`
                                   : `${c.border} ${c.bg} hover:${c.activeBg}`
                               }`}
                             >
-                              <span className={`text-[13px] font-black leading-none ${c.text}`}>{short}</span>
-                              <span className="text-[8px] font-semibold text-muted-foreground text-center leading-tight mt-0.5">{label}</span>
+                              <span className={`text-xl font-black leading-none ${c.text}`}>{short}</span>
+                              <span className="text-[10px] font-semibold text-foreground text-center leading-tight">{word1}</span>
+                              <span className="text-[10px] font-semibold text-foreground text-center leading-tight">{word2}</span>
                             </button>
                           );
                         })}
@@ -3370,30 +3372,32 @@ export default function IntelligenceMapping() {
                     { label: "Other Entry",    short: "OE", colour: "violet" },
                   ] as const;
                   const colourMap: Record<string, { border: string; bg: string; activeBg: string; text: string; ring: string }> = {
-                    emerald: { border: "border-emerald-500/40", bg: "bg-emerald-500/5", activeBg: "bg-emerald-500/15", text: "text-emerald-400", ring: "ring-emerald-400" },
-                    rose:    { border: "border-rose-500/40",    bg: "bg-rose-500/5",    activeBg: "bg-rose-500/15",    text: "text-rose-400",    ring: "ring-rose-400" },
-                    sky:     { border: "border-sky-500/40",     bg: "bg-sky-500/5",     activeBg: "bg-sky-500/15",     text: "text-sky-400",     ring: "ring-sky-400" },
-                    orange:  { border: "border-orange-500/40",  bg: "bg-orange-500/5",  activeBg: "bg-orange-500/15",  text: "text-orange-400",  ring: "ring-orange-400" },
-                    violet:  { border: "border-violet-500/40",  bg: "bg-violet-500/5",  activeBg: "bg-violet-500/15",  text: "text-violet-400",  ring: "ring-violet-400" },
+                    emerald: { border: "border-emerald-500", bg: "bg-card", activeBg: "bg-emerald-500/10", text: "text-emerald-500", ring: "ring-emerald-500" },
+                    rose:    { border: "border-rose-500",    bg: "bg-card", activeBg: "bg-rose-500/10",    text: "text-rose-500",    ring: "ring-rose-500" },
+                    sky:     { border: "border-sky-500",     bg: "bg-card", activeBg: "bg-sky-500/10",     text: "text-sky-500",     ring: "ring-sky-500" },
+                    orange:  { border: "border-orange-500",  bg: "bg-card", activeBg: "bg-orange-500/10",  text: "text-orange-500",  ring: "ring-orange-500" },
+                    violet:  { border: "border-violet-500",  bg: "bg-card", activeBg: "bg-violet-500/10",  text: "text-violet-500",  ring: "ring-violet-500" },
                   };
                   return (
-                    <div className="grid grid-cols-5 gap-1.5">
+                    <div className="grid grid-cols-5 gap-2">
                       {tiles.map(({ label, short, colour }) => {
                         const c = colourMap[colour];
                         const isActive = rsInlineLabel === label;
+                        const [word1, word2] = label.split(" ");
                         return (
                           <button
                             key={label}
                             disabled={rsAddingRow}
                             onClick={() => { if (isActive) { closeInlineField(); } else { openInlineField(label); } }}
-                            className={`flex flex-col items-center justify-center gap-0.5 rounded-xl border-2 py-2.5 px-1 transition-all active:scale-95 disabled:opacity-50 ${
+                            className={`flex flex-col items-center justify-center gap-1 rounded-2xl border-2 py-4 px-1 transition-all active:scale-95 disabled:opacity-50 ${
                               isActive
-                                ? `${c.border} ${c.activeBg} ring-1 ${c.ring}`
+                                ? `${c.border} ${c.activeBg} ring-2 ${c.ring}`
                                 : `${c.border} ${c.bg} hover:${c.activeBg}`
                             }`}
                           >
-                            <span className={`text-[13px] font-black leading-none ${c.text}`}>{short}</span>
-                            <span className="text-[8px] font-semibold text-muted-foreground text-center leading-tight mt-0.5">{label}</span>
+                            <span className={`text-xl font-black leading-none ${c.text}`}>{short}</span>
+                            <span className="text-[10px] font-semibold text-foreground text-center leading-tight">{word1}</span>
+                            <span className="text-[10px] font-semibold text-foreground text-center leading-tight">{word2}</span>
                           </button>
                         );
                       })}

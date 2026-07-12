@@ -30,7 +30,6 @@ import {
   X,
   Check,
   Route,
-  GitBranch,
 } from "lucide-react";
 import {
   MARKER_COLOURS,
@@ -183,15 +182,7 @@ export default function RSMappingEmbedded() {
   const [pendingMove, setPendingMove] = useState<{ lat: number; lng: number; address: string } | null>(null);
   const movingOrigPosRef = useRef<{ lat: number; lng: number } | null>(null);
 
-  // Route tracing state
-  const [traceRouteEnabled, setTraceRouteEnabled] = useState(false);
-  const [tracing, setTracing] = useState(false);
-  const tracePolylinesRef = useRef<(google.maps.Polyline | google.maps.DirectionsRenderer)[]>([]);
-  const directionsServiceRef = useRef<google.maps.DirectionsService | null>(null);
-  // Ref to hold the snapToRoads mutateAsync so runTraceRoute always has the latest version
-  const snapToRoadsMutateRef = useRef<((input: { points: { lat: number; lng: number }[] }) => Promise<{ points: { lat: number; lng: number }[] }>) | null>(null);
-
-  // Waypoint count as state (so Trace Route button renders after geocoding)
+  // Waypoint count as state (so waypoint counter renders after geocoding)
   const [waypointCount, setWaypointCount] = useState(0);
 
   // Comment dialog state
@@ -236,22 +227,10 @@ export default function RSMappingEmbedded() {
     mapRef.current = map;
     geocoderRef.current = new google.maps.Geocoder();
     infoWindowRef.current = new google.maps.InfoWindow();
-    directionsServiceRef.current = new google.maps.DirectionsService();
     setMapReady(true);
   }, []);
 
   // ── Clear map ────────────────────────────────────────────────────────────────
-
-  const clearTraceLines = useCallback(() => {
-    tracePolylinesRef.current.forEach((item) => {
-      if (item instanceof google.maps.Polyline) {
-        item.setMap(null);
-      } else {
-        (item as google.maps.DirectionsRenderer).setMap(null);
-      }
-    });
-    tracePolylinesRef.current = [];
-  }, []);
 
   const clearMap = useCallback(() => {
     if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current);
@@ -260,10 +239,9 @@ export default function RSMappingEmbedded() {
     placedWaypointsRef.current = [];
     polylineRef.current?.setMap(null);
     polylineRef.current = null;
-    clearTraceLines();
     infoWindowRef.current?.close();
     setWaypointCount(0);
-  }, [clearTraceLines]);
+  }, []);
 
   // ── Polyline update ──────────────────────────────────────────────────────────
 
@@ -719,210 +697,10 @@ export default function RSMappingEmbedded() {
     );
   }, [editDialog, editIcon, editColour, editRotation, upsertWaypoint, openPopup]);
 
-  // ── Trace Route ──────────────────────────────────────────────────────────────
-
-  const snapToRoadsMutation = trpc.rsMapping.snapToRoads.useMutation();
-  // Keep the ref always pointing to the latest mutateAsync
-  snapToRoadsMutateRef.current = snapToRoadsMutation.mutateAsync;
-
-  const runTraceRoute = useCallback(() => {
-    if (!mapRef.current) return;
-    const placed = placedWaypointsRef.current;
-    if (placed.length < 2) return;
-
-    clearTraceLines();
-    polylineRef.current?.setMap(null);
-    setTracing(true);
-
-    console.log('[TraceRoute] Starting. placed count:', placed.length, 'geocoderRef:', !!geocoderRef.current, 'snapFn:', !!snapToRoadsMutateRef.current);
-
-    // IMPORTANT: segmentType/viaStreets on a waypoint describe the path AFTER that waypoint
-    // (i.e. the segment FROM this waypoint TO the next). So we read from.segmentType, not to.segmentType.
-    const segments: { from: PlacedWaypoint; to: PlacedWaypoint; viaStreets: string[]; isCoos: boolean }[] = [];
-    for (let i = 0; i < placed.length - 1; i++) {
-      const from = placed[i];
-      const to = placed[i + 1];
-      // segmentType/viaStreets describe the path AFTER the 'from' waypoint
-      const isCoos = from.segmentType === "coos";
-      const viaStreets = from.segmentType === "continued_via" ? from.viaStreets : [];
-      console.log(`[TraceRoute] Segment ${i}: from=${from.address} segmentType=${from.segmentType} viaStreets=${JSON.stringify(from.viaStreets)}`);
-      segments.push({ from, to, viaStreets, isCoos });
-    }
-
-    console.log('[TraceRoute] Total segments:', segments.length);
-    let pending = segments.length;
-    const done = () => { if (--pending === 0) setTracing(false); };
-
-    segments.forEach((seg) => {
-      if (seg.isCoos) {
-        // Dashed grey line for out-of-sight segments
-        const line = new google.maps.Polyline({
-          path: [{ lat: seg.from.lat, lng: seg.from.lng }, { lat: seg.to.lat, lng: seg.to.lng }],
-          geodesic: true,
-          strokeColor: "#94a3b8",
-          strokeOpacity: 0,
-          strokeWeight: 2,
-          icons: [{ icon: { path: "M 0,-1 0,1", strokeOpacity: 1, scale: 3 }, offset: "0", repeat: "16px" }],
-          map: mapRef.current!,
-        });
-        tracePolylinesRef.current.push(line);
-        done();
-        return;
-      }
-
-      if (seg.viaStreets.length === 0) {
-        // Indigo direct line — no via data
-        const line = new google.maps.Polyline({
-          path: [{ lat: seg.from.lat, lng: seg.from.lng }, { lat: seg.to.lat, lng: seg.to.lng }],
-          geodesic: true,
-          strokeColor: "#6366f1",
-          strokeOpacity: 0.7,
-          strokeWeight: 3,
-          map: mapRef.current!,
-        });
-        tracePolylinesRef.current.push(line);
-        done();
-        return;
-      }
-
-      // Via-street segment: geocode each street, then snap to roads
-      // Extract suburb from the from/to address for precise geocoding
-      const extractSuburbFromAddress = (addr: string): string | null => {
-        // "1 Smith St, FREMANTLE WA 6160" → "Fremantle"
-        const parts = addr.split(",");
-        if (parts.length >= 2) {
-          // Take second-to-last part (suburb), strip WA/postcode
-          const suburb = parts[parts.length - 2]
-            .replace(/\b(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\b/gi, '')
-            .replace(/\d{4}/, '')
-            .trim();
-          if (suburb.length > 1) return suburb;
-        }
-        return null;
-      };
-      const suburb = extractSuburbFromAddress(seg.from.addressFull || seg.from.address)
-        || extractSuburbFromAddress(seg.to.addressFull || seg.to.address)
-        || (seg.from.suburbContext ? seg.from.suburbContext.replace(/\s*WA\s*\d*/i, '').trim() : null)
-        || (seg.to.suburbContext ? seg.to.suburbContext.replace(/\s*WA\s*\d*/i, '').trim() : null);
-      const suburbHint = suburb ? `, ${suburb}` : "";
-
-      const streets = seg.viaStreets;
-      const geocodedLatLngs: ({ lat: number; lng: number } | null)[] = new Array(streets.length).fill(null);
-      let geocodePending = streets.length;
-
-      const onAllGeocoded = () => {
-        const validLatLngs = geocodedLatLngs.filter((ll): ll is { lat: number; lng: number } => ll !== null);
-
-        if (validLatLngs.length === 0) {
-          // No streets geocoded — fall back to direct amber line
-          const line = new google.maps.Polyline({
-            path: [{ lat: seg.from.lat, lng: seg.from.lng }, { lat: seg.to.lat, lng: seg.to.lng }],
-            geodesic: true,
-            strokeColor: "#f59e0b",
-            strokeOpacity: 0.7,
-            strokeWeight: 3,
-            map: mapRef.current!,
-          });
-          tracePolylinesRef.current.push(line);
-          done();
-          return;
-        }
-
-        // Draw amber polyline through: from → street1 → street2 → ... → to
-        // This passes through a geocoded point on each listed street in order.
-        // No backend call needed — direct polyline through street midpoints.
-        const path = [
-          { lat: seg.from.lat, lng: seg.from.lng },
-          ...validLatLngs,
-          { lat: seg.to.lat, lng: seg.to.lng },
-        ];
-        const line = new google.maps.Polyline({
-          path,
-          geodesic: true,
-          strokeColor: "#f59e0b",
-          strokeOpacity: 0.9,
-          strokeWeight: 4,
-          map: mapRef.current!,
-        });
-        tracePolylinesRef.current.push(line);
-        done();
-      };
-
-      console.log('[TraceRoute] Processing via segment, streets:', streets, 'suburbHint:', suburbHint, 'geocoderRef:', !!geocoderRef.current);
-
-      // Guard: if geocoder not ready, fall back to direct amber line
-      if (!geocoderRef.current) {
-        const line = new google.maps.Polyline({
-          path: [{ lat: seg.from.lat, lng: seg.from.lng }, { lat: seg.to.lat, lng: seg.to.lng }],
-          geodesic: true,
-          strokeColor: "#f59e0b",
-          strokeOpacity: 0.7,
-          strokeWeight: 3,
-          map: mapRef.current!,
-        });
-        tracePolylinesRef.current.push(line);
-        done();
-        return;
-      }
-
-      // Use callback-style geocoder wrapped in Promise (matches working waypoint geocoding pattern)
-      // suburbHint makes the query precise (e.g. "Marine Parade, Cottesloe, Western Australia")
-      // componentRestrictions: AU ensures we never match overseas streets with the same name
-      const geocodePromises = streets.map((street) => {
-        const query = `${street}${suburbHint}, Australia`;
-        return new Promise<{ lat: number; lng: number } | null>((resolve) => {
-          geocoderRef.current!.geocode({
-            address: query,
-            componentRestrictions: { country: 'AU' },
-          }, (results, status) => {
-            if (status === "OK" && results && results[0]) {
-              const loc = results[0].geometry.location;
-              resolve({ lat: loc.lat(), lng: loc.lng() });
-            } else {
-              console.log('[TraceRoute] Geocode failed for:', query, 'status:', status);
-              resolve(null);
-            }
-          });
-        });
-      });
-
-      Promise.all(geocodePromises).then((results) => {
-        console.log('[TraceRoute] Geocode results:', results);
-        for (let i = 0; i < results.length; i++) {
-          geocodedLatLngs[i] = results[i];
-        }
-        onAllGeocoded();
-      }).catch((err) => {
-        console.error('[TraceRoute] Geocode Promise.all error:', err);
-        onAllGeocoded();
-      });
-    });
-  // snapToRoadsMutateRef is a ref — stable, no need in deps
-  }, [clearTraceLines]);
-
-  // Toggle trace route on/off
-  useEffect(() => {
-    if (!mapRef.current) return;
-    if (traceRouteEnabled) {
-      runTraceRoute();
-    } else {
-      clearTraceLines();
-      updatePolyline();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [traceRouteEnabled]);
-
   // ── Derived ───────────────────────────────────────────────────────────────────
 
   const activeSheets = (sheetsData as any[] | undefined)?.filter((s: any) => !s.deletedAt) ?? [];
   const selectedSheet = activeSheets.find((s: any) => s.id === selectedSheetId);
-
-  const viaSegmentCount = waypointCount > 0 ? placedWaypointsRef.current.filter(
-    (w) => w.segmentType === "continued_via" && w.viaStreets.length > 0
-  ).length : 0;
-  const coosSegmentCount = waypointCount > 0 ? placedWaypointsRef.current.filter(
-    (w) => w.segmentType === "coos"
-  ).length : 0;
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
@@ -973,32 +751,15 @@ export default function RSMappingEmbedded() {
           <span className="text-xs text-muted-foreground truncate max-w-[160px]">{selectedSheet.title}</span>
         )}
 
-        {(geocoding || tracing) && (
+        {geocoding && (
           <div className="flex items-center gap-1.5 ml-auto text-xs text-muted-foreground">
             <Spinner className="h-3.5 w-3.5" />
-            <span>{tracing ? "Tracing route…" : "Plotting route…"}</span>
+            <span>Plotting route…</span>
           </div>
         )}
 
-        {/* Trace Route toggle */}
-        {selectedSheetId && !geocoding && waypointCount >= 2 && (
-          <button
-            onClick={() => setTraceRouteEnabled((v) => !v)}
-            disabled={tracing}
-            className={`${!(geocoding || tracing) ? "ml-auto" : ""} flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-              traceRouteEnabled
-                ? "bg-amber-500 text-white border-amber-600 shadow-sm"
-                : "bg-card text-muted-foreground border-border hover:border-amber-400 hover:text-amber-600"
-            }`}
-            title={traceRouteEnabled ? "Switch back to straight-line view" : "Trace actual route using street data from running sheet"}
-          >
-            <GitBranch className="h-3.5 w-3.5" />
-            {tracing ? "Tracing…" : traceRouteEnabled ? "Route Traced" : "Trace Route"}
-          </button>
-        )}
-
-        {selectedSheetId && !geocoding && !traceRouteEnabled && (
-          <div className={`${waypointCount >= 2 ? "" : "ml-auto"} flex items-center gap-1.5 text-xs text-muted-foreground`}>
+        {selectedSheetId && !geocoding && (
+          <div className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
             <MapPin className="h-3.5 w-3.5 text-indigo-500" />
             <span>{waypointCount} waypoints</span>
           </div>
@@ -1090,35 +851,12 @@ export default function RSMappingEmbedded() {
                   <span>End</span>
                 </div>
               </div>
-              {traceRouteEnabled && (
-                <div className="flex items-center gap-3 border-t border-border pt-1.5 mt-0.5">
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-8 h-1 rounded bg-amber-400" />
-                    <span>Via route{viaSegmentCount > 0 ? ` (${viaSegmentCount})` : ""}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-8 h-0.5 border-t-2 border-dashed border-slate-400" />
-                    <span>OOS{coosSegmentCount > 0 ? ` (${coosSegmentCount})` : ""}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-8 h-1 rounded bg-indigo-500" />
-                    <span>Direct</span>
-                  </div>
-                </div>
-              )}
+
             </div>
           </div>
         )}
 
-        {/* Trace route info banner */}
-        {traceRouteEnabled && !tracing && waypointCount >= 2 && (
-          <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-amber-500/95 text-white text-xs font-semibold px-4 py-2 rounded-full shadow-lg flex items-center gap-2 pointer-events-none">
-            <GitBranch className="h-3.5 w-3.5" />
-            Route traced from running sheet
-            {viaSegmentCount > 0 && ` · ${viaSegmentCount} via segment${viaSegmentCount > 1 ? "s" : ""}`}
-            {coosSegmentCount > 0 && ` · ${coosSegmentCount} OOS`}
-          </div>
-        )}
+
       </div>
 
       {/* ── Comment dialog ───────────────────────────────────────────────────── */}

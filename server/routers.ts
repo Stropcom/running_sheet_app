@@ -2531,52 +2531,6 @@ export const appRouter = router({
         return { id };
       }),
 
-    /**
-     * Snap an ordered list of lat/lng points to road geometry using the Google Roads API.
-     * Returns the snapped polyline as an array of {lat, lng} coordinates.
-     * Uses interpolate=true so the Roads API fills in intermediate road points between
-     * the provided coordinates, giving a smooth road-following line.
-     *
-     * The Roads API accepts up to 100 points per request. If more are provided,
-     * they are chunked and the results are concatenated.
-     */
-    snapToRoads: protectedProcedure
-      .input(z.object({
-        points: z.array(z.object({ lat: z.number(), lng: z.number() })).min(2).max(200),
-      }))
-      .mutation(async ({ input }) => {
-        const CHUNK_SIZE = 100;
-        const allSnapped: Array<{ lat: number; lng: number }> = [];
-
-        for (let i = 0; i < input.points.length; i += CHUNK_SIZE - 1) {
-          // Overlap by 1 point so chunks connect seamlessly
-          const chunk = input.points.slice(i, i + CHUNK_SIZE);
-          const pathParam = chunk.map((p) => `${p.lat},${p.lng}`).join("|");
-          try {
-            const result = await makeRequest<RoadsResult>("/v1/snapToRoads", {
-              path: pathParam,
-              interpolate: true,
-            });
-            const snapped = (result.snappedPoints ?? []).map((sp) => ({
-              lat: sp.location.lat,
-              lng: sp.location.lng,
-            }));
-            // Avoid duplicating the overlap point
-            if (allSnapped.length > 0 && snapped.length > 0) {
-              allSnapped.push(...snapped.slice(1));
-            } else {
-              allSnapped.push(...snapped);
-            }
-          } catch (err) {
-            // If Roads API fails for this chunk, fall back to straight line between chunk points
-            for (const p of chunk) {
-              allSnapped.push(p);
-            }
-          }
-        }
-
-        return { points: allSnapped };
-      }),
   }),
   // ─── Admin Utilities ────────────────────────────────────────────────────────
   adminUtils: router({

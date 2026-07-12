@@ -786,11 +786,25 @@ export default function RSMappingEmbedded() {
       }
 
       // Via-street segment: geocode each street, then snap to roads
-      const suburbHint = seg.from.suburbContext
-        ? `, ${seg.from.suburbContext}`
-        : seg.to.suburbContext
-        ? `, ${seg.to.suburbContext}`
-        : "";
+      // Extract suburb from the from/to address for precise geocoding
+      const extractSuburbFromAddress = (addr: string): string | null => {
+        // "1 Smith St, FREMANTLE WA 6160" → "Fremantle"
+        const parts = addr.split(",");
+        if (parts.length >= 2) {
+          // Take second-to-last part (suburb), strip WA/postcode
+          const suburb = parts[parts.length - 2]
+            .replace(/\b(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\b/gi, '')
+            .replace(/\d{4}/, '')
+            .trim();
+          if (suburb.length > 1) return suburb;
+        }
+        return null;
+      };
+      const suburb = extractSuburbFromAddress(seg.from.addressFull || seg.from.address)
+        || extractSuburbFromAddress(seg.to.addressFull || seg.to.address)
+        || (seg.from.suburbContext ? seg.from.suburbContext.replace(/\s*WA\s*\d*/i, '').trim() : null)
+        || (seg.to.suburbContext ? seg.to.suburbContext.replace(/\s*WA\s*\d*/i, '').trim() : null);
+      const suburbHint = suburb ? `, ${suburb}` : "";
 
       const streets = seg.viaStreets;
       const geocodedLatLngs: ({ lat: number; lng: number } | null)[] = new Array(streets.length).fill(null);
@@ -851,11 +865,21 @@ export default function RSMappingEmbedded() {
         return;
       }
 
+      // Perth metro bounding box — restricts geocoder to WA results near Perth
+      const perthBounds = new google.maps.LatLngBounds(
+        { lat: -32.3, lng: 115.6 }, // SW corner
+        { lat: -31.5, lng: 116.2 }  // NE corner
+      );
+
       // Use callback-style geocoder wrapped in Promise (matches working waypoint geocoding pattern)
       const geocodePromises = streets.map((street) => {
         const query = `${street}${suburbHint}, Western Australia`;
         return new Promise<{ lat: number; lng: number } | null>((resolve) => {
-          geocoderRef.current!.geocode({ address: query }, (results, status) => {
+          geocoderRef.current!.geocode({
+            address: query,
+            bounds: perthBounds,
+            componentRestrictions: { country: 'AU' },
+          }, (results, status) => {
             if (status === "OK" && results && results[0]) {
               const loc = results[0].geometry.location;
               resolve({ lat: loc.lat(), lng: loc.lng() });

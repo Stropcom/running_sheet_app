@@ -188,6 +188,8 @@ export default function RSMappingEmbedded() {
   const [tracing, setTracing] = useState(false);
   const tracePolylinesRef = useRef<(google.maps.Polyline | google.maps.DirectionsRenderer)[]>([]);
   const directionsServiceRef = useRef<google.maps.DirectionsService | null>(null);
+  // Ref to hold the snapToRoads mutateAsync so runTraceRoute always has the latest version
+  const snapToRoadsMutateRef = useRef<((input: { points: { lat: number; lng: number }[] }) => Promise<{ points: { lat: number; lng: number }[] }>) | null>(null);
 
   // Waypoint count as state (so Trace Route button renders after geocoding)
   const [waypointCount, setWaypointCount] = useState(0);
@@ -720,6 +722,8 @@ export default function RSMappingEmbedded() {
   // ── Trace Route ──────────────────────────────────────────────────────────────
 
   const snapToRoadsMutation = trpc.rsMapping.snapToRoads.useMutation();
+  // Keep the ref always pointing to the latest mutateAsync
+  snapToRoadsMutateRef.current = snapToRoadsMutation.mutateAsync;
 
   const runTraceRoute = useCallback(() => {
     if (!mapRef.current) return;
@@ -815,7 +819,22 @@ export default function RSMappingEmbedded() {
 
         // Call backend Roads API snap-to-roads to get road-following geometry
         // for ONLY the listed streets (no connector roads added by Google)
-        snapToRoadsMutation.mutateAsync({ points })
+        const snapFn = snapToRoadsMutateRef.current;
+        if (!snapFn) {
+          // No mutation available — fall back to straight amber line
+          const line = new google.maps.Polyline({
+            path: [{ lat: seg.from.lat, lng: seg.from.lng }, { lat: seg.to.lat, lng: seg.to.lng }],
+            geodesic: true,
+            strokeColor: "#f59e0b",
+            strokeOpacity: 0.7,
+            strokeWeight: 3,
+            map: mapRef.current!,
+          });
+          tracePolylinesRef.current.push(line);
+          done();
+          return;
+        }
+        snapFn({ points })
           .then((result) => {
             const path = result.points;
             if (path.length >= 2) {
@@ -858,18 +877,44 @@ export default function RSMappingEmbedded() {
           });
       };
 
-      streets.forEach((street, idx) => {
-        const query = `${street}${suburbHint}, Western Australia`;
-        geocoderRef.current!.geocode({ address: query }, (results, status) => {
-          if (status === "OK" && results && results[0]) {
-            const loc = results[0].geometry.location;
-            geocodedLatLngs[idx] = { lat: loc.lat(), lng: loc.lng() };
-          }
-          if (--geocodePending === 0) onAllGeocoded();
+      // Guard: if geocoder not ready, fall back to direct amber line
+      if (!geocoderRef.current) {
+        const line = new google.maps.Polyline({
+          path: [{ lat: seg.from.lat, lng: seg.from.lng }, { lat: seg.to.lat, lng: seg.to.lng }],
+          geodesic: true,
+          strokeColor: "#f59e0b",
+          strokeOpacity: 0.7,
+          strokeWeight: 3,
+          map: mapRef.current!,
         });
+        tracePolylinesRef.current.push(line);
+        done();
+        return;
+      }
+
+      // Use Promise-based geocoder (more reliable than callback style in v=weekly)
+      const geocodePromises = streets.map((street) => {
+        const query = `${street}${suburbHint}, Western Australia`;
+        return geocoderRef.current!.geocode({ address: query })
+          .then((res) => {
+            if (res.results && res.results[0]) {
+              const loc = res.results[0].geometry.location;
+              return { lat: loc.lat(), lng: loc.lng() };
+            }
+            return null;
+          })
+          .catch(() => null as { lat: number; lng: number } | null);
+      });
+
+      Promise.all(geocodePromises).then((results) => {
+        for (let i = 0; i < results.length; i++) {
+          geocodedLatLngs[i] = results[i];
+        }
+        onAllGeocoded();
       });
     });
-  }, [clearTraceLines, snapToRoadsMutation]);
+  // snapToRoadsMutateRef is a ref — stable, no need in deps
+  }, [clearTraceLines]);
 
   // Toggle trace route on/off
   useEffect(() => {

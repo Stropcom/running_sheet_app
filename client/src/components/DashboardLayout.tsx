@@ -33,6 +33,18 @@ import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { Button } from "./ui/button";
 import { useOffline } from "@/contexts/OfflineContext";
+import { useSectionColor } from "@/contexts/SectionColorContext";
+
+// Thin coloured accent bar at the top of the main content area
+function SectionAccentBar() {
+  const color = useSectionColor();
+  return (
+    <div
+      className="h-[3px] w-full transition-colors duration-300"
+      style={{ backgroundColor: color.hex }}
+    />
+  );
+}
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
 const DEFAULT_WIDTH = 260;
@@ -566,6 +578,8 @@ function DashboardLayoutContent({
       </div>
 
       <SidebarInset>
+        {/* Section colour accent bar */}
+        <SectionAccentBar />
         {isMobile && (
           <div className="flex border-b border-border h-14 items-center justify-between bg-background/95 px-3 backdrop-blur sticky top-0 z-40">
             <div className="flex items-center gap-2">

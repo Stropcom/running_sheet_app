@@ -36,6 +36,7 @@ import IntelligenceMapping from "@/pages/IntelligenceMapping";
 import RSMapping from "@/pages/RSMapping";
 import DraftSheetPage from "@/pages/DraftSheetPage";
 import { DraftModeBanner } from "@/components/DraftModeBanner";
+import { SectionColorProvider } from "@/contexts/SectionColorContext";
 
 function Router() {
   return (
@@ -83,9 +84,11 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light" switchable>
         <TooltipProvider>
-          <Toaster />
-          <DraftModeBanner />
-          <Router />
+          <SectionColorProvider>
+            <Toaster />
+            <DraftModeBanner />
+            <Router />
+          </SectionColorProvider>
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>

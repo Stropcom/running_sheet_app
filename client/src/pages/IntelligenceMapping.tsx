@@ -611,10 +611,7 @@ export default function IntelligenceMapping() {
   }, [selectedOpIds, selectedTargetIds, opExpanded, rsSelectedOpId, rsSelectedSheetId, hiddenTeams, collapsedTeams, rsQeExpanded, mapDarkMode]);
 
   // Apply dark/light map style whenever mapDarkMode or mapReady changes
-  useEffect(() => {
-    if (!mapRef.current) return;
-    mapRef.current.setOptions({ styles: mapDarkMode ? DARK_MAP_STYLES : [] });
-  }, [mapDarkMode, mapReady]);
+  // Dark mode is applied via CSS filter on the map container div (not setOptions — blocked by mapId)
 
   // Persist sharing state and current userId so it can be read before auth resolves
   useEffect(() => {
@@ -1991,6 +1988,7 @@ export default function IntelligenceMapping() {
 
         <div
           className="w-full h-full"
+          style={mapDarkMode ? { filter: "brightness(0.6) invert(1) hue-rotate(180deg)" } : undefined}
           onTouchStart={(e) => {
             if (e.touches.length !== 1) return;
             const touch = e.touches[0];

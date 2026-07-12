@@ -72,44 +72,39 @@ export default function CalendarPage() {
   const { isAuthenticated } = useAuth();
   const [, navigate] = useLocation();
   const [date, setDate] = useState(new Date());
-  const [showOps, setShowOps] = useState(true);
-  const [showSheets, setShowSheets] = useState(true);
 
   const { data: rawEvents, isLoading } = trpc.calendar.events.useQuery(undefined, {
     enabled: isAuthenticated,
     staleTime: 60_000,
   });
 
-  // Convert timestamp numbers → Date objects, then filter by toggle state
+  // Convert timestamp numbers → Date objects, show only running sheets
   const events: CalEvent[] = useMemo(() => {
     if (!rawEvents) return [];
     return rawEvents
-      .filter((e) => (e.type === "operation" ? showOps : showSheets))
+      .filter((e) => e.type === "sheet")
       .map((e) => ({
         ...e,
         start: new Date(e.start),
         end: new Date(e.end),
         allDay: true,
       }));
-  }, [rawEvents, showOps, showSheets]);
+  }, [rawEvents]);
 
   const handleSelectEvent = useCallback(
     (event: CalEvent) => {
       if (event.type === "sheet" && event.sheetId) {
         navigate(`/sheet/${event.sheetId}`);
-      } else if (event.type === "operation" && event.operationId) {
-        navigate(`/operation/${event.operationId}`);
       }
     },
     [navigate]
   );
 
-  const eventStyleGetter = useCallback((event: CalEvent) => {
-    const isOp = event.type === "operation";
+  const eventStyleGetter = useCallback((_event: CalEvent) => {
     return {
       style: {
-        backgroundColor: isOp ? OP_COLOR : SHEET_COLOR,
-        borderColor: isOp ? OP_BORDER : SHEET_BORDER,
+        backgroundColor: SHEET_COLOR,
+        borderColor: SHEET_BORDER,
         color: "#fff",
         borderRadius: "4px",
         border: "none",
@@ -128,39 +123,13 @@ export default function CalendarPage() {
           <h1 className="text-xl font-semibold text-foreground">Calendar</h1>
         </div>
 
-        {/* Interactive legend */}
-        <div className="flex items-center gap-3 mb-4">
-          <button
-            onClick={() => setShowOps((v) => !v)}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all select-none ${
-              showOps
-                ? "border-transparent text-white"
-                : "border-border text-muted-foreground bg-transparent"
-            }`}
-            style={showOps ? { backgroundColor: OP_COLOR, borderColor: OP_BORDER } : {}}
-          >
-            <span
-              className="inline-block w-2.5 h-2.5 rounded-sm shrink-0"
-              style={{ backgroundColor: showOps ? "#fff" : OP_COLOR, opacity: showOps ? 0.85 : 1 }}
-            />
-            Operation
-          </button>
-
-          <button
-            onClick={() => setShowSheets((v) => !v)}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all select-none ${
-              showSheets
-                ? "border-transparent text-white"
-                : "border-border text-muted-foreground bg-transparent"
-            }`}
-            style={showSheets ? { backgroundColor: SHEET_COLOR, borderColor: SHEET_BORDER } : {}}
-          >
-            <span
-              className="inline-block w-2.5 h-2.5 rounded-sm shrink-0"
-              style={{ backgroundColor: showSheets ? "#fff" : SHEET_COLOR, opacity: showSheets ? 0.85 : 1 }}
-            />
-            Running Sheet
-          </button>
+        {/* Legend */}
+        <div className="flex items-center gap-2 mb-4">
+          <span
+            className="inline-block w-2.5 h-2.5 rounded-sm shrink-0"
+            style={{ backgroundColor: SHEET_COLOR }}
+          />
+          <span className="text-xs text-muted-foreground font-medium">Running Sheet</span>
         </div>
 
         {/* Calendar */}

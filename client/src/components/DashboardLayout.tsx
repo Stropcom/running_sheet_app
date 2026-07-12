@@ -209,8 +209,8 @@ function DashboardLayoutContent({
           </SidebarHeader>
 
           {/* Navigation */}
-          <SidebarContent className="gap-0 pt-2">
-            <SidebarMenu className="px-2 gap-1">
+          <SidebarContent className="gap-0 pt-2 pb-2">
+            <SidebarMenu className="px-2 gap-1.5">
 
               {/* ── Operations ── */}
               <SidebarMenuItem>
@@ -218,9 +218,9 @@ function DashboardLayoutContent({
                   isActive={location === "/" || location.startsWith("/operation/") || location.startsWith("/sheet/")}
                   onClick={() => setLocation("/")}
                   tooltip="Operations"
-                  className="h-11 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-sidebar-primary/40 shadow-sm"
+                  className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-orange-400/50 shadow-sm"
                 >
-                  <FileText className="h-4 w-4 text-foreground" />
+                  <FileText className="h-4 w-4 text-orange-400" />
                   <span className={`flex-1 ${location === "/" || location.startsWith("/operation/") || location.startsWith("/sheet/") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
                     Operations
                   </span>
@@ -233,9 +233,9 @@ function DashboardLayoutContent({
                   isActive={location === "/governance" || location.startsWith("/governance")}
                   onClick={() => setLocation("/governance")}
                   tooltip="Governance"
-                  className="h-11 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-sidebar-primary/40 shadow-sm"
+                  className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-purple-400/50 shadow-sm"
                 >
-                  <ClipboardCheck className="h-4 w-4 text-foreground" />
+                  <ClipboardCheck className="h-4 w-4 text-purple-400" />
                   <span className={`flex-1 ${location === "/governance" || location.startsWith("/governance") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
                     Governance
                   </span>
@@ -248,9 +248,9 @@ function DashboardLayoutContent({
                   isActive={location === "/todo" || location === "/todo/governance"}
                   onClick={() => setTodoExpanded((v) => !v)}
                   tooltip="To-Do"
-                  className="h-11 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-sidebar-primary/40 shadow-sm"
+                  className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-red-400/50 shadow-sm"
                 >
-                  <ClipboardList className={`h-4 w-4 ${todoCount > 0 ? "text-red-500" : "text-foreground"}`} />
+                  <ClipboardList className={`h-4 w-4 ${todoCount > 0 ? "text-red-500" : "text-red-400"}`} />
                   <span className={`flex-1 ${todoCount > 0 ? "text-red-500 font-medium" : location === "/todo" || location === "/todo/governance" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
                     To-Do
                   </span>
@@ -287,9 +287,9 @@ function DashboardLayoutContent({
                   isActive={location === "/intelligence/mapping"}
                   onClick={() => setLocation("/intelligence/mapping")}
                   tooltip="Mapping"
-                  className="h-11 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-sidebar-primary/40 shadow-sm"
+                  className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-teal-400/50 shadow-sm"
                 >
-                  <Map className="h-4 w-4 text-foreground" />
+                  <Map className="h-4 w-4 text-teal-400" />
                   <span className={`flex-1 ${location === "/intelligence/mapping" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
                     Mapping
                   </span>
@@ -302,9 +302,9 @@ function DashboardLayoutContent({
                   isActive={location === "/calendar" || location.startsWith("/calendar")}
                   onClick={() => setLocation("/calendar")}
                   tooltip="Calendar"
-                  className="h-11 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-sidebar-primary/40 shadow-sm"
+                  className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-cyan-400/50 shadow-sm"
                 >
-                  <CalendarDays className="h-4 w-4 text-foreground" />
+                  <CalendarDays className="h-4 w-4 text-cyan-400" />
                   <span className={`flex-1 ${location === "/calendar" || location.startsWith("/calendar") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
                     Calendar
                   </span>
@@ -317,10 +317,10 @@ function DashboardLayoutContent({
                   isActive={location === "/shortcuts" || location.startsWith("/shortcuts")}
                   onClick={() => setLocation("/shortcuts")}
                   tooltip="Shortcuts"
-                  className="h-11 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-sidebar-primary/40 shadow-sm"
+                  className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-yellow-400/50 shadow-sm"
                   onMouseEnter={() => { if (isObservationFocused) setShortcutsPanelOpen(true); }}
                 >
-                  <Zap className={`h-4 w-4 ${isObservationFocused ? "text-yellow-400" : "text-foreground"}`} />
+                  <Zap className={`h-4 w-4 ${isObservationFocused ? "text-yellow-400" : "text-yellow-400"}`} />
                   <span className={`flex-1 ${location === "/shortcuts" || location.startsWith("/shortcuts") ? "text-sidebar-foreground font-medium" : isObservationFocused ? "text-cyan-300 font-medium" : "text-sidebar-foreground/80"}`}>
                     Shortcuts
                   </span>
@@ -336,9 +336,9 @@ function DashboardLayoutContent({
                   isActive={location === "/intelligence" || (location.startsWith("/intelligence") && !location.startsWith("/intelligence/mapping"))}
                   onClick={() => setLocation("/intelligence")}
                   tooltip="Intelligence"
-                  className="h-11 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-sidebar-primary/40 shadow-sm"
+                  className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-violet-400/50 shadow-sm"
                 >
-                  <FolderSearch className="h-4 w-4 text-foreground" />
+                  <FolderSearch className="h-4 w-4 text-violet-400" />
                   <span className={`flex-1 ${location === "/intelligence" || (location.startsWith("/intelligence") && !location.startsWith("/intelligence/mapping")) ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
                     Intelligence
                   </span>
@@ -351,9 +351,9 @@ function DashboardLayoutContent({
                   isActive={location === "/target-registry" || location.startsWith("/target-registry")}
                   onClick={() => setLocation("/target-registry")}
                   tooltip="Target Registry"
-                  className="h-11 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-sidebar-primary/40 shadow-sm"
+                  className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-rose-400/50 shadow-sm"
                 >
-                  <BookOpen className="h-4 w-4 text-foreground" />
+                  <BookOpen className="h-4 w-4 text-rose-400" />
                   <span className={`flex-1 ${location === "/target-registry" || location.startsWith("/target-registry") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
                     Target Registry
                   </span>
@@ -369,9 +369,9 @@ function DashboardLayoutContent({
                   )}
                   onClick={() => setAdminFolderExpanded((v) => !v)}
                   tooltip="Administration"
-                  className="h-11 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-sidebar-primary/40 shadow-sm"
+                  className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-slate-400/50 shadow-sm"
                 >
-                  <Settings className="h-4 w-4 text-foreground" />
+                  <Settings className="h-4 w-4 text-slate-400" />
                   <span className={`flex-1 ${
                     location.startsWith("/court") || location === "/audit" || location === "/draft" ||
                     location === "/operation-management" || location === "/recycle-bin" || location === "/help"
@@ -456,9 +456,9 @@ function DashboardLayoutContent({
                   isActive={false}
                   onClick={() => setUserMgmtFolderExpanded((v) => !v)}
                   tooltip="User Management"
-                  className="h-11 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-sidebar-primary/40 shadow-sm"
+                  className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-blue-400/50 shadow-sm"
                 >
-                  <UserCog className={`h-4 w-4 ${location === "/profile" || location === "/admin" ? "text-foreground" : "text-foreground"}`} />
+                  <UserCog className="h-4 w-4 text-blue-400" />
                   <span className={`flex-1 ${location === "/profile" || location === "/admin" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
                     User Management
                   </span>

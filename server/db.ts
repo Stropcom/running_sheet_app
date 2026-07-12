@@ -3849,19 +3849,31 @@ export interface RsWaypointRow {
  * Strips bracketed short-forms, leading/trailing whitespace, and common filler
  * words so only the actual street names remain.
  */
+// Australian street type suffixes used to identify genuine street names
+const STREET_TYPE_RE = /\b(street|st|road|rd|avenue|ave|drive|dr|highway|hwy|freeway|fwy|parade|pde|terrace|tce|place|pl|court|ct|crescent|cres|boulevard|blvd|way|lane|ln|close|cl|circuit|cct|grove|gr|rise|row|walk|track|trk|path|loop|mews|quay|esplanade|esp)\b/i;
+
 function parseViaStreets(obs: string): string[] {
-  // Strip the leading "continued via:" or "continued via;" prefix
-  const body = obs.replace(/^continued\s+via[;:]/i, "").trim();
+  // If the observation ends with "continued via:" (street list is in the NEXT row),
+  // return empty immediately so the caller falls back to reading the next row.
+  if (/continued\s+via[;:]\s*$/i.test(obs.trim())) return [];
+
+  // Extract only the part AFTER "continued via:" prefix (may appear mid-text)
+  const match = obs.match(/continued\s+via[;:]\s*([\s\S]*)$/i);
+  const body = match ? match[1].trim() : obs.replace(/^continued\s+via[;:]/i, "").trim();
   if (!body) return [];
 
-  // Split on common separators: →, ->, then, via (as conjunction), comma, semicolon
+  // Split on common separators: →, ->, newline, comma, semicolon
   const parts = body
-    .split(/\s*(?:→|->|,|;|\bthen\b|\bvia\b)\s*/i)
+    .split(/\s*(?:→|->|\n|,|;)\s*/i)
     .map((p) => {
       // Strip bracketed short-forms like (CV) (OOS) etc.
       return p.replace(/\([^)]*\)/g, "").trim();
     })
-    .filter((p) => p.length > 2); // discard empty / very short tokens
+    .filter((p) => {
+      if (p.length < 3) return false;
+      // Only keep parts that look like street names (contain a street-type suffix)
+      return STREET_TYPE_RE.test(p);
+    });
 
   return parts;
 }
@@ -3960,15 +3972,27 @@ export async function getRsMappingWaypoints(sheetId: number): Promise<RsWaypoint
             const hasAddress = extractEntitiesFromText(nextObs).some((e) => e.type === 'address');
             const isAnotherKeyword = /continued\s+via[;:]|continued\s+out\s+of\s+sight|\bcoos\b/i.test(nextObs);
             if (!hasAddress && !isAnotherKeyword) {
-              // Parse the next row as the street list
-              // Streets are separated by commas/newlines, with optional "whereat" suffix
+              // Parse the next row as the street list.
+              // Format: "Street Name, SUBURB,\nStreet Name,\n...\nStreet Name, SUBURB, whereat;"
+              // Each line/comma-segment may be a street name or a suburb name.
+              // We only want parts that contain a street-type suffix.
               const streetBody = nextObs
                 .replace(/[,;]?\s*whereat[;:,.]?.*$/i, '') // strip trailing "whereat"
                 .trim();
               viaStreets = streetBody
-                .split(/\s*(?:→|->|,|;|\n|\bthen\b|\bvia\b)\s*/i)
+                .split(/\s*(?:→|->|,|;|\n)\s*/i)
                 .map((p) => p.replace(/\([^)]*\)/g, '').trim())
-                .filter((p) => p.length > 2);
+                .filter((p) => {
+                  if (p.length < 3) return false;
+                  // Only keep parts that look like street names
+                  return STREET_TYPE_RE.test(p);
+                })
+                .map((p) => {
+                  // Strip trailing suburb/state info (e.g. "Marine Parade, COTTESLOE" -> "Marine Parade")
+                  // Remove anything after the street type word
+                  const m = p.match(/^(.+?\b(?:street|st|road|rd|avenue|ave|drive|dr|highway|hwy|freeway|fwy|parade|pde|terrace|tce|place|pl|court|ct|crescent|cres|boulevard|blvd|way|lane|ln|close|cl|circuit|cct|grove|gr|rise|row|walk|track|trk|path|loop|mews|quay|esplanade|esp))\b/i);
+                  return m ? m[1].trim() : p.trim();
+                });
             }
           }
         }

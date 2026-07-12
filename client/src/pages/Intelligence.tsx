@@ -997,7 +997,7 @@ const TAB_OPTIONS: Array<{ value: TabView; label: string; icon: React.ReactNode 
   { value: "associates", label: "Associates", icon: <User className="w-3.5 h-3.5" /> },
   { value: "vehicle",    label: "Vehicles",   icon: <Car className="w-3.5 h-3.5" /> },
   { value: "locations",  label: "Locations",  icon: <MapPin className="w-3.5 h-3.5" /> },
-  { value: "rs-mapping", label: "Intelligence Mapping",  icon: <Route className="w-3.5 h-3.5" /> },
+  { value: "rs-mapping", label: "RS Intel Map",  icon: <Route className="w-3.5 h-3.5" /> },
 ];
 
 // ─── Main Page ────────────────────────────────────────────────────────────────

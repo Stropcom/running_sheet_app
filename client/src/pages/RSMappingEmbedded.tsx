@@ -739,23 +739,23 @@ export default function RSMappingEmbedded() {
           "position:absolute",
           "background:rgba(255,255,255,0.95)",
           "border:1.5px solid " + badgeColor,
-          "border-radius:6px",
-          "padding:3px 7px",
+          "border-radius:5px",
+          "padding:2px 5px",
           "font-family:system-ui,sans-serif",
-          "font-size:9.5px",
+          "font-size:8px",
           "line-height:1.35",
-          "max-width:140px",
-          "min-width:80px",
+          "max-width:120px",
+          "min-width:60px",
           "box-shadow:0 2px 6px rgba(0,0,0,0.15)",
           "pointer-events:none",
           "white-space:normal",
           "word-break:break-word",
           "z-index:10",
-          "transform:translate(-50%, calc(-100% - 14px))",
+          "transform:translate(-50%, calc(-100% - 26px))",
         ].join(";");
         div.innerHTML = [
           `<div style="font-weight:700;color:${badgeColor};font-size:9px;">#${index} · ${time}</div>`,
-          `<div style="color:#111;font-size:9px;margin-top:1px;">${address}</div>`,
+          `<div style="color:#111;font-size:7.5px;margin-top:1px;">${address}</div>`,
         ].join("");
         const panes = this.getPanes()!;
         panes.floatPane.appendChild(div);

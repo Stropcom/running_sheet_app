@@ -738,12 +738,13 @@ export default function RSMappingEmbedded() {
       segments.push({ from, to, viaStreets, isCoos });
     }
 
-    let pending = segments.length;
-    const done = () => { if (--pending === 0) setTracing(false); };
-
-    segments.forEach((seg) => {
-      if (seg.isCoos || seg.viaStreets.length === 0) {
-        // Draw straight dashed line
+    // Helper: draw a single segment using pre-geocoded coordinate waypoints
+    const drawSegment = (
+      seg: { from: PlacedWaypoint; to: PlacedWaypoint; viaStreets: string[]; isCoos: boolean },
+      viaLatLngs: google.maps.LatLng[],
+      onDone: () => void
+    ) => {
+      if (seg.isCoos || (seg.viaStreets.length === 0 && viaLatLngs.length === 0)) {
         const line = new google.maps.Polyline({
           path: [{ lat: seg.from.lat, lng: seg.from.lng }, { lat: seg.to.lat, lng: seg.to.lng }],
           geodesic: true,
@@ -754,20 +755,14 @@ export default function RSMappingEmbedded() {
           map: mapRef.current!,
         });
         tracePolylinesRef.current.push(line);
-        done();
+        onDone();
         return;
       }
 
-      // Build waypoints from viaStreets
-      // Use the departure suburb from the 'from' waypoint as context, falling back to 'to'
-      const suburbHint = seg.from.suburbContext
-        ? `, ${seg.from.suburbContext}`
-        : seg.to.suburbContext
-        ? `, ${seg.to.suburbContext}`
-        : "";
-      // Use stopover:true so Google MUST route through each named street in sequence
-      const viaWaypoints = seg.viaStreets.slice(0, DIRECTIONS_CHUNK_SIZE - 2).map((street) => ({
-        location: `${street}${suburbHint}, Western Australia`,
+      // Use geocoded lat/lng coordinates as waypoints — this forces Google to route
+      // through those exact points on each street rather than choosing its own path
+      const viaWaypoints = viaLatLngs.map((ll) => ({
+        location: ll,
         stopover: true,
       }));
 
@@ -807,9 +802,49 @@ export default function RSMappingEmbedded() {
             tracePolylinesRef.current.push(line);
             if (seg.viaStreets.length > 0) toast.warning(`Could not trace route for segment to ${seg.to.address}`);
           }
-          done();
+          onDone();
         }
       );
+    };
+
+    // Phase 1: geocode all via-streets to coordinates, then draw segments
+    // We geocode each street with suburb context to get a precise lat/lng on that street
+    let pending = segments.length;
+    const done = () => { if (--pending === 0) setTracing(false); };
+
+    segments.forEach((seg) => {
+      if (seg.isCoos || seg.viaStreets.length === 0) {
+        drawSegment(seg, [], done);
+        return;
+      }
+
+      // Geocode each via-street in sequence, then draw
+      const suburbHint = seg.from.suburbContext
+        ? `, ${seg.from.suburbContext}`
+        : seg.to.suburbContext
+        ? `, ${seg.to.suburbContext}`
+        : "";
+
+      const streets = seg.viaStreets.slice(0, DIRECTIONS_CHUNK_SIZE - 2);
+      const geocodedLatLngs: (google.maps.LatLng | null)[] = new Array(streets.length).fill(null);
+      let geocodePending = streets.length;
+
+      const onAllGeocoded = () => {
+        // Filter out any streets that failed to geocode
+        const validLatLngs = geocodedLatLngs.filter((ll): ll is google.maps.LatLng => ll !== null);
+        drawSegment(seg, validLatLngs, done);
+      };
+
+      streets.forEach((street, idx) => {
+        const query = `${street}${suburbHint}, Western Australia`;
+        geocoderRef.current!.geocode({ address: query }, (results, status) => {
+          if (status === "OK" && results && results[0]) {
+            geocodedLatLngs[idx] = results[0].geometry.location;
+          }
+          // Whether it succeeded or failed, count down
+          if (--geocodePending === 0) onAllGeocoded();
+        });
+      });
     });
   }, [clearTraceLines]);
 

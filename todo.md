@@ -293,12 +293,12 @@
 - [x] Governance page: show locked banner when sheet is closed
 
 ## Calendar Feature
-- [ ] Install react-big-calendar and date-fns localizer
-- [ ] Backend: tRPC calendar.events query returning operations and running sheets as calendar events
-- [ ] Frontend: CalendarPage with Month/Week/Day views using react-big-calendar
-- [ ] Calendar: clicking an event navigates to the relevant operation or running sheet
-- [ ] Sidebar: add Calendar entry between Target Registry and Court
-- [ ] Route /calendar registered in App.tsx
+- [x] Install react-big-calendar and date-fns localizer
+- [x] Backend: tRPC calendar.events query returning operations and running sheets as calendar events
+- [x] Frontend: CalendarPage with Month/Week/Day views using react-big-calendar
+- [x] Calendar: clicking an event navigates to the relevant operation or running sheet
+- [x] Sidebar: add Calendar entry between Target Registry and Court
+- [x] Route /calendar registered in App.tsx
 
 ## Close Validation & Statement Exclusion Rules (Round 41)
 - [x] sheet.close: validate all rows certified before allowing close
@@ -317,14 +317,14 @@
 - [x] Frontend: On success, invalidate operation queries and show toast
 
 ## Association Map (Intelligence) (Round 43)
-- [ ] Install react-force-graph or d3-force for interactive graph rendering
-- [ ] Backend: tRPC intelligence.getAssociationGraph procedure — returns nodes (persons, vehicles, addresses, businesses) and edges (co-occurrence in same observation/row)
-- [ ] Frontend: AssociationMap.tsx page — interactive force-directed graph with colour-coded node types
-- [ ] Graph: click a node to highlight its direct connections and show a detail panel
-- [ ] Graph: filter by entity type (persons/vehicles/addresses/businesses), operation, or date range
-- [ ] Graph: zoom, pan, and drag nodes
-- [ ] Sidebar nav: add "Association Map" under Intelligence section
-- [ ] Route /association-map registered in App.tsx
+- [x] Install react-force-graph or d3-force for interactive graph rendering
+- [x] Backend: tRPC intelligence.getAssociationGraph procedure — returns nodes (persons, vehicles, addresses, businesses) and edges (co-occurrence in same observation/row)
+- [x] Frontend: AssociationMap.tsx page — interactive force-directed graph with colour-coded node types
+- [x] Graph: click a node to highlight its direct connections and show a detail panel
+- [x] Graph: filter by entity type (persons/vehicles/addresses/businesses), operation, or date range
+- [x] Graph: zoom, pan, and drag nodes
+- [x] Sidebar nav: add "Association Map" under Intelligence section
+- [x] Route /association-map registered in App.tsx
 
 ## Intelligence Sub-folder Restructure + Association Mapping
 - [x] Install react-force-graph-2d for interactive graph rendering
@@ -630,10 +630,10 @@
 - [x] Assess and implement the strongest feasible edit flow for observation-derived intelligence markers (View Location Profile button)
 - [x] Redesign intelligence map InfoWindow popups (target-address and observation) to match modern custom-marker card style
 - [x] Review and fix Google Maps address format extraction in the intelligence scraper
-- [ ] Add two-option action sheet (RS Quick Entry / Marker) on tap-and-hold and existing marker tap
-- [ ] RS Quick Entry option: show same quick entry form as right pane, auto-fill address from tapped location, inherit selected operation/sheet from right pane
-- [ ] Marker option: show existing marker placement form with generated address at top
-- [ ] Fix single-tap map icon popup text to black (currently hard to read)
+- [x] Add two-option action sheet (RS Quick Entry / Marker) on tap-and-hold and existing marker tap
+- [x] RS Quick Entry option: show same quick entry form as right pane, auto-fill address from tapped location, inherit selected operation/sheet from right pane
+- [x] Marker option: show existing marker placement form with generated address at top
+- [x] Fix single-tap map icon popup text to black (currently hard to read)
 - [x] Differentiate action chooser for intel markers (target address / observation): show "RS Quick Entry" + "Intel" (opens existing info popup, data untouched) instead of "RS Quick Entry" + "Marker"
 - [x] Blank map tap-and-hold continues to show "RS Quick Entry" + "Marker" as before
 
@@ -647,13 +647,13 @@
 - [x] Wire convertGoogleAddresses into mapQeAddress pre-fill in IntelligenceMapping.tsx
 
 ## Quick Entry Tile Enhancements (Round 58)
-- [ ] Tile expansion: tapping a tile expands it to show a free-text observation field + shortcut buttons + CIN multi-select
-- [ ] Free-text field: if filled, replaces tile label as the observation; if empty, tile label is used as before
-- [ ] Shortcut buttons in expanded tile (append expanded text in tap order): V1 (target V1F/V1), V2 (target V2F/V2), TGT (target name), DSO (driver and sole occupant), CV (continued via), OOS (out of sight), COOS (continued out of sight)
-- [ ] CIN buttons: order Team Leader first, then remaining CINs in number order
-- [ ] CIN buttons: slightly larger and darker font
-- [ ] CIN buttons: multi-select (tap to toggle, multiple CINs can be selected)
-- [ ] CIN buttons: TEAM shortcut button that selects all CINs at once
+- [x] Tile expansion: tapping a tile expands it to show a free-text observation field + shortcut buttons + CIN multi-select
+- [x] Free-text field: if filled, replaces tile label as the observation; if empty, tile label is used as before
+- [x] Shortcut buttons in expanded tile (append expanded text in tap order): V1 (target V1F/V1), V2 (target V2F/V2), TGT (target name), DSO (driver and sole occupant), CV (continued via), OOS (out of sight), COOS (continued out of sight)
+- [x] CIN buttons: order Team Leader first, then remaining CINs in number order
+- [x] CIN buttons: slightly larger and darker font
+- [x] CIN buttons: multi-select (tap to toggle, multiple CINs can be selected)
+- [x] CIN buttons: TEAM shortcut button that selects all CINs at once
 
 ## Google Address Bulk Backfill (Round N)
 - [x] Add bulk backfill tRPC procedure to convert Google-formatted addresses in all existing observation rows to RS format

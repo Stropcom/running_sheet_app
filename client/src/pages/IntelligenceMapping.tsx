@@ -492,6 +492,7 @@ export default function IntelligenceMapping() {
   const rsInlineInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Right-pane collapsible RS Quick Entry panel state (separate from modal inline field)
+  const [rsQeSelectedTile, setRsQeSelectedTile] = useState<string | null>(null); // which tile is expanded
   const [rsQeText, setRsQeText] = useState("");
   const [rsQeCins, setRsQeCins] = useState<Set<string>>(new Set());
   const rsQeInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -1814,25 +1815,15 @@ export default function IntelligenceMapping() {
     startInlineCountdown();
   };
 
-  // Auto-open the inline observation field whenever the RS Quick Entry sheet opens
-  // (replaces the old trigger buttons — the full form appears immediately)
+  // Clear the inline field when the map QE sheet closes
   useEffect(() => {
-    if (mapQeOpen && rsSelectedSheetId) {
-      // Use a small delay so the sheet has rendered before we set focus
-      setTimeout(() => {
-        setRsInlineLabel("Entry");
-        setRsInlineText("");
-        setRsInlineCins(new Set());
-        rsInlineCinsRef.current = new Set();
-        setTimeout(() => rsInlineInputRef.current?.focus(), 80);
-      }, 50);
-    }
     if (!mapQeOpen) {
-      // Clear the inline field when the sheet closes
       setRsInlineLabel(null);
       setRsInlineText("");
+      setRsInlineCins(new Set());
+      rsInlineCinsRef.current = new Set();
     }
-  }, [mapQeOpen, rsSelectedSheetId]);
+  }, [mapQeOpen]);
 
   const addQuickRsEntry = (observation: string, cinsToAttach?: Set<string> | null) => {
     if (!rsSelectedSheetId) return;
@@ -2410,68 +2401,107 @@ export default function IntelligenceMapping() {
                     { label: "COOS", getValue: () => findShortcut("coos") ?? "continued out of sight" },
                   ];
                   const available = shortcuts.filter(s => s.getValue() !== null);
+                  const qeTiles = [
+                    { label: "Vehicle Arrive", short: "VA", colour: "emerald" },
+                    { label: "Vehicle Depart", short: "VD", colour: "rose" },
+                    { label: "Person Arrive",  short: "PA", colour: "sky" },
+                    { label: "Person Depart",  short: "PD", colour: "orange" },
+                    { label: "Other Entry",    short: "OE", colour: "violet" },
+                  ] as const;
+                  const qeColourMap: Record<string, { border: string; bg: string; activeBg: string; text: string; ring: string }> = {
+                    emerald: { border: "border-emerald-500/40", bg: "bg-emerald-500/5", activeBg: "bg-emerald-500/15", text: "text-emerald-400", ring: "ring-emerald-400" },
+                    rose:    { border: "border-rose-500/40",    bg: "bg-rose-500/5",    activeBg: "bg-rose-500/15",    text: "text-rose-400",    ring: "ring-rose-400" },
+                    sky:     { border: "border-sky-500/40",     bg: "bg-sky-500/5",     activeBg: "bg-sky-500/15",     text: "text-sky-400",     ring: "ring-sky-400" },
+                    orange:  { border: "border-orange-500/40",  bg: "bg-orange-500/5",  activeBg: "bg-orange-500/15",  text: "text-orange-400",  ring: "ring-orange-400" },
+                    violet:  { border: "border-violet-500/40",  bg: "bg-violet-500/5",  activeBg: "bg-violet-500/15",  text: "text-violet-400",  ring: "ring-violet-400" },
+                  };
                   const submitQeEntry = () => {
-                    const obs = rsQeText.trim() || "Entry";
+                    const obs = rsQeText.trim() || (rsQeSelectedTile ?? "Entry");
                     const cins = new Set(rsQeCins);
                     setRsQeText("");
                     setRsQeCins(new Set());
+                    setRsQeSelectedTile(null);
                     addQuickRsEntry(obs, cins);
                   };
                   return (
                     <div className="px-3 py-3 border-t border-border bg-card space-y-2.5">
-                      {/* OBSERVATION */}
-                      <div className="space-y-1.5">
-                        <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Observation</span>
-                        <textarea
-                          ref={rsQeInputRef}
-                          value={rsQeText}
-                          onChange={(e) => setRsQeText(e.target.value)}
-                          placeholder="Add details (optional)…"
-                          rows={3}
-                          className="w-full resize-none rounded-xl border-2 border-border bg-background px-3 py-2 text-[12px] placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                        />
-                        {/* Shortcut chips */}
-                        {available.length > 0 && (
-                          <div className="flex flex-wrap gap-1">
-                            {available.map(s => (
-                              <button key={s.label} onClick={() => { const v = s.getValue(); if (v) appendQeText(v); }} className="px-2 py-0.5 rounded-md text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all">{s.label}</button>
-                            ))}
-                          </div>
-                        )}
+                      {/* Tile grid */}
+                      <div className="grid grid-cols-5 gap-1.5">
+                        {qeTiles.map(({ label, short, colour }) => {
+                          const c = qeColourMap[colour];
+                          const isActive = rsQeSelectedTile === label;
+                          return (
+                            <button
+                              key={label}
+                              disabled={rsAddingRow}
+                              onClick={() => {
+                                if (isActive) {
+                                  setRsQeSelectedTile(null);
+                                  setRsQeText("");
+                                  setRsQeCins(new Set());
+                                } else {
+                                  setRsQeSelectedTile(label);
+                                  setRsQeText("");
+                                  setRsQeCins(new Set());
+                                  setTimeout(() => rsQeInputRef.current?.focus(), 50);
+                                }
+                              }}
+                              className={`flex flex-col items-center justify-center gap-0.5 rounded-xl border-2 py-2.5 px-1 transition-all active:scale-95 disabled:opacity-50 ${
+                                isActive
+                                  ? `${c.border} ${c.activeBg} ring-1 ${c.ring}`
+                                  : `${c.border} ${c.bg} hover:${c.activeBg}`
+                              }`}
+                            >
+                              <span className={`text-[13px] font-black leading-none ${c.text}`}>{short}</span>
+                              <span className="text-[8px] font-semibold text-muted-foreground text-center leading-tight mt-0.5">{label}</span>
+                            </button>
+                          );
+                        })}
                       </div>
-                      {/* FULL ADDRESS */}
-                      <div className="rounded-xl border-2 border-border bg-muted/30 px-3 py-2">
-                        <p className="text-[9px] font-bold uppercase tracking-wide text-primary mb-1">Full Address</p>
-                        <p className="text-[11px] font-mono text-foreground leading-snug">{rsTargetData?.arr ?? "—"}</p>
-                      </div>
-                      {/* SHORT ADDRESS */}
-                      {rsTargetData?.arr && (() => {
-                        const short = rsTargetData.arr.split(",")[0]?.trim() ?? rsTargetData.arr;
-                        return (
-                          <div className="rounded-xl border-2 border-border bg-muted/30 px-3 py-2">
-                            <p className="text-[9px] font-bold uppercase tracking-wide text-primary mb-1">Short Address</p>
-                            <p className="text-[11px] font-mono text-foreground">{short}</p>
+
+                      {/* Expanded form — shown when a tile is selected */}
+                      {rsQeSelectedTile && (
+                        <div className="rounded-lg border border-border bg-muted/40 p-2.5 flex flex-col gap-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Observation</span>
+                            <span className="text-[10px] text-muted-foreground italic">{rsQeSelectedTile}</span>
                           </div>
-                        );
-                      })()}
-                      {/* TEAM / CIN chips */}
-                      {rosterCins.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5">
-                          <button
-                            onClick={() => { const allSel = rosterCins.every(c => rsQeCins.has(c)); setRsQeCins(allSel ? new Set() : new Set(rosterCins)); }}
-                            className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all active:scale-95 ${rosterCins.every(c => rsQeCins.has(c)) ? "bg-amber-500/20 border-amber-500/60 text-amber-400" : "bg-muted/40 border-amber-500/30 text-amber-500/80 hover:bg-amber-500/10"}`}
-                          >TEAM</button>
-                          {rosterCins.map((cin) => (
-                            <button key={cin} onClick={() => { const next = new Set(rsQeCins); if (next.has(cin)) { next.delete(cin); } else { next.add(cin); } setRsQeCins(next); }} className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all active:scale-95 ${rsQeCins.has(cin) ? "bg-primary/20 border-primary/60 text-primary" : "bg-muted/40 border-border text-foreground/80 hover:bg-muted/70 hover:text-foreground"}`}>{cin}</button>
-                          ))}
+                          <textarea
+                            ref={rsQeInputRef}
+                            value={rsQeText}
+                            onChange={(e) => setRsQeText(e.target.value)}
+                            placeholder="Add details (optional)…"
+                            rows={2}
+                            className="w-full resize-none rounded-md border border-border bg-background px-2.5 py-1.5 text-[11px] placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                          />
+                          {/* Shortcut chips */}
+                          {available.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {available.map(s => (
+                                <button key={s.label} onClick={() => { const v = s.getValue(); if (v) appendQeText(v); }} className="px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all">{s.label}</button>
+                              ))}
+                            </div>
+                          )}
+                          {/* TEAM / CIN chips */}
+                          {rosterCins.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              <button
+                                onClick={() => { const allSel = rosterCins.every(c => rsQeCins.has(c)); setRsQeCins(allSel ? new Set() : new Set(rosterCins)); }}
+                                className={`px-2.5 py-1 rounded-full text-[12px] font-bold border transition-all active:scale-95 ${rosterCins.every(c => rsQeCins.has(c)) ? "bg-amber-500/20 border-amber-500/60 text-amber-500" : "bg-muted/40 border-amber-500/30 text-amber-500/80 hover:bg-amber-500/10"}`}
+                              >TEAM</button>
+                              {rosterCins.map((cin) => (
+                                <button key={cin} onClick={() => { const next = new Set(rsQeCins); if (next.has(cin)) { next.delete(cin); } else { next.add(cin); } setRsQeCins(next); }} className={`px-2.5 py-1 rounded-full text-[12px] font-bold border transition-all active:scale-95 ${rsQeCins.has(cin) ? "bg-primary/20 border-primary/60 text-primary" : "bg-muted/40 border-border text-foreground hover:bg-muted/70"}`}>{cin}</button>
+                              ))}
+                            </div>
+                          )}
+                          <div className="flex justify-end">
+                            <button onClick={submitQeEntry} disabled={rsAddingRow} className="flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-[11px] font-semibold text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-50">
+                              {rsAddingRow ? <Spinner className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />} Submit
+                            </button>
+                          </div>
                         </div>
                       )}
-                      {/* Submit */}
-                      <div className="flex justify-end">
-                        <button onClick={submitQeEntry} disabled={rsAddingRow} className="flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-[11px] font-semibold text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-50">
-                          {rsAddingRow ? <Spinner className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />} Submit
-                        </button>
-                      </div>
+
                       {/* Last entry confirmation */}
                       {rsLastEntry && (
                         <div className="rounded-xl border border-green-500/30 bg-green-500/10 px-3 py-2">
@@ -3329,6 +3359,47 @@ export default function IntelligenceMapping() {
                 </div>
 
                 <div className="border-t border-border" />
+
+                {/* ── Quick Action Tiles ── */}
+                {(() => {
+                  const tiles = [
+                    { label: "Vehicle Arrive", short: "VA", colour: "emerald" },
+                    { label: "Vehicle Depart", short: "VD", colour: "rose" },
+                    { label: "Person Arrive",  short: "PA", colour: "sky" },
+                    { label: "Person Depart",  short: "PD", colour: "orange" },
+                    { label: "Other Entry",    short: "OE", colour: "violet" },
+                  ] as const;
+                  const colourMap: Record<string, { border: string; bg: string; activeBg: string; text: string; ring: string }> = {
+                    emerald: { border: "border-emerald-500/40", bg: "bg-emerald-500/5", activeBg: "bg-emerald-500/15", text: "text-emerald-400", ring: "ring-emerald-400" },
+                    rose:    { border: "border-rose-500/40",    bg: "bg-rose-500/5",    activeBg: "bg-rose-500/15",    text: "text-rose-400",    ring: "ring-rose-400" },
+                    sky:     { border: "border-sky-500/40",     bg: "bg-sky-500/5",     activeBg: "bg-sky-500/15",     text: "text-sky-400",     ring: "ring-sky-400" },
+                    orange:  { border: "border-orange-500/40",  bg: "bg-orange-500/5",  activeBg: "bg-orange-500/15",  text: "text-orange-400",  ring: "ring-orange-400" },
+                    violet:  { border: "border-violet-500/40",  bg: "bg-violet-500/5",  activeBg: "bg-violet-500/15",  text: "text-violet-400",  ring: "ring-violet-400" },
+                  };
+                  return (
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {tiles.map(({ label, short, colour }) => {
+                        const c = colourMap[colour];
+                        const isActive = rsInlineLabel === label;
+                        return (
+                          <button
+                            key={label}
+                            disabled={rsAddingRow}
+                            onClick={() => { if (isActive) { closeInlineField(); } else { openInlineField(label); } }}
+                            className={`flex flex-col items-center justify-center gap-0.5 rounded-xl border-2 py-2.5 px-1 transition-all active:scale-95 disabled:opacity-50 ${
+                              isActive
+                                ? `${c.border} ${c.activeBg} ring-1 ${c.ring}`
+                                : `${c.border} ${c.bg} hover:${c.activeBg}`
+                            }`}
+                          >
+                            <span className={`text-[13px] font-black leading-none ${c.text}`}>{short}</span>
+                            <span className="text-[8px] font-semibold text-muted-foreground text-center leading-tight mt-0.5">{label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
 
                 {/* DEP / ARR */}
                 {rsTargetData?.arr && (

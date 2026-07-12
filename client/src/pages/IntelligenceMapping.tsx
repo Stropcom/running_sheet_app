@@ -2383,15 +2383,30 @@ export default function IntelligenceMapping() {
                   {rsQeExpanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
                 </button>
 
-                {/* Collapsible body */}
+                {/* Collapsible body — full RS Quick Entry form */}
                 {rsQeExpanded && (
                   <div className="px-3 py-3 space-y-2 border-t border-border bg-card">
-                    {/* Target strip */}
-                    {rsTargetData && (
-                      <div className="flex-shrink-0 rounded-lg border border-border bg-muted/30 px-2.5 py-1.5">
-                        <p className="text-[10px] font-bold text-foreground leading-none">{rsTargetData.tgt ?? rsTargetData.name}</p>
-                      </div>
-                    )}
+                    {/* Sheet + target strip */}
+                    <div className="flex items-center gap-2">
+                      {rsSheetsData && (() => {
+                        const sheet = (rsSheetsData as any[]).find((s: any) => s.id === rsSelectedSheetId);
+                        return sheet ? (
+                          <button
+                            onClick={() => setLocation(`/sheet/${rsSelectedSheetId}`)}
+                            className="flex-1 flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-primary/40 bg-primary/10 hover:bg-primary/20 active:scale-[0.98] transition-all min-w-0"
+                          >
+                            <MapIcon className="h-3 w-3 text-primary flex-shrink-0" />
+                            <span className="text-[11px] font-semibold text-primary truncate">{sheet.title || `Sheet #${sheet.id}`}</span>
+                            <ExternalLink className="h-3 w-3 text-primary/60 flex-shrink-0 ml-auto" />
+                          </button>
+                        ) : null;
+                      })()}
+                      {rsTargetData && (
+                        <div className="flex-shrink-0 rounded-lg border border-border bg-muted/30 px-2 py-1">
+                          <p className="text-[10px] font-bold text-foreground leading-none">{rsTargetData.tgt ?? rsTargetData.name}</p>
+                        </div>
+                      )}
+                    </div>
 
                     <div className="border-t border-border" />
 
@@ -2400,7 +2415,8 @@ export default function IntelligenceMapping() {
                       <button
                         disabled={rsAddingRow}
                         onClick={() => {
-                          if (rsInlineLabel === rsTargetData!.arr!) { closeInlineField(); } else { openInlineField(rsTargetData!.arr!); }
+                          const obs = rsTargetData!.arr!;
+                          if (rsInlineLabel === obs) { closeInlineField(); } else { openInlineField(obs); }
                         }}
                         className={`flex flex-col items-start gap-0.5 w-full rounded-lg border border-green-500/30 bg-green-500/5 hover:bg-green-500/10 active:scale-95 transition-all px-2.5 py-2 disabled:opacity-50 ${rsInlineLabel === rsTargetData!.arr! ? "ring-1 ring-green-400" : ""}`}
                       >
@@ -2436,7 +2452,7 @@ export default function IntelligenceMapping() {
                       return (
                         <div className="rounded-lg border border-border bg-muted/40 p-2.5 flex flex-col gap-2" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{rsInlineLabel}</span>
+                            <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Observation</span>
                             <button onClick={closeInlineField} className="text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
                           </div>
                           <textarea ref={rsInlineInputRef} value={rsInlineText} onChange={(e) => { setRsInlineText(e.target.value); resetInlineTimer(); }} onFocus={resetInlineTimer} placeholder="Add details (optional)…" rows={2} className="w-full resize-none rounded-lg border border-border bg-background px-2.5 py-1.5 text-[11px] placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
@@ -2484,7 +2500,10 @@ export default function IntelligenceMapping() {
                 <Radio className="h-3.5 w-3.5 text-muted-foreground" />
                 <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">TEAMS</span>
               </div>
-              <Switch checked={sharingEnabled} onCheckedChange={handleSharingToggle} className="scale-90" />
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-medium text-muted-foreground">Show &amp; Share</span>
+                <Switch checked={sharingEnabled} onCheckedChange={handleSharingToggle} className="scale-90" />
+              </div>
             </div>
 
             {/* GPS error */}

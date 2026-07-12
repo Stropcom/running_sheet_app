@@ -592,17 +592,17 @@
 - [x] Fix: receiving device must show other users' pins even when its own sharing toggle is OFF
 
 ## Custom Map Markers Feature (Round N)
-- [ ] Add custom_map_markers table to schema with lat/lng/label/address/operationId/markerIcon/markerColour/note/assocPersons/assocVehicles/targetId
-- [ ] Generate migration and apply SQL
-- [ ] Add server db helpers: createCustomMarker, getCustomMarkers, updateCustomMarker, deleteCustomMarker
-- [ ] Add tRPC procedures: customMarker.create, customMarker.list, customMarker.update, customMarker.delete
-- [ ] Add tRPC procedures for operation persons/vehicles lookup and add-new
-- [ ] Build flat SVG marker library module (shared/markerSvgs.ts) with all approved icons in 4 colours
-- [ ] Add tap-and-hold (mobile) and right-click (laptop) placement triggers on the map
-- [ ] Build marker placement bottom sheet form UI (icon picker first, then label/address/operation/persons/vehicles/note)
-- [ ] Render saved custom markers on the map with custom SVG icons
-- [ ] Build InfoWindow for custom markers with all linked data and action buttons
-- [ ] Link custom markers to intelligence profiles (target, associate, vehicle, location)
+- [x] Add custom_map_markers table to schema with lat/lng/label/address/operationId/markerIcon/markerColour/note/assocPersons/assocVehicles/targetId
+- [x] Generate migration and apply SQL
+- [x] Add server db helpers: createCustomMarker, getCustomMarkers, updateCustomMarker, deleteCustomMarker
+- [x] Add tRPC procedures: customMarker.create, customMarker.list, customMarker.update, customMarker.delete
+- [x] Add tRPC procedures for operation persons/vehicles lookup and add-new
+- [x] Build flat SVG marker library module (shared/markerSvgs.ts) with all approved icons in 4 colours
+- [x] Add tap-and-hold (mobile) and right-click (laptop) placement triggers on the map
+- [x] Build marker placement bottom sheet form UI (icon picker first, then label/address/operation/persons/vehicles/note)
+- [x] Render saved custom markers on the map with custom SVG icons
+- [x] Build InfoWindow for custom markers with all linked data and action buttons
+- [x] Link custom markers to intelligence profiles (target, associate, vehicle, location)
 
 ## Custom Map Markers Feature
 - [x] Add custom_map_markers table to schema with lat/lng/icon/colour/label/address/note/operationId/assocPersons/assocVehicles

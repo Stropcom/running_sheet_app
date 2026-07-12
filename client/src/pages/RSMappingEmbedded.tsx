@@ -719,8 +719,10 @@ export default function RSMappingEmbedded() {
 
   // ── Trace Route ──────────────────────────────────────────────────────────────
 
+  const snapToRoadsMutation = trpc.rsMapping.snapToRoads.useMutation();
+
   const runTraceRoute = useCallback(() => {
-    if (!mapRef.current || !directionsServiceRef.current) return;
+    if (!mapRef.current) return;
     const placed = placedWaypointsRef.current;
     if (placed.length < 2) return;
 
@@ -728,69 +730,120 @@ export default function RSMappingEmbedded() {
     polylineRef.current?.setMap(null);
     setTracing(true);
 
+    // IMPORTANT: segmentType/viaStreets on a waypoint describe the path AFTER that waypoint
+    // (i.e. the segment FROM this waypoint TO the next). So we read from.segmentType, not to.segmentType.
     const segments: { from: PlacedWaypoint; to: PlacedWaypoint; viaStreets: string[]; isCoos: boolean }[] = [];
     for (let i = 0; i < placed.length - 1; i++) {
       const from = placed[i];
       const to = placed[i + 1];
-      // The "to" waypoint carries the segment type (continued_via / coos)
-      const isCoos = to.segmentType === "coos";
-      const viaStreets = to.segmentType === "continued_via" ? to.viaStreets : [];
+      // segmentType/viaStreets describe the path AFTER the 'from' waypoint
+      const isCoos = from.segmentType === "coos";
+      const viaStreets = from.segmentType === "continued_via" ? from.viaStreets : [];
       segments.push({ from, to, viaStreets, isCoos });
     }
 
-    // Helper: draw a single segment using pre-geocoded coordinate waypoints
-    const drawSegment = (
-      seg: { from: PlacedWaypoint; to: PlacedWaypoint; viaStreets: string[]; isCoos: boolean },
-      viaLatLngs: google.maps.LatLng[],
-      onDone: () => void
-    ) => {
-      if (seg.isCoos || (seg.viaStreets.length === 0 && viaLatLngs.length === 0)) {
+    let pending = segments.length;
+    const done = () => { if (--pending === 0) setTracing(false); };
+
+    segments.forEach((seg) => {
+      if (seg.isCoos) {
+        // Dashed grey line for out-of-sight segments
         const line = new google.maps.Polyline({
           path: [{ lat: seg.from.lat, lng: seg.from.lng }, { lat: seg.to.lat, lng: seg.to.lng }],
           geodesic: true,
-          strokeColor: seg.isCoos ? "#94a3b8" : "#6366f1",
-          strokeOpacity: seg.isCoos ? 0 : 0.7,
-          strokeWeight: seg.isCoos ? 2 : 3,
-          icons: seg.isCoos ? [{ icon: { path: "M 0,-1 0,1", strokeOpacity: 1, scale: 3 }, offset: "0", repeat: "16px" }] : undefined,
+          strokeColor: "#94a3b8",
+          strokeOpacity: 0,
+          strokeWeight: 2,
+          icons: [{ icon: { path: "M 0,-1 0,1", strokeOpacity: 1, scale: 3 }, offset: "0", repeat: "16px" }],
           map: mapRef.current!,
         });
         tracePolylinesRef.current.push(line);
-        onDone();
+        done();
         return;
       }
 
-      // Use geocoded lat/lng coordinates as waypoints — this forces Google to route
-      // through those exact points on each street rather than choosing its own path
-      const viaWaypoints = viaLatLngs.map((ll) => ({
-        location: ll,
-        stopover: true,
-      }));
+      if (seg.viaStreets.length === 0) {
+        // Indigo direct line — no via data
+        const line = new google.maps.Polyline({
+          path: [{ lat: seg.from.lat, lng: seg.from.lng }, { lat: seg.to.lat, lng: seg.to.lng }],
+          geodesic: true,
+          strokeColor: "#6366f1",
+          strokeOpacity: 0.7,
+          strokeWeight: 3,
+          map: mapRef.current!,
+        });
+        tracePolylinesRef.current.push(line);
+        done();
+        return;
+      }
 
-      directionsServiceRef.current!.route(
-        {
-          origin: { lat: seg.from.lat, lng: seg.from.lng },
-          destination: { lat: seg.to.lat, lng: seg.to.lng },
-          waypoints: viaWaypoints,
-          optimizeWaypoints: false,
-          travelMode: google.maps.TravelMode.DRIVING,
-          avoidHighways: false,
-          avoidTolls: false,
-        },
-        (result, status) => {
-          if (status === "OK" && result) {
-            const renderer = new google.maps.DirectionsRenderer({
-              map: mapRef.current!,
-              directions: result,
-              suppressMarkers: true,
-              polylineOptions: {
+      // Via-street segment: geocode each street, then snap to roads
+      const suburbHint = seg.from.suburbContext
+        ? `, ${seg.from.suburbContext}`
+        : seg.to.suburbContext
+        ? `, ${seg.to.suburbContext}`
+        : "";
+
+      const streets = seg.viaStreets;
+      const geocodedLatLngs: ({ lat: number; lng: number } | null)[] = new Array(streets.length).fill(null);
+      let geocodePending = streets.length;
+
+      const onAllGeocoded = () => {
+        const validLatLngs = geocodedLatLngs.filter((ll): ll is { lat: number; lng: number } => ll !== null);
+
+        if (validLatLngs.length === 0) {
+          // No streets geocoded — fall back to direct amber line
+          const line = new google.maps.Polyline({
+            path: [{ lat: seg.from.lat, lng: seg.from.lng }, { lat: seg.to.lat, lng: seg.to.lng }],
+            geodesic: true,
+            strokeColor: "#f59e0b",
+            strokeOpacity: 0.7,
+            strokeWeight: 3,
+            map: mapRef.current!,
+          });
+          tracePolylinesRef.current.push(line);
+          done();
+          return;
+        }
+
+        // Build the ordered point list: from → street1 → street2 → ... → to
+        const points = [
+          { lat: seg.from.lat, lng: seg.from.lng },
+          ...validLatLngs,
+          { lat: seg.to.lat, lng: seg.to.lng },
+        ];
+
+        // Call backend Roads API snap-to-roads to get road-following geometry
+        // for ONLY the listed streets (no connector roads added by Google)
+        snapToRoadsMutation.mutateAsync({ points })
+          .then((result) => {
+            const path = result.points;
+            if (path.length >= 2) {
+              const line = new google.maps.Polyline({
+                path,
+                geodesic: true,
                 strokeColor: "#f59e0b",
-                strokeOpacity: 0.85,
+                strokeOpacity: 0.9,
                 strokeWeight: 4,
-              },
-            });
-            tracePolylinesRef.current.push(renderer as any);
-          } else {
-            // Fallback to straight amber line
+                map: mapRef.current!,
+              });
+              tracePolylinesRef.current.push(line);
+            } else {
+              // Fallback: straight amber line
+              const line = new google.maps.Polyline({
+                path: [{ lat: seg.from.lat, lng: seg.from.lng }, { lat: seg.to.lat, lng: seg.to.lng }],
+                geodesic: true,
+                strokeColor: "#f59e0b",
+                strokeOpacity: 0.7,
+                strokeWeight: 3,
+                map: mapRef.current!,
+              });
+              tracePolylinesRef.current.push(line);
+            }
+            done();
+          })
+          .catch(() => {
+            // Fallback: straight amber line
             const line = new google.maps.Polyline({
               path: [{ lat: seg.from.lat, lng: seg.from.lng }, { lat: seg.to.lat, lng: seg.to.lng }],
               geodesic: true,
@@ -800,53 +853,23 @@ export default function RSMappingEmbedded() {
               map: mapRef.current!,
             });
             tracePolylinesRef.current.push(line);
-            if (seg.viaStreets.length > 0) toast.warning(`Could not trace route for segment to ${seg.to.address}`);
-          }
-          onDone();
-        }
-      );
-    };
-
-    // Phase 1: geocode all via-streets to coordinates, then draw segments
-    // We geocode each street with suburb context to get a precise lat/lng on that street
-    let pending = segments.length;
-    const done = () => { if (--pending === 0) setTracing(false); };
-
-    segments.forEach((seg) => {
-      if (seg.isCoos || seg.viaStreets.length === 0) {
-        drawSegment(seg, [], done);
-        return;
-      }
-
-      // Geocode each via-street in sequence, then draw
-      const suburbHint = seg.from.suburbContext
-        ? `, ${seg.from.suburbContext}`
-        : seg.to.suburbContext
-        ? `, ${seg.to.suburbContext}`
-        : "";
-
-      const streets = seg.viaStreets.slice(0, DIRECTIONS_CHUNK_SIZE - 2);
-      const geocodedLatLngs: (google.maps.LatLng | null)[] = new Array(streets.length).fill(null);
-      let geocodePending = streets.length;
-
-      const onAllGeocoded = () => {
-        // Filter out any streets that failed to geocode
-        const validLatLngs = geocodedLatLngs.filter((ll): ll is google.maps.LatLng => ll !== null);
-        drawSegment(seg, validLatLngs, done);
+            toast.warning(`Could not snap route for segment to ${seg.to.address}`);
+            done();
+          });
       };
 
       streets.forEach((street, idx) => {
         const query = `${street}${suburbHint}, Western Australia`;
         geocoderRef.current!.geocode({ address: query }, (results, status) => {
           if (status === "OK" && results && results[0]) {
-            geocodedLatLngs[idx] = results[0].geometry.location;
+            const loc = results[0].geometry.location;
+            geocodedLatLngs[idx] = { lat: loc.lat(), lng: loc.lng() };
           }
-          // Whether it succeeded or failed, count down
           if (--geocodePending === 0) onAllGeocoded();
         });
       });
     });
-  }, [clearTraceLines]);
+  }, [clearTraceLines, snapToRoadsMutation]);
 
   // Toggle trace route on/off
   useEffect(() => {

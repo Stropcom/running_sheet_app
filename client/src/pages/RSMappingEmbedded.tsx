@@ -14,6 +14,7 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import html2canvas from "html2canvas";
 import { trpc } from "@/lib/trpc";
 import { MapView } from "@/components/Map";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -203,6 +204,7 @@ export default function RSMappingEmbedded() {
   // Visual RS mode
   const [visualRsMode, setVisualRsMode] = useState(false);
   const visualOverlaysRef = useRef<google.maps.OverlayView[]>([]);
+  const mapContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Loading state
   const [geocoding, setGeocoding] = useState(false);
@@ -723,7 +725,6 @@ export default function RSMappingEmbedded() {
       const lng = wp.lng;
       const time = wp.time ?? "—";
       const address = wp.address;
-      const obs = wp.observation ? wp.observation.substring(0, 50) + (wp.observation.length > 50 ? "…" : "") : "";
       const index = wp.index;
       const total = placed.length;
       const isFirst = index === 1;
@@ -736,26 +737,25 @@ export default function RSMappingEmbedded() {
         div = document.createElement("div");
         div.style.cssText = [
           "position:absolute",
-          "background:rgba(255,255,255,0.97)",
+          "background:rgba(255,255,255,0.95)",
           "border:1.5px solid " + badgeColor,
-          "border-radius:8px",
-          "padding:5px 8px",
+          "border-radius:6px",
+          "padding:3px 7px",
           "font-family:system-ui,sans-serif",
-          "font-size:10px",
-          "line-height:1.4",
-          "max-width:160px",
-          "min-width:100px",
-          "box-shadow:0 2px 8px rgba(0,0,0,0.18)",
+          "font-size:9.5px",
+          "line-height:1.35",
+          "max-width:140px",
+          "min-width:80px",
+          "box-shadow:0 2px 6px rgba(0,0,0,0.15)",
           "pointer-events:none",
           "white-space:normal",
           "word-break:break-word",
           "z-index:10",
-          "transform:translate(-50%, calc(-100% - 16px))",
+          "transform:translate(-50%, calc(-100% - 14px))",
         ].join(";");
         div.innerHTML = [
-          `<div style="font-weight:700;color:${badgeColor};font-size:9px;margin-bottom:2px;">#${index} · ${time}</div>`,
-          `<div style="font-weight:600;color:#111;font-size:9.5px;margin-bottom:2px;">${address}</div>`,
-          obs ? `<div style="color:#555;font-size:9px;">${obs}</div>` : "",
+          `<div style="font-weight:700;color:${badgeColor};font-size:9px;">#${index} · ${time}</div>`,
+          `<div style="color:#111;font-size:9px;margin-top:1px;">${address}</div>`,
         ].join("");
         const panes = this.getPanes()!;
         panes.floatPane.appendChild(div);
@@ -800,9 +800,33 @@ export default function RSMappingEmbedded() {
 
   // ── PDF export for Visual RS ──────────────────────────────────────────────────
 
-  const exportVisualRsPdf = useCallback(() => {
+  const [pdfExporting, setPdfExporting] = useState(false);
+
+  const exportVisualRsPdf = useCallback(async () => {
     const placed = placedWaypointsRef.current;
     if (placed.length === 0) { toast.error("No waypoints to export"); return; }
+    if (!mapContainerRef.current) { toast.error("Map container not ready"); return; }
+
+    setPdfExporting(true);
+    toast.info("Capturing map…");
+
+    let mapImageDataUrl = "";
+    try {
+      const canvas = await html2canvas(mapContainerRef.current, {
+        useCORS: true,
+        allowTaint: true,
+        scale: 1.5,
+        logging: false,
+        ignoreElements: (el) => {
+          // Ignore the overlay popup cards themselves so they don't double-render
+          return false;
+        },
+      });
+      mapImageDataUrl = canvas.toDataURL("image/jpeg", 0.92);
+    } catch (err) {
+      console.warn("Map capture failed:", err);
+      toast.warning("Map capture failed — PDF will include a placeholder");
+    }
 
     const rows = placed.map((wp) => ({
       index: wp.index,
@@ -820,9 +844,13 @@ export default function RSMappingEmbedded() {
         <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-weight:700;color:#6366f1;text-align:center;white-space:nowrap;">${r.index}</td>
         <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;white-space:nowrap;font-weight:600;">${r.time}</td>
         <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;">${r.address}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;color:#374151;">${r.observation.substring(0, 200)}${r.observation.length > 200 ? "…" : ""}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;color:#374151;">${r.observation}</td>
       </tr>
     `).join("");
+
+    const mapSection = mapImageDataUrl
+      ? `<div style="margin:16px 24px 0;"><img src="${mapImageDataUrl}" style="width:100%;border-radius:8px;border:1px solid #e5e7eb;display:block;" /></div>`
+      : `<div style="background:#f3f4f6;border:2px dashed #d1d5db;margin:16px 24px 0;border-radius:8px;height:200px;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:12px;">Map capture unavailable</div>`;
 
     const html = `<!DOCTYPE html>
 <html>
@@ -832,16 +860,15 @@ export default function RSMappingEmbedded() {
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: system-ui, sans-serif; font-size: 11px; color: #111; background: #fff; }
-  .header { background: #1e1b4b; color: #fff; padding: 16px 24px; }
-  .header h1 { font-size: 16px; font-weight: 700; margin-bottom: 2px; }
+  .header { background: #1e1b4b; color: #fff; padding: 14px 24px; }
+  .header h1 { font-size: 15px; font-weight: 700; margin-bottom: 2px; }
   .header p { font-size: 10px; color: rgba(255,255,255,0.65); }
-  .map-placeholder { background: #f3f4f6; border: 2px dashed #d1d5db; margin: 20px 24px; border-radius: 8px; height: 280px; display: flex; align-items: center; justify-content: center; color: #9ca3af; font-size: 12px; }
   .table-section { padding: 0 24px 24px; }
-  .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #6366f1; margin: 16px 0 8px; }
+  .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #6366f1; margin: 14px 0 8px; }
   table { width: 100%; border-collapse: collapse; }
-  thead th { background: #1e1b4b; color: #fff; padding: 8px 10px; text-align: left; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
+  thead th { background: #1e1b4b; color: #fff; padding: 7px 10px; text-align: left; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
   tbody tr:nth-child(even) { background: #f9fafb; }
-  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } @page { size: A4 landscape; margin: 10mm; } }
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } @page { size: A4 landscape; margin: 8mm; } }
 </style>
 </head>
 <body>
@@ -849,22 +876,23 @@ export default function RSMappingEmbedded() {
   <h1>Visual RS — ${sheetTitle}</h1>
   <p>${opName} · Generated: ${generatedAt}</p>
 </div>
-<div class="map-placeholder">📍 Map screenshot — use browser Print to capture the map view above this document</div>
+${mapSection}
 <div class="table-section">
   <div class="section-title">Running Sheet Entries (${rows.length} waypoints)</div>
   <table>
-    <thead><tr><th style="width:40px">#</th><th style="width:60px">Time</th><th style="width:35%">Address</th><th>Observation</th></tr></thead>
+    <thead><tr><th style="width:36px">#</th><th style="width:56px">Time</th><th style="width:32%">Address</th><th>Observation</th></tr></thead>
     <tbody>${tableRows}</tbody>
   </table>
 </div>
 </body></html>`;
 
+    setPdfExporting(false);
     const win = window.open("", "_blank");
     if (!win) { toast.error("Popup blocked — allow popups and try again"); return; }
     win.document.write(html);
     win.document.close();
-    setTimeout(() => win.print(), 600);
-  }, [placedWaypointsRef, sheetsData, selectedSheetId, operations, selectedOpId]);
+    setTimeout(() => win.print(), 800);
+  }, [placedWaypointsRef, mapContainerRef, sheetsData, selectedSheetId, operations, selectedOpId]);
 
   // ── Derived ───────────────────────────────────────────────────────────────────
 
@@ -948,11 +976,12 @@ export default function RSMappingEmbedded() {
                 </button>
                 {visualRsMode && (
                   <button
-                    onClick={exportVisualRsPdf}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border bg-card text-foreground border-border hover:bg-accent transition-all"
+                    onClick={() => { void exportVisualRsPdf(); }}
+                    disabled={pdfExporting}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border bg-card text-foreground border-border hover:bg-accent transition-all disabled:opacity-60"
                   >
-                    <FileDown className="h-3.5 w-3.5" />
-                    Export PDF
+                    {pdfExporting ? <Spinner className="h-3.5 w-3.5" /> : <FileDown className="h-3.5 w-3.5" />}
+                    {pdfExporting ? "Capturing…" : "Export PDF"}
                   </button>
                 )}
               </>
@@ -996,7 +1025,7 @@ export default function RSMappingEmbedded() {
       )}
 
       {/* ── Map ─────────────────────────────────────────────────────────────── */}
-      <div className="flex-1 relative overflow-hidden">
+      <div className="flex-1 relative overflow-hidden" ref={mapContainerRef}>
         <MapView
           className="w-full h-full"
           initialCenter={PERTH_CENTER}

@@ -49,8 +49,8 @@ export default function TodoGovernancePage() {
       <div className="max-w-2xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
-          <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30">
-            <ClipboardCheck className="w-5 h-5 text-amber-400" />
+          <div className="p-2.5 rounded-xl bg-cyan-500/15 border border-cyan-500/30">
+            <ClipboardCheck className="w-5 h-5 text-cyan-500" />
           </div>
           <div className="flex-1">
             <h1 className="text-xl font-bold text-foreground">RS Governance</h1>
@@ -61,7 +61,7 @@ export default function TodoGovernancePage() {
           {count > 0 && (
             <Badge
               variant="outline"
-              className="border-amber-500/40 bg-amber-500/10 text-amber-400 font-semibold"
+              className="border-cyan-500/40 bg-cyan-500/10 text-cyan-500 font-semibold"
             >
               {count} sheet{count !== 1 ? "s" : ""}
             </Badge>
@@ -98,11 +98,11 @@ export default function TodoGovernancePage() {
               <div
                 key={`${item.sheetId}-${idx}`}
                 onClick={() => navigate(`/governance/${item.sheetId}`)}
-                className="group flex flex-col gap-3 p-5 rounded-xl border border-amber-500/30 bg-card hover:bg-amber-500/5 hover:border-amber-500/50 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 cursor-pointer"
+                className="group flex flex-col gap-3 p-5 rounded-xl border border-cyan-500/30 bg-card hover:bg-cyan-500/5 hover:border-cyan-500/50 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 cursor-pointer"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 shrink-0">
-                    <FileText className="w-4 h-4 text-amber-400" />
+                  <div className="p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/20 shrink-0">
+                    <FileText className="w-4 h-4 text-cyan-500" />
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${
@@ -140,7 +140,7 @@ export default function TodoGovernancePage() {
                       <span key={ti} className={`flex items-center gap-1 text-xs ${
                         isReadyLabel ? "text-emerald-400 font-medium" :
                         isNotReadyLabel ? "text-rose-400 font-medium" :
-                        task === "Sheet not fully certified" ? "text-amber-400" : "text-rose-400"
+                        task === "Sheet not fully certified" ? "text-cyan-500" : "text-rose-400"
                       }`}>
                         {isReadyLabel ? <LockOpen className="w-3 h-3 shrink-0" /> :
                          isNotReadyLabel ? <AlertTriangle className="w-3 h-3 shrink-0" /> :
@@ -177,11 +177,11 @@ export default function TodoGovernancePage() {
                 {group.items.map((item, idx) => (
                   <div
                     key={`${item.sheetId}-${idx}`}
-                    className="group flex items-start gap-4 px-4 py-3 hover:bg-amber-500/5 transition-colors cursor-pointer border-b border-border/20 last:border-0"
+                    className="group flex items-start gap-4 px-4 py-3 hover:bg-cyan-500/5 transition-colors cursor-pointer border-b border-border/20 last:border-0"
                     onClick={() => navigate(`/governance/${item.sheetId}`)}
                   >
-                    <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 shrink-0 mt-0.5">
-                      <FileText className="w-4 h-4 text-amber-400" />
+                    <div className="p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/20 shrink-0 mt-0.5">
+                      <FileText className="w-4 h-4 text-cyan-500" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <span className="font-medium text-sm text-foreground truncate block">
@@ -212,7 +212,7 @@ export default function TodoGovernancePage() {
                                 : isNotReadyLabel
                                   ? "text-rose-400 font-medium"
                                   : task === "Sheet not fully certified"
-                                    ? "text-amber-400"
+                                    ? "text-cyan-500"
                                     : "text-rose-400"
                             }`}
                           >
@@ -244,7 +244,7 @@ export default function TodoGovernancePage() {
                         })}
                       </div>
                     </div>
-                    <ChevronRight className="w-4 h-4 text-amber-400/50 group-hover:text-amber-400 transition-colors shrink-0 mt-1" />
+                    <ChevronRight className="w-4 h-4 text-cyan-500/50 group-hover:text-cyan-500 transition-colors shrink-0 mt-1" />
                   </div>
                 ))}
               </div>

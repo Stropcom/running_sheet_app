@@ -111,7 +111,7 @@ function SectionHeader({
   onToggle: () => void;
 }) {
   const color =
-    percent === 100 ? "text-emerald-500" : percent >= 50 ? "text-amber-500" : "text-rose-500";
+    percent === 100 ? "text-emerald-500" : percent >= 50 ? "text-cyan-500" : "text-rose-500";
   return (
     <button
       onClick={onToggle}
@@ -513,7 +513,7 @@ export default function GovernancePage() {
                   overallPercent === 100
                     ? "text-emerald-500"
                     : overallPercent >= 50
-                    ? "text-amber-500"
+                    ? "text-cyan-500"
                     : "text-rose-500"
                 }`}
               >
@@ -690,13 +690,13 @@ export default function GovernancePage() {
                   ? "bg-rose-500/10 border-rose-500/30"
                   : allSavedImg
                     ? "bg-emerald-500/10 border-emerald-500/30"
-                    : "bg-amber-500/10 border-amber-500/30";
+                    : "bg-cyan-500/10 border-cyan-500/30";
                 const iconEl = !hasAnyImagery
                   ? <span className="text-rose-500 text-lg shrink-0 leading-none">✗</span>
                   : allSavedImg
                     ? <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
-                    : <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />;
-                const titleColor = !hasAnyImagery ? "text-rose-400" : allSavedImg ? "text-foreground" : "text-amber-500";
+                    : <AlertTriangle className="w-5 h-5 text-cyan-500 shrink-0" />;
+                const titleColor = !hasAnyImagery ? "text-rose-400" : allSavedImg ? "text-foreground" : "text-cyan-500";
                 const subText = !hasAnyImagery
                   ? "No imagery flagged on team details — no imagery taken"
                   : allSavedImg
@@ -797,7 +797,7 @@ export default function GovernancePage() {
                 overallPercent === 100
                   ? "text-emerald-500"
                   : overallPercent >= 50
-                  ? "text-amber-500"
+                  ? "text-cyan-500"
                   : "text-rose-500"
               }`}
             >
@@ -810,7 +810,7 @@ export default function GovernancePage() {
                 overallPercent === 100
                   ? "bg-emerald-500"
                   : overallPercent >= 50
-                  ? "bg-amber-500"
+                  ? "bg-cyan-500"
                   : "bg-rose-500"
               }`}
               style={{ width: `${overallPercent}%` }}

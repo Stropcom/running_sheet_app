@@ -21,13 +21,13 @@ import { format } from "date-fns";
 
 function percentColor(pct: number) {
   if (pct === 100) return "text-emerald-500";
-  if (pct >= 50) return "text-amber-500";
+  if (pct >= 50) return "text-cyan-500";
   return "text-rose-500";
 }
 
 function percentBg(pct: number) {
   if (pct === 100) return "bg-emerald-500";
-  if (pct >= 50) return "bg-amber-500";
+  if (pct >= 50) return "bg-cyan-500";
   return "bg-rose-500";
 }
 
@@ -83,7 +83,7 @@ function OperationGroup({
             className={`text-[10px] px-1.5 py-0 ${
               anyOverdue
                 ? "border-rose-500/40 text-rose-500"
-                : "border-amber-500/40 text-amber-500"
+                : "border-cyan-500/40 text-cyan-500"
             }`}
           >
             {anyOverdue && <AlertTriangle className="w-3 h-3 mr-1" />}
@@ -212,7 +212,7 @@ function GovernanceTileCard({
           </Badge>
         ) : (
           <Badge variant="outline" className={`text-[10px] px-1.5 py-0 shrink-0 ${
-            anyOverdue ? "border-rose-500/40 text-rose-500" : "border-amber-500/40 text-amber-500"
+            anyOverdue ? "border-rose-500/40 text-rose-500" : "border-cyan-500/40 text-cyan-500"
           }`}>
             {anyOverdue && <AlertTriangle className="w-3 h-3 mr-1" />}
             {needsAttention} need attention
@@ -228,13 +228,13 @@ function GovernanceTileCard({
         <div className="flex items-center justify-between mb-1">
           <span className="text-xs text-muted-foreground">{summaries.length} sheet{summaries.length !== 1 ? "s" : ""}</span>
           <span className={`text-xs font-semibold ${
-            overallPct === 100 ? "text-emerald-500" : overallPct >= 50 ? "text-amber-500" : "text-rose-500"
+            overallPct === 100 ? "text-emerald-500" : overallPct >= 50 ? "text-cyan-500" : "text-rose-500"
           }`}>{overallPct}%</span>
         </div>
         <div className="w-full h-1.5 rounded-full bg-muted/40 overflow-hidden">
           <div
             className={`h-full rounded-full transition-all ${
-              overallPct === 100 ? "bg-emerald-500" : overallPct >= 50 ? "bg-amber-500" : "bg-rose-500"
+              overallPct === 100 ? "bg-emerald-500" : overallPct >= 50 ? "bg-cyan-500" : "bg-rose-500"
             }`}
             style={{ width: `${overallPct}%` }}
           />

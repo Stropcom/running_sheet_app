@@ -159,6 +159,30 @@ function getTeamColour(team: string | null): string {
   return TEAM_COLOURS[team ?? "null"] ?? "#6b7280";
 }
 
+const DARK_MAP_STYLES: google.maps.MapTypeStyle[] = [
+  { elementType: "geometry", stylers: [{ color: "#212121" }] },
+  { elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#757575" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#212121" }] },
+  { featureType: "administrative", elementType: "geometry", stylers: [{ color: "#757575" }] },
+  { featureType: "administrative.country", elementType: "labels.text.fill", stylers: [{ color: "#9e9e9e" }] },
+  { featureType: "administrative.land_parcel", stylers: [{ visibility: "off" }] },
+  { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "#bdbdbd" }] },
+  { featureType: "poi", elementType: "labels.text.fill", stylers: [{ color: "#757575" }] },
+  { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#181818" }] },
+  { featureType: "poi.park", elementType: "labels.text.fill", stylers: [{ color: "#616161" }] },
+  { featureType: "poi.park", elementType: "labels.text.stroke", stylers: [{ color: "#1b1b1b" }] },
+  { featureType: "road", elementType: "geometry.fill", stylers: [{ color: "#2c2c2c" }] },
+  { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#8a8a8a" }] },
+  { featureType: "road.arterial", elementType: "geometry", stylers: [{ color: "#373737" }] },
+  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#3c3c3c" }] },
+  { featureType: "road.highway.controlled_access", elementType: "geometry", stylers: [{ color: "#4e4e4e" }] },
+  { featureType: "road.local", elementType: "labels.text.fill", stylers: [{ color: "#616161" }] },
+  { featureType: "transit", elementType: "labels.text.fill", stylers: [{ color: "#757575" }] },
+  { featureType: "water", elementType: "geometry", stylers: [{ color: "#000000" }] },
+  { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#3d3d3d" }] },
+];
+
 function buildInfoWindowContent(loc: IntelMapLocation): string {
   const isTarget = loc.type === "target_address";
   const accentColor = isTarget ? "#dc2626" : "#7c3aed";
@@ -426,6 +450,9 @@ export default function IntelligenceMapping() {
   const [rsQeExpanded, setRsQeExpanded] = useState<boolean>(() => {
     try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return JSON.parse(s).rsQeExpanded ?? false; } catch { /* ignore */ } return false;
   });
+  const [mapDarkMode, setMapDarkMode] = useState<boolean>(() => {
+    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return JSON.parse(s).mapDarkMode ?? false; } catch { /* ignore */ } return false;
+  });
   // Operations dropdown open state
   const [opsDropdownOpen, setOpsDropdownOpen] = useState(false);
   // GPS error
@@ -573,9 +600,16 @@ export default function IntelligenceMapping() {
         hiddenTeams: Array.from(hiddenTeams),
         collapsedTeams: Array.from(collapsedTeams),
         rsQeExpanded,
+        mapDarkMode,
       }));
     } catch { /* ignore */ }
-  }, [selectedOpIds, selectedTargetIds, opExpanded, rsSelectedOpId, rsSelectedSheetId, hiddenTeams, collapsedTeams, rsQeExpanded]);
+  }, [selectedOpIds, selectedTargetIds, opExpanded, rsSelectedOpId, rsSelectedSheetId, hiddenTeams, collapsedTeams, rsQeExpanded, mapDarkMode]);
+
+  // Apply dark/light map style whenever mapDarkMode or mapReady changes
+  useEffect(() => {
+    if (!mapRef.current) return;
+    mapRef.current.setOptions({ styles: mapDarkMode ? DARK_MAP_STYLES : [] });
+  }, [mapDarkMode, mapReady]);
 
   // Persist sharing state and current userId so it can be read before auth resolves
   useEffect(() => {
@@ -2176,6 +2210,24 @@ export default function IntelligenceMapping() {
 
         {/* Pane Body */}
         <div className="flex-1 overflow-y-auto" onClick={() => { if (rsInlineLabel) closeInlineField(); }}>
+
+          {/* ── MAP THEME toggle ── */}
+          <div className="px-3 py-3 border-b border-border">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Map Theme</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-[11px] font-medium transition-colors ${!mapDarkMode ? "text-foreground" : "text-muted-foreground"}`}>Light</span>
+                <Switch
+                  checked={mapDarkMode}
+                  onCheckedChange={setMapDarkMode}
+                  className="scale-90"
+                />
+                <span className={`text-[11px] font-medium transition-colors ${mapDarkMode ? "text-foreground" : "text-muted-foreground"}`}>Dark</span>
+              </div>
+            </div>
+          </div>
 
           {/* ── OPERATIONS section ── */}
           <div className="px-3 py-3 border-b border-border">

@@ -865,19 +865,14 @@ export default function RSMappingEmbedded() {
         return;
       }
 
-      // Perth metro bounding box — restricts geocoder to WA results near Perth
-      const perthBounds = new google.maps.LatLngBounds(
-        { lat: -32.3, lng: 115.6 }, // SW corner
-        { lat: -31.5, lng: 116.2 }  // NE corner
-      );
-
       // Use callback-style geocoder wrapped in Promise (matches working waypoint geocoding pattern)
+      // suburbHint makes the query precise (e.g. "Marine Parade, Cottesloe, Western Australia")
+      // componentRestrictions: AU ensures we never match overseas streets with the same name
       const geocodePromises = streets.map((street) => {
-        const query = `${street}${suburbHint}, Western Australia`;
+        const query = `${street}${suburbHint}, Australia`;
         return new Promise<{ lat: number; lng: number } | null>((resolve) => {
           geocoderRef.current!.geocode({
             address: query,
-            bounds: perthBounds,
             componentRestrictions: { country: 'AU' },
           }, (results, status) => {
             if (status === "OK" && results && results[0]) {

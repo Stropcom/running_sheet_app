@@ -10,6 +10,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { Spinner } from "@/components/ui/spinner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -412,8 +414,20 @@ export default function IntelligenceMapping() {
   });
   // Per-user visibility: Set of userIds that are hidden
   const [hiddenUsers, setHiddenUsers] = useState<Set<number>>(new Set());
-  // Per-team visibility: Set of team keys that are hidden
-  const [hiddenTeams, setHiddenTeams] = useState<Set<string>>(new Set());
+  // Per-team visibility: Set of team keys that are hidden — persisted
+  const [hiddenTeams, setHiddenTeams] = useState<Set<string>>(() => {
+    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return new Set<string>(JSON.parse(s).hiddenTeams ?? []); } catch { /* ignore */ } return new Set();
+  });
+  // Per-team collapsed (members hidden): Set of team keys — persisted
+  const [collapsedTeams, setCollapsedTeams] = useState<Set<string>>(() => {
+    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return new Set<string>(JSON.parse(s).collapsedTeams ?? []); } catch { /* ignore */ } return new Set();
+  });
+  // RS Quick Entry inline panel open/closed — persisted
+  const [rsQeExpanded, setRsQeExpanded] = useState<boolean>(() => {
+    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return JSON.parse(s).rsQeExpanded ?? false; } catch { /* ignore */ } return false;
+  });
+  // Operations dropdown open state
+  const [opsDropdownOpen, setOpsDropdownOpen] = useState(false);
   // GPS error
   const [gpsError, setGpsError] = useState<string | null>(null);
   // Whether device supports geolocation
@@ -556,9 +570,12 @@ export default function IntelligenceMapping() {
         opExpanded: Array.from(opExpanded),
         rsSelectedOpId,
         rsSelectedSheetId,
+        hiddenTeams: Array.from(hiddenTeams),
+        collapsedTeams: Array.from(collapsedTeams),
+        rsQeExpanded,
       }));
     } catch { /* ignore */ }
-  }, [selectedOpIds, selectedTargetIds, opExpanded, rsSelectedOpId, rsSelectedSheetId]);
+  }, [selectedOpIds, selectedTargetIds, opExpanded, rsSelectedOpId, rsSelectedSheetId, hiddenTeams, collapsedTeams, rsQeExpanded]);
 
   // Persist sharing state and current userId so it can be read before auth resolves
   useEffect(() => {
@@ -1825,18 +1842,18 @@ export default function IntelligenceMapping() {
       {/* ── Side Panel ── */}
       <div
         ref={panelRef}
-        className={`flex flex-col border-r border-border bg-card transition-all duration-200 ${
+        className={`flex flex-col border-r-2 border-border bg-card transition-all duration-200 ${
           sidebarOpen ? "w-64 min-w-[16rem]" : "w-0 min-w-0 overflow-hidden"
         }`}
       >
         {/* Panel Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
+        <div className="flex items-center justify-between px-4 py-3.5 border-b-2 border-border flex-shrink-0 bg-muted/20">
           <div className="flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 text-muted-foreground" />
-            <span className="font-semibold text-sm">Running Sheet</span>
+            <ShieldCheck className="h-4 w-4 text-primary" />
+            <span className="font-bold text-sm tracking-tight">Navigate</span>
           </div>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setSidebarOpen(false)}>
-            <X className="h-3.5 w-3.5" />
+          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl" onClick={() => setSidebarOpen(false)}>
+            <X className="h-4 w-4" />
           </Button>
         </div>
 
@@ -1887,17 +1904,17 @@ export default function IntelligenceMapping() {
         {!sidebarOpen && (
           <button
             onClick={(e) => { e.stopPropagation(); setSidebarOpen(true); }}
-            className="absolute left-0 z-10 flex items-center justify-center bg-card border border-l-0 border-border shadow-md hover:bg-accent transition-colors"
+            className="absolute left-0 z-10 flex items-center justify-center bg-card border-2 border-l-0 border-border shadow-lg hover:bg-accent active:scale-95 transition-all"
             style={{
               top: "50%",
               transform: "translateY(-50%)",
-              width: "20px",
-              height: "56px",
-              borderRadius: "0 6px 6px 0",
+              width: "40px",
+              height: "112px",
+              borderRadius: "0 12px 12px 0",
             }}
-            title="Open Map Settings"
+            title="Open Navigation Menu"
           >
-            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+            <ChevronRight className="h-5 w-5 text-muted-foreground" />
           </button>
         )}
 
@@ -2125,35 +2142,35 @@ export default function IntelligenceMapping() {
         {!rsActionsPaneOpen && (
           <button
             onClick={(e) => { e.stopPropagation(); setRsActionsPaneOpen(true); }}
-            className="absolute right-0 z-10 flex items-center justify-center bg-card border border-r-0 border-border shadow-md hover:bg-accent transition-colors"
+            className="absolute right-0 z-10 flex items-center justify-center bg-card border-2 border-r-0 border-border shadow-lg hover:bg-accent active:scale-95 transition-all"
             style={{
               top: "50%",
               transform: "translateY(-50%)",
-              width: "20px",
-              height: "56px",
-              borderRadius: "6px 0 0 6px",
+              width: "40px",
+              height: "112px",
+              borderRadius: "12px 0 0 12px",
             }}
-            title="Open RS Actions"
+            title="Open Map Settings"
           >
-            <ChevronLeft className="h-3.5 w-3.5 text-muted-foreground" />
+            <ChevronLeft className="h-5 w-5 text-muted-foreground" />
           </button>
         )}
       </div>
 
       {/* ── RS Actions Right Pane ── */}
       <div
-        className={`flex flex-col border-l border-border bg-card transition-all duration-200 ${
+        className={`flex flex-col border-l-2 border-border bg-card transition-all duration-200 ${
           rsActionsPaneOpen ? "w-80 min-w-[20rem]" : "w-0 min-w-0 overflow-hidden"
         }`}
       >
         {/* Pane Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
+        <div className="flex items-center justify-between px-4 py-3.5 border-b-2 border-border flex-shrink-0 bg-muted/20">
           <div className="flex items-center gap-2">
-            <Settings2 className="h-4 w-4 text-muted-foreground" />
-            <span className="font-semibold text-sm">Map Settings</span>
+            <Settings2 className="h-4 w-4 text-primary" />
+            <span className="font-bold text-sm tracking-tight">Map Settings</span>
           </div>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setRsActionsPaneOpen(false)}>
-            <X className="h-3.5 w-3.5" />
+          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl" onClick={() => setRsActionsPaneOpen(false)}>
+            <X className="h-4 w-4" />
           </Button>
         </div>
 
@@ -2161,319 +2178,197 @@ export default function IntelligenceMapping() {
         <div className="flex-1 overflow-y-auto" onClick={() => { if (rsInlineLabel) closeInlineField(); }}>
 
           {/* ── OPERATIONS section ── */}
-          <div className="px-3 py-3 border-b border-border/50">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Operations</span>
-              <div className="flex gap-2">
-                <button onClick={selectAllOps} className="text-[10px] text-blue-400 hover:text-blue-300">All</button>
-                <button onClick={clearAll} className="text-[10px] text-muted-foreground hover:text-foreground">Clear</button>
-              </div>
-            </div>
+          <div className="px-3 py-3 border-b border-border">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-2">Operations</span>
             {opsLoading ? (
-              <div className="flex items-center justify-center py-4"><Spinner className="h-4 w-4" /></div>
+              <div className="flex items-center justify-center py-3"><Spinner className="h-4 w-4" /></div>
             ) : !operations || operations.length === 0 ? (
-              <p className="text-xs text-muted-foreground text-center py-4">No operations found.</p>
+              <p className="text-xs text-muted-foreground text-center py-3">No operations found.</p>
             ) : (
-              <div className="flex flex-col gap-0.5">
-                {(operations as any[]).map((op) => {
-                  const opTargets = opTargetMap.get(op.id) ?? [];
-                  const isOpSelected = selectedOpIds.includes(op.id);
-                  const isExpanded = opExpanded.has(op.id);
-                  return (
-                    <div key={op.id}>
-                      <div className="flex items-center gap-2 px-1 py-1.5 rounded-md hover:bg-accent/50 transition-colors">
-                        <Checkbox
-                          id={`rp-op-${op.id}`}
-                          checked={isOpSelected}
-                          onCheckedChange={() => toggleOp(op.id)}
-                          className="h-3.5 w-3.5"
-                        />
-                        <label htmlFor={`rp-op-${op.id}`} className="flex-1 text-sm cursor-pointer truncate">{op.name}</label>
-                        {opTargets.length > 0 && (
-                          <button
-                            onClick={() => setOpExpanded(prev => {
-                              const next = new Set(prev);
-                              next.has(op.id) ? next.delete(op.id) : next.add(op.id);
-                              return next;
-                            })}
-                            className="text-muted-foreground hover:text-foreground"
-                          >
-                            {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                          </button>
-                        )}
-                      </div>
-                      {isExpanded && opTargets.length > 0 && (
-                        <div className="ml-5 pl-2 border-l border-border/50 flex flex-col gap-0.5 mb-1">
-                          {opTargets.map((t) => (
-                            <div key={t.id} className="flex items-center gap-2 px-1 py-1 rounded-md hover:bg-accent/40 transition-colors">
-                              <Checkbox
-                                id={`rp-tgt-${t.id}`}
-                                checked={selectedTargetIds.includes(t.id)}
-                                onCheckedChange={() => toggleTarget(t.id)}
-                                className="h-3 w-3"
-                              />
-                              <label htmlFor={`rp-tgt-${t.id}`} className="text-xs cursor-pointer truncate text-muted-foreground">{t.name}</label>
-                            </div>
-                          ))}
-                        </div>
-                      )}
+              <Popover open={opsDropdownOpen} onOpenChange={setOpsDropdownOpen}>
+                <PopoverTrigger asChild>
+                  <button className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border-2 border-border bg-background hover:bg-accent/50 active:scale-[0.98] transition-all text-left">
+                    <span className="text-xs text-foreground truncate flex-1">
+                      {selectedOpIds.length === 0
+                        ? "Select operations…"
+                        : selectedOpIds.length === (operations as any[]).length
+                        ? "All operations"
+                        : (operations as any[]).filter((op: any) => selectedOpIds.includes(op.id)).map((op: any) => op.name).join(", ")}
+                    </span>
+                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-72 p-2 rounded-xl border-2 border-border shadow-xl" align="end">
+                  <div className="flex items-center justify-between px-1 pb-2 border-b border-border mb-1">
+                    <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Select Operations</span>
+                    <div className="flex gap-2">
+                      <button onClick={selectAllOps} className="text-[10px] text-blue-400 hover:text-blue-300 font-semibold">All</button>
+                      <button onClick={clearAll} className="text-[10px] text-muted-foreground hover:text-foreground font-semibold">Clear</button>
                     </div>
-                  );
-                })}
-              </div>
+                  </div>
+                  <div className="flex flex-col gap-0.5 max-h-64 overflow-y-auto">
+                    {(operations as any[]).map((op) => {
+                      const opTargets = opTargetMap.get(op.id) ?? [];
+                      const isOpSelected = selectedOpIds.includes(op.id);
+                      const isExpanded = opExpanded.has(op.id);
+                      return (
+                        <div key={op.id}>
+                          <div className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-accent/50 transition-colors">
+                            <Checkbox
+                              id={`rp-op-${op.id}`}
+                              checked={isOpSelected}
+                              onCheckedChange={() => toggleOp(op.id)}
+                              className="h-4 w-4"
+                            />
+                            <label htmlFor={`rp-op-${op.id}`} className="flex-1 text-sm cursor-pointer truncate font-medium">{op.name}</label>
+                            {opTargets.length > 0 && (
+                              <button
+                                onClick={() => setOpExpanded(prev => {
+                                  const next = new Set(prev);
+                                  next.has(op.id) ? next.delete(op.id) : next.add(op.id);
+                                  return next;
+                                })}
+                                className="text-muted-foreground hover:text-foreground p-0.5"
+                              >
+                                {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                              </button>
+                            )}
+                          </div>
+                          {isExpanded && opTargets.length > 0 && (
+                            <div className="ml-6 pl-2 border-l border-border/50 flex flex-col gap-0.5 mb-1">
+                              {opTargets.map((t) => (
+                                <div key={t.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-accent/40 transition-colors">
+                                  <Checkbox
+                                    id={`rp-tgt-${t.id}`}
+                                    checked={selectedTargetIds.includes(t.id)}
+                                    onCheckedChange={() => toggleTarget(t.id)}
+                                    className="h-3.5 w-3.5"
+                                  />
+                                  <label htmlFor={`rp-tgt-${t.id}`} className="text-xs cursor-pointer truncate text-muted-foreground">{t.name}</label>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </PopoverContent>
+              </Popover>
             )}
           </div>
 
           {/* ── RS SELECTION section ── */}
-          <div className="px-3 py-3 border-b border-border/50 space-y-2">
-            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">RS Selection</span>
+          <div className="px-3 py-3 border-b border-border space-y-3">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">RS Selection</span>
 
-            {/* Step 1 + 2: selectors in a compact stack */}
-            <div className="space-y-2">
+            {/* Operation selector */}
+            <Select
+              value={rsSelectedOpId !== null ? String(rsSelectedOpId) : ""}
+              onValueChange={(val) => {
+                setRsSelectedOpId(Number(val));
+                setRsSelectedSheetId(null);
+                setRsLastEntry(null);
+              }}
+            >
+              <SelectTrigger className="w-full h-9 text-xs rounded-xl border-2">
+                <SelectValue placeholder="1. Choose operation…" />
+              </SelectTrigger>
+              <SelectContent>
+                {(operations ?? []).map((op: any) => (
+                  <SelectItem key={op.id} value={String(op.id)} className="text-xs">{op.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Running sheet selector */}
+            {rsSelectedOpId !== null && (
               <Select
-                value={rsSelectedOpId !== null ? String(rsSelectedOpId) : ""}
+                value={rsSelectedSheetId !== null ? String(rsSelectedSheetId) : ""}
                 onValueChange={(val) => {
-                  setRsSelectedOpId(Number(val));
-                  setRsSelectedSheetId(null);
+                  setRsSelectedSheetId(Number(val));
                   setRsLastEntry(null);
                 }}
               >
-                <SelectTrigger className="w-full h-8 text-xs">
-                  <SelectValue placeholder="1. Choose operation…" />
+                <SelectTrigger className="w-full h-9 text-xs rounded-xl border-2">
+                  <SelectValue placeholder="2. Choose running sheet…" />
                 </SelectTrigger>
                 <SelectContent>
-                  {(operations ?? []).map((op: any) => (
-                    <SelectItem key={op.id} value={String(op.id)} className="text-xs">{op.name}</SelectItem>
+                  {(rsSheetsData ?? []).filter((s: any) => !s.closedAt && !s.deletedAt).map((s: any) => (
+                    <SelectItem key={s.id} value={String(s.id)} className="text-xs">{s.title || `Sheet #${s.id}`}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-
-              {rsSelectedOpId !== null && (
-                <Select
-                  value={rsSelectedSheetId !== null ? String(rsSelectedSheetId) : ""}
-                  onValueChange={(val) => {
-                    setRsSelectedSheetId(Number(val));
-                    setRsLastEntry(null);
-                  }}
-                >
-                  <SelectTrigger className="w-full h-8 text-xs">
-                    <SelectValue placeholder="2. Choose running sheet…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(rsSheetsData ?? []).filter((s: any) => !s.closedAt && !s.deletedAt).map((s: any) => (
-                      <SelectItem key={s.id} value={String(s.id)} className="text-xs">{s.title || `Sheet #${s.id}`}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
-
-            {/* RS Quick Entry button — shown when sheet is selected */}
-            {rsSelectedSheetId !== null && (
-              <button
-                onClick={() => {
-                  setMapQeAddress("");
-                  setMapQeOpen(true);
-                }}
-                className="flex items-center gap-2 w-full px-3 py-2 rounded-md bg-primary/10 border border-primary/30 hover:bg-primary/20 active:scale-[0.98] transition-all text-primary"
-              >
-                <Plus className="h-3.5 w-3.5 flex-shrink-0" />
-                <span className="text-xs font-semibold">RS Quick Entry</span>
-              </button>
-            )}
-          </div>{/* end RS Selection */}
-
-          {/* ── TEAMS (Live Location) ── */}
-          <div className="px-3 py-3">
-            <div className="flex items-center gap-2 mb-3">
-              <Radio className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">TEAMS</span>
-            </div>
-
-            {/* Share my location toggle */}
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-foreground">Share &amp; show my location</span>
-              <Switch checked={sharingEnabled} onCheckedChange={handleSharingToggle} className="scale-90" />
-            </div>
-
-            {/* GPS error */}
-            {gpsError && (
-              <div className="flex items-start gap-1.5 mb-3 p-2 rounded bg-amber-500/10 border border-amber-500/30">
-                <AlertTriangle className="h-3 w-3 text-amber-500 mt-0.5 flex-shrink-0" />
-                <span className="text-[10px] text-amber-400 leading-tight">{gpsError}</span>
-              </div>
             )}
 
-            {/* Team rows */}
-            {[
-              { key: "TEAM1", label: "Team 1", colour: TEAM_COLOURS.TEAM1, users: liveUsersByTeam.TEAM1 },
-              { key: "TEAM2", label: "Team 2", colour: TEAM_COLOURS.TEAM2, users: liveUsersByTeam.TEAM2 },
-              { key: "PTT",   label: "PTT",    colour: TEAM_COLOURS.PTT,   users: liveUsersByTeam.PTT },
-            ].map(({ key, label, colour, users: teamUsers }) => (
-              <div key={key} className="mb-2">
-                <div className="flex items-center justify-between py-1">
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: colour }} />
-                    <span className="text-[11px] font-semibold" style={{ color: colour }}>{label}</span>
-                    {teamUsers.length > 0 && <span className="text-[10px] text-muted-foreground">({teamUsers.length})</span>}
-                  </div>
-                  <button onClick={() => toggleTeamVisibility(key)} className="text-[10px] text-muted-foreground hover:text-foreground">
-                    {hiddenTeams.has(key) ? "Show" : "Hide"}
-                  </button>
-                </div>
-                {teamUsers.length > 0 && !hiddenTeams.has(key) && (
-                  <div className="ml-4 flex flex-col gap-0.5">
-                    {teamUsers.map((u) => (
-                      <div key={u.userId} className="flex items-center justify-between px-1 py-0.5 rounded hover:bg-accent/30">
-                        <span className="text-[11px] text-foreground font-medium truncate">
-                          {u.name.toUpperCase()}
-                          {u.userId === user?.id && <span className="ml-1 text-[9px] text-muted-foreground">(you)</span>}
-                        </span>
-                        <button onClick={() => toggleUserVisibility(u.userId)} className="text-[10px] text-muted-foreground hover:text-foreground ml-2 flex-shrink-0">
-                          {hiddenUsers.has(u.userId) ? "Show" : "Hide"}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {teamUsers.length === 0 && <div className="ml-4 text-[10px] text-muted-foreground/50 italic pb-0.5">No units online</div>}
-              </div>
-            ))}
-
-            {/* Unassigned users */}
-            {liveUsersByTeam.unassigned.length > 0 && (
-              <div className="mb-2">
-                <div className="flex items-center justify-between py-1">
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-2.5 h-2.5 rounded-full bg-gray-500 flex-shrink-0" />
-                    <span className="text-[11px] font-semibold text-muted-foreground">Unassigned</span>
-                    <span className="text-[10px] text-muted-foreground">({liveUsersByTeam.unassigned.length})</span>
-                  </div>
-                  <button onClick={() => toggleTeamVisibility("null")} className="text-[10px] text-muted-foreground hover:text-foreground">
-                    {hiddenTeams.has("null") ? "Show" : "Hide"}
-                  </button>
-                </div>
-                {!hiddenTeams.has("null") && (
-                  <div className="ml-4 flex flex-col gap-0.5">
-                    {liveUsersByTeam.unassigned.map((u) => (
-                      <div key={u.userId} className="flex items-center justify-between px-1 py-0.5 rounded hover:bg-accent/30">
-                        <span className="text-[11px] text-foreground font-medium truncate">
-                          {u.name.toUpperCase()}
-                          {u.userId === user?.id && <span className="ml-1 text-[9px] text-muted-foreground">(you)</span>}
-                        </span>
-                        <button onClick={() => toggleUserVisibility(u.userId)} className="text-[10px] text-muted-foreground hover:text-foreground ml-2 flex-shrink-0">
-                          {hiddenUsers.has(u.userId) ? "Show" : "Hide"}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>{/* end TEAMS */}
-
-          {/* Sheet selected — show ARR button and inline entry */}
-          {rsSelectedSheetId !== null && (
-            <div className="px-3 py-3 border-t border-border/50 space-y-2">
-              {/* Sheet link */}
-              <div className="flex items-center gap-2">
-                {rsSheetsData && (() => {
-                  const sheet = (rsSheetsData as any[]).find((s: any) => s.id === rsSelectedSheetId);
-                  return sheet ? (
-                    <button
-                      onClick={() => setLocation(`/sheet/${rsSelectedSheetId}`)}
-                      className="flex-1 flex items-center gap-1.5 px-2 py-1.5 rounded-md border border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors min-w-0"
-                    >
-                      <MapIcon className="h-3 w-3 text-primary flex-shrink-0" />
-                      <span className="text-[11px] font-semibold text-primary truncate">{sheet.title || `Sheet #${sheet.id}`}</span>
-                    </button>
-                  ) : null;
-                })()}
-                {rsTargetData && (
-                  <div className="flex-shrink-0 rounded-md border border-border bg-muted/30 px-2 py-1">
-                    <p className="text-[10px] font-bold text-foreground leading-none">{rsTargetData.tgt ?? rsTargetData.name}</p>
-                  </div>
-                )}
-              </div>
-
-              <div className="border-t border-border" />
-
-              {/* DEP / ARR — shown if target has them */}
-              {rsTargetData?.arr && (
+            {/* Sheet link — shown below RS dropdown when sheet selected */}
+            {rsSelectedSheetId !== null && rsSheetsData && (() => {
+              const sheet = (rsSheetsData as any[]).find((s: any) => s.id === rsSelectedSheetId);
+              return sheet ? (
                 <button
-                  disabled={rsAddingRow}
-                  onClick={() => {
-                    if (rsInlineLabel === rsTargetData!.arr!) {
-                      closeInlineField();
-                    } else {
-                      openInlineField(rsTargetData!.arr!);
-                    }
-                  }}
-                  className={`flex flex-col items-start gap-0.5 rounded-md border border-green-500/30 bg-green-500/5 hover:bg-green-500/10 active:scale-95 transition-all px-2.5 py-2 disabled:opacity-50 ${rsInlineLabel === rsTargetData!.arr! ? "ring-1 ring-green-400" : ""}`}
+                  onClick={() => setLocation(`/sheet/${rsSelectedSheetId}`)}
+                  className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-primary/40 bg-primary/10 hover:bg-primary/20 active:scale-[0.98] transition-all min-w-0"
                 >
-                  <span className="text-[9px] font-bold uppercase tracking-wide text-green-400">ARR</span>
-                  <span className="text-[10px] text-foreground font-mono leading-tight line-clamp-2">{rsTargetData.arr}</span>
+                  <MapIcon className="h-3.5 w-3.5 text-primary flex-shrink-0" />
+                  <span className="text-xs font-semibold text-primary truncate flex-1 text-left">{sheet.title || `Sheet #${sheet.id}`}</span>
+                  <ExternalLink className="h-3 w-3 text-primary/60 flex-shrink-0" />
                 </button>
-              )}
+              ) : null;
+            })()}
 
-              {/* Inline observation field — shown when a quick action button is tapped */}
-              {rsInlineLabel && (() => {
-                // Parse roster CINs from the selected sheet
-                const selectedSheet = (rsSheetsData as any[] | undefined)?.find((s: any) => s.id === rsSelectedSheetId);
-                const rosterCins: string[] = [];
-                if (selectedSheet?.sheetCins) {
-                  try {
-                    const parsed: Array<{ cin: string; isTeamLeader?: boolean }> = typeof selectedSheet.sheetCins === "string"
-                      ? JSON.parse(selectedSheet.sheetCins)
-                      : selectedSheet.sheetCins;
-                    parsed
-                      .sort((a, b) => {
-                        // TL always first
-                        if (a.isTeamLeader && !b.isTeamLeader) return -1;
-                        if (!a.isTeamLeader && b.isTeamLeader) return 1;
-                        // Then sort numerically (extract leading digits) or alphabetically
-                        const numA = parseInt(a.cin ?? "", 10);
-                        const numB = parseInt(b.cin ?? "", 10);
-                        if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
-                        return (a.cin ?? "").localeCompare(b.cin ?? "");
-                      })
-                      .forEach(c => { if (c.cin) rosterCins.push(c.cin); });
-                  } catch { /* ignore */ }
-                }
-                return (
-                  <div
-                    className="rounded-lg border border-border bg-muted/40 p-2.5 flex flex-col gap-2"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{rsInlineLabel}</span>
-                      <button onClick={closeInlineField} className="text-muted-foreground hover:text-foreground">
-                        <X className="h-3.5 w-3.5" />
+            {/* RS Quick Entry — collapsible inline panel */}
+            {rsSelectedSheetId !== null && (
+              <div className="rounded-xl border-2 border-border overflow-hidden">
+                {/* Collapse header */}
+                <button
+                  onClick={() => setRsQeExpanded(v => !v)}
+                  className="flex items-center justify-between w-full px-3 py-2.5 bg-muted/30 hover:bg-muted/50 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <Plus className="h-3.5 w-3.5 text-primary" />
+                    <span className="text-xs font-semibold text-foreground">RS Quick Entry</span>
+                  </div>
+                  {rsQeExpanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                </button>
+
+                {/* Collapsible body */}
+                {rsQeExpanded && (
+                  <div className="px-3 py-3 space-y-2 border-t border-border bg-card">
+                    {/* Target strip */}
+                    {rsTargetData && (
+                      <div className="flex-shrink-0 rounded-lg border border-border bg-muted/30 px-2.5 py-1.5">
+                        <p className="text-[10px] font-bold text-foreground leading-none">{rsTargetData.tgt ?? rsTargetData.name}</p>
+                      </div>
+                    )}
+
+                    <div className="border-t border-border" />
+
+                    {/* ARR button */}
+                    {rsTargetData?.arr && (
+                      <button
+                        disabled={rsAddingRow}
+                        onClick={() => {
+                          if (rsInlineLabel === rsTargetData!.arr!) { closeInlineField(); } else { openInlineField(rsTargetData!.arr!); }
+                        }}
+                        className={`flex flex-col items-start gap-0.5 w-full rounded-lg border border-green-500/30 bg-green-500/5 hover:bg-green-500/10 active:scale-95 transition-all px-2.5 py-2 disabled:opacity-50 ${rsInlineLabel === rsTargetData!.arr! ? "ring-1 ring-green-400" : ""}`}
+                      >
+                        <span className="text-[9px] font-bold uppercase tracking-wide text-green-400">ARR</span>
+                        <span className="text-[10px] text-foreground font-mono leading-tight line-clamp-2">{rsTargetData.arr}</span>
                       </button>
-                    </div>
-                    <textarea
-                      ref={rsInlineInputRef}
-                      value={rsInlineText}
-                      onChange={(e) => { setRsInlineText(e.target.value); resetInlineTimer(); }}
-                      onFocus={resetInlineTimer}
-                      onBlur={() => { /* keep timer running on blur */ }}
-                      placeholder="Add details (optional)…"
-                      rows={2}
-                      className="w-full resize-none rounded-md border border-border bg-background px-2.5 py-1.5 text-[11px] placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                    />
-                    {/* Shortcut buttons — append expanded text in order */}
-                    {(() => {
-                      const appendText = (text: string) => {
-                        setRsInlineText(prev => prev ? `${prev} ${text}` : text);
-                        resetInlineTimer();
-                        rsInlineInputRef.current?.focus();
-                      };
-                      const findShortcut = (trigger: string) => {
-                        const tgt = (targetShortcuts as any[] | undefined)?.find((s: any) => s.trigger?.toLowerCase() === trigger.toLowerCase());
-                        if (tgt) return tgt.expansion as string;
-                        const gen = (generalShortcuts as any[] | undefined)?.find((s: any) => s.trigger?.toLowerCase() === trigger.toLowerCase());
-                        return gen ? gen.expansion as string : null;
-                      };
+                    )}
+
+                    {/* Inline observation field */}
+                    {rsInlineLabel && (() => {
+                      const selectedSheet = (rsSheetsData as any[] | undefined)?.find((s: any) => s.id === rsSelectedSheetId);
+                      const rosterCins: string[] = [];
+                      if (selectedSheet?.sheetCins) {
+                        try {
+                          const parsed: Array<{ cin: string; isTeamLeader?: boolean }> = typeof selectedSheet.sheetCins === "string" ? JSON.parse(selectedSheet.sheetCins) : selectedSheet.sheetCins;
+                          parsed.sort((a, b) => { if (a.isTeamLeader && !b.isTeamLeader) return -1; if (!a.isTeamLeader && b.isTeamLeader) return 1; const numA = parseInt(a.cin ?? "", 10); const numB = parseInt(b.cin ?? "", 10); if (!isNaN(numA) && !isNaN(numB)) return numA - numB; return (a.cin ?? "").localeCompare(b.cin ?? ""); }).forEach(c => { if (c.cin) rosterCins.push(c.cin); });
+                        } catch { /* ignore */ }
+                      }
+                      const appendText = (text: string) => { setRsInlineText(prev => prev ? `${prev} ${text}` : text); resetInlineTimer(); rsInlineInputRef.current?.focus(); };
+                      const findShortcut = (trigger: string) => { const tgt = (targetShortcuts as any[] | undefined)?.find((s: any) => s.trigger?.toLowerCase() === trigger.toLowerCase()); if (tgt) return tgt.expansion as string; const gen = (generalShortcuts as any[] | undefined)?.find((s: any) => s.trigger?.toLowerCase() === trigger.toLowerCase()); return gen ? gen.expansion as string : null; };
                       const shortcuts: Array<{ label: string; getValue: () => string | null }> = [
                         { label: "V1", getValue: () => rsTargetData?.v1 ?? rsTargetData?.v1f ?? null },
                         { label: "V2", getValue: () => rsTargetData?.v2 ?? rsTargetData?.v2f ?? null },
@@ -2486,89 +2381,160 @@ export default function IntelligenceMapping() {
                         { label: "COOS", getValue: () => findShortcut("coos") ?? "continued out of sight" },
                       ];
                       const available = shortcuts.filter(s => s.getValue() !== null);
-                      if (available.length === 0) return null;
                       return (
-                        <div className="flex flex-wrap gap-1">
-                          {available.map(s => (
-                            <button key={s.label}
-                              onClick={() => { const v = s.getValue(); if (v) appendText(v); }}
-                              className="px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all">
-                              {s.label}
+                        <div className="rounded-lg border border-border bg-muted/40 p-2.5 flex flex-col gap-2" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{rsInlineLabel}</span>
+                            <button onClick={closeInlineField} className="text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
+                          </div>
+                          <textarea ref={rsInlineInputRef} value={rsInlineText} onChange={(e) => { setRsInlineText(e.target.value); resetInlineTimer(); }} onFocus={resetInlineTimer} placeholder="Add details (optional)…" rows={2} className="w-full resize-none rounded-lg border border-border bg-background px-2.5 py-1.5 text-[11px] placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
+                          {available.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {available.map(s => (
+                                <button key={s.label} onClick={() => { const v = s.getValue(); if (v) appendText(v); }} className="px-2 py-0.5 rounded-md text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all">{s.label}</button>
+                              ))}
+                            </div>
+                          )}
+                          {rosterCins.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              <button onClick={() => { const allSel = rosterCins.every(c => rsInlineCins.has(c)); const next = allSel ? new Set<string>() : new Set(rosterCins); setRsInlineCins(next); rsInlineCinsRef.current = next; resetInlineTimer(); }} className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all active:scale-95 ${rosterCins.every(c => rsInlineCins.has(c)) ? "bg-amber-500/20 border-amber-500/60 text-amber-400" : "bg-muted/40 border-amber-500/30 text-amber-500/80 hover:bg-amber-500/10"}`}>TEAM</button>
+                              {rosterCins.map((cin) => (
+                                <button key={cin} onClick={() => { const next = new Set(rsInlineCins); if (next.has(cin)) { next.delete(cin); } else { next.add(cin); } setRsInlineCins(next); rsInlineCinsRef.current = next; resetInlineTimer(); }} className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all active:scale-95 ${rsInlineCins.has(cin) ? "bg-primary/20 border-primary/60 text-primary" : "bg-muted/40 border-border text-foreground/80 hover:bg-muted/70 hover:text-foreground"}`}>{cin}</button>
+                              ))}
+                            </div>
+                          )}
+                          <div className="flex items-center justify-end gap-2">
+                            <button onClick={submitInlineField} disabled={rsAddingRow} className="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-[10px] font-semibold text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-50">
+                              {rsAddingRow ? <Spinner className="h-3 w-3" /> : <Send className="h-3 w-3" />} Submit
                             </button>
-                          ))}
+                          </div>
                         </div>
                       );
                     })()}
-                    {/* CIN picker row — multi-select */}
-                    {rosterCins.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5">
-                        {/* TEAM button — selects all */}
-                        <button
-                          onClick={() => {
-                            const allSelected = rosterCins.every(c => rsInlineCins.has(c));
-                            const next = allSelected ? new Set<string>() : new Set(rosterCins);
-                            setRsInlineCins(next); rsInlineCinsRef.current = next; resetInlineTimer();
-                          }}
-                          className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all active:scale-95 ${
-                            rosterCins.every(c => rsInlineCins.has(c))
-                              ? "bg-amber-500/20 border-amber-500/60 text-amber-400"
-                              : "bg-muted/40 border-amber-500/30 text-amber-500/80 hover:bg-amber-500/10"
-                          }`}
-                        >TEAM</button>
-                        {rosterCins.map((cin) => (
-                          <button
-                            key={cin}
-                            onClick={() => {
-                              const next = new Set(rsInlineCins);
-                              if (next.has(cin)) { next.delete(cin); } else { next.add(cin); }
-                              setRsInlineCins(next); rsInlineCinsRef.current = next; resetInlineTimer();
-                            }}
-                            className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all active:scale-95 ${
-                              rsInlineCins.has(cin)
-                                ? "bg-primary/20 border-primary/60 text-primary"
-                                : "bg-muted/40 border-border text-foreground/80 hover:bg-muted/70 hover:text-foreground"
-                            }`}
-                          >
-                            {cin}
-                          </button>
-                        ))}
+
+                    {/* Last entry confirmation */}
+                    {rsLastEntry && (
+                      <div className="rounded-lg border border-green-500/30 bg-green-500/10 px-2.5 py-2">
+                        <p className="text-[9px] font-bold uppercase tracking-wide text-green-400 mb-0.5">Last Entry</p>
+                        <p className="text-[11px] font-mono text-foreground">{rsLastEntry.time} — {rsLastEntry.label}</p>
                       </div>
                     )}
-                    <div className="flex items-center justify-end gap-2">
+                  </div>
+                )}
+              </div>
+            )}
+          </div>{/* end RS Selection */}
+
+          {/* ── TEAMS (Live Location) ── */}
+          <div className="px-3 py-3">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Radio className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">TEAMS</span>
+              </div>
+              <Switch checked={sharingEnabled} onCheckedChange={handleSharingToggle} className="scale-90" />
+            </div>
+
+            {/* GPS error */}
+            {gpsError && (
+              <div className="flex items-start gap-1.5 mb-3 p-2.5 rounded-xl border-2 border-amber-500/30 bg-amber-500/10">
+                <AlertTriangle className="h-3 w-3 text-amber-500 mt-0.5 flex-shrink-0" />
+                <span className="text-[10px] text-amber-400 leading-tight">{gpsError}</span>
+              </div>
+            )}
+
+            {/* Team rows — collapsible with memory */}
+            <div className="flex flex-col gap-2">
+              {[
+                { key: "TEAM1", label: "Team 1", colour: TEAM_COLOURS.TEAM1, users: liveUsersByTeam.TEAM1 },
+                { key: "TEAM2", label: "Team 2", colour: TEAM_COLOURS.TEAM2, users: liveUsersByTeam.TEAM2 },
+                { key: "PTT",   label: "PTT",    colour: TEAM_COLOURS.PTT,   users: liveUsersByTeam.PTT },
+              ].map(({ key, label, colour, users: teamUsers }) => {
+                const isCollapsed = collapsedTeams.has(key);
+                return (
+                  <div key={key} className="rounded-xl border-2 border-border overflow-hidden">
+                    {/* Team header — tap to collapse/expand */}
+                    <div className="flex items-center justify-between px-3 py-2.5 bg-muted/20 hover:bg-muted/40 transition-colors">
                       <button
-                        onClick={submitInlineField}
-                        disabled={rsAddingRow}
-                        className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-[10px] font-semibold text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-50"
+                        onClick={() => setCollapsedTeams(prev => { const next = new Set(prev); next.has(key) ? next.delete(key) : next.add(key); return next; })}
+                        className="flex items-center gap-2 flex-1 min-w-0"
                       >
-                        {rsAddingRow ? <Spinner className="h-3 w-3" /> : <Send className="h-3 w-3" />}
-                        Submit
+                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: colour }} />
+                        <span className="text-[11px] font-semibold" style={{ color: colour }}>{label}</span>
+                        {teamUsers.length > 0 && <span className="text-[10px] text-muted-foreground">({teamUsers.length})</span>}
+                        {isCollapsed ? <ChevronRight className="h-3 w-3 text-muted-foreground ml-auto" /> : <ChevronDown className="h-3 w-3 text-muted-foreground ml-auto" />}
+                      </button>
+                      <button onClick={() => toggleTeamVisibility(key)} className="ml-2 text-[10px] text-muted-foreground hover:text-foreground flex-shrink-0 px-1.5 py-0.5 rounded-md border border-border/50 bg-background/50">
+                        {hiddenTeams.has(key) ? "Show" : "Hide"}
                       </button>
                     </div>
+                    {/* Team members — shown when not collapsed */}
+                    {!isCollapsed && (
+                      <div className="px-3 py-2 border-t border-border bg-card">
+                        {teamUsers.length === 0 ? (
+                          <p className="text-[10px] text-muted-foreground/50 italic">No units online</p>
+                        ) : (
+                          <div className="flex flex-col gap-0.5">
+                            {teamUsers.map((u) => (
+                              <div key={u.userId} className="flex items-center justify-between px-1 py-1 rounded-lg hover:bg-accent/30">
+                                <span className="text-[11px] text-foreground font-medium truncate">
+                                  {u.name.toUpperCase()}
+                                  {u.userId === user?.id && <span className="ml-1 text-[9px] text-muted-foreground">(you)</span>}
+                                </span>
+                                <button onClick={() => toggleUserVisibility(u.userId)} className="text-[10px] text-muted-foreground hover:text-foreground ml-2 flex-shrink-0">
+                                  {hiddenUsers.has(u.userId) ? "Show" : "Hide"}
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Unassigned users */}
+              {liveUsersByTeam.unassigned.length > 0 && (() => {
+                const isCollapsed = collapsedTeams.has("null");
+                return (
+                  <div className="rounded-xl border-2 border-border overflow-hidden">
+                    <div className="flex items-center justify-between px-3 py-2.5 bg-muted/20 hover:bg-muted/40 transition-colors">
+                      <button
+                        onClick={() => setCollapsedTeams(prev => { const next = new Set(prev); next.has("null") ? next.delete("null") : next.add("null"); return next; })}
+                        className="flex items-center gap-2 flex-1 min-w-0"
+                      >
+                        <div className="w-2.5 h-2.5 rounded-full bg-gray-500 flex-shrink-0" />
+                        <span className="text-[11px] font-semibold text-muted-foreground">Unassigned</span>
+                        <span className="text-[10px] text-muted-foreground">({liveUsersByTeam.unassigned.length})</span>
+                        {isCollapsed ? <ChevronRight className="h-3 w-3 text-muted-foreground ml-auto" /> : <ChevronDown className="h-3 w-3 text-muted-foreground ml-auto" />}
+                      </button>
+                      <button onClick={() => toggleTeamVisibility("null")} className="ml-2 text-[10px] text-muted-foreground hover:text-foreground flex-shrink-0 px-1.5 py-0.5 rounded-md border border-border/50 bg-background/50">
+                        {hiddenTeams.has("null") ? "Show" : "Hide"}
+                      </button>
+                    </div>
+                    {!isCollapsed && (
+                      <div className="px-3 py-2 border-t border-border bg-card">
+                        <div className="flex flex-col gap-0.5">
+                          {liveUsersByTeam.unassigned.map((u) => (
+                            <div key={u.userId} className="flex items-center justify-between px-1 py-1 rounded-lg hover:bg-accent/30">
+                              <span className="text-[11px] text-foreground font-medium truncate">
+                                {u.name.toUpperCase()}
+                                {u.userId === user?.id && <span className="ml-1 text-[9px] text-muted-foreground">(you)</span>}
+                              </span>
+                              <button onClick={() => toggleUserVisibility(u.userId)} className="text-[10px] text-muted-foreground hover:text-foreground ml-2 flex-shrink-0">
+                                {hiddenUsers.has(u.userId) ? "Show" : "Hide"}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })()}
-
-              {/* Quick action buttons removed per user request */}
-
-              {/* Last entry confirmation */}
-              {rsLastEntry && (
-                <div className="rounded-md border border-green-500/30 bg-green-500/10 px-2.5 py-2">
-                  <p className="text-[9px] font-bold uppercase tracking-wide text-green-400 mb-0.5">Last Entry</p>
-                  <p className="text-[11px] font-mono text-foreground">{rsLastEntry.time} — {rsLastEntry.label}</p>
-                </div>
-              )}
-
-
             </div>
-          )}
-
-          {/* Placeholder when nothing selected */}
-          {rsSelectedOpId === null && (
-            <div className="flex flex-col items-center justify-center text-center py-8 gap-2">
-              <ClipboardList className="h-8 w-8 text-muted-foreground/25" />
-              <p className="text-xs text-muted-foreground">Select an operation and running sheet to use quick RS shortcuts.</p>
-            </div>
-          )}
+          </div>{/* end TEAMS */}
         </div>
       </div>
 

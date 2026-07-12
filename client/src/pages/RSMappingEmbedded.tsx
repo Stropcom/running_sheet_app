@@ -759,10 +759,16 @@ export default function RSMappingEmbedded() {
       }
 
       // Build waypoints from viaStreets
-      const suburbHint = seg.to.suburbContext ? `, ${seg.to.suburbContext}` : "";
-      const viaWaypoints = seg.viaStreets.slice(0, DIRECTIONS_CHUNK_SIZE).map((street) => ({
-        location: `${street}${suburbHint}`,
-        stopover: false,
+      // Use the departure suburb from the 'from' waypoint as context, falling back to 'to'
+      const suburbHint = seg.from.suburbContext
+        ? `, ${seg.from.suburbContext}`
+        : seg.to.suburbContext
+        ? `, ${seg.to.suburbContext}`
+        : "";
+      // Use stopover:true so Google MUST route through each named street in sequence
+      const viaWaypoints = seg.viaStreets.slice(0, DIRECTIONS_CHUNK_SIZE - 2).map((street) => ({
+        location: `${street}${suburbHint}, Western Australia`,
+        stopover: true,
       }));
 
       directionsServiceRef.current!.route(
@@ -770,6 +776,7 @@ export default function RSMappingEmbedded() {
           origin: { lat: seg.from.lat, lng: seg.from.lng },
           destination: { lat: seg.to.lat, lng: seg.to.lng },
           waypoints: viaWaypoints,
+          optimizeWaypoints: false,
           travelMode: google.maps.TravelMode.DRIVING,
           avoidHighways: false,
           avoidTolls: false,

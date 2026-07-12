@@ -311,7 +311,7 @@ export default function OperationManagementPage() {
             <ArrowRightLeft className="w-5 h-5 text-violet-400" />
           </div>
           <div className="flex-1">
-            <h1 className="text-xl font-bold text-foreground">Operation Management</h1>
+            <h1 className="text-xl font-bold text-foreground">Archive</h1>
             <p className="text-sm text-muted-foreground">
               Manage operation status — Before Court and Archive
             </p>

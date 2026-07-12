@@ -26,7 +26,7 @@ import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useTheme } from "@/contexts/ThemeContext";
 import {
-  FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen, Scale, FolderOpen, ChevronDown, ChevronRight, CalendarDays, Shield, ClipboardCheck as GovIcon, Map, ArrowRightLeft, HelpCircle, Trash2, WifiOff } from "lucide-react";
+  FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen, Scale, FolderOpen, ChevronDown, ChevronRight, CalendarDays, Shield, ClipboardCheck as GovIcon, Map, ArrowRightLeft, HelpCircle, Trash2, WifiOff, Settings, UserCog } from "lucide-react";
 import React, { CSSProperties, useEffect, useRef, useState } from "react";
 import { useObservationFocus } from "@/contexts/ObservationFocusContext";
 import { useLocation } from "wouter";
@@ -113,8 +113,6 @@ function DashboardLayoutContent({
     refetchOnWindowFocus: true,
   });
   const certifyCount = outstanding?.length ?? 0;
-  // Count all governance items with outstanding tasks — not just uncertified sheets.
-  // This ensures the author's post-certification tasks (save as Word, PDF, etc.) are counted.
   const govCount = governanceTodo?.filter(g => g.outstanding.length > 0).length ?? 0;
   const todoCount = certifyCount + govCount;
 
@@ -136,36 +134,21 @@ function DashboardLayoutContent({
     }
   }, [isObservationFocused, shortcutsPanelHovered]);
 
-  const [courtExpanded, setCourtExpanded] = useState(() => {
-    return location.startsWith("/court");
-  });
-  const [todoExpanded, setTodoExpanded] = useState(() => {
-    return location === "/todo" || location === "/todo/governance";
-  });
+  const [courtExpanded, setCourtExpanded] = useState(() => location.startsWith("/court"));
+  const [todoExpanded, setTodoExpanded] = useState(() => location === "/todo" || location === "/todo/governance");
+  const [adminFolderExpanded, setAdminFolderExpanded] = useState(false);
+  const [userMgmtFolderExpanded, setUserMgmtFolderExpanded] = useState(false);
 
-
-  const menuItems = [
-    { icon: FileText, label: "Operations", path: "/", color: "text-foreground" },
-    { icon: ClipboardCheck, label: "Governance", path: "/governance", color: "text-foreground" },
-    { icon: CalendarDays, label: "Calendar", path: "/calendar", color: "text-foreground" },
-    { icon: Zap, label: "Shortcuts", path: "/shortcuts", color: "text-foreground" },
-    { icon: FolderSearch, label: "Intelligence", path: "/intelligence", color: "text-foreground" },
-    { icon: BookOpen, label: "Target Registry", path: "/target-registry", color: "text-foreground" },
-    { icon: ScrollText, label: "Audit Log", path: "/audit", color: "text-foreground" },
-    { icon: WifiOff, label: "Draft Mode", path: "/draft", badge: draftCounts.total > 0 ? draftCounts.total : undefined, color: "text-foreground" },
-    { icon: Trash2, label: "Recycle Bin", path: "/recycle-bin", color: "text-foreground" },
-    { icon: HelpCircle, label: "Help", path: "/help", color: "text-foreground" },
-    { icon: User, label: "My Profile", path: "/profile", color: "text-foreground" },
-    ...(user?.role === "admin" ? [
-      { icon: Users, label: "User Management", path: "/admin", color: "text-foreground" },
-    ] : []), // member and observer do not see User Management
-  ];
-
-  const activeMenuItem = menuItems.find((item) =>
-    item.path === location || (item.path !== "/" && location.startsWith(item.path))
-  );
-  const roleConf = ROLE_CONFIG[(user?.role as keyof typeof ROLE_CONFIG) ?? "observer"];
-  const RoleIcon = roleConf?.icon ?? Eye;
+  // Expand admin folder if current route is inside it
+  useEffect(() => {
+    const adminPaths = ["/court", "/audit", "/draft", "/operation-management", "/recycle-bin", "/help"];
+    if (adminPaths.some(p => location === p || location.startsWith(p))) {
+      setAdminFolderExpanded(true);
+    }
+    if (location === "/profile" || location === "/admin") {
+      setUserMgmtFolderExpanded(true);
+    }
+  }, []);
 
   useEffect(() => {
     if (isCollapsed) setIsResizing(false);
@@ -193,10 +176,17 @@ function DashboardLayoutContent({
     };
   }, [isResizing, setSidebarWidth]);
 
+  const subItemClass = (active: boolean) =>
+    `flex items-center gap-2 h-8 px-2 rounded-md text-sm transition-colors w-full text-left ${
+      active
+        ? "bg-sidebar-accent text-sidebar-foreground font-medium"
+        : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+    }`;
+
   return (
     <>
       <div className="relative" ref={sidebarRef}>
-        <Sidebar collapsible="icon" className="border-r border-sidebar-border" disableTransition={isResizing}>
+        <Sidebar collapsible="icon" className="border-r border-sidebar-border rounded-r-2xl shadow-2xl overflow-hidden" disableTransition={isResizing}>
           {/* Header */}
           <SidebarHeader className="h-16 justify-center border-b border-sidebar-border">
             <div className="flex items-center gap-3 px-2 w-full">
@@ -221,229 +211,278 @@ function DashboardLayoutContent({
           {/* Navigation */}
           <SidebarContent className="gap-0 pt-2">
             <SidebarMenu className="px-2">
-              {menuItems.map((item) => {
-                const isActive =
-                  item.path === "/"
-                    ? location === "/" || location.startsWith("/operation/") || location.startsWith("/sheet/")
-                    : location === item.path || location.startsWith(item.path);
-                // Insert To-Do folder before Calendar
-                const isBeforeCalendar = item.path === "/calendar";
-                    // Intelligence is a plain single sidebar item
-                const isIntelligenceItem = item.path === "/intelligence";
-                // Insert Operation Management after Target Registry, Court after Operation Management
-                const isAfterTargetRegistry = item.path === "/audit";
-                return (
-                  <React.Fragment key={item.path}>
-                    {isBeforeCalendar && (
-                      <>
-                      <SidebarMenuItem key="todo-folder">
-                        <SidebarMenuButton
-                          isActive={location === "/todo" || location === "/todo/governance"}
-                          onClick={() => setTodoExpanded((v) => !v)}
-                          tooltip="To-Do"
-                          className="h-10 font-normal transition-all"
-                        >
-                          <ClipboardList className={`h-4 w-4 ${todoCount > 0 ? "text-red-500" : "text-foreground"}`} />
-                          <span className={`flex-1 ${
-                            todoCount > 0 ? "text-red-500 font-medium" : location === "/todo" || location === "/todo/governance" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"
-                          }`}>
-                            To-Do
-                          </span>
-                          {todoCount > 0 && !isCollapsed && (
-                            <span className="inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-[10px] font-bold bg-red-500/20 border border-red-500/40 text-red-500">
-                              {todoCount}
-                            </span>
-                          )}
-                          {!isCollapsed && (
-                            todoExpanded
-                              ? <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />
-                              : <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />
-                          )}
-                        </SidebarMenuButton>
-                        {todoExpanded && !isCollapsed && (
-                          <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
-                            {/* Certify subfolder */}
-                            <button
-                              onClick={() => setLocation("/todo")}
-                              className={`flex items-center gap-2 h-8 px-2 rounded-md text-sm transition-colors w-full text-left ${
-                                location === "/todo"
-                                  ? "bg-sidebar-accent text-sidebar-foreground font-medium"
-                                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
-                              }`}
-                            >
-                              <Shield className={`h-3.5 w-3.5 shrink-0 ${certifyCount > 0 ? "text-red-400" : "text-emerald-400"}`} />
-                              <span className="flex-1">Certify</span>
-                              {certifyCount > 0 && (
-                                <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[9px] font-bold bg-red-500/20 border border-red-500/40 text-red-400">
-                                  {certifyCount}
-                                </span>
-                              )}
-                            </button>
-                            {/* RS Governance subfolder */}
-                            <button
-                              onClick={() => setLocation("/todo/governance")}
-                              className={`flex items-center gap-2 h-8 px-2 rounded-md text-sm transition-colors w-full text-left ${
-                                location === "/todo/governance"
-                                  ? "bg-sidebar-accent text-sidebar-foreground font-medium"
-                                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
-                              }`}
-                            >
-                              <GovIcon className={`h-3.5 w-3.5 shrink-0 ${govCount > 0 ? "text-blue-400" : "text-emerald-400"}`} />
-                              <span className="flex-1">RS Governance</span>
-                              {govCount > 0 && (
-                                <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[9px] font-bold bg-blue-500/20 border border-blue-500/40 text-blue-400">
-                                  {govCount}
-                                </span>
-                              )}
-                            </button>
-                          </div>
-                        )}
-                      </SidebarMenuItem>
 
-                      {/* Mapping — own top-level folder, between To-Do and Calendar */}
-                      <SidebarMenuItem key="mapping-folder">
-                        <SidebarMenuButton
-                          isActive={location === "/intelligence/mapping"}
-                          onClick={() => setLocation("/intelligence/mapping")}
-                          tooltip="Mapping"
-                          className="h-10 font-normal transition-all"
-                        >
-                          <Map className={`h-4 w-4 text-foreground`} />
-                          <span className={`flex-1 ${location === "/intelligence/mapping" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
-                            Mapping
-                          </span>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
+              {/* ── Operations ── */}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={location === "/" || location.startsWith("/operation/") || location.startsWith("/sheet/")}
+                  onClick={() => setLocation("/")}
+                  tooltip="Operations"
+                  className="h-10 font-normal transition-all"
+                >
+                  <FileText className="h-4 w-4 text-foreground" />
+                  <span className={`flex-1 ${location === "/" || location.startsWith("/operation/") || location.startsWith("/sheet/") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
+                    Operations
+                  </span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
 
-                      </>
+              {/* ── Governance ── */}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={location === "/governance" || location.startsWith("/governance")}
+                  onClick={() => setLocation("/governance")}
+                  tooltip="Governance"
+                  className="h-10 font-normal transition-all"
+                >
+                  <ClipboardCheck className="h-4 w-4 text-foreground" />
+                  <span className={`flex-1 ${location === "/governance" || location.startsWith("/governance") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
+                    Governance
+                  </span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              {/* ── To-Do (expandable) ── */}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={location === "/todo" || location === "/todo/governance"}
+                  onClick={() => setTodoExpanded((v) => !v)}
+                  tooltip="To-Do"
+                  className="h-10 font-normal transition-all"
+                >
+                  <ClipboardList className={`h-4 w-4 ${todoCount > 0 ? "text-red-500" : "text-foreground"}`} />
+                  <span className={`flex-1 ${todoCount > 0 ? "text-red-500 font-medium" : location === "/todo" || location === "/todo/governance" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
+                    To-Do
+                  </span>
+                  {todoCount > 0 && !isCollapsed && (
+                    <span className="inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-[10px] font-bold bg-red-500/20 border border-red-500/40 text-red-500">
+                      {todoCount}
+                    </span>
+                  )}
+                  {!isCollapsed && (todoExpanded ? <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" /> : <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />)}
+                </SidebarMenuButton>
+                {todoExpanded && !isCollapsed && (
+                  <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
+                    <button onClick={() => setLocation("/todo")} className={subItemClass(location === "/todo")}>
+                      <Shield className={`h-3.5 w-3.5 shrink-0 ${certifyCount > 0 ? "text-red-400" : "text-emerald-400"}`} />
+                      <span className="flex-1">Certify</span>
+                      {certifyCount > 0 && (
+                        <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[9px] font-bold bg-red-500/20 border border-red-500/40 text-red-400">{certifyCount}</span>
+                      )}
+                    </button>
+                    <button onClick={() => setLocation("/todo/governance")} className={subItemClass(location === "/todo/governance")}>
+                      <GovIcon className={`h-3.5 w-3.5 shrink-0 ${govCount > 0 ? "text-blue-400" : "text-emerald-400"}`} />
+                      <span className="flex-1">RS Governance</span>
+                      {govCount > 0 && (
+                        <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[9px] font-bold bg-blue-500/20 border border-blue-500/40 text-blue-400">{govCount}</span>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </SidebarMenuItem>
+
+              {/* ── Mapping ── */}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={location === "/intelligence/mapping"}
+                  onClick={() => setLocation("/intelligence/mapping")}
+                  tooltip="Mapping"
+                  className="h-10 font-normal transition-all"
+                >
+                  <Map className="h-4 w-4 text-foreground" />
+                  <span className={`flex-1 ${location === "/intelligence/mapping" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
+                    Mapping
+                  </span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              {/* ── Calendar ── */}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={location === "/calendar" || location.startsWith("/calendar")}
+                  onClick={() => setLocation("/calendar")}
+                  tooltip="Calendar"
+                  className="h-10 font-normal transition-all"
+                >
+                  <CalendarDays className="h-4 w-4 text-foreground" />
+                  <span className={`flex-1 ${location === "/calendar" || location.startsWith("/calendar") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
+                    Calendar
+                  </span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              {/* ── Shortcuts ── */}
+              <SidebarMenuItem ref={shortcutsItemRef}>
+                <SidebarMenuButton
+                  isActive={location === "/shortcuts" || location.startsWith("/shortcuts")}
+                  onClick={() => setLocation("/shortcuts")}
+                  tooltip="Shortcuts"
+                  className="h-10 font-normal transition-all"
+                  onMouseEnter={() => { if (isObservationFocused) setShortcutsPanelOpen(true); }}
+                >
+                  <Zap className={`h-4 w-4 ${isObservationFocused ? "text-yellow-400" : "text-foreground"}`} />
+                  <span className={`flex-1 ${location === "/shortcuts" || location.startsWith("/shortcuts") ? "text-sidebar-foreground font-medium" : isObservationFocused ? "text-cyan-300 font-medium" : "text-sidebar-foreground/80"}`}>
+                    Shortcuts
+                  </span>
+                  {isObservationFocused && !isCollapsed && (
+                    <span className="ml-1 text-[9px] font-bold text-cyan-500 uppercase tracking-wide">hover</span>
+                  )}
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              {/* ── Intelligence ── */}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={location === "/intelligence" || (location.startsWith("/intelligence") && !location.startsWith("/intelligence/mapping"))}
+                  onClick={() => setLocation("/intelligence")}
+                  tooltip="Intelligence"
+                  className="h-10 font-normal transition-all"
+                >
+                  <FolderSearch className="h-4 w-4 text-foreground" />
+                  <span className={`flex-1 ${location === "/intelligence" || (location.startsWith("/intelligence") && !location.startsWith("/intelligence/mapping")) ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
+                    Intelligence
+                  </span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              {/* ── Target Registry ── */}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={location === "/target-registry" || location.startsWith("/target-registry")}
+                  onClick={() => setLocation("/target-registry")}
+                  tooltip="Target Registry"
+                  className="h-10 font-normal transition-all"
+                >
+                  <BookOpen className="h-4 w-4 text-foreground" />
+                  <span className={`flex-1 ${location === "/target-registry" || location.startsWith("/target-registry") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
+                    Target Registry
+                  </span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              {/* ── Administration (expandable, all users) ── */}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={adminFolderExpanded && !isCollapsed ? false : (
+                    location.startsWith("/court") || location === "/audit" || location === "/draft" ||
+                    location === "/operation-management" || location === "/recycle-bin" || location === "/help"
+                  )}
+                  onClick={() => setAdminFolderExpanded((v) => !v)}
+                  tooltip="Administration"
+                  className="h-10 font-normal transition-all"
+                >
+                  <Settings className="h-4 w-4 text-foreground" />
+                  <span className={`flex-1 ${
+                    location.startsWith("/court") || location === "/audit" || location === "/draft" ||
+                    location === "/operation-management" || location === "/recycle-bin" || location === "/help"
+                      ? "text-sidebar-foreground font-medium"
+                      : "text-sidebar-foreground/80"
+                  }`}>
+                    Administration
+                  </span>
+                  {!isCollapsed && (adminFolderExpanded ? <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" /> : <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />)}
+                </SidebarMenuButton>
+
+                {adminFolderExpanded && !isCollapsed && (
+                  <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
+
+                    {/* Court (expandable sub-folder) */}
+                    <button
+                      onClick={() => setCourtExpanded((v) => !v)}
+                      className={subItemClass(location.startsWith("/court"))}
+                    >
+                      <Scale className="h-3.5 w-3.5 shrink-0 text-foreground" />
+                      <span className="flex-1">Court</span>
+                      {courtExpanded ? <ChevronDown className="h-3 w-3 text-sidebar-foreground/40" /> : <ChevronRight className="h-3 w-3 text-sidebar-foreground/40" />}
+                    </button>
+                    {courtExpanded && (
+                      <div className="ml-4 border-l border-sidebar-border/40 pl-3 flex flex-col gap-0.5 mb-0.5">
+                        <button onClick={() => setLocation("/court/statements")} className={subItemClass(location === "/court/statements")}>
+                          <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                          Statements
+                        </button>
+                        <button onClick={() => setLocation("/court/witness-list")} className={subItemClass(location === "/court/witness-list")}>
+                          <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                          Witness List
+                        </button>
+                        <button onClick={() => setLocation("/court/wipc")} className={subItemClass(location === "/court/wipc")}>
+                          <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+                          <span className="flex-1">WIPC</span>
+                          <span className="inline-flex items-center gap-0.5 px-1 py-0 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 leading-4">🔒</span>
+                        </button>
+                      </div>
                     )}
 
-                    {isAfterTargetRegistry && (
-                      <SidebarMenuItem key="op-management">
-                        <SidebarMenuButton
-                          isActive={location === "/operation-management"}
-                          onClick={() => setLocation("/operation-management")}
-                          tooltip="Operation Management"
-                          className="h-10 font-normal transition-all"
-                        >
-                          <ArrowRightLeft className={`h-4 w-4 text-foreground`} />
-                          <span className={`flex-1 ${location === "/operation-management" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
-                            Operation Management
-                          </span>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    )}
+                    {/* Audit Log */}
+                    <button onClick={() => setLocation("/audit")} className={subItemClass(location === "/audit")}>
+                      <ScrollText className="h-3.5 w-3.5 shrink-0 text-foreground" />
+                      Audit Log
+                    </button>
 
-                    {isAfterTargetRegistry && (
-                      <SidebarMenuItem key="court-folder">
-                        <SidebarMenuButton
-                          isActive={location.startsWith("/court")}
-                          onClick={() => setCourtExpanded((v) => !v)}
-                          tooltip="Court"
-                          className="h-10 font-normal transition-all"
-                        >
-                          <Scale className={`h-4 w-4 text-foreground`} />
-                          <span className={`flex-1 ${location.startsWith("/court") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
-                            Court
-                          </span>
-                          {!isCollapsed && (
-                            courtExpanded
-                              ? <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40" />
-                              : <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40" />
-                          )}
-                        </SidebarMenuButton>
-                        {courtExpanded && !isCollapsed && (
-                          <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
-                            <button
-                              onClick={() => setLocation("/court/statements")}
-                              className={`flex items-center gap-2 h-8 px-2 rounded-md text-sm transition-colors w-full text-left ${
-                                location === "/court/statements"
-                                  ? "bg-sidebar-accent text-sidebar-foreground font-medium"
-                                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
-                              }`}
-                            >
-                              <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-                              Statements
-                            </button>
-                            <button
-                              onClick={() => setLocation("/court/witness-list")}
-                              className={`flex items-center gap-2 h-8 px-2 rounded-md text-sm transition-colors w-full text-left ${
-                                location === "/court/witness-list"
-                                  ? "bg-sidebar-accent text-sidebar-foreground font-medium"
-                                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
-                              }`}
-                            >
-                              <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-                              Witness List
-                            </button>
-                            <button
-                              onClick={() => setLocation("/court/wipc")}
-                              className={`flex items-center gap-2 h-8 px-2 rounded-md text-sm transition-colors w-full text-left ${
-                                location === "/court/wipc"
-                                  ? "bg-sidebar-accent text-sidebar-foreground font-medium"
-                                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
-                              }`}
-                            >
-                              <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-amber-400" />
-                              <span className="flex-1">WIPC</span>
-                              <span className="inline-flex items-center gap-0.5 px-1 py-0 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 leading-4">
-                                🔒
-                              </span>
-                            </button>
-                          </div>
-                        )}
-                      </SidebarMenuItem>
+                    {/* Draft Mode */}
+                    <button onClick={() => setLocation("/draft")} className={subItemClass(location === "/draft")}>
+                      <WifiOff className={`h-3.5 w-3.5 shrink-0 ${draftCounts.total > 0 ? "text-blue-400" : "text-foreground"}`} />
+                      <span className="flex-1">Draft Mode</span>
+                      {draftCounts.total > 0 && (
+                        <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[9px] font-bold bg-blue-500/20 border border-blue-500/40 text-blue-400">{draftCounts.total}</span>
+                      )}
+                    </button>
+
+                    {/* Archive (was Operation Management) */}
+                    <button onClick={() => setLocation("/operation-management")} className={subItemClass(location === "/operation-management")}>
+                      <ArrowRightLeft className="h-3.5 w-3.5 shrink-0 text-foreground" />
+                      Archive
+                    </button>
+
+                    {/* Recycle Bin */}
+                    <button onClick={() => setLocation("/recycle-bin")} className={subItemClass(location === "/recycle-bin")}>
+                      <Trash2 className="h-3.5 w-3.5 shrink-0 text-foreground" />
+                      Recycle Bin
+                    </button>
+
+                    {/* Help */}
+                    <button onClick={() => setLocation("/help")} className={subItemClass(location === "/help")}>
+                      <HelpCircle className="h-3.5 w-3.5 shrink-0 text-foreground" />
+                      Help
+                    </button>
+
+                  </div>
+                )}
+              </SidebarMenuItem>
+
+              {/* ── User Management (expandable, all users see it, Access Management is admin-only inside) ── */}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={false}
+                  onClick={() => setUserMgmtFolderExpanded((v) => !v)}
+                  tooltip="User Management"
+                  className="h-10 font-normal transition-all"
+                >
+                  <UserCog className={`h-4 w-4 ${location === "/profile" || location === "/admin" ? "text-foreground" : "text-foreground"}`} />
+                  <span className={`flex-1 ${location === "/profile" || location === "/admin" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
+                    User Management
+                  </span>
+                  {!isCollapsed && (userMgmtFolderExpanded ? <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" /> : <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />)}
+                </SidebarMenuButton>
+
+                {userMgmtFolderExpanded && !isCollapsed && (
+                  <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
+                    {/* My Profile */}
+                    <button onClick={() => setLocation("/profile")} className={subItemClass(location === "/profile")}>
+                      <User className="h-3.5 w-3.5 shrink-0 text-foreground" />
+                      My Profile
+                    </button>
+                    {/* Access Management — admin only */}
+                    {user?.role === "admin" && (
+                      <button onClick={() => setLocation("/admin")} className={subItemClass(location === "/admin")}>
+                        <Users className="h-3.5 w-3.5 shrink-0 text-foreground" />
+                        Access Management
+                      </button>
                     )}
-                    {isIntelligenceItem && (
-                      <SidebarMenuItem key="intel-folder">
-                        <SidebarMenuButton
-                          isActive={location === "/intelligence" || (location.startsWith("/intelligence") && !location.startsWith("/intelligence/mapping"))}
-                          onClick={() => setLocation("/intelligence")}
-                          tooltip="Intelligence"
-                          className="h-10 font-normal transition-all"
-                        >
-                          <FolderSearch className={`h-4 w-4 text-foreground`} />
-                          <span className={`flex-1 ${location === "/intelligence" || (location.startsWith("/intelligence") && !location.startsWith("/intelligence/mapping")) ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
-                            Intelligence
-                          </span>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    )}
-                    {!isIntelligenceItem && (
-                      <SidebarMenuItem key={item.path} ref={item.label === "Shortcuts" ? shortcutsItemRef : undefined}>
-                        <SidebarMenuButton
-                          isActive={isActive}
-                          onClick={() => setLocation(item.path)}
-                          tooltip={item.label}
-                          className="h-10 font-normal transition-all"
-                          onMouseEnter={() => {
-                            if (item.label === "Shortcuts" && isObservationFocused) {
-                              setShortcutsPanelOpen(true);
-                            }
-                          }}
-                        >
-                          <item.icon className={`h-4 w-4 ${
-                            (item as any).badge > 0 ? "text-blue-400" : isActive ? (item as any).color ?? "text-sidebar-primary" : item.label === "Shortcuts" && isObservationFocused ? "text-yellow-400" : (item as any).color ? `${(item as any).color}/60` : "text-sidebar-foreground/60"
-                          }`} />
-                          <span className={`flex-1 ${
-                            (item as any).badge > 0 ? "text-blue-300 font-medium" : isActive ? "text-sidebar-foreground font-medium" : item.label === "Shortcuts" && isObservationFocused ? "text-cyan-300 font-medium" : "text-sidebar-foreground/80"
-                          }`}>
-                            {(item as any).badgeLabel ?? item.label}
-                          </span>
-                          {(item as any).badge > 0 && !isCollapsed && (
-                            <span className="ml-auto inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-[10px] font-bold bg-blue-500/20 border border-blue-500/40 text-blue-400">
-                              {(item as any).badge}
-                            </span>
-                          )}
-                          {item.label === "Shortcuts" && isObservationFocused && !isCollapsed && (
-                            <span className="ml-1 text-[9px] font-bold text-cyan-500 uppercase tracking-wide">hover</span>
-                          )}
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    )}
-                  </React.Fragment>
-                );
-              })}
+                  </div>
+                )}
+              </SidebarMenuItem>
+
             </SidebarMenu>
           </SidebarContent>
 
@@ -463,8 +502,14 @@ function DashboardLayoutContent({
                         {user?.name ?? "—"}
                       </p>
                       <div className="flex items-center gap-1 mt-1.5">
-                        <RoleIcon className={`w-3 h-3 ${roleConf?.color}`} />
-                        <span className={`text-xs ${roleConf?.color}`}>{roleConf?.label}</span>
+                        {(() => {
+                          const roleConf = ROLE_CONFIG[(user?.role as keyof typeof ROLE_CONFIG) ?? "observer"];
+                          const RoleIcon = roleConf?.icon ?? Eye;
+                          return <>
+                            <RoleIcon className={`w-3 h-3 ${roleConf?.color}`} />
+                            <span className={`text-xs ${roleConf?.color}`}>{roleConf?.label}</span>
+                          </>;
+                        })()}
                       </div>
                     </div>
                   )}
@@ -475,10 +520,16 @@ function DashboardLayoutContent({
                   <p className="text-sm font-medium">{user?.name}</p>
                   <p className="text-xs text-muted-foreground font-mono">{(user as any)?.cin ? `CIN: ${(user as any).cin}` : (user as any)?.username ?? ""}</p>
                   {(user as any)?.unit && <p className="text-xs text-muted-foreground">{(user as any).unit}</p>}
-                  <Badge variant="outline" className={`mt-1.5 text-xs gap-1 ${roleConf?.badge}`}>
-                    <RoleIcon className="w-3 h-3" />
-                    {roleConf?.label}
-                  </Badge>
+                  {(() => {
+                    const roleConf = ROLE_CONFIG[(user?.role as keyof typeof ROLE_CONFIG) ?? "observer"];
+                    const RoleIcon = roleConf?.icon ?? Eye;
+                    return (
+                      <Badge variant="outline" className={`mt-1.5 text-xs gap-1 ${roleConf?.badge}`}>
+                        <RoleIcon className="w-3 h-3" />
+                        {roleConf?.label}
+                      </Badge>
+                    );
+                  })()}
                 </div>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => setLocation("/profile")} className="cursor-pointer">
@@ -520,7 +571,7 @@ function DashboardLayoutContent({
             <div className="flex items-center gap-2">
               <SidebarTrigger className="h-9 w-9 rounded-lg" />
               <span className="text-base font-semibold text-foreground">
-                {activeMenuItem?.label ?? "Running Sheet"}
+                Running Sheet
               </span>
             </div>
             {location !== "/intelligence/mapping" && (
@@ -560,7 +611,7 @@ function DashboardLayoutContent({
             setShortcutsPanelHovered(false);
             if (!isObservationFocused) setShortcutsPanelOpen(false);
           }}
-          onMouseDown={(e) => e.preventDefault()} // prevent textarea blur
+          onMouseDown={(e) => e.preventDefault()}
         >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-sidebar-border bg-sidebar-accent/30">
@@ -571,27 +622,23 @@ function DashboardLayoutContent({
             <button
               className="h-6 w-6 flex items-center justify-center rounded hover:bg-sidebar-accent text-sidebar-foreground/50 hover:text-sidebar-foreground transition-colors"
               onClick={() => setShortcutsPanelOpen(false)}
-              onMouseDown={(e) => e.preventDefault()}
-              aria-label="Close shortcuts panel"
             >
               ×
             </button>
           </div>
-          {/* List */}
-          <div className="overflow-y-auto" style={{ maxHeight: "calc(60vh - 48px)" }}>
-            {!shortcutsList || shortcutsList.length === 0 ? (
-              <p className="px-4 py-6 text-sm text-sidebar-foreground/50 text-center italic">No shortcuts defined</p>
+          {/* Body */}
+          <div className="overflow-y-auto p-3 flex flex-col gap-1" style={{ maxHeight: "calc(60vh - 48px)" }}>
+            {shortcutsList && shortcutsList.length > 0 ? (
+              shortcutsList.map((sc: any) => (
+                <div key={sc.id} className="flex items-start gap-2 px-2 py-1.5 rounded-lg hover:bg-sidebar-accent/40 transition-colors">
+                  <span className="shrink-0 font-mono text-xs font-bold text-cyan-400 bg-cyan-400/10 border border-cyan-400/20 rounded px-1.5 py-0.5 leading-none mt-0.5">
+                    {sc.trigger}
+                  </span>
+                  <span className="text-xs text-sidebar-foreground/80 leading-relaxed">{sc.expansion}</span>
+                </div>
+              ))
             ) : (
-              <table className="w-full text-sm">
-                <tbody>
-                  {shortcutsList.map((s: { id: number; trigger: string; expansion: string }) => (
-                    <tr key={s.id} className="border-b border-sidebar-border/40 last:border-0 hover:bg-sidebar-accent/20 transition-colors">
-                      <td className="px-4 py-2.5 font-mono text-cyan-400 font-semibold whitespace-nowrap w-1/3">{s.trigger}</td>
-                      <td className="px-3 py-2.5 text-sidebar-foreground/80 leading-snug">{s.expansion}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <p className="text-xs text-sidebar-foreground/50 text-center py-4">No shortcuts yet</p>
             )}
           </div>
         </div>

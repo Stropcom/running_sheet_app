@@ -56,6 +56,8 @@ import {
   Shield,
   Users,
   ShieldCheck,
+  Settings,
+  UserCog,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -392,6 +394,115 @@ function haversineMetres(lat1: number, lng1: number, lat2: number, lng2: number)
   const dLng = (lng2 - lng1) * Math.PI / 180;
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// ── Map Sidebar Nav Component ─────────────────────────────────────────────────
+function MapSidebarNav({ user, onNavigate }: { user: any; onNavigate: (path: string) => void }) {
+  const curPath = window.location.pathname;
+  const [adminExpanded, setAdminExpanded] = useState(false);
+  const [userMgmtExpanded, setUserMgmtExpanded] = useState(false);
+  const [courtExpanded, setCourtExpanded] = useState(false);
+
+  const navBtn = (path: string, Icon: React.ComponentType<{ className?: string }>, label: string) => {
+    const isActive = path === "/"
+      ? curPath === "/" || curPath.startsWith("/operation/") || curPath.startsWith("/sheet/")
+      : curPath === path || curPath.startsWith(path);
+    return (
+      <button
+        key={path}
+        onClick={() => onNavigate(path)}
+        className={`flex items-center gap-3 w-full px-4 py-2.5 text-sm transition-colors hover:bg-accent/60 ${
+          isActive ? "bg-accent text-foreground font-medium" : "text-foreground/80"
+        }`}
+      >
+        <Icon className="h-4 w-4 flex-shrink-0" />
+        <span className="truncate">{label}</span>
+      </button>
+    );
+  };
+
+  const subBtn = (path: string, Icon: React.ComponentType<{ className?: string }>, label: string, extra?: React.ReactNode) => {
+    const isActive = curPath === path || curPath.startsWith(path);
+    return (
+      <button
+        key={path}
+        onClick={() => onNavigate(path)}
+        className={`flex items-center gap-2 w-full px-3 py-2 text-sm transition-colors hover:bg-accent/60 rounded-md ${
+          isActive ? "bg-accent text-foreground font-medium" : "text-foreground/70"
+        }`}
+      >
+        <Icon className="h-3.5 w-3.5 flex-shrink-0" />
+        <span className="flex-1 truncate">{label}</span>
+        {extra}
+      </button>
+    );
+  };
+
+  return (
+    <div className="flex-1 overflow-y-auto py-2">
+      {navBtn("/", FileText, "Operations")}
+      {navBtn("/governance", ClipboardCheck, "Governance")}
+      {navBtn("/todo", ClipboardList, "To-Do")}
+      {navBtn("/intelligence/mapping", MapIcon, "Mapping")}
+      {navBtn("/calendar", CalendarDays, "Calendar")}
+      {navBtn("/shortcuts", Zap, "Shortcuts")}
+      {navBtn("/intelligence", FolderSearch, "Intelligence")}
+      {navBtn("/target-registry", BookOpen, "Target Registry")}
+
+      {/* Administration folder */}
+      <button
+        onClick={() => setAdminExpanded(v => !v)}
+        className="flex items-center gap-3 w-full px-4 py-2.5 text-sm transition-colors hover:bg-accent/60 text-foreground/80"
+      >
+        <Settings className="h-4 w-4 flex-shrink-0" />
+        <span className="flex-1 truncate">Administration</span>
+        {adminExpanded ? <ChevronDown className="h-3.5 w-3.5 text-foreground/40" /> : <ChevronRight className="h-3.5 w-3.5 text-foreground/40" />}
+      </button>
+      {adminExpanded && (
+        <div className="ml-4 border-l border-border/50 pl-2 flex flex-col gap-0.5 mb-1">
+          {/* Court expandable */}
+          <button
+            onClick={() => setCourtExpanded(v => !v)}
+            className={`flex items-center gap-2 w-full px-3 py-2 text-sm transition-colors hover:bg-accent/60 rounded-md ${
+              curPath.startsWith("/court") ? "bg-accent text-foreground font-medium" : "text-foreground/70"
+            }`}
+          >
+            <Scale className="h-3.5 w-3.5 flex-shrink-0" />
+            <span className="flex-1">Court</span>
+            {courtExpanded ? <ChevronDown className="h-3 w-3 text-foreground/40" /> : <ChevronRight className="h-3 w-3 text-foreground/40" />}
+          </button>
+          {courtExpanded && (
+            <div className="ml-4 border-l border-border/40 pl-2 flex flex-col gap-0.5 mb-0.5">
+              {subBtn("/court/statements", FolderOpen, "Statements")}
+              {subBtn("/court/witness-list", FolderOpen, "Witness List")}
+              {subBtn("/court/wipc", ShieldCheck, "WIPC", <span className="text-[9px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1 rounded leading-4">🔒</span>)}
+            </div>
+          )}
+          {subBtn("/audit", ScrollText, "Audit Log")}
+          {subBtn("/draft", WifiOff, "Draft Mode")}
+          {subBtn("/operation-management", ArrowRightLeft, "Archive")}
+          {subBtn("/recycle-bin", Trash2, "Recycle Bin")}
+          {subBtn("/help", HelpCircle, "Help")}
+        </div>
+      )}
+
+      {/* User Management folder */}
+      <button
+        onClick={() => setUserMgmtExpanded(v => !v)}
+        className="flex items-center gap-3 w-full px-4 py-2.5 text-sm transition-colors hover:bg-accent/60 text-foreground/80"
+      >
+        <UserCog className="h-4 w-4 flex-shrink-0" />
+        <span className="flex-1 truncate">User Management</span>
+        {userMgmtExpanded ? <ChevronDown className="h-3.5 w-3.5 text-foreground/40" /> : <ChevronRight className="h-3.5 w-3.5 text-foreground/40" />}
+      </button>
+      {userMgmtExpanded && (
+        <div className="ml-4 border-l border-border/50 pl-2 flex flex-col gap-0.5 mb-1">
+          {subBtn("/profile", User, "My Profile")}
+          {user?.role === "admin" && subBtn("/admin", Users, "Access Management")}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── Main Component ─────────────────────────────────────────────────────────────
@@ -1895,43 +2006,10 @@ export default function IntelligenceMapping() {
         </div>
 
         {/* App Navigation Menu */}
-        <div className="flex-1 overflow-y-auto py-2">
-          {[
-            { icon: FileText, label: "Operations", path: "/" },
-            { icon: ClipboardCheck, label: "Governance", path: "/governance" },
-            { icon: ClipboardList, label: "To-Do", path: "/todo" },
-            { icon: MapIcon, label: "Mapping", path: "/intelligence/mapping" },
-            { icon: CalendarDays, label: "Calendar", path: "/calendar" },
-            { icon: Zap, label: "Shortcuts", path: "/shortcuts" },
-            { icon: FolderSearch, label: "Intelligence", path: "/intelligence" },
-            { icon: BookOpen, label: "Target Registry", path: "/target-registry" },
-            { icon: ArrowRightLeft, label: "Operation Management", path: "/operation-management" },
-            { icon: Scale, label: "Court", path: "/court/statements" },
-            { icon: ScrollText, label: "Audit Log", path: "/audit" },
-            { icon: WifiOff, label: "Draft Mode", path: "/draft" },
-            { icon: Trash2, label: "Recycle Bin", path: "/recycle-bin" },
-            { icon: HelpCircle, label: "Help", path: "/help" },
-            { icon: User, label: "My Profile", path: "/profile" },
-            ...(user?.role === "admin" ? [{ icon: Users, label: "User Management", path: "/admin" }] : []),
-          ].map(({ icon: Icon, label, path }) => {
-            const curPath = window.location.pathname;
-            const isActive = path === "/"
-              ? curPath === "/" || curPath.startsWith("/operation/") || curPath.startsWith("/sheet/")
-              : curPath === path || curPath.startsWith(path);
-            return (
-              <button
-                key={path}
-                onClick={() => { setSidebarOpen(false); setLocation(path); }}
-                className={`flex items-center gap-3 w-full px-4 py-2.5 text-sm transition-colors hover:bg-accent/60 ${
-                  isActive ? "bg-accent text-foreground font-medium" : "text-foreground/80"
-                }`}
-              >
-                <Icon className="h-4 w-4 flex-shrink-0" />
-                <span className="truncate">{label}</span>
-              </button>
-            );
-          })}
-        </div>
+        <MapSidebarNav
+          user={user}
+          onNavigate={(path) => { setSidebarOpen(false); setLocation(path); }}
+        />
       </div>
 
       {/* ── Map Area ── */}

@@ -734,6 +734,8 @@ export default function RSMappingEmbedded() {
     polylineRef.current?.setMap(null);
     setTracing(true);
 
+    console.log('[TraceRoute] Starting. placed count:', placed.length, 'geocoderRef:', !!geocoderRef.current, 'snapFn:', !!snapToRoadsMutateRef.current);
+
     // IMPORTANT: segmentType/viaStreets on a waypoint describe the path AFTER that waypoint
     // (i.e. the segment FROM this waypoint TO the next). So we read from.segmentType, not to.segmentType.
     const segments: { from: PlacedWaypoint; to: PlacedWaypoint; viaStreets: string[]; isCoos: boolean }[] = [];
@@ -743,9 +745,11 @@ export default function RSMappingEmbedded() {
       // segmentType/viaStreets describe the path AFTER the 'from' waypoint
       const isCoos = from.segmentType === "coos";
       const viaStreets = from.segmentType === "continued_via" ? from.viaStreets : [];
+      console.log(`[TraceRoute] Segment ${i}: from=${from.address} segmentType=${from.segmentType} viaStreets=${JSON.stringify(from.viaStreets)}`);
       segments.push({ from, to, viaStreets, isCoos });
     }
 
+    console.log('[TraceRoute] Total segments:', segments.length);
     let pending = segments.length;
     const done = () => { if (--pending === 0) setTracing(false); };
 
@@ -810,72 +814,27 @@ export default function RSMappingEmbedded() {
           return;
         }
 
-        // Build the ordered point list: from → street1 → street2 → ... → to
-        const points = [
+        // Draw amber polyline through: from → street1 → street2 → ... → to
+        // This passes through a geocoded point on each listed street in order.
+        // No backend call needed — direct polyline through street midpoints.
+        const path = [
           { lat: seg.from.lat, lng: seg.from.lng },
           ...validLatLngs,
           { lat: seg.to.lat, lng: seg.to.lng },
         ];
-
-        // Call backend Roads API snap-to-roads to get road-following geometry
-        // for ONLY the listed streets (no connector roads added by Google)
-        const snapFn = snapToRoadsMutateRef.current;
-        if (!snapFn) {
-          // No mutation available — fall back to straight amber line
-          const line = new google.maps.Polyline({
-            path: [{ lat: seg.from.lat, lng: seg.from.lng }, { lat: seg.to.lat, lng: seg.to.lng }],
-            geodesic: true,
-            strokeColor: "#f59e0b",
-            strokeOpacity: 0.7,
-            strokeWeight: 3,
-            map: mapRef.current!,
-          });
-          tracePolylinesRef.current.push(line);
-          done();
-          return;
-        }
-        snapFn({ points })
-          .then((result) => {
-            const path = result.points;
-            if (path.length >= 2) {
-              const line = new google.maps.Polyline({
-                path,
-                geodesic: true,
-                strokeColor: "#f59e0b",
-                strokeOpacity: 0.9,
-                strokeWeight: 4,
-                map: mapRef.current!,
-              });
-              tracePolylinesRef.current.push(line);
-            } else {
-              // Fallback: straight amber line
-              const line = new google.maps.Polyline({
-                path: [{ lat: seg.from.lat, lng: seg.from.lng }, { lat: seg.to.lat, lng: seg.to.lng }],
-                geodesic: true,
-                strokeColor: "#f59e0b",
-                strokeOpacity: 0.7,
-                strokeWeight: 3,
-                map: mapRef.current!,
-              });
-              tracePolylinesRef.current.push(line);
-            }
-            done();
-          })
-          .catch(() => {
-            // Fallback: straight amber line
-            const line = new google.maps.Polyline({
-              path: [{ lat: seg.from.lat, lng: seg.from.lng }, { lat: seg.to.lat, lng: seg.to.lng }],
-              geodesic: true,
-              strokeColor: "#f59e0b",
-              strokeOpacity: 0.7,
-              strokeWeight: 3,
-              map: mapRef.current!,
-            });
-            tracePolylinesRef.current.push(line);
-            toast.warning(`Could not snap route for segment to ${seg.to.address}`);
-            done();
-          });
+        const line = new google.maps.Polyline({
+          path,
+          geodesic: true,
+          strokeColor: "#f59e0b",
+          strokeOpacity: 0.9,
+          strokeWeight: 4,
+          map: mapRef.current!,
+        });
+        tracePolylinesRef.current.push(line);
+        done();
       };
+
+      console.log('[TraceRoute] Processing via segment, streets:', streets, 'suburbHint:', suburbHint, 'geocoderRef:', !!geocoderRef.current);
 
       // Guard: if geocoder not ready, fall back to direct amber line
       if (!geocoderRef.current) {
@@ -892,24 +851,30 @@ export default function RSMappingEmbedded() {
         return;
       }
 
-      // Use Promise-based geocoder (more reliable than callback style in v=weekly)
+      // Use callback-style geocoder wrapped in Promise (matches working waypoint geocoding pattern)
       const geocodePromises = streets.map((street) => {
         const query = `${street}${suburbHint}, Western Australia`;
-        return geocoderRef.current!.geocode({ address: query })
-          .then((res) => {
-            if (res.results && res.results[0]) {
-              const loc = res.results[0].geometry.location;
-              return { lat: loc.lat(), lng: loc.lng() };
+        return new Promise<{ lat: number; lng: number } | null>((resolve) => {
+          geocoderRef.current!.geocode({ address: query }, (results, status) => {
+            if (status === "OK" && results && results[0]) {
+              const loc = results[0].geometry.location;
+              resolve({ lat: loc.lat(), lng: loc.lng() });
+            } else {
+              console.log('[TraceRoute] Geocode failed for:', query, 'status:', status);
+              resolve(null);
             }
-            return null;
-          })
-          .catch(() => null as { lat: number; lng: number } | null);
+          });
+        });
       });
 
       Promise.all(geocodePromises).then((results) => {
+        console.log('[TraceRoute] Geocode results:', results);
         for (let i = 0; i < results.length; i++) {
           geocodedLatLngs[i] = results[i];
         }
+        onAllGeocoded();
+      }).catch((err) => {
+        console.error('[TraceRoute] Geocode Promise.all error:', err);
         onAllGeocoded();
       });
     });

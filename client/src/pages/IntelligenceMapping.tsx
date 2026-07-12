@@ -1878,9 +1878,10 @@ export default function IntelligenceMapping() {
       {/* ── Side Panel ── */}
       <div
         ref={panelRef}
-        className={`flex flex-col border-r-2 border-border bg-card transition-all duration-200 ${
-          sidebarOpen ? "w-64 min-w-[16rem]" : "w-0 min-w-0 overflow-hidden"
+        className={`flex flex-col border-r-2 border-border bg-card transition-all duration-200 shadow-2xl ${
+          sidebarOpen ? "w-64 min-w-[16rem] rounded-r-2xl" : "w-0 min-w-0 overflow-hidden"
         }`}
+        style={sidebarOpen ? { clipPath: "none" } : undefined}
       >
         {/* Panel Header */}
         <div className="flex items-center justify-between px-4 py-3.5 border-b-2 border-border flex-shrink-0 bg-muted/20">
@@ -2196,8 +2197,8 @@ export default function IntelligenceMapping() {
 
       {/* ── RS Actions Right Pane ── */}
       <div
-        className={`flex flex-col border-l-2 border-border bg-card transition-all duration-200 ${
-          rsActionsPaneOpen ? "w-80 min-w-[20rem]" : "w-0 min-w-0 overflow-hidden"
+        className={`flex flex-col border-l-2 border-border bg-card transition-all duration-200 shadow-2xl ${
+          rsActionsPaneOpen ? "w-80 min-w-[20rem] rounded-l-2xl" : "w-0 min-w-0 overflow-hidden"
         }`}
       >
         {/* Pane Header */}
@@ -2604,11 +2605,11 @@ export default function IntelligenceMapping() {
 
       {/* ── Bottom Quick-Link Banner ── */}
       <div
-        className="absolute bottom-0 left-0 right-0 z-20 flex items-center justify-center gap-1 px-2 py-1.5"
+        className="absolute bottom-2 left-2 right-2 z-20 flex items-center justify-center gap-1 px-2 py-1.5 rounded-2xl shadow-2xl"
         style={{
-          background: "rgba(15,17,23,0.88)",
-          backdropFilter: "blur(10px)",
-          borderTop: "1px solid rgba(255,255,255,0.08)",
+          background: "rgba(15,17,23,0.92)",
+          backdropFilter: "blur(12px)",
+          border: "1.5px solid rgba(255,255,255,0.10)",
         }}
       >
         {/* Permanent: Operations */}

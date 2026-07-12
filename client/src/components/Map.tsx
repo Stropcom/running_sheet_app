@@ -141,7 +141,6 @@ export function MapView({
       fullscreenControl: false,
       zoomControl: false,
       streetViewControl: false,
-      mapId: "DEMO_MAP_ID",
       gestureHandling: "greedy", // one-finger pan on mobile
     });
     if (onMapReady) {

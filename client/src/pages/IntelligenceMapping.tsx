@@ -491,6 +491,11 @@ export default function IntelligenceMapping() {
   const rsCountdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const rsInlineInputRef = useRef<HTMLTextAreaElement | null>(null);
 
+  // Right-pane collapsible RS Quick Entry panel state (separate from modal inline field)
+  const [rsQeText, setRsQeText] = useState("");
+  const [rsQeCins, setRsQeCins] = useState<Set<string>>(new Set());
+  const rsQeInputRef = useRef<HTMLTextAreaElement | null>(null);
+
   // ── Custom Marker Placement State ────────────────────────────────────────────
   const [placingMarker, setPlacingMarker] = useState(false); // placement mode active
   const [pendingLatLng, setPendingLatLng] = useState<{ lat: number; lng: number } | null>(null);
@@ -2384,111 +2389,101 @@ export default function IntelligenceMapping() {
                 </button>
 
                 {/* Collapsible body — full RS Quick Entry form */}
-                {rsQeExpanded && (
-                  <div className="px-3 py-3 space-y-2 border-t border-border bg-card">
-                    {/* Sheet + target strip */}
-                    <div className="flex items-center gap-2">
-                      {rsSheetsData && (() => {
-                        const sheet = (rsSheetsData as any[]).find((s: any) => s.id === rsSelectedSheetId);
-                        return sheet ? (
-                          <button
-                            onClick={() => setLocation(`/sheet/${rsSelectedSheetId}`)}
-                            className="flex-1 flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-primary/40 bg-primary/10 hover:bg-primary/20 active:scale-[0.98] transition-all min-w-0"
-                          >
-                            <MapIcon className="h-3 w-3 text-primary flex-shrink-0" />
-                            <span className="text-[11px] font-semibold text-primary truncate">{sheet.title || `Sheet #${sheet.id}`}</span>
-                            <ExternalLink className="h-3 w-3 text-primary/60 flex-shrink-0 ml-auto" />
-                          </button>
-                        ) : null;
+                {rsQeExpanded && rsSelectedSheetId && (() => {
+                  const selectedSheet = (rsSheetsData as any[] | undefined)?.find((s: any) => s.id === rsSelectedSheetId);
+                  const rosterCins: string[] = [];
+                  if (selectedSheet?.sheetCins) {
+                    try {
+                      const parsed: Array<{ cin: string; isTeamLeader?: boolean }> = typeof selectedSheet.sheetCins === "string" ? JSON.parse(selectedSheet.sheetCins) : selectedSheet.sheetCins;
+                      parsed.sort((a, b) => { if (a.isTeamLeader && !b.isTeamLeader) return -1; if (!a.isTeamLeader && b.isTeamLeader) return 1; const numA = parseInt(a.cin ?? "", 10); const numB = parseInt(b.cin ?? "", 10); if (!isNaN(numA) && !isNaN(numB)) return numA - numB; return (a.cin ?? "").localeCompare(b.cin ?? ""); }).forEach(c => { if (c.cin) rosterCins.push(c.cin); });
+                    } catch { /* ignore */ }
+                  }
+                  const appendQeText = (text: string) => { setRsQeText(prev => prev ? `${prev} ${text}` : text); rsQeInputRef.current?.focus(); };
+                  const findShortcut = (trigger: string) => { const tgt = (targetShortcuts as any[] | undefined)?.find((s: any) => s.trigger?.toLowerCase() === trigger.toLowerCase()); if (tgt) return tgt.expansion as string; const gen = (generalShortcuts as any[] | undefined)?.find((s: any) => s.trigger?.toLowerCase() === trigger.toLowerCase()); return gen ? gen.expansion as string : null; };
+                  const shortcuts: Array<{ label: string; getValue: () => string | null }> = [
+                    { label: "V1", getValue: () => rsTargetData?.v1 ?? rsTargetData?.v1f ?? null },
+                    { label: "V2", getValue: () => rsTargetData?.v2 ?? rsTargetData?.v2f ?? null },
+                    { label: "TGT", getValue: () => rsTargetData?.tgt ?? rsTargetData?.name ?? null },
+                    { label: "DSO", getValue: () => findShortcut("dso") ?? "driver and sole occupant" },
+                    { label: "D", getValue: () => findShortcut("d") ?? "departed and" },
+                    { label: "AR", getValue: () => findShortcut("ar") ?? "arrived and" },
+                    { label: "CV", getValue: () => findShortcut("cv") ?? "continued via" },
+                    { label: "OOS", getValue: () => findShortcut("oos") ?? "out of sight" },
+                    { label: "COOS", getValue: () => findShortcut("coos") ?? "continued out of sight" },
+                  ];
+                  const available = shortcuts.filter(s => s.getValue() !== null);
+                  const submitQeEntry = () => {
+                    const obs = rsQeText.trim() || "Entry";
+                    const cins = new Set(rsQeCins);
+                    setRsQeText("");
+                    setRsQeCins(new Set());
+                    addQuickRsEntry(obs, cins);
+                  };
+                  return (
+                    <div className="px-3 py-3 border-t border-border bg-card space-y-2.5">
+                      {/* OBSERVATION */}
+                      <div className="space-y-1.5">
+                        <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Observation</span>
+                        <textarea
+                          ref={rsQeInputRef}
+                          value={rsQeText}
+                          onChange={(e) => setRsQeText(e.target.value)}
+                          placeholder="Add details (optional)…"
+                          rows={3}
+                          className="w-full resize-none rounded-xl border-2 border-border bg-background px-3 py-2 text-[12px] placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                        />
+                        {/* Shortcut chips */}
+                        {available.length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {available.map(s => (
+                              <button key={s.label} onClick={() => { const v = s.getValue(); if (v) appendQeText(v); }} className="px-2 py-0.5 rounded-md text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all">{s.label}</button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      {/* FULL ADDRESS */}
+                      <div className="rounded-xl border-2 border-border bg-muted/30 px-3 py-2">
+                        <p className="text-[9px] font-bold uppercase tracking-wide text-primary mb-1">Full Address</p>
+                        <p className="text-[11px] font-mono text-foreground leading-snug">{rsTargetData?.arr ?? "—"}</p>
+                      </div>
+                      {/* SHORT ADDRESS */}
+                      {rsTargetData?.arr && (() => {
+                        const short = rsTargetData.arr.split(",")[0]?.trim() ?? rsTargetData.arr;
+                        return (
+                          <div className="rounded-xl border-2 border-border bg-muted/30 px-3 py-2">
+                            <p className="text-[9px] font-bold uppercase tracking-wide text-primary mb-1">Short Address</p>
+                            <p className="text-[11px] font-mono text-foreground">{short}</p>
+                          </div>
+                        );
                       })()}
-                      {rsTargetData && (
-                        <div className="flex-shrink-0 rounded-lg border border-border bg-muted/30 px-2 py-1">
-                          <p className="text-[10px] font-bold text-foreground leading-none">{rsTargetData.tgt ?? rsTargetData.name}</p>
+                      {/* TEAM / CIN chips */}
+                      {rosterCins.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          <button
+                            onClick={() => { const allSel = rosterCins.every(c => rsQeCins.has(c)); setRsQeCins(allSel ? new Set() : new Set(rosterCins)); }}
+                            className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all active:scale-95 ${rosterCins.every(c => rsQeCins.has(c)) ? "bg-amber-500/20 border-amber-500/60 text-amber-400" : "bg-muted/40 border-amber-500/30 text-amber-500/80 hover:bg-amber-500/10"}`}
+                          >TEAM</button>
+                          {rosterCins.map((cin) => (
+                            <button key={cin} onClick={() => { const next = new Set(rsQeCins); if (next.has(cin)) { next.delete(cin); } else { next.add(cin); } setRsQeCins(next); }} className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all active:scale-95 ${rsQeCins.has(cin) ? "bg-primary/20 border-primary/60 text-primary" : "bg-muted/40 border-border text-foreground/80 hover:bg-muted/70 hover:text-foreground"}`}>{cin}</button>
+                          ))}
+                        </div>
+                      )}
+                      {/* Submit */}
+                      <div className="flex justify-end">
+                        <button onClick={submitQeEntry} disabled={rsAddingRow} className="flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-[11px] font-semibold text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-50">
+                          {rsAddingRow ? <Spinner className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />} Submit
+                        </button>
+                      </div>
+                      {/* Last entry confirmation */}
+                      {rsLastEntry && (
+                        <div className="rounded-xl border border-green-500/30 bg-green-500/10 px-3 py-2">
+                          <p className="text-[9px] font-bold uppercase tracking-wide text-green-400 mb-0.5">Last Entry</p>
+                          <p className="text-[11px] font-mono text-foreground">{rsLastEntry.time} — {rsLastEntry.label}</p>
                         </div>
                       )}
                     </div>
-
-                    <div className="border-t border-border" />
-
-                    {/* ARR button */}
-                    {rsTargetData?.arr && (
-                      <button
-                        disabled={rsAddingRow}
-                        onClick={() => {
-                          const obs = rsTargetData!.arr!;
-                          if (rsInlineLabel === obs) { closeInlineField(); } else { openInlineField(obs); }
-                        }}
-                        className={`flex flex-col items-start gap-0.5 w-full rounded-lg border border-green-500/30 bg-green-500/5 hover:bg-green-500/10 active:scale-95 transition-all px-2.5 py-2 disabled:opacity-50 ${rsInlineLabel === rsTargetData!.arr! ? "ring-1 ring-green-400" : ""}`}
-                      >
-                        <span className="text-[9px] font-bold uppercase tracking-wide text-green-400">ARR</span>
-                        <span className="text-[10px] text-foreground font-mono leading-tight line-clamp-2">{rsTargetData.arr}</span>
-                      </button>
-                    )}
-
-                    {/* Inline observation field */}
-                    {rsInlineLabel && (() => {
-                      const selectedSheet = (rsSheetsData as any[] | undefined)?.find((s: any) => s.id === rsSelectedSheetId);
-                      const rosterCins: string[] = [];
-                      if (selectedSheet?.sheetCins) {
-                        try {
-                          const parsed: Array<{ cin: string; isTeamLeader?: boolean }> = typeof selectedSheet.sheetCins === "string" ? JSON.parse(selectedSheet.sheetCins) : selectedSheet.sheetCins;
-                          parsed.sort((a, b) => { if (a.isTeamLeader && !b.isTeamLeader) return -1; if (!a.isTeamLeader && b.isTeamLeader) return 1; const numA = parseInt(a.cin ?? "", 10); const numB = parseInt(b.cin ?? "", 10); if (!isNaN(numA) && !isNaN(numB)) return numA - numB; return (a.cin ?? "").localeCompare(b.cin ?? ""); }).forEach(c => { if (c.cin) rosterCins.push(c.cin); });
-                        } catch { /* ignore */ }
-                      }
-                      const appendText = (text: string) => { setRsInlineText(prev => prev ? `${prev} ${text}` : text); resetInlineTimer(); rsInlineInputRef.current?.focus(); };
-                      const findShortcut = (trigger: string) => { const tgt = (targetShortcuts as any[] | undefined)?.find((s: any) => s.trigger?.toLowerCase() === trigger.toLowerCase()); if (tgt) return tgt.expansion as string; const gen = (generalShortcuts as any[] | undefined)?.find((s: any) => s.trigger?.toLowerCase() === trigger.toLowerCase()); return gen ? gen.expansion as string : null; };
-                      const shortcuts: Array<{ label: string; getValue: () => string | null }> = [
-                        { label: "V1", getValue: () => rsTargetData?.v1 ?? rsTargetData?.v1f ?? null },
-                        { label: "V2", getValue: () => rsTargetData?.v2 ?? rsTargetData?.v2f ?? null },
-                        { label: "TGT", getValue: () => rsTargetData?.tgt ?? rsTargetData?.name ?? null },
-                        { label: "DSO", getValue: () => findShortcut("dso") ?? "driver and sole occupant" },
-                        { label: "D", getValue: () => findShortcut("d") ?? "departed and" },
-                        { label: "AR", getValue: () => findShortcut("ar") ?? "arrived and" },
-                        { label: "CV", getValue: () => findShortcut("cv") ?? "continued via" },
-                        { label: "OOS", getValue: () => findShortcut("oos") ?? "out of sight" },
-                        { label: "COOS", getValue: () => findShortcut("coos") ?? "continued out of sight" },
-                      ];
-                      const available = shortcuts.filter(s => s.getValue() !== null);
-                      return (
-                        <div className="rounded-lg border border-border bg-muted/40 p-2.5 flex flex-col gap-2" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Observation</span>
-                            <button onClick={closeInlineField} className="text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
-                          </div>
-                          <textarea ref={rsInlineInputRef} value={rsInlineText} onChange={(e) => { setRsInlineText(e.target.value); resetInlineTimer(); }} onFocus={resetInlineTimer} placeholder="Add details (optional)…" rows={2} className="w-full resize-none rounded-lg border border-border bg-background px-2.5 py-1.5 text-[11px] placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
-                          {available.length > 0 && (
-                            <div className="flex flex-wrap gap-1">
-                              {available.map(s => (
-                                <button key={s.label} onClick={() => { const v = s.getValue(); if (v) appendText(v); }} className="px-2 py-0.5 rounded-md text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all">{s.label}</button>
-                              ))}
-                            </div>
-                          )}
-                          {rosterCins.length > 0 && (
-                            <div className="flex flex-wrap gap-1.5">
-                              <button onClick={() => { const allSel = rosterCins.every(c => rsInlineCins.has(c)); const next = allSel ? new Set<string>() : new Set(rosterCins); setRsInlineCins(next); rsInlineCinsRef.current = next; resetInlineTimer(); }} className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all active:scale-95 ${rosterCins.every(c => rsInlineCins.has(c)) ? "bg-amber-500/20 border-amber-500/60 text-amber-400" : "bg-muted/40 border-amber-500/30 text-amber-500/80 hover:bg-amber-500/10"}`}>TEAM</button>
-                              {rosterCins.map((cin) => (
-                                <button key={cin} onClick={() => { const next = new Set(rsInlineCins); if (next.has(cin)) { next.delete(cin); } else { next.add(cin); } setRsInlineCins(next); rsInlineCinsRef.current = next; resetInlineTimer(); }} className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all active:scale-95 ${rsInlineCins.has(cin) ? "bg-primary/20 border-primary/60 text-primary" : "bg-muted/40 border-border text-foreground/80 hover:bg-muted/70 hover:text-foreground"}`}>{cin}</button>
-                              ))}
-                            </div>
-                          )}
-                          <div className="flex items-center justify-end gap-2">
-                            <button onClick={submitInlineField} disabled={rsAddingRow} className="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-[10px] font-semibold text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-50">
-                              {rsAddingRow ? <Spinner className="h-3 w-3" /> : <Send className="h-3 w-3" />} Submit
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })()}
-
-                    {/* Last entry confirmation */}
-                    {rsLastEntry && (
-                      <div className="rounded-lg border border-green-500/30 bg-green-500/10 px-2.5 py-2">
-                        <p className="text-[9px] font-bold uppercase tracking-wide text-green-400 mb-0.5">Last Entry</p>
-                        <p className="text-[11px] font-mono text-foreground">{rsLastEntry.time} — {rsLastEntry.label}</p>
-                      </div>
-                    )}
-                  </div>
-                )}
+                  );
+                })()}
               </div>
             )}
           </div>{/* end RS Selection */}

@@ -443,7 +443,7 @@ function MapSidebarNav({ user, onNavigate }: { user: any; onNavigate: (path: str
       {navBtn("/", FileText, "Operations")}
       {navBtn("/governance", ClipboardCheck, "Governance")}
       {navBtn("/todo", ClipboardList, "To-Do")}
-      {navBtn("/intelligence/mapping", MapIcon, "Intelligence Mapping")}
+      {navBtn("/intelligence/mapping", MapIcon, "Mapping")}
       {navBtn("/calendar", CalendarDays, "Calendar")}
       {navBtn("/shortcuts", Zap, "Shortcuts")}
       {navBtn("/intelligence", FolderSearch, "Intelligence")}

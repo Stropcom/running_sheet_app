@@ -151,6 +151,10 @@ function DashboardLayoutContent({
   }, []);
 
   useEffect(() => {
+    if (isCollapsed) setIsResizing(false);
+  }, [isCollapsed]);
+
+  useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizing) return;
       const sidebarLeft = sidebarRef.current?.getBoundingClientRect().left ?? 0;
@@ -182,14 +186,25 @@ function DashboardLayoutContent({
   return (
     <>
       <div className="relative" ref={sidebarRef}>
-        <Sidebar collapsible="none" className="border-r border-sidebar-border rounded-r-2xl shadow-2xl overflow-hidden" disableTransition={isResizing}>
+        <Sidebar collapsible="icon" className="border-r border-sidebar-border rounded-r-2xl shadow-2xl overflow-hidden" disableTransition={isResizing}>
           {/* Header */}
           <SidebarHeader className="h-16 justify-center border-b border-sidebar-border">
-            <div className="flex items-center gap-3 px-4 w-full">
-              <ShieldCheck className="w-5 h-5 text-sidebar-primary shrink-0" />
-              <span className="font-semibold text-sidebar-foreground tracking-tight truncate text-sm">
-                Running Sheet
-              </span>
+            <div className="flex items-center gap-3 px-2 w-full">
+              <button
+                onClick={toggleSidebar}
+                className="h-8 w-8 flex items-center justify-center hover:bg-sidebar-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
+                aria-label="Toggle navigation"
+              >
+                <PanelLeft className="h-4 w-4 text-sidebar-foreground/60" />
+              </button>
+              {!isCollapsed && (
+                <div className="flex items-center gap-2 min-w-0">
+                  <ShieldCheck className="w-5 h-5 text-sidebar-primary shrink-0" />
+                  <span className="font-semibold text-sidebar-foreground tracking-tight truncate text-sm">
+                    Running Sheet
+                  </span>
+                </div>
+              )}
             </div>
           </SidebarHeader>
 
@@ -239,14 +254,14 @@ function DashboardLayoutContent({
                   <span className={`flex-1 ${todoCount > 0 ? "text-red-500 font-medium" : location === "/todo" || location === "/todo/governance" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
                     To-Do
                   </span>
-                  {todoCount > 0 && (
+                  {todoCount > 0 && !isCollapsed && (
                     <span className="inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-[10px] font-bold bg-red-500/20 border border-red-500/40 text-red-500">
                       {todoCount}
                     </span>
                   )}
-                  {todoExpanded ? <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" /> : <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />}
+                  {!isCollapsed && (todoExpanded ? <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" /> : <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />)}
                 </SidebarMenuButton>
-                {todoExpanded && (
+                {todoExpanded && !isCollapsed && (
                   <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
                     <button onClick={() => setLocation("/todo")} className={subItemClass(location === "/todo")}>
                       <Shield className={`h-3.5 w-3.5 shrink-0 ${certifyCount > 0 ? "text-red-400" : "text-emerald-400"}`} />
@@ -365,10 +380,10 @@ function DashboardLayoutContent({
                   }`}>
                     Administration
                   </span>
-                  {adminFolderExpanded ? <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" /> : <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />}
+                  {!isCollapsed && (adminFolderExpanded ? <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" /> : <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />)}
                 </SidebarMenuButton>
 
-                {adminFolderExpanded && (
+                {adminFolderExpanded && !isCollapsed && (
                   <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
 
                     {/* Court (expandable sub-folder) */}
@@ -447,10 +462,10 @@ function DashboardLayoutContent({
                   <span className={`flex-1 ${location === "/profile" || location === "/admin" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
                     User Management
                   </span>
-                  {userMgmtFolderExpanded ? <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" /> : <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />}
+                  {!isCollapsed && (userMgmtFolderExpanded ? <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" /> : <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />)}
                 </SidebarMenuButton>
 
-                {userMgmtFolderExpanded && (
+                {userMgmtFolderExpanded && !isCollapsed && (
                   <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
                     {/* My Profile */}
                     <button onClick={() => setLocation("/profile")} className={subItemClass(location === "/profile")}>
@@ -541,11 +556,13 @@ function DashboardLayoutContent({
         </Sidebar>
 
         {/* Resize handle */}
-        <div
-          className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-primary/30 transition-colors"
-          style={{ zIndex: 50 }}
-          onMouseDown={() => setIsResizing(true)}
-        />
+        {!isCollapsed && (
+          <div
+            className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-primary/30 transition-colors"
+            style={{ zIndex: 50 }}
+            onMouseDown={() => setIsResizing(true)}
+          />
+        )}
       </div>
 
       <SidebarInset>

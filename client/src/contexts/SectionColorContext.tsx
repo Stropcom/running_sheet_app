@@ -16,10 +16,10 @@ export type SectionColor = {
 const SECTION_COLORS: Record<string, SectionColor> = {
   operations: {
     name: "Operations",
-    text: "text-orange-400",
-    border: "border-orange-400/50",
-    bg: "bg-orange-400/8",
-    hex: "#fb923c",
+    text: "text-cyan-400",
+    border: "border-cyan-400/50",
+    bg: "bg-cyan-400/8",
+    hex: "#22d3ee",
   },
   governance: {
     name: "Governance",
@@ -44,10 +44,10 @@ const SECTION_COLORS: Record<string, SectionColor> = {
   },
   calendar: {
     name: "Calendar",
-    text: "text-cyan-400",
-    border: "border-cyan-400/50",
-    bg: "bg-cyan-400/8",
-    hex: "#22d3ee",
+    text: "text-orange-400",
+    border: "border-orange-400/50",
+    bg: "bg-orange-400/8",
+    hex: "#fb923c",
   },
   shortcuts: {
     name: "Shortcuts",

@@ -403,7 +403,7 @@ function MapSidebarNav({ user, onNavigate }: { user: any; onNavigate: (path: str
   const [userMgmtExpanded, setUserMgmtExpanded] = useState(false);
   const [courtExpanded, setCourtExpanded] = useState(false);
 
-  const navBtn = (path: string, Icon: React.ComponentType<{ className?: string }>, label: string) => {
+  const navBtn = (path: string, Icon: React.ComponentType<{ className?: string }>, label: string, iconColor?: string) => {
     const isActive = path === "/"
       ? curPath === "/" || curPath.startsWith("/operation/") || curPath.startsWith("/sheet/")
       : curPath === path || curPath.startsWith(path);
@@ -411,11 +411,13 @@ function MapSidebarNav({ user, onNavigate }: { user: any; onNavigate: (path: str
       <button
         key={path}
         onClick={() => onNavigate(path)}
-        className={`flex items-center gap-3 w-full px-4 py-2.5 text-sm transition-colors hover:bg-accent/60 ${
-          isActive ? "bg-accent text-foreground font-medium" : "text-foreground/80"
+        className={`flex items-center gap-3 w-full px-3 py-0 h-14 rounded-xl border text-sm font-medium transition-all shadow-sm ${
+          isActive
+            ? "bg-accent border-primary/40 text-foreground shadow-md"
+            : "bg-card border-border/60 text-foreground/80 hover:bg-accent/60 hover:border-border"
         }`}
       >
-        <Icon className="h-4 w-4 flex-shrink-0" />
+        <Icon className={`h-5 w-5 flex-shrink-0 ${iconColor ?? "text-foreground/60"}`} />
         <span className="truncate">{label}</span>
       </button>
     );
@@ -439,22 +441,24 @@ function MapSidebarNav({ user, onNavigate }: { user: any; onNavigate: (path: str
   };
 
   return (
-    <div className="flex-1 overflow-y-auto py-2">
-      {navBtn("/", FileText, "Operations")}
-      {navBtn("/governance", ClipboardCheck, "Governance")}
-      {navBtn("/todo", ClipboardList, "To-Do")}
-      {navBtn("/intelligence/mapping", MapIcon, "Mapping")}
-      {navBtn("/calendar", CalendarDays, "Calendar")}
-      {navBtn("/shortcuts", Zap, "Shortcuts")}
-      {navBtn("/intelligence", FolderSearch, "Intelligence")}
-      {navBtn("/target-registry", BookOpen, "Target Registry")}
+    <div className="flex-1 overflow-y-auto py-2 px-2 flex flex-col gap-1.5">
+      {navBtn("/", FileText, "Operations", "text-cyan-500")}
+      {navBtn("/governance", ClipboardCheck, "Governance", "text-purple-500")}
+      {navBtn("/todo", ClipboardList, "To-Do", "text-rose-500")}
+      {navBtn("/intelligence/mapping", MapIcon, "Mapping", "text-teal-500")}
+      {navBtn("/calendar", CalendarDays, "Calendar", "text-orange-500")}
+      {navBtn("/shortcuts", Zap, "Shortcuts", "text-yellow-500")}
+      {navBtn("/intelligence", FolderSearch, "Intelligence", "text-violet-500")}
+      {navBtn("/target-registry", BookOpen, "Target Registry", "text-rose-400")}
 
       {/* Administration folder */}
       <button
         onClick={() => setAdminExpanded(v => !v)}
-        className="flex items-center gap-3 w-full px-4 py-2.5 text-sm transition-colors hover:bg-accent/60 text-foreground/80"
+        className={`flex items-center gap-3 w-full px-3 h-14 rounded-xl border text-sm font-medium transition-all shadow-sm ${
+          adminExpanded ? "bg-accent border-primary/40 text-foreground" : "bg-card border-border/60 text-foreground/80 hover:bg-accent/60"
+        }`}
       >
-        <Settings className="h-4 w-4 flex-shrink-0" />
+        <Settings className="h-5 w-5 flex-shrink-0 text-slate-500" />
         <span className="flex-1 truncate">Administration</span>
         {adminExpanded ? <ChevronDown className="h-3.5 w-3.5 text-foreground/40" /> : <ChevronRight className="h-3.5 w-3.5 text-foreground/40" />}
       </button>
@@ -489,9 +493,11 @@ function MapSidebarNav({ user, onNavigate }: { user: any; onNavigate: (path: str
       {/* User Management folder */}
       <button
         onClick={() => setUserMgmtExpanded(v => !v)}
-        className="flex items-center gap-3 w-full px-4 py-2.5 text-sm transition-colors hover:bg-accent/60 text-foreground/80"
+        className={`flex items-center gap-3 w-full px-3 h-14 rounded-xl border text-sm font-medium transition-all shadow-sm ${
+          userMgmtExpanded ? "bg-accent border-primary/40 text-foreground" : "bg-card border-border/60 text-foreground/80 hover:bg-accent/60"
+        }`}
       >
-        <UserCog className="h-4 w-4 flex-shrink-0" />
+        <UserCog className="h-5 w-5 flex-shrink-0 text-blue-500" />
         <span className="flex-1 truncate">User Management</span>
         {userMgmtExpanded ? <ChevronDown className="h-3.5 w-3.5 text-foreground/40" /> : <ChevronRight className="h-3.5 w-3.5 text-foreground/40" />}
       </button>

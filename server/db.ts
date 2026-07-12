@@ -3945,9 +3945,33 @@ export async function getRsMappingWaypoints(sheetId: number): Promise<RsWaypoint
       if (!between.observation) continue;
       const obs = between.observation.trim();
 
-      if (/^continued\s+via[;:]/i.test(obs)) {
+      if (/continued\s+via[;:]/i.test(obs)) {
         segmentType = 'continued_via';
+        // Try to parse streets from the same row first
         viaStreets = parseViaStreets(obs);
+        // If no streets found inline, check if the observation ends with "continued via:"
+        // and the streets are in the very next row (separate row format)
+        if (viaStreets.length === 0 && ri + 1 < nextRowIdx) {
+          const nextRow = rows[ri + 1];
+          if (nextRow?.observation) {
+            const nextObs = nextRow.observation.trim();
+            // The next row should look like a street list (no bracketed address entity)
+            // and not be another continued_via or coos row
+            const hasAddress = extractEntitiesFromText(nextObs).some((e) => e.type === 'address');
+            const isAnotherKeyword = /continued\s+via[;:]|continued\s+out\s+of\s+sight|\bcoos\b/i.test(nextObs);
+            if (!hasAddress && !isAnotherKeyword) {
+              // Parse the next row as the street list
+              // Streets are separated by commas/newlines, with optional "whereat" suffix
+              const streetBody = nextObs
+                .replace(/[,;]?\s*whereat[;:,.]?.*$/i, '') // strip trailing "whereat"
+                .trim();
+              viaStreets = streetBody
+                .split(/\s*(?:→|->|,|;|\n|\bthen\b|\bvia\b)\s*/i)
+                .map((p) => p.replace(/\([^)]*\)/g, '').trim())
+                .filter((p) => p.length > 2);
+            }
+          }
+        }
         break; // continued via takes priority
       }
       // COOS / OOS patterns (out of sight)

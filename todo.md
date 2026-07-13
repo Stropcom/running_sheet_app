@@ -763,3 +763,14 @@
 - [x] Mobile layout: Op Manager Full View — cards full-width, mobile card-per-team for tasking, stacked priority cards
 - [x] Mobile layout: Intelligence profile stats bars — responsive grid (2x2 on mobile, 4-up on desktop)
 - [x] Mobile layout: Tile Home Screen row 1 — single column on xs, 2-up on sm+
+
+## Phone Number & Push Notifications (Round 5)
+- [x] DB: add phone column (varchar, nullable) to users table
+- [x] DB: migration SQL applied via webdev_execute_sql
+- [x] Backend: include phone in user create/update/list/me procedures
+- [x] Frontend: AdminPage Add/Edit User form — add Phone field (free text, optional)
+- [x] Frontend: MyProfilePage — add Phone field (read-only display + edit via profile update)
+- [x] Frontend: MyProfilePage — add Enable Notifications button (requests browser push permission, registers subscription via opManager.subscribePush)
+- [x] Frontend: MyProfilePage — show notification status (Enabled / Not enabled)
+- [x] Op Manager: when user is selected from dropdown in Supervisor Contacts, auto-populate phone from user.phone
+- [x] Op Manager: when user is selected from dropdown in On-Call Supervisor, auto-populate mobile from user.phone

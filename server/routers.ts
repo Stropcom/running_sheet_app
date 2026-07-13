@@ -1043,6 +1043,7 @@ export const appRouter = router({
         cin: z.string().min(1),
         unit: z.string().optional(),
         team: z.enum(["TEAM1", "TEAM2", "PTT"]).optional(),
+        phone: z.string().optional(),
         username: z.string().min(1),
         password: z.string().min(1),
         role: z.enum(["observer", "member", "admin"]),
@@ -1054,6 +1055,7 @@ export const appRouter = router({
           cin: input.cin.toUpperCase(),
           unit: input.unit,
           team: input.team,
+          phone: input.phone || null,
           username: input.username.trim().toLowerCase(),
           passwordHash,
           role: input.role,
@@ -1079,6 +1081,7 @@ export const appRouter = router({
         cin: z.string().min(1).optional(),
         unit: z.string().optional(),
         team: z.enum(["TEAM1", "TEAM2", "PTT"]).nullable().optional(),
+        phone: z.string().nullable().optional(),
         username: z.string().min(1).optional(),
         password: z.string().min(1).optional(),
         role: z.enum(["observer", "member", "admin"]).optional(),
@@ -2601,7 +2604,7 @@ export const appRouter = router({
   opManager: router({
     listUsers: certifierOrAdminProcedure.query(async () => {
       const users = await getAllUsers();
-      return users.map((u) => ({ id: u.id, name: u.name, cin: u.cin ?? null }));
+      return users.map((u) => ({ id: u.id, name: u.name, cin: u.cin ?? null, phone: u.phone ?? null }));
     }),
 
     getPriorityBoard: certifierOrAdminProcedure

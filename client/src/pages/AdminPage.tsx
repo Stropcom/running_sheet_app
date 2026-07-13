@@ -63,6 +63,7 @@ interface UserFormData {
   cin: string;
   unit: string;
   team: TeamValue;
+  phone: string;
   username: string;
   password: string;
   role: Role;
@@ -73,6 +74,7 @@ const emptyForm = (): UserFormData => ({
   cin: "",
   unit: "",
   team: undefined,
+  phone: "",
   username: "",
   password: "",
   role: "observer",
@@ -109,13 +111,23 @@ function UserFormFields({ form, setForm, isEdit = false }: UserFormFieldsProps) 
           />
         </div>
       </div>
-      <div className="space-y-1.5">
-        <Label className="text-xs uppercase tracking-wider text-muted-foreground">Unit</Label>
-        <Input
-          placeholder="e.g. Alpha Company"
-          value={form.unit}
-          onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))}
-        />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs uppercase tracking-wider text-muted-foreground">Unit</Label>
+          <Input
+            placeholder="e.g. Alpha Company"
+            value={form.unit}
+            onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs uppercase tracking-wider text-muted-foreground">Mobile Phone</Label>
+          <Input
+            placeholder="e.g. 0400 000 000"
+            value={form.phone}
+            onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+          />
+        </div>
       </div>
       <div className="space-y-1.5">
         <Label className="text-xs uppercase tracking-wider text-muted-foreground">Team</Label>
@@ -239,6 +251,7 @@ export default function AdminPage() {
     if (form.cin) payload.cin = form.cin;
     payload.unit = form.unit;
     payload.team = form.team ?? null;
+    payload.phone = form.phone || null;
     if (form.username) payload.username = form.username;
     if (form.password) payload.password = form.password;
     payload.role = form.role;
@@ -252,6 +265,7 @@ export default function AdminPage() {
       cin: u.cin ?? "",
       unit: u.unit ?? "",
       team: (u.team as TeamValue) ?? undefined,
+      phone: (u as { phone?: string | null }).phone ?? "",
       username: u.username ?? "",
       password: "",
       role: (u.role as Role) ?? "observer",

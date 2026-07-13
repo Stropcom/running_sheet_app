@@ -1012,7 +1012,7 @@ function ContactRoleCard({
   role: string;
   contacts: ContactEntry[];
   setContacts: React.Dispatch<React.SetStateAction<ContactEntry[]>>;
-  users: { id: number; name: string; cin: string | null }[];
+  users: { id: number; name: string; cin: string | null; phone?: string | null }[];
 }) {
   const entry = contacts.find((c) => c.role === role);
 
@@ -1042,9 +1042,11 @@ function ContactRoleCard({
       </p>
       <Select
         value={entry?.userId ? String(entry.userId) : "__none__"}
-        onValueChange={(v) =>
-          update({ userId: v === "__none__" ? null : Number(v) })
-        }
+        onValueChange={(v) => {
+          const uid_val = v === "__none__" ? null : Number(v);
+          const selectedUser = uid_val ? users.find((u) => u.id === uid_val) : null;
+          update({ userId: uid_val, phone: selectedUser?.phone ?? entry?.phone ?? null });
+        }}
       >
         <SelectTrigger className="h-8 text-xs">
           <SelectValue placeholder="Select user…" />
@@ -1390,7 +1392,7 @@ function OnCallEntryEditor({
   entry: OnCallEntry;
   onChange: (patch: Partial<OnCallEntry>) => void;
   onRemove: () => void;
-  users: { id: number; name: string; cin: string | null }[];
+  users: { id: number; name: string; cin: string | null; phone?: string | null }[];
 }) {
   return (
     <div className="rounded-lg border border-border p-3 space-y-2">
@@ -1421,9 +1423,11 @@ function OnCallEntryEditor({
       </div>
       <Select
         value={entry.userId ? String(entry.userId) : "__none__"}
-        onValueChange={(v) =>
-          onChange({ userId: v === "__none__" ? null : Number(v) })
-        }
+        onValueChange={(v) => {
+          const uid_val = v === "__none__" ? null : Number(v);
+          const selectedUser = uid_val ? users.find((u) => u.id === uid_val) : null;
+          onChange({ userId: uid_val, mobile: selectedUser?.phone ?? entry.mobile ?? null });
+        }}
       >
         <SelectTrigger className="h-8 text-xs w-full">
           <SelectValue placeholder="Select user…" />

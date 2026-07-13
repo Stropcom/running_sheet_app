@@ -117,6 +117,9 @@ import {
   getSidebarOrder,
   setSidebarOrder,
   DEFAULT_SIDEBAR_ORDER,
+  getHomePrefs,
+  setHomePrefs,
+  DEFAULT_TILE_ORDER,
 } from "./db";
 
 import { makeRequest, type RoadsResult } from "./_core/map";
@@ -2547,6 +2550,19 @@ export const appRouter = router({
       .input(z.object({ orderedKeys: z.array(z.string()) }))
       .mutation(async ({ input, ctx }) => {
         await setSidebarOrder(ctx.user.id, input.orderedKeys);
+        return { ok: true };
+      }),
+    getHomePrefs: protectedProcedure.query(async ({ ctx }) => {
+      const prefs = await getHomePrefs(ctx.user.id);
+      return { ...prefs, defaultTileOrder: DEFAULT_TILE_ORDER };
+    }),
+    setHomePrefs: protectedProcedure
+      .input(z.object({
+        mode: z.enum(["folder", "tile"]).optional(),
+        tileOrder: z.array(z.string()).optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await setHomePrefs(ctx.user.id, input);
         return { ok: true };
       }),
   }),

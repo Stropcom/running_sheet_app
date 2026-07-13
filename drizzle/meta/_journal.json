@@ -232,6 +232,13 @@
       "when": 1783906422089,
       "tag": "0032_conscious_tigra",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "5",
+      "when": 1783908812200,
+      "tag": "0033_typical_red_hulk",
+      "breakpoints": true
     }
   ]
 }

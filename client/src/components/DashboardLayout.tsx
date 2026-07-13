@@ -42,7 +42,7 @@ import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useTheme } from "@/contexts/ThemeContext";
 import {
-  FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen, Scale, FolderOpen, ChevronDown, ChevronRight, CalendarDays, Shield, ClipboardCheck as GovIcon, Map, ArrowRightLeft, HelpCircle, Trash2, WifiOff, Settings, UserCog, BarChart3, GripVertical } from "lucide-react";
+  FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen, Scale, FolderOpen, ChevronDown, ChevronRight, CalendarDays, Shield, ClipboardCheck as GovIcon, Map, ArrowRightLeft, HelpCircle, Trash2, WifiOff, Settings, UserCog, BarChart3, GripVertical, LayoutGrid, List } from "lucide-react";
 import React, { CSSProperties, useEffect, useRef, useState } from "react";
 import { useObservationFocus } from "@/contexts/ObservationFocusContext";
 import { useLocation } from "wouter";
@@ -362,6 +362,32 @@ function DashboardLayoutContent({
   const [adminFolderExpanded, setAdminFolderExpanded] = useState(false);
   const [userMgmtFolderExpanded, setUserMgmtFolderExpanded] = useState(false);
 
+  // ── Home screen mode toggle ──────────────────────────────────────────────
+  const [homeMode, setHomeMode] = useState<"folder" | "tile">("folder");
+  const { data: homePrefsData } = trpc.sidebar.getHomePrefs.useQuery(undefined, { staleTime: Infinity });
+  const setHomePrefsMutation = trpc.sidebar.setHomePrefs.useMutation();
+
+  useEffect(() => {
+    if (homePrefsData?.mode) {
+      setHomeMode(homePrefsData.mode as "folder" | "tile");
+      // If tile mode is active and we're at the root, redirect to tile home
+      if (homePrefsData.mode === "tile" && location === "/") {
+        setLocation("/tile-home");
+      }
+    }
+  }, [homePrefsData]);
+
+  function toggleHomeMode() {
+    const newMode = homeMode === "folder" ? "tile" : "folder";
+    setHomeMode(newMode);
+    setHomePrefsMutation.mutate({ mode: newMode });
+    if (newMode === "tile") {
+      setLocation("/tile-home");
+    } else {
+      setLocation("/");
+    }
+  }
+
   // ── Sidebar drag-to-reorder ──────────────────────────────────────────────
   const DEFAULT_NAV_ORDER = [
     "operations", "governance", "todo", "mapping", "calendar", "shortcuts", "intelligence", "targetRegistry",
@@ -451,12 +477,26 @@ function DashboardLayoutContent({
                 <PanelLeft className="h-4 w-4 text-sidebar-foreground/60" />
               </button>
               {!isCollapsed && (
-                <div className="flex items-center gap-2 min-w-0">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
                   <ShieldCheck className="w-5 h-5 text-sidebar-primary shrink-0" />
                   <span className="font-semibold text-sidebar-foreground tracking-tight truncate text-sm">
                     Running Sheet
                   </span>
                 </div>
+              )}
+              {!isCollapsed && (
+                <button
+                  onClick={toggleHomeMode}
+                  className="h-8 w-8 flex items-center justify-center hover:bg-sidebar-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0 ml-auto"
+                  title={homeMode === "folder" ? "Switch to Tile Home" : "Switch to Folder View"}
+                  aria-label={homeMode === "folder" ? "Switch to Tile Home" : "Switch to Folder View"}
+                >
+                  {homeMode === "folder" ? (
+                    <LayoutGrid className="h-4 w-4 text-sidebar-foreground/60" />
+                  ) : (
+                    <List className="h-4 w-4 text-sidebar-foreground/60" />
+                  )}
+                </button>
               )}
             </div>
           </SidebarHeader>

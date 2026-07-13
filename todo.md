@@ -689,3 +689,13 @@
 - [x] Drag handle shown as subtle grip icon on hover/hold
 - [x] Order persisted to DB on drop; falls back to default order for new users
 - [x] Administration and User Management always stay at the bottom (pinned, non-draggable)
+
+## Tile Home Screen
+- [x] DB: add homeScreenMode ('folder'|'tile') and tileLayout (JSON) columns to user_sidebar_order table
+- [x] tRPC: getHomeMode / setHomeMode / getTileLayout / setTileLayout procedures
+- [x] TileHomeScreen component: 3-row grid (2 large top row, 4 medium row 2, 4 medium row 3 = 10 total)
+- [x] Each tile shows: colour-coded icon, name, live badge count, subtitle info (large only)
+- [x] Tiles are draggable across rows; row slot determines display size
+- [x] Toggle button in sidebar header switches between Folder and Tile view
+- [x] Preference saved per-user; Folder view is default for new users
+- [x] Live data: operations count, governance %, to-do count, etc. per tile

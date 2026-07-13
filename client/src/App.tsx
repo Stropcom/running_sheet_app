@@ -36,6 +36,7 @@ import IntelligenceMapping from "@/pages/IntelligenceMapping";
 import RSMapping from "@/pages/RSMapping";
 import DraftSheetPage from "@/pages/DraftSheetPage";
 import ReportsPage from "@/pages/ReportsPage";
+import TileHomeScreen from "@/pages/TileHomeScreen";
 import { DraftModeBanner } from "@/components/DraftModeBanner";
 import { SectionColorProvider } from "@/contexts/SectionColorContext";
 
@@ -73,6 +74,7 @@ function Router() {
       <Route path="/draft" component={DraftHubPage} />
       <Route path="/draft/sheet/:localId" component={DraftSheetPage} />
       <Route path="/reports" component={ReportsPage} />
+      <Route path="/tile-home" component={TileHomeScreen} />
       <Route path="/audit" component={AuditLogPage} />
       <Route path="/admin" component={AdminPage} />
       <Route path="/404" component={NotFound} />

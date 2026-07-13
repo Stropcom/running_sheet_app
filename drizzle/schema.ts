@@ -537,6 +537,10 @@ export const userSidebarOrder = mysqlTable("user_sidebar_order", {
   userId: int("userId").notNull().unique(),
   /** JSON array of nav item keys in user-defined order, e.g. ["operations","todo","governance",...] */
   orderedKeys: text("orderedKeys").notNull(),
+  /** 'folder' (default) or 'tile' */
+  homeScreenMode: varchar("homeScreenMode", { length: 16 }).default("folder").notNull(),
+  /** JSON array of 10 tile keys in display order (row1=[0,1], row2=[2,3,4,5], row3=[6,7,8,9]) */
+  tileOrder: text("tileOrder"),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 export type UserSidebarOrder = typeof userSidebarOrder.$inferSelect;

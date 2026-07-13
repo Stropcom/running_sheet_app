@@ -135,7 +135,7 @@ export default function IntelligenceAssociateProfile() {
                   </Button>
                 </div>
               </div>
-              <div className="grid grid-cols-3 divide-x divide-border/60 bg-blue-50/50 dark:bg-blue-950/20">
+              <div className="grid grid-cols-3 divide-x divide-y sm:divide-y-0 divide-border/60 bg-blue-50/50 dark:bg-blue-950/20">
                 {[
                   { label: "Linked Targets", value: profile.linkedTargets.length },
                   { label: "Running Sheets", value: profile.linkedSheets.length },

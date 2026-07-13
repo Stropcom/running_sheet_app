@@ -153,7 +153,7 @@ export default function IntelligenceLocationProfile() {
                   </Button>
                 </div>
               </div>
-              <div className="grid grid-cols-3 divide-x divide-border/60 bg-emerald-50/50 dark:bg-emerald-950/20">
+              <div className="grid grid-cols-3 divide-x divide-y sm:divide-y-0 divide-border/60 bg-emerald-50/50 dark:bg-emerald-950/20">
                 {[
                   { label: "Linked Targets", value: profile.linkedTargets.length },
                   { label: "Running Sheets", value: profile.linkedSheets.length },

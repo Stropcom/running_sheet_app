@@ -746,3 +746,19 @@
 - [x] Role-based access: only admin/Full Access+User Management can edit; all other users see read-only Full View
 - [x] Read-only users: on clicking Op Manager, show current week Full View; can navigate to next week if posted
 - [x] No "Add Operation" button shown when no operations exist — show empty state message instead (fix)
+
+## Operation Manager & Mobile Polish (Round 4)
+- [x] Full View: each section (On-Call, Supervisor Contacts, Priority Board, Weekly Tasking) as floating card (bg-card, rounded-xl, shadow-md, border)
+- [x] Weekly Tasking Calendar edit view: each team row as a floating card per day on mobile
+- [x] Full View typography: consistent heading sizes, readable body text, sufficient contrast
+- [x] Weekly Tasking table cells: symmetric equal-width columns, consistent padding, break-words (no truncate)
+- [ ] Mobile layout: DashboardLayout sidebar collapse/overlay on small screens
+- [ ] Mobile layout: Operations list page — cards stack cleanly, search bar full-width
+- [ ] Mobile layout: Running Sheet detail — table scrolls horizontally, time/CIN/certify columns fixed-width
+- [ ] Mobile layout: Governance page — checklist items stack cleanly
+- [ ] Mobile layout: Intelligence page — entity cards stack cleanly
+- [ ] Mobile layout: Target Registry — table scrolls or stacks on mobile
+- [x] Mobile layout: Admin/User Management — form fields stack on mobile (grid-cols-1 sm:grid-cols-2)
+- [x] Mobile layout: Op Manager Full View — cards full-width, mobile card-per-team for tasking, stacked priority cards
+- [x] Mobile layout: Intelligence profile stats bars — responsive grid (2x2 on mobile, 4-up on desktop)
+- [x] Mobile layout: Tile Home Screen row 1 — single column on xs, 2-up on sm+

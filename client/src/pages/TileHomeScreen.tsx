@@ -535,8 +535,8 @@ export default function TileHomeScreen() {
             onDragCancel={() => setActiveDragId(null)}
           >
             <SortableContext items={tileOrder} strategy={rectSortingStrategy}>
-              {/* Row 1 — 2 large tiles */}
-              <div className="grid grid-cols-2 gap-3 mb-3">
+              {/* Row 1 — 1 col on xs, 2 large tiles on sm+ */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                 {row1.map((id) => (
                   <SortableTile
                     key={id}

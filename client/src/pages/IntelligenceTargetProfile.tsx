@@ -230,7 +230,7 @@ export default function IntelligenceTargetProfile() {
                 </div>
               </div>
               {/* Stats */}
-              <div className="grid grid-cols-4 divide-x divide-border/60 bg-blue-50/50 dark:bg-blue-950/20">
+              <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-border/60 bg-blue-50/50 dark:bg-blue-950/20">
                 {[
                   { label: "Observations", value: profile.observationCount },
                   { label: "Running Sheets", value: profile.linkedSheets.length },

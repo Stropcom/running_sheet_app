@@ -804,9 +804,9 @@
 - [x] Copy to Next Week: all other details (contacts, priority board, PTT/Cap.Support tasks) copy as-is
 
 ## PDF Export Image Fix (Round 8)
-- [ ] Fix: embedded images not rendering in the running sheet visual PDF/print export
-- [ ] Root cause: image src URLs (S3 presigned or relative paths) are blocked by the print window's security context
-- [ ] Fix: fetch each image as a base64 data URL before building the print HTML, then inline as data:image/... src
+- [x] Fix: embedded images not rendering in the running sheet visual PDF/print export
+- [x] Root cause: html2canvas cannot capture cross-origin Google Maps tiles (browser security restriction)
+- [x] Fix: server-side tRPC procedure fetches Static Maps API as base64 data URL and returns it to client for embedding
 
 ## Visual RS Map Image Fix (Round 9)
 - [x] Fix: embedded map image blank/broken in Visual RS PDF export
@@ -814,3 +814,11 @@
 - [x] Fix: added server-side tRPC procedure rsMapping.getStaticMapImage that fetches Google Static Maps API via Manus proxy and returns base64 data URL
 - [x] Updated exportVisualRsPdf in RSMappingEmbedded.tsx to call the new procedure instead of html2canvas
 - [x] Removed html2canvas import from RSMappingEmbedded.tsx
+
+## Op Manager Polish Round 8
+- [x] Full View team cards: remove bold filled header background — team name in colour, coloured border outline only
+- [x] Full View On-Call: fix CTO mobile number not displaying (added fallback to user.phone)
+- [x] Tasking edit tab: restyle to floating cards matching Full View (coloured border + coloured team name, no filled header)
+- [x] Priority Board priority dropdown: limit to 1 and 2 only
+- [x] Priority Board category dropdown: change options to A-TACC 1, A-TACC 2, WC, Other
+- [x] Print/export Full View: fit entire page on 1 A4 landscape page (scale 0.82 + A4 landscape @page rule)

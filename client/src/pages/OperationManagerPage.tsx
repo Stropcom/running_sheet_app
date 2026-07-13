@@ -73,7 +73,7 @@ const SHIFT_OPTIONS = [
   "1400-2200",
   "Custom",
 ];
-const CATEGORIES = ["A-TACC", "WC", "Other"];
+const CATEGORIES = ["A-TACC 1", "A-TACC 2", "WC", "Other"];
 const REQUEST_TYPES = ["Surv", "PTT", "Capability"];
 const SUPERVISOR_ROLES = [
   "CTO Inspector",
@@ -703,7 +703,7 @@ export default function OperationManagerPage() {
         </div>
 
         {/* Branded hero banner */}
-        <style>{`@media print { .no-print { display: none !important; } }`}</style>
+        <style>{`@media print { .no-print { display: none !important; } @page { size: A4 landscape; margin: 8mm; } body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } .print-scale { transform: scale(0.82); transform-origin: top left; width: 122%; } }`}</style>
         <div
           className="print:block"
           style={{
@@ -731,7 +731,7 @@ export default function OperationManagerPage() {
             </p>
           </div>
         ) : (
-          <div className="p-4 space-y-4 max-w-6xl mx-auto print:p-2">
+          <div className="p-4 space-y-4 max-w-6xl mx-auto print:p-0 print-scale">
             <FullViewOnCall
               onCallEntries={onCallEntries}
               contacts={contacts}
@@ -942,12 +942,19 @@ export default function OperationManagerPage() {
               })}
             </div>
             {/* Desktop: full table */}
-            <div className="hidden sm:block rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs border-collapse">
+            <div className="hidden sm:block space-y-3">
+              {TEAM_ROWS.map((teamRowEdit) => {
+                const tcEdit = TEAM_COLOURS[teamRowEdit];
+                return (
+                <div key={teamRowEdit} className="rounded-xl overflow-hidden bg-card" style={{ border: `2px solid ${tcEdit.border}` }}>
+                  <div className="px-4 py-2.5" style={{ borderBottom: `1px solid ${tcEdit.border}20` }}>
+                    <p className="text-sm font-bold tracking-wide" style={{ color: tcEdit.border }}>{TEAM_LABELS[teamRowEdit]}</p>
+                  </div>
+                  <div className="overflow-x-auto">
+                  <table className="w-full text-xs border-collapse">
                   <thead>
-                    <tr className="bg-muted/40">
-                      <th className="text-left px-3 py-2.5 font-semibold border-b border-r border-border w-32 text-foreground">
+                    <tr className="bg-muted/20">
+                      <th className="text-left px-3 py-2.5 font-semibold border-b border-r border-border w-32 text-foreground hidden">
                         Team
                       </th>
                       {DAYS.map((d) => (
@@ -962,42 +969,35 @@ export default function OperationManagerPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {TEAM_ROWS.map((teamRow) => {
-                      const tc = TEAM_COLOURS[teamRow];
-                      return (
-                      <tr key={teamRow}>
-                        <td
-                          className="px-3 py-2 font-bold border-r border-border text-xs align-top w-32"
-                          style={{ background: tc.bg, color: tc.text, borderLeft: `4px solid ${tc.border}` }}
-                        >
-                          {TEAM_LABELS[teamRow]}
-                        </td>
-                        {DAYS.map((_, dayIndex) => {
-                          const key = `${teamRow}-${dayIndex}`;
-                          const cell = taskingGrid[key] ?? {};
-                          return (
-                            <td
-                              key={dayIndex}
-                              className="px-2 py-2 border-r border-border last:border-r-0 align-top"
-                              style={{ minWidth: 130, width: `${100 / 7}%` }}
-                            >
-                              <TaskingCellEditor
-                                cell={cell}
-                                onChange={(patch) =>
-                                  updateCell(teamRow, dayIndex, patch)
-                                }
-                                opOptions={activeOps}
-                                onCreateOp={handleCreateOp}
-                              />
-                            </td>
-                          );
-                        })}
-                      </tr>
-                      );
-                    })}
+                    <tr>
+                      <td className="hidden" />
+                      {DAYS.map((_, dayIndex) => {
+                        const key = `${teamRowEdit}-${dayIndex}`;
+                        const cell = taskingGrid[key] ?? {};
+                        return (
+                          <td
+                            key={dayIndex}
+                            className="px-2 py-2 border-r border-border last:border-r-0 align-top"
+                            style={{ minWidth: 130, width: `${100 / 7}%` }}
+                          >
+                            <TaskingCellEditor
+                              cell={cell}
+                              onChange={(patch) =>
+                                updateCell(teamRowEdit, dayIndex, patch)
+                              }
+                              opOptions={activeOps}
+                              onCreateOp={handleCreateOp}
+                            />
+                          </td>
+                        );
+                      })}
+                    </tr>
                   </tbody>
                 </table>
+                </div>
               </div>
+                );
+              })}
             </div>
           </TabsContent>
 
@@ -1387,7 +1387,7 @@ function PriorityRowEditor({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {Array.from({ length: 20 }, (_, i) => i + 1).map((n) => (
+            {[1, 2].map((n) => (
               <SelectItem key={n} value={String(n)}>#{n}</SelectItem>
             ))}
           </SelectContent>
@@ -1633,10 +1633,11 @@ function FullViewOnCall({
             {hasOnCall ? onCallEntries.map((oc, i) => {
               const user = users.find((u) => u.id === oc.userId);
               const name = user?.name ?? "—";
+              const mobile = oc.mobile ?? user?.phone ?? null;
               return (
                 <div key={i} className="flex items-center gap-2 py-1">
                   <span className="text-sm font-semibold text-foreground">{name}</span>
-                  {oc.mobile && <span className="text-xs text-muted-foreground">{oc.mobile}</span>}
+                  {mobile && <span className="text-xs text-muted-foreground">{mobile}</span>}
                   {oc.isOnCall && <Badge variant="secondary" className="text-[10px] px-1.5 py-0 ml-auto">On-Call</Badge>}
                 </div>
               );
@@ -1684,15 +1685,15 @@ function FullViewTasking({
         return (
           <div
             key={teamRow}
-            className="rounded-xl shadow-sm overflow-hidden"
+            className="rounded-xl shadow-sm overflow-hidden bg-card"
             style={{ border: `2px solid ${tc.border}` }}
           >
             {/* Team header */}
             <div
               className="px-4 py-2.5 flex items-center gap-2"
-              style={{ background: tc.border }}
+              style={{ background: "transparent", borderBottom: `1px solid ${tc.border}20` }}
             >
-              <span className="text-sm font-extrabold tracking-wide text-white">{TEAM_LABELS[teamRow]}</span>
+              <span className="text-sm font-bold tracking-wide" style={{ color: tc.border }}>{TEAM_LABELS[teamRow]}</span>
             </div>
             {/* Mobile: day list */}
             <div className="block sm:hidden bg-card divide-y divide-border">
@@ -1722,7 +1723,7 @@ function FullViewTasking({
             <div className="hidden sm:block bg-card overflow-x-auto">
               <table className="w-full text-xs border-collapse">
                 <thead>
-                  <tr style={{ background: `${tc.bg}` }}>
+                  <tr style={{ background: "transparent" }}>
                     {DAYS.map((d) => (
                       <th
                         key={d}

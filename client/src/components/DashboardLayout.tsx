@@ -416,7 +416,14 @@ function DashboardLayoutContent({
 
   useEffect(() => {
     if (sidebarOrderData?.order && sidebarOrderData.order.length > 0) {
-      setNavOrder(sidebarOrderData.order);
+      // Merge: keep saved order but append any new keys not yet in the saved list
+      const saved = sidebarOrderData.order;
+      const allKeys = DEFAULT_NAV_ORDER;
+      const merged = [...saved.filter((k) => allKeys.includes(k))];
+      for (const k of allKeys) {
+        if (!merged.includes(k)) merged.push(k);
+      }
+      setNavOrder(merged);
     }
   }, [sidebarOrderData]);
 

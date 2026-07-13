@@ -4290,6 +4290,7 @@ export const DEFAULT_SIDEBAR_ORDER = [
   "shortcuts",
   "intelligence",
   "targetRegistry",
+  "operationManager",
 ];
 
 export async function getSidebarOrder(userId: number): Promise<string[]> {

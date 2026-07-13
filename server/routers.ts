@@ -2593,6 +2593,11 @@ export const appRouter = router({
 
   // ─── Operation Manager ─────────────────────────────────────────────────────
   opManager: router({
+    listUsers: certifierOrAdminProcedure.query(async () => {
+      const users = await getAllUsers();
+      return users.map((u) => ({ id: u.id, name: u.name, cin: u.cin ?? null }));
+    }),
+
     getPriorityBoard: certifierOrAdminProcedure
       .input(z.object({ weekStart: z.string() }))
       .query(async ({ input }) => {

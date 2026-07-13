@@ -715,3 +715,16 @@
 - [x] Route: /operation-manager registered in App.tsx
 - [x] Dashboard tile: add Operation Manager tile to tile home screen (now 11 tiles — adjust layout)
 - [x] SectionColorContext: /operation-manager colour mapping
+
+## Operation Manager Enhancements (Round 2)
+- [x] Fix: Op Manager missing from main Folder list (Home page folder view)
+- [x] Priority Board: Category field → dropdown (A-TACC, WC, Other)
+- [x] Priority Board: Operation field → dropdown of active operations + "Add Operation" inline create
+- [x] Priority Board: Request Type → multi-select dropdown (Surv, PTT, Capability)
+- [x] Weekly Tasking: Custom Time shift → show free-text time input when Custom is selected
+- [x] Weekly Tasking: Primary/Secondary task → dropdown of active operations + "Other" (free text) + "Training" at top
+- [x] Supervisor Contacts: Role → dropdown (CTO Inspector, Surveillance Team 1, Surveillance Team 2, PTT)
+- [x] Supervisor Contacts: Name → dropdown of all users (not free text)
+- [x] Supervisor Contacts: Phone → free text (keep as-is)
+- [x] New tab: On-Call Supervisor — name dropdown (users), mobile free text, on-call toggle, day selector (individual day or full week)
+- [x] Full-page CTO Tasking Week view (read-only summary of all tabs for the selected week) with Edit button to return to edit mode

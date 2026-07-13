@@ -1617,10 +1617,12 @@ function FullViewOnCall({
     const name = user?.name ?? "—";
     const phone = c?.phone ?? user?.phone ?? null;
     return (
-      <div key={role} className="flex items-center gap-3 py-1.5">
-        <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider w-28 shrink-0">{role}</span>
-        <span className="text-sm font-semibold text-foreground">{name}</span>
-        {phone && <span className="text-xs text-muted-foreground ml-auto">{phone}</span>}
+      <div key={role} className="py-1.5">
+        <div className="flex items-baseline gap-2">
+          <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider shrink-0">{role}</span>
+          <span className="text-xs font-semibold text-foreground">{name}</span>
+          {phone && <span className="text-xs text-muted-foreground whitespace-nowrap ml-1">{phone}</span>}
+        </div>
       </div>
     );
   };
@@ -1635,33 +1637,35 @@ function FullViewOnCall({
         <div className="px-4 py-2.5 border-b border-border" style={{ background: "linear-gradient(90deg,#1e3a8a 0%,#1d4ed8 100%)" }}>
           <h2 className="text-xs font-bold tracking-widest uppercase text-white">Supervisors &amp; Contacts</h2>
         </div>
-        <div className="px-4 py-2 grid grid-cols-1 sm:grid-cols-2 gap-x-6 divide-y sm:divide-y-0 sm:divide-x divide-border">
+        <div className="px-4 py-2 grid grid-cols-1 sm:grid-cols-3 gap-x-4 divide-y sm:divide-y-0 sm:divide-x divide-border">
           {/* Left: On-Call */}
-          <div className="py-2 sm:py-0 sm:pr-4">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">On-Call</p>
+          <div className="py-2 sm:py-0 sm:pr-3">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1">On-Call</p>
             {hasOnCall ? onCallEntries.map((oc, i) => {
               const user = users.find((u) => u.id === oc.userId);
               const name = user?.name ?? "—";
               const mobile = oc.mobile ?? user?.phone ?? null;
               return (
-                <div key={i} className="flex items-center gap-2 py-1">
-                  <span className="text-sm font-semibold text-foreground">{name}</span>
-                  {mobile && <span className="text-xs text-muted-foreground">{mobile}</span>}
-                  {oc.isOnCall && <Badge variant="secondary" className="text-[10px] px-1.5 py-0 ml-auto">On-Call</Badge>}
+                <div key={i} className="py-0.5">
+                  <span className="text-xs font-semibold text-foreground">{name}</span>
+                  {mobile && <span className="text-xs text-muted-foreground whitespace-nowrap ml-2">{mobile}</span>}
+                  {oc.isOnCall && <Badge variant="secondary" className="text-[10px] px-1.5 py-0 ml-2">On-Call</Badge>}
                 </div>
               );
             }) : <p className="text-xs text-muted-foreground">Not set</p>}
           </div>
-          {/* Right: Supervisor Contacts */}
-          <div className="py-2 sm:py-0 sm:pl-4">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">Supervisors</p>
-            <div className="grid grid-cols-2 gap-x-4">
-              <div className="divide-y divide-border/50">
-                {["CTO Inspector", "PTT"].map(renderContact)}
-              </div>
-              <div className="divide-y divide-border/50">
-                {["Team 1", "Team 2"].map(renderContact)}
-              </div>
+          {/* Middle: CTO Inspector + PTT */}
+          <div className="py-2 sm:py-0 sm:px-3">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Supervisors</p>
+            <div className="divide-y divide-border/50">
+              {["CTO Inspector", "PTT"].map(renderContact)}
+            </div>
+          </div>
+          {/* Right: Team 1 + Team 2 */}
+          <div className="py-2 sm:py-0 sm:pl-3">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1">&nbsp;</p>
+            <div className="divide-y divide-border/50">
+              {["Team 1", "Team 2"].map(renderContact)}
             </div>
           </div>
         </div>

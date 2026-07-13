@@ -822,3 +822,11 @@
 - [x] Priority Board priority dropdown: limit to 1 and 2 only
 - [x] Priority Board category dropdown: change options to A-TACC 1, A-TACC 2, WC, Other
 - [x] Print/export Full View: fit entire page on 1 A4 landscape page (scale 0.82 + A4 landscape @page rule)
+
+## Op Manager Polish Round 9
+- [x] Print: switch to portrait A4, fit entire full view on 1 page (scale 0.72, 6mm margins)
+- [x] Team card borders: lighter/thinner (1px at 60% opacity)
+- [x] Table lines inside team cards: heavier (border-border instead of border-border/50)
+- [x] Header: removed "Covert & Technical Operations" line, date range now inline right of title
+- [x] Shift rotation anchor: moved back 1 week — Team 1 on 1400-2200 this week (13 Jul), 0700-1500 next week (20 Jul)
+- [x] PTT: 0600-1400 Mon-Fri, RDO Sat-Sun auto-populated; Cap. Support: 0700-1500 Mon-Fri, RDO Sat-Sun

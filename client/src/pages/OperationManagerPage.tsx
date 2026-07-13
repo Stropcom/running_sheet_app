@@ -117,14 +117,17 @@ function formatWeekLabel(weekStart: string): string {
 }
 
 // ─── Shift auto-population ────────────────────────────────────────────────────
-// Surv 1 is on DAY shift the week of 2026-07-14 (Monday). Alternates each week.
-const SURV1_DAY_ANCHOR = "2026-07-14";
+// Surv 1 is on AFTERNOON shift the week of 2026-07-07 (Mon 7 Jul). Alternates each week.
+// Week of 13 Jul: Surv1=afternoon (1400-2200), Surv2=day (0700-1500)
+// Week of 20 Jul: Surv1=day (0700-1500), Surv2=afternoon (1400-2200)
+const SURV1_AFTERNOON_ANCHOR = "2026-07-07";
 
 function isSurv1DayShift(weekStart: string): boolean {
-  const anchor = new Date(SURV1_DAY_ANCHOR + "T00:00:00Z").getTime();
+  const anchor = new Date(SURV1_AFTERNOON_ANCHOR + "T00:00:00Z").getTime();
   const ws = new Date(weekStart + "T00:00:00Z").getTime();
   const diffWeeks = Math.round((ws - anchor) / (7 * 24 * 3600 * 1000));
-  return diffWeeks % 2 === 0;
+  // anchor week = afternoon for surv1 (diffWeeks=0 → not day)
+  return diffWeeks % 2 !== 0;
 }
 
 function getDefaultShift(
@@ -132,7 +135,14 @@ function getDefaultShift(
   dayIndex: number,
   weekStart: string
 ): string {
-  if (teamRow === "ptt" || teamRow === "cap") return "";
+  // PTT: 0600-1400 Mon-Fri, RDO Sat-Sun
+  if (teamRow === "ptt") {
+    return dayIndex <= 4 ? "0600-1400" : "RDO";
+  }
+  // Cap. Support: 0700-1500 Mon-Fri, RDO Sat-Sun
+  if (teamRow === "cap") {
+    return dayIndex <= 4 ? "0700-1500" : "RDO";
+  }
   const surv1IsDay = isSurv1DayShift(weekStart);
   const isDay = teamRow === "surv1" ? surv1IsDay : !surv1IsDay;
   if (isDay) {
@@ -703,7 +713,7 @@ export default function OperationManagerPage() {
         </div>
 
         {/* Branded hero banner */}
-        <style>{`@media print { .no-print { display: none !important; } @page { size: A4 landscape; margin: 8mm; } body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } .print-scale { transform: scale(0.82); transform-origin: top left; width: 122%; } }`}</style>
+        <style>{`@media print { .no-print { display: none !important; } @page { size: A4 portrait; margin: 6mm; } body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } .print-scale { transform: scale(0.72); transform-origin: top left; width: 139%; } }`}</style>
         <div
           className="print:block"
           style={{
@@ -712,11 +722,10 @@ export default function OperationManagerPage() {
             printColorAdjust: "exact",
           }}
         >
-          <div className="max-w-6xl mx-auto px-6 py-5 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-bold tracking-widest uppercase text-blue-200 mb-1">Covert &amp; Technical Operations</p>
-              <h1 className="text-2xl font-extrabold text-white tracking-tight">CTO Weekly Tasking</h1>
-              <p className="text-sm text-blue-200 mt-0.5">{formatWeekLabel(weekStart)}</p>
+          <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <h1 className="text-xl font-extrabold text-white tracking-tight">CTO Weekly Tasking</h1>
+              <span className="text-sm text-blue-200">{formatWeekLabel(weekStart)}</span>
             </div>
             <div className="hidden sm:flex flex-col items-end gap-1">
               <p className="text-xs text-blue-400">{new Date().toLocaleDateString("en-AU", { dateStyle: "long" })}</p>
@@ -1686,12 +1695,12 @@ function FullViewTasking({
           <div
             key={teamRow}
             className="rounded-xl shadow-sm overflow-hidden bg-card"
-            style={{ border: `2px solid ${tc.border}` }}
+            style={{ border: `1px solid ${tc.border}60` }}
           >
             {/* Team header */}
             <div
-              className="px-4 py-2.5 flex items-center gap-2"
-              style={{ background: "transparent", borderBottom: `1px solid ${tc.border}20` }}
+              className="px-4 py-2 flex items-center gap-2"
+              style={{ background: "transparent", borderBottom: `1px solid ${tc.border}40` }}
             >
               <span className="text-sm font-bold tracking-wide" style={{ color: tc.border }}>{TEAM_LABELS[teamRow]}</span>
             </div>
@@ -1727,7 +1736,7 @@ function FullViewTasking({
                     {DAYS.map((d) => (
                       <th
                         key={d}
-                        className="text-center px-3 py-2 font-bold border-r border-border/50 last:border-r-0"
+                        className="text-center px-3 py-2 font-bold border-r border-border last:border-r-0"
                         style={{ color: tc.text, width: `${100 / 7}%`, minWidth: 110 }}
                       >
                         {d}
@@ -1747,7 +1756,7 @@ function FullViewTasking({
                         <td
                           key={dayIndex}
                           className={cn(
-                            "px-3 py-3 border-r border-border/50 last:border-r-0 align-top",
+                            "px-3 py-2 border-r border-border last:border-r-0 align-top",
                             shift === "RDO" ? "opacity-40" : ""
                           )}
                           style={{ width: `${100 / 7}%`, minWidth: 110 }}

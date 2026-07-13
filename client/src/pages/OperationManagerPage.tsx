@@ -97,24 +97,27 @@ const ON_CALL_ROLES = [
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 // ─── Week helpers ─────────────────────────────────────────────────────────────
+// All date arithmetic uses UTC to avoid AEST/DST timezone drift.
 function getMondayOfWeek(date: Date): string {
-  const d = new Date(date);
-  const day = d.getDay();
+  // Use the local calendar date (year/month/day) but treat it as UTC midnight
+  // so that AEST users on Monday morning don't get bumped back to Sunday UTC.
+  const utc = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const day = utc.getUTCDay(); // 0=Sun, 1=Mon, ...
   const diff = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diff);
-  return d.toISOString().slice(0, 10);
+  utc.setUTCDate(utc.getUTCDate() + diff);
+  return utc.toISOString().slice(0, 10);
 }
 
 function addWeeks(weekStart: string, n: number): string {
   const d = new Date(weekStart + "T00:00:00Z");
-  d.setDate(d.getDate() + 7 * n);
+  d.setUTCDate(d.getUTCDate() + 7 * n);
   return d.toISOString().slice(0, 10);
 }
 
 function formatWeekLabel(weekStart: string): string {
   const d = new Date(weekStart + "T00:00:00Z");
-  const end = new Date(d);
-  end.setDate(end.getDate() + 6);
+  const end = new Date(weekStart + "T00:00:00Z");
+  end.setUTCDate(end.getUTCDate() + 6);
   const fmt = (x: Date) =>
     x.toLocaleDateString("en-AU", {
       day: "2-digit",

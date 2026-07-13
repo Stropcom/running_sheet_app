@@ -111,7 +111,10 @@ function SortableNavItem({
         className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-blue-700/50 shadow-sm"
       >
         <FileText className="h-4 w-4 text-blue-700" />
-        <span className={`flex-1 ${location === "/" || location.startsWith("/operation/") || location.startsWith("/sheet/") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>Operations</span>
+        <span className="flex-1 flex flex-col gap-0">
+          <span className={location === "/" || location.startsWith("/operation/") || location.startsWith("/sheet/") ? "text-sidebar-foreground font-medium text-sm leading-tight" : "text-sidebar-foreground/80 text-sm leading-tight"}>Operations</span>
+          <span className="text-[10px] text-sidebar-foreground/40 font-normal leading-tight">Running Sheets</span>
+        </span>
         {gripHandle}
       </SidebarMenuButton>
     </SidebarMenuItem>
@@ -392,7 +395,9 @@ function DashboardLayoutContent({
   ];
   const [navOrder, setNavOrder] = useState<string[]>(DEFAULT_NAV_ORDER);
   const { data: sidebarOrderData } = trpc.sidebar.getOrder.useQuery(undefined, { staleTime: Infinity });
-  const setSidebarOrderMutation = trpc.sidebar.setOrder.useMutation();
+  const setSidebarOrderMutation = trpc.sidebar.setOrder.useMutation({
+    onSuccess: () => dashboardUtils.sidebar.getOrder.invalidate(),
+  });
 
   useEffect(() => {
     if (sidebarOrderData?.order && sidebarOrderData.order.length > 0) {

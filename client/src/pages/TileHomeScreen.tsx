@@ -194,7 +194,7 @@ function useTileBadges() {
       subtitle: `${activeOps} active`,
       stats: [
         { label: "Active", value: String(activeOps) },
-        { label: "Running Sheets", value: String(activeSheets) },
+        { label: "Running Sheets Active", value: String(activeSheets) },
       ],
     },
     governance: {

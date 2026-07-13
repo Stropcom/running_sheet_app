@@ -153,6 +153,10 @@ function vitePluginManusDebugCollector(): Plugin {
 
 const pwaPlugin = VitePWA({
   registerType: "autoUpdate",
+  // Use injectManifest so our custom sw.ts (with push handler) is used
+  strategies: "injectManifest",
+  srcDir: "src",
+  filename: "sw.ts",
   includeAssets: ["favicon.ico", "apple-touch-icon.png"],
   manifest: {
     name: "Running Sheet Log",
@@ -179,19 +183,10 @@ const pwaPlugin = VitePWA({
       },
     ],
   },
-  workbox: {
-    maximumFileSizeToCacheInBytes: 4 * 1024 * 1024, // 4 MiB — bundle is ~2.1 MiB
+  injectManifest: {
+    maximumFileSizeToCacheInBytes: 4 * 1024 * 1024, // 4 MiB
     globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
-    runtimeCaching: [
-      {
-        urlPattern: /^\/api\/trpc\//,
-        handler: "NetworkFirst",
-        options: {
-          cacheName: "trpc-cache",
-          expiration: { maxEntries: 50, maxAgeSeconds: 300 },
-        },
-      },
-    ],
+    rollupFormat: "es",
   },
   devOptions: {
     enabled: false,

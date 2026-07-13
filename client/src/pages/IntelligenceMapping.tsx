@@ -146,6 +146,8 @@ const DEFAULT_QUICK_LINKS: QuickLink[] = [
   { label: "Target Registry", path: "/target-registry", icon: "BookOpen" },
   { label: "Governance", path: "/governance", icon: "ClipboardCheck" },
   { label: "Calendar", path: "/calendar", icon: "CalendarDays" },
+  { label: "To-Do", path: "/todo", icon: "ClipboardList" },
+  { label: "Shortcuts", path: "/shortcuts", icon: "Zap" },
 ];
 
 const LS_QUICK_LINKS_KEY = "runlog_map_quick_links";
@@ -2690,24 +2692,25 @@ export default function IntelligenceMapping() {
       </div>
 
       {/* ── Bottom Quick-Link Pills ── */}
+      {/* Mobile/tablet: 4 pills compact | Laptop (lg+): 6 pills elongated */}
       <div className="absolute bottom-3 left-0 right-0 z-20 flex items-end justify-center gap-2 px-3 pointer-events-none">
 
         {/* Pill 1 — Folders (fixed) */}
         <button
           onClick={() => setLocation("/")}
-          className="pointer-events-auto flex flex-col items-center justify-center gap-1 px-4 py-2.5 rounded-2xl shadow-lg bg-card border border-border hover:bg-accent active:scale-95 transition-all min-w-[64px]"
+          className="pointer-events-auto flex flex-col items-center justify-center gap-1 px-4 lg:px-6 py-2.5 rounded-2xl shadow-lg bg-card border border-border hover:bg-accent active:scale-95 transition-all min-w-[64px] lg:min-w-[88px]"
         >
           <FolderIcon className="h-5 w-5 text-blue-700" />
-          <span className="text-[10px] font-semibold text-foreground/70 leading-none">Folders</span>
+          <span className="text-[10px] lg:text-[11px] font-semibold text-foreground/70 leading-none">Folders</span>
         </button>
 
         {/* Pill 2 — Dashboard (fixed) */}
         <button
           onClick={() => setLocation("/tile-home")}
-          className="pointer-events-auto flex flex-col items-center justify-center gap-1 px-4 py-2.5 rounded-2xl shadow-lg bg-card border border-border hover:bg-accent active:scale-95 transition-all min-w-[64px]"
+          className="pointer-events-auto flex flex-col items-center justify-center gap-1 px-4 lg:px-6 py-2.5 rounded-2xl shadow-lg bg-card border border-border hover:bg-accent active:scale-95 transition-all min-w-[64px] lg:min-w-[88px]"
         >
           <LayoutGrid className="h-5 w-5 text-indigo-500" />
-          <span className="text-[10px] font-semibold text-foreground/70 leading-none">Dashboard</span>
+          <span className="text-[10px] lg:text-[11px] font-semibold text-foreground/70 leading-none">Dashboard</span>
         </button>
 
         {/* Pill 3 — Active Running Sheet (greyed when none selected; tap-hold to customise) */}
@@ -2724,7 +2727,7 @@ export default function IntelligenceMapping() {
               onPointerDown={() => { holdTimer3 = setTimeout(() => setEditingQuickLinks(true), 600); }}
               onPointerUp={() => { if (holdTimer3) clearTimeout(holdTimer3); }}
               onPointerLeave={() => { if (holdTimer3) clearTimeout(holdTimer3); }}
-              className={`pointer-events-auto flex flex-col items-center justify-center gap-1 px-4 py-2.5 rounded-2xl shadow-lg border transition-all min-w-[64px] max-w-[90px] ${
+              className={`pointer-events-auto flex flex-col items-center justify-center gap-1 px-4 lg:px-6 py-2.5 rounded-2xl shadow-lg border transition-all min-w-[64px] lg:min-w-[88px] max-w-[110px] ${
                 activeSheet
                   ? "bg-card border-border hover:bg-accent active:scale-95 cursor-pointer"
                   : "bg-card/60 border-border/40 cursor-default opacity-50"
@@ -2732,14 +2735,14 @@ export default function IntelligenceMapping() {
               title={activeSheet ? `Open: ${sheetTitle}` : "No running sheet selected"}
             >
               <ClipboardList className={`h-5 w-5 flex-shrink-0 ${activeSheet ? "text-emerald-500" : "text-muted-foreground/40"}`} />
-              <span className={`text-[10px] font-semibold leading-none truncate max-w-[76px] ${activeSheet ? "text-foreground/70" : "text-muted-foreground/40"}`}>
+              <span className={`text-[10px] lg:text-[11px] font-semibold leading-none truncate max-w-[96px] ${activeSheet ? "text-foreground/70" : "text-muted-foreground/40"}`}>
                 {sheetTitle ?? "Active RS"}
               </span>
             </button>
           );
         })()}
 
-        {/* Pill 4 — Customisable slot (tap = navigate, tap-hold = open picker) */}
+        {/* Pill 4 — Customisable slot 1 */}
         {(() => {
           const ql = quickLinks[0];
           const iconEntry = ql ? ICON_MAP[ql.icon] : null;
@@ -2752,14 +2755,40 @@ export default function IntelligenceMapping() {
               onPointerDown={() => { holdTimer4 = setTimeout(() => setEditingQuickLinks(true), 600); }}
               onPointerUp={() => { if (holdTimer4) clearTimeout(holdTimer4); }}
               onPointerLeave={() => { if (holdTimer4) clearTimeout(holdTimer4); }}
-              className="pointer-events-auto flex flex-col items-center justify-center gap-1 px-4 py-2.5 rounded-2xl shadow-lg bg-card border border-border hover:bg-accent active:scale-95 transition-all min-w-[64px]"
+              className="pointer-events-auto flex flex-col items-center justify-center gap-1 px-4 lg:px-6 py-2.5 rounded-2xl shadow-lg bg-card border border-border hover:bg-accent active:scale-95 transition-all min-w-[64px] lg:min-w-[88px]"
               title={ql ? `${ql.label} — hold to change` : "Hold to set shortcut"}
             >
               <IconComp className={`h-5 w-5 ${iconColour}`} />
-              <span className="text-[10px] font-semibold text-foreground/70 leading-none truncate max-w-[64px]">{ql?.label ?? "Shortcut"}</span>
+              <span className="text-[10px] lg:text-[11px] font-semibold text-foreground/70 leading-none truncate max-w-[80px]">{ql?.label ?? "Shortcut"}</span>
             </button>
           );
         })()}
+
+        {/* Pills 5 & 6 — Extra customisable slots, laptop only (lg+) */}
+        {[1, 2].map((slotOffset) => (
+          <div key={slotOffset} className="hidden lg:block">
+            {(() => {
+              const ql = quickLinks[slotOffset];
+              const iconEntry = ql ? ICON_MAP[ql.icon] : null;
+              const IconComp = iconEntry?.Icon ?? FolderSearch;
+              const iconColour = iconEntry?.colour ?? "text-muted-foreground";
+              let holdTimerX: ReturnType<typeof setTimeout> | null = null;
+              return (
+                <button
+                  onClick={() => { if (ql) setLocation(ql.path); }}
+                  onPointerDown={() => { holdTimerX = setTimeout(() => setEditingQuickLinks(true), 600); }}
+                  onPointerUp={() => { if (holdTimerX) clearTimeout(holdTimerX); }}
+                  onPointerLeave={() => { if (holdTimerX) clearTimeout(holdTimerX); }}
+                  className="pointer-events-auto flex flex-col items-center justify-center gap-1 px-6 py-2.5 rounded-2xl shadow-lg bg-card border border-border hover:bg-accent active:scale-95 transition-all min-w-[88px]"
+                  title={ql ? `${ql.label} — hold to change` : "Hold to set shortcut"}
+                >
+                  <IconComp className={`h-5 w-5 ${iconColour}`} />
+                  <span className="text-[11px] font-semibold text-foreground/70 leading-none truncate max-w-[80px]">{ql?.label ?? "Shortcut"}</span>
+                </button>
+              );
+            })()}
+          </div>
+        ))}
 
       </div>
 

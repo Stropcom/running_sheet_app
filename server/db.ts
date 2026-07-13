@@ -36,6 +36,9 @@ import {
   InsertCustomMapMarker,
   rsMappingWaypoints,
   userSidebarOrder,
+  opManagerPriorityRows,
+  opManagerTaskingCells,
+  opManagerSupervisorContacts,
 } from "../drizzle/schema";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -4372,4 +4375,104 @@ export async function setHomePrefs(
       tileOrder: updates.tileOrder ? JSON.stringify(updates.tileOrder) : JSON.stringify(DEFAULT_TILE_ORDER),
     });
   }
+}
+
+// ─── Operation Manager ────────────────────────────────────────────────────────
+
+export async function getOpManagerPriorityBoard(weekStart: string) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(opManagerPriorityRows)
+    .where(eq(opManagerPriorityRows.weekStart, weekStart))
+    .orderBy(opManagerPriorityRows.sortOrder);
+}
+
+export async function saveOpManagerPriorityBoard(
+  weekStart: string,
+  rows: Array<{
+    category: string;
+    priority: number;
+    operationId?: number | null;
+    operationName?: string | null;
+    team?: string | null;
+    requestType?: string | null;
+    sortOrder: number;
+  }>
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(opManagerPriorityRows).where(eq(opManagerPriorityRows.weekStart, weekStart));
+  if (rows.length === 0) return [];
+  await db.insert(opManagerPriorityRows).values(rows.map((r) => ({ ...r, weekStart })));
+  return getOpManagerPriorityBoard(weekStart);
+}
+
+export async function getOpManagerTaskingCalendar(weekStart: string) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(opManagerTaskingCells)
+    .where(eq(opManagerTaskingCells.weekStart, weekStart));
+}
+
+export async function saveOpManagerTaskingCell(
+  weekStart: string,
+  dayIndex: number,
+  teamRow: string,
+  data: { shiftTime?: string | null; primaryTask?: string | null; secondaryTask?: string | null }
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const existing = await db
+    .select()
+    .from(opManagerTaskingCells)
+    .where(
+      and(
+        eq(opManagerTaskingCells.weekStart, weekStart),
+        eq(opManagerTaskingCells.dayIndex, dayIndex),
+        eq(opManagerTaskingCells.teamRow, teamRow)
+      )
+    )
+    .limit(1);
+  if (existing.length > 0) {
+    await db
+      .update(opManagerTaskingCells)
+      .set(data)
+      .where(eq(opManagerTaskingCells.id, existing[0].id));
+  } else {
+    await db.insert(opManagerTaskingCells).values({ weekStart, dayIndex, teamRow, ...data });
+  }
+}
+
+export async function getOpManagerSupervisorContacts(weekStart: string) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(opManagerSupervisorContacts)
+    .where(eq(opManagerSupervisorContacts.weekStart, weekStart))
+    .orderBy(opManagerSupervisorContacts.sortOrder);
+}
+
+export async function saveOpManagerSupervisorContacts(
+  weekStart: string,
+  contacts: Array<{
+    role: string;
+    userId?: number | null;
+    customName?: string | null;
+    phone?: string | null;
+    sortOrder: number;
+  }>
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .delete(opManagerSupervisorContacts)
+    .where(eq(opManagerSupervisorContacts.weekStart, weekStart));
+  if (contacts.length === 0) return [];
+  await db.insert(opManagerSupervisorContacts).values(contacts.map((c) => ({ ...c, weekStart })));
+  return getOpManagerSupervisorContacts(weekStart);
 }

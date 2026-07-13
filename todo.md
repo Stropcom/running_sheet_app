@@ -699,3 +699,19 @@
 - [x] Toggle button in sidebar header switches between Folder and Tile view
 - [x] Preference saved per-user; Folder view is default for new users
 - [x] Live data: operations count, governance %, to-do count, etc. per tile
+
+## Operation Manager (Main Folder — between Target Registry and Administration)
+- [x] DB: op_manager_priority_rows table (weekStart, category, priority, operationId, operationName, team, requestType, sortOrder)
+- [x] DB: op_manager_tasking_cells table (weekStart, dayIndex, teamRow, shiftTime, primaryTask, secondaryTask)
+- [x] DB: op_manager_supervisor_contacts table (weekStart, role, userId, customName, phone)
+- [x] tRPC: getPriorityBoard, savePriorityBoard, getTaskingCalendar, saveTaskingCalendar, getSupervisorContacts, saveSupervisorContacts
+- [x] Frontend: OperationManagerPage.tsx with two tabs — Priority Board and Weekly Tasking Calendar
+- [x] Priority Board: editable priority table, user-defined categories (A-TACC, WC etc.), operation auto-suggest + inline create, supervisor contacts from user list
+- [x] Weekly Tasking Calendar: 7-day grid (Mon-Sun), 4 team rows per day (Surveillance 1, Surveillance 2, PTT, Cap. Support), shift dropdown (RDO/0600-1400/0700-1500/1400-2200/1000-1800/Custom), primary + secondary op per cell
+- [x] Inline create operation: if op not found in dropdown, show "Create Operation" option (same flow as Operations folder)
+- [x] Week navigation: previous/next week buttons
+- [x] Access: Full Access users only can edit
+- [x] Sidebar: add Operation Manager as main folder between Target Registry and Administration (with ClipboardList or similar icon)
+- [x] Route: /operation-manager registered in App.tsx
+- [ ] Dashboard tile: add Operation Manager tile to tile home screen (now 11 tiles — adjust layout)
+- [x] SectionColorContext: /operation-manager colour mapping

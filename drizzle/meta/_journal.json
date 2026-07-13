@@ -239,6 +239,13 @@
       "when": 1783908812200,
       "tag": "0033_typical_red_hulk",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "5",
+      "when": 1783936066276,
+      "tag": "0034_narrow_virginia_dare",
+      "breakpoints": true
     }
   ]
 }

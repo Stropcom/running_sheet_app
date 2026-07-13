@@ -37,6 +37,7 @@ import RSMapping from "@/pages/RSMapping";
 import DraftSheetPage from "@/pages/DraftSheetPage";
 import ReportsPage from "@/pages/ReportsPage";
 import TileHomeScreen from "@/pages/TileHomeScreen";
+import OperationManagerPage from "@/pages/OperationManagerPage";
 import { DraftModeBanner } from "@/components/DraftModeBanner";
 import { SectionColorProvider } from "@/contexts/SectionColorContext";
 
@@ -64,6 +65,7 @@ function Router() {
       <Route path="/governance" component={GovernanceListPage} />
       <Route path="/governance/:sheetId" component={GovernancePage} />
       <Route path="/target-registry" component={TargetRegistryPage} />
+      <Route path="/operation-manager" component={OperationManagerPage} />
       <Route path="/operation-management" component={OperationManagementPage} />
       <Route path="/calendar" component={CalendarPage} />
       <Route path="/court/statements" component={StatementsPage} />

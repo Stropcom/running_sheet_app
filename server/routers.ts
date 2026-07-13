@@ -135,6 +135,12 @@ import {
   createWipcMember,
   updateWipcMember,
   deleteWipcMember,
+  getOpManagerPriorityBoard,
+  saveOpManagerPriorityBoard,
+  getOpManagerTaskingCalendar,
+  saveOpManagerTaskingCell,
+  getOpManagerSupervisorContacts,
+  saveOpManagerSupervisorContacts,
 } from "./db";
 
 // ─── Role Guards ──────────────────────────────────────────────────────────────
@@ -2583,6 +2589,78 @@ export const appRouter = router({
     outstandingTodos: protectedProcedure.query(async () => {
       return getOutstandingTodosByUser();
     }),
+  }),
+
+  // ─── Operation Manager ─────────────────────────────────────────────────────
+  opManager: router({
+    getPriorityBoard: certifierOrAdminProcedure
+      .input(z.object({ weekStart: z.string() }))
+      .query(async ({ input }) => {
+        return getOpManagerPriorityBoard(input.weekStart);
+      }),
+
+    savePriorityBoard: certifierOrAdminProcedure
+      .input(z.object({
+        weekStart: z.string(),
+        rows: z.array(z.object({
+          id: z.number().optional(),
+          category: z.string(),
+          priority: z.number(),
+          operationId: z.number().nullable().optional(),
+          operationName: z.string().nullable().optional(),
+          team: z.string().nullable().optional(),
+          requestType: z.string().nullable().optional(),
+          sortOrder: z.number(),
+        })),
+      }))
+      .mutation(async ({ input }) => {
+        await saveOpManagerPriorityBoard(input.weekStart, input.rows);
+        return { ok: true };
+      }),
+
+    getTaskingCalendar: certifierOrAdminProcedure
+      .input(z.object({ weekStart: z.string() }))
+      .query(async ({ input }) => {
+        return getOpManagerTaskingCalendar(input.weekStart);
+      }),
+
+    saveTaskingCell: certifierOrAdminProcedure
+      .input(z.object({
+        weekStart: z.string(),
+        dayIndex: z.number().min(0).max(6),
+        teamRow: z.string(),
+        shiftTime: z.string().nullable().optional(),
+        primaryTask: z.string().nullable().optional(),
+        secondaryTask: z.string().nullable().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { weekStart, dayIndex, teamRow, ...data } = input;
+        await saveOpManagerTaskingCell(weekStart, dayIndex, teamRow, data);
+        return { ok: true };
+      }),
+
+    getSupervisorContacts: certifierOrAdminProcedure
+      .input(z.object({ weekStart: z.string() }))
+      .query(async ({ input }) => {
+        return getOpManagerSupervisorContacts(input.weekStart);
+      }),
+
+    saveSupervisorContacts: certifierOrAdminProcedure
+      .input(z.object({
+        weekStart: z.string(),
+        contacts: z.array(z.object({
+          id: z.number().optional(),
+          role: z.string(),
+          userId: z.number().nullable().optional(),
+          customName: z.string().nullable().optional(),
+          phone: z.string().nullable().optional(),
+          sortOrder: z.number(),
+        })),
+      }))
+      .mutation(async ({ input }) => {
+        await saveOpManagerSupervisorContacts(input.weekStart, input.contacts);
+        return { ok: true };
+      }),
   }),
 
   // ─── Admin Utilities ────────────────────────────────────────────────────────

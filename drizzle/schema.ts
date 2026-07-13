@@ -544,3 +544,46 @@ export const userSidebarOrder = mysqlTable("user_sidebar_order", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 export type UserSidebarOrder = typeof userSidebarOrder.$inferSelect;
+
+// ─── Operation Manager ────────────────────────────────────────────────────────
+
+export const opManagerPriorityRows = mysqlTable("op_manager_priority_rows", {
+  id: int("id").autoincrement().primaryKey(),
+  weekStart: varchar("weekStart", { length: 10 }).notNull(), // ISO date string YYYY-MM-DD (Monday)
+  category: varchar("category", { length: 64 }).notNull(),   // e.g. "A-TACC", "WC"
+  priority: int("priority").notNull(),                        // 1, 2, 3 ...
+  operationId: int("operationId"),                            // FK to operations (nullable — may be free-text)
+  operationName: varchar("operationName", { length: 255 }),   // free-text fallback
+  team: varchar("team", { length: 64 }),
+  requestType: varchar("requestType", { length: 128 }),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type OpManagerPriorityRow = typeof opManagerPriorityRows.$inferSelect;
+
+export const opManagerTaskingCells = mysqlTable("op_manager_tasking_cells", {
+  id: int("id").autoincrement().primaryKey(),
+  weekStart: varchar("weekStart", { length: 10 }).notNull(),
+  dayIndex: int("dayIndex").notNull(),   // 0=Mon … 6=Sun
+  teamRow: varchar("teamRow", { length: 64 }).notNull(), // "surv1" | "surv2" | "ptt" | "cap"
+  shiftTime: varchar("shiftTime", { length: 32 }),       // "RDO" | "0600-1400" | custom
+  primaryTask: varchar("primaryTask", { length: 255 }),
+  secondaryTask: varchar("secondaryTask", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type OpManagerTaskingCell = typeof opManagerTaskingCells.$inferSelect;
+
+export const opManagerSupervisorContacts = mysqlTable("op_manager_supervisor_contacts", {
+  id: int("id").autoincrement().primaryKey(),
+  weekStart: varchar("weekStart", { length: 10 }).notNull(),
+  role: varchar("role", { length: 128 }).notNull(), // e.g. "CTO", "Team 1 TL", "On Call Supervisor"
+  userId: int("userId"),                             // FK to users (nullable)
+  customName: varchar("customName", { length: 255 }),
+  phone: varchar("phone", { length: 32 }),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type OpManagerSupervisorContact = typeof opManagerSupervisorContacts.$inferSelect;

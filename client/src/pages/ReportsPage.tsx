@@ -122,7 +122,7 @@ function GroupPanel({
   icon: Icon,
   iconColor,
   children,
-  defaultOpen = true,
+  defaultOpen = false,
 }: {
   title: string;
   count: number;

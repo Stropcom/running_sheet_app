@@ -147,7 +147,7 @@ import {
   savePushSubscription,
   removePushSubscription,
 } from "./db";
-import { sendPushToAll } from "./webPush";
+import { sendPushToAll, sendPushToUsers } from "./webPush";
 
 // ─── Role Guards ──────────────────────────────────────────────────────────────
 
@@ -2746,17 +2746,25 @@ export const appRouter = router({
       }),
 
     postWeek: adminProcedure
-      .input(z.object({ weekStart: z.string() }))
+      .input(z.object({
+        weekStart: z.string(),
+        userIds: z.array(z.number()).optional(), // if provided, notify only these users
+      }))
       .mutation(async ({ ctx, input }) => {
         await markWeekPosted(input.weekStart, ctx.user.id);
         const weekLabel = new Date(input.weekStart + "T00:00:00Z").toLocaleDateString("en-AU", {
           day: "2-digit", month: "short", year: "numeric", timeZone: "UTC",
         });
-        await sendPushToAll(
-          "New CTO Tasking Posted",
-          `CTO Tasking for the week of ${weekLabel} has been posted.`,
-          "/operation-manager"
-        ).catch((err) => console.warn("[Push] Failed to send notifications:", err));
+        const title = "New CTO Tasking Posted";
+        const body = `CTO Tasking for the week of ${weekLabel} has been posted.`;
+        const url = "/operation-manager";
+        if (input.userIds && input.userIds.length > 0) {
+          await sendPushToUsers(input.userIds, title, body, url)
+            .catch((err) => console.warn("[Push] Failed to send targeted notifications:", err));
+        } else {
+          await sendPushToAll(title, body, url)
+            .catch((err) => console.warn("[Push] Failed to send notifications:", err));
+        }
         return { ok: true };
       }),
 

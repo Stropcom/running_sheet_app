@@ -3,10 +3,10 @@ import { cleanupOutdatedCaches, precacheAndRoute } from "workbox-precaching";
 
 declare const self: ServiceWorkerGlobalScope;
 
-// Workbox injects the precache manifest into this variable at build time
-declare const __WB_MANIFEST: Array<{ url: string; revision: string | null }>;
-
-precacheAndRoute(__WB_MANIFEST);
+// self.__WB_MANIFEST is replaced by Workbox's injectManifest step at build time.
+// The cast via (self as unknown) prevents TypeScript from complaining while keeping
+// the literal string intact in the compiled output so Workbox can find it.
+precacheAndRoute((self as unknown as { __WB_MANIFEST: Array<{ url: string; revision: string | null }> }).__WB_MANIFEST);
 cleanupOutdatedCaches();
 
 // ── Push notification handler ─────────────────────────────────────────────────
@@ -38,7 +38,6 @@ self.addEventListener("notificationclick", (event: NotificationEvent) => {
     self.clients
       .matchAll({ type: "window", includeUncontrolled: true })
       .then((clientList) => {
-        // If a window is already open, focus it and navigate
         for (const client of clientList) {
           if ("focus" in client) {
             client.focus();
@@ -48,7 +47,6 @@ self.addEventListener("notificationclick", (event: NotificationEvent) => {
             return;
           }
         }
-        // Otherwise open a new window
         return self.clients.openWindow(url);
       })
   );

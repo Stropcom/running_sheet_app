@@ -48,6 +48,14 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { cn } from "@/lib/utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const TEAM_ROWS = ["surv1", "surv2", "ptt", "cap"] as const;
@@ -328,6 +336,8 @@ export default function OperationManagerPage() {
   const [onCallEntries, setOnCallEntries] = useState<OnCallEntry[]>([]);
   const [activeTab, setActiveTab] = useState("contacts");
   const [isSavingTasking, setIsSavingTasking] = useState(false);
+  const [notifyDialogOpen, setNotifyDialogOpen] = useState(false);
+  const [selectedUserIds, setSelectedUserIds] = useState<Set<number>>(new Set());
 
   // ── Sync remote → local ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -572,11 +582,28 @@ export default function OperationManagerPage() {
   };
 
   // ── Post & Notify ─────────────────────────────────────────────────────────────
-  const handlePostAndNotify = async () => {
+  const openNotifyDialog = () => {
+    // Pre-select all users
+    const allIds = new Set(
+      (usersQuery.data ?? []).map((u) => u.id)
+    );
+    setSelectedUserIds(allIds);
+    setNotifyDialogOpen(true);
+  };
+
+  const handleConfirmNotify = async () => {
+    setNotifyDialogOpen(false);
     try {
-      await postWeekMut.mutateAsync({ weekStart });
+      await postWeekMut.mutateAsync({
+        weekStart,
+        userIds: selectedUserIds.size > 0 ? Array.from(selectedUserIds) : undefined,
+      });
       await utils.opManager.isWeekPosted.invalidate();
-      toast.success("CTO Tasking posted and notifications sent.");
+      toast.success(
+        selectedUserIds.size > 0
+          ? `CTO Tasking posted. Notified ${selectedUserIds.size} user${selectedUserIds.size === 1 ? "" : "s"}.`
+          : "CTO Tasking posted (no users notified)."
+      );
     } catch {
       toast.error("Failed to post CTO Tasking.");
     }
@@ -692,7 +719,7 @@ export default function OperationManagerPage() {
                   </Button>
                   <Button
                     size="sm"
-                    onClick={handlePostAndNotify}
+                    onClick={openNotifyDialog}
                     disabled={postWeekMut.isPending}
                     className="gap-1"
                     variant={postedQuery.data?.posted ? "outline" : "default"}
@@ -759,6 +786,7 @@ export default function OperationManagerPage() {
   // EDIT VIEW (admin only)
   // ─────────────────────────────────────────────────────────────────────────────
   return (
+    <>
     <div className="min-h-screen bg-background text-foreground">
       <PageHeader
         weekStart={weekStart}
@@ -1060,6 +1088,85 @@ export default function OperationManagerPage() {
         </Tabs>
       </div>
     </div>
+
+    {/* ── Post & Notify user-selection dialog ─────────────────────────────────────────── */}
+    <Dialog open={notifyDialogOpen} onOpenChange={setNotifyDialogOpen}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Select who to notify</DialogTitle>
+        </DialogHeader>
+        <div className="py-2 space-y-1 max-h-72 overflow-y-auto">
+          {/* Select All toggle */}
+          <div className="flex items-center gap-2 pb-2 border-b border-border/50">
+            <Checkbox
+              id="notify-all"
+              checked={
+                (usersQuery.data ?? []).length > 0 &&
+                selectedUserIds.size === (usersQuery.data ?? []).length
+              }
+              onCheckedChange={(checked) => {
+                if (checked) {
+                  setSelectedUserIds(new Set((usersQuery.data ?? []).map((u) => u.id)));
+                } else {
+                  setSelectedUserIds(new Set());
+                }
+              }}
+            />
+            <Label htmlFor="notify-all" className="font-semibold cursor-pointer">
+              Select All
+            </Label>
+          </div>
+          {/* User list sorted: CIN 667 first, then ascending */}
+          {[...(usersQuery.data ?? [])]
+            .sort((a, b) => {
+              const cinA = a.cin ?? "";
+              const cinB = b.cin ?? "";
+              if (cinA === "667" && cinB !== "667") return -1;
+              if (cinB === "667" && cinA !== "667") return 1;
+              return cinA.localeCompare(cinB, undefined, { numeric: true });
+            })
+            .map((u) => (
+              <div key={u.id} className="flex items-center gap-2 py-1">
+                <Checkbox
+                  id={`notify-user-${u.id}`}
+                  checked={selectedUserIds.has(u.id)}
+                  onCheckedChange={(checked) => {
+                    setSelectedUserIds((prev) => {
+                      const next = new Set(prev);
+                      if (checked) next.add(u.id); else next.delete(u.id);
+                      return next;
+                    });
+                  }}
+                />
+                <Label
+                  htmlFor={`notify-user-${u.id}`}
+                  className="cursor-pointer flex items-center gap-2"
+                >
+                  <span className="font-mono text-xs text-muted-foreground w-10">
+                    {u.cin ?? "—"}
+                  </span>
+                  <span>{u.name}</span>
+                </Label>
+              </div>
+            ))}
+        </div>
+        <DialogFooter className="gap-2">
+          <Button variant="outline" size="sm" onClick={() => setNotifyDialogOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            onClick={handleConfirmNotify}
+            disabled={postWeekMut.isPending}
+            className="gap-1"
+          >
+            <Send className="h-3.5 w-3.5" />
+            Post & Notify ({selectedUserIds.size})
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
 

@@ -830,3 +830,10 @@
 - [x] Header: removed "Covert & Technical Operations" line, date range now inline right of title
 - [x] Shift rotation anchor: moved back 1 week — Team 1 on 1400-2200 this week (13 Jul), 0700-1500 next week (20 Jul)
 - [x] PTT: 0600-1400 Mon-Fri, RDO Sat-Sun auto-populated; Cap. Support: 0700-1500 Mon-Fri, RDO Sat-Sun
+
+## Post & Notify Dialog + Build Fix (Round 10)
+- [x] Fix production build: sw.ts injectManifest self.__WB_MANIFEST literal preserved
+- [x] Post & Notify: open user-selection dialog before sending push notifications
+- [x] Dialog: list all users sorted CIN 667 first, then ascending CIN order
+- [x] Dialog: checkboxes to select/deselect individual users, Select All toggle
+- [x] Server: update postWeek to accept optional list of userIds to notify (sendPushToUsers helper added)

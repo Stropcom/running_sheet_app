@@ -529,3 +529,14 @@ export const rsMappingWaypoints = mysqlTable("rs_mapping_waypoints", {
 
 export type RsMappingWaypoint = typeof rsMappingWaypoints.$inferSelect;
 export type InsertRsMappingWaypoint = typeof rsMappingWaypoints.$inferInsert;
+
+// ─── User Sidebar Order ───────────────────────────────────────────────────────
+
+export const userSidebarOrder = mysqlTable("user_sidebar_order", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(),
+  /** JSON array of nav item keys in user-defined order, e.g. ["operations","todo","governance",...] */
+  orderedKeys: text("orderedKeys").notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type UserSidebarOrder = typeof userSidebarOrder.$inferSelect;

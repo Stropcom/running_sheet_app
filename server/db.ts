@@ -35,6 +35,7 @@ import {
   CustomMapMarker,
   InsertCustomMapMarker,
   rsMappingWaypoints,
+  userSidebarOrder,
 } from "../drizzle/schema";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -4273,4 +4274,52 @@ export async function getOutstandingTodosByUser(): Promise<OutstandingTodoUser[]
   }
 
   return results.sort((a, b) => b.totalCount - a.totalCount);
+}
+
+// ─── User Sidebar Order ───────────────────────────────────────────────────────
+
+export const DEFAULT_SIDEBAR_ORDER = [
+  "operations",
+  "governance",
+  "todo",
+  "mapping",
+  "calendar",
+  "shortcuts",
+  "intelligence",
+  "targetRegistry",
+];
+
+export async function getSidebarOrder(userId: number): Promise<string[]> {
+  const db = await getDb();
+  if (!db) return DEFAULT_SIDEBAR_ORDER;
+  const rows = await db
+    .select()
+    .from(userSidebarOrder)
+    .where(eq(userSidebarOrder.userId, userId))
+    .limit(1);
+  if (rows.length === 0) return DEFAULT_SIDEBAR_ORDER;
+  try {
+    const parsed = JSON.parse(rows[0].orderedKeys);
+    if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+  } catch { /* fall through */ }
+  return DEFAULT_SIDEBAR_ORDER;
+}
+
+export async function setSidebarOrder(userId: number, orderedKeys: string[]): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const json = JSON.stringify(orderedKeys);
+  const existing = await db
+    .select({ id: userSidebarOrder.id })
+    .from(userSidebarOrder)
+    .where(eq(userSidebarOrder.userId, userId))
+    .limit(1);
+  if (existing.length > 0) {
+    await db
+      .update(userSidebarOrder)
+      .set({ orderedKeys: json })
+      .where(eq(userSidebarOrder.userId, userId));
+  } else {
+    await db.insert(userSidebarOrder).values({ userId, orderedKeys: json });
+  }
 }

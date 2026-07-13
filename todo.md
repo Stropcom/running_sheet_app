@@ -679,3 +679,13 @@
 - [x] Sidebar: Add Reports as first sub-item under Administration folder in DashboardLayout
 - [x] Route: /reports registered in App.tsx
 - [x] SectionColorContext: /reports maps to administration colour
+
+## Sidebar Drag-to-Reorder (Round 66)
+- [x] Install @dnd-kit/core and @dnd-kit/sortable
+- [x] DB: add user_sidebar_order table (userId, orderedKeys JSON) or column on users
+- [x] tRPC: getSidebarOrder and setSidebarOrder procedures
+- [x] DashboardLayout: replace static nav list with SortableContext drag-and-drop list
+- [x] Long-press / pointer-down hold (300ms) activates drag on touch devices
+- [x] Drag handle shown as subtle grip icon on hover/hold
+- [x] Order persisted to DB on drop; falls back to default order for new users
+- [x] Administration and User Management always stay at the bottom (pinned, non-draggable)

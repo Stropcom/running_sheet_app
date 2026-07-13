@@ -1,5 +1,21 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -26,7 +42,7 @@ import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useTheme } from "@/contexts/ThemeContext";
 import {
-  FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen, Scale, FolderOpen, ChevronDown, ChevronRight, CalendarDays, Shield, ClipboardCheck as GovIcon, Map, ArrowRightLeft, HelpCircle, Trash2, WifiOff, Settings, UserCog, BarChart3 } from "lucide-react";
+  FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen, Scale, FolderOpen, ChevronDown, ChevronRight, CalendarDays, Shield, ClipboardCheck as GovIcon, Map, ArrowRightLeft, HelpCircle, Trash2, WifiOff, Settings, UserCog, BarChart3, GripVertical } from "lucide-react";
 import React, { CSSProperties, useEffect, useRef, useState } from "react";
 import { useObservationFocus } from "@/contexts/ObservationFocusContext";
 import { useLocation } from "wouter";
@@ -34,6 +50,201 @@ import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { Button } from "./ui/button";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useSectionColor } from "@/contexts/SectionColorContext";
+
+// ─── SortableNavItem ─────────────────────────────────────────────────────────
+type SortableNavItemProps = {
+  id: string;
+  isCollapsed: boolean;
+  location: string;
+  setLocation: (path: string) => void;
+  todoCount: number;
+  certifyCount: number;
+  govCount: number;
+  todoExpanded: boolean;
+  setTodoExpanded: React.Dispatch<React.SetStateAction<boolean>>;
+  shortcutsItemRef: React.RefObject<HTMLLIElement | null>;
+  isObservationFocused: boolean;
+  setShortcutsPanelOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  subItemClass: (active: boolean) => string;
+};
+
+function SortableNavItem({
+  id,
+  isCollapsed,
+  location,
+  setLocation,
+  todoCount,
+  certifyCount,
+  govCount,
+  todoExpanded,
+  setTodoExpanded,
+  shortcutsItemRef,
+  isObservationFocused,
+  setShortcutsPanelOpen,
+  subItemClass,
+}: SortableNavItemProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 50 : undefined,
+  };
+
+  const gripHandle = !isCollapsed ? (
+    <span
+      {...listeners}
+      className="flex items-center px-1 cursor-grab active:cursor-grabbing text-sidebar-foreground/20 hover:text-sidebar-foreground/50 transition-colors shrink-0 touch-none"
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <GripVertical className="h-3.5 w-3.5" />
+    </span>
+  ) : null;
+
+  const itemProps = { ref: setNodeRef, style, ...attributes };
+
+  if (id === "operations") return (
+    <SidebarMenuItem {...itemProps}>
+      <SidebarMenuButton
+        isActive={location === "/" || location.startsWith("/operation/") || location.startsWith("/sheet/")}
+        onClick={() => setLocation("/")}
+        tooltip="Operations"
+        className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-blue-700/50 shadow-sm"
+      >
+        <FileText className="h-4 w-4 text-blue-700" />
+        <span className={`flex-1 ${location === "/" || location.startsWith("/operation/") || location.startsWith("/sheet/") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>Operations</span>
+        {gripHandle}
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+
+  if (id === "governance") return (
+    <SidebarMenuItem {...itemProps}>
+      <SidebarMenuButton
+        isActive={location === "/governance" || location.startsWith("/governance")}
+        onClick={() => setLocation("/governance")}
+        tooltip="Governance"
+        className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-purple-400/50 shadow-sm"
+      >
+        <ClipboardCheck className="h-4 w-4 text-purple-400" />
+        <span className={`flex-1 ${location === "/governance" || location.startsWith("/governance") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>Governance</span>
+        {gripHandle}
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+
+  if (id === "todo") return (
+    <SidebarMenuItem {...itemProps}>
+      <SidebarMenuButton
+        isActive={location === "/todo" || location === "/todo/governance"}
+        onClick={() => setTodoExpanded((v) => !v)}
+        tooltip="To-Do"
+        className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-red-400/50 shadow-sm"
+      >
+        <ClipboardList className={`h-4 w-4 ${todoCount > 0 ? "text-red-500" : "text-red-400"}`} />
+        <span className={`flex-1 ${todoCount > 0 ? "text-red-500 font-medium" : location === "/todo" || location === "/todo/governance" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>To-Do</span>
+        {todoCount > 0 && !isCollapsed && (
+          <span className="inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-[10px] font-bold bg-red-500/20 border border-red-500/40 text-red-500">{todoCount}</span>
+        )}
+        {!isCollapsed && (todoExpanded ? <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" /> : <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />)}
+        {gripHandle}
+      </SidebarMenuButton>
+      {todoExpanded && !isCollapsed && (
+        <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
+          <button onClick={() => setLocation("/todo")} className={subItemClass(location === "/todo")}>
+            <Shield className={`h-3.5 w-3.5 shrink-0 ${certifyCount > 0 ? "text-red-400" : "text-emerald-400"}`} />
+            <span className="flex-1">Certify</span>
+            {certifyCount > 0 && <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[9px] font-bold bg-red-500/20 border border-red-500/40 text-red-400">{certifyCount}</span>}
+          </button>
+          <button onClick={() => setLocation("/todo/governance")} className={subItemClass(location === "/todo/governance")}>
+            <GovIcon className={`h-3.5 w-3.5 shrink-0 ${govCount > 0 ? "text-blue-400" : "text-emerald-400"}`} />
+            <span className="flex-1">RS Governance</span>
+            {govCount > 0 && <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[9px] font-bold bg-blue-500/20 border border-blue-500/40 text-blue-400">{govCount}</span>}
+          </button>
+        </div>
+      )}
+    </SidebarMenuItem>
+  );
+
+  if (id === "mapping") return (
+    <SidebarMenuItem {...itemProps}>
+      <SidebarMenuButton
+        isActive={location === "/intelligence/mapping"}
+        onClick={() => setLocation("/intelligence/mapping")}
+        tooltip="Mapping"
+        className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-teal-400/50 shadow-sm"
+      >
+        <Map className="h-4 w-4 text-teal-400" />
+        <span className={`flex-1 ${location === "/intelligence/mapping" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>Mapping</span>
+        {gripHandle}
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+
+  if (id === "calendar") return (
+    <SidebarMenuItem {...itemProps}>
+      <SidebarMenuButton
+        isActive={location === "/calendar" || location.startsWith("/calendar")}
+        onClick={() => setLocation("/calendar")}
+        tooltip="Calendar"
+        className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-orange-400/50 shadow-sm"
+      >
+        <CalendarDays className="h-4 w-4 text-orange-400" />
+        <span className={`flex-1 ${location === "/calendar" || location.startsWith("/calendar") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>Calendar</span>
+        {gripHandle}
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+
+  if (id === "shortcuts") return (
+    <SidebarMenuItem {...itemProps} ref={(el) => { (itemProps as any).ref(el); (shortcutsItemRef as React.MutableRefObject<HTMLLIElement | null>).current = el; }}>
+      <SidebarMenuButton
+        isActive={location === "/shortcuts" || location.startsWith("/shortcuts")}
+        onClick={() => setLocation("/shortcuts")}
+        tooltip="Shortcuts"
+        className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-yellow-400/50 shadow-sm"
+        onMouseEnter={() => { if (isObservationFocused) setShortcutsPanelOpen(true); }}
+      >
+        <Zap className="h-4 w-4 text-yellow-400" />
+        <span className={`flex-1 ${location === "/shortcuts" || location.startsWith("/shortcuts") ? "text-sidebar-foreground font-medium" : isObservationFocused ? "text-cyan-300 font-medium" : "text-sidebar-foreground/80"}`}>Shortcuts</span>
+        {isObservationFocused && !isCollapsed && <span className="ml-1 text-[9px] font-bold text-cyan-500 uppercase tracking-wide">hover</span>}
+        {gripHandle}
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+
+  if (id === "intelligence") return (
+    <SidebarMenuItem {...itemProps}>
+      <SidebarMenuButton
+        isActive={location === "/intelligence" || (location.startsWith("/intelligence") && !location.startsWith("/intelligence/mapping"))}
+        onClick={() => setLocation("/intelligence")}
+        tooltip="Intelligence"
+        className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-violet-400/50 shadow-sm"
+      >
+        <FolderSearch className="h-4 w-4 text-violet-400" />
+        <span className={`flex-1 ${location === "/intelligence" || (location.startsWith("/intelligence") && !location.startsWith("/intelligence/mapping")) ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>Intelligence</span>
+        {gripHandle}
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+
+  if (id === "targetRegistry") return (
+    <SidebarMenuItem {...itemProps}>
+      <SidebarMenuButton
+        isActive={location === "/target-registry" || location.startsWith("/target-registry")}
+        onClick={() => setLocation("/target-registry")}
+        tooltip="Target Registry"
+        className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-rose-400/50 shadow-sm"
+      >
+        <BookOpen className="h-4 w-4 text-rose-400" />
+        <span className={`flex-1 ${location === "/target-registry" || location.startsWith("/target-registry") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>Target Registry</span>
+        {gripHandle}
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+
+  return null;
+}
 
 // Thin coloured accent bar at the top of the main content area
 function SectionAccentBar() {
@@ -151,6 +362,36 @@ function DashboardLayoutContent({
   const [adminFolderExpanded, setAdminFolderExpanded] = useState(false);
   const [userMgmtFolderExpanded, setUserMgmtFolderExpanded] = useState(false);
 
+  // ── Sidebar drag-to-reorder ──────────────────────────────────────────────
+  const DEFAULT_NAV_ORDER = [
+    "operations", "governance", "todo", "mapping", "calendar", "shortcuts", "intelligence", "targetRegistry",
+  ];
+  const [navOrder, setNavOrder] = useState<string[]>(DEFAULT_NAV_ORDER);
+  const { data: sidebarOrderData } = trpc.sidebar.getOrder.useQuery(undefined, { staleTime: Infinity });
+  const setSidebarOrderMutation = trpc.sidebar.setOrder.useMutation();
+
+  useEffect(() => {
+    if (sidebarOrderData?.order && sidebarOrderData.order.length > 0) {
+      setNavOrder(sidebarOrderData.order);
+    }
+  }, [sidebarOrderData]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { delay: 300, tolerance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 300, tolerance: 8 } }),
+  );
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = navOrder.indexOf(active.id as string);
+    const newIndex = navOrder.indexOf(over.id as string);
+    if (oldIndex === -1 || newIndex === -1) return;
+    const newOrder = arrayMove(navOrder, oldIndex, newIndex);
+    setNavOrder(newOrder);
+    setSidebarOrderMutation.mutate({ orderedKeys: newOrder });
+  }
+
   // Expand admin folder if current route is inside it
   useEffect(() => {
     const adminPaths = ["/court", "/audit", "/draft", "/operation-management", "/recycle-bin", "/help", "/reports"];
@@ -224,153 +465,29 @@ function DashboardLayoutContent({
           <SidebarContent className="gap-0 pt-2 pb-2">
             <SidebarMenu className="px-2 gap-1.5">
 
-              {/* ── Operations ── */}
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={location === "/" || location.startsWith("/operation/") || location.startsWith("/sheet/")}
-                  onClick={() => setLocation("/")}
-                  tooltip="Operations"
-                  className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-blue-700/50 shadow-sm"
-                >
-                  <FileText className="h-4 w-4 text-blue-700" />
-                  <span className={`flex-1 ${location === "/" || location.startsWith("/operation/") || location.startsWith("/sheet/") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
-                    Operations
-                  </span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-
-              {/* ── Governance ── */}
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={location === "/governance" || location.startsWith("/governance")}
-                  onClick={() => setLocation("/governance")}
-                  tooltip="Governance"
-                  className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-purple-400/50 shadow-sm"
-                >
-                  <ClipboardCheck className="h-4 w-4 text-purple-400" />
-                  <span className={`flex-1 ${location === "/governance" || location.startsWith("/governance") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
-                    Governance
-                  </span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-
-              {/* ── To-Do (expandable) ── */}
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={location === "/todo" || location === "/todo/governance"}
-                  onClick={() => setTodoExpanded((v) => !v)}
-                  tooltip="To-Do"
-                  className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-red-400/50 shadow-sm"
-                >
-                  <ClipboardList className={`h-4 w-4 ${todoCount > 0 ? "text-red-500" : "text-red-400"}`} />
-                  <span className={`flex-1 ${todoCount > 0 ? "text-red-500 font-medium" : location === "/todo" || location === "/todo/governance" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
-                    To-Do
-                  </span>
-                  {todoCount > 0 && !isCollapsed && (
-                    <span className="inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-[10px] font-bold bg-red-500/20 border border-red-500/40 text-red-500">
-                      {todoCount}
-                    </span>
-                  )}
-                  {!isCollapsed && (todoExpanded ? <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" /> : <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />)}
-                </SidebarMenuButton>
-                {todoExpanded && !isCollapsed && (
-                  <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
-                    <button onClick={() => setLocation("/todo")} className={subItemClass(location === "/todo")}>
-                      <Shield className={`h-3.5 w-3.5 shrink-0 ${certifyCount > 0 ? "text-red-400" : "text-emerald-400"}`} />
-                      <span className="flex-1">Certify</span>
-                      {certifyCount > 0 && (
-                        <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[9px] font-bold bg-red-500/20 border border-red-500/40 text-red-400">{certifyCount}</span>
-                      )}
-                    </button>
-                    <button onClick={() => setLocation("/todo/governance")} className={subItemClass(location === "/todo/governance")}>
-                      <GovIcon className={`h-3.5 w-3.5 shrink-0 ${govCount > 0 ? "text-blue-400" : "text-emerald-400"}`} />
-                      <span className="flex-1">RS Governance</span>
-                      {govCount > 0 && (
-                        <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[9px] font-bold bg-blue-500/20 border border-blue-500/40 text-blue-400">{govCount}</span>
-                      )}
-                    </button>
-                  </div>
-                )}
-              </SidebarMenuItem>
-
-              {/* ── Mapping ── */}
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={location === "/intelligence/mapping"}
-                  onClick={() => setLocation("/intelligence/mapping")}
-                  tooltip="Mapping"
-                  className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-teal-400/50 shadow-sm"
-                >
-                  <Map className="h-4 w-4 text-teal-400" />
-                  <span className={`flex-1 ${location === "/intelligence/mapping" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
-                    Mapping
-                  </span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-
-              {/* ── Calendar ── */}
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={location === "/calendar" || location.startsWith("/calendar")}
-                  onClick={() => setLocation("/calendar")}
-                  tooltip="Calendar"
-                  className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-orange-400/50 shadow-sm"
-                >
-                  <CalendarDays className="h-4 w-4 text-orange-400" />
-                  <span className={`flex-1 ${location === "/calendar" || location.startsWith("/calendar") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
-                    Calendar
-                  </span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-
-              {/* ── Shortcuts ── */}
-              <SidebarMenuItem ref={shortcutsItemRef}>
-                <SidebarMenuButton
-                  isActive={location === "/shortcuts" || location.startsWith("/shortcuts")}
-                  onClick={() => setLocation("/shortcuts")}
-                  tooltip="Shortcuts"
-                  className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-yellow-400/50 shadow-sm"
-                  onMouseEnter={() => { if (isObservationFocused) setShortcutsPanelOpen(true); }}
-                >
-                  <Zap className={`h-4 w-4 ${isObservationFocused ? "text-yellow-400" : "text-yellow-400"}`} />
-                  <span className={`flex-1 ${location === "/shortcuts" || location.startsWith("/shortcuts") ? "text-sidebar-foreground font-medium" : isObservationFocused ? "text-cyan-300 font-medium" : "text-sidebar-foreground/80"}`}>
-                    Shortcuts
-                  </span>
-                  {isObservationFocused && !isCollapsed && (
-                    <span className="ml-1 text-[9px] font-bold text-cyan-500 uppercase tracking-wide">hover</span>
-                  )}
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-
-              {/* ── Intelligence ── */}
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={location === "/intelligence" || (location.startsWith("/intelligence") && !location.startsWith("/intelligence/mapping"))}
-                  onClick={() => setLocation("/intelligence")}
-                  tooltip="Intelligence"
-                  className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-violet-400/50 shadow-sm"
-                >
-                  <FolderSearch className="h-4 w-4 text-violet-400" />
-                  <span className={`flex-1 ${location === "/intelligence" || (location.startsWith("/intelligence") && !location.startsWith("/intelligence/mapping")) ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
-                    Intelligence
-                  </span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-
-              {/* ── Target Registry ── */}
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={location === "/target-registry" || location.startsWith("/target-registry")}
-                  onClick={() => setLocation("/target-registry")}
-                  tooltip="Target Registry"
-                  className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-rose-400/50 shadow-sm"
-                >
-                  <BookOpen className="h-4 w-4 text-rose-400" />
-                  <span className={`flex-1 ${location === "/target-registry" || location.startsWith("/target-registry") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
-                    Target Registry
-                  </span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+              {/* ── Draggable main nav items ── */}
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                <SortableContext items={navOrder} strategy={verticalListSortingStrategy}>
+                  {navOrder.map((key) => (
+                    <SortableNavItem
+                      key={key}
+                      id={key}
+                      isCollapsed={isCollapsed}
+                      location={location}
+                      setLocation={setLocation}
+                      todoCount={todoCount}
+                      certifyCount={certifyCount}
+                      govCount={govCount}
+                      todoExpanded={todoExpanded}
+                      setTodoExpanded={setTodoExpanded}
+                      shortcutsItemRef={shortcutsItemRef}
+                      isObservationFocused={isObservationFocused}
+                      setShortcutsPanelOpen={setShortcutsPanelOpen}
+                      subItemClass={subItemClass}
+                    />
+                  ))}
+                </SortableContext>
+              </DndContext>
 
               {/* ── Administration (expandable, all users) ── */}
               <SidebarMenuItem>

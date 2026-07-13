@@ -114,6 +114,9 @@ import {
   upsertRsMappingWaypoint,
   getIncompleteRunningSheets,
   getOutstandingTodosByUser,
+  getSidebarOrder,
+  setSidebarOrder,
+  DEFAULT_SIDEBAR_ORDER,
 } from "./db";
 
 import { makeRequest, type RoadsResult } from "./_core/map";
@@ -2534,6 +2537,20 @@ export const appRouter = router({
       }),
 
   }),
+  // ─── Sidebar Preferences ──────────────────────────────────────────────────
+  sidebar: router({
+    getOrder: protectedProcedure.query(async ({ ctx }) => {
+      const order = await getSidebarOrder(ctx.user.id);
+      return { order, defaultOrder: DEFAULT_SIDEBAR_ORDER };
+    }),
+    setOrder: protectedProcedure
+      .input(z.object({ orderedKeys: z.array(z.string()) }))
+      .mutation(async ({ input, ctx }) => {
+        await setSidebarOrder(ctx.user.id, input.orderedKeys);
+        return { ok: true };
+      }),
+  }),
+
   // ─── Reports ────────────────────────────────────────────────────────────────
   reports: router({
     /**

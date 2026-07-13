@@ -527,15 +527,23 @@ export default function OperationManagerPage() {
           sortOrder: i,
         })),
       });
-      // Copy tasking cells
+      // Copy tasking cells — swap Team 1 (surv1) and Team 2 (surv2) shifts for the new week
       const taskingMutations = TEAM_ROWS.flatMap((teamRow) =>
         DAYS.map((_, dayIndex) => {
-          const key = `${teamRow}-${dayIndex}`;
+          // For surv1/surv2, use the opposite team's cell from this week (shift swap)
+          const sourceTeamRow: TeamRow =
+            teamRow === "surv1" ? "surv2" :
+            teamRow === "surv2" ? "surv1" :
+            teamRow;
+          const key = `${sourceTeamRow}-${dayIndex}`;
           const cell = taskingGrid[key] ?? {};
-          const shiftTime = cell.shiftTime === "Custom" ? cell.customTime ?? null : cell.shiftTime ?? null;
+          // For surv1/surv2 shift, use auto-populated default for next week instead of copying verbatim
+          const autoShift = (teamRow === "surv1" || teamRow === "surv2")
+            ? getDefaultShift(teamRow, dayIndex, nextWeekStart)
+            : (cell.shiftTime === "Custom" ? cell.customTime ?? null : cell.shiftTime ?? null);
           const primaryTask = cell.primaryTask === "Other" ? cell.primaryOther ?? null : cell.primaryTask ?? null;
           const secondaryTask = cell.secondaryTask === "Other" ? cell.secondaryOther ?? null : cell.secondaryTask ?? null;
-          return saveTaskingCellMut.mutateAsync({ weekStart: nextWeekStart, dayIndex, teamRow, shiftTime, primaryTask, secondaryTask });
+          return saveTaskingCellMut.mutateAsync({ weekStart: nextWeekStart, dayIndex, teamRow, shiftTime: autoShift, primaryTask, secondaryTask });
         })
       );
       await Promise.all(taskingMutations);
@@ -706,21 +714,13 @@ export default function OperationManagerPage() {
         >
           <div className="max-w-6xl mx-auto px-6 py-5 flex items-center justify-between">
             <div>
-              <p className="text-xs font-bold tracking-widest uppercase text-blue-200 mb-1">Covert Tactics Operations</p>
+              <p className="text-xs font-bold tracking-widest uppercase text-blue-200 mb-1">Covert &amp; Technical Operations</p>
               <h1 className="text-2xl font-extrabold text-white tracking-tight">CTO Weekly Tasking</h1>
               <p className="text-sm text-blue-200 mt-0.5">{formatWeekLabel(weekStart)}</p>
             </div>
             <div className="hidden sm:flex flex-col items-end gap-1">
-              <p className="text-xs text-blue-300 uppercase tracking-wider font-semibold">SENSITIVE — FOR OFFICIAL USE ONLY</p>
               <p className="text-xs text-blue-400">{new Date().toLocaleDateString("en-AU", { dateStyle: "long" })}</p>
             </div>
-          </div>
-          {/* Colour bar */}
-          <div className="flex h-1.5">
-            <div className="flex-1" style={{ background: "#ec4899" }} />
-            <div className="flex-1" style={{ background: "#1976d2" }} />
-            <div className="flex-1" style={{ background: "#f9a825" }} />
-            <div className="flex-1" style={{ background: "#7c3aed" }} />
           </div>
         </div>
 
@@ -734,9 +734,6 @@ export default function OperationManagerPage() {
           <div className="p-4 space-y-4 max-w-6xl mx-auto print:p-2">
             <FullViewOnCall
               onCallEntries={onCallEntries}
-              users={usersQuery.data ?? []}
-            />
-            <FullViewContacts
               contacts={contacts}
               users={usersQuery.data ?? []}
             />
@@ -805,7 +802,7 @@ export default function OperationManagerPage() {
                 ))}
               </div>
               <div className="space-y-3">
-                {["Surveillance Team 1", "Surveillance Team 2"].map((role) => (
+                {["Team 1", "Team 2"].map((role) => (
                   <ContactRoleCard
                     key={role}
                     role={role}
@@ -1382,9 +1379,19 @@ function PriorityRowEditor({
   return (
     <div className="rounded-lg border border-border p-3 space-y-2">
       <div className="flex items-center gap-2">
-        <Badge variant="outline" className="text-xs shrink-0">
-          #{idx + 1}
-        </Badge>
+        <Select
+          value={String(row.priority || idx + 1)}
+          onValueChange={(v) => onChange({ priority: Number(v) })}
+        >
+          <SelectTrigger className="h-8 text-xs w-16 shrink-0">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {Array.from({ length: 20 }, (_, i) => i + 1).map((n) => (
+              <SelectItem key={n} value={String(n)}>#{n}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Select
           value={row.category}
           onValueChange={(v) => onChange({ category: v })}
@@ -1585,98 +1592,80 @@ function OnCallEntryEditor({
 }
 
 // ─── Full View sub-components ─────────────────────────────────────────────────
+// Combined On-Call + Supervisor Contacts card (compact)
 function FullViewOnCall({
   onCallEntries,
+  contacts,
   users,
 }: {
   onCallEntries: OnCallEntry[];
-  users: { id: number; name: string; cin: string | null }[];
+  contacts: ContactEntry[];
+  users: { id: number; name: string; cin: string | null; phone?: string | null }[];
 }) {
-  if (onCallEntries.length === 0) return null;
+  const renderContact = (role: string) => {
+    const c = contacts.find((x) => x.role === role);
+    const user = users.find((u) => u.id === c?.userId);
+    const name = user?.name ?? "—";
+    const phone = c?.phone ?? user?.phone ?? null;
+    return (
+      <div key={role} className="flex items-center gap-3 py-1.5">
+        <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider w-28 shrink-0">{role}</span>
+        <span className="text-sm font-semibold text-foreground">{name}</span>
+        {phone && <span className="text-xs text-muted-foreground ml-auto">{phone}</span>}
+      </div>
+    );
+  };
+
+  const hasOnCall = onCallEntries.length > 0;
+  const hasContacts = contacts.length > 0;
+  if (!hasOnCall && !hasContacts) return null;
+
   return (
     <section>
       <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-        <div className="px-4 py-3 border-b border-border bg-muted/30">
-          <h2 className="text-sm font-semibold tracking-wide">On-Call Supervisors</h2>
+        <div className="px-4 py-2.5 border-b border-border" style={{ background: "linear-gradient(90deg,#1e3a8a 0%,#1d4ed8 100%)" }}>
+          <h2 className="text-xs font-bold tracking-widest uppercase text-white">Supervisors &amp; Contacts</h2>
         </div>
-        <div className="p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-          {onCallEntries.map((oc, i) => {
-            const user = users.find((u) => u.id === oc.userId);
-            const name = user?.name ?? "—";
-            return (
-              <div
-                key={i}
-                className="rounded-lg border border-border bg-background p-3 space-y-1.5"
-              >
-                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                  {oc.role}
-                </p>
-                <p className="text-sm font-semibold text-foreground">{name}</p>
-                {oc.mobile && (
-                  <p className="text-xs text-muted-foreground font-medium">{oc.mobile}</p>
-                )}
-                <div className="flex gap-2 flex-wrap pt-0.5">
-                  {oc.isOnCall && (
-                    <Badge variant="secondary" className="text-[11px] px-2 py-0.5">
-                      On-Call
-                    </Badge>
-                  )}
-                  {oc.dayScope !== "full" && (
-                    <Badge variant="outline" className="text-[11px] px-2 py-0.5">
-                      {oc.dayScope}
-                    </Badge>
-                  )}
+        <div className="px-4 py-2 grid grid-cols-1 sm:grid-cols-2 gap-x-6 divide-y sm:divide-y-0 sm:divide-x divide-border">
+          {/* Left: On-Call */}
+          <div className="py-2 sm:py-0 sm:pr-4">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">On-Call</p>
+            {hasOnCall ? onCallEntries.map((oc, i) => {
+              const user = users.find((u) => u.id === oc.userId);
+              const name = user?.name ?? "—";
+              return (
+                <div key={i} className="flex items-center gap-2 py-1">
+                  <span className="text-sm font-semibold text-foreground">{name}</span>
+                  {oc.mobile && <span className="text-xs text-muted-foreground">{oc.mobile}</span>}
+                  {oc.isOnCall && <Badge variant="secondary" className="text-[10px] px-1.5 py-0 ml-auto">On-Call</Badge>}
                 </div>
+              );
+            }) : <p className="text-xs text-muted-foreground">Not set</p>}
+          </div>
+          {/* Right: Supervisor Contacts */}
+          <div className="py-2 sm:py-0 sm:pl-4">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">Supervisors</p>
+            <div className="grid grid-cols-2 gap-x-4">
+              <div className="divide-y divide-border/50">
+                {["CTO Inspector", "PTT"].map(renderContact)}
               </div>
-            );
-          })}
+              <div className="divide-y divide-border/50">
+                {["Team 1", "Team 2"].map(renderContact)}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </section>
   );
 }
 
-function FullViewContacts({
-  contacts,
-  users,
-}: {
+// Keep FullViewContacts as a no-op (merged into FullViewOnCall)
+function FullViewContacts(_props: {
   contacts: ContactEntry[];
   users: { id: number; name: string; cin: string | null }[];
 }) {
-  const renderContactCard = (role: string) => {
-    const c = contacts.find((x) => x.role === role);
-    const user = users.find((u) => u.id === c?.userId);
-    const name = user?.name ?? "—";
-    return (
-      <div key={role} className="rounded-lg border border-border bg-background p-3 space-y-1.5">
-        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-          {role}
-        </p>
-        <p className="text-sm font-semibold text-foreground">{name}</p>
-        {c?.phone && (
-          <p className="text-xs text-muted-foreground font-medium">{c.phone}</p>
-        )}
-      </div>
-    );
-  };
-
-  return (
-    <section>
-      <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-        <div className="px-4 py-3 border-b border-border bg-muted/30">
-          <h2 className="text-sm font-semibold tracking-wide">Supervisor Contacts</h2>
-        </div>
-        <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="space-y-3">
-            {["CTO Inspector", "PTT"].map(renderContactCard)}
-          </div>
-          <div className="space-y-3">
-            {["Team 1", "Team 2"].map(renderContactCard)}
-          </div>
-        </div>
-      </div>
-    </section>
-  );
+  return null;
 }
 
 function FullViewTasking({
@@ -1686,133 +1675,99 @@ function FullViewTasking({
   weekStart: string;
 }) {
   return (
-    <section>
-      <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-        <div className="px-4 py-3 border-b border-border bg-muted/30">
-          <h2 className="text-sm font-semibold tracking-wide">Weekly Tasking Calendar</h2>
-        </div>
-        {/* Mobile: card-per-team layout */}
-        <div className="block sm:hidden p-3 space-y-3">
-          {TEAM_ROWS.map((teamRow) => {
-            const tc = TEAM_COLOURS[teamRow];
-            return (
-            <div key={teamRow} className="rounded-lg overflow-hidden" style={{ border: `2px solid ${tc.border}` }}>
-              <div className="px-3 py-2 border-b" style={{ background: tc.bg, borderColor: tc.border }}>
-                <p className="text-xs font-bold tracking-wide" style={{ color: tc.text }}>{TEAM_LABELS[teamRow]}</p>
-              </div>
-              <div className="divide-y divide-border">
-                {DAYS.map((day, dayIndex) => {
-                  const key = `${teamRow}-${dayIndex}`;
-                  const cell = taskingGrid[key] ?? {};
-                  const shift = cell.shiftTime === "Custom" ? cell.customTime ?? "Custom" : cell.shiftTime ?? "";
-                  const primary = cell.primaryTask === "Other" ? cell.primaryOther ?? "" : cell.primaryTask ?? "";
-                  const secondary = cell.secondaryTask === "Other" ? cell.secondaryOther ?? "" : cell.secondaryTask ?? "";
-                  return (
-                    <div key={dayIndex} className={cn("flex items-start gap-3 px-3 py-2", shift === "RDO" && "opacity-50")}>
-                      <span className="text-xs font-semibold text-muted-foreground w-8 shrink-0 pt-0.5">{day}</span>
-                      <div className="min-w-0">
-                        {shift && (
-                          <span className={cn("text-xs font-bold", shift === "RDO" ? "text-muted-foreground" : "text-primary")}>
-                            {shift}
-                          </span>
-                        )}
-                        {primary && <p className="text-xs mt-0.5 text-foreground">{primary}</p>}
-                        {secondary && <p className="text-xs text-muted-foreground">{secondary}</p>}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+    <section className="space-y-3">
+      <div className="px-1">
+        <h2 className="text-sm font-bold tracking-widest uppercase text-muted-foreground">Weekly Tasking Calendar</h2>
+      </div>
+      {TEAM_ROWS.map((teamRow) => {
+        const tc = TEAM_COLOURS[teamRow];
+        return (
+          <div
+            key={teamRow}
+            className="rounded-xl shadow-sm overflow-hidden"
+            style={{ border: `2px solid ${tc.border}` }}
+          >
+            {/* Team header */}
+            <div
+              className="px-4 py-2.5 flex items-center gap-2"
+              style={{ background: tc.border }}
+            >
+              <span className="text-sm font-extrabold tracking-wide text-white">{TEAM_LABELS[teamRow]}</span>
             </div>
-          );
-          })}
-        </div>
-        {/* Desktop: full table */}
-        <div className="hidden sm:block overflow-x-auto">
-          <table className="w-full text-xs border-collapse">
-            <thead>
-              <tr className="bg-muted/40">
-                <th className="text-left px-3 py-2.5 font-semibold border-b border-r border-border w-32 text-foreground">
-                  Team
-                </th>
-                {DAYS.map((d) => (
-                  <th
-                    key={d}
-                    className="text-center px-2 py-2.5 font-semibold border-b border-r border-border last:border-r-0 text-foreground"
-                    style={{ minWidth: 110, width: `${100 / 7}%` }}
-                  >
-                    {d}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {TEAM_ROWS.map((teamRow) => {
-                const tc = TEAM_COLOURS[teamRow];
+            {/* Mobile: day list */}
+            <div className="block sm:hidden bg-card divide-y divide-border">
+              {DAYS.map((day, dayIndex) => {
+                const key = `${teamRow}-${dayIndex}`;
+                const cell = taskingGrid[key] ?? {};
+                const shift = cell.shiftTime === "Custom" ? cell.customTime ?? "Custom" : cell.shiftTime ?? "";
+                const primary = cell.primaryTask === "Other" ? cell.primaryOther ?? "" : cell.primaryTask ?? "";
+                const secondary = cell.secondaryTask === "Other" ? cell.secondaryOther ?? "" : cell.secondaryTask ?? "";
                 return (
-                <tr key={teamRow}>
-                  <td
-                    className="px-3 py-3 font-bold border-r border-border text-xs align-top"
-                    style={{ background: tc.bg, color: tc.text, borderLeft: `4px solid ${tc.border}` }}
-                  >
-                    {TEAM_LABELS[teamRow]}
-                  </td>
-                  {DAYS.map((_, dayIndex) => {
-                    const key = `${teamRow}-${dayIndex}`;
-                    const cell = taskingGrid[key] ?? {};
-                    const shift =
-                      cell.shiftTime === "Custom"
-                        ? cell.customTime ?? "Custom"
-                        : cell.shiftTime ?? "";
-                    const primary =
-                      cell.primaryTask === "Other"
-                        ? cell.primaryOther ?? ""
-                        : cell.primaryTask ?? "";
-                    const secondary =
-                      cell.secondaryTask === "Other"
-                        ? cell.secondaryOther ?? ""
-                        : cell.secondaryTask ?? "";
-                    return (
-                      <td
-                        key={dayIndex}
-                        className={cn(
-                          "px-2 py-2.5 border-r border-border last:border-r-0 align-top",
-                          shift === "RDO" ? "bg-muted/20" : "bg-background"
-                        )}
-                        style={{ minWidth: 110, width: `${100 / 7}%` }}
-                      >
-                        {shift && (
-                          <p
-                            className={cn(
-                              "font-bold text-[11px] leading-tight",
-                              shift === "RDO"
-                                ? "text-muted-foreground"
-                                : "text-primary"
-                            )}
-                          >
-                            {shift}
-                          </p>
-                        )}
-                        {primary && (
-                          <p className="mt-1 text-[11px] leading-snug text-foreground break-words">
-                            {primary}
-                          </p>
-                        )}
-                        {secondary && (
-                          <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground break-words">
-                            {secondary}
-                          </p>
-                        )}
-                      </td>
-                    );
-                  })}
-                </tr>
+                  <div key={dayIndex} className={cn("flex items-start gap-3 px-4 py-2.5", shift === "RDO" && "opacity-40")}>
+                    <span className="text-xs font-bold text-muted-foreground w-8 shrink-0 pt-0.5">{day}</span>
+                    <div className="min-w-0">
+                      {shift && (
+                        <span className={cn("text-xs font-bold", shift === "RDO" ? "text-muted-foreground" : "")} style={shift !== "RDO" ? { color: tc.border } : {}}>
+                          {shift}
+                        </span>
+                      )}
+                      {primary && <p className="text-xs mt-0.5 text-foreground">{primary}</p>}
+                      {secondary && <p className="text-xs text-muted-foreground">{secondary}</p>}
+                    </div>
+                  </div>
                 );
               })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+            </div>
+            {/* Desktop: 7-column grid */}
+            <div className="hidden sm:block bg-card overflow-x-auto">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr style={{ background: `${tc.bg}` }}>
+                    {DAYS.map((d) => (
+                      <th
+                        key={d}
+                        className="text-center px-3 py-2 font-bold border-r border-border/50 last:border-r-0"
+                        style={{ color: tc.text, width: `${100 / 7}%`, minWidth: 110 }}
+                      >
+                        {d}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    {DAYS.map((_, dayIndex) => {
+                      const key = `${teamRow}-${dayIndex}`;
+                      const cell = taskingGrid[key] ?? {};
+                      const shift = cell.shiftTime === "Custom" ? cell.customTime ?? "Custom" : cell.shiftTime ?? "";
+                      const primary = cell.primaryTask === "Other" ? cell.primaryOther ?? "" : cell.primaryTask ?? "";
+                      const secondary = cell.secondaryTask === "Other" ? cell.secondaryOther ?? "" : cell.secondaryTask ?? "";
+                      return (
+                        <td
+                          key={dayIndex}
+                          className={cn(
+                            "px-3 py-3 border-r border-border/50 last:border-r-0 align-top",
+                            shift === "RDO" ? "opacity-40" : ""
+                          )}
+                          style={{ width: `${100 / 7}%`, minWidth: 110 }}
+                        >
+                          {shift && (
+                            <p className="font-bold text-xs leading-tight" style={{ color: shift === "RDO" ? undefined : tc.border }}>
+                              {shift}
+                            </p>
+                          )}
+                          {primary && <p className="mt-1 text-xs leading-snug text-foreground break-words">{primary}</p>}
+                          {secondary && <p className="mt-0.5 text-xs leading-snug text-muted-foreground break-words">{secondary}</p>}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })}
     </section>
   );
 }

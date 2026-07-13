@@ -789,3 +789,16 @@
 - [x] Modern branded header banner: "CTO Weekly Tasking" with gradient/colour bar, week date range, unit name
 - [x] Print/PDF: include the branded header banner, colour-coded team rows, compact contacts, larger tasking grid
 - [x] Post & Notify → Re-post & Notify once week has been posted (allows re-sending after edits)
+
+## Op Manager Polish Round 7
+- [x] Full View: merge On-Call Supervisors + Supervisor Contacts into one compact single floating card
+- [x] Full View: remove the 4-colour accent bar under the hero banner header
+- [x] Full View: remove background shading from team name cells in tasking table — team names in colour only, no fill
+- [x] Full View: each team row becomes its own individual floating card (not rows in a shared table)
+- [x] Full View: team cards sized larger — tasking is the main content, contacts are ancillary
+- [x] Full View: fix "Covert Tactics Operations" → "Covert & Technical Operations" in hero banner
+- [x] Full View: remove "SENSITIVE — FOR OFFICIAL USE ONLY" text from header
+- [x] Priority Board: restore priority number dropdown (#1, #2, #3…) per row
+- [x] Fix: Team 1 and Team 2 contacts not saving/displaying correctly in Full View
+- [x] Copy to Next Week: swap Team 1/2 shifts (day↔afternoon) using auto-populated defaults for next week
+- [x] Copy to Next Week: all other details (contacts, priority board, PTT/Cap.Support tasks) copy as-is

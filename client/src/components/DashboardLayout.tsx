@@ -488,8 +488,8 @@ function DashboardLayoutContent({
                 <button
                   onClick={toggleHomeMode}
                   className="h-8 w-8 flex items-center justify-center hover:bg-sidebar-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0 ml-auto"
-                  title={homeMode === "folder" ? "Switch to Tile Home" : "Switch to Folder View"}
-                  aria-label={homeMode === "folder" ? "Switch to Tile Home" : "Switch to Folder View"}
+                  title={homeMode === "folder" ? "Switch to Dashboard" : "Switch to Folders"}
+                  aria-label={homeMode === "folder" ? "Switch to Dashboard" : "Switch to Folders"}
                 >
                   {homeMode === "folder" ? (
                     <LayoutGrid className="h-4 w-4 text-sidebar-foreground/60" />

@@ -174,8 +174,8 @@ function useTileBadges() {
   const certifyCount = outstanding?.length ?? 0;
   const govCount = governanceTodo?.filter((g: any) => g.outstanding.length > 0).length ?? 0;
   const todoCount = certifyCount + govCount;
-  const activeOps = operations?.filter((o: any) => !o.closedAt)?.length ?? 0;
-  const closedOps = operations?.filter((o: any) => o.closedAt)?.length ?? 0;
+  const activeOps = operations?.filter((o: any) => o.status === 'active')?.length ?? 0;
+  const closedOps = operations?.filter((o: any) => o.status !== 'active')?.length ?? 0;
   const totalOps = operations?.length ?? 0;
   const targetCount = allTargets?.length ?? 0;
   const now = Date.now();
@@ -184,17 +184,17 @@ function useTileBadges() {
   ).length ?? 0;
   const totalEvents = calendarEvents?.length ?? 0;
 
-  // Count total sheets across all operations
-  const totalSheets = operations?.reduce((acc: number, op: any) => acc + (op.sheetCount ?? 0), 0) ?? 0;
+  // Count active running sheets (not closed, not deleted)
+  const { data: allSheets } = trpc.sheet.list.useQuery(undefined, { staleTime: 30_000 });
+  const activeSheets = allSheets?.filter((s: any) => !s.closedAt)?.length ?? 0;
 
   return {
     operations: {
       badge: activeOps > 0 ? activeOps : null,
-      subtitle: `${activeOps} active · ${closedOps} closed`,
+      subtitle: `${activeOps} active`,
       stats: [
         { label: "Active", value: String(activeOps) },
-        { label: "Closed", value: String(closedOps) },
-        { label: "Total", value: String(totalOps) },
+        { label: "Running Sheets", value: String(activeSheets) },
       ],
     },
     governance: {
@@ -481,9 +481,9 @@ export default function TileHomeScreen() {
             </div>
             <div>
               <h1 className="text-lg font-bold text-foreground leading-tight">
-                {user?.name ? `Welcome, ${user.name.split(" ")[0]}` : "Home"}
+                RunLog Dashboard
               </h1>
-              <p className="text-xs text-muted-foreground">{dateStr} · {timeStr}</p>
+              <p className="text-xs text-muted-foreground">{user?.name ? `${user.name.split(" ")[0]} · ` : ""}{dateStr} · {timeStr}</p>
             </div>
           </div>
 
@@ -491,10 +491,10 @@ export default function TileHomeScreen() {
           <button
             onClick={switchToFolderView}
             className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-border bg-muted/50 hover:bg-muted text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-            title="Switch to Folder View"
+            title="Switch to Folders"
           >
             <List className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Folder View</span>
+            <span className="hidden sm:inline">Folders</span>
           </button>
         </div>
       </div>

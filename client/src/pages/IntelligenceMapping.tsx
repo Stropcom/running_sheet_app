@@ -58,6 +58,8 @@ import {
   ShieldCheck,
   Settings,
   UserCog,
+  LayoutGrid,
+  FolderOpen as FolderIcon,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -2696,13 +2698,24 @@ export default function IntelligenceMapping() {
           border: "1.5px solid rgba(255,255,255,0.10)",
         }}
       >
-        {/* Permanent: Operations */}
+        {/* Permanent: Folders */}
         <button
           onClick={() => setLocation("/")}
           className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 rounded-lg hover:bg-white/10 active:scale-95 transition-all min-w-[56px]"
         >
-          <FileText className="h-5 w-5 text-blue-400" />
-          <span className="text-[11px] font-semibold text-blue-300/80 leading-none">Operations</span>
+          <FolderIcon className="h-5 w-5 text-blue-400" />
+          <span className="text-[11px] font-semibold text-blue-300/80 leading-none">Folders</span>
+        </button>
+
+        <div className="w-px h-6 bg-white/10 mx-0.5" />
+
+        {/* Permanent: Dashboard */}
+        <button
+          onClick={() => setLocation("/tile-home")}
+          className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 rounded-lg hover:bg-white/10 active:scale-95 transition-all min-w-[56px]"
+        >
+          <LayoutGrid className="h-5 w-5 text-indigo-400" />
+          <span className="text-[11px] font-semibold text-indigo-300/80 leading-none">Dashboard</span>
         </button>
 
         <div className="w-px h-6 bg-white/10 mx-0.5" />

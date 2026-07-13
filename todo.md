@@ -713,5 +713,5 @@
 - [x] Access: Full Access users only can edit
 - [x] Sidebar: add Operation Manager as main folder between Target Registry and Administration (with ClipboardList or similar icon)
 - [x] Route: /operation-manager registered in App.tsx
-- [ ] Dashboard tile: add Operation Manager tile to tile home screen (now 11 tiles — adjust layout)
+- [x] Dashboard tile: add Operation Manager tile to tile home screen (now 11 tiles — adjust layout)
 - [x] SectionColorContext: /operation-manager colour mapping

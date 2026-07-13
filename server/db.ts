@@ -4331,6 +4331,7 @@ export const DEFAULT_TILE_ORDER = [
   "operations", "administration",          // row 1 — large (2)
   "todo", "governance", "intelligence", "targetRegistry",  // row 2 — medium (4)
   "mapping", "calendar", "shortcuts", "userManagement",    // row 3 — medium (4)
+  "operationManager",                                       // overflow — medium
 ];
 
 export async function getHomePrefs(userId: number): Promise<{ mode: string; tileOrder: string[] }> {

@@ -129,6 +129,15 @@ const TILE_CONFIG: Record<
     accentColor: "#f43f5e",
     route: "/target-registry",
   },
+  operationManager: {
+    label: "Op Manager",
+    icon: ClipboardList,
+    color: "text-purple-500",
+    bgColor: "bg-purple-500/10",
+    borderColor: "border-purple-500/30",
+    accentColor: "#a855f7",
+    route: "/operation-manager",
+  },
   administration: {
     label: "Administration",
     icon: Settings,
@@ -160,6 +169,7 @@ const DEFAULT_TILE_ORDER = [
   "calendar",
   "shortcuts",
   "userManagement",
+  "operationManager",
 ];
 
 // ─── Live badge data hook ─────────────────────────────────────────────────────
@@ -245,6 +255,11 @@ function useTileBadges() {
       stats: [
         { label: "Targets", value: String(targetCount) },
       ],
+    },
+    operationManager: {
+      badge: null,
+      subtitle: "Priority board & tasking",
+      stats: [],
     },
     administration: {
       badge: null,

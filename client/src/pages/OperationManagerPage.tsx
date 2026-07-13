@@ -117,17 +117,18 @@ function formatWeekLabel(weekStart: string): string {
 }
 
 // ─── Shift auto-population ────────────────────────────────────────────────────
-// Surv 1 is on AFTERNOON shift the week of 2026-07-07 (Mon 7 Jul). Alternates each week.
-// Week of 13 Jul: Surv1=afternoon (1400-2200), Surv2=day (0700-1500)
-// Week of 20 Jul: Surv1=day (0700-1500), Surv2=afternoon (1400-2200)
-const SURV1_AFTERNOON_ANCHOR = "2026-07-07";
+// Rotation anchor: Team 1 (surv1) is on DAY shift the week of 2026-07-20.
+// Week of 13 Jul: surv1=afternoon, surv2=day
+// Week of 20 Jul: surv1=day,       surv2=afternoon
+// Week of 27 Jul: surv1=afternoon, surv2=day   ... alternates forever
+const SURV1_DAY_ANCHOR = "2026-07-20";
 
 function isSurv1DayShift(weekStart: string): boolean {
-  const anchor = new Date(SURV1_AFTERNOON_ANCHOR + "T00:00:00Z").getTime();
+  const anchor = new Date(SURV1_DAY_ANCHOR + "T00:00:00Z").getTime();
   const ws = new Date(weekStart + "T00:00:00Z").getTime();
   const diffWeeks = Math.round((ws - anchor) / (7 * 24 * 3600 * 1000));
-  // anchor week = afternoon for surv1 (diffWeeks=0 → not day)
-  return diffWeeks % 2 !== 0;
+  // diffWeeks even (0, 2, 4, ...) = surv1 on day; odd = surv1 on afternoon
+  return diffWeeks % 2 === 0;
 }
 
 function getDefaultShift(

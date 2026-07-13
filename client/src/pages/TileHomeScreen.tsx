@@ -397,7 +397,7 @@ function SortableTile({ id, size, badge, subtitle, stats }: SortableTileProps) {
       style={style}
       {...attributes}
       {...listeners}
-      className={`touch-none ${size === "large" ? "h-52" : "h-32"}`}
+      className={`touch-none ${size === "large" ? "h-44 sm:h-52" : "h-28 sm:h-32"}`}
       onClick={() => {
         if (!isDragging && cfg) setLocation(cfg.route);
       }}
@@ -473,7 +473,7 @@ export default function TileHomeScreen() {
   return (
     <div className="min-h-full bg-background">
       {/* ── Page header ── */}
-      <div className="border-b border-border bg-card px-6 py-4">
+      <div className="border-b border-border bg-card px-4 sm:px-6 py-4">
         <div className="flex items-center justify-between max-w-5xl mx-auto">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-blue-700/10 border border-blue-700/30 flex items-center justify-center">
@@ -500,12 +500,13 @@ export default function TileHomeScreen() {
       </div>
 
       {/* ── Tile grid ── */}
-      <div className="p-4 md:p-6 max-w-5xl mx-auto">
+      <div className="p-3 sm:p-4 md:p-6 max-w-5xl mx-auto">
         {/* Outer frame */}
-        <div className="rounded-2xl border-2 border-border bg-card/50 p-4 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
+        <div className="rounded-2xl border-2 border-border bg-card/50 p-3 sm:p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-3 sm:mb-4">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Dashboard</p>
-            <p className="text-xs text-muted-foreground">Hold &amp; drag to rearrange · Top row shows full detail</p>
+            <p className="text-xs text-muted-foreground hidden sm:block">Hold &amp; drag to rearrange · Top row shows full detail</p>
+            <p className="text-xs text-muted-foreground sm:hidden">Hold &amp; drag to reorder</p>
           </div>
 
           <DndContext
@@ -530,8 +531,8 @@ export default function TileHomeScreen() {
                 ))}
               </div>
 
-              {/* Row 2 — 4 medium tiles */}
-              <div className="grid grid-cols-4 gap-3 mb-3">
+              {/* Row 2 — 2 cols on mobile, 4 on desktop */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
                 {row2.map((id) => (
                   <SortableTile
                     key={id}
@@ -544,8 +545,8 @@ export default function TileHomeScreen() {
                 ))}
               </div>
 
-              {/* Row 3 — 4 medium tiles */}
-              <div className="grid grid-cols-4 gap-3">
+              {/* Row 3 — 2 cols on mobile, 4 on desktop */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {row3.map((id) => (
                   <SortableTile
                     key={id}
@@ -560,7 +561,7 @@ export default function TileHomeScreen() {
 
               {/* Overflow */}
               {overflow.length > 0 && (
-                <div className="grid grid-cols-4 gap-3 mt-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
                   {overflow.map((id) => (
                     <SortableTile
                       key={id}

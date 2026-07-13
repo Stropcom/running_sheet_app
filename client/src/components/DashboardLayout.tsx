@@ -365,7 +365,10 @@ function DashboardLayoutContent({
   // ── Home screen mode toggle ──────────────────────────────────────────────
   const [homeMode, setHomeMode] = useState<"folder" | "tile">("folder");
   const { data: homePrefsData } = trpc.sidebar.getHomePrefs.useQuery(undefined, { staleTime: Infinity });
-  const setHomePrefsMutation = trpc.sidebar.setHomePrefs.useMutation();
+  const dashboardUtils = trpc.useUtils();
+  const setHomePrefsMutation = trpc.sidebar.setHomePrefs.useMutation({
+    onSuccess: () => dashboardUtils.sidebar.getHomePrefs.invalidate(),
+  });
 
   useEffect(() => {
     if (homePrefsData?.mode) {

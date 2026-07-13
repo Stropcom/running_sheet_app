@@ -417,7 +417,10 @@ export default function TileHomeScreen() {
   const badges = useTileBadges();
 
   const { data: homePrefs } = trpc.sidebar.getHomePrefs.useQuery(undefined, { staleTime: Infinity });
-  const setHomePrefsMutation = trpc.sidebar.setHomePrefs.useMutation();
+  const utils = trpc.useUtils();
+  const setHomePrefsMutation = trpc.sidebar.setHomePrefs.useMutation({
+    onSuccess: () => utils.sidebar.getHomePrefs.invalidate(),
+  });
 
   // Current date/time display
   const [now, setNow] = useState(() => new Date());

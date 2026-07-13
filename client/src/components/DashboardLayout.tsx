@@ -95,7 +95,6 @@ function SortableNavItem({
     <span
       {...listeners}
       className="flex items-center px-1 cursor-grab active:cursor-grabbing text-sidebar-foreground/20 hover:text-sidebar-foreground/50 transition-colors shrink-0 touch-none"
-      onPointerDown={(e) => e.stopPropagation()}
     >
       <GripVertical className="h-3.5 w-3.5" />
     </span>

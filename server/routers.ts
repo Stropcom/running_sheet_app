@@ -141,7 +141,13 @@ import {
   saveOpManagerTaskingCell,
   getOpManagerSupervisorContacts,
   saveOpManagerSupervisorContacts,
+  getPostedWeeks,
+  isWeekPosted,
+  markWeekPosted,
+  savePushSubscription,
+  removePushSubscription,
 } from "./db";
+import { sendPushToAll } from "./webPush";
 
 // ─── Role Guards ──────────────────────────────────────────────────────────────
 
@@ -2664,6 +2670,51 @@ export const appRouter = router({
       }))
       .mutation(async ({ input }) => {
         await saveOpManagerSupervisorContacts(input.weekStart, input.contacts);
+        return { ok: true };
+      }),
+
+    // ── Posted weeks ──────────────────────────────────────────────────────────
+    getPostedWeeks: protectedProcedure.query(async () => {
+      return getPostedWeeks();
+    }),
+
+    isWeekPosted: protectedProcedure
+      .input(z.object({ weekStart: z.string() }))
+      .query(async ({ input }) => {
+        return { posted: await isWeekPosted(input.weekStart) };
+      }),
+
+    postWeek: adminProcedure
+      .input(z.object({ weekStart: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        await markWeekPosted(input.weekStart, ctx.user.id);
+        const weekLabel = new Date(input.weekStart + "T00:00:00Z").toLocaleDateString("en-AU", {
+          day: "2-digit", month: "short", year: "numeric", timeZone: "UTC",
+        });
+        await sendPushToAll(
+          "New CTO Tasking Posted",
+          `CTO Tasking for the week of ${weekLabel} has been posted.`,
+          "/operation-manager"
+        ).catch((err) => console.warn("[Push] Failed to send notifications:", err));
+        return { ok: true };
+      }),
+
+    // ── Push subscriptions ────────────────────────────────────────────────────
+    subscribePush: protectedProcedure
+      .input(z.object({
+        endpoint: z.string(),
+        p256dh: z.string(),
+        auth: z.string(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        await savePushSubscription(ctx.user.id, input.endpoint, input.p256dh, input.auth);
+        return { ok: true };
+      }),
+
+    unsubscribePush: protectedProcedure
+      .input(z.object({ endpoint: z.string() }))
+      .mutation(async ({ input }) => {
+        await removePushSubscription(input.endpoint);
         return { ok: true };
       }),
   }),

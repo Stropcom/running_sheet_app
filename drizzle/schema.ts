@@ -587,3 +587,23 @@ export const opManagerSupervisorContacts = mysqlTable("op_manager_supervisor_con
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 export type OpManagerSupervisorContact = typeof opManagerSupervisorContacts.$inferSelect;
+
+// ─── Op Manager Posted Weeks ─────────────────────────────────────────────────
+export const opManagerPostedWeeks = mysqlTable("op_manager_posted_weeks", {
+  id: int("id").autoincrement().primaryKey(),
+  weekStart: varchar("weekStart", { length: 10 }).notNull().unique(), // ISO date YYYY-MM-DD (Monday)
+  postedAt: timestamp("postedAt").defaultNow().notNull(),
+  postedBy: int("postedBy").notNull(), // FK → users.id
+});
+export type OpManagerPostedWeek = typeof opManagerPostedWeeks.$inferSelect;
+
+// ─── Push Subscriptions ───────────────────────────────────────────────────────
+export const pushSubscriptions = mysqlTable("push_subscriptions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(), // FK → users.id
+  endpoint: text("endpoint").notNull(),
+  p256dh: text("p256dh").notNull(),
+  auth: text("auth").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type PushSubscription = typeof pushSubscriptions.$inferSelect;

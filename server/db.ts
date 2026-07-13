@@ -39,6 +39,8 @@ import {
   opManagerPriorityRows,
   opManagerTaskingCells,
   opManagerSupervisorContacts,
+  opManagerPostedWeeks,
+  pushSubscriptions,
 } from "../drizzle/schema";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -4477,4 +4479,64 @@ export async function saveOpManagerSupervisorContacts(
   if (contacts.length === 0) return [];
   await db.insert(opManagerSupervisorContacts).values(contacts.map((c) => ({ ...c, weekStart })));
   return getOpManagerSupervisorContacts(weekStart);
+}
+
+// ─── Op Manager Posted Weeks ─────────────────────────────────────────────────
+export async function getPostedWeeks() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(opManagerPostedWeeks).orderBy(opManagerPostedWeeks.weekStart);
+}
+
+export async function isWeekPosted(weekStart: string) {
+  const db = await getDb();
+  if (!db) return false;
+  const rows = await db
+    .select()
+    .from(opManagerPostedWeeks)
+    .where(eq(opManagerPostedWeeks.weekStart, weekStart));
+  return rows.length > 0;
+}
+
+export async function markWeekPosted(weekStart: string, postedBy: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Upsert — if already posted, update postedAt
+  await db
+    .insert(opManagerPostedWeeks)
+    .values({ weekStart, postedBy, postedAt: new Date() })
+    .onDuplicateKeyUpdate({ set: { postedAt: new Date(), postedBy } });
+  return { weekStart, postedAt: new Date() };
+}
+
+// ─── Push Subscriptions ───────────────────────────────────────────────────────
+export async function savePushSubscription(
+  userId: number,
+  endpoint: string,
+  p256dh: string,
+  auth: string
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Remove any existing subscription for this endpoint
+  await db.delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, endpoint));
+  await db.insert(pushSubscriptions).values({ userId, endpoint, p256dh, auth });
+}
+
+export async function removePushSubscription(endpoint: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, endpoint));
+}
+
+export async function getAllPushSubscriptions() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(pushSubscriptions);
+}
+
+export async function getPushSubscriptionsByUserId(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(pushSubscriptions).where(eq(pushSubscriptions.userId, userId));
 }

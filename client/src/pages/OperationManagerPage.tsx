@@ -1,28 +1,35 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import {
   ChevronLeft,
   ChevronRight,
+  ArrowLeft,
   Plus,
   Trash2,
-  GripVertical,
-  Phone,
-  User,
-  Calendar,
-  ClipboardList,
   Save,
+  Send,
   Eye,
   Edit2,
   Printer,
+  Bell,
+  BellOff,
+  CheckCircle2,
+  GripVertical,
 } from "lucide-react";
 import {
   DndContext,
@@ -30,7 +37,6 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
-  DragEndEvent,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -39,880 +45,334 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { cn } from "@/lib/utils";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-
-const CATEGORY_OPTIONS = ["A-TACC", "WC", "Other"];
-const REQUEST_TYPE_OPTIONS = ["Surv", "PTT", "Capability"];
-const ROLE_OPTIONS = ["CTO Inspector", "Surveillance Team 1", "Surveillance Team 2", "PTT"];
-const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const TEAM_ROWS = ["Surveillance 1", "Surveillance 2", "PTT", "Cap. Support"];
+const TEAM_ROWS = ["surv1", "surv2", "ptt", "cap"] as const;
+type TeamRow = (typeof TEAM_ROWS)[number];
+const TEAM_LABELS: Record<TeamRow, string> = {
+  surv1: "Surveillance 1",
+  surv2: "Surveillance 2",
+  ptt: "PTT",
+  cap: "Cap. Support",
+};
 const SHIFT_OPTIONS = [
   "RDO",
-  "0600–1400",
-  "0700–1500",
-  "1400–2200",
-  "1000–1800",
-  "Custom Time",
+  "0600-1400",
+  "0700-1500",
+  "1000-1800",
+  "1400-2200",
+  "Custom",
 ];
+const CATEGORIES = ["A-TACC", "WC", "Other"];
+const REQUEST_TYPES = ["Surv", "PTT", "Capability"];
+const SUPERVISOR_ROLES = [
+  "CTO Inspector",
+  "Surveillance Team 1",
+  "Surveillance Team 2",
+  "PTT",
+];
+const ON_CALL_ROLES = [
+  "On-Call Supervisor",
+  "On-Call PTT",
+  "On-Call Cap. Support",
+];
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-// Sentinel values for operation dropdown
-const OP_OTHER = "__OTHER__";
-const OP_TRAINING = "__TRAINING__";
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
+// ─── Week helpers ─────────────────────────────────────────────────────────────
 function getMondayOfWeek(date: Date): string {
   const d = new Date(date);
-  const perthOffset = 8 * 60;
-  const utcMs = d.getTime() + d.getTimezoneOffset() * 60000;
-  const perthMs = utcMs + perthOffset * 60000;
-  const perth = new Date(perthMs);
-  const day = perth.getDay();
+  const day = d.getDay();
   const diff = day === 0 ? -6 : 1 - day;
-  perth.setDate(perth.getDate() + diff);
-  return perth.toISOString().slice(0, 10);
-}
-
-function addWeeks(weekStart: string, n: number): string {
-  const d = new Date(weekStart + "T00:00:00+08:00");
-  d.setDate(d.getDate() + n * 7);
+  d.setDate(d.getDate() + diff);
   return d.toISOString().slice(0, 10);
 }
 
-function formatWeekRange(weekStart: string): string {
-  const start = new Date(weekStart + "T00:00:00+08:00");
-  const end = new Date(weekStart + "T00:00:00+08:00");
-  end.setDate(end.getDate() + 6);
-  const opts: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", year: "numeric" };
-  return `${start.toLocaleDateString("en-AU", opts)} – ${end.toLocaleDateString("en-AU", opts)}`;
+function addWeeks(weekStart: string, n: number): string {
+  const d = new Date(weekStart + "T00:00:00Z");
+  d.setDate(d.getDate() + 7 * n);
+  return d.toISOString().slice(0, 10);
 }
 
-function getDayDate(weekStart: string, dayIndex: number): string {
-  const d = new Date(weekStart + "T00:00:00+08:00");
-  d.setDate(d.getDate() + dayIndex);
-  return d.toLocaleDateString("en-AU", { day: "numeric", month: "short" });
+function formatWeekLabel(weekStart: string): string {
+  const d = new Date(weekStart + "T00:00:00Z");
+  const end = new Date(d);
+  end.setDate(end.getDate() + 6);
+  const fmt = (x: Date) =>
+    x.toLocaleDateString("en-AU", {
+      day: "2-digit",
+      month: "short",
+      timeZone: "UTC",
+    });
+  return `${fmt(d)} – ${fmt(end)}`;
+}
+
+// ─── Shift auto-population ────────────────────────────────────────────────────
+// Surv 1 is on DAY shift the week of 2026-07-14 (Monday). Alternates each week.
+const SURV1_DAY_ANCHOR = "2026-07-14";
+
+function isSurv1DayShift(weekStart: string): boolean {
+  const anchor = new Date(SURV1_DAY_ANCHOR + "T00:00:00Z").getTime();
+  const ws = new Date(weekStart + "T00:00:00Z").getTime();
+  const diffWeeks = Math.round((ws - anchor) / (7 * 24 * 3600 * 1000));
+  return diffWeeks % 2 === 0;
+}
+
+function getDefaultShift(
+  teamRow: TeamRow,
+  dayIndex: number,
+  weekStart: string
+): string {
+  if (teamRow === "ptt" || teamRow === "cap") return "";
+  const surv1IsDay = isSurv1DayShift(weekStart);
+  const isDay = teamRow === "surv1" ? surv1IsDay : !surv1IsDay;
+  if (isDay) {
+    return dayIndex <= 4 ? "0700-1500" : "RDO";
+  } else {
+    if (dayIndex === 0) return "RDO";
+    if (dayIndex >= 1 && dayIndex <= 3) return "1400-2200";
+    if (dayIndex === 4) return "1000-1800";
+    return "RDO";
+  }
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
 interface PriorityRow {
-  id?: number;
   localId: string;
+  id?: number;
   category: string;
   priority: number;
   operationId?: number | null;
   operationName?: string | null;
   team?: string | null;
-  requestType?: string | null; // comma-separated e.g. "Surv,PTT"
+  requestType?: string | null;
   sortOrder: number;
 }
 
 interface TaskingCell {
   shiftTime?: string | null;
-  primaryTask?: string | null;      // operation name or sentinel
-  primaryTaskFree?: string | null;  // free text when Other
+  customTime?: string;
+  primaryTask?: string | null;
+  primaryOther?: string;
   secondaryTask?: string | null;
-  secondaryTaskFree?: string | null;
+  secondaryOther?: string;
 }
 
-interface SupervisorContact {
-  id?: number;
+interface ContactEntry {
   localId: string;
+  id?: number;
   role: string;
   userId?: number | null;
-  customName?: string | null;
   phone?: string | null;
   sortOrder: number;
 }
 
 interface OnCallEntry {
-  id?: number;
   localId: string;
-  dayScope: string; // "week" | "Mon" | "Tue" | ...
+  id?: number;
+  role: string;
   userId?: number | null;
-  customName?: string | null;
   mobile?: string | null;
   isOnCall: boolean;
-  sortOrder: number;
+  dayScope: string;
 }
 
-// ─── Multi-select Request Type ────────────────────────────────────────────────
-
-function RequestTypeMultiSelect({
-  value,
-  onChange,
-}: {
-  value: string | null | undefined;
-  onChange: (v: string) => void;
-}) {
-  const selected = value ? value.split(",").map((s) => s.trim()).filter(Boolean) : [];
-
-  function toggle(opt: string) {
-    const next = selected.includes(opt)
-      ? selected.filter((s) => s !== opt)
-      : [...selected, opt];
-    onChange(next.join(","));
-  }
-
-  return (
-    <div className="flex flex-col gap-0.5">
-      {REQUEST_TYPE_OPTIONS.map((opt) => (
-        <label key={opt} className="flex items-center gap-1 cursor-pointer text-[11px]">
-          <Checkbox
-            checked={selected.includes(opt)}
-            onCheckedChange={() => toggle(opt)}
-            className="h-3 w-3"
-          />
-          {opt}
-        </label>
-      ))}
-    </div>
-  );
-}
-
-// ─── Operation Dropdown ───────────────────────────────────────────────────────
-
-function OperationDropdown({
-  value,
-  valueName,
-  operations,
-  onSelect,
-  onCreateOp,
-  placeholder,
-  includeSpecial, // include Other / Training at top
-}: {
-  value?: number | null;
-  valueName?: string | null;
-  operations: { id: number; name: string }[];
-  onSelect: (id: number | null, name: string | null) => void;
-  onCreateOp?: (name: string) => void;
-  placeholder?: string;
-  includeSpecial?: boolean;
-}) {
-  const [search, setSearch] = useState(valueName ?? "");
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+// ─── Push notification hook ───────────────────────────────────────────────────
+function usePushSubscription() {
+  const [subscribed, setSubscribed] = useState(false);
+  const subscribeMut = trpc.opManager.subscribePush.useMutation();
+  const unsubscribeMut = trpc.opManager.unsubscribePush.useMutation();
 
   useEffect(() => {
-    setSearch(valueName ?? "");
-  }, [valueName]);
-
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    navigator.serviceWorker.ready
+      .then(async (reg) => {
+        const existing = await reg.pushManager.getSubscription();
+        setSubscribed(!!existing);
+      })
+      .catch(() => {});
   }, []);
 
-  const filtered = operations.filter((op) =>
-    op.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const subscribe = useCallback(async () => {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      toast.error("Push notifications are not supported in this browser.");
+      return;
+    }
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY as string;
+      if (!vapidKey) {
+        toast.error("Push notifications not configured.");
+        return;
+      }
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: vapidKey,
+      });
+      const json = sub.toJSON();
+      const keys = json.keys as Record<string, string>;
+      await subscribeMut.mutateAsync({
+        endpoint: json.endpoint!,
+        p256dh: keys["p256dh"],
+        auth: keys["auth"],
+      });
+      setSubscribed(true);
+      toast.success("Push notifications enabled.");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to enable push notifications.");
+    }
+  }, [subscribeMut]);
 
-  const displayValue =
-    value === null && valueName === "Other" ? "Other" :
-    value === null && valueName === "Training" ? "Training" :
-    valueName ?? "";
+  const unsubscribe = useCallback(async () => {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        await unsubscribeMut.mutateAsync({ endpoint: sub.endpoint });
+        await sub.unsubscribe();
+      }
+      setSubscribed(false);
+      toast.success("Push notifications disabled.");
+    } catch {
+      toast.error("Failed to disable push notifications.");
+    }
+  }, [unsubscribeMut]);
 
-  return (
-    <div className="relative" ref={ref}>
-      <Input
-        value={search}
-        onChange={(e) => {
-          setSearch(e.target.value);
-          setOpen(true);
-        }}
-        onFocus={() => setOpen(true)}
-        className="h-7 text-[11px] px-1.5"
-        placeholder={placeholder ?? "Select operation…"}
-      />
-      {open && (
-        <div className="absolute z-50 top-full left-0 right-0 mt-0.5 bg-popover border border-border rounded shadow-md max-h-48 overflow-y-auto min-w-[180px]">
-          {includeSpecial && (
-            <>
-              <button
-                className="w-full text-left px-2 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground font-medium text-amber-600"
-                onMouseDown={() => {
-                  onSelect(null, "Training");
-                  setSearch("Training");
-                  setOpen(false);
-                }}
-              >
-                📋 Training
-              </button>
-              <button
-                className="w-full text-left px-2 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground font-medium text-muted-foreground"
-                onMouseDown={() => {
-                  onSelect(null, "Other");
-                  setSearch("Other");
-                  setOpen(false);
-                }}
-              >
-                ✏️ Other (free text)
-              </button>
-              <div className="border-t border-border/40 my-0.5" />
-            </>
-          )}
-          {filtered.map((op) => (
-            <button
-              key={op.id}
-              className="w-full text-left px-2 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground"
-              onMouseDown={() => {
-                onSelect(op.id, op.name);
-                setSearch(op.name);
-                setOpen(false);
-              }}
-            >
-              {op.name}
-            </button>
-          ))}
-          {filtered.length === 0 && search.trim() && onCreateOp && (
-            <button
-              className="w-full text-left px-2 py-1.5 text-xs text-blue-500 hover:bg-accent flex items-center gap-1"
-              onMouseDown={() => {
-                onCreateOp(search.trim());
-                setOpen(false);
-              }}
-            >
-              <Plus size={11} /> Create "{search.trim()}"
-            </button>
-          )}
-          {filtered.length === 0 && search.trim() && !onCreateOp && (
-            <div className="px-2 py-1.5 text-xs text-muted-foreground">No match</div>
-          )}
-        </div>
-      )}
-    </div>
-  );
+  return { subscribed, subscribe, unsubscribe };
 }
 
-// ─── Sortable Priority Row ────────────────────────────────────────────────────
+// ─── Unique ID helper ─────────────────────────────────────────────────────────
+let _uid = 0;
+const uid = () => String(++_uid);
 
-function SortablePriorityRow({
-  row,
-  index,
-  operations,
-  onUpdate,
-  onDelete,
-  onCreateOp,
-}: {
-  row: PriorityRow;
-  index: number;
-  operations: { id: number; name: string }[];
-  onUpdate: (localId: string, field: keyof PriorityRow, value: unknown) => void;
-  onDelete: (localId: string) => void;
-  onCreateOp: (name: string, localId: string) => void;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: row.localId });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  return (
-    <tr ref={setNodeRef} style={style} className="border-b border-border/40 hover:bg-muted/20 transition-colors">
-      <td className="p-1 w-8">
-        <button
-          {...attributes}
-          {...listeners}
-          className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-1 touch-none"
-        >
-          <GripVertical size={14} />
-        </button>
-      </td>
-      <td className="p-1 text-center text-xs text-muted-foreground w-8">{index + 1}</td>
-
-      {/* Category dropdown */}
-      <td className="p-1 w-28">
-        <Select
-          value={row.category}
-          onValueChange={(v) => onUpdate(row.localId, "category", v)}
-        >
-          <SelectTrigger className="h-7 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {CATEGORY_OPTIONS.map((c) => (
-              <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </td>
-
-      {/* Priority */}
-      <td className="p-1 w-16">
-        <Input
-          type="number"
-          min={1}
-          value={row.priority}
-          onChange={(e) => onUpdate(row.localId, "priority", parseInt(e.target.value) || 1)}
-          className="h-7 text-xs text-center"
-        />
-      </td>
-
-      {/* Operation dropdown with Add Op */}
-      <td className="p-1 min-w-[160px]">
-        <OperationDropdown
-          value={row.operationId}
-          valueName={row.operationName}
-          operations={operations}
-          onSelect={(id, name) => {
-            onUpdate(row.localId, "operationId", id);
-            onUpdate(row.localId, "operationName", name);
-          }}
-          onCreateOp={(name) => onCreateOp(name, row.localId)}
-          placeholder="Search or add op…"
-        />
-      </td>
-
-      {/* Team */}
-      <td className="p-1 w-28">
-        <Input
-          value={row.team ?? ""}
-          onChange={(e) => onUpdate(row.localId, "team", e.target.value)}
-          className="h-7 text-xs"
-          placeholder="Team"
-        />
-      </td>
-
-      {/* Request type multi-select */}
-      <td className="p-1 w-32">
-        <RequestTypeMultiSelect
-          value={row.requestType}
-          onChange={(v) => onUpdate(row.localId, "requestType", v)}
-        />
-      </td>
-
-      <td className="p-1 w-8">
-        <button
-          onClick={() => onDelete(row.localId)}
-          className="text-muted-foreground hover:text-destructive transition-colors p-1"
-        >
-          <Trash2 size={13} />
-        </button>
-      </td>
-    </tr>
-  );
-}
-
-// ─── Tasking Cell Editor ──────────────────────────────────────────────────────
-
-function TaskingCellEditor({
-  cell,
-  operations,
-  onChange,
-}: {
-  cell: TaskingCell;
-  operations: { id: number; name: string }[];
-  onChange: (updates: Partial<TaskingCell>) => void;
-}) {
-  const isCustom =
-    cell.shiftTime != null &&
-    cell.shiftTime !== "" &&
-    !SHIFT_OPTIONS.slice(0, -1).includes(cell.shiftTime);
-
-  const shiftSelectValue = isCustom ? "Custom Time" : (cell.shiftTime ?? "");
-
-  return (
-    <div className="flex flex-col gap-1 p-1 min-w-[140px]">
-      {/* Shift */}
-      <Select
-        value={shiftSelectValue}
-        onValueChange={(v) => {
-          if (v === "Custom Time") {
-            onChange({ shiftTime: "" });
-          } else {
-            onChange({ shiftTime: v === "" ? null : v });
-          }
-        }}
-      >
-        <SelectTrigger className="h-6 text-[11px] px-1.5">
-          <SelectValue placeholder="Shift" />
-        </SelectTrigger>
-        <SelectContent>
-          {SHIFT_OPTIONS.map((s) => (
-            <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      {/* Custom time input — shown when Custom Time is selected */}
-      {(shiftSelectValue === "Custom Time" || isCustom) && (
-        <Input
-          value={isCustom ? (cell.shiftTime ?? "") : ""}
-          onChange={(e) => onChange({ shiftTime: e.target.value || null })}
-          className="h-6 text-[11px] px-1.5"
-          placeholder="e.g. 0800–1600"
-          autoFocus={shiftSelectValue === "Custom Time" && !isCustom}
-        />
-      )}
-
-      {/* Primary task */}
-      <OperationDropdown
-        value={null}
-        valueName={cell.primaryTask}
-        operations={operations}
-        onSelect={(_, name) => {
-          onChange({
-            primaryTask: name,
-            primaryTaskFree: name === "Other" ? (cell.primaryTaskFree ?? "") : null,
-          });
-        }}
-        placeholder="Primary task…"
-        includeSpecial
-      />
-      {cell.primaryTask === "Other" && (
-        <Input
-          value={cell.primaryTaskFree ?? ""}
-          onChange={(e) => onChange({ primaryTaskFree: e.target.value || null })}
-          className="h-6 text-[11px] px-1.5"
-          placeholder="Describe task…"
-        />
-      )}
-
-      {/* Secondary task */}
-      <OperationDropdown
-        value={null}
-        valueName={cell.secondaryTask}
-        operations={operations}
-        onSelect={(_, name) => {
-          onChange({
-            secondaryTask: name,
-            secondaryTaskFree: name === "Other" ? (cell.secondaryTaskFree ?? "") : null,
-          });
-        }}
-        placeholder="Secondary task…"
-        includeSpecial
-      />
-      {cell.secondaryTask === "Other" && (
-        <Input
-          value={cell.secondaryTaskFree ?? ""}
-          onChange={(e) => onChange({ secondaryTaskFree: e.target.value || null })}
-          className="h-6 text-[11px] px-1.5"
-          placeholder="Describe task…"
-        />
-      )}
-    </div>
-  );
-}
-
-// ─── Sortable Contact Row ─────────────────────────────────────────────────────
-
-function SortableContactRow({
-  contact,
-  users,
-  onUpdate,
-  onDelete,
-}: {
-  contact: SupervisorContact;
-  users: { id: number; name: string; cin: string | null }[];
-  onUpdate: (localId: string, field: keyof SupervisorContact, value: unknown) => void;
-  onDelete: (localId: string) => void;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: contact.localId });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className="flex items-start gap-2 p-2 bg-card border border-border/50 rounded-lg mb-2"
-    >
-      <button
-        {...attributes}
-        {...listeners}
-        className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground touch-none mt-1.5"
-      >
-        <GripVertical size={14} />
-      </button>
-      <div className="flex-1 grid grid-cols-3 gap-2">
-        {/* Role dropdown */}
-        <Select
-          value={contact.role}
-          onValueChange={(v) => onUpdate(contact.localId, "role", v)}
-        >
-          <SelectTrigger className="h-7 text-xs">
-            <SelectValue placeholder="Role" />
-          </SelectTrigger>
-          <SelectContent>
-            {ROLE_OPTIONS.map((r) => (
-              <SelectItem key={r} value={r} className="text-xs">{r}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {/* Name dropdown from users */}
-        <Select
-          value={contact.userId != null ? String(contact.userId) : "custom"}
-          onValueChange={(v) => {
-            if (v === "custom") {
-              onUpdate(contact.localId, "userId", null);
-            } else {
-              const u = users.find((u) => String(u.id) === v);
-              onUpdate(contact.localId, "userId", Number(v));
-              onUpdate(contact.localId, "customName", u?.name ?? null);
-            }
-          }}
-        >
-          <SelectTrigger className="h-7 text-xs">
-            <SelectValue placeholder="Select user" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="custom" className="text-xs italic text-muted-foreground">Custom name</SelectItem>
-            {users.map((u) => (
-              <SelectItem key={u.id} value={String(u.id)} className="text-xs">
-                {u.name}{u.cin ? ` (${u.cin})` : ""}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {/* Phone free text */}
-        <Input
-          value={contact.phone ?? ""}
-          onChange={(e) => onUpdate(contact.localId, "phone", e.target.value || null)}
-          className="h-7 text-xs"
-          placeholder="Phone"
-        />
-
-        {/* Custom name field when not linked to a user */}
-        {contact.userId == null && (
-          <Input
-            value={contact.customName ?? ""}
-            onChange={(e) => onUpdate(contact.localId, "customName", e.target.value || null)}
-            className="h-7 text-xs col-span-2"
-            placeholder="Custom name"
-          />
-        )}
-      </div>
-      <button
-        onClick={() => onDelete(contact.localId)}
-        className="text-muted-foreground hover:text-destructive transition-colors mt-1.5"
-      >
-        <Trash2 size={13} />
-      </button>
-    </div>
-  );
-}
-
-// ─── On-Call Entry Row ────────────────────────────────────────────────────────
-
-function OnCallEntryRow({
-  entry,
-  users,
-  onUpdate,
-  onDelete,
-}: {
-  entry: OnCallEntry;
-  users: { id: number; name: string; cin: string | null }[];
-  onUpdate: (localId: string, field: keyof OnCallEntry, value: unknown) => void;
-  onDelete: (localId: string) => void;
-}) {
-  return (
-    <div className="flex items-start gap-2 p-2 bg-card border border-border/50 rounded-lg mb-2">
-      <div className="flex-1 grid grid-cols-4 gap-2">
-        {/* Day scope */}
-        <Select
-          value={entry.dayScope}
-          onValueChange={(v) => onUpdate(entry.localId, "dayScope", v)}
-        >
-          <SelectTrigger className="h-7 text-xs">
-            <SelectValue placeholder="Day" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="week" className="text-xs font-medium">Full Week</SelectItem>
-            {DAY_LABELS.map((d) => (
-              <SelectItem key={d} value={d} className="text-xs">{d}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {/* Name dropdown */}
-        <Select
-          value={entry.userId != null ? String(entry.userId) : "custom"}
-          onValueChange={(v) => {
-            if (v === "custom") {
-              onUpdate(entry.localId, "userId", null);
-            } else {
-              const u = users.find((u) => String(u.id) === v);
-              onUpdate(entry.localId, "userId", Number(v));
-              onUpdate(entry.localId, "customName", u?.name ?? null);
-            }
-          }}
-        >
-          <SelectTrigger className="h-7 text-xs">
-            <SelectValue placeholder="Select user" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="custom" className="text-xs italic text-muted-foreground">Custom name</SelectItem>
-            {users.map((u) => (
-              <SelectItem key={u.id} value={String(u.id)} className="text-xs">
-                {u.name}{u.cin ? ` (${u.cin})` : ""}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {/* Custom name */}
-        {entry.userId == null && (
-          <Input
-            value={entry.customName ?? ""}
-            onChange={(e) => onUpdate(entry.localId, "customName", e.target.value || null)}
-            className="h-7 text-xs"
-            placeholder="Name"
-          />
-        )}
-
-        {/* Mobile free text */}
-        <Input
-          value={entry.mobile ?? ""}
-          onChange={(e) => onUpdate(entry.localId, "mobile", e.target.value || null)}
-          className="h-7 text-xs"
-          placeholder="Mobile"
-        />
-
-        {/* On-call toggle */}
-        <label className="flex items-center gap-1.5 cursor-pointer text-xs col-span-1">
-          <Checkbox
-            checked={entry.isOnCall}
-            onCheckedChange={(v) => onUpdate(entry.localId, "isOnCall", !!v)}
-            className="h-3.5 w-3.5"
-          />
-          On-call
-        </label>
-      </div>
-      <button
-        onClick={() => onDelete(entry.localId)}
-        className="text-muted-foreground hover:text-destructive transition-colors mt-1.5"
-      >
-        <Trash2 size={13} />
-      </button>
-    </div>
-  );
-}
-
-// ─── CTO Tasking Week View ────────────────────────────────────────────────────
-
-function CTOTaskingWeekView({
-  weekStart,
-  priorityRows,
-  taskingCells,
-  contacts,
-  onCallEntries,
-  onEdit,
-}: {
-  weekStart: string;
-  priorityRows: PriorityRow[];
-  taskingCells: Record<string, TaskingCell>;
-  contacts: SupervisorContact[];
-  onCallEntries: OnCallEntry[];
-  onEdit: () => void;
-}) {
-  return (
-    <div className="p-4 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-bold text-foreground">CTO Tasking Week</h2>
-          <p className="text-sm text-muted-foreground">{formatWeekRange(weekStart)}</p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => window.print()}>
-            <Printer size={13} /> Print
-          </Button>
-          <Button size="sm" className="gap-1.5 text-xs bg-purple-600 hover:bg-purple-700 text-white" onClick={onEdit}>
-            <Edit2 size={13} /> Edit
-          </Button>
-        </div>
-      </div>
-
-      {/* Supervisor Contacts */}
-      {contacts.length > 0 && (
-        <div>
-          <h3 className="text-sm font-semibold text-foreground mb-2 border-b border-border/40 pb-1">Supervisor Contacts</h3>
-          <div className="grid grid-cols-2 gap-2">
-            {contacts.map((c) => (
-              <div key={c.localId} className="flex items-center gap-2 text-xs bg-muted/30 rounded px-2 py-1.5">
-                <User size={12} className="text-muted-foreground shrink-0" />
-                <span className="font-medium text-foreground">{c.role}:</span>
-                <span>{c.customName ?? "—"}</span>
-                {c.phone && (
-                  <span className="flex items-center gap-0.5 text-muted-foreground ml-auto">
-                    <Phone size={10} /> {c.phone}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* On-Call */}
-      {onCallEntries.length > 0 && (
-        <div>
-          <h3 className="text-sm font-semibold text-foreground mb-2 border-b border-border/40 pb-1">On-Call Supervisor</h3>
-          <div className="grid grid-cols-2 gap-2">
-            {onCallEntries.map((e) => (
-              <div key={e.localId} className="flex items-center gap-2 text-xs bg-muted/30 rounded px-2 py-1.5">
-                <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0">
-                  {e.dayScope === "week" ? "Full Week" : e.dayScope}
-                </Badge>
-                {e.isOnCall && <Badge className="text-[10px] px-1 py-0 bg-amber-500/20 text-amber-600 border-amber-500/30 shrink-0">On-Call</Badge>}
-                <span>{e.customName ?? "—"}</span>
-                {e.mobile && (
-                  <span className="flex items-center gap-0.5 text-muted-foreground ml-auto">
-                    <Phone size={10} /> {e.mobile}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Priority Board */}
-      {priorityRows.length > 0 && (
-        <div>
-          <h3 className="text-sm font-semibold text-foreground mb-2 border-b border-border/40 pb-1">Priority Board</h3>
-          <table className="w-full text-xs border-collapse">
-            <thead>
-              <tr className="bg-muted/40 border-b border-border/60">
-                <th className="p-1.5 text-left font-medium w-8">#</th>
-                <th className="p-1.5 text-left font-medium">Category</th>
-                <th className="p-1.5 text-left font-medium">Pri</th>
-                <th className="p-1.5 text-left font-medium">Operation</th>
-                <th className="p-1.5 text-left font-medium">Team</th>
-                <th className="p-1.5 text-left font-medium">Request</th>
-              </tr>
-            </thead>
-            <tbody>
-              {priorityRows.map((row, idx) => (
-                <tr key={row.localId} className="border-b border-border/30">
-                  <td className="p-1.5 text-muted-foreground">{idx + 1}</td>
-                  <td className="p-1.5 font-medium">{row.category}</td>
-                  <td className="p-1.5">{row.priority}</td>
-                  <td className="p-1.5">{row.operationName ?? "—"}</td>
-                  <td className="p-1.5">{row.team ?? "—"}</td>
-                  <td className="p-1.5">
-                    {row.requestType ? (
-                      <div className="flex flex-wrap gap-0.5">
-                        {row.requestType.split(",").map((rt) => (
-                          <Badge key={rt} variant="outline" className="text-[10px] px-1 py-0">{rt.trim()}</Badge>
-                        ))}
-                      </div>
-                    ) : "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Weekly Tasking Calendar */}
-      <div>
-        <h3 className="text-sm font-semibold text-foreground mb-2 border-b border-border/40 pb-1">Weekly Tasking Calendar</h3>
-        <div className="overflow-x-auto">
-          <table className="text-xs border-collapse w-full min-w-[700px]">
-            <thead>
-              <tr className="bg-muted/40">
-                <th className="border border-border/40 p-1.5 text-left font-medium w-24">Team</th>
-                {DAY_LABELS.map((day, i) => (
-                  <th key={day} className="border border-border/40 p-1.5 text-center font-medium">
-                    <span className="block">{day}</span>
-                    <span className="block text-[10px] text-muted-foreground font-normal">{getDayDate(weekStart, i)}</span>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {TEAM_ROWS.map((teamRow) => (
-                <tr key={teamRow}>
-                  <td className="border border-border/40 p-1.5 font-medium whitespace-nowrap bg-muted/20">{teamRow}</td>
-                  {DAY_LABELS.map((_, dayIndex) => {
-                    const key = `${dayIndex}-${teamRow}`;
-                    const cell = taskingCells[key] ?? {};
-                    const primaryDisplay = cell.primaryTask === "Other" ? (cell.primaryTaskFree || "Other") : cell.primaryTask;
-                    const secondaryDisplay = cell.secondaryTask === "Other" ? (cell.secondaryTaskFree || "Other") : cell.secondaryTask;
-                    return (
-                      <td key={dayIndex} className="border border-border/40 p-1.5 align-top">
-                        {cell.shiftTime && (
-                          <div className="font-medium text-purple-600 text-[10px] mb-0.5">{cell.shiftTime}</div>
-                        )}
-                        {primaryDisplay && <div className="text-[11px]">{primaryDisplay}</div>}
-                        {secondaryDisplay && (
-                          <div className="text-[10px] text-muted-foreground">{secondaryDisplay}</div>
-                        )}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Main Page ────────────────────────────────────────────────────────────────
-
+// ─── Main Component ───────────────────────────────────────────────────────────
 export default function OperationManagerPage() {
   const { user } = useAuth();
-  const utils = trpc.useUtils();
+  const [, navigate] = useLocation();
+  const isAdmin = user?.role === "admin";
 
-  const [weekStart, setWeekStart] = useState(() => getMondayOfWeek(new Date()));
-  const [activeTab, setActiveTab] = useState("priority");
-  const [viewMode, setViewMode] = useState<"edit" | "view">("edit");
-
-  // ── Operations & Users ────────────────────────────────────────────────────
-  const { data: operations } = trpc.operation.list.useQuery(undefined, { staleTime: 60_000 });
-  const { data: usersData } = trpc.opManager.listUsers.useQuery(undefined, { staleTime: 60_000 });
-  const userList: { id: number; name: string; cin: string | null }[] = usersData ?? [];
-
-  // ── Priority Board ────────────────────────────────────────────────────────
-  const [priorityRows, setPriorityRows] = useState<PriorityRow[]>([]);
-  const [priorityDirty, setPriorityDirty] = useState(false);
-
-  const { data: priorityData, isLoading: priorityLoading } = trpc.opManager.getPriorityBoard.useQuery(
-    { weekStart }, { staleTime: 30_000 }
+  const [weekStart, setWeekStart] = useState(() =>
+    getMondayOfWeek(new Date())
   );
-
+  const [viewMode, setViewMode] = useState<"edit" | "view">(
+    isAdmin ? "edit" : "view"
+  );
   useEffect(() => {
-    if (priorityData) {
-      setPriorityRows(priorityData.map((r) => ({ ...r, localId: String(r.id ?? Math.random()) })));
-      setPriorityDirty(false);
-    } else if (!priorityLoading) {
-      setPriorityRows([]);
-    }
-  }, [priorityData, priorityLoading]);
+    if (!isAdmin) setViewMode("view");
+  }, [isAdmin]);
 
-  const savePriorityMutation = trpc.opManager.savePriorityBoard.useMutation({
-    onSuccess: () => {
-      toast.success("Priority board saved");
-      setPriorityDirty(false);
-      utils.opManager.getPriorityBoard.invalidate({ weekStart });
-    },
-    onError: (e) => toast.error(e.message),
+  const { subscribed, subscribe, unsubscribe } = usePushSubscription();
+
+  // ── Queries ───────────────────────────────────────────────────────────────────
+  const opsQuery = trpc.operation.list.useQuery(undefined, { staleTime: 30_000 });
+  const usersQuery = trpc.opManager.listUsers.useQuery(undefined, {
+    staleTime: 60_000,
+  });
+  const priorityQuery = trpc.opManager.getPriorityBoard.useQuery(
+    { weekStart },
+    { staleTime: 5_000 }
+  );
+  const taskingQuery = trpc.opManager.getTaskingCalendar.useQuery(
+    { weekStart },
+    { staleTime: 5_000 }
+  );
+  const contactsQuery = trpc.opManager.getSupervisorContacts.useQuery(
+    { weekStart },
+    { staleTime: 5_000 }
+  );
+  const postedQuery = trpc.opManager.isWeekPosted.useQuery(
+    { weekStart },
+    { staleTime: 5_000 }
+  );
+  const postedWeeksQuery = trpc.opManager.getPostedWeeks.useQuery(undefined, {
+    staleTime: 30_000,
   });
 
+  // ── Mutations ─────────────────────────────────────────────────────────────────
+  const savePriorityMut = trpc.opManager.savePriorityBoard.useMutation();
+  const saveTaskingCellMut = trpc.opManager.saveTaskingCell.useMutation();
+  const saveContactsMut = trpc.opManager.saveSupervisorContacts.useMutation();
+  const postWeekMut = trpc.opManager.postWeek.useMutation();
+  const createOpMut = trpc.operation.create.useMutation({
+    onSuccess: () => utils.operation.list.invalidate(),
+  });
+  const utils = trpc.useUtils();
+
+  // ── Local state ───────────────────────────────────────────────────────────────
+  const [priorityRows, setPriorityRows] = useState<PriorityRow[]>([]);
+  const [taskingGrid, setTaskingGrid] = useState<Record<string, TaskingCell>>(
+    {}
+  );
+  const [contacts, setContacts] = useState<ContactEntry[]>([]);
+  const [onCallEntries, setOnCallEntries] = useState<OnCallEntry[]>([]);
+  const [activeTab, setActiveTab] = useState("contacts");
+  const [isSavingTasking, setIsSavingTasking] = useState(false);
+
+  // ── Sync remote → local ───────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!priorityQuery.data) return;
+    setPriorityRows(
+      priorityQuery.data.map((r) => ({ ...r, localId: uid() }))
+    );
+  }, [priorityQuery.data]);
+
+  useEffect(() => {
+    if (!taskingQuery.data) return;
+    const grid: Record<string, TaskingCell> = {};
+    if (taskingQuery.data.length === 0) {
+      TEAM_ROWS.forEach((teamRow) => {
+        DAYS.forEach((_, dayIndex) => {
+          const key = `${teamRow}-${dayIndex}`;
+          grid[key] = { shiftTime: getDefaultShift(teamRow, dayIndex, weekStart) || null };
+        });
+      });
+    } else {
+      taskingQuery.data.forEach((cell) => {
+        const key = `${cell.teamRow}-${cell.dayIndex}`;
+        const storedShift = cell.shiftTime ?? null;
+        const isCustomShift =
+          storedShift !== null && !SHIFT_OPTIONS.includes(storedShift);
+        grid[key] = {
+          shiftTime: isCustomShift ? "Custom" : storedShift,
+          customTime: isCustomShift ? storedShift ?? "" : "",
+          primaryTask: cell.primaryTask ?? null,
+          secondaryTask: cell.secondaryTask ?? null,
+        };
+      });
+    }
+    setTaskingGrid(grid);
+  }, [taskingQuery.data, weekStart]);
+
+  useEffect(() => {
+    if (!contactsQuery.data) return;
+    const fixed = contactsQuery.data.filter(
+      (c) => !ON_CALL_ROLES.includes(c.role)
+    );
+    const onCall = contactsQuery.data.filter((c) =>
+      ON_CALL_ROLES.includes(c.role)
+    );
+    setContacts(fixed.map((c) => ({ ...c, localId: uid() })));
+    setOnCallEntries(
+      onCall.map((c) => ({
+        localId: uid(),
+        id: c.id,
+        role: c.role,
+        userId: c.userId ?? null,
+        mobile: c.phone ?? null,
+        isOnCall: true,
+        dayScope: "full",
+      }))
+    );
+  }, [contactsQuery.data]);
+
+  // ── Priority Board ────────────────────────────────────────────────────────────
   const addPriorityRow = () => {
     setPriorityRows((prev) => [
       ...prev,
       {
-        localId: `new-${Date.now()}`,
-        category: CATEGORY_OPTIONS[0],
+        localId: uid(),
+        category: "A-TACC",
         priority: prev.length + 1,
         operationId: null,
         operationName: null,
@@ -921,459 +381,480 @@ export default function OperationManagerPage() {
         sortOrder: prev.length,
       },
     ]);
-    setPriorityDirty(true);
   };
 
-  const updatePriorityRow = useCallback((localId: string, field: keyof PriorityRow, value: unknown) => {
-    setPriorityRows((prev) => prev.map((r) => (r.localId === localId ? { ...r, [field]: value } : r)));
-    setPriorityDirty(true);
-  }, []);
-
-  const deletePriorityRow = useCallback((localId: string) => {
-    setPriorityRows((prev) => prev.filter((r) => r.localId !== localId));
-    setPriorityDirty(true);
-  }, []);
-
-  const prioritySensors = useSensors(useSensor(PointerSensor, { activationConstraint: { delay: 200, tolerance: 5 } }));
-
-  const handlePriorityDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    setPriorityRows((prev) => {
-      const oldIdx = prev.findIndex((r) => r.localId === active.id);
-      const newIdx = prev.findIndex((r) => r.localId === over.id);
-      return arrayMove(prev, oldIdx, newIdx).map((r, i) => ({ ...r, sortOrder: i }));
-    });
-    setPriorityDirty(true);
+  const updatePriorityRow = (localId: string, patch: Partial<PriorityRow>) => {
+    setPriorityRows((prev) =>
+      prev.map((r) => (r.localId === localId ? { ...r, ...patch } : r))
+    );
   };
 
-  const savePriorityBoard = () => {
-    savePriorityMutation.mutate({
-      weekStart,
-      rows: priorityRows.map((r, i) => ({
-        id: r.id,
-        category: r.category,
-        priority: r.priority,
-        operationId: r.operationId ?? null,
-        operationName: r.operationName ?? null,
-        team: r.team ?? null,
-        requestType: r.requestType ?? null,
-        sortOrder: i,
-      })),
-    });
+  const removePriorityRow = (localId: string) => {
+    setPriorityRows((prev) =>
+      prev
+        .filter((r) => r.localId !== localId)
+        .map((r, i) => ({ ...r, priority: i + 1, sortOrder: i }))
+    );
   };
 
-  // ── Inline operation creation ─────────────────────────────────────────────
-  const [createOpDialog, setCreateOpDialog] = useState<{ open: boolean; name: string; localId: string }>({
-    open: false, name: "", localId: "",
-  });
-  const createOpMutation = trpc.operation.create.useMutation({
-    onSuccess: (data, vars) => {
-      updatePriorityRow(createOpDialog.localId, "operationId", data.id);
-      updatePriorityRow(createOpDialog.localId, "operationName", vars.name);
-      utils.operation.list.invalidate();
-      toast.success(`Operation "${vars.name}" created`);
-      setCreateOpDialog({ open: false, name: "", localId: "" });
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  // ── Tasking Calendar ──────────────────────────────────────────────────────
-  const [taskingCells, setTaskingCells] = useState<Record<string, TaskingCell>>({});
-
-  const { data: taskingData, isLoading: taskingLoading } = trpc.opManager.getTaskingCalendar.useQuery(
-    { weekStart }, { staleTime: 30_000 }
-  );
-
-  useEffect(() => {
-    if (taskingData) {
-      const map: Record<string, TaskingCell> = {};
-      for (const cell of taskingData) {
-        const key = `${cell.dayIndex}-${cell.teamRow}`;
-        map[key] = {
-          shiftTime: cell.shiftTime,
-          primaryTask: cell.primaryTask,
-          secondaryTask: cell.secondaryTask,
-        };
-      }
-      setTaskingCells(map);
+  const savePriorityBoard = async () => {
+    try {
+      await savePriorityMut.mutateAsync({
+        weekStart,
+        rows: priorityRows.map((r, i) => ({
+          id: r.id,
+          category: r.category,
+          priority: i + 1,
+          operationId: r.operationId ?? null,
+          operationName: r.operationName ?? null,
+          team: r.team ?? null,
+          requestType: r.requestType ?? null,
+          sortOrder: i,
+        })),
+      });
+      await utils.opManager.getPriorityBoard.invalidate();
+      toast.success("Priority board saved.");
+    } catch {
+      toast.error("Failed to save priority board.");
     }
-  }, [taskingData]);
+  };
 
-  const saveTaskingCellMutation = trpc.opManager.saveTaskingCell.useMutation({
-    onError: (e) => toast.error(e.message),
-  });
+  // ── Tasking Calendar ──────────────────────────────────────────────────────────
+  const updateCell = (
+    teamRow: TeamRow,
+    dayIndex: number,
+    patch: Partial<TaskingCell>
+  ) => {
+    const key = `${teamRow}-${dayIndex}`;
+    setTaskingGrid((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
+  };
 
-  const pendingCellSaves = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-
-  const handleTaskingCellChange = useCallback(
-    (dayIndex: number, teamRow: string, updates: Partial<TaskingCell>) => {
-      const key = `${dayIndex}-${teamRow}`;
-      setTaskingCells((prev) => {
-        const updated = { ...prev[key], ...updates };
-        // Debounce save
-        const existing = pendingCellSaves.current.get(key);
-        if (existing) clearTimeout(existing);
-        const t = setTimeout(() => {
-          saveTaskingCellMutation.mutate({
+  const saveAllTaskingCells = async () => {
+    setIsSavingTasking(true);
+    try {
+      const mutations = TEAM_ROWS.flatMap((teamRow) =>
+        DAYS.map((_, dayIndex) => {
+          const key = `${teamRow}-${dayIndex}`;
+          const cell = taskingGrid[key] ?? {};
+          const shiftTime =
+            cell.shiftTime === "Custom"
+              ? cell.customTime ?? null
+              : cell.shiftTime ?? null;
+          const primaryTask =
+            cell.primaryTask === "Other"
+              ? cell.primaryOther ?? null
+              : cell.primaryTask ?? null;
+          const secondaryTask =
+            cell.secondaryTask === "Other"
+              ? cell.secondaryOther ?? null
+              : cell.secondaryTask ?? null;
+          return saveTaskingCellMut.mutateAsync({
             weekStart,
             dayIndex,
             teamRow,
-            shiftTime: updated.shiftTime ?? null,
-            primaryTask: updated.primaryTask === "Other"
-              ? (updated.primaryTaskFree ? `Other: ${updated.primaryTaskFree}` : "Other")
-              : (updated.primaryTask ?? null),
-            secondaryTask: updated.secondaryTask === "Other"
-              ? (updated.secondaryTaskFree ? `Other: ${updated.secondaryTaskFree}` : "Other")
-              : (updated.secondaryTask ?? null),
+            shiftTime,
+            primaryTask,
+            secondaryTask,
           });
-          pendingCellSaves.current.delete(key);
-        }, 800);
-        pendingCellSaves.current.set(key, t);
-        return { ...prev, [key]: updated };
-      });
-    },
-    [weekStart, saveTaskingCellMutation]
-  );
-
-  // ── Supervisor Contacts ───────────────────────────────────────────────────
-  const [contacts, setContacts] = useState<SupervisorContact[]>([]);
-  const [contactsDirty, setContactsDirty] = useState(false);
-
-  const { data: contactsData, isLoading: contactsLoading } = trpc.opManager.getSupervisorContacts.useQuery(
-    { weekStart }, { staleTime: 30_000 }
-  );
-
-  useEffect(() => {
-    if (contactsData) {
-      setContacts(contactsData.map((c) => ({ ...c, localId: String(c.id ?? Math.random()) })));
-      setContactsDirty(false);
-    } else if (!contactsLoading) {
-      setContacts([]);
+        })
+      );
+      await Promise.all(mutations);
+      await utils.opManager.getTaskingCalendar.invalidate();
+      toast.success("Tasking calendar saved.");
+    } catch {
+      toast.error("Failed to save tasking calendar.");
     }
-  }, [contactsData, contactsLoading]);
-
-  const saveContactsMutation = trpc.opManager.saveSupervisorContacts.useMutation({
-    onSuccess: () => {
-      toast.success("Contacts saved");
-      setContactsDirty(false);
-      utils.opManager.getSupervisorContacts.invalidate({ weekStart });
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const addContact = () => {
-    setContacts((prev) => [
-      ...prev,
-      { localId: `new-${Date.now()}`, role: ROLE_OPTIONS[0], userId: null, customName: null, phone: null, sortOrder: prev.length },
-    ]);
-    setContactsDirty(true);
+    setIsSavingTasking(false);
   };
 
-  const updateContact = useCallback((localId: string, field: keyof SupervisorContact, value: unknown) => {
-    setContacts((prev) => prev.map((c) => (c.localId === localId ? { ...c, [field]: value } : c)));
-    setContactsDirty(true);
-  }, []);
-
-  const deleteContact = useCallback((localId: string) => {
-    setContacts((prev) => prev.filter((c) => c.localId !== localId));
-    setContactsDirty(true);
-  }, []);
-
-  const contactSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { delay: 200, tolerance: 5 } }));
-
-  const handleContactDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    setContacts((prev) => {
-      const oldIdx = prev.findIndex((c) => c.localId === active.id);
-      const newIdx = prev.findIndex((c) => c.localId === over.id);
-      return arrayMove(prev, oldIdx, newIdx).map((c, i) => ({ ...c, sortOrder: i }));
-    });
-    setContactsDirty(true);
-  };
-
-  const saveContacts = () => {
-    saveContactsMutation.mutate({
-      weekStart,
-      contacts: contacts.map((c, i) => ({
+  // ── Contacts ──────────────────────────────────────────────────────────────────
+  const saveContacts = async () => {
+    const all = [
+      ...contacts.map((c, i) => ({
         id: c.id,
         role: c.role,
         userId: c.userId ?? null,
-        customName: c.customName ?? null,
+        customName: null as string | null,
         phone: c.phone ?? null,
         sortOrder: i,
       })),
-    });
-  };
-
-  // ── On-Call Supervisor (local state, stored via contacts with special role) ─
-  const [onCallEntries, setOnCallEntries] = useState<OnCallEntry[]>([]);
-  const [onCallDirty, setOnCallDirty] = useState(false);
-
-  // Load on-call from contacts data (role starts with "On-Call:")
-  useEffect(() => {
-    if (contactsData) {
-      const onCallRows = contactsData
-        .filter((c) => c.role.startsWith("On-Call:"))
-        .map((c) => {
-          const dayScope = c.role.replace("On-Call:", "").trim() || "week";
-          const isOnCall = (c.phone ?? "").startsWith("on-call:");
-          const mobile = isOnCall ? (c.phone ?? "").replace("on-call:", "") : (c.phone ?? "");
-          return {
-            id: c.id,
-            localId: String(c.id ?? Math.random()),
-            dayScope,
-            userId: c.userId ?? null,
-            customName: c.customName ?? null,
-            mobile: mobile || null,
-            isOnCall,
-            sortOrder: c.sortOrder,
-          };
-        });
-      setOnCallEntries(onCallRows);
-      setOnCallDirty(false);
+      ...onCallEntries.map((oc, i) => ({
+        id: oc.id,
+        role: oc.role,
+        userId: oc.userId ?? null,
+        customName: null as string | null,
+        phone: oc.mobile ?? null,
+        sortOrder: contacts.length + i,
+      })),
+    ];
+    try {
+      await saveContactsMut.mutateAsync({ weekStart, contacts: all });
+      await utils.opManager.getSupervisorContacts.invalidate();
+      toast.success("Contacts saved.");
+    } catch {
+      toast.error("Failed to save contacts.");
     }
-  }, [contactsData]);
-
-  const addOnCallEntry = () => {
-    setOnCallEntries((prev) => [
-      ...prev,
-      { localId: `oncall-${Date.now()}`, dayScope: "week", userId: null, customName: null, mobile: null, isOnCall: true, sortOrder: prev.length },
-    ]);
-    setOnCallDirty(true);
   };
 
-  const updateOnCallEntry = useCallback((localId: string, field: keyof OnCallEntry, value: unknown) => {
-    setOnCallEntries((prev) => prev.map((e) => (e.localId === localId ? { ...e, [field]: value } : e)));
-    setOnCallDirty(true);
-  }, []);
-
-  const deleteOnCallEntry = useCallback((localId: string) => {
-    setOnCallEntries((prev) => prev.filter((e) => e.localId !== localId));
-    setOnCallDirty(true);
-  }, []);
-
-  const saveOnCall = () => {
-    // Save on-call entries as supervisor contacts with special role encoding
-    const regularContacts = contacts.filter((c) => !c.role.startsWith("On-Call:"));
-    const onCallAsContacts = onCallEntries.map((e, i) => ({
-      id: e.id,
-      role: `On-Call:${e.dayScope}`,
-      userId: e.userId ?? null,
-      customName: e.customName ?? null,
-      phone: e.isOnCall ? `on-call:${e.mobile ?? ""}` : (e.mobile ?? null),
-      sortOrder: regularContacts.length + i,
-    }));
-    saveContactsMutation.mutate({
-      weekStart,
-      contacts: [
-        ...regularContacts.map((c, i) => ({
-          id: c.id,
-          role: c.role,
-          userId: c.userId ?? null,
-          customName: c.customName ?? null,
-          phone: c.phone ?? null,
-          sortOrder: i,
-        })),
-        ...onCallAsContacts,
-      ],
-    });
-    setOnCallDirty(false);
+  // ── Post & Notify ─────────────────────────────────────────────────────────────
+  const handlePostAndNotify = async () => {
+    try {
+      await postWeekMut.mutateAsync({ weekStart });
+      await utils.opManager.isWeekPosted.invalidate();
+      toast.success("CTO Tasking posted and notifications sent.");
+    } catch {
+      toast.error("Failed to post CTO Tasking.");
+    }
   };
 
-  // ── Role guard ────────────────────────────────────────────────────────────
-  if (user && user.role === "observer") {
-    return (
-      <div className="flex items-center justify-center h-full text-muted-foreground p-8">
-        <p>You do not have access to Operation Manager.</p>
-      </div>
-    );
-  }
+  // ── Create operation inline ───────────────────────────────────────────────────
+  const handleCreateOp = async (
+    name: string,
+    onCreated: (id: number, name: string) => void
+  ) => {
+    if (!name.trim()) return;
+    try {
+      const trimmedName = name.trim();
+      const result = await createOpMut.mutateAsync({
+        name: trimmedName,
+        promisNumber: "",
+        imsNumber: "",
+        investigationUnit: "",
+      });
+      onCreated(result.id, trimmedName);
+      toast.success(`Operation "${trimmedName}" created.`);
+    } catch {
+      toast.error("Failed to create operation.");
+    }
+  };
 
-  // ── View mode ─────────────────────────────────────────────────────────────
+  // ── Navigation for non-admins ─────────────────────────────────────────────────
+  const postedWeekStarts = (postedWeeksQuery.data ?? []).map((p) => p.weekStart);
+  const currentWeekStart = getMondayOfWeek(new Date());
+  const canViewWeek =
+    isAdmin ||
+    weekStart === currentWeekStart ||
+    postedWeekStarts.includes(weekStart);
+  const sortedViewableWeeks = Array.from(
+    new Set([currentWeekStart, ...postedWeekStarts])
+  ).sort();
+  const currentViewIdx = sortedViewableWeeks.indexOf(weekStart);
+
+  const handlePrevWeek = () => {
+    if (isAdmin) setWeekStart((ws) => addWeeks(ws, -1));
+    else if (currentViewIdx > 0)
+      setWeekStart(sortedViewableWeeks[currentViewIdx - 1]);
+  };
+  const handleNextWeek = () => {
+    if (isAdmin) setWeekStart((ws) => addWeeks(ws, 1));
+    else if (currentViewIdx < sortedViewableWeeks.length - 1)
+      setWeekStart(sortedViewableWeeks[currentViewIdx + 1]);
+  };
+
+  const activeOps = (opsQuery.data ?? []).filter(
+    (op) => !op.status || op.status === "active"
+  ).map(op => ({ id: op.id, name: op.name }));
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // FULL VIEW
+  // ─────────────────────────────────────────────────────────────────────────────
   if (viewMode === "view") {
     return (
-      <div className="flex flex-col h-full overflow-auto">
-        {/* Week navigation bar */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border/50 bg-card/50 shrink-0">
-          <div className="flex items-center gap-2">
-            <ClipboardList size={18} className="text-purple-600" />
-            <h1 className="font-semibold text-sm">Operation Manager</h1>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setWeekStart((w) => addWeeks(w, -1))}>
-              <ChevronLeft size={14} />
-            </Button>
-            <span className="text-xs font-medium text-muted-foreground min-w-[200px] text-center">{formatWeekRange(weekStart)}</span>
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setWeekStart((w) => addWeeks(w, 1))}>
-              <ChevronRight size={14} />
-            </Button>
-            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setWeekStart(getMondayOfWeek(new Date()))}>
-              This Week
-            </Button>
-          </div>
-        </div>
-        <CTOTaskingWeekView
+      <div className="min-h-screen bg-background text-foreground">
+        <PageHeader
           weekStart={weekStart}
-          priorityRows={priorityRows}
-          taskingCells={taskingCells}
-          contacts={contacts.filter((c) => !c.role.startsWith("On-Call:"))}
-          onCallEntries={onCallEntries}
-          onEdit={() => setViewMode("edit")}
+          onPrev={handlePrevWeek}
+          onNext={handleNextWeek}
+          prevDisabled={!isAdmin && currentViewIdx <= 0}
+          nextDisabled={
+            !isAdmin && currentViewIdx >= sortedViewableWeeks.length - 1
+          }
+          onBack={() => navigate("/")}
+          rightSlot={
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={subscribed ? unsubscribe : subscribe}
+                title={
+                  subscribed ? "Disable notifications" : "Enable notifications"
+                }
+              >
+                {subscribed ? (
+                  <Bell className="h-4 w-4 text-primary" />
+                ) : (
+                  <BellOff className="h-4 w-4 text-muted-foreground" />
+                )}
+              </Button>
+              {isAdmin && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setViewMode("edit")}
+                    className="gap-1"
+                  >
+                    <Edit2 className="h-3.5 w-3.5" /> Edit
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => window.print()}
+                    className="gap-1"
+                  >
+                    <Printer className="h-3.5 w-3.5" /> Print
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handlePostAndNotify}
+                    disabled={
+                      postWeekMut.isPending || !!postedQuery.data?.posted
+                    }
+                    className="gap-1"
+                  >
+                    {postedQuery.data?.posted ? (
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                    ) : (
+                      <Send className="h-3.5 w-3.5" />
+                    )}
+                    {postedQuery.data?.posted ? "Posted" : "Post & Notify"}
+                  </Button>
+                </>
+              )}
+            </div>
+          }
         />
+
+        {!canViewWeek ? (
+          <div className="flex flex-col items-center justify-center h-64 text-muted-foreground gap-2">
+            <p className="text-base font-medium">
+              No tasking posted for this week yet.
+            </p>
+          </div>
+        ) : (
+          <div className="p-4 space-y-6 max-w-5xl mx-auto print:p-2">
+            <FullViewOnCall
+              onCallEntries={onCallEntries}
+              users={usersQuery.data ?? []}
+            />
+            <FullViewContacts
+              contacts={contacts}
+              users={usersQuery.data ?? []}
+            />
+            <FullViewTasking taskingGrid={taskingGrid} weekStart={weekStart} />
+            <FullViewPriority priorityRows={priorityRows} />
+          </div>
+        )}
       </div>
     );
   }
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // EDIT VIEW (admin only)
+  // ─────────────────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border/50 bg-card/50 shrink-0">
-        <div className="flex items-center gap-2">
-          <ClipboardList size={18} className="text-purple-600" />
-          <h1 className="font-semibold text-sm">Operation Manager</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setWeekStart((w) => addWeeks(w, -1))}>
-            <ChevronLeft size={14} />
-          </Button>
-          <span className="text-xs font-medium text-muted-foreground min-w-[200px] text-center">{formatWeekRange(weekStart)}</span>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setWeekStart((w) => addWeeks(w, 1))}>
-            <ChevronRight size={14} />
-          </Button>
-          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setWeekStart(getMondayOfWeek(new Date()))}>
-            This Week
-          </Button>
+    <div className="min-h-screen bg-background text-foreground">
+      <PageHeader
+        weekStart={weekStart}
+        onPrev={() => setWeekStart((ws) => addWeeks(ws, -1))}
+        onNext={() => setWeekStart((ws) => addWeeks(ws, 1))}
+        onBack={() => navigate("/")}
+        rightSlot={
           <Button
             variant="outline"
             size="sm"
-            className="h-7 text-xs gap-1.5 border-purple-500/50 text-purple-600 hover:bg-purple-500/10"
             onClick={() => setViewMode("view")}
+            className="gap-1"
           >
-            <Eye size={12} /> Full View
+            <Eye className="h-3.5 w-3.5" /> Full View
           </Button>
-        </div>
-      </div>
+        }
+      />
 
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1 overflow-hidden">
-        <div className="px-4 pt-2 shrink-0 border-b border-border/30">
-          <TabsList className="h-8">
-            <TabsTrigger value="priority" className="text-xs h-7 px-3">
-              <ClipboardList size={12} className="mr-1" /> Priority Board
-            </TabsTrigger>
-            <TabsTrigger value="tasking" className="text-xs h-7 px-3">
-              <Calendar size={12} className="mr-1" /> Weekly Tasking
-            </TabsTrigger>
-            <TabsTrigger value="contacts" className="text-xs h-7 px-3">
-              <User size={12} className="mr-1" /> Supervisor Contacts
-            </TabsTrigger>
-            <TabsTrigger value="oncall" className="text-xs h-7 px-3">
-              <Phone size={12} className="mr-1" /> On-Call Supervisor
-            </TabsTrigger>
+      <div className="p-4 max-w-5xl mx-auto">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="mb-4 w-full grid grid-cols-4">
+            <TabsTrigger value="contacts">Contacts</TabsTrigger>
+            <TabsTrigger value="oncall">On-Call</TabsTrigger>
+            <TabsTrigger value="tasking">Tasking</TabsTrigger>
+            <TabsTrigger value="priority">Priority</TabsTrigger>
           </TabsList>
-        </div>
 
-        {/* ── Priority Board ─────────────────────────────────────────────── */}
-        <TabsContent value="priority" className="flex-1 overflow-auto m-0 p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-foreground">Priority Board</h2>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={addPriorityRow}>
-                <Plus size={12} /> Add Row
-              </Button>
+          {/* ── Contacts ──────────────────────────────────────────────────── */}
+          <TabsContent value="contacts" className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold">Supervisor Contacts</h2>
               <Button
                 size="sm"
-                className="h-7 text-xs gap-1 bg-purple-600 hover:bg-purple-700 text-white"
-                onClick={savePriorityBoard}
-                disabled={!priorityDirty || savePriorityMutation.isPending}
+                onClick={saveContacts}
+                disabled={saveContactsMut.isPending}
+                className="gap-1"
               >
-                <Save size={12} /> {savePriorityMutation.isPending ? "Saving…" : "Save"}
+                <Save className="h-3.5 w-3.5" /> Save
               </Button>
             </div>
-          </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-3">
+                {["CTO Inspector", "PTT"].map((role) => (
+                  <ContactRoleCard
+                    key={role}
+                    role={role}
+                    contacts={contacts}
+                    setContacts={setContacts}
+                    users={usersQuery.data ?? []}
+                  />
+                ))}
+              </div>
+              <div className="space-y-3">
+                {["Surveillance Team 1", "Surveillance Team 2"].map((role) => (
+                  <ContactRoleCard
+                    key={role}
+                    role={role}
+                    contacts={contacts}
+                    setContacts={setContacts}
+                    users={usersQuery.data ?? []}
+                  />
+                ))}
+              </div>
+            </div>
+          </TabsContent>
 
-          {priorityLoading ? (
-            <div className="text-xs text-muted-foreground">Loading…</div>
-          ) : (
+          {/* ── On-Call ───────────────────────────────────────────────────── */}
+          <TabsContent value="oncall" className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold">On-Call Supervisor</h2>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    setOnCallEntries((prev) => [
+                      ...prev,
+                      {
+                        localId: uid(),
+                        role: "On-Call Supervisor",
+                        userId: null,
+                        mobile: null,
+                        isOnCall: true,
+                        dayScope: "full",
+                      },
+                    ])
+                  }
+                  className="gap-1"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={saveContacts}
+                  disabled={saveContactsMut.isPending}
+                  className="gap-1"
+                >
+                  <Save className="h-3.5 w-3.5" /> Save
+                </Button>
+              </div>
+            </div>
+            {onCallEntries.length === 0 ? (
+              <div className="text-center py-10 text-muted-foreground">
+                <p className="mb-3">No on-call entries yet.</p>
+                <Button
+                  size="sm"
+                  onClick={() =>
+                    setOnCallEntries([
+                      {
+                        localId: uid(),
+                        role: "On-Call Supervisor",
+                        userId: null,
+                        mobile: null,
+                        isOnCall: true,
+                        dayScope: "full",
+                      },
+                    ])
+                  }
+                  className="gap-1"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add Entry
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {onCallEntries.map((entry) => (
+                  <OnCallEntryEditor
+                    key={entry.localId}
+                    entry={entry}
+                    onChange={(patch) =>
+                      setOnCallEntries((prev) =>
+                        prev.map((e) =>
+                          e.localId === entry.localId ? { ...e, ...patch } : e
+                        )
+                      )
+                    }
+                    onRemove={() =>
+                      setOnCallEntries((prev) =>
+                        prev.filter((e) => e.localId !== entry.localId)
+                      )
+                    }
+                    users={usersQuery.data ?? []}
+                  />
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* ── Tasking ───────────────────────────────────────────────────── */}
+          <TabsContent value="tasking" className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold">
+                Weekly Tasking Calendar
+              </h2>
+              <Button
+                size="sm"
+                onClick={saveAllTaskingCells}
+                disabled={isSavingTasking}
+                className="gap-1"
+              >
+                <Save className="h-3.5 w-3.5" />{" "}
+                {isSavingTasking ? "Saving…" : "Save"}
+              </Button>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-xs border-collapse">
                 <thead>
-                  <tr className="border-b-2 border-border/60 bg-muted/30">
-                    <th className="p-1 w-8"></th>
-                    <th className="p-1 w-8 text-center text-muted-foreground">#</th>
-                    <th className="p-1 text-left font-medium w-28">Category</th>
-                    <th className="p-1 text-left font-medium w-16">Priority</th>
-                    <th className="p-1 text-left font-medium">Operation</th>
-                    <th className="p-1 text-left font-medium w-28">Team</th>
-                    <th className="p-1 text-left font-medium w-32">Request Type</th>
-                    <th className="p-1 w-8"></th>
-                  </tr>
-                </thead>
-                <DndContext sensors={prioritySensors} collisionDetection={closestCenter} onDragEnd={handlePriorityDragEnd}>
-                  <SortableContext items={priorityRows.map((r) => r.localId)} strategy={verticalListSortingStrategy}>
-                    <tbody>
-                      {priorityRows.length === 0 ? (
-                        <tr>
-                          <td colSpan={8} className="text-center py-8 text-muted-foreground">
-                            No rows yet. Click "Add Row" to start.
-                          </td>
-                        </tr>
-                      ) : (
-                        priorityRows.map((row, idx) => (
-                          <SortablePriorityRow
-                            key={row.localId}
-                            row={row}
-                            index={idx}
-                            operations={operations ?? []}
-                            onUpdate={updatePriorityRow}
-                            onDelete={deletePriorityRow}
-                            onCreateOp={(name, localId) => setCreateOpDialog({ open: true, name, localId })}
-                          />
-                        ))
-                      )}
-                    </tbody>
-                  </SortableContext>
-                </DndContext>
-              </table>
-            </div>
-          )}
-        </TabsContent>
-
-        {/* ── Weekly Tasking Calendar ────────────────────────────────────── */}
-        <TabsContent value="tasking" className="flex-1 overflow-auto m-0 p-4">
-          <h2 className="text-sm font-semibold text-foreground mb-3">Weekly Tasking Calendar</h2>
-          <p className="text-[11px] text-muted-foreground mb-3">Changes auto-save after a short delay.</p>
-          {taskingLoading ? (
-            <div className="text-xs text-muted-foreground">Loading…</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="text-xs border-collapse w-full min-w-[1000px]">
-                <thead>
-                  <tr className="bg-muted/30">
-                    <th className="border border-border/40 p-2 text-left font-medium w-28 sticky left-0 bg-muted/30 z-10">Team</th>
-                    {DAY_LABELS.map((day, i) => (
-                      <th key={day} className="border border-border/40 p-2 text-center font-medium">
-                        <span className="block">{day}</span>
-                        <span className="block text-[10px] text-muted-foreground font-normal">{getDayDate(weekStart, i)}</span>
+                  <tr className="bg-muted/50">
+                    <th className="text-left p-2 font-medium border border-border w-28">
+                      Team
+                    </th>
+                    {DAYS.map((d) => (
+                      <th
+                        key={d}
+                        className="text-center p-2 font-medium border border-border min-w-[120px]"
+                      >
+                        {d}
                       </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {TEAM_ROWS.map((teamRow) => (
-                    <tr key={teamRow} className="hover:bg-muted/10 transition-colors">
-                      <td className="border border-border/40 p-2 font-medium text-xs sticky left-0 bg-card z-10 whitespace-nowrap">{teamRow}</td>
-                      {DAY_LABELS.map((_, dayIndex) => {
-                        const key = `${dayIndex}-${teamRow}`;
-                        const cell = taskingCells[key] ?? {};
+                    <tr key={teamRow} className="border-b border-border">
+                      <td className="p-2 font-medium border border-border text-xs">
+                        {TEAM_LABELS[teamRow]}
+                      </td>
+                      {DAYS.map((_, dayIndex) => {
+                        const key = `${teamRow}-${dayIndex}`;
+                        const cell = taskingGrid[key] ?? {};
                         return (
-                          <td key={dayIndex} className="border border-border/40 align-top p-0">
+                          <td
+                            key={dayIndex}
+                            className="p-1 border border-border align-top"
+                          >
                             <TaskingCellEditor
                               cell={cell}
-                              operations={operations ?? []}
-                              onChange={(updates) => handleTaskingCellChange(dayIndex, teamRow, updates)}
+                              onChange={(patch) =>
+                                updateCell(teamRow, dayIndex, patch)
+                              }
+                              opOptions={activeOps}
+                              onCreateOp={handleCreateOp}
                             />
                           </td>
                         );
@@ -1383,147 +864,804 @@ export default function OperationManagerPage() {
                 </tbody>
               </table>
             </div>
-          )}
-        </TabsContent>
+          </TabsContent>
 
-        {/* ── Supervisor Contacts ────────────────────────────────────────── */}
-        <TabsContent value="contacts" className="flex-1 overflow-auto m-0 p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-foreground">Supervisor Contacts</h2>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={addContact}>
-                <Plus size={12} /> Add Contact
-              </Button>
-              <Button
-                size="sm"
-                className="h-7 text-xs gap-1 bg-purple-600 hover:bg-purple-700 text-white"
-                onClick={saveContacts}
-                disabled={!contactsDirty || saveContactsMutation.isPending}
-              >
-                <Save size={12} /> {saveContactsMutation.isPending ? "Saving…" : "Save"}
-              </Button>
+          {/* ── Priority Board ────────────────────────────────────────────── */}
+          <TabsContent value="priority" className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold">Priority Board</h2>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={addPriorityRow}
+                  className="gap-1"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add Row
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={savePriorityBoard}
+                  disabled={savePriorityMut.isPending}
+                  className="gap-1"
+                >
+                  <Save className="h-3.5 w-3.5" /> Save
+                </Button>
+              </div>
             </div>
-          </div>
-          <p className="text-[11px] text-muted-foreground mb-3">
-            Role, name (from user list), and phone number for each supervisor contact.
-          </p>
-          {contactsLoading ? (
-            <div className="text-xs text-muted-foreground">Loading…</div>
-          ) : (
-            <div className="max-w-2xl">
-              <DndContext sensors={contactSensors} collisionDetection={closestCenter} onDragEnd={handleContactDragEnd}>
-                <SortableContext items={contacts.filter((c) => !c.role.startsWith("On-Call:")).map((c) => c.localId)} strategy={verticalListSortingStrategy}>
-                  {contacts.filter((c) => !c.role.startsWith("On-Call:")).length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground text-xs">
-                      No contacts yet. Click "Add Contact" to start.
-                    </div>
-                  ) : (
-                    contacts
-                      .filter((c) => !c.role.startsWith("On-Call:"))
-                      .map((contact) => (
-                        <SortableContactRow
-                          key={contact.localId}
-                          contact={contact}
-                          users={userList}
-                          onUpdate={updateContact}
-                          onDelete={deleteContact}
-                        />
-                      ))
-                  )}
-                </SortableContext>
-              </DndContext>
-            </div>
-          )}
-        </TabsContent>
-
-        {/* ── On-Call Supervisor ─────────────────────────────────────────── */}
-        <TabsContent value="oncall" className="flex-1 overflow-auto m-0 p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-foreground">On-Call Supervisor</h2>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={addOnCallEntry}>
-                <Plus size={12} /> Add Entry
-              </Button>
-              <Button
-                size="sm"
-                className="h-7 text-xs gap-1 bg-purple-600 hover:bg-purple-700 text-white"
-                onClick={saveOnCall}
-                disabled={!onCallDirty || saveContactsMutation.isPending}
-              >
-                <Save size={12} /> {saveContactsMutation.isPending ? "Saving…" : "Save"}
-              </Button>
-            </div>
-          </div>
-          <p className="text-[11px] text-muted-foreground mb-3">
-            Select a day (or Full Week), choose the supervisor from the user list, enter their mobile, and mark if they are on-call.
-          </p>
-          {contactsLoading ? (
-            <div className="text-xs text-muted-foreground">Loading…</div>
-          ) : (
-            <div className="max-w-2xl">
-              {onCallEntries.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground text-xs">
-                  No on-call entries yet. Click "Add Entry" to start.
-                </div>
-              ) : (
-                onCallEntries.map((entry) => (
-                  <OnCallEntryRow
-                    key={entry.localId}
-                    entry={entry}
-                    users={userList}
-                    onUpdate={updateOnCallEntry}
-                    onDelete={deleteOnCallEntry}
+            {priorityRows.length === 0 ? (
+              <div className="text-center py-10 text-muted-foreground">
+                <p className="mb-3">No priority rows yet.</p>
+                <Button size="sm" onClick={addPriorityRow} className="gap-1">
+                  <Plus className="h-3.5 w-3.5" /> Add First Row
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {priorityRows.map((row, idx) => (
+                  <PriorityRowEditor
+                    key={row.localId}
+                    row={row}
+                    idx={idx}
+                    onChange={(patch) => updatePriorityRow(row.localId, patch)}
+                    onRemove={() => removePriorityRow(row.localId)}
+                    opOptions={activeOps}
+                    onCreateOp={handleCreateOp}
                   />
-                ))
-              )}
-            </div>
-          )}
-        </TabsContent>
-      </Tabs>
-
-      {/* Inline Create Operation Dialog */}
-      <Dialog
-        open={createOpDialog.open}
-        onOpenChange={(open) => !open && setCreateOpDialog({ open: false, name: "", localId: "" })}
-      >
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-sm">Create New Operation</DialogTitle>
-          </DialogHeader>
-          <div className="py-2">
-            <label className="text-xs text-muted-foreground mb-1 block">Operation Name</label>
-            <Input
-              value={createOpDialog.name}
-              onChange={(e) => setCreateOpDialog((prev) => ({ ...prev, name: e.target.value }))}
-              className="h-8 text-sm"
-              placeholder="Enter operation name"
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && createOpDialog.name.trim()) {
-                  createOpMutation.mutate({ name: createOpDialog.name.trim() });
-                }
-              }}
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" size="sm" onClick={() => setCreateOpDialog({ open: false, name: "", localId: "" })}>
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              className="bg-purple-600 hover:bg-purple-700 text-white"
-              onClick={() => {
-                if (createOpDialog.name.trim()) {
-                  createOpMutation.mutate({ name: createOpDialog.name.trim() });
-                }
-              }}
-              disabled={!createOpDialog.name.trim() || createOpMutation.isPending}
-            >
-              {createOpMutation.isPending ? "Creating…" : "Create"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
+      </div>
     </div>
+  );
+}
+
+// ─── PageHeader ───────────────────────────────────────────────────────────────
+function PageHeader({
+  weekStart,
+  onPrev,
+  onNext,
+  onBack,
+  prevDisabled,
+  nextDisabled,
+  rightSlot,
+}: {
+  weekStart: string;
+  onPrev: () => void;
+  onNext: () => void;
+  onBack: () => void;
+  prevDisabled?: boolean;
+  nextDisabled?: boolean;
+  rightSlot?: React.ReactNode;
+}) {
+  return (
+    <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border px-4 py-3 flex items-center gap-3">
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={onBack}
+        className="shrink-0"
+      >
+        <ArrowLeft className="h-4 w-4" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={onPrev}
+        disabled={prevDisabled}
+      >
+        <ChevronLeft className="h-4 w-4" />
+      </Button>
+      <div className="flex-1 min-w-0 text-center">
+        <p className="text-sm font-semibold truncate">
+          {formatWeekLabel(weekStart)}
+        </p>
+      </div>
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={onNext}
+        disabled={nextDisabled}
+      >
+        <ChevronRight className="h-4 w-4" />
+      </Button>
+      {rightSlot}
+    </div>
+  );
+}
+
+// ─── ContactRoleCard ──────────────────────────────────────────────────────────
+function ContactRoleCard({
+  role,
+  contacts,
+  setContacts,
+  users,
+}: {
+  role: string;
+  contacts: ContactEntry[];
+  setContacts: React.Dispatch<React.SetStateAction<ContactEntry[]>>;
+  users: { id: number; name: string; cin: string | null }[];
+}) {
+  const entry = contacts.find((c) => c.role === role);
+
+  const update = (patch: Partial<ContactEntry>) => {
+    setContacts((prev) => {
+      const idx = prev.findIndex((c) => c.role === role);
+      if (idx >= 0)
+        return prev.map((c, i) => (i === idx ? { ...c, ...patch } : c));
+      return [
+        ...prev,
+        {
+          localId: uid(),
+          role,
+          userId: null,
+          phone: null,
+          sortOrder: prev.length,
+          ...patch,
+        },
+      ];
+    });
+  };
+
+  return (
+    <div className="rounded-lg border border-border p-3 space-y-2">
+      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+        {role}
+      </p>
+      <Select
+        value={entry?.userId ? String(entry.userId) : "__none__"}
+        onValueChange={(v) =>
+          update({ userId: v === "__none__" ? null : Number(v) })
+        }
+      >
+        <SelectTrigger className="h-8 text-xs">
+          <SelectValue placeholder="Select user…" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__none__">— None —</SelectItem>
+          {users.map((u) => (
+            <SelectItem key={u.id} value={String(u.id)}>
+              {u.name}
+              {u.cin ? ` (${u.cin})` : ""}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Input
+        className="h-8 text-xs"
+        placeholder="Phone / mobile"
+        value={entry?.phone ?? ""}
+        onChange={(e) => update({ phone: e.target.value })}
+      />
+    </div>
+  );
+}
+
+// ─── TaskingCellEditor ────────────────────────────────────────────────────────
+function TaskingCellEditor({
+  cell,
+  onChange,
+  opOptions,
+  onCreateOp,
+}: {
+  cell: TaskingCell;
+  onChange: (patch: Partial<TaskingCell>) => void;
+  opOptions: { id: number; name: string }[];
+  onCreateOp: (
+    name: string,
+    onCreated: (id: number, name: string) => void
+  ) => void;
+}) {
+  const shiftVal = cell.shiftTime ?? "";
+  const isCustom = shiftVal === "Custom";
+
+  const taskOpts = [
+    { value: "Training", label: "📋 Training" },
+    { value: "Other", label: "✏️ Other (free text)" },
+    ...opOptions.map((op) => ({ value: op.name, label: op.name })),
+  ];
+
+  return (
+    <div className="space-y-1">
+      {/* Shift */}
+      <Select
+        value={shiftVal || "__none__"}
+        onValueChange={(v) => {
+          if (v === "__none__") onChange({ shiftTime: null, customTime: "" });
+          else onChange({ shiftTime: v, customTime: "" });
+        }}
+      >
+        <SelectTrigger className="h-7 text-[11px] w-full">
+          <SelectValue placeholder="Shift…" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__none__">— None —</SelectItem>
+          {SHIFT_OPTIONS.map((s) => (
+            <SelectItem key={s} value={s}>
+              {s}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {isCustom && (
+        <Input
+          className="h-7 text-[11px]"
+          placeholder="e.g. 0800-1600"
+          value={cell.customTime ?? ""}
+          onChange={(e) => onChange({ customTime: e.target.value })}
+        />
+      )}
+      {/* Primary task */}
+      <TaskSelect
+        placeholder="Primary…"
+        value={cell.primaryTask ?? ""}
+        otherValue={cell.primaryOther ?? ""}
+        onChange={(v, other) =>
+          onChange({ primaryTask: v, primaryOther: other })
+        }
+        taskOpts={taskOpts}
+        onCreateOp={(name) =>
+          onCreateOp(name, (_, opName) =>
+            onChange({ primaryTask: opName, primaryOther: "" })
+          )
+        }
+      />
+      {/* Secondary task */}
+      <TaskSelect
+        placeholder="Secondary…"
+        value={cell.secondaryTask ?? ""}
+        otherValue={cell.secondaryOther ?? ""}
+        onChange={(v, other) =>
+          onChange({ secondaryTask: v, secondaryOther: other })
+        }
+        taskOpts={taskOpts}
+        onCreateOp={(name) =>
+          onCreateOp(name, (_, opName) =>
+            onChange({ secondaryTask: opName, secondaryOther: "" })
+          )
+        }
+      />
+    </div>
+  );
+}
+
+function TaskSelect({
+  placeholder,
+  value,
+  otherValue,
+  onChange,
+  taskOpts,
+  onCreateOp,
+}: {
+  placeholder: string;
+  value: string;
+  otherValue: string;
+  onChange: (v: string, other: string) => void;
+  taskOpts: { value: string; label: string }[];
+  onCreateOp: (name: string) => void;
+}) {
+  const [addingOp, setAddingOp] = useState(false);
+  const [newName, setNewName] = useState("");
+
+  return (
+    <div className="space-y-1">
+      <Select
+        value={value || "__none__"}
+        onValueChange={(v) => {
+          if (v === "__add__") {
+            setAddingOp(true);
+            return;
+          }
+          if (v === "__none__") onChange("", "");
+          else onChange(v, "");
+        }}
+      >
+        <SelectTrigger className="h-7 text-[11px] w-full">
+          <SelectValue placeholder={placeholder} />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__none__">— None —</SelectItem>
+          {taskOpts.map((o) => (
+            <SelectItem key={o.value} value={o.value}>
+              {o.label}
+            </SelectItem>
+          ))}
+          <SelectItem value="__add__" className="text-primary">
+            + Add Operation
+          </SelectItem>
+        </SelectContent>
+      </Select>
+      {value === "Other" && (
+        <Input
+          className="h-7 text-[11px]"
+          placeholder="Describe task…"
+          value={otherValue}
+          onChange={(e) => onChange("Other", e.target.value)}
+        />
+      )}
+      {addingOp && (
+        <div className="flex gap-1">
+          <Input
+            className="h-7 text-[11px] flex-1"
+            placeholder="Op name…"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            autoFocus
+          />
+          <Button
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => {
+              onCreateOp(newName);
+              setNewName("");
+              setAddingOp(false);
+            }}
+          >
+            <Plus className="h-3 w-3" />
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── PriorityRowEditor ────────────────────────────────────────────────────────
+function PriorityRowEditor({
+  row,
+  idx,
+  onChange,
+  onRemove,
+  opOptions,
+  onCreateOp,
+}: {
+  row: PriorityRow;
+  idx: number;
+  onChange: (patch: Partial<PriorityRow>) => void;
+  onRemove: () => void;
+  opOptions: { id: number; name: string }[];
+  onCreateOp: (
+    name: string,
+    onCreated: (id: number, name: string) => void
+  ) => void;
+}) {
+  const [addingOp, setAddingOp] = useState(false);
+  const [newOpName, setNewOpName] = useState("");
+  const reqTypes = row.requestType
+    ? row.requestType.split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
+
+  const toggleReqType = (rt: string) => {
+    const next = reqTypes.includes(rt)
+      ? reqTypes.filter((r) => r !== rt)
+      : [...reqTypes, rt];
+    onChange({ requestType: next.join(", ") });
+  };
+
+  return (
+    <div className="rounded-lg border border-border p-3 space-y-2">
+      <div className="flex items-center gap-2">
+        <Badge variant="outline" className="text-xs shrink-0">
+          #{idx + 1}
+        </Badge>
+        <Select
+          value={row.category}
+          onValueChange={(v) => onChange({ category: v })}
+        >
+          <SelectTrigger className="h-8 text-xs flex-1">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {CATEGORIES.map((c) => (
+              <SelectItem key={c} value={c}>
+                {c}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-8 w-8 shrink-0 text-destructive"
+          onClick={onRemove}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+      {/* Operation */}
+      <div className="space-y-1">
+        <Select
+          value={row.operationName ?? "__none__"}
+          onValueChange={(v) => {
+            if (v === "__none__") {
+              onChange({ operationId: null, operationName: null });
+            } else if (v === "__add__") {
+              setAddingOp(true);
+            } else {
+              const op = opOptions.find((o) => o.name === v);
+              onChange({ operationId: op?.id ?? null, operationName: v });
+            }
+          }}
+        >
+          <SelectTrigger className="h-8 text-xs w-full">
+            <SelectValue placeholder="Select operation…" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">— None —</SelectItem>
+            {opOptions.map((op) => (
+              <SelectItem key={op.id} value={op.name}>
+                {op.name}
+              </SelectItem>
+            ))}
+            <SelectItem value="__add__" className="text-primary">
+              + Add Operation
+            </SelectItem>
+          </SelectContent>
+        </Select>
+        {addingOp && (
+          <div className="flex gap-1">
+            <Input
+              className="h-8 text-xs flex-1"
+              placeholder="Operation name…"
+              value={newOpName}
+              onChange={(e) => setNewOpName(e.target.value)}
+              autoFocus
+            />
+            <Button
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => {
+                onCreateOp(newOpName, (id, name) =>
+                  onChange({ operationId: id, operationName: name })
+                );
+                setNewOpName("");
+                setAddingOp(false);
+              }}
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        )}
+      </div>
+      {/* Team */}
+      <Input
+        className="h-8 text-xs"
+        placeholder="Team (e.g. Surv 1)"
+        value={row.team ?? ""}
+        onChange={(e) => onChange({ team: e.target.value })}
+      />
+      {/* Request Type multi-select */}
+      <div className="flex flex-wrap gap-3">
+        {REQUEST_TYPES.map((rt) => (
+          <label
+            key={rt}
+            className="flex items-center gap-1.5 cursor-pointer text-xs"
+          >
+            <Checkbox
+              checked={reqTypes.includes(rt)}
+              onCheckedChange={() => toggleReqType(rt)}
+            />
+            {rt}
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── OnCallEntryEditor ────────────────────────────────────────────────────────
+function OnCallEntryEditor({
+  entry,
+  onChange,
+  onRemove,
+  users,
+}: {
+  entry: OnCallEntry;
+  onChange: (patch: Partial<OnCallEntry>) => void;
+  onRemove: () => void;
+  users: { id: number; name: string; cin: string | null }[];
+}) {
+  return (
+    <div className="rounded-lg border border-border p-3 space-y-2">
+      <div className="flex items-center gap-2">
+        <Select
+          value={entry.role}
+          onValueChange={(v) => onChange({ role: v })}
+        >
+          <SelectTrigger className="h-8 text-xs flex-1">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {ON_CALL_ROLES.map((r) => (
+              <SelectItem key={r} value={r}>
+                {r}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-8 w-8 text-destructive shrink-0"
+          onClick={onRemove}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+      <Select
+        value={entry.userId ? String(entry.userId) : "__none__"}
+        onValueChange={(v) =>
+          onChange({ userId: v === "__none__" ? null : Number(v) })
+        }
+      >
+        <SelectTrigger className="h-8 text-xs w-full">
+          <SelectValue placeholder="Select user…" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__none__">— None —</SelectItem>
+          {users.map((u) => (
+            <SelectItem key={u.id} value={String(u.id)}>
+              {u.name}
+              {u.cin ? ` (${u.cin})` : ""}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Input
+        className="h-8 text-xs"
+        placeholder="Mobile number"
+        value={entry.mobile ?? ""}
+        onChange={(e) => onChange({ mobile: e.target.value })}
+      />
+      <div className="flex flex-wrap gap-2 items-center">
+        <span className="text-xs text-muted-foreground">Day:</span>
+        {["full", ...DAYS].map((d) => (
+          <button
+            key={d}
+            onClick={() => onChange({ dayScope: d })}
+            className={cn(
+              "text-xs px-2 py-0.5 rounded border transition-colors",
+              entry.dayScope === d
+                ? "bg-primary text-primary-foreground border-primary"
+                : "border-border hover:bg-muted"
+            )}
+          >
+            {d === "full" ? "Full Week" : d}
+          </button>
+        ))}
+      </div>
+      <label className="flex items-center gap-2 cursor-pointer text-xs">
+        <Checkbox
+          checked={entry.isOnCall}
+          onCheckedChange={(v) => onChange({ isOnCall: !!v })}
+        />
+        On-Call
+      </label>
+    </div>
+  );
+}
+
+// ─── Full View sub-components ─────────────────────────────────────────────────
+function FullViewOnCall({
+  onCallEntries,
+  users,
+}: {
+  onCallEntries: OnCallEntry[];
+  users: { id: number; name: string; cin: string | null }[];
+}) {
+  if (onCallEntries.length === 0) return null;
+  return (
+    <section>
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+        On-Call Supervisors
+      </h2>
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+        {onCallEntries.map((oc, i) => {
+          const user = users.find((u) => u.id === oc.userId);
+          const name = user?.name ?? "—";
+          return (
+            <div
+              key={i}
+              className="rounded-lg border border-border p-3 space-y-1"
+            >
+              <p className="text-xs font-semibold text-muted-foreground">
+                {oc.role}
+              </p>
+              <p className="text-sm font-medium">{name}</p>
+              {oc.mobile && (
+                <p className="text-xs text-muted-foreground">{oc.mobile}</p>
+              )}
+              <div className="flex gap-2 flex-wrap">
+                {oc.isOnCall && (
+                  <Badge variant="secondary" className="text-xs">
+                    On-Call
+                  </Badge>
+                )}
+                {oc.dayScope !== "full" && (
+                  <Badge variant="outline" className="text-xs">
+                    {oc.dayScope}
+                  </Badge>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function FullViewContacts({
+  contacts,
+  users,
+}: {
+  contacts: ContactEntry[];
+  users: { id: number; name: string; cin: string | null }[];
+}) {
+  const renderCard = (role: string) => {
+    const c = contacts.find((x) => x.role === role);
+    const user = users.find((u) => u.id === c?.userId);
+    const name = user?.name ?? "—";
+    return (
+      <div key={role} className="rounded-lg border border-border p-3 space-y-1">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+          {role}
+        </p>
+        <p className="text-sm font-medium">{name}</p>
+        {c?.phone && (
+          <p className="text-xs text-muted-foreground">{c.phone}</p>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <section>
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+        Supervisor Contacts
+      </h2>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-3">
+          {["CTO Inspector", "PTT"].map(renderCard)}
+        </div>
+        <div className="space-y-3">
+          {["Surveillance Team 1", "Surveillance Team 2"].map(renderCard)}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FullViewTasking({
+  taskingGrid,
+  weekStart,
+}: {
+  taskingGrid: Record<string, TaskingCell>;
+  weekStart: string;
+}) {
+  return (
+    <section>
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+        Weekly Tasking
+      </h2>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs border-collapse">
+          <thead>
+            <tr className="bg-muted/50">
+              <th className="text-left p-2 font-medium border border-border w-28">
+                Team
+              </th>
+              {DAYS.map((d) => (
+                <th
+                  key={d}
+                  className="text-center p-2 font-medium border border-border min-w-[90px]"
+                >
+                  {d}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {TEAM_ROWS.map((teamRow) => (
+              <tr key={teamRow}>
+                <td className="p-2 font-medium border border-border">
+                  {TEAM_LABELS[teamRow]}
+                </td>
+                {DAYS.map((_, dayIndex) => {
+                  const key = `${teamRow}-${dayIndex}`;
+                  const cell = taskingGrid[key] ?? {};
+                  const shift =
+                    cell.shiftTime === "Custom"
+                      ? cell.customTime ?? "Custom"
+                      : cell.shiftTime ?? "";
+                  const primary =
+                    cell.primaryTask === "Other"
+                      ? cell.primaryOther ?? ""
+                      : cell.primaryTask ?? "";
+                  const secondary =
+                    cell.secondaryTask === "Other"
+                      ? cell.secondaryOther ?? ""
+                      : cell.secondaryTask ?? "";
+                  return (
+                    <td
+                      key={dayIndex}
+                      className={cn(
+                        "p-2 border border-border align-top",
+                        shift === "RDO" && "bg-muted/30"
+                      )}
+                    >
+                      {shift && (
+                        <p
+                          className={cn(
+                            "font-semibold",
+                            shift === "RDO"
+                              ? "text-muted-foreground"
+                              : "text-primary"
+                          )}
+                        >
+                          {shift}
+                        </p>
+                      )}
+                      {primary && <p className="mt-0.5 truncate">{primary}</p>}
+                      {secondary && (
+                        <p className="text-muted-foreground truncate">
+                          {secondary}
+                        </p>
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function FullViewPriority({ priorityRows }: { priorityRows: PriorityRow[] }) {
+  if (priorityRows.length === 0) return null;
+  return (
+    <section>
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+        Priority Board
+      </h2>
+      <div className="rounded-lg border border-border overflow-hidden">
+        <table className="w-full text-xs">
+          <thead className="bg-muted/50">
+            <tr>
+              <th className="text-left p-2 font-medium border-b border-border w-8">
+                #
+              </th>
+              <th className="text-left p-2 font-medium border-b border-border">
+                Category
+              </th>
+              <th className="text-left p-2 font-medium border-b border-border">
+                Operation
+              </th>
+              <th className="text-left p-2 font-medium border-b border-border">
+                Team
+              </th>
+              <th className="text-left p-2 font-medium border-b border-border">
+                Request Type
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {priorityRows.map((row, i) => (
+              <tr key={i} className="border-b border-border last:border-0">
+                <td className="p-2 text-muted-foreground">{i + 1}</td>
+                <td className="p-2 font-medium">{row.category}</td>
+                <td className="p-2">{row.operationName ?? "—"}</td>
+                <td className="p-2">{row.team ?? "—"}</td>
+                <td className="p-2">{row.requestType ?? "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }

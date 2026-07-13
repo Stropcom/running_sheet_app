@@ -728,3 +728,21 @@
 - [x] Supervisor Contacts: Phone → free text (keep as-is)
 - [x] New tab: On-Call Supervisor — name dropdown (users), mobile free text, on-call toggle, day selector (individual day or full week)
 - [x] Full-page CTO Tasking Week view (read-only summary of all tabs for the selected week) with Edit button to return to edit mode
+
+## Operation Manager Enhancements (Round 3)
+- [x] Back button on OperationManagerPage header (navigates to home)
+- [x] Contacts layout: On-Call Supervisor section at top of Full View and contacts tab
+- [x] Contacts layout: 2-column fixed grid — Left col: CTO Inspector (top), PTT (below); Right col: Surv Team 1 (top), Surv Team 2 (below)
+- [x] Shift auto-populate: Surv 1 starts on day shift this week (week of 2026-07-14), alternates each week; Surv 2 opposite
+- [x] Day shift defaults: Mon–Fri 0700–1500, Sat–Sun RDO
+- [x] Afternoon shift defaults: Mon RDO, Tue–Thu 1400–2200, Fri 1000–1800, Sat–Sun RDO
+- [x] PTT and Cap. Support rows: default all days to blank (no auto-fill)
+- [x] Save button on Weekly Tasking Calendar tab (manual save in addition to auto-save)
+- [x] Previous-week template: when opening a new week with no data, auto-copy previous week as starting template (editable)
+- [x] Post & Notify button on Full View — sends push notification to all users ("New CTO Tasking Posted for [week]")
+- [x] DB: op_manager_posted_weeks table (weekStart, postedAt, postedBy) to track which weeks have been posted
+- [x] tRPC: opManager.postWeek mutation (admin only) — saves posted record + sends notification to all users
+- [x] tRPC: opManager.getPostedWeeks query — returns list of posted weekStarts
+- [x] Role-based access: only admin/Full Access+User Management can edit; all other users see read-only Full View
+- [x] Read-only users: on clicking Op Manager, show current week Full View; can navigate to next week if posted
+- [x] No "Add Operation" button shown when no operations exist — show empty state message instead (fix)

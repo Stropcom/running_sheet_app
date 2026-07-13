@@ -301,17 +301,17 @@ export default function AdminPage() {
         </div>
 
         {/* Table */}
-        <div className="rounded-xl border border-border/60 overflow-hidden bg-card/50">
-          <Table>
+        <div className="rounded-xl border border-border/60 overflow-hidden bg-card/50 overflow-x-auto">
+          <Table className="min-w-[600px]">
             <TableHeader>
               <TableRow className="border-border/60 bg-muted/30">
                 <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Name</TableHead>
                 <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium">CIN</TableHead>
-                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Unit</TableHead>
-                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Team</TableHead>
-                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Username</TableHead>
+                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium hidden sm:table-cell">Unit</TableHead>
+                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium hidden sm:table-cell">Team</TableHead>
+                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium hidden md:table-cell">Username</TableHead>
                 <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Access Level</TableHead>
-                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Last Sign In</TableHead>
+                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium hidden lg:table-cell">Last Sign In</TableHead>
                 <TableHead className="w-20" />
               </TableRow>
             </TableHeader>
@@ -338,9 +338,9 @@ export default function AdminPage() {
                       )}
                     </TableCell>
                     <TableCell className="font-mono text-sm text-foreground/80">{u.cin || "—"}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{u.unit || "—"}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{u.team ? u.team.replace("TEAM", "TEAM ") : "—"}</TableCell>
-                    <TableCell className="font-mono text-sm text-muted-foreground">{u.username}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground hidden sm:table-cell">{u.unit || "—"}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground hidden sm:table-cell">{u.team ? u.team.replace("TEAM", "TEAM ") : "—"}</TableCell>
+                    <TableCell className="font-mono text-sm text-muted-foreground hidden md:table-cell">{u.username}</TableCell>
                     <TableCell>
                       <span
                         className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border ${ROLE_COLORS[u.role as Role]}`}
@@ -349,7 +349,7 @@ export default function AdminPage() {
                         {u.role}
                       </span>
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
+                    <TableCell className="text-xs text-muted-foreground hidden lg:table-cell">
                       {u.lastSignedIn ? new Date(u.lastSignedIn).toLocaleString() : "Never"}
                     </TableCell>
                     <TableCell>

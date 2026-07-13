@@ -802,3 +802,15 @@
 - [x] Fix: Team 1 and Team 2 contacts not saving/displaying correctly in Full View
 - [x] Copy to Next Week: swap Team 1/2 shifts (day↔afternoon) using auto-populated defaults for next week
 - [x] Copy to Next Week: all other details (contacts, priority board, PTT/Cap.Support tasks) copy as-is
+
+## PDF Export Image Fix (Round 8)
+- [ ] Fix: embedded images not rendering in the running sheet visual PDF/print export
+- [ ] Root cause: image src URLs (S3 presigned or relative paths) are blocked by the print window's security context
+- [ ] Fix: fetch each image as a base64 data URL before building the print HTML, then inline as data:image/... src
+
+## Visual RS Map Image Fix (Round 9)
+- [x] Fix: embedded map image blank/broken in Visual RS PDF export
+- [x] Root cause: html2canvas cannot capture cross-origin Google Maps tiles (browser security restriction)
+- [x] Fix: added server-side tRPC procedure rsMapping.getStaticMapImage that fetches Google Static Maps API via Manus proxy and returns base64 data URL
+- [x] Updated exportVisualRsPdf in RSMappingEmbedded.tsx to call the new procedure instead of html2canvas
+- [x] Removed html2canvas import from RSMappingEmbedded.tsx

@@ -14,8 +14,8 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import html2canvas from "html2canvas";
 import { trpc } from "@/lib/trpc";
+import { trpcClient } from "@/lib/trpc";
 import { MapView } from "@/components/Map";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -808,24 +808,32 @@ export default function RSMappingEmbedded() {
     if (!mapContainerRef.current) { toast.error("Map container not ready"); return; }
 
     setPdfExporting(true);
-    toast.info("Capturing map…");
+    toast.info("Fetching map image…");
 
     let mapImageDataUrl = "";
     try {
-      const canvas = await html2canvas(mapContainerRef.current, {
-        useCORS: true,
-        allowTaint: true,
-        scale: 1.5,
-        logging: false,
-        ignoreElements: (el) => {
-          // Ignore the overlay popup cards themselves so they don't double-render
-          return false;
-        },
+      // Build waypoint list for the static map request
+      const waypointInput = placed.map((wp) => ({
+        lat: wp.lat,
+        lng: wp.lng,
+        index: wp.index,
+        colour: wp.markerColour ?? undefined,
+      }));
+
+      // Get current map center and zoom from the live Google Maps instance
+      const mapCenter = mapRef.current?.getCenter();
+      const mapZoom = mapRef.current?.getZoom();
+
+      const result = await trpcClient.rsMapping.getStaticMapImage.query({
+        waypoints: waypointInput,
+        center: mapCenter ? { lat: mapCenter.lat(), lng: mapCenter.lng() } : undefined,
+        zoom: mapZoom ?? undefined,
+        size: "800x500",
       });
-      mapImageDataUrl = canvas.toDataURL("image/jpeg", 0.92);
+      mapImageDataUrl = result.dataUrl;
     } catch (err) {
-      console.warn("Map capture failed:", err);
-      toast.warning("Map capture failed — PDF will include a placeholder");
+      console.warn("Map image fetch failed:", err);
+      toast.warning("Map image unavailable — PDF will include a placeholder");
     }
 
     const rows = placed.map((wp) => ({

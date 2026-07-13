@@ -373,10 +373,6 @@ function DashboardLayoutContent({
   useEffect(() => {
     if (homePrefsData?.mode) {
       setHomeMode(homePrefsData.mode as "folder" | "tile");
-      // If tile mode is active and we're at the root, redirect to tile home
-      if (homePrefsData.mode === "tile" && location === "/") {
-        setLocation("/tile-home");
-      }
     }
   }, [homePrefsData]);
 

@@ -180,6 +180,7 @@ const pwaPlugin = VitePWA({
     ],
   },
   workbox: {
+    maximumFileSizeToCacheInBytes: 4 * 1024 * 1024, // 4 MiB — bundle is ~2.1 MiB
     globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
     runtimeCaching: [
       {

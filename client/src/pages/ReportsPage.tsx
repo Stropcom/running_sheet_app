@@ -50,7 +50,7 @@ interface TodoUser {
 // ─── Category config ──────────────────────────────────────────────────────────
 
 const CATEGORIES = [
-  { id: "operation",    label: "Operation",           icon: FileText,    color: "text-orange-400" },
+  { id: "operation",    label: "Operation",           icon: FileText,    color: "text-blue-700" },
   { id: "team",         label: "Team",                icon: Users,       color: "text-blue-400" },
   { id: "teamLeader",   label: "Team Leader",         icon: Shield,      color: "text-amber-400" },
   { id: "author",       label: "Author",              icon: PenLine,     color: "text-violet-400" },
@@ -164,7 +164,7 @@ function ByOperation({ sheets, onNavigate }: { sheets: IncompleteSheet[]; onNavi
   return (
     <div className="flex flex-col gap-2">
       {grouped.map(([opName, group]) => (
-        <GroupPanel key={opName} title={opName} count={group.length} icon={FileText} iconColor="text-orange-400">
+        <GroupPanel key={opName} title={opName} count={group.length} icon={FileText} iconColor="text-blue-700">
           {group.map((s) => <SheetCard key={s.sheetId} sheet={s} onNavigate={onNavigate} />)}
         </GroupPanel>
       ))}
@@ -411,7 +411,7 @@ export default function ReportsPage() {
         {/* Category toggles */}
         <div>
           <p className="text-xs text-muted-foreground mb-2 font-medium uppercase tracking-wide">Show categories</p>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
             {CATEGORIES.map((cat) => {
               const Icon = cat.icon;
               const active = activeCategories.has(cat.id);
@@ -419,14 +419,14 @@ export default function ReportsPage() {
                 <button
                   key={cat.id}
                   onClick={() => toggleCategory(cat.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${
+                  className={`flex flex-col items-center justify-center gap-1.5 px-2 py-2.5 rounded-xl border text-xs font-medium transition-all ${
                     active
                       ? "border-border bg-accent text-foreground"
                       : "border-border/40 bg-transparent text-muted-foreground hover:border-border hover:text-foreground"
                   }`}
                 >
-                  <Icon className={`h-3.5 w-3.5 ${active ? cat.color : "text-muted-foreground"}`} />
-                  {cat.label}
+                  <Icon className={`h-4 w-4 ${active ? cat.color : "text-muted-foreground"}`} />
+                  <span className="text-center leading-tight">{cat.label}</span>
                 </button>
               );
             })}
@@ -458,7 +458,7 @@ export default function ReportsPage() {
             {activeCategories.has("operation") && (
               <section>
                 <div className="flex items-center gap-2 mb-2">
-                  <FileText className="h-4 w-4 text-orange-400" />
+                  <FileText className="h-4 w-4 text-blue-700" />
                   <h2 className="text-sm font-semibold text-foreground">By Operation</h2>
                 </div>
                 <ByOperation sheets={sheets as IncompleteSheet[]} onNavigate={handleNavigate} />

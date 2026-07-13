@@ -230,9 +230,9 @@ function DashboardLayoutContent({
                   isActive={location === "/" || location.startsWith("/operation/") || location.startsWith("/sheet/")}
                   onClick={() => setLocation("/")}
                   tooltip="Operations"
-                  className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-cyan-400/50 shadow-sm"
+                  className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-blue-700/50 shadow-sm"
                 >
-                  <FileText className="h-4 w-4 text-cyan-400" />
+                  <FileText className="h-4 w-4 text-blue-700" />
                   <span className={`flex-1 ${location === "/" || location.startsWith("/operation/") || location.startsWith("/sheet/") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
                     Operations
                   </span>

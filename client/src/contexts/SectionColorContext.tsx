@@ -16,10 +16,10 @@ export type SectionColor = {
 const SECTION_COLORS: Record<string, SectionColor> = {
   operations: {
     name: "Operations",
-    text: "text-cyan-400",
-    border: "border-cyan-400/50",
-    bg: "bg-cyan-400/8",
-    hex: "#22d3ee",
+    text: "text-blue-700",
+    border: "border-blue-700/50",
+    bg: "bg-blue-700/8",
+    hex: "#1d4ed8",
   },
   governance: {
     name: "Governance",

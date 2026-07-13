@@ -774,3 +774,18 @@
 - [x] Frontend: MyProfilePage — show notification status (Enabled / Not enabled)
 - [x] Op Manager: when user is selected from dropdown in Supervisor Contacts, auto-populate phone from user.phone
 - [x] Op Manager: when user is selected from dropdown in On-Call Supervisor, auto-populate mobile from user.phone
+
+## Op Manager Visual Overhaul (Round 6)
+- [x] Rename "Surveillance 1" → "Team 1" and "Surveillance 2" → "Team 2" throughout (constants, DB labels, full view, edit view)
+- [x] Colour-code team rows: Team 1 = blue, Team 2 = green, PTT = orange, Cap. Support = purple (match map tag colours)
+- [x] Floating card per team row in Weekly Tasking edit view (coloured left border + header badge)
+- [x] Floating card per team row in Full View tasking table (coloured header row)
+- [x] Reorder Full View sections: On-Call → Supervisor Contacts → Priority Board → Weekly Tasking Calendar
+- [x] Reorder edit tabs: On-Call → Contacts → Priority Board → Tasking
+- [x] On-Call and Supervisor Contacts cards: reduce vertical padding/height to be more compact
+- [x] Weekly Tasking Calendar: increase proportional size (takes up more vertical space on page)
+- [x] Alternating shift defaults for Team 1/2: Team 1 day shift week of 2026-07-14, Team 2 afternoon; alternates each week
+- [x] Copy to Next Week button on Full View: copies all CTO Tasking data from current week to next week
+- [x] Modern branded header banner: "CTO Weekly Tasking" with gradient/colour bar, week date range, unit name
+- [x] Print/PDF: include the branded header banner, colour-coded team rows, compact contacts, larger tasking grid
+- [x] Post & Notify → Re-post & Notify once week has been posted (allows re-sending after edits)

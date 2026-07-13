@@ -30,6 +30,8 @@ import {
   BellOff,
   CheckCircle2,
   GripVertical,
+  Copy,
+  RefreshCw,
 } from "lucide-react";
 import {
   DndContext,
@@ -51,10 +53,17 @@ import { cn } from "@/lib/utils";
 const TEAM_ROWS = ["surv1", "surv2", "ptt", "cap"] as const;
 type TeamRow = (typeof TEAM_ROWS)[number];
 const TEAM_LABELS: Record<TeamRow, string> = {
-  surv1: "Surveillance 1",
-  surv2: "Surveillance 2",
+  surv1: "Team 1",
+  surv2: "Team 2",
   ptt: "PTT",
   cap: "Cap. Support",
+};
+// Colours matching map/team tags (from IntelligenceMapping TEAM_COLOURS)
+const TEAM_COLOURS: Record<TeamRow, { bg: string; border: string; text: string }> = {
+  surv1: { bg: "#fce7f3", border: "#ec4899", text: "#9d174d" },
+  surv2: { bg: "#dbeafe", border: "#1976d2", text: "#1e3a8a" },
+  ptt:   { bg: "#fef3c7", border: "#f9a825", text: "#78350f" },
+  cap:   { bg: "#ede9fe", border: "#7c3aed", text: "#4c1d95" },
 };
 const SHIFT_OPTIONS = [
   "RDO",
@@ -68,8 +77,8 @@ const CATEGORIES = ["A-TACC", "WC", "Other"];
 const REQUEST_TYPES = ["Surv", "PTT", "Capability"];
 const SUPERVISOR_ROLES = [
   "CTO Inspector",
-  "Surveillance Team 1",
-  "Surveillance Team 2",
+  "Team 1",
+  "Team 2",
   "PTT",
 ];
 const ON_CALL_ROLES = [
@@ -496,6 +505,53 @@ export default function OperationManagerPage() {
     }
   };
 
+  // ── Copy to Next Week ──────────────────────────────────────────────────────────
+  const [isCopying, setIsCopying] = useState(false);
+  const handleCopyToNextWeek = async () => {
+    setIsCopying(true);
+    try {
+      const currentMs = new Date(weekStart).getTime();
+      const nextWeek = new Date(currentMs + 7 * 24 * 60 * 60 * 1000);
+      const nextWeekStart = getMondayOfWeek(nextWeek);
+      // Copy priority board
+      await savePriorityMut.mutateAsync({
+        weekStart: nextWeekStart,
+        rows: priorityRows.map((r, i) => ({
+          id: undefined,
+          category: r.category,
+          priority: i + 1,
+          operationId: r.operationId ?? null,
+          operationName: r.operationName ?? null,
+          team: r.team ?? null,
+          requestType: r.requestType ?? null,
+          sortOrder: i,
+        })),
+      });
+      // Copy tasking cells
+      const taskingMutations = TEAM_ROWS.flatMap((teamRow) =>
+        DAYS.map((_, dayIndex) => {
+          const key = `${teamRow}-${dayIndex}`;
+          const cell = taskingGrid[key] ?? {};
+          const shiftTime = cell.shiftTime === "Custom" ? cell.customTime ?? null : cell.shiftTime ?? null;
+          const primaryTask = cell.primaryTask === "Other" ? cell.primaryOther ?? null : cell.primaryTask ?? null;
+          const secondaryTask = cell.secondaryTask === "Other" ? cell.secondaryOther ?? null : cell.secondaryTask ?? null;
+          return saveTaskingCellMut.mutateAsync({ weekStart: nextWeekStart, dayIndex, teamRow, shiftTime, primaryTask, secondaryTask });
+        })
+      );
+      await Promise.all(taskingMutations);
+      // Copy contacts
+      const allContacts = [
+        ...contacts.map((c, i) => ({ id: undefined as number | undefined, role: c.role, userId: c.userId ?? null, customName: null as string | null, phone: c.phone ?? null, sortOrder: i })),
+        ...onCallEntries.map((oc, i) => ({ id: undefined as number | undefined, role: oc.role, userId: oc.userId ?? null, customName: null as string | null, phone: oc.mobile ?? null, sortOrder: contacts.length + i })),
+      ];
+      await saveContactsMut.mutateAsync({ weekStart: nextWeekStart, contacts: allContacts });
+      toast.success("Copied to next week. Navigate to next week to review.");
+    } catch {
+      toast.error("Failed to copy to next week.");
+    }
+    setIsCopying(false);
+  };
+
   // ── Post & Notify ─────────────────────────────────────────────────────────────
   const handlePostAndNotify = async () => {
     try {
@@ -561,6 +617,7 @@ export default function OperationManagerPage() {
   if (viewMode === "view") {
     return (
       <div className="min-h-screen bg-background text-foreground">
+        <div className="no-print">
         <PageHeader
           weekStart={weekStart}
           onPrev={handlePrevWeek}
@@ -599,6 +656,16 @@ export default function OperationManagerPage() {
                   <Button
                     variant="outline"
                     size="sm"
+                    onClick={handleCopyToNextWeek}
+                    disabled={isCopying}
+                    className="gap-1"
+                    title="Copy all data from this week to next week"
+                  >
+                    <Copy className="h-3.5 w-3.5" /> {isCopying ? "Copying…" : "Copy to Next Week"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={() => window.print()}
                     className="gap-1"
                   >
@@ -607,23 +674,55 @@ export default function OperationManagerPage() {
                   <Button
                     size="sm"
                     onClick={handlePostAndNotify}
-                    disabled={
-                      postWeekMut.isPending || !!postedQuery.data?.posted
-                    }
+                    disabled={postWeekMut.isPending}
                     className="gap-1"
+                    variant={postedQuery.data?.posted ? "outline" : "default"}
                   >
-                    {postedQuery.data?.posted ? (
-                      <CheckCircle2 className="h-3.5 w-3.5" />
+                    {postWeekMut.isPending ? (
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    ) : postedQuery.data?.posted ? (
+                      <RefreshCw className="h-3.5 w-3.5" />
                     ) : (
                       <Send className="h-3.5 w-3.5" />
                     )}
-                    {postedQuery.data?.posted ? "Posted" : "Post & Notify"}
+                    {postedQuery.data?.posted ? "Re-post & Notify" : "Post & Notify"}
                   </Button>
                 </>
               )}
             </div>
           }
         />
+        </div>
+
+        {/* Branded hero banner */}
+        <style>{`@media print { .no-print { display: none !important; } }`}</style>
+        <div
+          className="print:block"
+          style={{
+            background: "linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 60%, #2563eb 100%)",
+            WebkitPrintColorAdjust: "exact",
+            printColorAdjust: "exact",
+          }}
+        >
+          <div className="max-w-6xl mx-auto px-6 py-5 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold tracking-widest uppercase text-blue-200 mb-1">Covert Tactics Operations</p>
+              <h1 className="text-2xl font-extrabold text-white tracking-tight">CTO Weekly Tasking</h1>
+              <p className="text-sm text-blue-200 mt-0.5">{formatWeekLabel(weekStart)}</p>
+            </div>
+            <div className="hidden sm:flex flex-col items-end gap-1">
+              <p className="text-xs text-blue-300 uppercase tracking-wider font-semibold">SENSITIVE — FOR OFFICIAL USE ONLY</p>
+              <p className="text-xs text-blue-400">{new Date().toLocaleDateString("en-AU", { dateStyle: "long" })}</p>
+            </div>
+          </div>
+          {/* Colour bar */}
+          <div className="flex h-1.5">
+            <div className="flex-1" style={{ background: "#ec4899" }} />
+            <div className="flex-1" style={{ background: "#1976d2" }} />
+            <div className="flex-1" style={{ background: "#f9a825" }} />
+            <div className="flex-1" style={{ background: "#7c3aed" }} />
+          </div>
+        </div>
 
         {!canViewWeek ? (
           <div className="flex flex-col items-center justify-center h-64 text-muted-foreground gap-2">
@@ -632,7 +731,7 @@ export default function OperationManagerPage() {
             </p>
           </div>
         ) : (
-          <div className="p-4 space-y-6 max-w-5xl mx-auto print:p-2">
+          <div className="p-4 space-y-4 max-w-6xl mx-auto print:p-2">
             <FullViewOnCall
               onCallEntries={onCallEntries}
               users={usersQuery.data ?? []}
@@ -641,8 +740,8 @@ export default function OperationManagerPage() {
               contacts={contacts}
               users={usersQuery.data ?? []}
             />
-            <FullViewTasking taskingGrid={taskingGrid} weekStart={weekStart} />
             <FullViewPriority priorityRows={priorityRows} />
+            <FullViewTasking taskingGrid={taskingGrid} weekStart={weekStart} />
           </div>
         )}
       </div>
@@ -674,10 +773,10 @@ export default function OperationManagerPage() {
       <div className="p-4 max-w-5xl mx-auto">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="mb-4 w-full grid grid-cols-4">
-            <TabsTrigger value="contacts">Contacts</TabsTrigger>
             <TabsTrigger value="oncall">On-Call</TabsTrigger>
-            <TabsTrigger value="tasking">Tasking</TabsTrigger>
+            <TabsTrigger value="contacts">Contacts</TabsTrigger>
             <TabsTrigger value="priority">Priority</TabsTrigger>
+            <TabsTrigger value="tasking">Tasking</TabsTrigger>
           </TabsList>
 
           {/* ── Contacts ──────────────────────────────────────────────────── */}
@@ -817,10 +916,12 @@ export default function OperationManagerPage() {
             </div>
             {/* Mobile: one card per team row */}
             <div className="block sm:hidden space-y-4">
-              {TEAM_ROWS.map((teamRow) => (
-                <div key={teamRow} className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-                  <div className="px-4 py-2.5 bg-muted/40 border-b border-border">
-                    <p className="text-xs font-bold tracking-wide">{TEAM_LABELS[teamRow]}</p>
+              {TEAM_ROWS.map((teamRow) => {
+                const tc = TEAM_COLOURS[teamRow];
+                return (
+                <div key={teamRow} className="rounded-xl overflow-hidden" style={{ border: `2px solid ${tc.border}` }}>
+                  <div className="px-4 py-2.5 border-b" style={{ background: tc.bg, borderColor: tc.border }}>
+                    <p className="text-xs font-bold tracking-wide" style={{ color: tc.text }}>{TEAM_LABELS[teamRow]}</p>
                   </div>
                   <div className="divide-y divide-border">
                     {DAYS.map((day, dayIndex) => {
@@ -840,7 +941,8 @@ export default function OperationManagerPage() {
                     })}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
             {/* Desktop: full table */}
             <div className="hidden sm:block rounded-xl border border-border bg-card shadow-sm overflow-hidden">
@@ -863,9 +965,14 @@ export default function OperationManagerPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {TEAM_ROWS.map((teamRow) => (
+                    {TEAM_ROWS.map((teamRow) => {
+                      const tc = TEAM_COLOURS[teamRow];
+                      return (
                       <tr key={teamRow}>
-                        <td className="px-3 py-3 font-semibold border-r border-border text-xs text-foreground bg-muted/20 align-top">
+                        <td
+                          className="px-3 py-2 font-bold border-r border-border text-xs align-top w-32"
+                          style={{ background: tc.bg, color: tc.text, borderLeft: `4px solid ${tc.border}` }}
+                        >
                           {TEAM_LABELS[teamRow]}
                         </td>
                         {DAYS.map((_, dayIndex) => {
@@ -889,7 +996,8 @@ export default function OperationManagerPage() {
                           );
                         })}
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1563,7 +1671,7 @@ function FullViewContacts({
             {["CTO Inspector", "PTT"].map(renderContactCard)}
           </div>
           <div className="space-y-3">
-            {["Surveillance Team 1", "Surveillance Team 2"].map(renderContactCard)}
+            {["Team 1", "Team 2"].map(renderContactCard)}
           </div>
         </div>
       </div>
@@ -1585,10 +1693,12 @@ function FullViewTasking({
         </div>
         {/* Mobile: card-per-team layout */}
         <div className="block sm:hidden p-3 space-y-3">
-          {TEAM_ROWS.map((teamRow) => (
-            <div key={teamRow} className="rounded-lg border border-border bg-background overflow-hidden">
-              <div className="px-3 py-2 bg-muted/40 border-b border-border">
-                <p className="text-xs font-bold tracking-wide">{TEAM_LABELS[teamRow]}</p>
+          {TEAM_ROWS.map((teamRow) => {
+            const tc = TEAM_COLOURS[teamRow];
+            return (
+            <div key={teamRow} className="rounded-lg overflow-hidden" style={{ border: `2px solid ${tc.border}` }}>
+              <div className="px-3 py-2 border-b" style={{ background: tc.bg, borderColor: tc.border }}>
+                <p className="text-xs font-bold tracking-wide" style={{ color: tc.text }}>{TEAM_LABELS[teamRow]}</p>
               </div>
               <div className="divide-y divide-border">
                 {DAYS.map((day, dayIndex) => {
@@ -1614,7 +1724,8 @@ function FullViewTasking({
                 })}
               </div>
             </div>
-          ))}
+          );
+          })}
         </div>
         {/* Desktop: full table */}
         <div className="hidden sm:block overflow-x-auto">
@@ -1636,9 +1747,14 @@ function FullViewTasking({
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {TEAM_ROWS.map((teamRow) => (
+              {TEAM_ROWS.map((teamRow) => {
+                const tc = TEAM_COLOURS[teamRow];
+                return (
                 <tr key={teamRow}>
-                  <td className="px-3 py-3 font-semibold border-r border-border text-xs text-foreground bg-muted/20 align-top">
+                  <td
+                    className="px-3 py-3 font-bold border-r border-border text-xs align-top"
+                    style={{ background: tc.bg, color: tc.text, borderLeft: `4px solid ${tc.border}` }}
+                  >
                     {TEAM_LABELS[teamRow]}
                   </td>
                   {DAYS.map((_, dayIndex) => {
@@ -1691,7 +1807,8 @@ function FullViewTasking({
                     );
                   })}
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

@@ -136,7 +136,7 @@ const TILE_CONFIG: Record<
     bgColor: "bg-slate-500/10",
     borderColor: "border-slate-500/30",
     accentColor: "#64748b",
-    route: "/court",
+    route: "/reports",
   },
   userManagement: {
     label: "User Management",
@@ -145,7 +145,7 @@ const TILE_CONFIG: Record<
     bgColor: "bg-cyan-500/10",
     borderColor: "border-cyan-500/30",
     accentColor: "#06b6d4",
-    route: "/user-management",
+    route: "/profile",
   },
 };
 

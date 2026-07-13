@@ -26,7 +26,7 @@ import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useTheme } from "@/contexts/ThemeContext";
 import {
-  FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen, Scale, FolderOpen, ChevronDown, ChevronRight, CalendarDays, Shield, ClipboardCheck as GovIcon, Map, ArrowRightLeft, HelpCircle, Trash2, WifiOff, Settings, UserCog } from "lucide-react";
+  FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen, Scale, FolderOpen, ChevronDown, ChevronRight, CalendarDays, Shield, ClipboardCheck as GovIcon, Map, ArrowRightLeft, HelpCircle, Trash2, WifiOff, Settings, UserCog, BarChart3 } from "lucide-react";
 import React, { CSSProperties, useEffect, useRef, useState } from "react";
 import { useObservationFocus } from "@/contexts/ObservationFocusContext";
 import { useLocation } from "wouter";
@@ -153,7 +153,7 @@ function DashboardLayoutContent({
 
   // Expand admin folder if current route is inside it
   useEffect(() => {
-    const adminPaths = ["/court", "/audit", "/draft", "/operation-management", "/recycle-bin", "/help"];
+    const adminPaths = ["/court", "/audit", "/draft", "/operation-management", "/recycle-bin", "/help", "/reports"];
     if (adminPaths.some(p => location === p || location.startsWith(p))) {
       setAdminFolderExpanded(true);
     }
@@ -377,7 +377,7 @@ function DashboardLayoutContent({
                 <SidebarMenuButton
                   isActive={adminFolderExpanded && !isCollapsed ? false : (
                     location.startsWith("/court") || location === "/audit" || location === "/draft" ||
-                    location === "/operation-management" || location === "/recycle-bin" || location === "/help"
+                    location === "/operation-management" || location === "/recycle-bin" || location === "/help" || location === "/reports"
                   )}
                   onClick={() => setAdminFolderExpanded((v) => !v)}
                   tooltip="Administration"
@@ -386,7 +386,7 @@ function DashboardLayoutContent({
                   <Settings className="h-4 w-4 text-slate-400" />
                   <span className={`flex-1 ${
                     location.startsWith("/court") || location === "/audit" || location === "/draft" ||
-                    location === "/operation-management" || location === "/recycle-bin" || location === "/help"
+                    location === "/operation-management" || location === "/recycle-bin" || location === "/help" || location === "/reports"
                       ? "text-sidebar-foreground font-medium"
                       : "text-sidebar-foreground/80"
                   }`}>
@@ -397,6 +397,12 @@ function DashboardLayoutContent({
 
                 {adminFolderExpanded && !isCollapsed && (
                   <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
+
+                    {/* Reports */}
+                    <button onClick={() => setLocation("/reports")} className={subItemClass(location === "/reports")}>
+                      <BarChart3 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                      Reports
+                    </button>
 
                     {/* Court (expandable sub-folder) */}
                     <button

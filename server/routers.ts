@@ -112,6 +112,8 @@ import {
   backfillGoogleAddressesInObservations,
   getRsMappingWaypoints,
   upsertRsMappingWaypoint,
+  getIncompleteRunningSheets,
+  getOutstandingTodosByUser,
 } from "./db";
 
 import { makeRequest, type RoadsResult } from "./_core/map";
@@ -2532,6 +2534,24 @@ export const appRouter = router({
       }),
 
   }),
+  // ─── Reports ────────────────────────────────────────────────────────────────
+  reports: router({
+    /**
+     * Returns all non-deleted, non-closed running sheets with full status info
+     * for the Reports page (incomplete sheets).
+     */
+    incompleteSheets: protectedProcedure.query(async () => {
+      return getIncompleteRunningSheets();
+    }),
+
+    /**
+     * Returns all users ranked by total outstanding to-do actions.
+     */
+    outstandingTodos: protectedProcedure.query(async () => {
+      return getOutstandingTodosByUser();
+    }),
+  }),
+
   // ─── Admin Utilities ────────────────────────────────────────────────────────
   adminUtils: router({
     backfillGoogleAddresses: adminProcedure.mutation(async () => {

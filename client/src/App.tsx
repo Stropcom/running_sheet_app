@@ -35,6 +35,7 @@ import IntelligenceLocationProfile from "@/pages/IntelligenceLocationProfile";
 import IntelligenceMapping from "@/pages/IntelligenceMapping";
 import RSMapping from "@/pages/RSMapping";
 import DraftSheetPage from "@/pages/DraftSheetPage";
+import ReportsPage from "@/pages/ReportsPage";
 import { DraftModeBanner } from "@/components/DraftModeBanner";
 import { SectionColorProvider } from "@/contexts/SectionColorContext";
 
@@ -71,6 +72,7 @@ function Router() {
       <Route path="/recycle-bin" component={RecycleBin} />
       <Route path="/draft" component={DraftHubPage} />
       <Route path="/draft/sheet/:localId" component={DraftSheetPage} />
+      <Route path="/reports" component={ReportsPage} />
       <Route path="/audit" component={AuditLogPage} />
       <Route path="/admin" component={AdminPage} />
       <Route path="/404" component={NotFound} />

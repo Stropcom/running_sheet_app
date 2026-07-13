@@ -4083,3 +4083,194 @@ export async function upsertRsMappingWaypoint(input: {
     return (res as any).insertId as number;
   }
 }
+
+// ─── Reports ──────────────────────────────────────────────────────────────────
+
+export interface IncompleteSheetReport {
+  sheetId: number;
+  sheetTitle: string;
+  operationId: number;
+  operationName: string;
+  operationStatus: string;
+  /** Parsed sheetCins array */
+  teamCins: { cin: string; isTeamLeader?: boolean; isAuthor?: boolean; isCertifier?: boolean }[];
+  /** Teams present on this sheet (derived from users table) */
+  teams: string[];
+  /** True when members span more than one distinct team */
+  isTeamBlended: boolean;
+  teamLeaderCin: string | null;
+  authorCin: string | null;
+  certifierCin: string | null;
+  uncertifiedRowCount: number;
+  govPercent: number;
+  isClosed: boolean;
+  createdAt: Date;
+}
+
+/**
+ * Returns all non-deleted, non-closed running sheets with full status info
+ * for the Reports page. Enriches each sheet with team membership data from
+ * the users table so the "Team Blended" logic can be applied client-side.
+ */
+export async function getIncompleteRunningSheets(): Promise<IncompleteSheetReport[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  // All non-deleted sheets
+  const sheets = await db
+    .select()
+    .from(runningSheets)
+    .where(isNull(runningSheets.deletedAt));
+
+  if (sheets.length === 0) return [];
+
+  const opIds = Array.from(new Set(sheets.map((s) => s.operationId)));
+  const sheetIds = sheets.map((s) => s.id);
+
+  const [ops, govRecords, allUsers] = await Promise.all([
+    db.select().from(operations).where(inArray(operations.id, opIds)),
+    getGovernanceRecordsBySheetIds(sheetIds),
+    db.select().from(users),
+  ]);
+
+  // Build CIN → team map from users table
+  const cinTeamMap = new Map<string, string>();
+  for (const u of allUsers) {
+    if (u.cin && u.team) cinTeamMap.set(u.cin, u.team);
+  }
+
+  // Compute certification status per sheet
+  const allRowMembers = sheetIds.length > 0
+    ? await db.select().from(rowMembers).where(
+        inArray(rowMembers.rowId,
+          (await db.select({ id: sheetRows.id }).from(sheetRows).where(inArray(sheetRows.sheetId, sheetIds))).map(r => r.id)
+        )
+      )
+    : [];
+
+  const allRows = sheetIds.length > 0
+    ? await db.select().from(sheetRows).where(inArray(sheetRows.sheetId, sheetIds))
+    : [];
+
+  const allRowIds = allRows.map(r => r.id);
+  const allCerts = allRowIds.length > 0
+    ? await db.select().from(certifications).where(
+        and(inArray(certifications.rowId, allRowIds), eq(certifications.isActive, true))
+      )
+    : [];
+
+  const results: IncompleteSheetReport[] = [];
+
+  for (const sheet of sheets) {
+    const op = ops.find((o) => o.id === sheet.operationId);
+    if (!op) continue;
+
+    // Parse sheetCins
+    let teamCins: { cin: string; isTeamLeader?: boolean; isAuthor?: boolean; isCertifier?: boolean }[] = [];
+    try { teamCins = JSON.parse(sheet.sheetCins ?? "[]"); } catch { teamCins = []; }
+
+    const teamLeaderCin = teamCins.find(c => c.isTeamLeader)?.cin ?? null;
+    const authorCin = teamCins.find(c => c.isAuthor)?.cin ?? null;
+    // Certifier: first CIN that is neither TL nor Author (or TL if no one else)
+    const certifierCin = teamCins.find(c => !c.isTeamLeader && !c.isAuthor)?.cin ?? teamLeaderCin;
+
+    // Derive teams present on this sheet
+    const teamsOnSheet = Array.from(new Set(
+      teamCins.map(c => cinTeamMap.get(c.cin)).filter((t): t is string => !!t)
+    ));
+    const isTeamBlended = teamsOnSheet.length > 1;
+
+    // Compute uncertified row count
+    const sheetRowObjs = allRows.filter(r => r.sheetId === sheet.id);
+    const sheetRowIds = sheetRowObjs.map(r => r.id);
+    const sheetMembers = allRowMembers.filter(m => sheetRowIds.includes(m.rowId) && m.memberName !== "__SPACE__");
+    const certRowMemberIds = new Set(allCerts.filter(c => sheetRowIds.includes(c.rowId)).map(c => c.memberId));
+    const uncertifiedRowCount = sheetRowObjs.filter(row => {
+      const rowMems = sheetMembers.filter(m => m.rowId === row.id);
+      return rowMems.length > 0 && rowMems.some(m => !certRowMemberIds.has(m.id));
+    }).length;
+
+    const allSigned = sheetRowObjs.length === 0 || (
+      sheetMembers.length > 0 && sheetMembers.every(m => certRowMemberIds.has(m.id))
+    );
+
+    // Governance percent
+    const govRec = govRecords.find(g => g.sheetId === sheet.id) ?? null;
+    const govPercent = computeGovernancePercent(govRec, allSigned);
+
+    const isClosed = !!sheet.closedAt;
+
+    // Only include sheets that are incomplete (not closed OR governance < 100 OR uncertified rows)
+    const isIncomplete = !isClosed || uncertifiedRowCount > 0 || govPercent < 100;
+    if (!isIncomplete) continue;
+
+    results.push({
+      sheetId: sheet.id,
+      sheetTitle: sheet.title,
+      operationId: op.id,
+      operationName: op.name,
+      operationStatus: op.status,
+      teamCins,
+      teams: teamsOnSheet,
+      isTeamBlended,
+      teamLeaderCin,
+      authorCin,
+      certifierCin,
+      uncertifiedRowCount,
+      govPercent,
+      isClosed,
+      createdAt: sheet.createdAt,
+    });
+  }
+
+  return results.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+}
+
+export interface OutstandingTodoUser {
+  cin: string;
+  name: string;
+  team: string | null;
+  uncertifiedCount: number;
+  governanceCount: number;
+  totalCount: number;
+}
+
+/**
+ * Returns all users ranked by total outstanding to-do actions
+ * (uncertified rows they are a member of + governance items they own as TL/Author).
+ */
+export async function getOutstandingTodosByUser(): Promise<OutstandingTodoUser[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const allUsers = await db.select().from(users);
+  const usersWithCin = allUsers.filter(u => u.cin && u.cin.trim() !== "");
+
+  const results: OutstandingTodoUser[] = [];
+
+  for (const user of usersWithCin) {
+    const cin = user.cin!;
+
+    // Uncertified rows for this CIN
+    const outstanding = await getOutstandingSheetsForCin(cin);
+    const uncertifiedCount = outstanding.reduce((sum, s) => sum + s.uncertifiedRowCount, 0);
+
+    // Governance items for this CIN (TL + Author)
+    const govTodo = await getGovernanceTodoForCin(cin);
+    const governanceCount = govTodo.reduce((sum, s) => sum + s.outstanding.filter(o => o !== "Ready to close").length, 0);
+
+    const totalCount = uncertifiedCount + governanceCount;
+    if (totalCount === 0) continue;
+
+    results.push({
+      cin,
+      name: user.name,
+      team: user.team ?? null,
+      uncertifiedCount,
+      governanceCount,
+      totalCount,
+    });
+  }
+
+  return results.sort((a, b) => b.totalCount - a.totalCount);
+}

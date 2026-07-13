@@ -668,3 +668,14 @@
 - [x] When Visual RS is OFF: hide all popup cards, return to normal numbered-pin view
 - [x] Add Export PDF button (visible when Visual RS is ON): captures map screenshot + RS entries table below
 - [x] PDF: map screenshot at top (landscape), RS entries table (Time / Address / Observation) below on same page
+
+## Reports Section — Incomplete/Outstanding Report (Round 65)
+- [x] Backend: tRPC reports.incompleteSheets procedure — returns all non-deleted, non-closed sheets with per-sheet status (uncertified row count, governance %, closed status, sheetCins parsed for TL/Author/Certifier/Team)
+- [x] Backend: tRPC reports.outstandingTodos procedure — returns per-user outstanding to-do action count (uncertified rows + governance items) ranked descending
+- [x] Frontend: ReportsPage.tsx — unified report page with toggleable category panels (Operation, Team, Team Leader, Author, Certifier, Outstanding To-Do Actions)
+- [x] Frontend: Team Blended group — RS where members span more than one team shown as separate "Team Blended" group in Team view
+- [x] Frontend: Each category panel is independently toggled on/off via a checkbox/button strip at top of page
+- [x] Frontend: Each panel shows grouped RS cards with incomplete reason chips (Uncertified rows, Governance %, Not closed)
+- [x] Sidebar: Add Reports as first sub-item under Administration folder in DashboardLayout
+- [x] Route: /reports registered in App.tsx
+- [x] SectionColorContext: /reports maps to administration colour

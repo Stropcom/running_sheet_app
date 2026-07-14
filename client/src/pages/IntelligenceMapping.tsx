@@ -2142,7 +2142,7 @@ export default function IntelligenceMapping() {
       {/* ── Side Panel ── */}
       <div
         ref={panelRef}
-        className={`flex flex-col border-r-2 border-border bg-card shadow-2xl relative flex-shrink-0 ${
+        className={`flex flex-col min-h-0 border-r-2 border-border bg-card shadow-2xl relative flex-shrink-0 ${
           sidebarOpen
             ? "lg:rounded-none rounded-r-2xl transition-none"
             : "w-0 min-w-0 overflow-hidden transition-all duration-200"
@@ -3525,7 +3525,7 @@ export default function IntelligenceMapping() {
                   setMapQeTimeOverride(`${String(parseInt(v)).padStart(2,"0")}:${mapQeMinute} ${mapQePeriod}`);
                 }}
               >
-                <SelectTrigger className="w-12 h-6 text-[11px] font-mono px-1.5 py-0">
+                <SelectTrigger className="w-16 h-6 text-[11px] font-mono px-1.5 py-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -3546,7 +3546,7 @@ export default function IntelligenceMapping() {
                   setMapQeTimeOverride(`${String(parseInt(mapQeHour)).padStart(2,"0")}:${v} ${mapQePeriod}`);
                 }}
               >
-                <SelectTrigger className="w-12 h-6 text-[11px] font-mono px-1.5 py-0">
+                <SelectTrigger className="w-16 h-6 text-[11px] font-mono px-1.5 py-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

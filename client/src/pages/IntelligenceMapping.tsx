@@ -685,6 +685,10 @@ export default function IntelligenceMapping() {
   // RS Quick Entry from map: shown when user picks "RS Quick Entry" from the action chooser
   const [mapQeOpen, setMapQeOpen] = useState(false);
   const [mapQeTimeOverride, setMapQeTimeOverride] = useState<string | null>(null); // "HH:MM AM/PM" or null for current time
+  const [mapQeHour, setMapQeHour] = useState("12");
+  const [mapQeMinute, setMapQeMinute] = useState("00");
+  const [mapQePeriod, setMapQePeriod] = useState("AM");
+  const [mapQeSelectOpen, setMapQeSelectOpen] = useState(false);
   const [mapQeAddress, setMapQeAddress] = useState(""); // pre-filled address for the observation
   const [cmLabel, setCmLabel] = useState("");
   const [cmAddress, setCmAddress] = useState("");
@@ -1092,10 +1096,11 @@ export default function IntelligenceMapping() {
   }, []);
 
   // ── Click-outside to close panels ──────────────────────────────────────────
+  // On desktop the left pane is permanently open — only close it on mobile/tablet
   const handleMapAreaClick = useCallback(() => {
-    if (sidebarOpen) setSidebarOpen(false);
+    if (sidebarOpen && !isDesktop) setSidebarOpen(false);
     if (rsActionsPaneOpen) setRsActionsPaneOpen(false);
-  }, [sidebarOpen, rsActionsPaneOpen]);
+  }, [sidebarOpen, isDesktop, rsActionsPaneOpen]);
 
   // ── Map pin rendering ────────────────────────────────────────────────────────
   const clearMarkers = useCallback(() => {
@@ -2045,8 +2050,16 @@ export default function IntelligenceMapping() {
   // (replaces the old trigger buttons — the full form appears immediately)
   useEffect(() => {
     if (mapQeOpen && rsSelectedSheetId) {
-      // Reset time override to current time on each open
-      setMapQeTimeOverride(null);
+      // Reset time picker to current time on each open
+      const now = new Date();
+      const h24 = now.getHours();
+      const min = now.getMinutes();
+      const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+      const ampm = h24 < 12 ? "AM" : "PM";
+      setMapQeHour(String(h12));
+      setMapQeMinute(String(min).padStart(2, "0"));
+      setMapQePeriod(ampm);
+      setMapQeTimeOverride(`${String(h12).padStart(2,"0")}:${String(min).padStart(2,"0")} ${ampm}`);
       // Use a small delay so the sheet has rendered before we set focus
       setTimeout(() => {
         setRsInlineLabel("Entry");
@@ -3499,29 +3512,66 @@ export default function IntelligenceMapping() {
               </button>
             </div>
 
-            {/* Compact time selector */}
-            <div className="flex items-center gap-2 mb-3">
+            {/* Time picker — matches SheetDetail TimePickerCell style */}
+            <div className="flex items-center gap-1.5 mb-3">
               <Clock className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-              <span className="text-[11px] text-muted-foreground font-medium">Time:</span>
-              <input
-                type="time"
-                defaultValue={(() => { const n = new Date(); return `${String(n.getHours()).padStart(2,"0")}:${String(n.getMinutes()).padStart(2,"0")}`; })()}
-                onChange={(e) => {
-                  const [hStr, mStr] = e.target.value.split(":");
-                  const h = parseInt(hStr ?? "0");
-                  const m = parseInt(mStr ?? "0");
-                  const ampm = h < 12 ? "AM" : "PM";
-                  const h12 = h % 12 === 0 ? 12 : h % 12;
-                  setMapQeTimeOverride(`${String(h12).padStart(2,"0")}:${String(m).padStart(2,"0")} ${ampm}`);
+              <span className="text-[11px] text-muted-foreground font-medium mr-0.5">Time:</span>
+              {/* Hour */}
+              <Select
+                value={mapQeHour}
+                onOpenChange={(o) => setMapQeSelectOpen(o)}
+                onValueChange={(v) => {
+                  setMapQeHour(v);
+                  setMapQeTimeOverride(`${String(parseInt(v)).padStart(2,"0")}:${mapQeMinute} ${mapQePeriod}`);
                 }}
-                className="rounded-md border border-border bg-background px-2 py-1 text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-              />
-              {mapQeTimeOverride && (
-                <button
-                  onClick={() => setMapQeTimeOverride(null)}
-                  className="text-[10px] text-muted-foreground hover:text-foreground underline"
-                >Now</button>
-              )}
+              >
+                <SelectTrigger className="w-14 h-7 text-xs font-mono">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 12 }, (_, i) => String(i + 1)).map((h) => (
+                    <SelectItem key={h} value={h} className="font-mono">
+                      {String(parseInt(h)).padStart(2, "0")}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <span className="text-muted-foreground font-mono text-sm">:</span>
+              {/* Minute */}
+              <Select
+                value={mapQeMinute}
+                onOpenChange={(o) => setMapQeSelectOpen(o)}
+                onValueChange={(v) => {
+                  setMapQeMinute(v);
+                  setMapQeTimeOverride(`${String(parseInt(mapQeHour)).padStart(2,"0")}:${v} ${mapQePeriod}`);
+                }}
+              >
+                <SelectTrigger className="w-14 h-7 text-xs font-mono">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0")).map((m) => (
+                    <SelectItem key={m} value={m} className="font-mono">{m}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {/* AM/PM */}
+              <Select
+                value={mapQePeriod}
+                onOpenChange={(o) => setMapQeSelectOpen(o)}
+                onValueChange={(v) => {
+                  setMapQePeriod(v);
+                  setMapQeTimeOverride(`${String(parseInt(mapQeHour)).padStart(2,"0")}:${mapQeMinute} ${v}`);
+                }}
+              >
+                <SelectTrigger className="w-14 h-7 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="AM">AM</SelectItem>
+                  <SelectItem value="PM">PM</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {/* No sheet selected warning */}

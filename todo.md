@@ -891,3 +891,7 @@
 ## Map Left Pane — Desktop Fixed Open & Resizable
 - [x] On desktop (lg+), left map pane is permanently open (not a slide-in drawer) and resizable via drag handle, same as main sidebar
 - [x] On tablet/mobile, left pane remains a slide-in drawer
+
+## Map Quick Entry & Left Pane Fixes (Round 16 - Jul 15)
+- [x] RS Quick Entry modal: replace compact HH:MM inputs with the same scroll-wheel time picker used in the main running sheet
+- [x] Left map pane (desktop): prevent pane from closing when the map area is clicked — only close on mobile/tablet

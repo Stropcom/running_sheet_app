@@ -847,3 +847,8 @@
 - [ ] UI: Create New starts with blank contacts/priority board; shift times auto-populated as always
 - [ ] UI: clicking a week row opens Full View (admin gets edit button from Full View)
 - [ ] UI: only Full Access + User Manager users see the New/Edit controls; others see folder list + view only
+
+## Map Target Filter Fix (Round 11 - Jul 14)
+- [x] Fix: map showing all targets when running sheet has no target selected
+- [x] Root cause: getIntelMappingLocations line 3367 — when filteredTargetIds.size === 0, it returned all targets instead of nothing
+- [x] Fix: early return [] when filteredTargetIds is empty after filtering

@@ -3362,10 +3362,10 @@ export async function getIntelMappingLocations(
     if (!seenPairs.has(`${r.id}::${r.operationId}`)) allTargetData.push(r);
   }
 
-  // Only keep targets that pass the filter
-  const relevantTargets = allTargetData.filter(t =>
-    filteredTargetIds.size === 0 ? true : filteredTargetIds.has(t.id)
-  );
+  // Only keep targets that pass the filter.
+  // If filteredTargetIds is empty (no targets matched the op/target filter), return nothing.
+  if (filteredTargetIds.size === 0) return [];
+  const relevantTargets = allTargetData.filter(t => filteredTargetIds.has(t.id));
 
   // Build location map: label (lowercase) -> IntelMapLocation
   const locationMap = new Map<string, IntelMapLocation>();

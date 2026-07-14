@@ -839,14 +839,14 @@
 - [x] Server: update postWeek to accept optional list of userIds to notify (sendPushToUsers helper added)
 
 ## Op Manager Folder Redesign (Round 11)
-- [ ] Server: add listAllWeeks procedure returning all weeks that have any saved data (tasking, contacts, or priority), sorted most recent first, with posted status
-- [ ] Server: add copyWeekData procedure to copy tasking tasks (not shift times), contacts, and priority board from one week to another
-- [ ] UI: replace Op Manager entry with a folder/list view showing all saved weeks (date range, posted badge, last edited)
-- [ ] UI: "New CTO Weekly Tasking" button opens a dialog with "Copy Last" or "Create New" options
-- [ ] UI: Copy Last copies contacts + priority board + task names from most recent week; shift times always come from auto-population
-- [ ] UI: Create New starts with blank contacts/priority board; shift times auto-populated as always
-- [ ] UI: clicking a week row opens Full View (admin gets edit button from Full View)
-- [ ] UI: only Full Access + User Manager users see the New/Edit controls; others see folder list + view only
+- [x] Server: add listAllWeeks procedure returning all weeks that have any saved data (tasking, contacts, or priority), sorted most recent first, with posted status
+- [x] Server: add copyWeekData procedure to copy tasking tasks (not shift times), contacts, and priority board from one week to another
+- [x] UI: replace Op Manager entry with a folder/list view showing all saved weeks (date range, posted badge, last edited)
+- [x] UI: "New CTO Weekly Tasking" button opens a dialog with "Copy Last" or "Create New" options
+- [x] UI: Copy Last copies contacts + priority board + task names from most recent week; shift times always come from auto-population
+- [x] UI: Create New starts with blank contacts/priority board; shift times auto-populated as always
+- [x] UI: clicking a week row opens Full View (admin gets edit button from Full View)
+- [x] UI: only Full Access + User Manager users see the New/Edit controls; others see folder list + view only
 
 ## Map Target Filter Fix (Round 11 - Jul 14)
 - [x] Fix: map showing all targets when running sheet has no target selected

@@ -3363,9 +3363,11 @@ export async function getIntelMappingLocations(
   }
 
   // Only keep targets that pass the filter.
-  // If filteredTargetIds is empty (no targets matched the op/target filter), return nothing.
-  if (filteredTargetIds.size === 0) return [];
-  const relevantTargets = allTargetData.filter(t => filteredTargetIds.has(t.id));
+  // If filteredTargetIds is empty (no targets linked to this operation), skip target card rendering
+  // but still allow observation-based intel (addresses, vehicles, persons) to show.
+  const relevantTargets = filteredTargetIds.size === 0
+    ? []
+    : allTargetData.filter(t => filteredTargetIds.has(t.id));
 
   // Build location map: label (lowercase) -> IntelMapLocation
   const locationMap = new Map<string, IntelMapLocation>();

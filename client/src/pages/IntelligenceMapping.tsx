@@ -768,10 +768,16 @@ export default function IntelligenceMapping() {
 
   // Custom map markers — poll every 5 seconds
   // Filter by selected operations so markers are scoped to the active operation.
-  // When no operation is selected (all-ops view), pass undefined to fetch all markers.
-  // Pass empty array when no operations selected so server returns nothing (not all markers)
+  // When no operation is selected in Map Settings but an RS pane operation is active,
+  // include rsSelectedOpId so custom markers for that operation are visible.
+  // Pass empty array only when truly no operation context exists.
+  const effectiveOpIdsForMarkers = useMemo(() => {
+    if (selectedOpIds.length > 0) return selectedOpIds;
+    if (rsSelectedOpId != null) return [rsSelectedOpId];
+    return [];
+  }, [selectedOpIds, rsSelectedOpId]);
   const { data: customMarkers, refetch: refetchCustomMarkers } = trpc.customMarker.list.useQuery(
-    { operationIds: selectedOpIds.length > 0 ? selectedOpIds : [] },
+    { operationIds: effectiveOpIdsForMarkers },
     { refetchInterval: 5000, enabled: true }
   );
   const createCustomMarkerMut = trpc.customMarker.create.useMutation({
@@ -2053,8 +2059,8 @@ export default function IntelligenceMapping() {
           </div>
         )}
 
-        {/* Empty state */}
-        {!locsLoading && locations && locations.length === 0 && (
+        {/* Empty state — only show when there are also no custom markers */}
+        {!locsLoading && locations && locations.length === 0 && !(customMarkers && customMarkers.length > 0) && (
           <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
             <div className="bg-card border border-border rounded-xl px-8 py-6 shadow-lg text-center max-w-xs">
               <MapPin className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />

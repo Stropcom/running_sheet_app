@@ -749,11 +749,13 @@ function ProfileDialog({
 
 function OperationsTab({
   entities,
+  allOps,
   search,
   sortOrder = "az",
   tileView = false,
 }: {
   entities: Entity[];
+  allOps?: Array<{ id: number; name: string }>;
   search: string;
   sortOrder?: "az" | "recent";
   tileView?: boolean;
@@ -763,6 +765,20 @@ function OperationsTab({
 
   const operations = useMemo<OperationSummary[]>(() => {
     const opMap = new Map<number, OperationSummary>();
+
+    // Seed opMap with ALL known operations (so ops with no entities still appear)
+    if (allOps) {
+      for (const op of allOps) {
+        opMap.set(op.id, {
+          operationId: op.id,
+          operationName: op.name,
+          entityCount: 0,
+          sheetCount: 0,
+          entities: [],
+        });
+      }
+    }
+
     for (const entity of entities) {
       for (const occ of entity.occurrences) {
         if (!opMap.has(occ.operationId)) {
@@ -815,7 +831,7 @@ function OperationsTab({
     });
     const sortedRegistry = [...registry].sort((a, b) => a.operationName.localeCompare(b.operationName));
     return [...sorted, ...sortedRegistry];
-  }, [entities, sortOrder]);
+  }, [entities, allOps, sortOrder]);
 
   const filtered = useMemo(() => {
     if (!search) return operations;
@@ -1005,6 +1021,7 @@ const TAB_OPTIONS: Array<{ value: TabView; label: string; icon: React.ReactNode 
 export default function IntelligencePage() {
   const { viewMode } = useViewMode();
   const { data: entities, isLoading } = trpc.intelligence.getEntities.useQuery();
+  const { data: allOps } = trpc.operation.list.useQuery();
   const [, navigate] = useLocation();
   const [search, setSearch]         = useState("");
   const [activeTab, setActiveTab]   = useState<TabView>("operations");
@@ -1098,9 +1115,11 @@ export default function IntelligencePage() {
   const tabCounts = useMemo(() => {
     const counts: Partial<Record<TabView, number>> = {};
     if (!filteredEntities) return counts;
+    // Count all operations: entity-derived + any with no entities yet
     const opIds = new Set<number>();
     for (const e of filteredEntities) for (const o of e.occurrences) opIds.add(o.operationId);
-    counts["operations"]  = opIds.size;
+    const allOpCount = Math.max(opIds.size, allOps?.length ?? 0);
+    counts["operations"]  = allOpCount;
     counts["targets"]     = filteredEntities.filter((e) => e.isTarget === true).length;
     counts["associates"]  = filteredEntities.filter((e) => e.type === "person" && !e.isTarget).length;
     counts["vehicle"]     = filteredEntities.filter((e) => e.type === "vehicle").length;
@@ -1274,9 +1293,9 @@ export default function IntelligencePage() {
               </div>
             </div>
             {viewMode === "tile" ? (
-              <OperationsTab entities={filteredEntities} search={search} sortOrder={opSortOrder} tileView />
+              <OperationsTab entities={filteredEntities} allOps={allOps} search={search} sortOrder={opSortOrder} tileView />
             ) : (
-              <OperationsTab entities={filteredEntities} search={search} sortOrder={opSortOrder} />
+              <OperationsTab entities={filteredEntities} allOps={allOps} search={search} sortOrder={opSortOrder} />
             )}
           </>
         )}

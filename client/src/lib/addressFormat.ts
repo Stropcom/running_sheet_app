@@ -260,8 +260,13 @@ export function formatIntelVehicle(shortForm: string, fullObservation?: string):
   // Extract registration from "Vehicle REGO" pattern
   const vehiclePrefix = cleaned.match(/^[Vv]ehicle\s+(.+)$/i);
   if (!vehiclePrefix) {
-    // Not a "Vehicle REGO" format — return as-is (already normalised above)
-    return cleaned;
+    // Not a "Vehicle REGO" format.
+    // Fallback: strip ", bearing [STATE] registration REGO" suffix from the raw text
+    // (handles cases where the full observation text ended up as the shortForm).
+    const stripped = cleaned
+      .replace(/,?\s+bearing\s+(?:[A-Z]{2,3}\s+)?registration\s+[\w\s-]+$/i, "")
+      .trim();
+    return stripped || cleaned;
   }
 
   const rego = vehiclePrefix[1].trim().toUpperCase();
@@ -283,6 +288,11 @@ export function formatIntelVehicle(shortForm: string, fullObservation?: string):
         .replace(/^V\d[A-Z]?:\s*/i, "")
         .trim();
       if (desc && desc.toLowerCase() !== "vehicle") {
+        // If desc already starts with the rego (e.g. "1FDD444 black Subaru WRX"),
+        // return desc directly to avoid duplicating the rego in the display.
+        if (desc.toLowerCase().startsWith(rego.toLowerCase())) {
+          return desc;
+        }
         return `${rego} ${desc}`;
       }
     }

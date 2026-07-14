@@ -852,3 +852,11 @@
 - [x] Fix: map showing all targets when running sheet has no target selected
 - [x] Root cause: getIntelMappingLocations line 3367 — when filteredTargetIds.size === 0, it returned all targets instead of nothing
 - [x] Fix: early return [] when filteredTargetIds is empty after filtering
+
+## Intelligence Bug Fixes (Round 12 - Jul 14)
+- [x] Fix: Operations not appearing in Intelligence folder until a target is linked
+  - Root cause: OperationsTab derived its list solely from entities (intel extracted from observations); if no observations, no entities → operation never appeared
+  - Fix: added trpc.operation.list.useQuery() in IntelligencePage, passed allOps to OperationsTab, seeded opMap with all known operations so ops with 0 entities appear immediately
+- [x] Fix: Vehicle display showing full raw text (e.g. "1FDD444 black Subaru WRX, bearing WA registration 1FDD444") instead of clean format
+  - Root cause: formatIntelVehicle was prepending rego ("1FDD444") to desc ("1FDD444 black Subaru WRX") even when desc already started with the rego, producing "1FDD444 1FDD444 black Subaru WRX"
+  - Fix: added check — if desc.toLowerCase().startsWith(rego.toLowerCase()), return desc directly; also added fallback strip of ", bearing ... registration ..." for non-Vehicle-prefix shortForms

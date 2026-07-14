@@ -302,16 +302,57 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
 
     lines.push(sections.join(""));
   } else {
-    // Target address: keep original simple nav buttons
+    // Target address: full button set matching observation popup
+    const btnBase = "font-size:12px;font-weight:600;padding:7px 0;border-radius:6px;cursor:pointer;text-align:center;text-decoration:none;display:block;width:100%;box-sizing:border-box;";
+    const safeLabel = loc.label.replace(/'/g, "\\'");
+    const sections: string[] = [];
+
+    // Rotation slider
+    sections.push(`
+      <div style="margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <img id="intel-popup-preview-${encodedLabel}" src="data:image/svg+xml;base64,${btoa(getMarkerSvg(intelIcon as any, intelColour as any))}" style="width:24px;height:24px;object-fit:contain;flex-shrink:0;transform:rotate(${intelRotation}deg);transition:transform 0.1s;" />
+          <div style="flex:1;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+              <span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Rotation</span>
+              <span id="intel-popup-deg-${encodedLabel}" style="font-size:10px;color:#374151;font-weight:600;">${intelRotation}\u00b0</span>
+            </div>
+            <input id="intel-popup-slider-${encodedLabel}" type="range" min="0" max="359" step="1" value="${intelRotation}"
+              style="width:100%;accent-color:#6366f1;cursor:pointer;"
+              oninput="window.__intelPopupRotate('${safeLabel}', this.value)"
+            />
+          </div>
+        </div>
+      </div>
+    `);
+
+    // Row 0: RS Quick Entry — full width, indigo
+    sections.push(`<div style="margin-top:5px;"><button onclick="window.__intelRsQuickEntry('${safeLabel}')" style="${btnBase}background:#6366f1;color:#fff;border:none;font-size:13px;padding:9px 0;">RS Quick Entry</button></div>`);
+
+    // Row 1: Edit Target buttons (one per linked target) — teal
+    if (loc.linkedTargets.length > 0) {
+      for (const t of loc.linkedTargets) {
+        sections.push(`<div style="margin-top:5px;"><button onclick="window.__editTargetFromMap(${t.targetId})" style="${btnBase}background:#0f766e;color:#fff;border:none;font-size:13px;padding:9px 0;">Edit ${t.name}</button></div>`);
+      }
+    }
+
+    // Row 2: Waze | Street View
     if (loc.lat != null && loc.lng != null) {
       const lat = loc.lat;
       const lng = loc.lng;
-      const btnRow = [
-        `<a href="https://waze.com/ul?ll=${lat},${lng}&navigate=yes" target="_blank" style="font-size:11px;padding:4px 10px;background:#00bcd4;color:#fff;border-radius:4px;text-decoration:none">Waze</a>`,
-        `<a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}" target="_blank" style="font-size:11px;padding:4px 10px;background:#4285f4;color:#fff;border-radius:4px;text-decoration:none">Street View</a>`,
+      const navBtns = [
+        `<a href="https://waze.com/ul?ll=${lat},${lng}&navigate=yes" target="_blank" style="${btnBase}background:#00bcd4;color:#fff;">Waze</a>`,
+        `<a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}" target="_blank" style="${btnBase}background:#4285f4;color:#fff;">Street View</a>`,
       ];
-      lines.push(`<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${btnRow.join("")}</div>`);
+      sections.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;">${navBtns.join("")}</div>`);
     }
+
+    // Row 3: Edit (appearance) | Move
+    const editBtn = `<button onclick="window.__intelOpenEditDialog('${safeLabel}')" style="${btnBase}background:#16a34a;color:#fff;border:none;">Edit</button>`;
+    const moveBtn = `<button onclick="window.__intelStartMove('${safeLabel}')" style="${btnBase}background:#0369a1;color:#fff;border:none;">Move…</button>`;
+    sections.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;">${editBtn}${moveBtn}</div>`);
+
+    lines.push(sections.join(""));
   }
 
   // ── Secondary (observation) locs absorbed into this target_address pin ──

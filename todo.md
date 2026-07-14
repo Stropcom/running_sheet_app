@@ -860,3 +860,8 @@
 - [x] Fix: Vehicle display showing full raw text (e.g. "1FDD444 black Subaru WRX, bearing WA registration 1FDD444") instead of clean format
   - Root cause: formatIntelVehicle was prepending rego ("1FDD444") to desc ("1FDD444 black Subaru WRX") even when desc already started with the rego, producing "1FDD444 1FDD444 black Subaru WRX"
   - Fix: added check — if desc.toLowerCase().startsWith(rego.toLowerCase()), return desc directly; also added fallback strip of ", bearing ... registration ..." for non-Vehicle-prefix shortForms
+
+## Map Target Marker Popup Fix (Round 13 - Jul 14)
+- [x] Fix: target address marker popup was missing action buttons (rotation slider, RS Quick Entry, Edit Target, Waze, Street View, Edit appearance, Move)
+- [x] Root cause: buildInfoWindowContent had an if/else split where observation locations got the full button set but target addresses only got small Waze + Street View links
+- [x] Fix: replaced the target address else-branch with the full button set matching the observation popup, including rotation slider, RS Quick Entry, Edit Target (per linked target), Waze/Street View, Edit (appearance), Move

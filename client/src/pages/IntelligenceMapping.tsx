@@ -60,6 +60,7 @@ import {
   UserCog,
   LayoutGrid,
   FolderOpen as FolderIcon,
+  Clock,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -143,12 +144,22 @@ const ALL_QUICK_LINK_OPTIONS: QuickLink[] = [
 
 const DEFAULT_QUICK_LINKS: QuickLink[] = [
   { label: "Intel Profiles", path: "/intelligence", icon: "FolderSearch" },
-  { label: "Target Registry", path: "/target-registry", icon: "BookOpen" },
   { label: "Governance", path: "/governance", icon: "ClipboardCheck" },
   { label: "Calendar", path: "/calendar", icon: "CalendarDays" },
-  { label: "To-Do", path: "/todo", icon: "ClipboardList" },
-  { label: "Shortcuts", path: "/shortcuts", icon: "Zap" },
 ];
+
+// Key → nav item mapping (mirrors DashboardLayout SortableNavItem)
+const NAV_KEY_MAP: Record<string, { path: string; Icon: React.ComponentType<{ className?: string }>; label: string; iconColor: string }> = {
+  operations:       { path: "/",                    Icon: FileText,      label: "Operations",     iconColor: "text-cyan-500" },
+  governance:       { path: "/governance",           Icon: ClipboardCheck, label: "Governance",     iconColor: "text-purple-500" },
+  todo:             { path: "/todo",                 Icon: ClipboardList,  label: "To-Do",          iconColor: "text-rose-500" },
+  mapping:          { path: "/intelligence/mapping", Icon: MapIcon,        label: "Mapping",        iconColor: "text-teal-500" },
+  calendar:         { path: "/calendar",             Icon: CalendarDays,   label: "Calendar",       iconColor: "text-orange-500" },
+  shortcuts:        { path: "/shortcuts",            Icon: Zap,            label: "Shortcuts",      iconColor: "text-yellow-500" },
+  intelligence:     { path: "/intelligence",         Icon: FolderSearch,   label: "Intelligence",   iconColor: "text-violet-500" },
+  targetRegistry:   { path: "/target-registry",      Icon: BookOpen,       label: "Target Registry",iconColor: "text-rose-400" },
+  operationManager: { path: "/operation-manager",    Icon: ClipboardList,  label: "Op Manager",     iconColor: "text-purple-500" },
+};
 
 const LS_QUICK_LINKS_KEY = "runlog_map_quick_links";
 const LS_MAP_SETTINGS_KEY = "runlog_map_settings";
@@ -442,7 +453,7 @@ function haversineMetres(lat1: number, lng1: number, lat2: number, lng2: number)
 }
 
 // ── Map Sidebar Nav Component ─────────────────────────────────────────────────
-function MapSidebarNav({ user, onNavigate }: { user: any; onNavigate: (path: string) => void }) {
+function MapSidebarNav({ user, onNavigate, navOrder }: { user: any; onNavigate: (path: string) => void; navOrder: string[] }) {
   const curPath = window.location.pathname;
   const [adminExpanded, setAdminExpanded] = useState(false);
   const [userMgmtExpanded, setUserMgmtExpanded] = useState(false);
@@ -487,14 +498,11 @@ function MapSidebarNav({ user, onNavigate }: { user: any; onNavigate: (path: str
 
   return (
     <div className="flex-1 overflow-y-auto py-2 px-2 flex flex-col gap-1.5">
-      {navBtn("/", FileText, "Operations", "text-cyan-500")}
-      {navBtn("/governance", ClipboardCheck, "Governance", "text-purple-500")}
-      {navBtn("/todo", ClipboardList, "To-Do", "text-rose-500")}
-      {navBtn("/intelligence/mapping", MapIcon, "Mapping", "text-teal-500")}
-      {navBtn("/calendar", CalendarDays, "Calendar", "text-orange-500")}
-      {navBtn("/shortcuts", Zap, "Shortcuts", "text-yellow-500")}
-      {navBtn("/intelligence", FolderSearch, "Intelligence", "text-violet-500")}
-      {navBtn("/target-registry", BookOpen, "Target Registry", "text-rose-400")}
+      {navOrder.map(key => {
+        const item = NAV_KEY_MAP[key];
+        if (!item) return null;
+        return navBtn(item.path, item.Icon, item.label, item.iconColor);
+      })}
 
       {/* Administration folder */}
       <button
@@ -572,7 +580,15 @@ export default function IntelligenceMapping() {
     try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return new Set<number>(JSON.parse(s).opExpanded ?? []); } catch { /* ignore */ } return new Set();
   });
   // Left pane starts closed — user opens it when needed. Never auto-open on navigation.
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  // On desktop (lg+), the left pane is always open and resizable
+  const isDesktop = typeof window !== "undefined" && window.innerWidth >= 1024;
+  const [sidebarOpen, setSidebarOpen] = useState(() => isDesktop);
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    try { const s = localStorage.getItem("runlog_map_sidebar_width"); if (s) return Math.max(200, Math.min(480, parseInt(s))); } catch { /* ignore */ } return 256;
+  });
+  const sidebarResizingRef = useRef(false);
+  const sidebarResizeStartXRef = useRef(0);
+  const sidebarResizeStartWidthRef = useRef(256);
 
   // Per-device ID — tab-unique, stored in sessionStorage so each browser tab gets its own ID.
   // This is critical: two tabs logged in as the same user must have different deviceIds so
@@ -668,6 +684,7 @@ export default function IntelligenceMapping() {
   const [actionChooser, setActionChooser] = useState<{ lat: number; lng: number; address: string; intelLoc?: IntelMapLocation } | null>(null);
   // RS Quick Entry from map: shown when user picks "RS Quick Entry" from the action chooser
   const [mapQeOpen, setMapQeOpen] = useState(false);
+  const [mapQeTimeOverride, setMapQeTimeOverride] = useState<string | null>(null); // "HH:MM AM/PM" or null for current time
   const [mapQeAddress, setMapQeAddress] = useState(""); // pre-filled address for the observation
   const [cmLabel, setCmLabel] = useState("");
   const [cmAddress, setCmAddress] = useState("");
@@ -912,6 +929,47 @@ export default function IntelligenceMapping() {
     { targetId: rsTargetData?.id! },
     { enabled: !!rsTargetData?.id }
   );
+
+  // Per-sheet target shortcuts (for RS Quick Entry shortcut expansion)
+  const { data: targetShortcutsForSheet } = trpc.targetShortcuts.listForSheet.useQuery(
+    { sheetId: rsSelectedSheetId! },
+    { enabled: !!rsSelectedSheetId }
+  );
+  // Assigned target for the selected sheet (for TGT/HBF/HB/V1F/V1/V2F/V2/DEP/ARR shortcuts)
+  const { data: assignedTarget } = trpc.target.getById.useQuery(
+    { id: rsTargetData?.id ?? 0 },
+    { enabled: !!rsTargetData?.id }
+  );
+  // Combined shortcut map for RS Quick Entry textarea
+  const mapQeShortcutMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const s of (generalShortcuts as any[] ?? [])) map[s.trigger.toLowerCase()] = s.expansion;
+    if (assignedTarget) {
+      const t = assignedTarget as any;
+      if (t.tgt) map['tgt'] = t.tgt;
+      if (t.hbf) map['hbf'] = t.hbf;
+      if (t.hb)  map['hb']  = t.hb;
+      if (t.v1f) map['v1f'] = t.v1f;
+      if (t.v1)  map['v1']  = t.v1;
+      if (t.v2f) map['v2f'] = t.v2f;
+      if (t.v2)  map['v2']  = t.v2;
+      if (t.dep) map['dep'] = t.dep;
+      if (t.arr) map['arr'] = t.arr;
+    }
+    for (const s of (targetShortcutsForSheet as any[] ?? [])) map[s.trigger.toLowerCase()] = s.expansion;
+    return map;
+  }, [generalShortcuts, assignedTarget, targetShortcutsForSheet]);
+
+  // Sidebar order (mirrors main menu) for left map pane
+  const { data: sidebarOrderData } = trpc.sidebar.getOrder.useQuery(undefined, { staleTime: 30_000 });
+  const DEFAULT_MAP_NAV_ORDER = ["operations", "governance", "todo", "mapping", "calendar", "shortcuts", "intelligence", "targetRegistry", "operationManager"];
+  const mapNavOrder = useMemo(() => {
+    if (!sidebarOrderData?.order?.length) return DEFAULT_MAP_NAV_ORDER;
+    const saved = sidebarOrderData.order as string[];
+    const merged = [...saved.filter((k: string) => DEFAULT_MAP_NAV_ORDER.includes(k))];
+    for (const k of DEFAULT_MAP_NAV_ORDER) { if (!merged.includes(k)) merged.push(k); }
+    return merged;
+  }, [sidebarOrderData]);
 
   // Targets per operation
   const { data: allTargets } = trpc.target.registry.list.useQuery();
@@ -1962,8 +2020,9 @@ export default function IntelligenceMapping() {
     const finalText = rsInlineText.trim() ? rsInlineText.trim() : rsInlineLabel;
     // Capture CINs BEFORE closeInlineField clears the ref
     const cinsToAttach = new Set(rsInlineCinsRef.current);
+    const timeOverride = mapQeTimeOverride;
     closeInlineField();
-    addQuickRsEntry(finalText, cinsToAttach);
+    addQuickRsEntry(finalText, cinsToAttach, timeOverride);
   };
 
   const resetInlineTimer = () => {
@@ -1986,6 +2045,8 @@ export default function IntelligenceMapping() {
   // (replaces the old trigger buttons — the full form appears immediately)
   useEffect(() => {
     if (mapQeOpen && rsSelectedSheetId) {
+      // Reset time override to current time on each open
+      setMapQeTimeOverride(null);
       // Use a small delay so the sheet has rendered before we set focus
       setTimeout(() => {
         setRsInlineLabel("Entry");
@@ -2002,14 +2063,36 @@ export default function IntelligenceMapping() {
     }
   }, [mapQeOpen, rsSelectedSheetId]);
 
-  const addQuickRsEntry = (observation: string, cinsToAttach?: Set<string> | null) => {
+  const addQuickRsEntry = (observation: string, cinsToAttach?: Set<string> | null, timeOverride?: string | null) => {
     if (!rsSelectedSheetId) return;
-    const now = new Date();
-    const h24 = now.getHours();
-    const min = now.getMinutes();
-    const totalMins = h24 * 60 + min;
-    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
-    const timeStr = `${String(h12).padStart(2, "0")}:${String(min).padStart(2, "0")} ${h24 < 12 ? "AM" : "PM"}`;
+    let timeStr: string;
+    let totalMins: number;
+    if (timeOverride) {
+      const match = timeOverride.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+      if (match) {
+        let h = parseInt(match[1]);
+        const m = parseInt(match[2]);
+        const ampm = match[3].toUpperCase();
+        if (ampm === "PM" && h !== 12) h += 12;
+        if (ampm === "AM" && h === 12) h = 0;
+        totalMins = h * 60 + m;
+        const h12 = h % 12 === 0 ? 12 : h % 12;
+        timeStr = `${String(h12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${ampm}`;
+      } else {
+        const now = new Date();
+        const h24 = now.getHours(); const min = now.getMinutes();
+        totalMins = h24 * 60 + min;
+        const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+        timeStr = `${String(h12).padStart(2, "0")}:${String(min).padStart(2, "0")} ${h24 < 12 ? "AM" : "PM"}`;
+      }
+    } else {
+      const now = new Date();
+      const h24 = now.getHours();
+      const min = now.getMinutes();
+      totalMins = h24 * 60 + min;
+      const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+      timeStr = `${String(h12).padStart(2, "0")}:${String(min).padStart(2, "0")} ${h24 < 12 ? "AM" : "PM"}`;
+    }
     setRsAddingRow(true);
     // Store the CINs in a local variable captured by the mutation callback
     const cins = cinsToAttach ? Array.from(cinsToAttach) : [];
@@ -2046,10 +2129,12 @@ export default function IntelligenceMapping() {
       {/* ── Side Panel ── */}
       <div
         ref={panelRef}
-        className={`flex flex-col border-r-2 border-border bg-card transition-all duration-200 shadow-2xl ${
-          sidebarOpen ? "w-64 min-w-[16rem] rounded-r-2xl" : "w-0 min-w-0 overflow-hidden"
+        className={`flex flex-col border-r-2 border-border bg-card shadow-2xl relative flex-shrink-0 ${
+          sidebarOpen
+            ? "lg:rounded-none rounded-r-2xl transition-none"
+            : "w-0 min-w-0 overflow-hidden transition-all duration-200"
         }`}
-        style={sidebarOpen ? { clipPath: "none" } : undefined}
+        style={sidebarOpen ? { width: `${sidebarWidth}px`, minWidth: `${sidebarWidth}px` } : undefined}
       >
         {/* Panel Header */}
         <div className="flex items-center justify-between px-4 py-3.5 border-b-2 border-border flex-shrink-0 bg-muted/20">
@@ -2057,7 +2142,8 @@ export default function IntelligenceMapping() {
             <ShieldCheck className="h-4 w-4 text-primary" />
             <span className="font-bold text-sm tracking-tight">Navigate</span>
           </div>
-          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl" onClick={() => setSidebarOpen(false)}>
+          {/* Close button: hidden on desktop (always open), visible on mobile/tablet */}
+          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl lg:hidden" onClick={() => setSidebarOpen(false)}>
             <X className="h-4 w-4" />
           </Button>
         </div>
@@ -2065,7 +2151,33 @@ export default function IntelligenceMapping() {
         {/* App Navigation Menu */}
         <MapSidebarNav
           user={user}
-          onNavigate={(path) => { setSidebarOpen(false); setLocation(path); }}
+          onNavigate={(path) => { if (!isDesktop) setSidebarOpen(false); setLocation(path); }}
+          navOrder={mapNavOrder}
+        />
+
+        {/* Resize handle — desktop only */}
+        <div
+          className="hidden lg:block absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 transition-colors z-10"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            sidebarResizingRef.current = true;
+            sidebarResizeStartXRef.current = e.clientX;
+            sidebarResizeStartWidthRef.current = sidebarWidth;
+            const onMove = (me: MouseEvent) => {
+              if (!sidebarResizingRef.current) return;
+              const delta = me.clientX - sidebarResizeStartXRef.current;
+              const newW = Math.max(200, Math.min(480, sidebarResizeStartWidthRef.current + delta));
+              setSidebarWidth(newW);
+            };
+            const onUp = () => {
+              sidebarResizingRef.current = false;
+              document.removeEventListener("mousemove", onMove);
+              document.removeEventListener("mouseup", onUp);
+              try { localStorage.setItem("runlog_map_sidebar_width", String(sidebarWidth)); } catch { /* ignore */ }
+            };
+            document.addEventListener("mousemove", onMove);
+            document.addEventListener("mouseup", onUp);
+          }}
         />
       </div>
 
@@ -2507,119 +2619,7 @@ export default function IntelligenceMapping() {
               ) : null;
             })()}
 
-            {/* RS Quick Entry — collapsible inline panel */}
-            {rsSelectedSheetId !== null && (
-              <div className="rounded-xl border-2 border-border overflow-hidden">
-                {/* Collapse header */}
-                <button
-                  onClick={() => setRsQeExpanded(v => !v)}
-                  className="flex items-center justify-between w-full px-3 py-2.5 bg-muted/30 hover:bg-muted/50 transition-colors"
-                >
-                  <div className="flex items-center gap-2">
-                    <Plus className="h-3.5 w-3.5 text-primary" />
-                    <span className="text-xs font-semibold text-foreground">RS Quick Entry</span>
-                  </div>
-                  {rsQeExpanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
-                </button>
-
-                {/* Collapsible body — full RS Quick Entry form */}
-                {rsQeExpanded && rsSelectedSheetId && (() => {
-                  const selectedSheet = (rsSheetsData as any[] | undefined)?.find((s: any) => s.id === rsSelectedSheetId);
-                  const rosterCins: string[] = [];
-                  if (selectedSheet?.sheetCins) {
-                    try {
-                      const parsed: Array<{ cin: string; isTeamLeader?: boolean }> = typeof selectedSheet.sheetCins === "string" ? JSON.parse(selectedSheet.sheetCins) : selectedSheet.sheetCins;
-                      parsed.sort((a, b) => { if (a.isTeamLeader && !b.isTeamLeader) return -1; if (!a.isTeamLeader && b.isTeamLeader) return 1; const numA = parseInt(a.cin ?? "", 10); const numB = parseInt(b.cin ?? "", 10); if (!isNaN(numA) && !isNaN(numB)) return numA - numB; return (a.cin ?? "").localeCompare(b.cin ?? ""); }).forEach(c => { if (c.cin) rosterCins.push(c.cin); });
-                    } catch { /* ignore */ }
-                  }
-                  const appendQeText = (text: string) => { setRsQeText(prev => prev ? `${prev} ${text}` : text); rsQeInputRef.current?.focus(); };
-                  const findShortcut = (trigger: string) => { const tgt = (targetShortcuts as any[] | undefined)?.find((s: any) => s.trigger?.toLowerCase() === trigger.toLowerCase()); if (tgt) return tgt.expansion as string; const gen = (generalShortcuts as any[] | undefined)?.find((s: any) => s.trigger?.toLowerCase() === trigger.toLowerCase()); return gen ? gen.expansion as string : null; };
-                  const shortcuts: Array<{ label: string; getValue: () => string | null }> = [
-                    { label: "V1", getValue: () => rsTargetData?.v1 ?? rsTargetData?.v1f ?? null },
-                    { label: "V2", getValue: () => rsTargetData?.v2 ?? rsTargetData?.v2f ?? null },
-                    { label: "TGT", getValue: () => rsTargetData?.tgt ?? rsTargetData?.name ?? null },
-                    { label: "DSO", getValue: () => findShortcut("dso") ?? "driver and sole occupant" },
-                    { label: "D", getValue: () => findShortcut("d") ?? "departed and" },
-                    { label: "AR", getValue: () => findShortcut("ar") ?? "arrived and" },
-                    { label: "CV", getValue: () => findShortcut("cv") ?? "continued via" },
-                    { label: "OOS", getValue: () => findShortcut("oos") ?? "out of sight" },
-                    { label: "COOS", getValue: () => findShortcut("coos") ?? "continued out of sight" },
-                  ];
-                  const available = shortcuts.filter(s => s.getValue() !== null);
-                  const submitQeEntry = () => {
-                    const obs = rsQeText.trim() || "Entry";
-                    const cins = new Set(rsQeCins);
-                    setRsQeText("");
-                    setRsQeCins(new Set());
-                    addQuickRsEntry(obs, cins);
-                  };
-                  return (
-                    <div className="px-3 py-3 border-t border-border bg-card space-y-2.5">
-                      {/* OBSERVATION */}
-                      <div className="space-y-1.5">
-                        <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Observation</span>
-                        <textarea
-                          ref={rsQeInputRef}
-                          value={rsQeText}
-                          onChange={(e) => setRsQeText(e.target.value)}
-                          placeholder="Add details (optional)…"
-                          rows={3}
-                          className="w-full resize-none rounded-xl border-2 border-border bg-background px-3 py-2 text-[12px] placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                        />
-                        {/* Shortcut chips */}
-                        {available.length > 0 && (
-                          <div className="flex flex-wrap gap-1">
-                            {available.map(s => (
-                              <button key={s.label} onClick={() => { const v = s.getValue(); if (v) appendQeText(v); }} className="px-2 py-0.5 rounded-md text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all">{s.label}</button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      {/* FULL ADDRESS */}
-                      <div className="rounded-xl border-2 border-border bg-muted/30 px-3 py-2">
-                        <p className="text-[9px] font-bold uppercase tracking-wide text-primary mb-1">Full Address</p>
-                        <p className="text-[11px] font-mono text-foreground leading-snug">{rsTargetData?.arr ?? "—"}</p>
-                      </div>
-                      {/* SHORT ADDRESS */}
-                      {rsTargetData?.arr && (() => {
-                        const short = rsTargetData.arr.split(",")[0]?.trim() ?? rsTargetData.arr;
-                        return (
-                          <div className="rounded-xl border-2 border-border bg-muted/30 px-3 py-2">
-                            <p className="text-[9px] font-bold uppercase tracking-wide text-primary mb-1">Short Address</p>
-                            <p className="text-[11px] font-mono text-foreground">{short}</p>
-                          </div>
-                        );
-                      })()}
-                      {/* TEAM / CIN chips */}
-                      {rosterCins.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5">
-                          <button
-                            onClick={() => { const allSel = rosterCins.every(c => rsQeCins.has(c)); setRsQeCins(allSel ? new Set() : new Set(rosterCins)); }}
-                            className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all active:scale-95 ${rosterCins.every(c => rsQeCins.has(c)) ? "bg-amber-500/20 border-amber-500/60 text-amber-400" : "bg-muted/40 border-amber-500/30 text-amber-500/80 hover:bg-amber-500/10"}`}
-                          >TEAM</button>
-                          {rosterCins.map((cin) => (
-                            <button key={cin} onClick={() => { const next = new Set(rsQeCins); if (next.has(cin)) { next.delete(cin); } else { next.add(cin); } setRsQeCins(next); }} className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all active:scale-95 ${rsQeCins.has(cin) ? "bg-primary/20 border-primary/60 text-primary" : "bg-muted/40 border-border text-foreground/80 hover:bg-muted/70 hover:text-foreground"}`}>{cin}</button>
-                          ))}
-                        </div>
-                      )}
-                      {/* Submit */}
-                      <div className="flex justify-end">
-                        <button onClick={submitQeEntry} disabled={rsAddingRow} className="flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-[11px] font-semibold text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-50">
-                          {rsAddingRow ? <Spinner className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />} Submit
-                        </button>
-                      </div>
-                      {/* Last entry confirmation */}
-                      {rsLastEntry && (
-                        <div className="rounded-xl border border-green-500/30 bg-green-500/10 px-3 py-2">
-                          <p className="text-[9px] font-bold uppercase tracking-wide text-green-400 mb-0.5">Last Entry</p>
-                          <p className="text-[11px] font-mono text-foreground">{rsLastEntry.time} — {rsLastEntry.label}</p>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
+            {/* RS Quick Entry moved to bottom tab bar — use the indigo RS Entry pill instead */}
           </div>{/* end RS Selection */}
 
           {/* ── TEAMS (Live Location) ── */}
@@ -2739,57 +2739,69 @@ export default function IntelligenceMapping() {
       </div>
 
       {/* ── Bottom Quick-Link Pills ── */}
-      {/* Mobile/tablet: 4 pills compact | Laptop (lg+): 6 pills elongated */}
+      {/* Mobile: 3 fixed + 1 custom | Tablet (md+): 3 fixed + 2 custom | Laptop (lg+): 3 fixed + 3 custom */}
       <div className="absolute bottom-3 left-0 right-0 z-20 flex items-end justify-center gap-2 px-3 pointer-events-none">
 
         {/* Pill 1 — Folders (fixed) */}
         <button
-          onClick={() => setLocation("/")}
+          onClick={() => setSidebarOpen(true)}
           className="pointer-events-auto flex flex-col items-center justify-center gap-1 px-4 lg:px-6 py-2.5 rounded-2xl shadow-lg bg-card border border-border hover:bg-accent active:scale-95 transition-all min-w-[64px] lg:min-w-[88px]"
         >
           <FolderIcon className="h-5 w-5 text-blue-700" />
           <span className="text-[10px] lg:text-[11px] font-semibold text-foreground/70 leading-none">Folders</span>
         </button>
 
-        {/* Pill 2 — Dashboard (fixed) */}
-        <button
-          onClick={() => setLocation("/tile-home")}
-          className="pointer-events-auto flex flex-col items-center justify-center gap-1 px-4 lg:px-6 py-2.5 rounded-2xl shadow-lg bg-card border border-border hover:bg-accent active:scale-95 transition-all min-w-[64px] lg:min-w-[88px]"
-        >
-          <LayoutGrid className="h-5 w-5 text-indigo-500" />
-          <span className="text-[10px] lg:text-[11px] font-semibold text-foreground/70 leading-none">Dashboard</span>
-        </button>
-
-        {/* Pill 3 — Active Running Sheet (greyed when none selected; tap-hold to customise) */}
+        {/* Pill 2 — Active RS (fixed, always shows "Active RS" label, greyed when none selected) */}
         {(() => {
           const activeSheet = rsSelectedSheetId && rsSheetsData
             ? (rsSheetsData as any[]).find((s: any) => s.id === rsSelectedSheetId)
             : null;
-          const sheetTitle = activeSheet ? (activeSheet.title || `Sheet #${activeSheet.id}`) : null;
-          let holdTimer3: ReturnType<typeof setTimeout> | null = null;
+          let holdTimer2: ReturnType<typeof setTimeout> | null = null;
           return (
             <button
               disabled={!activeSheet}
               onClick={() => { if (activeSheet) setLocation(`/sheet/${rsSelectedSheetId}`); }}
-              onPointerDown={() => { holdTimer3 = setTimeout(() => setEditingQuickLinks(true), 600); }}
-              onPointerUp={() => { if (holdTimer3) clearTimeout(holdTimer3); }}
-              onPointerLeave={() => { if (holdTimer3) clearTimeout(holdTimer3); }}
-              className={`pointer-events-auto flex flex-col items-center justify-center gap-1 px-4 lg:px-6 py-2.5 rounded-2xl shadow-lg border transition-all min-w-[64px] lg:min-w-[88px] max-w-[110px] ${
+              onPointerDown={() => { holdTimer2 = setTimeout(() => setEditingQuickLinks(true), 600); }}
+              onPointerUp={() => { if (holdTimer2) clearTimeout(holdTimer2); }}
+              onPointerLeave={() => { if (holdTimer2) clearTimeout(holdTimer2); }}
+              className={`pointer-events-auto flex flex-col items-center justify-center gap-1 px-4 lg:px-6 py-2.5 rounded-2xl shadow-lg border transition-all min-w-[64px] lg:min-w-[88px] ${
                 activeSheet
                   ? "bg-card border-border hover:bg-accent active:scale-95 cursor-pointer"
                   : "bg-card/60 border-border/40 cursor-default opacity-50"
               }`}
-              title={activeSheet ? `Open: ${sheetTitle}` : "No running sheet selected"}
+              title={activeSheet ? `Open active running sheet` : "No running sheet selected"}
             >
               <ClipboardList className={`h-5 w-5 flex-shrink-0 ${activeSheet ? "text-emerald-500" : "text-muted-foreground/40"}`} />
-              <span className={`text-[10px] lg:text-[11px] font-semibold leading-none truncate max-w-[96px] ${activeSheet ? "text-foreground/70" : "text-muted-foreground/40"}`}>
-                {sheetTitle ?? "Active RS"}
+              <span className={`text-[10px] lg:text-[11px] font-semibold leading-none ${activeSheet ? "text-foreground/70" : "text-muted-foreground/40"}`}>
+                Active RS
               </span>
             </button>
           );
         })()}
 
-        {/* Pill 4 — Customisable slot 1 */}
+        {/* Pill 3 — RS Quick Entry (fixed, indigo, greyed when no sheet selected) */}
+        {(() => {
+          const hasSheet = !!rsSelectedSheetId;
+          return (
+            <button
+              disabled={!hasSheet}
+              onClick={() => { if (hasSheet) setMapQeOpen(true); }}
+              className={`pointer-events-auto flex flex-col items-center justify-center gap-1 px-4 lg:px-6 py-2.5 rounded-2xl shadow-lg border transition-all min-w-[64px] lg:min-w-[88px] ${
+                hasSheet
+                  ? "bg-indigo-600 border-indigo-500 hover:bg-indigo-500 active:scale-95 cursor-pointer"
+                  : "bg-card/60 border-border/40 cursor-default opacity-50"
+              }`}
+              title={hasSheet ? "RS Quick Entry" : "Select a running sheet first"}
+            >
+              <FileText className={`h-5 w-5 flex-shrink-0 ${hasSheet ? "text-white" : "text-muted-foreground/40"}`} />
+              <span className={`text-[10px] lg:text-[11px] font-semibold leading-none ${hasSheet ? "text-white" : "text-muted-foreground/40"}`}>
+                RS Entry
+              </span>
+            </button>
+          );
+        })()}
+
+        {/* Pill 4 — Custom slot 1 (all screen sizes) */}
         {(() => {
           const ql = quickLinks[0];
           const iconEntry = ql ? ICON_MAP[ql.icon] : null;
@@ -2798,7 +2810,7 @@ export default function IntelligenceMapping() {
           let holdTimer4: ReturnType<typeof setTimeout> | null = null;
           return (
             <button
-              onClick={() => { if (ql) setLocation(ql.path); }}
+              onClick={() => { if (ql) setLocation(ql.path); else setEditingQuickLinks(true); }}
               onPointerDown={() => { holdTimer4 = setTimeout(() => setEditingQuickLinks(true), 600); }}
               onPointerUp={() => { if (holdTimer4) clearTimeout(holdTimer4); }}
               onPointerLeave={() => { if (holdTimer4) clearTimeout(holdTimer4); }}
@@ -2811,31 +2823,53 @@ export default function IntelligenceMapping() {
           );
         })()}
 
-        {/* Pills 5 & 6 — Extra customisable slots, laptop only (lg+) */}
-        {[1, 2].map((slotOffset) => (
-          <div key={slotOffset} className="hidden lg:block">
-            {(() => {
-              const ql = quickLinks[slotOffset];
-              const iconEntry = ql ? ICON_MAP[ql.icon] : null;
-              const IconComp = iconEntry?.Icon ?? FolderSearch;
-              const iconColour = iconEntry?.colour ?? "text-muted-foreground";
-              let holdTimerX: ReturnType<typeof setTimeout> | null = null;
-              return (
-                <button
-                  onClick={() => { if (ql) setLocation(ql.path); }}
-                  onPointerDown={() => { holdTimerX = setTimeout(() => setEditingQuickLinks(true), 600); }}
-                  onPointerUp={() => { if (holdTimerX) clearTimeout(holdTimerX); }}
-                  onPointerLeave={() => { if (holdTimerX) clearTimeout(holdTimerX); }}
-                  className="pointer-events-auto flex flex-col items-center justify-center gap-1 px-6 py-2.5 rounded-2xl shadow-lg bg-card border border-border hover:bg-accent active:scale-95 transition-all min-w-[88px]"
-                  title={ql ? `${ql.label} — hold to change` : "Hold to set shortcut"}
-                >
-                  <IconComp className={`h-5 w-5 ${iconColour}`} />
-                  <span className="text-[11px] font-semibold text-foreground/70 leading-none truncate max-w-[80px]">{ql?.label ?? "Shortcut"}</span>
-                </button>
-              );
-            })()}
-          </div>
-        ))}
+        {/* Pill 5 — Custom slot 2 (tablet md+ only) */}
+        <div className="hidden md:block">
+          {(() => {
+            const ql = quickLinks[1];
+            const iconEntry = ql ? ICON_MAP[ql.icon] : null;
+            const IconComp = iconEntry?.Icon ?? FolderSearch;
+            const iconColour = iconEntry?.colour ?? "text-muted-foreground";
+            let holdTimer5: ReturnType<typeof setTimeout> | null = null;
+            return (
+              <button
+                onClick={() => { if (ql) setLocation(ql.path); else setEditingQuickLinks(true); }}
+                onPointerDown={() => { holdTimer5 = setTimeout(() => setEditingQuickLinks(true), 600); }}
+                onPointerUp={() => { if (holdTimer5) clearTimeout(holdTimer5); }}
+                onPointerLeave={() => { if (holdTimer5) clearTimeout(holdTimer5); }}
+                className="pointer-events-auto flex flex-col items-center justify-center gap-1 px-4 lg:px-6 py-2.5 rounded-2xl shadow-lg bg-card border border-border hover:bg-accent active:scale-95 transition-all min-w-[64px] lg:min-w-[88px]"
+                title={ql ? `${ql.label} — hold to change` : "Hold to set shortcut"}
+              >
+                <IconComp className={`h-5 w-5 ${iconColour}`} />
+                <span className="text-[10px] lg:text-[11px] font-semibold text-foreground/70 leading-none truncate max-w-[80px]">{ql?.label ?? "Shortcut"}</span>
+              </button>
+            );
+          })()}
+        </div>
+
+        {/* Pill 6 — Custom slot 3 (laptop lg+ only) */}
+        <div className="hidden lg:block">
+          {(() => {
+            const ql = quickLinks[2];
+            const iconEntry = ql ? ICON_MAP[ql.icon] : null;
+            const IconComp = iconEntry?.Icon ?? FolderSearch;
+            const iconColour = iconEntry?.colour ?? "text-muted-foreground";
+            let holdTimer6: ReturnType<typeof setTimeout> | null = null;
+            return (
+              <button
+                onClick={() => { if (ql) setLocation(ql.path); else setEditingQuickLinks(true); }}
+                onPointerDown={() => { holdTimer6 = setTimeout(() => setEditingQuickLinks(true), 600); }}
+                onPointerUp={() => { if (holdTimer6) clearTimeout(holdTimer6); }}
+                onPointerLeave={() => { if (holdTimer6) clearTimeout(holdTimer6); }}
+                className="pointer-events-auto flex flex-col items-center justify-center gap-1 px-6 py-2.5 rounded-2xl shadow-lg bg-card border border-border hover:bg-accent active:scale-95 transition-all min-w-[88px]"
+                title={ql ? `${ql.label} — hold to change` : "Hold to set shortcut"}
+              >
+                <IconComp className={`h-5 w-5 ${iconColour}`} />
+                <span className="text-[11px] font-semibold text-foreground/70 leading-none truncate max-w-[80px]">{ql?.label ?? "Shortcut"}</span>
+              </button>
+            );
+          })()}
+        </div>
 
       </div>
 
@@ -2853,7 +2887,7 @@ export default function IntelligenceMapping() {
             <div className="flex items-center justify-between mb-4">
               <div>
                 <p className="text-sm font-bold text-foreground">Customise Quick Links</p>
-                <p className="text-xs text-muted-foreground mt-0.5">Choose up to 4 folders for the map banner</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Choose up to 3 custom shortcut folders (laptop: 3, tablet: 2, mobile: 1)</p>
               </div>
               <button
                 onClick={() => setEditingQuickLinks(false)}
@@ -2877,11 +2911,11 @@ export default function IntelligenceMapping() {
                         let next: QuickLink[];
                         if (isSelected) {
                           next = prev.filter(q => q.path !== opt.path);
-                        } else if (prev.length < 4) {
+                        } else if (prev.length < 3) {
                           next = [...prev, opt];
                         } else {
                           // Replace last slot
-                          next = [...prev.slice(0, 3), opt];
+                          next = [...prev.slice(0, 2), opt];
                         }
                         localStorage.setItem(LS_QUICK_LINKS_KEY, JSON.stringify(next));
                         return next;
@@ -3465,6 +3499,31 @@ export default function IntelligenceMapping() {
               </button>
             </div>
 
+            {/* Compact time selector */}
+            <div className="flex items-center gap-2 mb-3">
+              <Clock className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+              <span className="text-[11px] text-muted-foreground font-medium">Time:</span>
+              <input
+                type="time"
+                defaultValue={(() => { const n = new Date(); return `${String(n.getHours()).padStart(2,"0")}:${String(n.getMinutes()).padStart(2,"0")}`; })()}
+                onChange={(e) => {
+                  const [hStr, mStr] = e.target.value.split(":");
+                  const h = parseInt(hStr ?? "0");
+                  const m = parseInt(mStr ?? "0");
+                  const ampm = h < 12 ? "AM" : "PM";
+                  const h12 = h % 12 === 0 ? 12 : h % 12;
+                  setMapQeTimeOverride(`${String(h12).padStart(2,"0")}:${String(m).padStart(2,"0")} ${ampm}`);
+                }}
+                className="rounded-md border border-border bg-background px-2 py-1 text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+              {mapQeTimeOverride && (
+                <button
+                  onClick={() => setMapQeTimeOverride(null)}
+                  className="text-[10px] text-muted-foreground hover:text-foreground underline"
+                >Now</button>
+              )}
+            </div>
+
             {/* No sheet selected warning */}
             {rsSelectedSheetId === null ? (
               <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-3 text-center">
@@ -3543,6 +3602,30 @@ export default function IntelligenceMapping() {
                         value={rsInlineText}
                         onChange={(e) => { setRsInlineText(e.target.value); resetInlineTimer(); }}
                         onFocus={resetInlineTimer}
+                        onKeyDown={(e) => {
+                          if (e.key === " " || e.key === "Tab") {
+                            const textarea = e.currentTarget;
+                            const pos = textarea.selectionStart ?? 0;
+                            const textBefore = rsInlineText.slice(0, pos);
+                            const match = textBefore.match(/(\S+)$/);
+                            if (match) {
+                              const word = match[1].toLowerCase();
+                              const expansion = mapQeShortcutMap[word];
+                              if (expansion) {
+                                e.preventDefault();
+                                const before = textBefore.slice(0, textBefore.length - match[1].length);
+                                const after = rsInlineText.slice(pos);
+                                const newText = before + expansion + " " + after;
+                                setRsInlineText(newText);
+                                resetInlineTimer();
+                                requestAnimationFrame(() => {
+                                  const newPos = before.length + expansion.length + 1;
+                                  textarea.setSelectionRange(newPos, newPos);
+                                });
+                              }
+                            }
+                          }
+                        }}
                         placeholder="Add details (optional)…"
                         rows={2}
                         className="w-full resize-none rounded-md border border-border bg-background px-2.5 py-1.5 text-[11px] placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"

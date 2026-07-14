@@ -870,3 +870,24 @@
 - [x] Fix: Visual RS export was using a separate Google Static Maps API call that produced a different map image (generic pins, different styling) instead of what was on screen
 - [x] Fix: Replaced static map API call with html2canvas screenshot of the live map container div, capturing the exact map tiles, route polyline, and custom numbered markers as displayed on screen
 - [x] Fix: Map image in print HTML now uses max-height:320px + object-fit:contain so it scales correctly without cropping
+
+## Map Bottom Tab Bar & Quick Entry Improvements (Round 15 - Jul 14)
+- [x] Add fixed bottom quick-link tab bar to Intelligence Map: Folders, Active RS, RS Quick Entry + 3 custom (laptop), 2 custom (tablet), 1 custom (mobile)
+- [x] Remove RS Quick Entry from the right sliding pane
+- [x] Add phrase shortcuts (pt, dso, OOS, coos, rack, etc.) to RS Quick Entry observation field
+- [x] Add compact time selector to RS Quick Entry dialog
+- [x] Sync left map pane nav order with main menu sidebar order (when main menu order changes, left map pane updates to match)
+
+## Vehicle Format Fix (Intelligence)
+- [x] Fix formatIntelVehicle to output: rego colour make model type (e.g. "1DFY345 green BMW X5") — strip "bearing WA registration X (Vehicle X)" suffix, extract rego from bracket or "bearing" pattern, put rego first
+
+## Map Bottom Tab Bar & Quick Entry Overhaul
+- [x] Replace bottom tab bar: Folders (fixed), Active RS (fixed, always "Active RS" label), RS Quick Entry (fixed, indigo), 3 custom slots (laptop), 2 custom (tablet), 1 custom (mobile)
+- [x] Remove RS Quick Entry collapsible section from right pane
+- [x] Add compact time selector to RS Quick Entry modal
+- [x] Add shortcut keyboard expansion (Space/Tab) to RS Quick Entry observation textarea
+- [x] Sync left map pane nav order with main menu sidebar order
+
+## Map Left Pane — Desktop Fixed Open & Resizable
+- [x] On desktop (lg+), left map pane is permanently open (not a slide-in drawer) and resizable via drag handle, same as main sidebar
+- [x] On tablet/mobile, left pane remains a slide-in drawer

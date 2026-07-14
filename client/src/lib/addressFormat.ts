@@ -261,11 +261,27 @@ export function formatIntelVehicle(shortForm: string, fullObservation?: string):
   const vehiclePrefix = cleaned.match(/^[Vv]ehicle\s+(.+)$/i);
   if (!vehiclePrefix) {
     // Not a "Vehicle REGO" format.
-    // Fallback: strip ", bearing [STATE] registration REGO" suffix from the raw text
-    // (handles cases where the full observation text ended up as the shortForm).
-    const stripped = cleaned
-      .replace(/,?\s+bearing\s+(?:[A-Z]{2,3}\s+)?registration\s+[\w\s-]+$/i, "")
-      .trim();
+    // Try to extract rego from "bearing [STATE] registration REGO" embedded in the text.
+    // e.g. "black Subaru WRX, bearing WA registration 1FDD444 (Vehicle 1FDD444)"
+    //   → rego = "1FDD444", desc = "black Subaru WRX" → "1FDD444 black Subaru WRX"
+    const bearingMatch = cleaned.match(
+      /^(.+?),?\s+bearing\s+(?:[A-Z]{2,3}\s+)?registration\s+([A-Z0-9-]+)/i
+    );
+    if (bearingMatch) {
+      const rawDesc = bearingMatch[1]
+        .replace(/^[aA]\s+/, "")
+        .replace(/^V\d[A-Z]?:\s*/i, "")
+        .trim();
+      const extractedRego = bearingMatch[2].trim().toUpperCase();
+      if (rawDesc && rawDesc.toLowerCase() !== "vehicle") {
+        // Avoid duplicating rego if desc already starts with it
+        if (rawDesc.toUpperCase().startsWith(extractedRego)) return rawDesc;
+        return `${extractedRego} ${rawDesc}`;
+      }
+      return extractedRego;
+    }
+    // No bearing pattern — strip any trailing bracket code and return
+    const stripped = cleaned.replace(/\s*\([^)]{1,80}\)\s*$/, "").trim();
     return stripped || cleaned;
   }
 

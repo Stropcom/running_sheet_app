@@ -3512,10 +3512,10 @@ export default function IntelligenceMapping() {
               </button>
             </div>
 
-            {/* Time picker — matches SheetDetail TimePickerCell style */}
-            <div className="flex items-center gap-1.5 mb-3">
-              <Clock className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-              <span className="text-[11px] text-muted-foreground font-medium mr-0.5">Time:</span>
+            {/* Time picker — slim inline row */}
+            <div className="flex items-center gap-1 mb-3">
+              <Clock className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+              <span className="text-[10px] text-muted-foreground font-medium mr-0.5">Time:</span>
               {/* Hour */}
               <Select
                 value={mapQeHour}
@@ -3525,18 +3525,18 @@ export default function IntelligenceMapping() {
                   setMapQeTimeOverride(`${String(parseInt(v)).padStart(2,"0")}:${mapQeMinute} ${mapQePeriod}`);
                 }}
               >
-                <SelectTrigger className="w-14 h-7 text-xs font-mono">
+                <SelectTrigger className="w-12 h-6 text-[11px] font-mono px-1.5 py-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {Array.from({ length: 12 }, (_, i) => String(i + 1)).map((h) => (
-                    <SelectItem key={h} value={h} className="font-mono">
+                    <SelectItem key={h} value={h} className="font-mono text-xs">
                       {String(parseInt(h)).padStart(2, "0")}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              <span className="text-muted-foreground font-mono text-sm">:</span>
+              <span className="text-muted-foreground font-mono text-[11px]">:</span>
               {/* Minute */}
               <Select
                 value={mapQeMinute}
@@ -3546,12 +3546,12 @@ export default function IntelligenceMapping() {
                   setMapQeTimeOverride(`${String(parseInt(mapQeHour)).padStart(2,"0")}:${v} ${mapQePeriod}`);
                 }}
               >
-                <SelectTrigger className="w-14 h-7 text-xs font-mono">
+                <SelectTrigger className="w-12 h-6 text-[11px] font-mono px-1.5 py-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0")).map((m) => (
-                    <SelectItem key={m} value={m} className="font-mono">{m}</SelectItem>
+                    <SelectItem key={m} value={m} className="font-mono text-xs">{m}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -3564,14 +3564,28 @@ export default function IntelligenceMapping() {
                   setMapQeTimeOverride(`${String(parseInt(mapQeHour)).padStart(2,"0")}:${mapQeMinute} ${v}`);
                 }}
               >
-                <SelectTrigger className="w-14 h-7 text-xs">
+                <SelectTrigger className="w-14 h-6 text-[11px] px-1.5 py-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="AM">AM</SelectItem>
-                  <SelectItem value="PM">PM</SelectItem>
+                  <SelectItem value="AM" className="text-xs">AM</SelectItem>
+                  <SelectItem value="PM" className="text-xs">PM</SelectItem>
                 </SelectContent>
               </Select>
+              {/* Now button */}
+              <button
+                onClick={() => {
+                  const n = new Date();
+                  const h24 = n.getHours(); const min = n.getMinutes();
+                  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+                  const ampm = h24 < 12 ? "AM" : "PM";
+                  setMapQeHour(String(h12));
+                  setMapQeMinute(String(min).padStart(2, "0"));
+                  setMapQePeriod(ampm);
+                  setMapQeTimeOverride(`${String(h12).padStart(2,"0")}:${String(min).padStart(2,"0")} ${ampm}`);
+                }}
+                className="ml-1 text-[10px] text-primary hover:text-primary/80 underline font-medium"
+              >Now</button>
             </div>
 
             {/* No sheet selected warning */}
@@ -3677,7 +3691,7 @@ export default function IntelligenceMapping() {
                           }
                         }}
                         placeholder="Add details (optional)…"
-                        rows={2}
+                        rows={4}
                         className="w-full resize-none rounded-md border border-border bg-background px-2.5 py-1.5 text-[11px] placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                       />
                       {/* Shortcut buttons */}

@@ -828,7 +828,7 @@ export default function RSMappingEmbedded() {
         waypoints: waypointInput,
         center: mapCenter ? { lat: mapCenter.lat(), lng: mapCenter.lng() } : undefined,
         zoom: mapZoom ?? undefined,
-        size: "800x500",
+        size: "800x350",
       });
       mapImageDataUrl = result.dataUrl;
     } catch (err) {
@@ -857,7 +857,7 @@ export default function RSMappingEmbedded() {
     `).join("");
 
     const mapSection = mapImageDataUrl
-      ? `<div style="margin:16px 24px 0;"><img src="${mapImageDataUrl}" style="width:100%;border-radius:8px;border:1px solid #e5e7eb;display:block;" /></div>`
+      ? `<div style="margin:16px 24px 0;"><img src="${mapImageDataUrl}" style="width:100%;max-height:280px;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb;display:block;" /></div>`
       : `<div style="background:#f3f4f6;border:2px dashed #d1d5db;margin:16px 24px 0;border-radius:8px;height:200px;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:12px;">Map capture unavailable</div>`;
 
     const html = `<!DOCTYPE html>

@@ -812,22 +812,35 @@ export default function RSMappingEmbedded() {
 
     let mapImageDataUrl = "";
     try {
-      // Capture the live map canvas directly using html2canvas
-      const html2canvas = (await import("html2canvas")).default;
-      const canvas = await html2canvas(mapContainerRef.current, {
-        useCORS: true,
-        allowTaint: true,
-        scale: 1,
-        logging: false,
-        // Only capture the map div itself, not overlays
-        ignoreElements: (el) => {
-          // Ignore backdrop overlays (loading/empty state) but keep markers
-          return el.classList?.contains("backdrop-blur-sm") ?? false;
-        },
+      // Use the server-side Static Maps proxy so we get a real map image
+      // (html2canvas fails on Google Maps tiles due to CORS)
+      const liveMap = mapRef.current;
+      const center = liveMap?.getCenter();
+      const zoom = liveMap?.getZoom();
+
+      // Build waypoint list with colours matching the on-screen markers
+      const COLOUR_HEX: Record<string, string> = {
+        red: "#E53935", yellow: "#F9A825", blue: "#1E88E5",
+        purple: "#8E24AA", black: "#212121",
+      };
+      const waypointList = placed.map((wp, i) => ({
+        lat: wp.lat,
+        lng: wp.lng,
+        index: wp.index,
+        colour: i === 0 ? "#22c55e"                          // first = green
+               : i === placed.length - 1 ? "#E53935"         // last = red
+               : COLOUR_HEX[wp.markerColour ?? "blue"] ?? "#1E88E5",
+      }));
+
+      const result = await trpcClient.rsMapping.getStaticMapImage.query({
+        waypoints: waypointList,
+        center: center ? { lat: center.lat(), lng: center.lng() } : undefined,
+        zoom: zoom ?? undefined,
+        size: "800x350",
       });
-      mapImageDataUrl = canvas.toDataURL("image/png");
+      mapImageDataUrl = result.dataUrl;
     } catch (err) {
-      console.warn("Map screenshot failed:", err);
+      console.warn("Static map image failed:", err);
       toast.warning("Map image unavailable — PDF will include a placeholder");
     }
 

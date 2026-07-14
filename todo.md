@@ -895,3 +895,6 @@
 ## Map Quick Entry & Left Pane Fixes (Round 16 - Jul 15)
 - [x] RS Quick Entry modal: replace compact HH:MM inputs with the same scroll-wheel time picker used in the main running sheet
 - [x] Left map pane (desktop): prevent pane from closing when the map area is clicked — only close on mobile/tablet
+
+## Visual RS Export Map Fix (Round 17 - Jul 15)
+- [x] Fix map image not appearing in Visual RS export — html2canvas fails silently due to CORS on Google Maps tiles; replace with reliable Google Static Maps API call passing live map center/zoom/markers

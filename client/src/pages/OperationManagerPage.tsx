@@ -32,6 +32,9 @@ import {
   GripVertical,
   Copy,
   RefreshCw,
+  FolderOpen,
+  CalendarPlus,
+  FileText,
 } from "lucide-react";
 import {
   DndContext,
@@ -286,12 +289,15 @@ export default function OperationManagerPage() {
   const [weekStart, setWeekStart] = useState(() =>
     getMondayOfWeek(new Date())
   );
-  const [viewMode, setViewMode] = useState<"edit" | "view">(
-    isAdmin ? "edit" : "view"
-  );
+  const [viewMode, setViewMode] = useState<"folder" | "edit" | "view">("folder");
   useEffect(() => {
-    if (!isAdmin) setViewMode("view");
-  }, [isAdmin]);
+    // Non-admins can only be in folder or view mode
+    if (!isAdmin && viewMode === "edit") setViewMode("folder");
+  }, [isAdmin, viewMode]);
+
+  // ── New-week dialog state ─────────────────────────────────────────────────────
+  const [newWeekDialogOpen, setNewWeekDialogOpen] = useState(false);
+  const [isCreatingWeek, setIsCreatingWeek] = useState(false);
 
   const { subscribed, subscribe, unsubscribe } = usePushSubscription();
 
@@ -319,6 +325,9 @@ export default function OperationManagerPage() {
   const postedWeeksQuery = trpc.opManager.getPostedWeeks.useQuery(undefined, {
     staleTime: 30_000,
   });
+  const allWeeksQuery = trpc.opManager.listAllWeeks.useQuery(undefined, {
+    staleTime: 10_000,
+  });
 
   // ── Mutations ─────────────────────────────────────────────────────────────────
   const savePriorityMut = trpc.opManager.savePriorityBoard.useMutation();
@@ -328,6 +337,7 @@ export default function OperationManagerPage() {
   const createOpMut = trpc.operation.create.useMutation({
     onSuccess: () => utils.operation.list.invalidate(),
   });
+  const copyWeekMut = trpc.opManager.copyWeek.useMutation();
   const utils = trpc.useUtils();
 
   // ── Local state ───────────────────────────────────────────────────────────────
@@ -529,6 +539,47 @@ export default function OperationManagerPage() {
     }
   };
 
+
+  // ── New week creation ────────────────────────────────────────────────────────
+  // Next un-saved week = first Monday after the latest saved week
+  const nextNewWeekStart = (() => {
+    const all = allWeeksQuery.data ?? [];
+    if (all.length === 0) return getMondayOfWeek(new Date());
+    return addWeeks(all[0].weekStart, 1);
+  })();
+
+  const handleCreateBlankWeek = async () => {
+    setIsCreatingWeek(true);
+    setWeekStart(nextNewWeekStart);
+    setViewMode("edit");
+    setNewWeekDialogOpen(false);
+    setIsCreatingWeek(false);
+  };
+
+  const handleCopyLastWeek = async () => {
+    setIsCreatingWeek(true);
+    const all = allWeeksQuery.data ?? [];
+    if (all.length === 0) {
+      toast.error("No previous week to copy from.");
+      setIsCreatingWeek(false);
+      return;
+    }
+    const fromWeek = all[0].weekStart;
+    try {
+      await copyWeekMut.mutateAsync({ fromWeekStart: fromWeek, toWeekStart: nextNewWeekStart });
+      await utils.opManager.listAllWeeks.invalidate();
+      await utils.opManager.getSupervisorContacts.invalidate();
+      await utils.opManager.getPriorityBoard.invalidate();
+      setWeekStart(nextNewWeekStart);
+      setViewMode("edit");
+      setNewWeekDialogOpen(false);
+      toast.success(`Copied contacts & priority from ${formatWeekLabel(fromWeek)}.`);
+    } catch {
+      toast.error("Failed to copy week.");
+    }
+    setIsCreatingWeek(false);
+  };
+
   // ── Copy to Next Week ──────────────────────────────────────────────────────────
   const [isCopying, setIsCopying] = useState(false);
   const handleCopyToNextWeek = async () => {
@@ -661,6 +712,148 @@ export default function OperationManagerPage() {
   ).map(op => ({ id: op.id, name: op.name }));
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // FOLDER VIEW (landing page)
+  // ─────────────────────────────────────────────────────────────────────────────
+  if (viewMode === "folder") {
+    const allWeeks = allWeeksQuery.data ?? [];
+    return (
+      <div className="min-h-screen bg-background text-foreground">
+        {/* Header */}
+        <div className="border-b border-border bg-card">
+          <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="icon" onClick={() => navigate("/")}>
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+              <div className="flex items-center gap-2">
+                <FolderOpen className="h-5 w-5 text-primary" />
+                <h1 className="text-lg font-semibold">CTO Weekly Tasking</h1>
+              </div>
+            </div>
+            {isAdmin && (
+              <Button size="sm" className="gap-1" onClick={() => setNewWeekDialogOpen(true)}>
+                <CalendarPlus className="h-4 w-4" />
+                New CTO Weekly Tasking
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Week list */}
+        <div className="max-w-4xl mx-auto px-4 py-6">
+          {allWeeksQuery.isLoading ? (
+            <div className="flex items-center justify-center h-40 text-muted-foreground">
+              Loading…
+            </div>
+          ) : allWeeks.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-64 text-muted-foreground gap-3">
+              <FolderOpen className="h-12 w-12 opacity-30" />
+              <p className="text-base font-medium">No weekly tasking sheets yet.</p>
+              {isAdmin && (
+                <Button size="sm" onClick={() => setNewWeekDialogOpen(true)} className="gap-1">
+                  <CalendarPlus className="h-4 w-4" /> Create First Week
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {allWeeks.map((week, idx) => (
+                <button
+                  key={week.weekStart}
+                  onClick={() => {
+                    setWeekStart(week.weekStart);
+                    setViewMode("view");
+                  }}
+                  className="w-full text-left rounded-lg border border-border bg-card hover:bg-accent/50 transition-colors px-4 py-3 flex items-center justify-between group"
+                >
+                  <div className="flex items-center gap-3">
+                    <FileText className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                    <div>
+                      <p className="font-medium text-sm">
+                        CTO Weekly Tasking — {formatWeekLabel(week.weekStart)}
+                      </p>
+                      {week.postedAt && (
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Posted {new Date(week.postedAt).toLocaleDateString("en-AU", { dateStyle: "medium" })}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {idx === 0 && (
+                      <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">
+                        Latest
+                      </span>
+                    )}
+                    {week.posted ? (
+                      <span className="text-xs bg-green-500/10 text-green-600 dark:text-green-400 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+                        <CheckCircle2 className="h-3 w-3" /> Posted
+                      </span>
+                    ) : (
+                      <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full font-medium">
+                        Draft
+                      </span>
+                    )}
+                    <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* New week dialog */}
+        <Dialog open={newWeekDialogOpen} onOpenChange={setNewWeekDialogOpen}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>New CTO Weekly Tasking</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">
+              Creating week: <span className="font-semibold text-foreground">{formatWeekLabel(nextNewWeekStart)}</span>
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Shift times are always auto-populated from the rotation schedule. You can change them manually after creating.
+            </p>
+            <div className="flex flex-col gap-2 pt-2">
+              <Button
+                onClick={handleCopyLastWeek}
+                disabled={isCreatingWeek || (allWeeksQuery.data ?? []).length === 0}
+                className="gap-2 justify-start"
+                variant="outline"
+              >
+                <Copy className="h-4 w-4" />
+                <div className="text-left">
+                  <p className="font-medium">Copy Last Week</p>
+                  <p className="text-xs text-muted-foreground font-normal">
+                    Copies contacts & priority board from {(allWeeksQuery.data ?? []).length > 0 ? formatWeekLabel((allWeeksQuery.data ?? [])[0].weekStart) : "previous week"}
+                  </p>
+                </div>
+              </Button>
+              <Button
+                onClick={handleCreateBlankWeek}
+                disabled={isCreatingWeek}
+                className="gap-2 justify-start"
+                variant="outline"
+              >
+                <CalendarPlus className="h-4 w-4" />
+                <div className="text-left">
+                  <p className="font-medium">Create New</p>
+                  <p className="text-xs text-muted-foreground font-normal">Start with a blank sheet</p>
+                </div>
+              </Button>
+            </div>
+            {isCreatingWeek && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground pt-1">
+                <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Creating…
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+      </div>
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // FULL VIEW
   // ─────────────────────────────────────────────────────────────────────────────
   if (viewMode === "view") {
@@ -675,7 +868,7 @@ export default function OperationManagerPage() {
           nextDisabled={
             !isAdmin && currentViewIdx >= sortedViewableWeeks.length - 1
           }
-          onBack={() => navigate("/")}
+          onBack={() => setViewMode("folder")}
           rightSlot={
             <div className="flex items-center gap-2">
               <Button
@@ -693,7 +886,7 @@ export default function OperationManagerPage() {
                 )}
               </Button>
               {isAdmin && (
-                <>
+                <>                  
                   <Button
                     variant="outline"
                     size="sm"
@@ -701,16 +894,6 @@ export default function OperationManagerPage() {
                     className="gap-1"
                   >
                     <Edit2 className="h-3.5 w-3.5" /> Edit
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleCopyToNextWeek}
-                    disabled={isCopying}
-                    className="gap-1"
-                    title="Copy all data from this week to next week"
-                  >
-                    <Copy className="h-3.5 w-3.5" /> {isCopying ? "Copying…" : "Copy to Next Week"}
                   </Button>
                   <Button
                     variant="outline"
@@ -795,7 +978,7 @@ export default function OperationManagerPage() {
         weekStart={weekStart}
         onPrev={() => setWeekStart((ws) => addWeeks(ws, -1))}
         onNext={() => setWeekStart((ws) => addWeeks(ws, 1))}
-        onBack={() => navigate("/")}
+        onBack={() => setViewMode("folder")}
         rightSlot={
           <Button
             variant="outline"
@@ -1956,3 +2139,4 @@ function FullViewPriority({ priorityRows }: { priorityRows: PriorityRow[] }) {
     </section>
   );
 }
+

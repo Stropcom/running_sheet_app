@@ -144,6 +144,8 @@ import {
   getPostedWeeks,
   isWeekPosted,
   markWeekPosted,
+  listAllOpManagerWeeks,
+  copyOpManagerWeek,
   savePushSubscription,
   removePushSubscription,
 } from "./db";
@@ -2732,6 +2734,18 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         await saveOpManagerSupervisorContacts(input.weekStart, input.contacts);
         return { ok: true };
+      }),
+
+
+    // ── All weeks folder list ──────────────────────────────────────────────────
+    listAllWeeks: protectedProcedure.query(async () => {
+      return listAllOpManagerWeeks();
+    }),
+
+    copyWeek: adminProcedure
+      .input(z.object({ fromWeekStart: z.string(), toWeekStart: z.string() }))
+      .mutation(async ({ input }) => {
+        return copyOpManagerWeek(input.fromWeekStart, input.toWeekStart);
       }),
 
     // ── Posted weeks ──────────────────────────────────────────────────────────

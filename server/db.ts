@@ -4481,6 +4481,65 @@ export async function saveOpManagerSupervisorContacts(
   return getOpManagerSupervisorContacts(weekStart);
 }
 
+
+// ─── Op Manager All Weeks (folder list) ───────────────────────────────────────
+export async function listAllOpManagerWeeks() {
+  const db = await getDb();
+  if (!db) return [];
+  const [taskingRows, contactRows, priorityRows, postedRows] = await Promise.all([
+    db.selectDistinct({ weekStart: opManagerTaskingCells.weekStart }).from(opManagerTaskingCells),
+    db.selectDistinct({ weekStart: opManagerSupervisorContacts.weekStart }).from(opManagerSupervisorContacts),
+    db.selectDistinct({ weekStart: opManagerPriorityRows.weekStart }).from(opManagerPriorityRows),
+    db.select().from(opManagerPostedWeeks),
+  ]);
+  const postedMap = new Map(postedRows.map((p) => [p.weekStart, p.postedAt]));
+  const allWeekStarts = new Set([
+    ...taskingRows.map((r) => r.weekStart),
+    ...contactRows.map((r) => r.weekStart),
+    ...priorityRows.map((r) => r.weekStart),
+    ...postedRows.map((r) => r.weekStart),
+  ]);
+  return Array.from(allWeekStarts)
+    .sort((a, b) => b.localeCompare(a))
+    .map((weekStart) => ({
+      weekStart,
+      posted: postedMap.has(weekStart),
+      postedAt: postedMap.get(weekStart) ?? null,
+    }));
+}
+
+export async function copyOpManagerWeek(fromWeekStart: string, toWeekStart: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const contacts = await getOpManagerSupervisorContacts(fromWeekStart);
+  if (contacts.length > 0) {
+    await db.delete(opManagerSupervisorContacts).where(eq(opManagerSupervisorContacts.weekStart, toWeekStart));
+    await db.insert(opManagerSupervisorContacts).values(
+      contacts.map(({ id: _id, weekStart: _ws, ...rest }) => ({ ...rest, weekStart: toWeekStart }))
+    );
+  }
+  const priority = await getOpManagerPriorityBoard(fromWeekStart);
+  if (priority.length > 0) {
+    await db.delete(opManagerPriorityRows).where(eq(opManagerPriorityRows.weekStart, toWeekStart));
+    await db.insert(opManagerPriorityRows).values(
+      priority.map(({ id: _id, weekStart: _ws, ...rest }) => ({ ...rest, weekStart: toWeekStart }))
+    );
+  }
+  // Copy task names only — shiftTime always comes from auto-population
+  const tasking = await getOpManagerTaskingCalendar(fromWeekStart);
+  if (tasking.length > 0) {
+    await db.delete(opManagerTaskingCells).where(eq(opManagerTaskingCells.weekStart, toWeekStart));
+    await db.insert(opManagerTaskingCells).values(
+      tasking.map(({ id: _id, weekStart: _ws, shiftTime: _st, ...rest }) => ({
+        ...rest,
+        weekStart: toWeekStart,
+        shiftTime: null,
+      }))
+    );
+  }
+  return { ok: true };
+}
+
 // ─── Op Manager Posted Weeks ─────────────────────────────────────────────────
 export async function getPostedWeeks() {
   const db = await getDb();

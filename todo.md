@@ -865,3 +865,8 @@
 - [x] Fix: target address marker popup was missing action buttons (rotation slider, RS Quick Entry, Edit Target, Waze, Street View, Edit appearance, Move)
 - [x] Root cause: buildInfoWindowContent had an if/else split where observation locations got the full button set but target addresses only got small Waze + Street View links
 - [x] Fix: replaced the target address else-branch with the full button set matching the observation popup, including rotation slider, RS Quick Entry, Edit Target (per linked target), Waze/Street View, Edit (appearance), Move
+
+## Visual RS Map Screenshot Fix (Round 14 - Jul 14)
+- [x] Fix: Visual RS export was using a separate Google Static Maps API call that produced a different map image (generic pins, different styling) instead of what was on screen
+- [x] Fix: Replaced static map API call with html2canvas screenshot of the live map container div, capturing the exact map tiles, route polyline, and custom numbered markers as displayed on screen
+- [x] Fix: Map image in print HTML now uses max-height:320px + object-fit:contain so it scales correctly without cropping

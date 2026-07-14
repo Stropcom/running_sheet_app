@@ -808,31 +808,26 @@ export default function RSMappingEmbedded() {
     if (!mapContainerRef.current) { toast.error("Map container not ready"); return; }
 
     setPdfExporting(true);
-    toast.info("Fetching map image…");
+    toast.info("Capturing map screenshot…");
 
     let mapImageDataUrl = "";
     try {
-      // Build waypoint list for the static map request
-      const waypointInput = placed.map((wp) => ({
-        lat: wp.lat,
-        lng: wp.lng,
-        index: wp.index,
-        colour: wp.markerColour ?? undefined,
-      }));
-
-      // Get current map center and zoom from the live Google Maps instance
-      const mapCenter = mapRef.current?.getCenter();
-      const mapZoom = mapRef.current?.getZoom();
-
-      const result = await trpcClient.rsMapping.getStaticMapImage.query({
-        waypoints: waypointInput,
-        center: mapCenter ? { lat: mapCenter.lat(), lng: mapCenter.lng() } : undefined,
-        zoom: mapZoom ?? undefined,
-        size: "800x350",
+      // Capture the live map canvas directly using html2canvas
+      const html2canvas = (await import("html2canvas")).default;
+      const canvas = await html2canvas(mapContainerRef.current, {
+        useCORS: true,
+        allowTaint: true,
+        scale: 1,
+        logging: false,
+        // Only capture the map div itself, not overlays
+        ignoreElements: (el) => {
+          // Ignore backdrop overlays (loading/empty state) but keep markers
+          return el.classList?.contains("backdrop-blur-sm") ?? false;
+        },
       });
-      mapImageDataUrl = result.dataUrl;
+      mapImageDataUrl = canvas.toDataURL("image/png");
     } catch (err) {
-      console.warn("Map image fetch failed:", err);
+      console.warn("Map screenshot failed:", err);
       toast.warning("Map image unavailable — PDF will include a placeholder");
     }
 
@@ -857,7 +852,7 @@ export default function RSMappingEmbedded() {
     `).join("");
 
     const mapSection = mapImageDataUrl
-      ? `<div style="margin:16px 24px 0;"><img src="${mapImageDataUrl}" style="width:100%;max-height:280px;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb;display:block;" /></div>`
+      ? `<div style="margin:16px 24px 0;"><img src="${mapImageDataUrl}" style="width:100%;max-height:320px;object-fit:contain;border-radius:8px;border:1px solid #e5e7eb;display:block;" /></div>`
       : `<div style="background:#f3f4f6;border:2px dashed #d1d5db;margin:16px 24px 0;border-radius:8px;height:200px;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:12px;">Map capture unavailable</div>`;
 
     const html = `<!DOCTYPE html>

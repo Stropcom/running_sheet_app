@@ -2469,6 +2469,68 @@ export default function IntelligenceMapping() {
             <ChevronLeft className="h-5 w-5 text-muted-foreground" />
           </button>
         )}
+
+        {/* ── Bottom Quick-Link Pills (laptop only, centred over map area) ── */}
+        <div className="hidden lg:flex absolute bottom-4 left-0 right-0 z-20 items-end justify-center gap-3 px-4 pointer-events-none">
+
+          {/* Pill 1 — Active RS (green) */}
+          {(() => {
+            const activeSheet = rsSelectedSheetId && rsSheetsData
+              ? (rsSheetsData as any[]).find((s: any) => s.id === rsSelectedSheetId)
+              : null;
+            return (
+              <button
+                disabled={!activeSheet}
+                onClick={() => { if (activeSheet) setLocation(`/sheet/${rsSelectedSheetId}`); }}
+                className={`pointer-events-auto flex flex-col items-center justify-center gap-1 px-8 py-3 rounded-2xl shadow-lg border transition-all min-w-[110px] ${
+                  activeSheet
+                    ? "bg-emerald-600 border-emerald-500 hover:bg-emerald-500 active:scale-95 cursor-pointer"
+                    : "bg-card/70 border-border/40 cursor-default opacity-50"
+                }`}
+                title={activeSheet ? "Open active running sheet" : "No running sheet selected"}
+              >
+                <ClipboardList className={`h-5 w-5 flex-shrink-0 ${activeSheet ? "text-white" : "text-muted-foreground/40"}`} />
+                <span className={`text-[11px] font-semibold leading-none ${activeSheet ? "text-white" : "text-muted-foreground/40"}`}>
+                  Active RS
+                </span>
+              </button>
+            );
+          })()}
+
+          {/* Pill 2 — RS Entry (blue) */}
+          {(() => {
+            const hasSheet = !!rsSelectedSheetId;
+            return (
+              <button
+                disabled={!hasSheet}
+                onClick={() => { if (hasSheet) setMapQeOpen(true); }}
+                className={`pointer-events-auto flex flex-col items-center justify-center gap-1 px-8 py-3 rounded-2xl shadow-lg border transition-all min-w-[110px] ${
+                  hasSheet
+                    ? "bg-blue-600 border-blue-500 hover:bg-blue-500 active:scale-95 cursor-pointer"
+                    : "bg-card/70 border-border/40 cursor-default opacity-50"
+                }`}
+                title={hasSheet ? "RS Quick Entry" : "Select a running sheet first"}
+              >
+                <FileText className={`h-5 w-5 flex-shrink-0 ${hasSheet ? "text-white" : "text-muted-foreground/40"}`} />
+                <span className={`text-[11px] font-semibold leading-none ${hasSheet ? "text-white" : "text-muted-foreground/40"}`}>
+                  RS Entry
+                </span>
+              </button>
+            );
+          })()}
+
+          {/* Pill 3 — Intel Profiles (purple) */}
+          <button
+            onClick={() => setLocation("/intelligence")}
+            className="pointer-events-auto flex flex-col items-center justify-center gap-1 px-8 py-3 rounded-2xl shadow-lg border bg-violet-600 border-violet-500 hover:bg-violet-500 active:scale-95 transition-all min-w-[110px]"
+            title="Intel Profiles"
+          >
+            <FolderSearch className="h-5 w-5 flex-shrink-0 text-white" />
+            <span className="text-[11px] font-semibold leading-none text-white">Intel Profiles</span>
+          </button>
+
+        </div>
+
       </div>
 
       {/* ── RS Actions Right Pane ── */}
@@ -2764,143 +2826,9 @@ export default function IntelligenceMapping() {
               })()}
             </div>
           </div>{/* end TEAMS */}
-        </div>
-      </div>
 
-      {/* ── Bottom Quick-Link Pills ── */}
-      {/* Mobile: 3 fixed + 1 custom | Tablet (md+): 3 fixed + 2 custom | Laptop (lg+): 3 fixed + 3 custom */}
-      <div className="absolute bottom-3 left-0 right-0 z-20 flex items-end justify-center gap-2 px-3 pointer-events-none">
-
-        {/* Pill 1 — Folders (fixed) */}
-        <button
-          onClick={() => setSidebarOpen(true)}
-          className="pointer-events-auto flex flex-col items-center justify-center gap-1 px-4 lg:px-6 py-2.5 rounded-2xl shadow-lg bg-card border border-border hover:bg-accent active:scale-95 transition-all min-w-[64px] lg:min-w-[88px]"
-        >
-          <FolderIcon className="h-5 w-5 text-blue-700" />
-          <span className="text-[10px] lg:text-[11px] font-semibold text-foreground/70 leading-none">Folders</span>
-        </button>
-
-        {/* Pill 2 — Active RS (fixed, always shows "Active RS" label, greyed when none selected) */}
-        {(() => {
-          const activeSheet = rsSelectedSheetId && rsSheetsData
-            ? (rsSheetsData as any[]).find((s: any) => s.id === rsSelectedSheetId)
-            : null;
-          let holdTimer2: ReturnType<typeof setTimeout> | null = null;
-          return (
-            <button
-              disabled={!activeSheet}
-              onClick={() => { if (activeSheet) setLocation(`/sheet/${rsSelectedSheetId}`); }}
-              onPointerDown={() => { holdTimer2 = setTimeout(() => setEditingQuickLinks(true), 600); }}
-              onPointerUp={() => { if (holdTimer2) clearTimeout(holdTimer2); }}
-              onPointerLeave={() => { if (holdTimer2) clearTimeout(holdTimer2); }}
-              className={`pointer-events-auto flex flex-col items-center justify-center gap-1 px-4 lg:px-6 py-2.5 rounded-2xl shadow-lg border transition-all min-w-[64px] lg:min-w-[88px] ${
-                activeSheet
-                  ? "bg-card border-border hover:bg-accent active:scale-95 cursor-pointer"
-                  : "bg-card/60 border-border/40 cursor-default opacity-50"
-              }`}
-              title={activeSheet ? `Open active running sheet` : "No running sheet selected"}
-            >
-              <ClipboardList className={`h-5 w-5 flex-shrink-0 ${activeSheet ? "text-emerald-500" : "text-muted-foreground/40"}`} />
-              <span className={`text-[10px] lg:text-[11px] font-semibold leading-none ${activeSheet ? "text-foreground/70" : "text-muted-foreground/40"}`}>
-                Active RS
-              </span>
-            </button>
-          );
-        })()}
-
-        {/* Pill 3 — RS Quick Entry (fixed, indigo, greyed when no sheet selected) */}
-        {(() => {
-          const hasSheet = !!rsSelectedSheetId;
-          return (
-            <button
-              disabled={!hasSheet}
-              onClick={() => { if (hasSheet) setMapQeOpen(true); }}
-              className={`pointer-events-auto flex flex-col items-center justify-center gap-1 px-4 lg:px-6 py-2.5 rounded-2xl shadow-lg border transition-all min-w-[64px] lg:min-w-[88px] ${
-                hasSheet
-                  ? "bg-indigo-600 border-indigo-500 hover:bg-indigo-500 active:scale-95 cursor-pointer"
-                  : "bg-card/60 border-border/40 cursor-default opacity-50"
-              }`}
-              title={hasSheet ? "RS Quick Entry" : "Select a running sheet first"}
-            >
-              <FileText className={`h-5 w-5 flex-shrink-0 ${hasSheet ? "text-white" : "text-muted-foreground/40"}`} />
-              <span className={`text-[10px] lg:text-[11px] font-semibold leading-none ${hasSheet ? "text-white" : "text-muted-foreground/40"}`}>
-                RS Entry
-              </span>
-            </button>
-          );
-        })()}
-
-        {/* Pill 4 — Custom slot 1 (all screen sizes) */}
-        {(() => {
-          const ql = quickLinks[0];
-          const iconEntry = ql ? ICON_MAP[ql.icon] : null;
-          const IconComp = iconEntry?.Icon ?? FolderSearch;
-          const iconColour = iconEntry?.colour ?? "text-muted-foreground";
-          let holdTimer4: ReturnType<typeof setTimeout> | null = null;
-          return (
-            <button
-              onClick={() => { if (ql) setLocation(ql.path); else setEditingQuickLinks(true); }}
-              onPointerDown={() => { holdTimer4 = setTimeout(() => setEditingQuickLinks(true), 600); }}
-              onPointerUp={() => { if (holdTimer4) clearTimeout(holdTimer4); }}
-              onPointerLeave={() => { if (holdTimer4) clearTimeout(holdTimer4); }}
-              className="pointer-events-auto flex flex-col items-center justify-center gap-1 px-4 lg:px-6 py-2.5 rounded-2xl shadow-lg bg-card border border-border hover:bg-accent active:scale-95 transition-all min-w-[64px] lg:min-w-[88px]"
-              title={ql ? `${ql.label} — hold to change` : "Hold to set shortcut"}
-            >
-              <IconComp className={`h-5 w-5 ${iconColour}`} />
-              <span className="text-[10px] lg:text-[11px] font-semibold text-foreground/70 leading-none truncate max-w-[80px]">{ql?.label ?? "Shortcut"}</span>
-            </button>
-          );
-        })()}
-
-        {/* Pill 5 — Custom slot 2 (tablet md+ only) */}
-        <div className="hidden md:block">
-          {(() => {
-            const ql = quickLinks[1];
-            const iconEntry = ql ? ICON_MAP[ql.icon] : null;
-            const IconComp = iconEntry?.Icon ?? FolderSearch;
-            const iconColour = iconEntry?.colour ?? "text-muted-foreground";
-            let holdTimer5: ReturnType<typeof setTimeout> | null = null;
-            return (
-              <button
-                onClick={() => { if (ql) setLocation(ql.path); else setEditingQuickLinks(true); }}
-                onPointerDown={() => { holdTimer5 = setTimeout(() => setEditingQuickLinks(true), 600); }}
-                onPointerUp={() => { if (holdTimer5) clearTimeout(holdTimer5); }}
-                onPointerLeave={() => { if (holdTimer5) clearTimeout(holdTimer5); }}
-                className="pointer-events-auto flex flex-col items-center justify-center gap-1 px-4 lg:px-6 py-2.5 rounded-2xl shadow-lg bg-card border border-border hover:bg-accent active:scale-95 transition-all min-w-[64px] lg:min-w-[88px]"
-                title={ql ? `${ql.label} — hold to change` : "Hold to set shortcut"}
-              >
-                <IconComp className={`h-5 w-5 ${iconColour}`} />
-                <span className="text-[10px] lg:text-[11px] font-semibold text-foreground/70 leading-none truncate max-w-[80px]">{ql?.label ?? "Shortcut"}</span>
-              </button>
-            );
-          })()}
-        </div>
-
-        {/* Pill 6 — Custom slot 3 (laptop lg+ only) */}
-        <div className="hidden lg:block">
-          {(() => {
-            const ql = quickLinks[2];
-            const iconEntry = ql ? ICON_MAP[ql.icon] : null;
-            const IconComp = iconEntry?.Icon ?? FolderSearch;
-            const iconColour = iconEntry?.colour ?? "text-muted-foreground";
-            let holdTimer6: ReturnType<typeof setTimeout> | null = null;
-            return (
-              <button
-                onClick={() => { if (ql) setLocation(ql.path); else setEditingQuickLinks(true); }}
-                onPointerDown={() => { holdTimer6 = setTimeout(() => setEditingQuickLinks(true), 600); }}
-                onPointerUp={() => { if (holdTimer6) clearTimeout(holdTimer6); }}
-                onPointerLeave={() => { if (holdTimer6) clearTimeout(holdTimer6); }}
-                className="pointer-events-auto flex flex-col items-center justify-center gap-1 px-6 py-2.5 rounded-2xl shadow-lg bg-card border border-border hover:bg-accent active:scale-95 transition-all min-w-[88px]"
-                title={ql ? `${ql.label} — hold to change` : "Hold to set shortcut"}
-              >
-                <IconComp className={`h-5 w-5 ${iconColour}`} />
-                <span className="text-[11px] font-semibold text-foreground/70 leading-none truncate max-w-[80px]">{ql?.label ?? "Shortcut"}</span>
-              </button>
-            );
-          })()}
-        </div>
-
-      </div>
+        </div>{/* end Pane Body */}
+      </div>{/* end RS Actions Right Pane */}
 
       {/* ── Quick-Link Editor Modal ── */}
       {editingQuickLinks && (
@@ -3720,12 +3648,12 @@ export default function IntelligenceMapping() {
                           return gen ? gen.expansion as string : null;
                         };
                         // Helper: extract registration/short value for display preview
+                        // A rego must be 3-8 alphanumeric chars AND contain at least one digit
                         const extractReg = (val: string | null | undefined): string | null => {
                           if (!val) return null;
-                          // Extract last word-token that looks like a rego (alphanumeric, 4-8 chars)
-                          const tokens = val.trim().split(/\s+/);
-                          const rego = tokens.slice().reverse().find(t => /^[A-Z0-9]{3,8}$/i.test(t));
-                          return rego ?? tokens[tokens.length - 1] ?? null;
+                          const tokens = val.trim().split(/\s+/).map(t => t.replace(/[^A-Z0-9]/gi, ''));
+                          const rego = tokens.slice().reverse().find(t => /^[A-Z0-9]{3,8}$/i.test(t) && /\d/.test(t));
+                          return rego ?? null;
                         };
                         // Build dynamic extra vehicle chips from assignedTarget JSON
                         const extraVehicleChips: Array<{ label: string; display: string; getValue: () => string | null }> = [];
@@ -3733,6 +3661,7 @@ export default function IntelligenceMapping() {
                           const evs: Array<{ full: string; short: string }> = JSON.parse((assignedTarget as any)?.extraVehicles ?? '[]');
                           evs.forEach((ev, i) => {
                             const num = i + 2;
+                            // Prefer short (e.g. "Vehicle 1HTU905") over full for reg extraction
                             const val = ev.short || ev.full || null;
                             if (val) {
                               const reg = extractReg(ev.short || ev.full);
@@ -3740,21 +3669,20 @@ export default function IntelligenceMapping() {
                             }
                           });
                         } catch {}
-                        // Wild field chips
+                        // Wild field chips — show full value (truncated to 12 chars)
                         const wildChips: Array<{ label: string; display: string; getValue: () => string | null }> = [];
                         try {
                           const wfs: Array<{ label: string; value: string }> = JSON.parse((assignedTarget as any)?.wildFields ?? '[]');
                           wfs.forEach((wf) => {
                             if (wf.value) {
-                              // Show up to first 8 chars of value as preview
-                              const preview = wf.value.trim().slice(0, 8) + (wf.value.trim().length > 8 ? '…' : '');
+                              const preview = wf.value.trim().slice(0, 12) + (wf.value.trim().length > 12 ? '…' : '');
                               wildChips.push({ label: wf.label, display: `${wf.label} ${preview}`, getValue: () => wf.value });
                             }
                           });
                         } catch {}
-                        // V1 reg preview
+                        // V1: prefer v1 (short) for reg extraction; fall back to v1f
                         const v1Val = rsTargetData?.v1 ?? rsTargetData?.v1f ?? null;
-                        const v1Reg = extractReg(rsTargetData?.v1 ?? rsTargetData?.v1f);
+                        const v1Reg = extractReg(rsTargetData?.v1) ?? extractReg(rsTargetData?.v1f);
                         const shortcuts: Array<{ label: string; display: string; getValue: () => string | null }> = [
                           { label: "V1", display: v1Reg ? `V1 ${v1Reg}` : "V1", getValue: () => v1Val },
                           ...extraVehicleChips,

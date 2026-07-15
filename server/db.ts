@@ -1338,6 +1338,60 @@ export function extractEntitiesFromText(text: string): Array<{
         // e.g. "4 GLYDE ST" → "4 Glyde St"
         displayName = shortForm.replace(/\b(\w+)/g, titleCaseStreetWord);
       }
+    } else if (type === "vehicle") {
+      // For vehicle entities: build a clean display name as "REGO colour make/model".
+      // The shortForm is typically "Vehicle REGO" (e.g. "Vehicle 1FBP509") or just the rego.
+      // The fullDescription is the text immediately before the bracket, e.g.:
+      //   "A white Toyota Landcruiser, bearing WA registration 1FBP509"
+      //   "black Subaru WRX, bearing WA registration 1FDD444"
+      //   "1HTU905" (bare rego, no description)
+      //
+      // Strategy:
+      //   1. Extract the raw rego from shortForm (strip "Vehicle " prefix if present)
+      //   2. Find colour + make/model words in fullDescription that precede the rego mention
+      //   3. Build display as "REGO colour make/model" (e.g. "1FBP509 white Toyota Landcruiser")
+
+      // Step 1: extract raw rego
+      const rawRego = shortForm.replace(/^vehicle\s+/i, "").trim();
+
+      // Step 2: scan fullDescription for vehicle description words before the rego
+      // Look for colour + make/model in the text
+      const COLOURS = /\b(white|black|silver|grey|gray|red|blue|green|yellow|orange|purple|brown|gold|bronze|cream|beige|maroon|navy|dark|light|bright)\b/gi;
+      const MAKES_DISPLAY = /\b(toyota|ford|holden|honda|mazda|nissan|mitsubishi|subaru|hyundai|kia|volkswagen|vw|bmw|mercedes|audi|lexus|volvo|jeep|dodge|land rover|range rover|defender|discovery|jaguar|porsche|mini|isuzu|suzuki|daihatsu|haval|gwm|mg|byd|tesla|great wall)\b/gi;
+      const BODY_TYPES = /\b(landcruiser|land cruiser|hilux|ranger|triton|navara|amarok|colorado|dmax|d-max|fortuner|prado|patrol|pathfinder|rav4|crv|cr-v|cx-5|cx5|cx-3|cx3|tucson|sportage|tiguan|forester|outback|wrx|impreza|levorg|liberty|brz|86|corolla|camry|yaris|kluger|tarago|hiace|hilux|falcon|commodore|cruze|captiva|trax|trailblazer|everest|territory|escape|focus|fiesta|mondeo|transit|connect|courier|f-150|f150|mustang|explorer|expedition|bronco|wrangler|cherokee|grand cherokee|compass|renegade|gladiator|durango|charger|challenger|ram|1500|2500|3500|sedan|hatchback|suv|wagon|coupe|ute|van|truck|4wd|4x4|bus|minivan|people mover)\b/gi;
+
+      // Find the portion of fullDescription that describes the vehicle
+      // (everything before any mention of the rego or "bearing"/"registration" keywords)
+      const regoIdx = fullDescription.toUpperCase().indexOf(rawRego.toUpperCase());
+      const descSource = regoIdx > 0 ? fullDescription.slice(0, regoIdx) : fullDescription;
+
+      const colourMatches = Array.from(descSource.matchAll(COLOURS)).map(m => m[0].toLowerCase());
+      const makeMatches = Array.from(descSource.matchAll(MAKES_DISPLAY)).map(m => m[0]);
+      const bodyMatches = Array.from(descSource.matchAll(BODY_TYPES)).map(m => m[0]);
+
+      // Build description: colour + make + body (deduplicated, max 3 words)
+      const descParts: string[] = [];
+      if (colourMatches.length > 0) descParts.push(colourMatches[colourMatches.length - 1]);
+      if (makeMatches.length > 0) descParts.push(makeMatches[makeMatches.length - 1]);
+      if (bodyMatches.length > 0) {
+        const lastBody = bodyMatches[bodyMatches.length - 1];
+        // Don't duplicate if body type is same as make (e.g. "Toyota Toyota")
+        if (!descParts.some(p => p.toLowerCase() === lastBody.toLowerCase())) {
+          descParts.push(lastBody);
+        }
+      }
+
+      if (rawRego && rawRego !== shortForm) {
+        // Had "Vehicle REGO" format — use rego + description
+        displayName = descParts.length > 0
+          ? `${rawRego} ${descParts.join(" ")}`
+          : rawRego;
+      } else if (descParts.length > 0) {
+        // shortForm is already just the rego
+        displayName = `${rawRego} ${descParts.join(" ")}`;
+      }
+      // else: keep displayName = shortForm (bare rego, no description available)
+
     } else if (type === "person") {
       // Extract the last 2-4 words immediately before the bracket — these are most
       // likely to be the full name. E.g. "Observed Jason JOHNSON (JOHNSON)" →
@@ -1891,12 +1945,17 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
               existingKeys.add(occKey);
             }
           }
-          // For vehicles: if the shorter form is a "Vehicle REGO" style shortForm
-          // (e.g. "Vehicle 1ICW519"), prefer it as the canonical shortForm over
-          // the full description text (e.g. "Silver Hyundai Santa Fe, bearing...").
-          // This ensures the intel display gets a clean shortForm to format.
-          if (entityType === "vehicle" && /^vehicle\s+/i.test(shorter.shortForm)) {
-            longer.shortForm = shorter.shortForm;
+          // For vehicles: when merging, prefer the entity with a richer display name
+          // (one that includes colour/make/model) over a bare rego or "Vehicle REGO" form.
+          // The longer entity (sorted by shortForm length) is usually richer, so we keep it.
+          // Exception: if the longer entity is actually a bare rego and the shorter has
+          // a richer description (colour+make), swap them.
+          if (entityType === "vehicle") {
+            const longerHasDesc = /[a-z]/i.test(longer.shortForm.replace(/^\d[A-Z]{2,3}\d{3}\s*/i, ""));
+            const shorterHasDesc = /[a-z]/i.test(shorter.shortForm.replace(/^\d[A-Z]{2,3}\d{3}\s*/i, ""));
+            if (!longerHasDesc && shorterHasDesc) {
+              longer.shortForm = shorter.shortForm;
+            }
           }
           absorbed.add(shorterLower);
         }

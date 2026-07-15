@@ -898,3 +898,7 @@
 
 ## Visual RS Export Map Fix (Round 17 - Jul 15)
 - [x] Fix map image not appearing in Visual RS export — html2canvas fails silently due to CORS on Google Maps tiles; replace with reliable Google Static Maps API call passing live map center/zoom/markers
+
+## Intelligence Extraction Fixes (Jul 2026)
+- [x] Suppress UM1/UM2/UM3 etc. (and bracketed variants) from being recorded as entities in the intelligence folder
+- [x] Fix multi-vehicle extraction: when two vehicles appear in one observation joined by "and a", both are now extracted with correct rego-first formatting (e.g. "1HTU905 white Mitsubishi Triton utility" and "1EAI510 white Mitsubishi SUV")

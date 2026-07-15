@@ -289,9 +289,30 @@ export function formatIntelVehicle(shortForm: string, fullObservation?: string):
 
   // Try to extract description from the full observation text
   if (fullObservation) {
-    // Pattern: "[description], bearing [jurisdiction] registration REGO (Vehicle REGO)"
-    // or:      "[description] bearing [jurisdiction] registration REGO"
-    // or:      "[description] bearing registration REGO"
+    // Find the specific bearing clause for THIS rego in the full observation.
+    // Strategy: locate "bearing ... registration REGO" by index, then look backward
+    // from that position to extract the vehicle description.
+    // We split on closing brackets ) to avoid spilling across other vehicle references
+    // like "(Vehicle 1HTU905)" when there are multiple vehicles in one observation.
+    const escapedRego = rego.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const bearingIdx = fullObservation.search(
+      new RegExp('bearing\\s+(?:[A-Z]{2,3}\\s+)?registration\\s+' + escapedRego + '\\b', 'i')
+    );
+    if (bearingIdx >= 0) {
+      // Take text before the bearing clause, strip trailing comma/space
+      const beforeBearing = fullObservation.slice(0, bearingIdx).replace(/,?\s*$/, '').trim();
+      // Split on closing brackets to isolate the last vehicle description segment
+      const segments = beforeBearing.split(')');
+      let lastSegment = segments[segments.length - 1].trim();
+      // Strip leading connectors: "and a", "and an", "and the", "a ", "an ", "the "
+      lastSegment = lastSegment.replace(/^(?:and\s+(?:a[n]?\s+|the\s+)?|a[n]?\s+|the\s+)/i, '').trim();
+      lastSegment = lastSegment.replace(/^[aA]\s+/, '').replace(/^V\d[A-Z]?:\s*/i, '').trim();
+      if (lastSegment && lastSegment.toLowerCase() !== 'vehicle') {
+        if (lastSegment.toLowerCase().startsWith(rego.toLowerCase())) return lastSegment;
+        return `${rego} ${lastSegment}`;
+      }
+    }
+    // Fallback: original approach — match from start of observation (single-vehicle case)
     const descMatch = fullObservation.match(
       /^(.+?),?\s+bearing\s+(?:[A-Z]{2,3}\s+)?registration\s+[\w\s-]+/i
     );

@@ -1166,6 +1166,9 @@ export function extractEntitiesFromText(text: string): Array<{
     if (shortForm.length < 2) continue;
     // Skip if shortForm looks like a time (e.g. "08:00")
     if (/^\d{1,2}:\d{2}$/.test(shortForm)) continue;
+    // Skip UM references (e.g. "UM1", "UM2", "UM12") — unidentified males/persons
+    // that are not recorded in the intelligence folder by design.
+    if (/^UM\d+$/i.test(shortForm)) continue;
 
     const lowerFull = fullDescription.toLowerCase();
     const lowerShort = shortForm.toLowerCase();

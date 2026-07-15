@@ -19,13 +19,17 @@ fi
 
 # Dev-time tooling, and any `_core` directory (documented in CLAUDE.md's
 # Golden Rule as inherited platform scaffolding, never wired into a live
-# route), are explicitly exempt.
-if [[ "$FILE_PATH" == */dev-tools/* || "$FILE_PATH" == */scripts/dev/* || "$FILE_PATH" == */_core/* ]]; then
+# route), are explicitly exempt. The enforcement files themselves, and
+# CLAUDE.md (the policy doc that has to describe these strings in prose),
+# are also exempt: they legitimately contain these strings as data, not
+# as a runtime call.
+if [[ "$FILE_PATH" == */dev-tools/* || "$FILE_PATH" == */scripts/dev/* || "$FILE_PATH" == */_core/* || "$FILE_PATH" == *check-no-runtime-ai.sh || "$FILE_PATH" == */.claude/settings.json || "$FILE_PATH" == */CLAUDE.md ]]; then
   exit 0
 fi
 
-# Banned patterns: known AI/LLM SDK imports, package names, and raw API
-# hosts. Extend this list as new providers/SDKs come into use.
+# Banned patterns: known AI/LLM SDK imports, package names, raw API hosts,
+# and the dead _core helper call sites. Extend this list as new
+# providers/SDKs/helpers come into use.
 BANNED_PATTERNS=(
   "openai"
   "anthropic"
@@ -38,6 +42,10 @@ BANNED_PATTERNS=(
   "openrouter"
   "langchain"
   "llama-index"
+  "forge.manus.im"
+  "invokeLLM\("
+  "generateImage\("
+  "transcribeAudio\("
 )
 
 MATCHES=""

@@ -7,12 +7,15 @@
       "WebFetch(domain:api.cohere.ai)",
       "WebFetch(domain:api-inference.huggingface.co)",
       "WebFetch(domain:openrouter.ai)",
+      "WebFetch(domain:forge.manus.im)",
       "Bash(curl * api.openai.com*)",
       "Bash(curl * api.anthropic.com*)",
       "Bash(curl * generativelanguage.googleapis.com*)",
       "Bash(curl * openrouter.ai*)",
+      "Bash(curl * forge.manus.im*)",
       "Bash(wget * api.openai.com*)",
-      "Bash(wget * api.anthropic.com*)"
+      "Bash(wget * api.anthropic.com*)",
+      "Bash(wget * forge.manus.im*)"
     ],
     "additionalDirectories": []
   },

@@ -33,6 +33,10 @@ BANNED_PATTERNS=(
   "openrouter"
   "langchain"
   "llama-index"
+  "forge\.manus\.im"
+  "invokeLLM\("
+  "generateImage\("
+  "transcribeAudio\("
 )
 
 EXCLUDE_ARGS=()

@@ -710,7 +710,7 @@ export async function getTargetsByOperation(operationId: number) {
   // Exclude soft-deleted targets in both paths
   const byFk = await db.select().from(targets).where(and(eq(targets.operationId, operationId), isNull(targets.deletedAt)));
   const linked = await db
-    .select({ id: targets.id, name: targets.name, tgt: targets.tgt, hbf: targets.hbf, hb: targets.hb, v1f: targets.v1f, v1: targets.v1, v2f: targets.v2f, v2: targets.v2, dep: targets.dep, arr: targets.arr, operationId: targets.operationId, createdBy: targets.createdBy, createdAt: targets.createdAt, updatedAt: targets.updatedAt })
+    .select({ id: targets.id, name: targets.name, tgt: targets.tgt, hbf: targets.hbf, hb: targets.hb, v1f: targets.v1f, v1: targets.v1, v2f: targets.v2f, v2: targets.v2, dep: targets.dep, arr: targets.arr, extraVehicles: targets.extraVehicles, wildFields: targets.wildFields, operationId: targets.operationId, createdBy: targets.createdBy, createdAt: targets.createdAt, updatedAt: targets.updatedAt })
     .from(operationTargetLinks)
     .innerJoin(targets, eq(operationTargetLinks.targetId, targets.id))
     .where(and(eq(operationTargetLinks.operationId, operationId), isNull(targets.deletedAt)));
@@ -751,7 +751,7 @@ export async function createTarget(data: InsertTarget) {
 
 export async function updateTarget(
   id: number,
-  data: Partial<Pick<InsertTarget, "name" | "tgt" | "hbf" | "hb" | "v1f" | "v1" | "v2f" | "v2" | "dep" | "arr">>
+  data: Partial<Pick<InsertTarget, "name" | "tgt" | "hbf" | "hb" | "v1f" | "v1" | "v2f" | "v2" | "dep" | "arr" | "extraVehicles" | "wildFields">>
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");

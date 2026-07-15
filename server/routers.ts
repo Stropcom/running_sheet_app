@@ -1172,6 +1172,8 @@ export const appRouter = router({
         v2f: z.string().optional(),
         dep: z.string().optional(),
         arr: z.string().optional(),
+        extraVehicles: z.string().optional(), // JSON array of {full,short}
+        wildFields: z.string().optional(),    // JSON array of {label,value}
       }))
       .mutation(async ({ ctx, input }) => {
         return createTarget({ ...input, createdBy: ctx.user.id });
@@ -1191,6 +1193,8 @@ export const appRouter = router({
         v2f: z.string().optional(),
         dep: z.string().optional(),
         arr: z.string().optional(),
+        extraVehicles: z.string().optional().nullable(),
+        wildFields: z.string().optional().nullable(),
       }))
       .mutation(async ({ input }) => {
         const { id, ...data } = input;
@@ -1250,6 +1254,8 @@ export const appRouter = router({
           v2: z.string().optional().nullable(),
           dep: z.string().optional().nullable(),
           arr: z.string().optional().nullable(),
+          extraVehicles: z.string().optional().nullable(),
+          wildFields: z.string().optional().nullable(),
           linkToOperationId: z.number().optional().nullable(),
         }))
         .mutation(async ({ input, ctx }) => {
@@ -1275,6 +1281,8 @@ export const appRouter = router({
           v2: z.string().optional().nullable(),
           dep: z.string().optional().nullable(),
           arr: z.string().optional().nullable(),
+          extraVehicles: z.string().optional().nullable(),
+          wildFields: z.string().optional().nullable(),
         }))
         .mutation(async ({ input }) => {
           const { id, ...data } = input;
@@ -1513,6 +1521,8 @@ export const appRouter = router({
           v1f: target.v1f,
           v2: target.v2,
           v2f: target.v2f,
+          extraVehicles: target.extraVehicles ?? null,
+          wildFields: target.wildFields ?? null,
         };
       }),
 

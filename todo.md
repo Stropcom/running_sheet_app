@@ -913,3 +913,14 @@
 - [x] Enlarge the map icon in the top-right of pages (mobile and desktop)
 - [x] Add Active RS icon/link next to the map icon — faded when no active RS, highlighted (green) when one is selected in the map pane, clicking navigates to that running sheet
 - [x] Active RS state read from localStorage (LS_MAP_SETTINGS_KEY) so DashboardLayout can show it without a context
+
+## Dynamic Vehicles & Wild Fields
+
+- [x] Add extraVehicles (JSON) and wildFields (JSON) columns to targets DB table; migrate existing v2f/v2 data into extraVehicles
+- [x] Update server db.ts and routers.ts to persist/return extraVehicles and wildFields
+- [x] TargetRegistry: V1F/V1 as sole default; Add Vehicle button creates V2F/V2, V3F/V3 pairs dynamically; Add Wild Field button creates #1, #2… fields
+- [x] TargetRegistry AddTargetDialog: same dynamic vehicles and wild fields in create dialog
+- [x] SheetDetail shortcutMap: extra vehicles (v2f/v2, v3f/v3…) and wild fields (#1, #2…) injected as shortcuts
+- [x] SheetDetail TARGET panel: extra vehicle and wild field rows shown in collapsible target panel
+- [x] IntelligenceMapping mapQeShortcutMap: extra vehicles and wild fields injected
+- [x] IntelligenceMapping RS Quick Entry chips: V2, V3… and #1, #2… chips appear dynamically when filled in

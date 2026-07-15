@@ -141,8 +141,12 @@ export const targets = mysqlTable("targets", {
   hb:  text("hb"),    // Home Base (short)
   v1f: text("v1f"),   // Vehicle 1 Full description
   v1:  text("v1"),    // Vehicle 1 (short)
-  v2f: text("v2f"),   // Vehicle 2 Full description
-  v2:  text("v2"),    // Vehicle 2 (short)
+  v2f: text("v2f"),   // Vehicle 2 Full description (legacy — migrated into extraVehicles)
+  v2:  text("v2"),    // Vehicle 2 (short) (legacy — migrated into extraVehicles)
+  // Dynamic extra vehicles beyond V1: JSON array of {full: string, short: string}
+  extraVehicles: text("extraVehicles"),
+  // Numbered wild fields: JSON array of {label: string, value: string} e.g. [{label:"#1",value:"..."},{label:"#2",value:"..."}]
+  wildFields: text("wildFields"),
   dep: text("dep"),   // Depart address/location
   arr: text("arr"),   // Arrive address/location
   createdBy: int("createdBy").notNull(),

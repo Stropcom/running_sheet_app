@@ -1932,6 +1932,22 @@ export default function SheetDetail() {
       if (t.v2)  map['v2']  = t.v2;
       if (t.dep) map['dep'] = t.dep;
       if (t.arr) map['arr'] = t.arr;
+      // Extra vehicles (V2F/V2, V3F/V3, …)
+      try {
+        const evs: Array<{ full: string; short: string }> = JSON.parse((t as any).extraVehicles ?? '[]');
+        evs.forEach((ev, i) => {
+          const num = i + 2;
+          if (ev.full)  map[`v${num}f`] = ev.full;
+          if (ev.short) map[`v${num}`]  = ev.short;
+        });
+      } catch {}
+      // Wild fields (#1, #2, …)
+      try {
+        const wfs: Array<{ label: string; value: string }> = JSON.parse((t as any).wildFields ?? '[]');
+        wfs.forEach((wf) => {
+          if (wf.value) map[wf.label.toLowerCase()] = wf.value;
+        });
+      } catch {}
     }
     // Per-target custom shortcuts (override global if same trigger)
     for (const s of targetShortcutsData ?? []) map[s.trigger.toLowerCase()] = s.expansion;
@@ -2340,14 +2356,30 @@ export default function SheetDetail() {
         {/* TARGET Panel — shown when a target is assigned to this sheet */}
         {sheet?.targetId && assignedTarget && (() => {
           const t = assignedTarget;
+          // Build dynamic extra vehicle fields from JSON
+          const extraVehicleFields: { label: string; value: string | null }[] = [];
+          try {
+            const evs: Array<{ full: string; short: string }> = JSON.parse((t as any).extraVehicles ?? '[]');
+            evs.forEach((ev, i) => {
+              const num = i + 2;
+              if (ev.full)  extraVehicleFields.push({ label: `V${num}F`, value: ev.full });
+              if (ev.short) extraVehicleFields.push({ label: `V${num}`,  value: ev.short });
+            });
+          } catch {}
+          // Build wild fields
+          const wildFieldItems: { label: string; value: string | null }[] = [];
+          try {
+            const wfs: Array<{ label: string; value: string }> = JSON.parse((t as any).wildFields ?? '[]');
+            wfs.forEach((wf) => { if (wf.value) wildFieldItems.push({ label: wf.label, value: wf.value }); });
+          } catch {}
           const fields: { label: string; value: string | null }[] = [
             { label: "TGT", value: t.tgt },
             { label: "HBF", value: t.hbf },
             { label: "HB",  value: t.hb  },
             { label: "V1F", value: t.v1f },
             { label: "V1",  value: t.v1  },
-            { label: "V2F", value: t.v2f },
-            { label: "V2",  value: t.v2  },
+            ...extraVehicleFields,
+            ...wildFieldItems,
             { label: "DEP", value: t.dep },
             { label: "ARR", value: t.arr },
           ];

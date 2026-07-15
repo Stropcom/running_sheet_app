@@ -959,6 +959,22 @@ export default function IntelligenceMapping() {
       if (t.v2)  map['v2']  = t.v2;
       if (t.dep) map['dep'] = t.dep;
       if (t.arr) map['arr'] = t.arr;
+      // Extra vehicles (V2F/V2, V3F/V3, …)
+      try {
+        const evs: Array<{ full: string; short: string }> = JSON.parse(t.extraVehicles ?? '[]');
+        evs.forEach((ev: { full: string; short: string }, i: number) => {
+          const num = i + 2;
+          if (ev.full)  map[`v${num}f`] = ev.full;
+          if (ev.short) map[`v${num}`]  = ev.short;
+        });
+      } catch {}
+      // Wild fields (#1, #2, …)
+      try {
+        const wfs: Array<{ label: string; value: string }> = JSON.parse(t.wildFields ?? '[]');
+        wfs.forEach((wf: { label: string; value: string }) => {
+          if (wf.value) map[wf.label.toLowerCase()] = wf.value;
+        });
+      } catch {}
     }
     for (const s of (targetShortcutsForSheet as any[] ?? [])) map[s.trigger.toLowerCase()] = s.expansion;
     return map;
@@ -3703,10 +3719,26 @@ export default function IntelligenceMapping() {
                           const gen = (generalShortcuts as any[] | undefined)?.find((s: any) => s.trigger?.toLowerCase() === trigger.toLowerCase());
                           return gen ? gen.expansion as string : null;
                         };
+                        // Build dynamic extra vehicle chips from assignedTarget JSON
+                        const extraVehicleChips: Array<{ label: string; getValue: () => string | null }> = [];
+                        try {
+                          const evs: Array<{ full: string; short: string }> = JSON.parse((assignedTarget as any)?.extraVehicles ?? '[]');
+                          evs.forEach((ev, i) => {
+                            const num = i + 2;
+                            if (ev.short || ev.full) extraVehicleChips.push({ label: `V${num}`, getValue: () => ev.short || ev.full || null });
+                          });
+                        } catch {}
+                        // Wild field chips
+                        const wildChips: Array<{ label: string; getValue: () => string | null }> = [];
+                        try {
+                          const wfs: Array<{ label: string; value: string }> = JSON.parse((assignedTarget as any)?.wildFields ?? '[]');
+                          wfs.forEach((wf) => { if (wf.value) wildChips.push({ label: wf.label, getValue: () => wf.value }); });
+                        } catch {}
                         const shortcuts: Array<{ label: string; getValue: () => string | null }> = [
                           { label: "V1", getValue: () => rsTargetData?.v1 ?? rsTargetData?.v1f ?? null },
-                          { label: "V2", getValue: () => rsTargetData?.v2 ?? rsTargetData?.v2f ?? null },
+                          ...extraVehicleChips,
                           { label: "TGT", getValue: () => rsTargetData?.tgt ?? rsTargetData?.name ?? null },
+                          ...wildChips,
                           { label: "DSO", getValue: () => findShortcut("dso") ?? "driver and sole occupant" },
                           { label: "D", getValue: () => findShortcut("d") ?? "departed and" },
                           { label: "AR", getValue: () => findShortcut("ar") ?? "arrived and" },

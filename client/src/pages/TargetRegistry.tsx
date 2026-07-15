@@ -39,6 +39,7 @@ import {
   Folder,
   Car,
   Home,
+  Hash,
 } from "lucide-react";
 import { ViewToggle } from "@/components/ViewToggle";
 import { useViewMode } from "@/contexts/ViewModeContext";
@@ -46,6 +47,9 @@ import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
+
+type ExtraVehicle = { full: string; short: string };
+type WildField = { label: string; value: string };
 
 type RegistryTarget = {
   id: number;
@@ -55,14 +59,25 @@ type RegistryTarget = {
   hb: string | null;
   v1f: string | null;
   v1: string | null;
-  v2f: string | null;
-  v2: string | null;
+  v2f: string | null; // legacy
+  v2: string | null;  // legacy
   dep: string | null;
   arr: string | null;
+  extraVehicles: string | null; // JSON: ExtraVehicle[]
+  wildFields: string | null;    // JSON: WildField[]
   createdAt: Date;
   updatedAt: Date;
   linkedOperations: Array<{ operationId: number; operationName: string | null }>;
 };
+
+function parseExtraVehicles(json: string | null | undefined): ExtraVehicle[] {
+  if (!json) return [];
+  try { return JSON.parse(json) as ExtraVehicle[]; } catch { return []; }
+}
+function parseWildFields(json: string | null | undefined): WildField[] {
+  if (!json) return [];
+  try { return JSON.parse(json) as WildField[]; } catch { return []; }
+}
 
 // ─── Link to Operation Dialog ─────────────────────────────────────────────────
 
@@ -172,14 +187,45 @@ function TargetCard({
   const [hb, setHb] = useState(target.hb ?? "");
   const [v1f, setV1f] = useState(target.v1f ?? "");
   const [v1, setV1] = useState(target.v1 ?? "");
-  const [v2f, setV2f] = useState(target.v2f ?? "");
-  const [v2, setV2] = useState(target.v2 ?? "");
   const [dep, setDep] = useState(target.dep ?? "");
   const [arr, setArr] = useState(target.arr ?? "");
+  // Dynamic extra vehicles (V2+): initialise from extraVehicles JSON, falling back to legacy v2f/v2
+  const [extraVehicles, setExtraVehicles] = useState<ExtraVehicle[]>(() => {
+    const parsed = parseExtraVehicles(target.extraVehicles);
+    if (parsed.length > 0) return parsed;
+    // Migrate legacy v2f/v2 if present
+    if (target.v2f || target.v2) return [{ full: target.v2f ?? "", short: target.v2 ?? "" }];
+    return [];
+  });
+  // Numbered wild fields (#1, #2, …)
+  const [wildFields, setWildFields] = useState<WildField[]>(() => parseWildFields(target.wildFields));
   const [dirty, setDirty] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const mark = (fn: () => void) => { fn(); setDirty(true); };
+
+  const addVehicle = () => { setExtraVehicles(v => [...v, { full: "", short: "" }]); setDirty(true); };
+  const removeVehicle = (i: number) => { setExtraVehicles(v => v.filter((_, idx) => idx !== i)); setDirty(true); };
+  const updateVehicle = (i: number, field: 'full' | 'short', val: string) => {
+    setExtraVehicles(v => v.map((item, idx) => idx === i ? { ...item, [field]: val } : item));
+    setDirty(true);
+  };
+  const addWildField = () => {
+    const nextNum = wildFields.length + 1;
+    setWildFields(v => [...v, { label: `#${nextNum}`, value: "" }]);
+    setDirty(true);
+  };
+  const removeWildField = (i: number) => {
+    setWildFields(v => {
+      const next = v.filter((_, idx) => idx !== i).map((f, idx) => ({ ...f, label: `#${idx + 1}` }));
+      return next;
+    });
+    setDirty(true);
+  };
+  const updateWildField = (i: number, val: string) => {
+    setWildFields(v => v.map((item, idx) => idx === i ? { ...item, value: val } : item));
+    setDirty(true);
+  };
 
   const update = trpc.target.registry.update.useMutation({
     onSuccess: () => {
@@ -277,10 +323,63 @@ function TargetCard({
             { label: "Home (HB)",               val: hb,  set: (v: string) => mark(() => setHb(v)) },
             { label: "Vehicle 1 Full (V1F)",    val: v1f, set: (v: string) => mark(() => setV1f(v)) },
             { label: "Vehicle (V1)",            val: v1,  set: (v: string) => mark(() => setV1(v)) },
-            { label: "Vehicle 2 Full (V2F)",    val: v2f, set: (v: string) => mark(() => setV2f(v)) },
-            { label: "Vehicle (V2)",            val: v2,  set: (v: string) => mark(() => setV2(v)) },
-            { label: "Depart (DEP)",            val: dep, set: (v: string) => mark(() => setDep(v)) },
-            { label: "Arrive (ARR)",            val: arr, set: (v: string) => mark(() => setArr(v)) },
+          ] as { label: string; val: string; set: (v: string) => void }[]).map(({ label, val, set }) => (
+            <div key={label} className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{label}</label>
+              <Input value={val} onChange={e => set(e.target.value)} />
+            </div>
+          ))}
+
+          {/* ── Dynamic extra vehicles (V2, V3, …) ── */}
+          {extraVehicles.map((ev, i) => {
+            const num = i + 2; // V2, V3, …
+            return (
+              <div key={i} className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
+                    <Car className="w-3 h-3" /> Vehicle {num}
+                  </span>
+                  <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => removeVehicle(i)}>
+                    <X className="w-3 h-3" />
+                  </Button>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle {num} Full (V{num}F)</label>
+                  <Input value={ev.full} onChange={e => updateVehicle(i, 'full', e.target.value)} placeholder="Full description…" />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle {num} (V{num})</label>
+                  <Input value={ev.short} onChange={e => updateVehicle(i, 'short', e.target.value)} placeholder="Short (e.g. rego)…" />
+                </div>
+              </div>
+            );
+          })}
+          <Button size="sm" variant="outline" className="gap-1.5 self-start" onClick={addVehicle}>
+            <Plus className="w-3.5 h-3.5" /> Add Vehicle
+          </Button>
+
+          {/* ── Wild fields (#1, #2, …) — between vehicles and dep/arr ── */}
+          {wildFields.map((wf, i) => (
+            <div key={i} className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-amber-500 uppercase tracking-wide flex items-center gap-1.5">
+                  <Hash className="w-3 h-3" /> Wild Field {wf.label}
+                </span>
+                <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => removeWildField(i)}>
+                  <X className="w-3 h-3" />
+                </Button>
+              </div>
+              <Input value={wf.value} onChange={e => updateWildField(i, e.target.value)} placeholder={`${wf.label} value…`} />
+            </div>
+          ))}
+          <Button size="sm" variant="outline" className="gap-1.5 self-start border-amber-500/40 text-amber-500 hover:bg-amber-500/10" onClick={addWildField}>
+            <Hash className="w-3.5 h-3.5" /> Add Wild Field
+          </Button>
+
+          {/* ── Depart / Arrive ── */}
+          {([
+            { label: "Depart (DEP)", val: dep, set: (v: string) => mark(() => setDep(v)) },
+            { label: "Arrive (ARR)", val: arr, set: (v: string) => mark(() => setArr(v)) },
           ] as { label: string; val: string; set: (v: string) => void }[]).map(({ label, val, set }) => (
             <div key={label} className="flex flex-col gap-1.5">
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{label}</label>
@@ -301,7 +400,14 @@ function TargetCard({
             <Button
               size="sm"
               className="gap-2"
-              onClick={() => update.mutate({ id: target.id, name, tgt: tgt || null, hbf: hbf || null, hb: hb || null, v1f: v1f || null, v1: v1 || null, v2f: v2f || null, v2: v2 || null, dep: dep || null, arr: arr || null })}
+              onClick={() => update.mutate({
+                id: target.id, name,
+                tgt: tgt || null, hbf: hbf || null, hb: hb || null,
+                v1f: v1f || null, v1: v1 || null,
+                dep: dep || null, arr: arr || null,
+                extraVehicles: JSON.stringify(extraVehicles),
+                wildFields: JSON.stringify(wildFields),
+              })}
               disabled={update.isPending || !dirty}
             >
               <Save className="w-3.5 h-3.5" />
@@ -424,7 +530,7 @@ function TargetCard({
 
 // ─── Add Target Dialog ────────────────────────────────────────────────────────
 
-const EMPTY_FORM = { name: "", tgt: "", hbf: "", hb: "", v1f: "", v1: "", v2f: "", v2: "", dep: "", arr: "" };
+const EMPTY_FORM = { name: "", tgt: "", hbf: "", hb: "", v1f: "", v1: "", dep: "", arr: "" };
 type TargetForm = typeof EMPTY_FORM;
 
 function AddTargetDialog({
@@ -434,20 +540,24 @@ function AddTargetDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  onSave: (data: TargetForm) => Promise<void>;
+  onSave: (data: TargetForm & { extraVehicles: ExtraVehicle[]; wildFields: WildField[] }) => Promise<void>;
 }) {
   const [form, setForm] = useState<TargetForm>(EMPTY_FORM);
+  const [extraVehicles, setExtraVehicles] = useState<ExtraVehicle[]>([]);
+  const [wildFields, setWildFields] = useState<WildField[]>([]);
   const [saving, setSaving] = useState(false);
 
-  const set = (field: keyof TargetForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
+  const setField = (field: keyof TargetForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(f => ({ ...f, [field]: e.target.value }));
 
   const handleSave = async () => {
     if (!form.name.trim()) { toast.error("Target name is required."); return; }
     setSaving(true);
     try {
-      await onSave(form);
+      await onSave({ ...form, extraVehicles, wildFields });
       setForm(EMPTY_FORM);
+      setExtraVehicles([]);
+      setWildFields([]);
       onClose();
     } catch (err: any) {
       toast.error(err?.message ?? "Failed to save target.");
@@ -465,7 +575,7 @@ function AddTargetDialog({
         <div className="flex flex-col gap-3 py-2">
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Full Name, Born *</label>
-            <Input value={form.name} onChange={set("name")} placeholder="e.g. John SMITH, born 1 Jan 1980" autoFocus />
+            <Input value={form.name} onChange={setField("name")} placeholder="e.g. John SMITH, born 1 Jan 1980" autoFocus />
           </div>
           {([
             { label: "Target (TGT)",           field: "tgt" as keyof TargetForm },
@@ -473,14 +583,53 @@ function AddTargetDialog({
             { label: "Home (HB)",               field: "hb"  as keyof TargetForm },
             { label: "Vehicle 1 Full (V1F)",    field: "v1f" as keyof TargetForm },
             { label: "Vehicle (V1)",            field: "v1"  as keyof TargetForm },
-            { label: "Vehicle 2 Full (V2F)",    field: "v2f" as keyof TargetForm },
-            { label: "Vehicle (V2)",            field: "v2"  as keyof TargetForm },
-            { label: "Depart (DEP)",            field: "dep" as keyof TargetForm },
-            { label: "Arrive (ARR)",            field: "arr" as keyof TargetForm },
           ]).map(({ label, field }) => (
             <div key={field} className="flex flex-col gap-1.5">
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{label}</label>
-              <Input value={form[field]} onChange={set(field)} />
+              <Input value={form[field]} onChange={setField(field)} />
+            </div>
+          ))}
+
+          {/* Dynamic extra vehicles */}
+          {extraVehicles.map((ev, i) => {
+            const num = i + 2;
+            return (
+              <div key={i} className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5"><Car className="w-3 h-3" /> Vehicle {num}</span>
+                  <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => setExtraVehicles(v => v.filter((_, idx) => idx !== i))}><X className="w-3 h-3" /></Button>
+                </div>
+                <Input value={ev.full} onChange={e => setExtraVehicles(v => v.map((item, idx) => idx === i ? { ...item, full: e.target.value } : item))} placeholder={`Vehicle ${num} Full (V${num}F)…`} />
+                <Input value={ev.short} onChange={e => setExtraVehicles(v => v.map((item, idx) => idx === i ? { ...item, short: e.target.value } : item))} placeholder={`Vehicle ${num} (V${num})…`} />
+              </div>
+            );
+          })}
+          <Button size="sm" variant="outline" className="gap-1.5 self-start" onClick={() => setExtraVehicles(v => [...v, { full: "", short: "" }])}>
+            <Plus className="w-3.5 h-3.5" /> Add Vehicle
+          </Button>
+
+          {/* Wild fields */}
+          {wildFields.map((wf, i) => (
+            <div key={i} className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-amber-500 uppercase tracking-wide flex items-center gap-1.5"><Hash className="w-3 h-3" /> Wild Field {wf.label}</span>
+                <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => setWildFields(v => v.filter((_, idx) => idx !== i).map((f, idx) => ({ ...f, label: `#${idx + 1}` })))}><X className="w-3 h-3" /></Button>
+              </div>
+              <Input value={wf.value} onChange={e => setWildFields(v => v.map((item, idx) => idx === i ? { ...item, value: e.target.value } : item))} placeholder={`${wf.label} value…`} />
+            </div>
+          ))}
+          <Button size="sm" variant="outline" className="gap-1.5 self-start border-amber-500/40 text-amber-500 hover:bg-amber-500/10" onClick={() => setWildFields(v => [...v, { label: `#${v.length + 1}`, value: "" }])}>
+            <Hash className="w-3.5 h-3.5" /> Add Wild Field
+          </Button>
+
+          {/* Depart / Arrive */}
+          {([
+            { label: "Depart (DEP)", field: "dep" as keyof TargetForm },
+            { label: "Arrive (ARR)", field: "arr" as keyof TargetForm },
+          ]).map(({ label, field }) => (
+            <div key={field} className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{label}</label>
+              <Input value={form[field]} onChange={setField(field)} />
             </div>
           ))}
         </div>
@@ -747,10 +896,10 @@ export default function TargetRegistryPage() {
             hb: form.hb || null,
             v1f: form.v1f || null,
             v1: form.v1 || null,
-            v2f: form.v2f || null,
-            v2: form.v2 || null,
             dep: form.dep || null,
             arr: form.arr || null,
+            extraVehicles: JSON.stringify(form.extraVehicles),
+            wildFields: JSON.stringify(form.wildFields),
           });
         }}
       />

@@ -908,3 +908,8 @@
 - [x] Word export includes cover page (operation name, PROMIS, IMS, unit, sheet title, date, TEAM roster)
 - [x] Word export includes running sheet table (time, observation, CIN, certify columns)
 - [x] Word export matches PDF layout/content as closely as possible
+
+## Map Icon & Active RS Indicator (Jul 2026)
+- [x] Enlarge the map icon in the top-right of pages (mobile and desktop)
+- [x] Add Active RS icon/link next to the map icon — faded when no active RS, highlighted (green) when one is selected in the map pane, clicking navigates to that running sheet
+- [x] Active RS state read from localStorage (LS_MAP_SETTINGS_KEY) so DashboardLayout can show it without a context

@@ -43,7 +43,7 @@ import { useIsMobile } from "@/hooks/useMobile";
 import { useTheme } from "@/contexts/ThemeContext";
 import {
   FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen, Scale, FolderOpen, ChevronDown, ChevronRight, CalendarDays, Shield, ClipboardCheck as GovIcon, Map, ArrowRightLeft, HelpCircle, Trash2, WifiOff, Settings, UserCog, BarChart3, GripVertical, LayoutGrid, List } from "lucide-react";
-import React, { CSSProperties, useEffect, useRef, useState } from "react";
+import React, { CSSProperties, useEffect, useRef, useState, useCallback } from "react";
 import { useObservationFocus } from "@/contexts/ObservationFocusContext";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
@@ -378,6 +378,35 @@ function DashboardLayoutContent({
   const [todoExpanded, setTodoExpanded] = useState(() => location === "/todo" || location === "/todo/governance");
   const [adminFolderExpanded, setAdminFolderExpanded] = useState(false);
   const [userMgmtFolderExpanded, setUserMgmtFolderExpanded] = useState(false);
+
+  // ── Active RS from map localStorage ─────────────────────────────────────
+  const LS_MAP_SETTINGS_KEY = "runlog_map_settings";
+  const readActiveRsId = useCallback((): number | null => {
+    try {
+      const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+      if (s) return JSON.parse(s).rsSelectedSheetId ?? null;
+    } catch { /* ignore */ }
+    return null;
+  }, []);
+  const [activeRsId, setActiveRsId] = useState<number | null>(readActiveRsId);
+
+  // Sync when the map page writes to localStorage
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === LS_MAP_SETTINGS_KEY) setActiveRsId(readActiveRsId());
+    };
+    window.addEventListener("storage", onStorage);
+    // Also poll on focus in case same-tab writes don't fire storage events
+    const onFocus = () => setActiveRsId(readActiveRsId());
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [readActiveRsId]);
+
+  // Re-read when navigating back to any page (location change)
+  useEffect(() => { setActiveRsId(readActiveRsId()); }, [location, readActiveRsId]);
 
   // ── Home screen mode toggle ──────────────────────────────────────────────
   const [homeMode, setHomeMode] = useState<"folder" | "tile">("folder");
@@ -776,26 +805,54 @@ function DashboardLayoutContent({
                 Running Sheet
               </span>
             </div>
-            {location !== "/intelligence/mapping" && (
+            <div className="flex items-center gap-1">
+              {/* Active RS quick-link (mobile) */}
               <button
-                onClick={() => setLocation("/intelligence/mapping")}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-base font-semibold text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
-                title="Back to Map"
+                onClick={() => { if (activeRsId) setLocation(`/sheet/${activeRsId}`); }}
+                className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg transition-all ${
+                  activeRsId
+                    ? "text-emerald-500 hover:bg-emerald-500/10 cursor-pointer"
+                    : "text-muted-foreground/30 cursor-default"
+                }`}
+                title={activeRsId ? "Go to Active RS" : "No active RS selected"}
               >
-                <Map className="h-5 w-5" />
-                <span>Map</span>
+                <ClipboardList className="h-5 w-5" />
               </button>
-            )}
+              {/* Map quick-link (mobile) */}
+              {location !== "/intelligence/mapping" && (
+                <button
+                  onClick={() => setLocation("/intelligence/mapping")}
+                  className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+                  title="Back to Map"
+                >
+                  <Map className="h-6 w-6" />
+                </button>
+              )}
+            </div>
           </div>
         )}
         {!isMobile && location !== "/intelligence/mapping" && (
-          <div className="flex justify-end px-4 pt-2 pb-0">
+          <div className="flex justify-end items-center gap-1 px-4 pt-2 pb-0">
+            {/* Active RS quick-link (desktop) */}
+            <button
+              onClick={() => { if (activeRsId) setLocation(`/sheet/${activeRsId}`); }}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                activeRsId
+                  ? "text-emerald-500 hover:bg-emerald-500/10 cursor-pointer"
+                  : "text-muted-foreground/25 cursor-default"
+              }`}
+              title={activeRsId ? "Go to Active RS" : "No active RS selected"}
+            >
+              <ClipboardList className="h-5 w-5" />
+              <span>Active RS</span>
+            </button>
+            {/* Map quick-link (desktop) */}
             <button
               onClick={() => setLocation("/intelligence/mapping")}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
               title="Back to Map"
             >
-              <Map className="h-3.5 w-3.5" />
+              <Map className="h-5 w-5" />
               <span>Back to Map</span>
             </button>
           </div>

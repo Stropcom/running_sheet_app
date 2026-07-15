@@ -3719,32 +3719,53 @@ export default function IntelligenceMapping() {
                           const gen = (generalShortcuts as any[] | undefined)?.find((s: any) => s.trigger?.toLowerCase() === trigger.toLowerCase());
                           return gen ? gen.expansion as string : null;
                         };
+                        // Helper: extract registration/short value for display preview
+                        const extractReg = (val: string | null | undefined): string | null => {
+                          if (!val) return null;
+                          // Extract last word-token that looks like a rego (alphanumeric, 4-8 chars)
+                          const tokens = val.trim().split(/\s+/);
+                          const rego = tokens.slice().reverse().find(t => /^[A-Z0-9]{3,8}$/i.test(t));
+                          return rego ?? tokens[tokens.length - 1] ?? null;
+                        };
                         // Build dynamic extra vehicle chips from assignedTarget JSON
-                        const extraVehicleChips: Array<{ label: string; getValue: () => string | null }> = [];
+                        const extraVehicleChips: Array<{ label: string; display: string; getValue: () => string | null }> = [];
                         try {
                           const evs: Array<{ full: string; short: string }> = JSON.parse((assignedTarget as any)?.extraVehicles ?? '[]');
                           evs.forEach((ev, i) => {
                             const num = i + 2;
-                            if (ev.short || ev.full) extraVehicleChips.push({ label: `V${num}`, getValue: () => ev.short || ev.full || null });
+                            const val = ev.short || ev.full || null;
+                            if (val) {
+                              const reg = extractReg(ev.short || ev.full);
+                              extraVehicleChips.push({ label: `V${num}`, display: reg ? `V${num} ${reg}` : `V${num}`, getValue: () => val });
+                            }
                           });
                         } catch {}
                         // Wild field chips
-                        const wildChips: Array<{ label: string; getValue: () => string | null }> = [];
+                        const wildChips: Array<{ label: string; display: string; getValue: () => string | null }> = [];
                         try {
                           const wfs: Array<{ label: string; value: string }> = JSON.parse((assignedTarget as any)?.wildFields ?? '[]');
-                          wfs.forEach((wf) => { if (wf.value) wildChips.push({ label: wf.label, getValue: () => wf.value }); });
+                          wfs.forEach((wf) => {
+                            if (wf.value) {
+                              // Show up to first 8 chars of value as preview
+                              const preview = wf.value.trim().slice(0, 8) + (wf.value.trim().length > 8 ? '…' : '');
+                              wildChips.push({ label: wf.label, display: `${wf.label} ${preview}`, getValue: () => wf.value });
+                            }
+                          });
                         } catch {}
-                        const shortcuts: Array<{ label: string; getValue: () => string | null }> = [
-                          { label: "V1", getValue: () => rsTargetData?.v1 ?? rsTargetData?.v1f ?? null },
+                        // V1 reg preview
+                        const v1Val = rsTargetData?.v1 ?? rsTargetData?.v1f ?? null;
+                        const v1Reg = extractReg(rsTargetData?.v1 ?? rsTargetData?.v1f);
+                        const shortcuts: Array<{ label: string; display: string; getValue: () => string | null }> = [
+                          { label: "V1", display: v1Reg ? `V1 ${v1Reg}` : "V1", getValue: () => v1Val },
                           ...extraVehicleChips,
-                          { label: "TGT", getValue: () => rsTargetData?.tgt ?? rsTargetData?.name ?? null },
+                          { label: "TGT", display: "TGT", getValue: () => rsTargetData?.tgt ?? rsTargetData?.name ?? null },
                           ...wildChips,
-                          { label: "DSO", getValue: () => findShortcut("dso") ?? "driver and sole occupant" },
-                          { label: "D", getValue: () => findShortcut("d") ?? "departed and" },
-                          { label: "AR", getValue: () => findShortcut("ar") ?? "arrived and" },
-                          { label: "CV", getValue: () => findShortcut("cv") ?? "continued via" },
-                          { label: "OOS", getValue: () => findShortcut("oos") ?? "out of sight" },
-                          { label: "COOS", getValue: () => findShortcut("coos") ?? "continued out of sight" },
+                          { label: "DSO", display: "DSO", getValue: () => findShortcut("dso") ?? "driver and sole occupant" },
+                          { label: "D", display: "D", getValue: () => findShortcut("d") ?? "departed and" },
+                          { label: "AR", display: "AR", getValue: () => findShortcut("ar") ?? "arrived and" },
+                          { label: "CV", display: "CV", getValue: () => findShortcut("cv") ?? "continued via" },
+                          { label: "OOS", display: "OOS", getValue: () => findShortcut("oos") ?? "out of sight" },
+                          { label: "COOS", display: "COOS", getValue: () => findShortcut("coos") ?? "continued out of sight" },
                         ];
                         const available = shortcuts.filter(s => s.getValue() !== null);
                         if (available.length === 0) return null;
@@ -3753,7 +3774,7 @@ export default function IntelligenceMapping() {
                             {available.map(s => (
                               <button key={s.label} onClick={() => { const v = s.getValue(); if (v) appendText(v); }}
                                 className="px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all">
-                                {s.label}
+                                {s.display}
                               </button>
                             ))}
                           </div>

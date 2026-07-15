@@ -1,0 +1,17 @@
+name: No Runtime AI Dependency
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  check-no-runtime-ai:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan operational source for AI/LLM references
+        run: |
+          chmod +x scripts/check-no-runtime-ai.sh
+          ./scripts/check-no-runtime-ai.sh server client/src shared

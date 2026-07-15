@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "deny": [
+      "WebFetch(domain:api.openai.com)",
+      "WebFetch(domain:api.anthropic.com)",
+      "WebFetch(domain:generativelanguage.googleapis.com)",
+      "WebFetch(domain:api.cohere.ai)",
+      "WebFetch(domain:api-inference.huggingface.co)",
+      "WebFetch(domain:openrouter.ai)",
+      "Bash(curl * api.openai.com*)",
+      "Bash(curl * api.anthropic.com*)",
+      "Bash(curl * generativelanguage.googleapis.com*)",
+      "Bash(curl * openrouter.ai*)",
+      "Bash(wget * api.openai.com*)",
+      "Bash(wget * api.anthropic.com*)"
+    ],
+    "additionalDirectories": []
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/check-no-runtime-ai.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1296,12 +1296,16 @@ export function extractEntitiesFromText(text: string): Array<{
       //  1. Standard: starts with a street number or cnr/corner prefix
       //  2. Intersection: "Street Type & Street Type, Suburb STATE"
       const STREET_TYPES_RE = "(?:St|Rd|Ave|Dr|Hwy|Fwy|Tce|Pde|Cct|Gr|Ln|Pl|Ct|Cl|Cres|Blvd|Way|Loop|Rise|Mews|Close|Place|Court|Lane|Terrace|Parade|Circuit|Green|Corner)";
-      const standardAddrRe = /(?:(?:cnr\s+of\s+|cnr\s+|corner\s+of\s+|lot\s+\d+\s+|\d{1,5}[A-Za-z]?\/\d{1,5}\s+|\d{1,5}[A-Za-z]?\s+)[A-Za-z][\w\s&]*(?:,\s*[A-Za-z][\w\s]+)?(?:\s+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))?(?:\s+\d{4})?(?:,\s*Australia)?)$/i;
+      // The street-number prefix must be preceded by a word boundary (start of string,
+      // space, comma, or punctuation) to prevent partial rego digits (e.g. "905" from
+      // "1HTU905") from being mistaken for a street number.
+      const standardAddrRe = /(?:^|(?<=[\s,;]))((?:cnr\s+of\s+|cnr\s+|corner\s+of\s+|lot\s+\d+\s+|\d{1,5}[A-Za-z]?\/\d{1,5}\s+|\d{1,5}[A-Za-z]?\s+)[A-Za-z][\w\s&]*(?:,\s*[A-Za-z][\w\s]+)?(?:\s+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))?(?:\s+\d{4})?(?:,\s*Australia)?)$/i;
       const intersectionAddrRe = new RegExp(
         `[A-Za-z][\\w\\s]+\\s+${STREET_TYPES_RE}\\s*&\\s*[A-Za-z][\\w\\s]+\\s+${STREET_TYPES_RE}(?:,\\s*[A-Za-z][\\w\\s]+)?(?:\\s+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))?(?:\\s+\\d{4})?(?:,\\s*Australia)?$`,
         "i"
       );
-      const addrMatch = fullDescription.match(standardAddrRe) || fullDescription.match(intersectionAddrRe);
+      const standardMatch = fullDescription.match(standardAddrRe);
+      const addrMatch = (standardMatch ? [standardMatch[1] ?? standardMatch[0]] : null) || fullDescription.match(intersectionAddrRe);
       if (addrMatch) {
         let addrText = addrMatch[0].trim();
         // Strip postcode and ", Australia"

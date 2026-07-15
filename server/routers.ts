@@ -2539,11 +2539,12 @@ export const appRouter = router({
       }))
       .query(async ({ input }) => {
         const { ENV } = await import("./_core/env");
-        const baseUrl = ENV.forgeApiUrl.replace(/\/+$/, "");
-        const apiKey = ENV.forgeApiKey;
-
-        const url = new URL(`${baseUrl}/v1/maps/proxy/maps/api/staticmap`);
-        url.searchParams.append("key", apiKey);
+        // A directly-owned Google Maps Platform key takes priority over the
+        // Manus forge proxy, so this works outside the Manus hosting environment.
+        const url = ENV.googleMapsApiKey
+          ? new URL("https://maps.googleapis.com/maps/api/staticmap")
+          : new URL(`${ENV.forgeApiUrl.replace(/\/+$/, "")}/v1/maps/proxy/maps/api/staticmap`);
+        url.searchParams.append("key", ENV.googleMapsApiKey || ENV.forgeApiKey);
 
         // Size defaults to 800x500 landscape for PDF
         const size = input.size ?? "800x500";

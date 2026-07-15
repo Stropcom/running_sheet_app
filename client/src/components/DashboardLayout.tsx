@@ -805,54 +805,54 @@ function DashboardLayoutContent({
                 Running Sheet
               </span>
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-2">
               {/* Active RS quick-link (mobile) */}
               <button
                 onClick={() => { if (activeRsId) setLocation(`/sheet/${activeRsId}`); }}
-                className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg transition-all ${
+                className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg transition-all ${
                   activeRsId
                     ? "text-emerald-500 hover:bg-emerald-500/10 cursor-pointer"
                     : "text-muted-foreground/30 cursor-default"
                 }`}
                 title={activeRsId ? "Go to Active RS" : "No active RS selected"}
               >
-                <ClipboardList className="h-5 w-5" />
+                <ClipboardList className="h-7 w-7" />
               </button>
               {/* Map quick-link (mobile) */}
               {location !== "/intelligence/mapping" && (
                 <button
                   onClick={() => setLocation("/intelligence/mapping")}
-                  className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+                  className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
                   title="Back to Map"
                 >
-                  <Map className="h-6 w-6" />
+                  <Map className="h-7 w-7" />
                 </button>
               )}
             </div>
           </div>
         )}
         {!isMobile && location !== "/intelligence/mapping" && (
-          <div className="flex justify-end items-center gap-1 px-4 pt-2 pb-0">
+          <div className="flex justify-end items-center gap-2 px-4 pt-2 pb-0">
             {/* Active RS quick-link (desktop) */}
             <button
               onClick={() => { if (activeRsId) setLocation(`/sheet/${activeRsId}`); }}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-all ${
                 activeRsId
                   ? "text-emerald-500 hover:bg-emerald-500/10 cursor-pointer"
                   : "text-muted-foreground/25 cursor-default"
               }`}
               title={activeRsId ? "Go to Active RS" : "No active RS selected"}
             >
-              <ClipboardList className="h-5 w-5" />
+              <ClipboardList className="h-6 w-6" />
               <span>Active RS</span>
             </button>
             {/* Map quick-link (desktop) */}
             <button
               onClick={() => setLocation("/intelligence/mapping")}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+              className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
               title="Back to Map"
             >
-              <Map className="h-5 w-5" />
+              <Map className="h-6 w-6" />
               <span>Back to Map</span>
             </button>
           </div>

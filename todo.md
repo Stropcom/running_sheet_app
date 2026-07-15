@@ -902,3 +902,9 @@
 ## Intelligence Extraction Fixes (Jul 2026)
 - [x] Suppress UM1/UM2/UM3 etc. (and bracketed variants) from being recorded as entities in the intelligence folder
 - [x] Fix multi-vehicle extraction: when two vehicles appear in one observation joined by "and a", both are now extracted with correct rego-first formatting (e.g. "1HTU905 white Mitsubishi Triton utility" and "1EAI510 white Mitsubishi SUV")
+
+## Word Export (Jul 2026)
+- [x] Add Word (.docx) export option to the running sheet export dropdown alongside PDF
+- [x] Word export includes cover page (operation name, PROMIS, IMS, unit, sheet title, date, TEAM roster)
+- [x] Word export includes running sheet table (time, observation, CIN, certify columns)
+- [x] Word export matches PDF layout/content as closely as possible

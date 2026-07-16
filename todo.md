@@ -990,3 +990,9 @@
 - [x] QE modal now includes HBF and V1F chips (previously missing)
 - [x] Extra vehicles in QE now get both VnF (full, trigger-only) and Vn (rego-only) chips
 - [x] Applied to both RS main target panel (SheetDetail) and QE modal (IntelligenceMapping)
+
+## Address Casing Fix (Jul 2026)
+- [x] convertGoogleAddresses now produces SUBURB STATE (uppercase) and (Title Case street) in bracket code
+- [x] Example: "20 Hinderwell St, SCARBOROUGH WA (20 Hinderwell St)" instead of "20 Hinderwell St, Scarborough WA (20 HINDERWELL ST)"
+- [x] Applied to both numbered addresses and intersection addresses
+- [x] toTitleCase and upperSuburb helpers added to addressFormat.ts

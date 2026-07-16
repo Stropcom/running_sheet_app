@@ -77,6 +77,19 @@ const INTERSECTION_RE = new RegExp(
   "i"
 );
 
+/** Title-case a string: "20 hinderwell st" → "20 Hinderwell St" */
+function toTitleCase(s: string): string {
+  return s.toLowerCase().replace(/\b([a-z])/g, c => c.toUpperCase());
+}
+
+/** Uppercase the suburb portion of a "Suburb STATE" string, keep state as-is */
+function upperSuburb(suburbState: string): string {
+  // e.g. "Scarborough WA" → "SCARBOROUGH WA", "Southern River WA" → "SOUTHERN RIVER WA"
+  const m = suburbState.trim().match(new RegExp(`^(.+?)\\s+(${AU_STATES})$`, 'i'));
+  if (m) return `${m[1].trim().toUpperCase()} ${m[2].toUpperCase()}`;
+  return suburbState.trim().toUpperCase();
+}
+
 /**
  * Returns true if the text contains a Google Maps formatted address that has
  * NOT already been converted to running sheet format.
@@ -113,10 +126,10 @@ export function convertGoogleAddresses(text: string): string {
       const afterMatch = str.slice(offset + fullMatch.length).trimStart();
       if (afterMatch.startsWith("(")) return fullMatch; // already converted
 
-      const s1 = street1.trim();
-      const s2 = street2.trim();
-      const bracketCode = `${s1} & ${s2}`.toUpperCase();
-      const cleanedAddress = `${s1} & ${s2}, ${suburbState.trim()}`;
+      const s1 = toTitleCase(street1.trim());
+      const s2 = toTitleCase(street2.trim());
+      const bracketCode = toTitleCase(`${s1} & ${s2}`);
+      const cleanedAddress = `${s1} & ${s2}, ${upperSuburb(suburbState)}`;
       return `${cleanedAddress} (${bracketCode})`;
     }
   );
@@ -128,8 +141,9 @@ export function convertGoogleAddresses(text: string): string {
       const afterMatch = str.slice(offset + fullMatch.length).trimStart();
       if (afterMatch.startsWith("(")) return fullMatch; // already converted
 
-      const bracketCode = `${streetNum} ${streetName.trim()}`.toUpperCase();
-      const cleanedAddress = `${businessPrefix ?? ""}${streetNum} ${streetName.trim()}, ${suburbState.trim()}`;
+      const streetNameClean = toTitleCase(streetName.trim());
+      const bracketCode = toTitleCase(`${streetNum} ${streetNameClean}`);
+      const cleanedAddress = `${businessPrefix ?? ""}${streetNum} ${streetNameClean}, ${upperSuburb(suburbState)}`;
       return `${cleanedAddress} (${bracketCode})`;
     }
   );

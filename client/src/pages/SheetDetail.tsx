@@ -2377,16 +2377,39 @@ export default function SheetDetail() {
             const wfs: Array<{ label: string; value: string }> = JSON.parse((t as any).wildFields ?? '[]');
             wfs.forEach((wf) => { if (wf.value) wildFieldItems.push({ label: wf.label, value: wf.value }); });
           } catch {}
+          // Strip "Vehicle " prefix from short vehicle values for display
+          const stripVehicle = (v: string | null | undefined): string | null => {
+            if (!v) return null;
+            return v.replace(/^Vehicle\s+/i, '').trim() || null;
+          };
+          // Extract registration number from a vehicle string (last alphanumeric token with digits)
+          const extractRegSD = (v: string | null | undefined): string | null => {
+            if (!v) return null;
+            const tokens = v.trim().split(/\s+/).map(t => t.replace(/[^A-Z0-9]/gi, ''));
+            return tokens.slice().reverse().find(t => /^[A-Z0-9]{3,8}$/i.test(t) && /\d/.test(t)) ?? stripVehicle(v);
+          };
+          // For extra vehicles, strip "Vehicle " prefix from short values
+          const cleanedExtraVehicleFields = extraVehicleFields.map(f => ({
+            ...f,
+            value: /^V\d+$/.test(f.label) ? (extractRegSD(f.value) ?? f.value) : f.value,
+          }));
           const fields: { label: string; value: string | null }[] = [
             { label: "TGT", value: t.tgt },
             { label: "HBF", value: t.hbf },
             { label: "HB",  value: t.hb  },
             { label: "V1F", value: t.v1f },
-            { label: "V1",  value: t.v1  },
-            ...extraVehicleFields,
+            { label: "V1",  value: extractRegSD(t.v1) ?? t.v1 },
+            ...cleanedExtraVehicleFields,
             ...wildFieldItems,
             { label: "DEP", value: t.dep },
             { label: "ARR", value: t.arr },
+            // Standard shortcut chips — always present
+            { label: "DSO", value: shortcutMap["dso"] ?? "driver and sole occupant" },
+            { label: "D",   value: shortcutMap["d"]   ?? "departed and" },
+            { label: "AR",  value: shortcutMap["ar"]  ?? "arrived and" },
+            { label: "CV",  value: shortcutMap["cv"]  ?? "continued via" },
+            { label: "OOS", value: shortcutMap["oos"] ?? "out of sight" },
+            { label: "COOS",value: shortcutMap["coos"]?? "continued out of sight" },
           ];
           const hasAnyField = fields.some((f) => f.value);
           return (

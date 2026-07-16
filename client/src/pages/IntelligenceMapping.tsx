@@ -3856,12 +3856,16 @@ export default function IntelligenceMapping() {
                           return gen ? gen.expansion as string : null;
                         };
                         // Helper: extract registration/short value for display preview
-                        // A rego must be 3-8 alphanumeric chars AND contain at least one digit
+                        // A rego must be 3-8 alphanumeric chars AND contain at least one digit OR letter
                         const extractReg = (val: string | null | undefined): string | null => {
                           if (!val) return null;
-                          const tokens = val.trim().split(/\s+/).map(t => t.replace(/[^A-Z0-9]/gi, ''));
-                          const rego = tokens.slice().reverse().find(t => /^[A-Z0-9]{3,8}$/i.test(t) && /\d/.test(t));
-                          return rego ?? null;
+                          const stripped = val.replace(/^Vehicle\s+/i, '').trim();
+                          const tokens = stripped.split(/\s+/).map(t => t.replace(/[^A-Z0-9]/gi, ''));
+                          const rego = tokens.slice().reverse().find(t => /^[A-Z0-9]{3,8}$/i.test(t) && /\d/.test(t) && /[A-Z]/i.test(t));
+                          if (rego) return rego;
+                          // Fallback: if stripped value looks like a plate (3-8 chars, alphanumeric), use it directly
+                          if (/^[A-Z0-9]{3,8}$/i.test(stripped)) return stripped;
+                          return null;
                         };
                         // Build dynamic extra vehicle chips from assignedTarget JSON
                         const extraVehicleChips: Array<{ label: string; display: string; getValue: () => string | null }> = [];

@@ -45,24 +45,61 @@ import {
 } from "../drizzle/schema";
 
 let _db: ReturnType<typeof drizzle> | null = null;
+let _pool: Awaited<ReturnType<typeof createPromisePool>> | null = null;
+let _lastConnectAttempt = 0;
+const RECONNECT_COOLDOWN_MS = 5000; // don't retry more than once per 5s
 
-export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
+async function createDbPool(retries = 3): Promise<ReturnType<typeof drizzle> | null> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const pool = createPromisePool({
-        uri: process.env.DATABASE_URL,
+        uri: process.env.DATABASE_URL!,
         ssl: { rejectUnauthorized: false },
         waitForConnections: true,
         connectionLimit: 10,
         queueLimit: 0,
+        connectTimeout: 15000,
+        // Automatically re-establish broken connections
+        enableKeepAlive: true,
+        keepAliveInitialDelay: 10000,
       });
+      // Verify the connection is actually alive
+      await pool.query("SELECT 1");
+      _pool = pool;
+      console.log(`[Database] Pool created successfully (attempt ${attempt})`);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      _db = drizzle(pool as any);
-      console.log("[Database] Pool created successfully");
+      return drizzle(pool as any);
     } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
-      _db = null;
+      console.warn(`[Database] Connection attempt ${attempt}/${retries} failed:`, error);
+      if (attempt < retries) {
+        await new Promise(r => setTimeout(r, 1000 * attempt)); // backoff: 1s, 2s
+      }
     }
+  }
+  console.error("[Database] All connection attempts failed");
+  return null;
+}
+
+export async function getDb() {
+  // If we have a pool, do a lightweight health check to detect stale connections
+  if (_db && _pool) {
+    try {
+      await _pool.query("SELECT 1");
+      return _db;
+    } catch {
+      console.warn("[Database] Pool health check failed — reconnecting...");
+      _db = null;
+      _pool = null;
+    }
+  }
+  if (!_db && process.env.DATABASE_URL) {
+    const now = Date.now();
+    if (now - _lastConnectAttempt < RECONNECT_COOLDOWN_MS) {
+      // Too soon to retry — return null to avoid hammering the DB
+      return null;
+    }
+    _lastConnectAttempt = now;
+    _db = await createDbPool(3);
   }
   return _db;
 }

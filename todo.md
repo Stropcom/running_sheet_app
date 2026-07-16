@@ -934,8 +934,3 @@
 - [x] Mobile/tablet bottom bar converted from full-width fixed strip to floating pills (absolute bottom-4, same style as laptop pills — rounded-2xl, shadow, coloured backgrounds)
 - [x] Left sidebar collapse tab coloured primary (blue) when pane is closed — acts as a visible call-to-action
 - [x] Right Map Settings collapse tab coloured amber/orange when pane is closed — visually distinct from the left tab
-
-## Clickable Trigger Chips & Drag-to-Reorder (Round 52)
-- [x] Main RS target panel: LABEL chips are now clickable — inserts value into the focused observation textarea
-- [x] Main RS target panel: chips are drag-to-reorder, order persisted per sheet in localStorage
-- [x] Quick Entry modal: shortcut chips are drag-to-reorder, order persisted globally in localStorage

@@ -1868,12 +1868,6 @@ export default function SheetDetail() {
   const [targetPanelExpanded, setTargetPanelExpanded] = useState<boolean>(() => {
     try { return localStorage.getItem("runsheet_target_panel_expanded") !== "false"; } catch { return true; }
   });
-  // Shortcut chip order for the target panel — persisted per sheet in localStorage
-  const [targetFieldOrder, setTargetFieldOrder] = useState<string[]>(() => {
-    try { const s = localStorage.getItem(`runsheet_field_order_${sheetId}`); if (s) return JSON.parse(s); } catch {} return [];
-  });
-  const targetFieldDragRef = useRef<{ dragging: string | null; startX: number; startY: number; startIdx: number }>({ dragging: null, startX: 0, startY: 0, startIdx: -1 });
-
   // Persist sort preference in localStorage so it survives navigation
   const [sortReversed, setSortReversed] = useState<boolean>(() => {
     try { return localStorage.getItem("runsheet_sort_reversed") === "true"; } catch { return false; }
@@ -2418,105 +2412,40 @@ export default function SheetDetail() {
                 </button>
               </div>
               {/* Collapsible details */}
-              {targetPanelExpanded && (() => {
-                // Apply saved order to the fields list
-                const visibleFields = fields.filter((f) => f.value);
-                const orderedFields = targetFieldOrder.length > 0
-                  ? [
-                      ...targetFieldOrder.map(lbl => visibleFields.find(f => f.label === lbl)).filter(Boolean) as typeof visibleFields,
-                      ...visibleFields.filter(f => !targetFieldOrder.includes(f.label)),
-                    ]
-                  : visibleFields;
-                return (
-                  <div className="px-4 pb-3 border-t border-border/40">
-                    {hasAnyField && (
-                      <div className="flex flex-wrap gap-1.5 pt-2">
-                        {orderedFields.map((f, idx) => {
-                          const isDepArr = (f.label === "DEP" || f.label === "ARR") && !isClosed;
-                          // Insert value into the currently focused textarea via execCommand
-                          const insertIntoFocused = () => {
-                            const el = document.activeElement as HTMLTextAreaElement | HTMLInputElement | null;
-                            if (el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT")) {
-                              const start = el.selectionStart ?? el.value.length;
-                              const end = el.selectionEnd ?? el.value.length;
-                              const before = el.value.slice(0, start);
-                              const after = el.value.slice(end);
-                              const insert = (before && !before.endsWith(" ")) ? ` ${f.value!}` : f.value!;
-                              // Use execCommand for React-controlled inputs
-                              try {
-                                document.execCommand("insertText", false, insert);
-                              } catch {
-                                // Fallback: native input event
-                                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set
-                                  ?? Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
-                                if (nativeInputValueSetter) {
-                                  nativeInputValueSetter.call(el, before + insert + after);
-                                  el.dispatchEvent(new Event("input", { bubbles: true }));
-                                }
-                              }
-                            }
-                          };
-                          return (
-                            <div
-                              key={f.label}
-                              draggable
-                              onDragStart={(e) => {
-                                targetFieldDragRef.current.dragging = f.label;
-                                targetFieldDragRef.current.startIdx = idx;
-                                e.dataTransfer.effectAllowed = "move";
-                              }}
-                              onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
-                              onDrop={(e) => {
-                                e.preventDefault();
-                                const fromLabel = targetFieldDragRef.current.dragging;
-                                if (!fromLabel || fromLabel === f.label) return;
-                                const labels = orderedFields.map(x => x.label);
-                                const fromIdx = labels.indexOf(fromLabel);
-                                const toIdx = idx;
-                                if (fromIdx === -1) return;
-                                const newOrder = [...labels];
-                                newOrder.splice(fromIdx, 1);
-                                newOrder.splice(toIdx, 0, fromLabel);
-                                setTargetFieldOrder(newOrder);
-                                try { localStorage.setItem(`runsheet_field_order_${sheetId}`, JSON.stringify(newOrder)); } catch {}
-                                targetFieldDragRef.current.dragging = null;
-                              }}
-                              onDragEnd={() => { targetFieldDragRef.current.dragging = null; }}
-                              className="flex items-center gap-0.5 cursor-grab active:cursor-grabbing"
-                            >
+              {targetPanelExpanded && (
+                <div className="px-4 pb-3 border-t border-border/40">
+                  {hasAnyField && (
+                    <div className="flex flex-wrap gap-x-6 gap-y-1">
+                      {fields.filter((f) => f.value).map((f) => {
+                        const isDepArr = (f.label === "DEP" || f.label === "ARR") && !isClosed;
+                        return (
+                          <div key={f.label} className="flex items-baseline gap-1.5 text-xs">
+                            <span className="font-semibold text-muted-foreground uppercase tracking-wide">{f.label}:</span>
+                            <span className="font-mono text-foreground">{f.value}</span>
+                            {isDepArr && (
                               <button
-                                onClick={insertIntoFocused}
-                                title={`Click to insert "${f.value}" into the focused observation`}
-                                className="flex items-baseline gap-1 px-2 py-0.5 rounded border border-primary/30 bg-primary/8 hover:bg-primary/15 active:scale-95 transition-all group"
+                                onClick={() => {
+                                  const now = new Date();
+                                  const h24 = now.getHours();
+                                  const min = now.getMinutes();
+                                  const totalMins = h24 * 60 + min;
+                                  const timeStr = minutesToTimeString(totalMins);
+                                  addRow.mutate({ sheetId, time: timeStr, timeMinutes: totalMins, observation: f.value! });
+                                }}
+                                disabled={addRow.isPending}
+                                title={`Add ${f.label} row with current time`}
+                                className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-primary/15 text-primary hover:bg-primary/25 active:scale-95 transition-all border border-primary/30"
                               >
-                                <span className="text-[10px] font-bold text-primary uppercase tracking-wide">{f.label}</span>
-                                <span className="text-[10px] font-mono text-foreground/80 max-w-[120px] truncate">{f.value}</span>
+                                + Row
                               </button>
-                              {isDepArr && (
-                                <button
-                                  onClick={() => {
-                                    const now = new Date();
-                                    const h24 = now.getHours();
-                                    const min = now.getMinutes();
-                                    const totalMins = h24 * 60 + min;
-                                    const timeStr = minutesToTimeString(totalMins);
-                                    addRow.mutate({ sheetId, time: timeStr, timeMinutes: totalMins, observation: f.value! });
-                                  }}
-                                  disabled={addRow.isPending}
-                                  title={`Add ${f.label} row with current time`}
-                                  className="ml-0.5 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-primary/15 text-primary hover:bg-primary/25 active:scale-95 transition-all border border-primary/30"
-                                >
-                                  + Row
-                                </button>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           );
         })()}

@@ -996,3 +996,12 @@
 - [x] Example: "20 Hinderwell St, SCARBOROUGH WA (20 Hinderwell St)" instead of "20 Hinderwell St, Scarborough WA (20 HINDERWELL ST)"
 - [x] Applied to both numbered addresses and intersection addresses
 - [x] toTitleCase and upperSuburb helpers added to addressFormat.ts
+
+## Jul 2026 — RS Pane Redesign (Map Right Panel)
+
+- [x] Remove separate RS Selection operation dropdown from right map pane
+- [x] Wire RS sheet list to top Operations filter (selectedOpIds) via new sheet.listByOperations procedure
+- [x] Add Clear (X) button next to RS dropdown to deselect active running sheet
+- [x] Auto-clear rsSelectedSheetId when all operations are cleared (clearAll) or last op is deselected (toggleOp)
+- [x] Remove rsSelectedOpId fallback from effectiveOpIdsForMarkers
+- [x] Update custom marker op defaults to use selectedOpIds[0] only

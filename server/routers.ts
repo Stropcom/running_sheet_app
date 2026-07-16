@@ -36,6 +36,7 @@ import {
   getRunningSheetById,
   getRunningSheets,
   getRunningSheetsByOperation,
+  getRunningSheetsByOperations,
   getUserById,
   getUserByUsername,
   removeRowMember,
@@ -466,6 +467,12 @@ export const appRouter = router({
       .input(z.object({ operationId: z.number() }))
       .query(async ({ input }) => {
         return getRunningSheetsByOperation(input.operationId);
+      }),
+
+    listByOperations: protectedProcedure
+      .input(z.object({ operationIds: z.array(z.number()) }))
+      .query(async ({ input }) => {
+        return getRunningSheetsByOperations(input.operationIds);
       }),
 
     get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {

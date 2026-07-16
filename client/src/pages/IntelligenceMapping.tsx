@@ -907,10 +907,8 @@ export default function IntelligenceMapping() {
     if (selectedOpIds.length > 0) return selectedOpIds;
     // If user explicitly cleared the selection, show nothing (don't fall back)
     if (opsExplicitlySet) return [];
-    // First load / no explicit selection: fall back to RS pane context
-    if (rsSelectedOpId != null) return [rsSelectedOpId];
     return [];
-  }, [selectedOpIds, opsExplicitlySet, rsSelectedOpId]);
+  }, [selectedOpIds, opsExplicitlySet]);
   const { data: customMarkers, refetch: refetchCustomMarkers } = trpc.customMarker.list.useQuery(
     { operationIds: effectiveOpIdsForMarkers },
     { refetchInterval: 5000, enabled: true }
@@ -986,10 +984,13 @@ export default function IntelligenceMapping() {
   // showOwnLocation always mirrors sharingEnabled (single toggle)
   const showOwnLocation = sharingEnabled;
 
-  // RS Actions pane — sheets for selected operation
-  const { data: rsSheetsData } = trpc.sheet.listByOperation.useQuery(
-    { operationId: rsSelectedOpId! },
-    { enabled: rsSelectedOpId !== null }
+  // RS Actions pane — sheets driven by the top Operations filter
+  // When selectedOpIds is non-empty, fetch sheets for all selected operations.
+  // When selectedOpIds is empty (ops cleared), return no sheets.
+  const rsOpIdsForSheets = useMemo(() => selectedOpIds, [selectedOpIds]);
+  const { data: rsSheetsData } = trpc.sheet.listByOperations.useQuery(
+    { operationIds: rsOpIdsForSheets },
+    { enabled: rsOpIdsForSheets.length > 0 }
   );
   // RS Actions pane — target for selected sheet
   const { data: rsTargetData } = trpc.intelligence.getSheetTarget.useQuery(
@@ -1084,6 +1085,11 @@ export default function IntelligenceMapping() {
       if (!next.includes(opId)) {
         const opTargets = opTargetMap.get(opId) ?? [];
         setSelectedTargetIds(tPrev => tPrev.filter(tid => !opTargets.find(t => t.id === tid)));
+        // If all ops are now deselected, clear RS selection too
+        if (next.length === 0) {
+          setRsSelectedSheetId(null);
+          setRsLastEntry(null);
+        }
       }
       return next;
     });
@@ -1107,6 +1113,8 @@ export default function IntelligenceMapping() {
     setOpsExplicitlySet(true);
     setSelectedOpIds([]);
     setSelectedTargetIds([]);
+    setRsSelectedSheetId(null);
+    setRsLastEntry(null);
   };
 
   // ── GPS / Sharing ────────────────────────────────────────────────────────────
@@ -2900,43 +2908,42 @@ export default function IntelligenceMapping() {
           <div className="px-3 py-3 border-b border-border space-y-3">
             <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">RS Selection</span>
 
-            {/* Operation selector */}
-            <Select
-              value={rsSelectedOpId !== null ? String(rsSelectedOpId) : ""}
-              onValueChange={(val) => {
-                setRsSelectedOpId(Number(val));
-                setRsSelectedSheetId(null);
-                setRsLastEntry(null);
-              }}
-            >
-              <SelectTrigger className="w-full h-9 text-xs rounded-xl border-2">
-                <SelectValue placeholder="1. Choose operation…" />
-              </SelectTrigger>
-              <SelectContent>
-                {(operations ?? []).map((op: any) => (
-                  <SelectItem key={op.id} value={String(op.id)} className="text-xs">{op.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {/* No ops selected — prompt user */}
+            {selectedOpIds.length === 0 && (
+              <p className="text-[11px] text-muted-foreground leading-snug">
+                Select an operation above to see available running sheets.
+              </p>
+            )}
 
-            {/* Running sheet selector */}
-            {rsSelectedOpId !== null && (
-              <Select
-                value={rsSelectedSheetId !== null ? String(rsSelectedSheetId) : ""}
-                onValueChange={(val) => {
-                  setRsSelectedSheetId(Number(val));
-                  setRsLastEntry(null);
-                }}
-              >
-                <SelectTrigger className="w-full h-9 text-xs rounded-xl border-2">
-                  <SelectValue placeholder="2. Choose running sheet…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(rsSheetsData ?? []).filter((s: any) => !s.closedAt && !s.deletedAt).map((s: any) => (
-                    <SelectItem key={s.id} value={String(s.id)} className="text-xs">{s.title || `Sheet #${s.id}`}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            {/* Running sheet selector — driven by top Operations filter */}
+            {selectedOpIds.length > 0 && (
+              <div className="flex items-center gap-2">
+                <Select
+                  value={rsSelectedSheetId !== null ? String(rsSelectedSheetId) : ""}
+                  onValueChange={(val) => {
+                    setRsSelectedSheetId(Number(val));
+                    setRsLastEntry(null);
+                  }}
+                >
+                  <SelectTrigger className="flex-1 h-9 text-xs rounded-xl border-2">
+                    <SelectValue placeholder="Choose running sheet…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(rsSheetsData ?? []).filter((s: any) => !s.closedAt && !s.deletedAt).map((s: any) => (
+                      <SelectItem key={s.id} value={String(s.id)} className="text-xs">{s.title || `Sheet #${s.id}`}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {rsSelectedSheetId !== null && (
+                  <button
+                    onClick={() => { setRsSelectedSheetId(null); setRsLastEntry(null); }}
+                    className="flex-shrink-0 h-9 w-9 flex items-center justify-center rounded-xl border-2 border-border bg-muted/40 hover:bg-destructive/20 hover:border-destructive/40 active:scale-95 transition-all"
+                    title="Clear running sheet selection"
+                  >
+                    <X className="h-3.5 w-3.5 text-muted-foreground" />
+                  </button>
+                )}
+              </div>
             )}
 
             {/* Sheet link — shown below RS dropdown when sheet selected */}
@@ -3186,7 +3193,7 @@ export default function IntelligenceMapping() {
                   setCmAddress(rsAddress);
                   setCmNote(""); setCmPersons([]); setCmVehicles([]); setCmRotation(0);
                   setCmPersonInput(""); setCmVehicleInput("");
-                  setCmOpId(selectedOpIds.length === 1 ? selectedOpIds[0] : (rsSelectedOpId ?? null));
+                  setCmOpId(selectedOpIds.length === 1 ? selectedOpIds[0] : null);
                   setPendingLatLng({ lat: poiTap.lat, lng: poiTap.lng });
                   setPoiTap(null);
                 }}
@@ -3253,7 +3260,7 @@ export default function IntelligenceMapping() {
                   setCmAddress(actionChooser.address);
                   setCmNote(""); setCmPersons([]); setCmVehicles([]); setCmRotation(0);
                   setCmPersonInput(""); setCmVehicleInput("");
-                  setCmOpId(selectedOpIds.length === 1 ? selectedOpIds[0] : (rsSelectedOpId ?? null));
+                  setCmOpId(selectedOpIds.length === 1 ? selectedOpIds[0] : null);
                   setPendingLatLng({ lat: actionChooser.lat, lng: actionChooser.lng });
                   setActionChooser(null);
                 }}

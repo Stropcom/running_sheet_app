@@ -323,6 +323,13 @@ export async function getRunningSheetsByOperation(operationId: number) {
   return db.select().from(runningSheets).where(and(eq(runningSheets.operationId, operationId), isNull(runningSheets.deletedAt))).orderBy(desc(runningSheets.createdAt));
 }
 
+export async function getRunningSheetsByOperations(operationIds: number[]) {
+  const db = await getDb();
+  if (!db) return [];
+  if (operationIds.length === 0) return [];
+  return db.select().from(runningSheets).where(and(inArray(runningSheets.operationId, operationIds), isNull(runningSheets.deletedAt))).orderBy(desc(runningSheets.createdAt));
+}
+
 export async function getRunningSheetById(id: number) {
   const db = await getDb();
   if (!db) return undefined;

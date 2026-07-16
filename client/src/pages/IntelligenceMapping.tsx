@@ -573,6 +573,12 @@ export default function IntelligenceMapping() {
   const [selectedOpIds, setSelectedOpIds] = useState<number[]>(() => {
     try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return JSON.parse(s).selectedOpIds ?? []; } catch { /* ignore */ } return [];
   });
+  // Track whether the user has explicitly interacted with the ops selector.
+  // When true and selectedOpIds is empty, we show NO markers (user cleared).
+  // When false and selectedOpIds is empty, fall back to rsSelectedOpId context.
+  const [opsExplicitlySet, setOpsExplicitlySet] = useState<boolean>(() => {
+    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) { const p = JSON.parse(s); return p.opsExplicitlySet ?? false; } } catch { /* ignore */ } return false;
+  });
   const [selectedTargetIds, setSelectedTargetIds] = useState<number[]>(() => {
     try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return JSON.parse(s).selectedTargetIds ?? []; } catch { /* ignore */ } return [];
   });
@@ -822,6 +828,7 @@ export default function IntelligenceMapping() {
     try {
       localStorage.setItem(LS_MAP_SETTINGS_KEY, JSON.stringify({
         selectedOpIds,
+        opsExplicitlySet,
         selectedTargetIds,
         opExpanded: Array.from(opExpanded),
         rsSelectedOpId,
@@ -835,7 +842,7 @@ export default function IntelligenceMapping() {
         pillBarTop,
       }));
     } catch { /* ignore */ }
-  }, [selectedOpIds, selectedTargetIds, opExpanded, rsSelectedOpId, rsSelectedSheetId, hiddenTeams, collapsedTeams, rsQeExpanded, mapDarkMode, leftTabTop, rightTabTop, pillBarTop]);
+  }, [selectedOpIds, opsExplicitlySet, selectedTargetIds, opExpanded, rsSelectedOpId, rsSelectedSheetId, hiddenTeams, collapsedTeams, rsQeExpanded, mapDarkMode, leftTabTop, rightTabTop, pillBarTop]);
 
   // Save map center/zoom to localStorage whenever the map stops moving (idle event)
   useEffect(() => {
@@ -898,9 +905,12 @@ export default function IntelligenceMapping() {
   // Pass empty array only when truly no operation context exists.
   const effectiveOpIdsForMarkers = useMemo(() => {
     if (selectedOpIds.length > 0) return selectedOpIds;
+    // If user explicitly cleared the selection, show nothing (don't fall back)
+    if (opsExplicitlySet) return [];
+    // First load / no explicit selection: fall back to RS pane context
     if (rsSelectedOpId != null) return [rsSelectedOpId];
     return [];
-  }, [selectedOpIds, rsSelectedOpId]);
+  }, [selectedOpIds, opsExplicitlySet, rsSelectedOpId]);
   const { data: customMarkers, refetch: refetchCustomMarkers } = trpc.customMarker.list.useQuery(
     { operationIds: effectiveOpIdsForMarkers },
     { refetchInterval: 5000, enabled: true }
@@ -1068,6 +1078,7 @@ export default function IntelligenceMapping() {
 
   // ── Filter handlers ──────────────────────────────────────────────────────────
   const toggleOp = (opId: number) => {
+    setOpsExplicitlySet(true);
     setSelectedOpIds(prev => {
       const next = prev.includes(opId) ? prev.filter(id => id !== opId) : [...prev, opId];
       if (!next.includes(opId)) {
@@ -1088,10 +1099,12 @@ export default function IntelligenceMapping() {
 
   const selectAllOps = () => {
     if (!operations) return;
+    setOpsExplicitlySet(true);
     setSelectedOpIds(operations.map((op: any) => op.id));
   };
 
   const clearAll = () => {
+    setOpsExplicitlySet(true);
     setSelectedOpIds([]);
     setSelectedTargetIds([]);
   };

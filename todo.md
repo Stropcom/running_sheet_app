@@ -927,3 +927,10 @@
 ## Mobile Bottom Bar & Draggable Side Tabs (Jul 2026)
 - [x] Mobile/tablet fixed bottom bar: Home (slate), Active RS (emerald), RS Entry (blue), Intel Profiles (violet) — fixed at bottom, hidden on lg+
 - [x] Draggable side tabs: left and right collapse tabs can be dragged vertically along the screen edge; position persisted to localStorage
+## Operations Dropdown & Map Memory (Jul 2026)
+- [x] Right-pane Operations dropdown: auto-collapse after each operation checkbox selection (multi-select but closes per tap)
+- [x] Map position memory: map restores last center/zoom on return — saved to localStorage on idle event, read back as initialCenter/initialZoom on mount
+## Floating Pills & Coloured Side Tabs (Jul 2026)
+- [x] Mobile/tablet bottom bar converted from full-width fixed strip to floating pills (absolute bottom-4, same style as laptop pills — rounded-2xl, shadow, coloured backgrounds)
+- [x] Left sidebar collapse tab coloured primary (blue) when pane is closed — acts as a visible call-to-action
+- [x] Right Map Settings collapse tab coloured amber/orange when pane is closed — visually distinct from the left tab

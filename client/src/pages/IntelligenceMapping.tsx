@@ -579,6 +579,16 @@ export default function IntelligenceMapping() {
   const [opExpanded, setOpExpanded] = useState<Set<number>>(() => {
     try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return new Set<number>(JSON.parse(s).opExpanded ?? []); } catch { /* ignore */ } return new Set();
   });
+  // Map position memory — persisted in localStorage
+  const [mapInitialCenter, setMapInitialCenter] = useState<google.maps.LatLngLiteral>(() => {
+    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) { const p = JSON.parse(s).mapCenter; if (p && typeof p.lat === 'number' && typeof p.lng === 'number') return p; } } catch { /* ignore */ }
+    return { lat: -31.9505, lng: 115.8605 };
+  });
+  const [mapInitialZoom, setMapInitialZoom] = useState<number>(() => {
+    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) { const z = JSON.parse(s).mapZoom; if (typeof z === 'number') return z; } } catch { /* ignore */ }
+    return 11;
+  });
+
   // Left pane starts closed — user opens it when needed. Never auto-open on navigation.
   // On desktop (lg+), the left pane is always open and resizable
   const isDesktop = typeof window !== "undefined" && window.innerWidth >= 1024;
@@ -805,6 +815,25 @@ export default function IntelligenceMapping() {
     } catch { /* ignore */ }
   }, [selectedOpIds, selectedTargetIds, opExpanded, rsSelectedOpId, rsSelectedSheetId, hiddenTeams, collapsedTeams, rsQeExpanded, mapDarkMode, leftTabTop, rightTabTop]);
 
+  // Save map center/zoom to localStorage whenever the map stops moving (idle event)
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    const map = mapRef.current;
+    const listener = map.addListener("idle", () => {
+      const center = map.getCenter();
+      const zoom = map.getZoom();
+      if (!center || zoom === undefined) return;
+      const lat = center.lat();
+      const lng = center.lng();
+      try {
+        const existing = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+        const parsed = existing ? JSON.parse(existing) : {};
+        localStorage.setItem(LS_MAP_SETTINGS_KEY, JSON.stringify({ ...parsed, mapCenter: { lat, lng }, mapZoom: zoom }));
+      } catch { /* ignore */ }
+    });
+    return () => { google.maps.event.removeListener(listener); };
+  }, [mapReady]);
+
   // Apply dark/light map style whenever mapDarkMode or mapReady changes
   // Dark mode is applied via CSS filter on the map container div (not setOptions — blocked by mapId)
 
@@ -1025,6 +1054,8 @@ export default function IntelligenceMapping() {
       }
       return next;
     });
+    // Collapse the dropdown after each selection (multi-select but auto-close per tap)
+    setOpsDropdownOpen(false);
   };
 
   const toggleTarget = (targetId: number) => {
@@ -2229,7 +2260,7 @@ export default function IntelligenceMapping() {
         {!sidebarOpen && (
           <button
             onClick={(e) => { if (leftTabDraggingRef.current) { leftTabDraggingRef.current = false; return; } e.stopPropagation(); setSidebarOpen(true); }}
-            className="absolute left-0 z-10 flex items-center justify-center bg-card border-2 border-l-0 border-border shadow-lg hover:bg-accent active:scale-95 transition-colors cursor-grab active:cursor-grabbing select-none touch-none"
+            className="absolute left-0 z-10 flex items-center justify-center bg-primary border-2 border-l-0 border-primary/80 shadow-lg hover:bg-primary/80 active:scale-95 transition-colors cursor-grab active:cursor-grabbing select-none touch-none"
             style={{
               top: `${leftTabTop}%`,
               transform: "translateY(-50%)",
@@ -2280,7 +2311,7 @@ export default function IntelligenceMapping() {
               document.addEventListener("touchend", onEnd);
             }}
           >
-            <ChevronRight className="h-5 w-5 text-muted-foreground" />
+            <ChevronRight className="h-5 w-5 text-primary-foreground" />
           </button>
         )}
 
@@ -2357,8 +2388,8 @@ export default function IntelligenceMapping() {
           <MapView
             onMapReady={handleMapReady}
             className="w-full h-full"
-            initialCenter={{ lat: -31.9505, lng: 115.8605 }}
-            initialZoom={11}
+            initialCenter={mapInitialCenter}
+            initialZoom={mapInitialZoom}
           />
 
           {/* Centre on me / Follow me floating buttons — top-left below search bar */}
@@ -2509,7 +2540,7 @@ export default function IntelligenceMapping() {
         {!rsActionsPaneOpen && (
           <button
             onClick={(e) => { if (rightTabDraggingRef.current) { rightTabDraggingRef.current = false; return; } e.stopPropagation(); setRsActionsPaneOpen(true); }}
-            className="absolute right-0 z-10 flex items-center justify-center bg-card border-2 border-r-0 border-border shadow-lg hover:bg-accent active:scale-95 transition-colors cursor-grab active:cursor-grabbing select-none touch-none"
+            className="absolute right-0 z-10 flex items-center justify-center bg-amber-600 border-2 border-r-0 border-amber-500 shadow-lg hover:bg-amber-500 active:scale-95 transition-colors cursor-grab active:cursor-grabbing select-none touch-none"
             style={{
               top: `${rightTabTop}%`,
               transform: "translateY(-50%)",
@@ -2560,7 +2591,7 @@ export default function IntelligenceMapping() {
               document.addEventListener("touchend", onEnd);
             }}
           >
-            <ChevronLeft className="h-5 w-5 text-muted-foreground" />
+            <ChevronLeft className="h-5 w-5 text-white" />
           </button>
         )}
 
@@ -2625,20 +2656,20 @@ export default function IntelligenceMapping() {
 
         </div>
 
-        {/* ── Mobile/Tablet Fixed Bottom Bar (hidden on lg+) ── */}
-        <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 flex items-stretch bg-card/95 backdrop-blur-md border-t-2 border-border shadow-2xl">
+        {/* ── Mobile/Tablet Floating Pills (hidden on lg+, floats over map like laptop version) ── */}
+        <div className="lg:hidden absolute bottom-4 left-0 right-0 z-20 flex items-end justify-center gap-2 px-3 pointer-events-none">
 
-          {/* Button 1 — Home (slate) */}
+          {/* Pill 1 — Home (slate) */}
           <button
             onClick={() => setLocation("/")}
-            className="flex-1 flex flex-col items-center justify-center gap-1 py-3 px-2 hover:bg-accent active:scale-95 transition-all"
+            className="pointer-events-auto flex flex-col items-center justify-center gap-1 px-5 py-2.5 rounded-2xl shadow-lg border bg-slate-700 border-slate-600 hover:bg-slate-600 active:scale-95 transition-all min-w-[72px]"
             title="Home"
           >
-            <Home className="h-6 w-6 text-slate-400" />
-            <span className="text-[10px] font-semibold leading-none text-slate-400">Home</span>
+            <Home className="h-5 w-5 flex-shrink-0 text-white" />
+            <span className="text-[10px] font-semibold leading-none text-white">Home</span>
           </button>
 
-          {/* Button 2 — Active RS (emerald) */}
+          {/* Pill 2 — Active RS (emerald) */}
           {(() => {
             const activeSheet = rsSelectedSheetId && rsSheetsData
               ? (rsSheetsData as any[]).find((s: any) => s.id === rsSelectedSheetId)
@@ -2647,47 +2678,47 @@ export default function IntelligenceMapping() {
               <button
                 disabled={!activeSheet}
                 onClick={() => { if (activeSheet) setLocation(`/sheet/${rsSelectedSheetId}`); }}
-                className={`flex-1 flex flex-col items-center justify-center gap-1 py-3 px-2 transition-all ${
+                className={`pointer-events-auto flex flex-col items-center justify-center gap-1 px-5 py-2.5 rounded-2xl shadow-lg border transition-all min-w-[72px] ${
                   activeSheet
-                    ? "hover:bg-emerald-600/20 active:scale-95 cursor-pointer"
-                    : "cursor-default opacity-40"
+                    ? "bg-emerald-600 border-emerald-500 hover:bg-emerald-500 active:scale-95 cursor-pointer"
+                    : "bg-card/70 border-border/40 cursor-default opacity-50"
                 }`}
                 title={activeSheet ? "Open active running sheet" : "No running sheet selected"}
               >
-                <ClipboardList className={`h-6 w-6 ${activeSheet ? "text-emerald-400" : "text-muted-foreground/40"}`} />
-                <span className={`text-[10px] font-semibold leading-none ${activeSheet ? "text-emerald-400" : "text-muted-foreground/40"}`}>Active RS</span>
+                <ClipboardList className={`h-5 w-5 flex-shrink-0 ${activeSheet ? "text-white" : "text-muted-foreground/40"}`} />
+                <span className={`text-[10px] font-semibold leading-none ${activeSheet ? "text-white" : "text-muted-foreground/40"}`}>Active RS</span>
               </button>
             );
           })()}
 
-          {/* Button 3 — RS Entry (blue) */}
+          {/* Pill 3 — RS Entry (blue) */}
           {(() => {
             const hasSheet = !!rsSelectedSheetId;
             return (
               <button
                 disabled={!hasSheet}
                 onClick={() => { if (hasSheet) setMapQeOpen(true); }}
-                className={`flex-1 flex flex-col items-center justify-center gap-1 py-3 px-2 transition-all ${
+                className={`pointer-events-auto flex flex-col items-center justify-center gap-1 px-5 py-2.5 rounded-2xl shadow-lg border transition-all min-w-[72px] ${
                   hasSheet
-                    ? "hover:bg-blue-600/20 active:scale-95 cursor-pointer"
-                    : "cursor-default opacity-40"
+                    ? "bg-blue-600 border-blue-500 hover:bg-blue-500 active:scale-95 cursor-pointer"
+                    : "bg-card/70 border-border/40 cursor-default opacity-50"
                 }`}
                 title={hasSheet ? "RS Quick Entry" : "Select a running sheet first"}
               >
-                <FileText className={`h-6 w-6 ${hasSheet ? "text-blue-400" : "text-muted-foreground/40"}`} />
-                <span className={`text-[10px] font-semibold leading-none ${hasSheet ? "text-blue-400" : "text-muted-foreground/40"}`}>RS Entry</span>
+                <FileText className={`h-5 w-5 flex-shrink-0 ${hasSheet ? "text-white" : "text-muted-foreground/40"}`} />
+                <span className={`text-[10px] font-semibold leading-none ${hasSheet ? "text-white" : "text-muted-foreground/40"}`}>RS Entry</span>
               </button>
             );
           })()}
 
-          {/* Button 4 — Intel Profiles (violet) */}
+          {/* Pill 4 — Intel Profiles (violet) */}
           <button
             onClick={() => setLocation("/intelligence")}
-            className="flex-1 flex flex-col items-center justify-center gap-1 py-3 px-2 hover:bg-violet-600/20 active:scale-95 transition-all"
+            className="pointer-events-auto flex flex-col items-center justify-center gap-1 px-5 py-2.5 rounded-2xl shadow-lg border bg-violet-600 border-violet-500 hover:bg-violet-500 active:scale-95 transition-all min-w-[72px]"
             title="Intel Profiles"
           >
-            <FolderSearch className="h-6 w-6 text-violet-400" />
-            <span className="text-[10px] font-semibold leading-none text-violet-400">Intel Profiles</span>
+            <FolderSearch className="h-5 w-5 flex-shrink-0 text-white" />
+            <span className="text-[10px] font-semibold leading-none text-white">Intel Profiles</span>
           </button>
 
         </div>

@@ -857,7 +857,7 @@ function DashboardLayoutContent({
             </button>
           </div>
         )}
-        <main className="flex-1 min-h-screen bg-background">{children}</main>
+        <main className="flex-1 min-h-screen bg-background/90">{children}</main>
       </SidebarInset>
 
       {/* ── Shortcuts Reference Panel ─────────────────────────────────────── */}

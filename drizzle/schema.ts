@@ -29,6 +29,8 @@ export const users = mysqlTable("users", {
   // Legacy OAuth field — kept nullable so existing rows are not broken
   openId: varchar("openId", { length: 64 }),
   loginMethod: varchar("loginMethod", { length: 64 }).default("local"),
+  wallpaperUrl: varchar("wallpaperUrl", { length: 512 }),
+  wallpaperOpacity: int("wallpaperOpacity").default(40), // 0-100, overlay darkness
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),

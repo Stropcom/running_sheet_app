@@ -3931,13 +3931,15 @@ export default function IntelligenceMapping() {
                         return (
                           <div className="flex flex-wrap gap-1">
                             {(() => {
-                              // All folder shortcut chips + TGT show trigger only — no expansion text
-                              // All target-detail chips and folder shortcuts show trigger only (no expansion text)
+                              // Chip display rules for QE modal:
+                              // - Vn short chips (V1, V2, V3...): show label + rego (from s.display which already has rego)
+                              // - VnF full chips, TGT, HBF, HB, DEP, ARR, folder shortcuts: trigger only
                               const folderQeLabels = new Set([
-                                "TGT", "HBF", "HB", "V1F", "V1", "V2F", "V2", "DEP", "ARR",
+                                "TGT", "HBF", "HB", "V1F", "V2F", "DEP", "ARR",
                                 ...(generalShortcuts as any[] ?? []).map((s: any) => (s.trigger as string).toUpperCase()),
                               ]);
-                              const isTargetDetailChip = (label: string) => /^V\d+F?$/.test(label);
+                              const isVnShortQe = (label: string) => /^V\d+$/.test(label); // V1, V2, V3 — show rego
+                              const isTargetDetailChip = (label: string) => /^V\d+F$/.test(label); // VnF — trigger only
                               const doQeReorder = (fromLabel: string, toLabel: string) => {
                                 if (!fromLabel || fromLabel === toLabel) return;
                                 const labels = orderedChips.map(x => x.label);
@@ -4014,7 +4016,8 @@ export default function IntelligenceMapping() {
                                     data-qe-chip={s.label}
                                     className="cursor-grab active:cursor-grabbing px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all select-none"
                                   >
-                                    {(isStdQe || isTargetDetailChip(s.label)) ? s.label : s.display}
+                                    {/* Vn short: show display (label + rego); VnF/folder/TGT: show label only */}
+                                    {isVnShortQe(s.label) ? s.display : (isStdQe || isTargetDetailChip(s.label)) ? s.label : s.display}
                                   </div>
                                 );
                               });

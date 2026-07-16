@@ -2527,10 +2527,14 @@ export default function SheetDetail() {
                               }
                             }
                           };
-                          // All target-detail chips and shortcut-folder chips show trigger only (no expansion text)
+                          // Chip display rules:
+                          // - Vn short chips (V1, V2, V3...): show label + rego value next to it
+                          // - VnF full chips, TGT, HBF, HB, DEP, ARR, folder shortcuts: trigger only (no value shown)
                           const shortcutFolderLabels = new Set((shortcutsData ?? []).map(s => s.trigger.toUpperCase()));
-                          const TARGET_DETAIL_LABELS = new Set(["TGT", "HBF", "HB", "V1F", "V1", "V2F", "V2", "DEP", "ARR"]);
-                          const isStandard = shortcutFolderLabels.has(f.label) || TARGET_DETAIL_LABELS.has(f.label) || /^V\d+F?$/.test(f.label);
+                          const TRIGGER_ONLY_LABELS = new Set(["TGT", "HBF", "HB", "V1F", "V2F", "DEP", "ARR"]);
+                          const isVnShort = /^V\d+$/.test(f.label); // V1, V2, V3 etc — show rego next to label
+                          const isVnFull  = /^V\d+F$/.test(f.label); // V1F, V2F etc — trigger only
+                          const isStandard = !isVnShort && (shortcutFolderLabels.has(f.label) || TRIGGER_ONLY_LABELS.has(f.label) || isVnFull);
                           const doReorder = (fromLabel: string, toLabel: string) => {
                             if (!fromLabel || fromLabel === toLabel) return;
                             const labels = orderedFields.map(x => x.label);
@@ -2620,7 +2624,8 @@ export default function SheetDetail() {
                                 className="flex items-baseline gap-1 px-2 py-0.5 rounded border border-primary/30 bg-primary/8 hover:bg-primary/15 active:scale-95 transition-all cursor-grab active:cursor-grabbing select-none"
                               >
                                 <span className="text-[10px] font-bold text-primary uppercase tracking-wide">{f.label}</span>
-                                {!isStandard && <span className="text-[10px] font-mono text-foreground/80 max-w-[120px] truncate">{f.value}</span>}
+                                {/* Vn short chips show rego next to label; all other standard chips show trigger only */}
+                                {(isVnShort || !isStandard) && <span className="text-[10px] font-mono text-foreground/80 max-w-[80px] truncate">{f.value}</span>}
                               </button>
                               {isDepArr && (
                                 <button

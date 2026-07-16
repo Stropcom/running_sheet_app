@@ -77,9 +77,93 @@ const INTERSECTION_RE = new RegExp(
   "i"
 );
 
-/** Title-case a string: "20 hinderwell st" → "20 Hinderwell St" */
+/**
+ * Map of street type abbreviations to their full forms.
+ * Keys are lowercase abbreviations; values are title-case full forms.
+ */
+const STREET_TYPE_MAP: Record<string, string> = {
+  st: "Street",
+  rd: "Road",
+  ave: "Avenue",
+  av: "Avenue",
+  dr: "Drive",
+  ct: "Court",
+  cl: "Close",
+  pl: "Place",
+  cres: "Crescent",
+  cr: "Crescent",
+  blvd: "Boulevard",
+  bvd: "Boulevard",
+  hwy: "Highway",
+  fwy: "Freeway",
+  ln: "Lane",
+  tce: "Terrace",
+  pde: "Parade",
+  cct: "Circuit",
+  gr: "Grove",
+  gdns: "Gardens",
+  gdn: "Garden",
+  esp: "Esplanade",
+  mws: "Motorway",
+  byp: "Bypass",
+  cnr: "Corner",
+  wy: "Way",
+  way: "Way",
+  loop: "Loop",
+  rise: "Rise",
+  run: "Run",
+  trk: "Track",
+  track: "Track",
+  row: "Row",
+  rdge: "Ridge",
+  ridge: "Ridge",
+  bnd: "Bend",
+  bend: "Bend",
+  vw: "View",
+  view: "View",
+  gln: "Glen",
+  glen: "Glen",
+  hts: "Heights",
+  heights: "Heights",
+  vale: "Vale",
+  walk: "Walk",
+  wlk: "Walk",
+  mews: "Mews",
+  qy: "Quay",
+  quay: "Quay",
+  sq: "Square",
+  square: "Square",
+  pass: "Pass",
+  psge: "Passage",
+  passage: "Passage",
+  nook: "Nook",
+  chase: "Chase",
+  grange: "Grange",
+  link: "Link",
+  retreat: "Retreat",
+  approach: "Approach",
+  app: "Approach",
+  pkwy: "Parkway",
+  pwy: "Parkway",
+  parkway: "Parkway",
+};
+
+/**
+ * Expand street type abbreviations in a street name string.
+ * Only expands the LAST word if it matches a known abbreviation.
+ * e.g. "Dover Rd" → "Dover Road", "Lakey St" → "Lakey Street"
+ */
+function expandStreetType(streetName: string): string {
+  return streetName.replace(/\b([A-Za-z]+)$/, (match) => {
+    const expanded = STREET_TYPE_MAP[match.toLowerCase()];
+    return expanded ?? match;
+  });
+}
+
+/** Title-case a string: "20 hinderwell st" → "20 Hinderwell Street" */
 function toTitleCase(s: string): string {
-  return s.toLowerCase().replace(/\b([a-z])/g, c => c.toUpperCase());
+  const titled = s.toLowerCase().replace(/\b([a-z])/g, c => c.toUpperCase());
+  return expandStreetType(titled);
 }
 
 /** Uppercase the suburb portion of a "Suburb STATE" string, keep state as-is */

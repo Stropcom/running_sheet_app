@@ -966,3 +966,8 @@
 - [x] Fix: RS main target panel chips not draggable on desktop/laptop
 - [x] Root cause: draggable was on the wrapper div but the inner button's onMouseDown preventDefault blocked dragstart from firing on desktop
 - [x] Fix: moved draggable + HTML5 drag handlers onto the button itself; touch handlers remain on the wrapper div
+
+## QE Modal Desktop Chip Drag Fix (Jul 2026)
+- [x] Fix: QE modal chips not draggable on desktop/laptop
+- [x] Root cause: onMouseDown preventDefault on the chip div was blocking HTML5 dragstart from firing on desktop
+- [x] Fix: removed onMouseDown preventDefault; onClick now guards against inserting text after a drag using qeChipDragRef.current.dragging check

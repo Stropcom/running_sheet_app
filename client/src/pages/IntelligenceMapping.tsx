@@ -3943,8 +3943,12 @@ export default function IntelligenceMapping() {
                                 return (
                                   <div
                                     key={s.label}
+                                    // Desktop HTML5 drag — draggable on the div itself (it IS the interactive element)
                                     draggable
-                                    onDragStart={(e) => { qeChipDragRef.current.dragging = s.label; e.dataTransfer.effectAllowed = "move"; }}
+                                    onDragStart={(e) => {
+                                      qeChipDragRef.current.dragging = s.label;
+                                      e.dataTransfer.effectAllowed = "move";
+                                    }}
                                     onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
                                     onDrop={(e) => {
                                       e.preventDefault();
@@ -3953,8 +3957,8 @@ export default function IntelligenceMapping() {
                                       qeChipDragRef.current.dragging = null;
                                     }}
                                     onDragEnd={() => { qeChipDragRef.current.dragging = null; }}
+                                    // Touch drag — 8px threshold before entering drag mode
                                     onTouchStart={(e) => {
-                                      // Reset drag state — only enter drag after movement threshold
                                       qeChipDragRef.current.dragging = null;
                                       qeChipDragRef.current.startX = e.touches[0].clientX;
                                       qeChipDragRef.current.startY = e.touches[0].clientY;
@@ -3964,12 +3968,11 @@ export default function IntelligenceMapping() {
                                       const dx = touch.clientX - qeChipDragRef.current.startX;
                                       const dy = touch.clientY - qeChipDragRef.current.startY;
                                       const dist = Math.sqrt(dx * dx + dy * dy);
-                                      // Only enter drag mode after 8px movement threshold
                                       if (dist > 8) {
                                         if (!qeChipDragRef.current.dragging) {
                                           qeChipDragRef.current.dragging = s.label;
                                         }
-                                        e.preventDefault(); // prevent scroll during drag
+                                        e.preventDefault();
                                         const el = document.elementFromPoint(touch.clientX, touch.clientY);
                                         const chipEl = el?.closest('[data-qe-chip]') as HTMLElement | null;
                                         if (chipEl) {
@@ -3982,15 +3985,20 @@ export default function IntelligenceMapping() {
                                       }
                                     }}
                                     onTouchEnd={(e) => {
-                                      // If no drag movement, treat as tap → insert text
                                       if (!qeChipDragRef.current.dragging) {
-                                        e.preventDefault(); // prevent ghost click
+                                        e.preventDefault();
                                         const v = s.getValue(); if (v) appendText(v);
                                       }
                                       qeChipDragRef.current.dragging = null;
                                     }}
-                                    onMouseDown={(e) => e.preventDefault()} // prevent input blur on desktop click
-                                    onClick={() => { const v = s.getValue(); if (v) appendText(v); }}
+                                    // Desktop click: insert text only if this wasn't a drag
+                                    // NOTE: do NOT call e.preventDefault() on mouseDown here —
+                                    // that would block the HTML5 dragstart event on desktop.
+                                    onClick={() => {
+                                      if (!qeChipDragRef.current.dragging) {
+                                        const v = s.getValue(); if (v) appendText(v);
+                                      }
+                                    }}
                                     data-qe-chip={s.label}
                                     className="cursor-grab active:cursor-grabbing px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all select-none"
                                   >

@@ -944,3 +944,10 @@
 - [x] QE modal: all shortcut-folder triggers injected as chips (trigger only, reorderable, replaces hardcoded list)
 - [x] Any new shortcut added to the Shortcuts folder automatically appears as a chip in both panels
 - [x] All chips remain drag-to-reorder with localStorage persistence
+
+## Wallpaper Upload Fix (Jul 2026)
+- [x] Fix: wallpaper image flashed then disappeared after upload
+- [x] Root cause: onSuccess cleared wallpaperPreview immediately, then profile.me.invalidate() refetch returned stale/null data causing currentWallpaper to become null
+- [x] Fix: added persistedWallpaperUrl state that holds the server-returned URL; currentWallpaper priority is now: local preview → persistedWallpaperUrl → profile DB value
+- [x] Fix: onError now clears preview and shows detailed error message
+- [x] Fix: clearWallpaper also resets persistedWallpaperUrl

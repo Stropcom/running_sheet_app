@@ -247,38 +247,56 @@ export default function MyProfilePage() {
   // ── Wallpaper ─────────────────────────────────────────────────────────────
   const wallpaperInputRef = useRef<HTMLInputElement>(null);
   const [wallpaperPreview, setWallpaperPreview] = useState<string | null>(null);
+  // persistedWallpaperUrl holds the URL returned by the server after a successful upload;
+  // it acts as a stable fallback so the image doesn't vanish while profile.me refetches.
+  const [persistedWallpaperUrl, setPersistedWallpaperUrl] = useState<string | null>(null);
   const [wallpaperOpacity, setWallpaperOpacity] = useState<number>(40);
 
   useEffect(() => {
     if (profile) {
       const p = profile as { wallpaperOpacity?: number | null; wallpaperUrl?: string | null };
       setWallpaperOpacity(p.wallpaperOpacity ?? 40);
-      // Apply persisted wallpaper on load
+      // Apply persisted wallpaper on load — also sync persistedWallpaperUrl
       if (p.wallpaperUrl) {
+        setPersistedWallpaperUrl(p.wallpaperUrl);
         document.documentElement.style.setProperty("--wallpaper-url", `url(${p.wallpaperUrl})`);
         document.documentElement.style.setProperty("--wallpaper-opacity", String((100 - (p.wallpaperOpacity ?? 40)) / 100));
+      } else {
+        // Profile explicitly has no wallpaper — only clear if we haven't just uploaded one
+        if (!persistedWallpaperUrl) {
+          document.documentElement.style.removeProperty("--wallpaper-url");
+          document.documentElement.style.removeProperty("--wallpaper-opacity");
+        }
       }
     }
-  }, [profile]);
+  }, [profile]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const uploadWallpaperMutation = trpc.profile.uploadWallpaper.useMutation({
     onSuccess: (data) => {
       toast.success("Wallpaper updated.");
-      utils.profile.me.invalidate();
+      // Store the returned URL immediately so currentWallpaper stays non-null
+      // even while profile.me is refetching
+      setPersistedWallpaperUrl(data.url);
+      setWallpaperPreview(null);
       document.documentElement.style.setProperty("--wallpaper-url", `url(${data.url})`);
       document.documentElement.style.setProperty("--wallpaper-opacity", String((100 - data.opacity) / 100));
-      setWallpaperPreview(null);
+      utils.profile.me.invalidate();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => {
+      // Upload failed — clear the local preview so stale data-URL doesn't persist
+      setWallpaperPreview(null);
+      toast.error(`Wallpaper upload failed: ${err.message}`);
+    },
   });
 
   const clearWallpaperMutation = trpc.profile.clearWallpaper.useMutation({
     onSuccess: () => {
       toast.success("Wallpaper removed.");
-      utils.profile.me.invalidate();
+      setPersistedWallpaperUrl(null);
+      setWallpaperPreview(null);
       document.documentElement.style.removeProperty("--wallpaper-url");
       document.documentElement.style.removeProperty("--wallpaper-opacity");
-      setWallpaperPreview(null);
+      utils.profile.me.invalidate();
     },
     onError: (err) => toast.error(err.message),
   });
@@ -305,7 +323,8 @@ export default function MyProfilePage() {
     e.target.value = "";
   };
 
-  const currentWallpaper = wallpaperPreview ?? (profile as { wallpaperUrl?: string | null } | undefined)?.wallpaperUrl ?? null;
+  // Priority: local preview (data-URL during upload) → server-returned URL (after upload, before refetch) → profile DB value
+  const currentWallpaper = wallpaperPreview ?? persistedWallpaperUrl ?? (profile as { wallpaperUrl?: string | null } | undefined)?.wallpaperUrl ?? null;
 
   return (
     <DashboardLayout>

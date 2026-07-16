@@ -2673,11 +2673,11 @@ export default function IntelligenceMapping() {
             {/* Home pill (mobile/tablet only) */}
             <button
               onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } setLocation("/"); }}
-              className="lg:hidden flex flex-col items-center justify-center gap-1 px-4 py-2 rounded-2xl shadow-md border bg-card/80 border-border/60 backdrop-blur-sm hover:bg-card active:scale-95 transition-all min-w-[64px]"
+              className="lg:hidden flex flex-col items-center justify-center gap-1 px-5 py-2.5 rounded-2xl shadow-lg border bg-slate-600 border-slate-500 hover:bg-slate-500 active:scale-95 transition-all min-w-[80px]"
               title="Home"
             >
-              <Home className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-              <span className="text-[10px] font-semibold leading-none text-muted-foreground">Home</span>
+              <Home className="h-5 w-5 flex-shrink-0 text-white" />
+              <span className="text-[11px] font-semibold leading-none text-white">Home</span>
             </button>
 
             {/* Active RS pill */}
@@ -2689,15 +2689,15 @@ export default function IntelligenceMapping() {
                 <button
                   disabled={!activeSheet}
                   onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } if (activeSheet) setLocation(`/sheet/${rsSelectedSheetId}`); }}
-                  className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-md border transition-all min-w-[64px] px-4 py-2 ${
+                  className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all min-w-[80px] px-5 py-2.5 ${
                     activeSheet
-                      ? "bg-emerald-600/25 border-emerald-500/40 hover:bg-emerald-600/35 active:scale-95 cursor-pointer backdrop-blur-sm"
-                      : "bg-card/60 border-border/40 cursor-default opacity-40 backdrop-blur-sm"
+                      ? "bg-emerald-700 border-emerald-600 hover:bg-emerald-600 active:scale-95 cursor-pointer"
+                      : "bg-emerald-900/50 border-emerald-800/50 cursor-default opacity-50"
                   }`}
                   title={activeSheet ? "Open active running sheet" : "No running sheet selected"}
                 >
-                  <ClipboardList className={`h-4 w-4 flex-shrink-0 ${activeSheet ? "text-emerald-400" : "text-muted-foreground/40"}`} />
-                  <span className={`text-[10px] font-semibold leading-none ${activeSheet ? "text-emerald-300" : "text-muted-foreground/40"}`}>Active RS</span>
+                  <ClipboardList className={`h-5 w-5 flex-shrink-0 ${activeSheet ? "text-white" : "text-white/40"}`} />
+                  <span className={`text-[11px] font-semibold leading-none ${activeSheet ? "text-white" : "text-white/40"}`}>Active RS</span>
                 </button>
               );
             })()}
@@ -2709,15 +2709,15 @@ export default function IntelligenceMapping() {
                 <button
                   disabled={!hasSheet}
                   onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } if (hasSheet) setMapQeOpen(true); }}
-                  className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-md border transition-all min-w-[64px] px-4 py-2 ${
+                  className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all min-w-[80px] px-5 py-2.5 ${
                     hasSheet
-                      ? "bg-blue-600/25 border-blue-500/40 hover:bg-blue-600/35 active:scale-95 cursor-pointer backdrop-blur-sm"
-                      : "bg-card/60 border-border/40 cursor-default opacity-40 backdrop-blur-sm"
+                      ? "bg-blue-700 border-blue-600 hover:bg-blue-600 active:scale-95 cursor-pointer"
+                      : "bg-blue-900/50 border-blue-800/50 cursor-default opacity-50"
                   }`}
                   title={hasSheet ? "RS Quick Entry" : "Select a running sheet first"}
                 >
-                  <FileText className={`h-4 w-4 flex-shrink-0 ${hasSheet ? "text-blue-400" : "text-muted-foreground/40"}`} />
-                  <span className={`text-[10px] font-semibold leading-none ${hasSheet ? "text-blue-300" : "text-muted-foreground/40"}`}>RS Entry</span>
+                  <FileText className={`h-5 w-5 flex-shrink-0 ${hasSheet ? "text-white" : "text-white/40"}`} />
+                  <span className={`text-[11px] font-semibold leading-none ${hasSheet ? "text-white" : "text-white/40"}`}>RS Entry</span>
                 </button>
               );
             })()}
@@ -2725,11 +2725,11 @@ export default function IntelligenceMapping() {
             {/* Intel Profiles pill */}
             <button
               onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } setLocation("/intelligence"); }}
-              className="flex flex-col items-center justify-center gap-1 rounded-2xl shadow-md border bg-violet-600/25 border-violet-500/40 hover:bg-violet-600/35 active:scale-95 transition-all min-w-[64px] px-4 py-2 backdrop-blur-sm"
+              className="flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border bg-violet-700 border-violet-600 hover:bg-violet-600 active:scale-95 transition-all min-w-[80px] px-5 py-2.5"
               title="Intel Profiles"
             >
-              <FolderSearch className="h-4 w-4 flex-shrink-0 text-violet-400" />
-              <span className="text-[10px] font-semibold leading-none text-violet-300">Intel Profiles</span>
+              <FolderSearch className="h-5 w-5 flex-shrink-0 text-white" />
+              <span className="text-[11px] font-semibold leading-none text-white">Intel Profiles</span>
             </button>
           </div>
         </div>

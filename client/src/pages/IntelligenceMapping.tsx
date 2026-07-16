@@ -3918,33 +3918,59 @@ export default function IntelligenceMapping() {
                           : available;
                         return (
                           <div className="flex flex-wrap gap-1">
-                            {orderedChips.map((s, chipIdx) => (
-                              <button
-                                key={s.label}
-                                draggable
-                                onDragStart={(e) => { qeChipDragRef.current.dragging = s.label; e.dataTransfer.effectAllowed = "move"; }}
-                                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
-                                onDrop={(e) => {
-                                  e.preventDefault();
-                                  const fromLabel = qeChipDragRef.current.dragging;
-                                  if (!fromLabel || fromLabel === s.label) return;
-                                  const labels = orderedChips.map(x => x.label);
-                                  const fromIdx = labels.indexOf(fromLabel);
-                                  const toIdx = chipIdx;
-                                  if (fromIdx === -1) return;
-                                  const newOrder = [...labels];
-                                  newOrder.splice(fromIdx, 1);
-                                  newOrder.splice(toIdx, 0, fromLabel);
-                                  setQeChipOrder(newOrder);
-                                  try { localStorage.setItem("runlog_qe_chip_order", JSON.stringify(newOrder)); } catch {};
-                                  qeChipDragRef.current.dragging = null;
-                                }}
-                                onDragEnd={() => { qeChipDragRef.current.dragging = null; }}
-                                onClick={() => { const v = s.getValue(); if (v) appendText(v); }}
-                                className="px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all cursor-grab active:cursor-grabbing">
-                                {s.display}
-                              </button>
-                            ))}
+                            {(() => {
+                              const standardQeLabels = ["DSO","D","AR","CV","OOS","COOS"];
+                              const doQeReorder = (fromLabel: string, toLabel: string) => {
+                                if (!fromLabel || fromLabel === toLabel) return;
+                                const labels = orderedChips.map(x => x.label);
+                                const fromIdx = labels.indexOf(fromLabel);
+                                const toIdx = labels.indexOf(toLabel);
+                                if (fromIdx === -1 || toIdx === -1) return;
+                                const newOrder = [...labels];
+                                newOrder.splice(fromIdx, 1);
+                                newOrder.splice(toIdx, 0, fromLabel);
+                                setQeChipOrder(newOrder);
+                                try { localStorage.setItem("runlog_qe_chip_order", JSON.stringify(newOrder)); } catch {};
+                              };
+                              return orderedChips.map((s) => {
+                                const isStdQe = standardQeLabels.includes(s.label);
+                                return (
+                                  <div
+                                    key={s.label}
+                                    draggable
+                                    onDragStart={(e) => { qeChipDragRef.current.dragging = s.label; e.dataTransfer.effectAllowed = "move"; }}
+                                    onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
+                                    onDrop={(e) => {
+                                      e.preventDefault();
+                                      const fromLabel = qeChipDragRef.current.dragging;
+                                      if (fromLabel) doQeReorder(fromLabel, s.label);
+                                      qeChipDragRef.current.dragging = null;
+                                    }}
+                                    onDragEnd={() => { qeChipDragRef.current.dragging = null; }}
+                                    onTouchStart={() => { qeChipDragRef.current.dragging = s.label; }}
+                                    onTouchMove={(e) => {
+                                      if (!qeChipDragRef.current.dragging) return;
+                                      const touch = e.touches[0];
+                                      const el = document.elementFromPoint(touch.clientX, touch.clientY);
+                                      const chipEl = el?.closest('[data-qe-chip]') as HTMLElement | null;
+                                      if (chipEl) {
+                                        const overLabel = chipEl.dataset.qeChip;
+                                        if (overLabel && overLabel !== qeChipDragRef.current.dragging) {
+                                          doQeReorder(qeChipDragRef.current.dragging, overLabel);
+                                          qeChipDragRef.current.dragging = overLabel;
+                                        }
+                                      }
+                                    }}
+                                    onTouchEnd={() => { qeChipDragRef.current.dragging = null; }}
+                                    onClick={() => { const v = s.getValue(); if (v) appendText(v); }}
+                                    data-qe-chip={s.label}
+                                    className="touch-none cursor-grab active:cursor-grabbing px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all select-none"
+                                  >
+                                    {isStdQe ? s.label : s.display}
+                                  </div>
+                                );
+                              });
+                            })()}
                           </div>
                         );
                       })()}

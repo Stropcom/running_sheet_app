@@ -2479,6 +2479,21 @@ export default function SheetDetail() {
                               }
                             }
                           };
+                          // Standard shortcut labels — show label only, no expansion text
+                          const standardLabels = ["DSO","D","AR","CV","OOS","COOS"];
+                          const isStandard = standardLabels.includes(f.label);
+                          const doReorder = (fromLabel: string, toLabel: string) => {
+                            if (!fromLabel || fromLabel === toLabel) return;
+                            const labels = orderedFields.map(x => x.label);
+                            const fromIdx = labels.indexOf(fromLabel);
+                            const toIdx = labels.indexOf(toLabel);
+                            if (fromIdx === -1 || toIdx === -1) return;
+                            const newOrder = [...labels];
+                            newOrder.splice(fromIdx, 1);
+                            newOrder.splice(toIdx, 0, fromLabel);
+                            setTargetFieldOrder(newOrder);
+                            try { localStorage.setItem(`runsheet_field_order_${sheetId}`, JSON.stringify(newOrder)); } catch {}
+                          };
                           return (
                             <div
                               key={f.label}
@@ -2492,28 +2507,40 @@ export default function SheetDetail() {
                               onDrop={(e) => {
                                 e.preventDefault();
                                 const fromLabel = targetFieldDragRef.current.dragging;
-                                if (!fromLabel || fromLabel === f.label) return;
-                                const labels = orderedFields.map(x => x.label);
-                                const fromIdx = labels.indexOf(fromLabel);
-                                const toIdx = idx;
-                                if (fromIdx === -1) return;
-                                const newOrder = [...labels];
-                                newOrder.splice(fromIdx, 1);
-                                newOrder.splice(toIdx, 0, fromLabel);
-                                setTargetFieldOrder(newOrder);
-                                try { localStorage.setItem(`runsheet_field_order_${sheetId}`, JSON.stringify(newOrder)); } catch {}
+                                if (fromLabel) doReorder(fromLabel, f.label);
                                 targetFieldDragRef.current.dragging = null;
                               }}
                               onDragEnd={() => { targetFieldDragRef.current.dragging = null; }}
-                              className="flex items-center gap-0.5 cursor-grab active:cursor-grabbing"
+                              onTouchStart={(e) => {
+                                targetFieldDragRef.current.dragging = f.label;
+                                targetFieldDragRef.current.startX = e.touches[0].clientX;
+                                targetFieldDragRef.current.startY = e.touches[0].clientY;
+                                targetFieldDragRef.current.startIdx = idx;
+                              }}
+                              onTouchMove={(e) => {
+                                if (!targetFieldDragRef.current.dragging) return;
+                                const touch = e.touches[0];
+                                const el = document.elementFromPoint(touch.clientX, touch.clientY);
+                                const chipEl = el?.closest('[data-chip-label]') as HTMLElement | null;
+                                if (chipEl) {
+                                  const overLabel = chipEl.dataset.chipLabel;
+                                  if (overLabel && overLabel !== targetFieldDragRef.current.dragging) {
+                                    doReorder(targetFieldDragRef.current.dragging, overLabel);
+                                    targetFieldDragRef.current.dragging = overLabel;
+                                  }
+                                }
+                              }}
+                              onTouchEnd={() => { targetFieldDragRef.current.dragging = null; }}
+                              data-chip-label={f.label}
+                              className="flex items-center gap-0.5 cursor-grab active:cursor-grabbing touch-none"
                             >
                               <button
                                 onClick={insertIntoFocused}
-                                title={`Click to insert "${f.value}" into the focused observation`}
+                                title={`Insert: ${f.value}`}
                                 className="flex items-baseline gap-1 px-2 py-0.5 rounded border border-primary/30 bg-primary/8 hover:bg-primary/15 active:scale-95 transition-all group"
                               >
                                 <span className="text-[10px] font-bold text-primary uppercase tracking-wide">{f.label}</span>
-                                <span className="text-[10px] font-mono text-foreground/80 max-w-[120px] truncate">{f.value}</span>
+                                {!isStandard && <span className="text-[10px] font-mono text-foreground/80 max-w-[120px] truncate">{f.value}</span>}
                               </button>
                               {isDepArr && (
                                 <button

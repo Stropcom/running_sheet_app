@@ -2440,13 +2440,8 @@ export default function SheetDetail() {
             ...wildFieldItems,
             { label: "DEP", value: t.dep },
             { label: "ARR", value: t.arr },
-            // Standard shortcut chips — always present
-            { label: "DSO", value: shortcutMap["dso"] ?? "driver and sole occupant" },
-            { label: "D",   value: shortcutMap["d"]   ?? "departed and" },
-            { label: "AR",  value: shortcutMap["ar"]  ?? "arrived and" },
-            { label: "CV",  value: shortcutMap["cv"]  ?? "continued via" },
-            { label: "OOS", value: shortcutMap["oos"] ?? "out of sight" },
-            { label: "COOS",value: shortcutMap["coos"]?? "continued out of sight" },
+            // All shortcut-folder triggers as chips (trigger only, always present)
+            ...(shortcutsData ?? []).map((s) => ({ label: s.trigger.toUpperCase(), value: s.expansion })),
           ];
           const hasAnyField = fields.some((f) => f.value);
           return (
@@ -2516,9 +2511,9 @@ export default function SheetDetail() {
                               }
                             }
                           };
-                          // Standard shortcut labels — show label only, no expansion text
-                          const standardLabels = ["DSO","D","AR","CV","OOS","COOS"];
-                          const isStandard = standardLabels.includes(f.label);
+                          // All shortcut-folder chips and TGT show label only (trigger only, no expansion text)
+                          const shortcutFolderLabels = new Set((shortcutsData ?? []).map(s => s.trigger.toUpperCase()));
+                          const isStandard = shortcutFolderLabels.has(f.label) || f.label === "TGT";
                           const doReorder = (fromLabel: string, toLabel: string) => {
                             if (!fromLabel || fromLabel === toLabel) return;
                             const labels = orderedFields.map(x => x.label);

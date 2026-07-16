@@ -3895,17 +3895,19 @@ export default function IntelligenceMapping() {
                         // V1: prefer v1 (short) for reg extraction; fall back to v1f
                         const v1Val = rsTargetData?.v1 ?? rsTargetData?.v1f ?? null;
                         const v1Reg = extractReg(rsTargetData?.v1) ?? extractReg(rsTargetData?.v1f);
+                        // All shortcut-folder triggers as chips (trigger only, always present)
+                        const folderShortcutChips: Array<{ label: string; display: string; getValue: () => string | null }> =
+                          (generalShortcuts as any[] ?? []).map((s: any) => ({
+                            label: (s.trigger as string).toUpperCase(),
+                            display: (s.trigger as string).toUpperCase(),
+                            getValue: () => findShortcut(s.trigger) ?? s.expansion as string,
+                          }));
                         const shortcuts: Array<{ label: string; display: string; getValue: () => string | null }> = [
                           { label: "V1", display: v1Reg ? `V1 ${v1Reg}` : "V1", getValue: () => v1Val },
                           ...extraVehicleChips,
                           { label: "TGT", display: "TGT", getValue: () => rsTargetData?.tgt ?? rsTargetData?.name ?? null },
                           ...wildChips,
-                          { label: "DSO", display: "DSO", getValue: () => findShortcut("dso") ?? "driver and sole occupant" },
-                          { label: "D", display: "D", getValue: () => findShortcut("d") ?? "departed and" },
-                          { label: "AR", display: "AR", getValue: () => findShortcut("ar") ?? "arrived and" },
-                          { label: "CV", display: "CV", getValue: () => findShortcut("cv") ?? "continued via" },
-                          { label: "OOS", display: "OOS", getValue: () => findShortcut("oos") ?? "out of sight" },
-                          { label: "COOS", display: "COOS", getValue: () => findShortcut("coos") ?? "continued out of sight" },
+                          ...folderShortcutChips,
                         ];
                         const available = shortcuts.filter(s => s.getValue() !== null);
                         if (available.length === 0) return null;
@@ -3919,7 +3921,11 @@ export default function IntelligenceMapping() {
                         return (
                           <div className="flex flex-wrap gap-1">
                             {(() => {
-                              const standardQeLabels = ["DSO","D","AR","CV","OOS","COOS"];
+                              // All folder shortcut chips + TGT show trigger only — no expansion text
+                              const folderQeLabels = new Set([
+                                "TGT",
+                                ...(generalShortcuts as any[] ?? []).map((s: any) => (s.trigger as string).toUpperCase()),
+                              ]);
                               const doQeReorder = (fromLabel: string, toLabel: string) => {
                                 if (!fromLabel || fromLabel === toLabel) return;
                                 const labels = orderedChips.map(x => x.label);
@@ -3933,7 +3939,7 @@ export default function IntelligenceMapping() {
                                 try { localStorage.setItem("runlog_qe_chip_order", JSON.stringify(newOrder)); } catch {};
                               };
                               return orderedChips.map((s) => {
-                                const isStdQe = standardQeLabels.includes(s.label);
+                                const isStdQe = folderQeLabels.has(s.label);
                                 return (
                                   <div
                                     key={s.label}

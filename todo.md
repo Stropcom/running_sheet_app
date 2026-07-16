@@ -938,3 +938,9 @@
 - [x] Team panel header style matches target panel: two separate buttons with border-l divider, chevron + pencil placement identical
 - [x] SheetDetail chips: tap inserts text into last-focused textarea (focusedTextareaRef), drag reorders — 8px movement threshold distinguishes tap from drag; onMouseDown preventDefault prevents textarea blur on desktop
 - [x] Quick Entry modal chips (IntelligenceMapping): same 8px movement threshold — short tap → appendText(), movement → drag reorder; onMouseDown preventDefault prevents input blur on desktop
+## Shortcut Chips Overhaul (Jul 2026)
+- [x] TGT chip: show trigger only (no target name / expansion text) in both RS main target panel and QE modal
+- [x] RS main target panel: all shortcut-folder triggers injected as chips (trigger only, reorderable, replaces hardcoded DSO/D/AR/CV/OOS/COOS list)
+- [x] QE modal: all shortcut-folder triggers injected as chips (trigger only, reorderable, replaces hardcoded list)
+- [x] Any new shortcut added to the Shortcuts folder automatically appears as a chip in both panels
+- [x] All chips remain drag-to-reorder with localStorage persistence

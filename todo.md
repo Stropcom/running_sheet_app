@@ -981,3 +981,12 @@
 - [x] Legacy 'D' chip removed from both RS main target panel and QE modal
 - [x] Canonical default chip order set for both RS main target panel and QE modal: SC, HBF, V1F, V1, V2F, V3..., TGT, DSO, DR, FP, US, DE, AR, CV, OOS, COOS, PU, PT, RACK, DEP, ARR, #1, #2, #3
 - [x] All chips remain individually drag-to-reorder; saved order persists in localStorage per sheet/modal
+
+## Chip Order/Visibility Fix (Jul 2026)
+- [x] Canonical order now generates full VnF/Vn pairs: SC, HBF, V1F, V1, V2F, V2, V3F, V3 ... up to V8F/V8, then TGT, DSO, DR, FP, US, DE, AR, CV, OOS, COOS, PU, PT, RACK, DEP, ARR, #1-#10
+- [x] Vehicle chips (V1, V2, V3 etc) only visible if that field has a value on the target
+- [x] VnF chips also only visible if that field has a value
+- [x] V1/Vn short chips show rego-only (no "Vehicle " prefix, no full string)
+- [x] QE modal now includes HBF and V1F chips (previously missing)
+- [x] Extra vehicles in QE now get both VnF (full, trigger-only) and Vn (rego-only) chips
+- [x] Applied to both RS main target panel (SheetDetail) and QE modal (IntelligenceMapping)

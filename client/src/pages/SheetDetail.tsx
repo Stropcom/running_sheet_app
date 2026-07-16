@@ -1873,11 +1873,13 @@ export default function SheetDetail() {
   });
   // Shortcut chip order for the target panel — persisted per sheet in localStorage
   // Canonical default chip order — used when no saved order exists in localStorage
+  // Generates: SC, HBF, V1F, V1, V2F, V2, V3F, V3, V4F, V4 ... (up to 8 vehicles), then fixed shortcuts, then DEP/ARR, then wild fields
   const CANONICAL_CHIP_ORDER = [
-    "SC", "HBF", "V1F", "V1", "V2F", "V3",
+    "SC", "HBF",
+    ...Array.from({ length: 8 }, (_, i) => [`V${i + 1}F`, `V${i + 1}`]).flat(),
     "TGT", "DSO", "DR", "FP", "US", "DE", "AR", "CV", "OOS", "COOS", "PU", "PT", "RACK",
     "DEP", "ARR",
-    "#1", "#2", "#3",
+    ...Array.from({ length: 10 }, (_, i) => `#${i + 1}`),
   ];
   const [targetFieldOrder, setTargetFieldOrder] = useState<string[]>(() => {
     try { const s = localStorage.getItem(`runsheet_field_order_${sheetId}`); if (s) return JSON.parse(s); } catch {} return CANONICAL_CHIP_ORDER;
@@ -2427,10 +2429,17 @@ export default function SheetDetail() {
             return v.replace(/^Vehicle\s+/i, '').trim() || null;
           };
           // Extract registration number from a vehicle string (last alphanumeric token with digits)
+          // Returns null if no rego-like token found — chip will be hidden (no value = not shown)
           const extractRegSD = (v: string | null | undefined): string | null => {
             if (!v) return null;
-            const tokens = v.trim().split(/\s+/).map(t => t.replace(/[^A-Z0-9]/gi, ''));
-            return tokens.slice().reverse().find(t => /^[A-Z0-9]{3,8}$/i.test(t) && /\d/.test(t)) ?? stripVehicle(v);
+            const stripped = v.replace(/^Vehicle\s+/i, '').trim();
+            const tokens = stripped.split(/\s+/).map(t => t.replace(/[^A-Z0-9]/gi, ''));
+            const rego = tokens.slice().reverse().find(t => /^[A-Z0-9]{3,8}$/i.test(t) && /\d/.test(t) && /[A-Z]/i.test(t));
+            if (rego) return rego;
+            // Fallback: if the stripped value itself looks like a plate (3-8 alphanumeric with digit+letter), use it
+            if (/^[A-Z0-9]{3,8}$/i.test(stripped) && /\d/.test(stripped) && /[A-Z]/i.test(stripped)) return stripped;
+            // No rego found — return the stripped value so the chip still shows (but only the cleaned text)
+            return stripped || null;
           };
           // For extra vehicles, strip "Vehicle " prefix from short values
           const cleanedExtraVehicleFields = extraVehicleFields.map(f => ({
@@ -2442,7 +2451,7 @@ export default function SheetDetail() {
             { label: "HBF", value: t.hbf },
             { label: "HB",  value: t.hb  },
             { label: "V1F", value: t.v1f },
-            { label: "V1",  value: extractRegSD(t.v1) ?? t.v1 },
+            { label: "V1",  value: extractRegSD(t.v1) },
             ...cleanedExtraVehicleFields,
             ...wildFieldItems,
             { label: "DEP", value: t.dep },

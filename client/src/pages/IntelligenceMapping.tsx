@@ -720,10 +720,11 @@ export default function IntelligenceMapping() {
   const [mapQeAddress, setMapQeAddress] = useState(""); // pre-filled address for the observation
   // Quick Entry shortcut chip order — persisted to localStorage so user can reorder them
   const QE_CANONICAL_ORDER = [
-    "SC", "HBF", "V1F", "V1", "V2F", "V3",
+    "SC", "HBF",
+    ...(Array.from({ length: 8 }, (_, i) => [`V${i + 1}F`, `V${i + 1}`]) as string[][]).flat(),
     "TGT", "DSO", "DR", "FP", "US", "DE", "AR", "CV", "OOS", "COOS", "PU", "PT", "RACK",
     "DEP", "ARR",
-    "#1", "#2", "#3",
+    ...(Array.from({ length: 10 }, (_, i) => `#${i + 1}`) as string[]),
   ];
   const [qeChipOrder, setQeChipOrder] = useState<string[]>(() => {
     try { const s = localStorage.getItem("runlog_qe_chip_order"); if (s) return JSON.parse(s); } catch {} return QE_CANONICAL_ORDER;
@@ -3874,16 +3875,16 @@ export default function IntelligenceMapping() {
                           return null;
                         };
                         // Build dynamic extra vehicle chips from assignedTarget JSON
+                        // Each extra vehicle gets both a VnF chip (full value, trigger-only label) and a Vn chip (rego-only)
                         const extraVehicleChips: Array<{ label: string; display: string; getValue: () => string | null }> = [];
                         try {
                           const evs: Array<{ full: string; short: string }> = JSON.parse((assignedTarget as any)?.extraVehicles ?? '[]');
                           evs.forEach((ev, i) => {
                             const num = i + 2;
-                            // Prefer short (e.g. "Vehicle 1HTU905") over full for reg extraction
-                            const val = ev.short || ev.full || null;
-                            if (val) {
-                              const reg = extractReg(ev.short || ev.full);
-                              extraVehicleChips.push({ label: `V${num}`, display: reg ? `V${num} ${reg}` : `V${num}`, getValue: () => val });
+                            if (ev.full) extraVehicleChips.push({ label: `V${num}F`, display: `V${num}F`, getValue: () => ev.full });
+                            if (ev.short) {
+                              const reg = extractReg(ev.short);
+                              extraVehicleChips.push({ label: `V${num}`, display: reg ? `V${num} ${reg}` : `V${num}`, getValue: () => ev.short });
                             }
                           });
                         } catch {}
@@ -3898,9 +3899,10 @@ export default function IntelligenceMapping() {
                             }
                           });
                         } catch {}
-                        // V1: prefer v1 (short) for reg extraction; fall back to v1f
-                        const v1Val = rsTargetData?.v1 ?? rsTargetData?.v1f ?? null;
-                        const v1Reg = extractReg(rsTargetData?.v1) ?? extractReg(rsTargetData?.v1f);
+                        // V1F and V1 chips — only shown if the target has those fields set
+                        const v1fVal = rsTargetData?.v1f ?? null;
+                        const v1Val = rsTargetData?.v1 ?? null;
+                        const v1Reg = extractReg(v1Val);
                         // All shortcut-folder triggers as chips (trigger only, always present) — exclude legacy 'D' chip
                         const folderShortcutChips: Array<{ label: string; display: string; getValue: () => string | null }> =
                           (generalShortcuts as any[] ?? []).filter((s: any) => (s.trigger as string).toUpperCase() !== "D").map((s: any) => ({
@@ -3909,7 +3911,9 @@ export default function IntelligenceMapping() {
                             getValue: () => findShortcut(s.trigger) ?? s.expansion as string,
                           }));
                         const shortcuts: Array<{ label: string; display: string; getValue: () => string | null }> = [
-                          { label: "V1", display: v1Reg ? `V1 ${v1Reg}` : "V1", getValue: () => v1Val },
+                          { label: "HBF", display: "HBF", getValue: () => rsTargetData?.hbf ?? null },
+                          { label: "V1F", display: "V1F", getValue: () => v1fVal },
+                          { label: "V1",  display: v1Reg ? `V1 ${v1Reg}` : "V1", getValue: () => v1Val },
                           ...extraVehicleChips,
                           { label: "TGT", display: "TGT", getValue: () => rsTargetData?.tgt ?? rsTargetData?.name ?? null },
                           ...wildChips,

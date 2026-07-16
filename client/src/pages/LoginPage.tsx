@@ -28,7 +28,7 @@ export default function LoginPage() {
     onSuccess: (result) => {
       // Set auth cache immediately so DashboardLayout sees the user
       utils.auth.me.setData(undefined, result.user as any);
-      setLocation("/");
+      setLocation(result.user.mustChangePassword ? "/change-password" : "/");
     },
     onError: (e) => {
       toast.error(e.message || "Login failed. Please check your credentials.");

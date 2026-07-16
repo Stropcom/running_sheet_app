@@ -14,6 +14,15 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { seedShortcutsIfEmpty, ensureDefaultShortcuts } from "../db";
+import { ENV } from "./env";
+
+// Fail fast rather than silently signing every session with an empty key.
+if (!ENV.cookieSecret || ENV.cookieSecret.length < 32) {
+  throw new Error(
+    "JWT_SECRET is not set or is too short (must be at least 32 characters). " +
+      "Refusing to start: an empty/weak secret would let anyone forge a valid login session."
+  );
+}
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -48,6 +57,14 @@ const authRateLimiter = rateLimit({
 async function startServer() {
   const app = express();
   const server = createServer(app);
+
+  // Trust the first hop's X-Forwarded-* headers (standard for a single
+  // reverse proxy in front — e.g. Manus's hosting, or a typical nginx/PaaS
+  // setup). Without this, express-rate-limit and req.protocol see the
+  // proxy's own address/scheme for every request instead of the real
+  // client's, breaking per-client rate limiting. If this app ever sits
+  // behind more than one proxy hop, increase this number accordingly.
+  app.set("trust proxy", 1);
 
   // ─── Security headers (Helmet — CSP excluded to avoid blocking app resources) ─
   app.use(helmet({

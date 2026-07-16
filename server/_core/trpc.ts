@@ -10,11 +10,30 @@ const t = initTRPC.context<TrpcContext>().create({
 export const router = t.router;
 export const publicProcedure = t.procedure;
 
+// Procedures still reachable while a user has an outstanding forced
+// password change (e.g. a fresh admin-issued temporary password). Keep
+// this list to the bare minimum needed to complete the change.
+const ALLOWED_DURING_FORCED_PASSWORD_CHANGE = new Set([
+  "auth.me",
+  "auth.logout",
+  "auth.setNewPassword",
+]);
+
 const requireUser = t.middleware(async opts => {
-  const { ctx, next } = opts;
+  const { ctx, next, path } = opts;
 
   if (!ctx.user) {
     throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
+  }
+
+  if (
+    ctx.user.mustChangePassword &&
+    !ALLOWED_DURING_FORCED_PASSWORD_CHANGE.has(path)
+  ) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "You must set a new password before continuing.",
+    });
   }
 
   return next({
@@ -27,11 +46,11 @@ const requireUser = t.middleware(async opts => {
 
 export const protectedProcedure = t.procedure.use(requireUser);
 
-export const adminProcedure = t.procedure.use(
+export const adminProcedure = protectedProcedure.use(
   t.middleware(async opts => {
     const { ctx, next } = opts;
 
-    if (!ctx.user || ctx.user.role !== 'admin') {
+    if (ctx.user.role !== 'admin') {
       throw new TRPCError({ code: "FORBIDDEN", message: NOT_ADMIN_ERR_MSG });
     }
 

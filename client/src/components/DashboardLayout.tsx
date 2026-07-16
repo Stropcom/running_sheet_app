@@ -291,12 +291,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
   });
   const { loading, user } = useAuth();
+  const [, setLocation] = useLocation();
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());
   }, [sidebarWidth]);
 
+  // A forced password change locks the user out of every other page until
+  // they set a real password — enforced server-side too, this is just the
+  // matching client-side redirect.
+  useEffect(() => {
+    if (user?.mustChangePassword) {
+      setLocation("/change-password");
+    }
+  }, [user, setLocation]);
+
   if (loading) return <DashboardLayoutSkeleton />;
+
+  if (user?.mustChangePassword) return <DashboardLayoutSkeleton />;
 
   if (!user) {
     return (

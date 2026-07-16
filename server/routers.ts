@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { COOKIE_NAME } from "@shared/const";
+import { COOKIE_NAME, SESSION_EXPIRY_MS } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
@@ -253,13 +253,13 @@ export const appRouter = router({
         // Create session token using the existing SDK (using username as openId-equivalent)
         const sessionToken = await sdk.createSessionToken(user.username, {
           name: user.name,
-          expiresInMs: 365 * 24 * 60 * 60 * 1000,
+          expiresInMs: SESSION_EXPIRY_MS,
         });
 
         const cookieOptions = getSessionCookieOptions(ctx.req);
         ctx.res.cookie(COOKIE_NAME, sessionToken, {
           ...cookieOptions,
-          maxAge: 365 * 24 * 60 * 60 * 1000,
+          maxAge: SESSION_EXPIRY_MS,
         });
 
         // Audit login
@@ -282,8 +282,26 @@ export const appRouter = router({
             unit: user.unit,
             role: user.role,
             username: user.username,
+            mustChangePassword: user.mustChangePassword,
           },
         };
+      }),
+
+    setNewPassword: protectedProcedure
+      .input(z.object({ newPassword: z.string().min(8, "Password must be at least 8 characters.") }))
+      .mutation(async ({ input, ctx }) => {
+        const passwordHash = await bcrypt.hash(input.newPassword, 12);
+        await updateUser(ctx.user.id, { passwordHash, mustChangePassword: false });
+        await createAuditLog({
+          sheetId: 0,
+          userId: ctx.user.id,
+          userName: ctx.user.cin ?? "Unknown",
+          userCIN: ctx.user.cin ?? undefined,
+          action: "password_changed",
+          details: `CIN ${ctx.user.cin ?? "Unknown"} set a new password`,
+          createdAt: Date.now(),
+        });
+        return { success: true };
       }),
 
     logout: publicProcedure.mutation(async ({ ctx }) => {
@@ -1063,6 +1081,9 @@ export const appRouter = router({
           role: input.role,
           loginMethod: "local",
           lastSignedIn: new Date(),
+          // Admin-set password is a temporary one — force a real password
+          // to be chosen on first login.
+          mustChangePassword: true,
         });
         await createAuditLog({
           sheetId: 0,

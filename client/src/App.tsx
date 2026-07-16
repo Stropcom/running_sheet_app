@@ -10,6 +10,7 @@ import SheetDetail from "./pages/SheetDetail";
 import AuditLogPage from "./pages/AuditLogPage";
 import AdminPage from "./pages/AdminPage";
 import LoginPage from "./pages/LoginPage";
+import ChangePasswordPage from "./pages/ChangePasswordPage";
 import MyProfilePage from "./pages/MyProfilePage";
 import TodoPage from "./pages/TodoPage";
 import TodoGovernancePage from "./pages/TodoGovernancePage";
@@ -45,6 +46,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/login" component={LoginPage} />
+      <Route path="/change-password" component={ChangePasswordPage} />
       <Route path="/profile" component={MyProfilePage} />
       <Route path="/" component={Home} />
       <Route path="/operation/:id" component={OperationDetail} />

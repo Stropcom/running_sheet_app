@@ -29,6 +29,9 @@ export const users = mysqlTable("users", {
   // Legacy OAuth field — kept nullable so existing rows are not broken
   openId: varchar("openId", { length: 64 }),
   loginMethod: varchar("loginMethod", { length: 64 }).default("local"),
+  // Forces a password change on next login (e.g. admin-issued temporary
+  // password). Enforced server-side in _core/trpc.ts, not just client UI.
+  mustChangePassword: boolean("mustChangePassword").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),

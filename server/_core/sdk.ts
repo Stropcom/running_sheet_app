@@ -156,6 +156,12 @@ class SDKServer {
 
   private getSessionSecret() {
     const secret = ENV.cookieSecret;
+    if (!secret || secret.length < 32) {
+      throw new Error(
+        "JWT_SECRET is not set or is too short (must be at least 32 characters). " +
+          "All session sign-in/verification is blocked until this is resolved."
+      );
+    }
     return new TextEncoder().encode(secret);
   }
 

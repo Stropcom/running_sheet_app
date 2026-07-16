@@ -670,6 +670,14 @@ export default function IntelligenceMapping() {
   });
   const leftTabDraggingRef = useRef(false);
   const rightTabDraggingRef = useRef(false);
+
+  // Draggable pill bar vertical position (percentage from top, 5-95)
+  const [pillBarTop, setPillBarTop] = useState<number>(() => {
+    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) { const v = JSON.parse(s).pillBarTop; if (typeof v === 'number') return v; } } catch { /* ignore */ } return 90;
+  });
+  const pillBarDraggingRef = useRef(false);
+  const pillBarLongPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pillBarIsDraggingRef = useRef(false);
   const [rsSelectedOpId, setRsSelectedOpId] = useState<number | null>(() => {
     try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return JSON.parse(s).rsSelectedOpId ?? null; } catch { /* ignore */ } return null;
   });
@@ -811,9 +819,10 @@ export default function IntelligenceMapping() {
         mapDarkMode,
         leftTabTop,
         rightTabTop,
+        pillBarTop,
       }));
     } catch { /* ignore */ }
-  }, [selectedOpIds, selectedTargetIds, opExpanded, rsSelectedOpId, rsSelectedSheetId, hiddenTeams, collapsedTeams, rsQeExpanded, mapDarkMode, leftTabTop, rightTabTop]);
+  }, [selectedOpIds, selectedTargetIds, opExpanded, rsSelectedOpId, rsSelectedSheetId, hiddenTeams, collapsedTeams, rsQeExpanded, mapDarkMode, leftTabTop, rightTabTop, pillBarTop]);
 
   // Save map center/zoom to localStorage whenever the map stops moving (idle event)
   useEffect(() => {
@@ -2595,132 +2604,134 @@ export default function IntelligenceMapping() {
           </button>
         )}
 
-        {/* ── Bottom Quick-Link Pills (laptop only, centred over map area) ── */}
-        <div className="hidden lg:flex absolute bottom-4 left-0 right-0 z-20 items-end justify-center gap-3 px-4 pointer-events-none">
-
-          {/* Pill 1 — Active RS (green) */}
-          {(() => {
-            const activeSheet = rsSelectedSheetId && rsSheetsData
-              ? (rsSheetsData as any[]).find((s: any) => s.id === rsSelectedSheetId)
-              : null;
-            return (
-              <button
-                disabled={!activeSheet}
-                onClick={() => { if (activeSheet) setLocation(`/sheet/${rsSelectedSheetId}`); }}
-                className={`pointer-events-auto flex flex-col items-center justify-center gap-1 px-8 py-3 rounded-2xl shadow-lg border transition-all min-w-[110px] ${
-                  activeSheet
-                    ? "bg-emerald-600 border-emerald-500 hover:bg-emerald-500 active:scale-95 cursor-pointer"
-                    : "bg-card/70 border-border/40 cursor-default opacity-50"
-                }`}
-                title={activeSheet ? "Open active running sheet" : "No running sheet selected"}
-              >
-                <ClipboardList className={`h-5 w-5 flex-shrink-0 ${activeSheet ? "text-white" : "text-muted-foreground/40"}`} />
-                <span className={`text-[11px] font-semibold leading-none ${activeSheet ? "text-white" : "text-muted-foreground/40"}`}>
-                  Active RS
-                </span>
-              </button>
-            );
-          })()}
-
-          {/* Pill 2 — RS Entry (blue) */}
-          {(() => {
-            const hasSheet = !!rsSelectedSheetId;
-            return (
-              <button
-                disabled={!hasSheet}
-                onClick={() => { if (hasSheet) setMapQeOpen(true); }}
-                className={`pointer-events-auto flex flex-col items-center justify-center gap-1 px-8 py-3 rounded-2xl shadow-lg border transition-all min-w-[110px] ${
-                  hasSheet
-                    ? "bg-blue-600 border-blue-500 hover:bg-blue-500 active:scale-95 cursor-pointer"
-                    : "bg-card/70 border-border/40 cursor-default opacity-50"
-                }`}
-                title={hasSheet ? "RS Quick Entry" : "Select a running sheet first"}
-              >
-                <FileText className={`h-5 w-5 flex-shrink-0 ${hasSheet ? "text-white" : "text-muted-foreground/40"}`} />
-                <span className={`text-[11px] font-semibold leading-none ${hasSheet ? "text-white" : "text-muted-foreground/40"}`}>
-                  RS Entry
-                </span>
-              </button>
-            );
-          })()}
-
-          {/* Pill 3 — Intel Profiles (purple) */}
-          <button
-            onClick={() => setLocation("/intelligence")}
-            className="pointer-events-auto flex flex-col items-center justify-center gap-1 px-8 py-3 rounded-2xl shadow-lg border bg-violet-600 border-violet-500 hover:bg-violet-500 active:scale-95 transition-all min-w-[110px]"
-            title="Intel Profiles"
+        {/* ── Draggable Floating Pill Bar (all devices) ──
+             Tap-hold the drag handle to reposition vertically. Position persisted to localStorage. */}
+        <div
+          className="absolute left-0 right-0 z-20 flex items-center justify-center pointer-events-none"
+          style={{ top: `${pillBarTop}%`, transform: "translateY(-50%)" }}
+        >
+          {/* Drag handle — long-press activates drag */}
+          <div
+            className={`pointer-events-auto flex items-center gap-2 lg:gap-3 px-2 py-1.5 rounded-3xl ${
+              pillBarDraggingRef.current ? "cursor-grabbing" : "cursor-grab"
+            } select-none touch-none`}
+            onMouseDown={(e) => {
+              // Long-press to drag on desktop
+              const startY = e.clientY;
+              const startTop = pillBarTop;
+              const parentH = (e.currentTarget.parentElement?.parentElement?.clientHeight ?? window.innerHeight);
+              pillBarIsDraggingRef.current = false;
+              pillBarLongPressRef.current = setTimeout(() => {
+                pillBarDraggingRef.current = true;
+                const onMove = (me: MouseEvent) => {
+                  const delta = me.clientY - startY;
+                  if (Math.abs(delta) > 3) { pillBarIsDraggingRef.current = true; }
+                  setPillBarTop(Math.max(5, Math.min(95, startTop + (delta / parentH) * 100)));
+                };
+                const onUp = () => {
+                  pillBarDraggingRef.current = false;
+                  document.removeEventListener("mousemove", onMove);
+                  document.removeEventListener("mouseup", onUp);
+                };
+                document.addEventListener("mousemove", onMove);
+                document.addEventListener("mouseup", onUp);
+              }, 300);
+              const onUp = () => {
+                if (pillBarLongPressRef.current) clearTimeout(pillBarLongPressRef.current);
+                document.removeEventListener("mouseup", onUp);
+              };
+              document.addEventListener("mouseup", onUp);
+            }}
+            onTouchStart={(e) => {
+              const touch = e.touches[0];
+              const startY = touch.clientY;
+              const startTop = pillBarTop;
+              const parentH = (e.currentTarget.parentElement?.parentElement?.clientHeight ?? window.innerHeight);
+              pillBarIsDraggingRef.current = false;
+              pillBarLongPressRef.current = setTimeout(() => {
+                pillBarDraggingRef.current = true;
+                const onMove = (te: TouchEvent) => {
+                  const delta = te.touches[0].clientY - startY;
+                  if (Math.abs(delta) > 3) { pillBarIsDraggingRef.current = true; }
+                  setPillBarTop(Math.max(5, Math.min(95, startTop + (delta / parentH) * 100)));
+                };
+                const onEnd = () => {
+                  pillBarDraggingRef.current = false;
+                  document.removeEventListener("touchmove", onMove);
+                  document.removeEventListener("touchend", onEnd);
+                };
+                document.addEventListener("touchmove", onMove, { passive: true });
+                document.addEventListener("touchend", onEnd);
+              }, 300);
+              const onEnd = () => {
+                if (pillBarLongPressRef.current) clearTimeout(pillBarLongPressRef.current);
+                document.removeEventListener("touchend", onEnd);
+              };
+              document.addEventListener("touchend", onEnd);
+            }}
           >
-            <FolderSearch className="h-5 w-5 flex-shrink-0 text-white" />
-            <span className="text-[11px] font-semibold leading-none text-white">Intel Profiles</span>
-          </button>
+            {/* Home pill (mobile/tablet only) */}
+            <button
+              onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } setLocation("/"); }}
+              className="lg:hidden flex flex-col items-center justify-center gap-1 px-5 py-2.5 rounded-2xl shadow-lg border bg-slate-700 border-slate-600 hover:bg-slate-600 active:scale-95 transition-all min-w-[72px]"
+              title="Home"
+            >
+              <Home className="h-5 w-5 flex-shrink-0 text-white" />
+              <span className="text-[10px] font-semibold leading-none text-white">Home</span>
+            </button>
 
-        </div>
+            {/* Active RS pill */}
+            {(() => {
+              const activeSheet = rsSelectedSheetId && rsSheetsData
+                ? (rsSheetsData as any[]).find((s: any) => s.id === rsSelectedSheetId)
+                : null;
+              return (
+                <button
+                  disabled={!activeSheet}
+                  onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } if (activeSheet) setLocation(`/sheet/${rsSelectedSheetId}`); }}
+                  className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all lg:min-w-[110px] min-w-[72px] lg:px-8 lg:py-3 px-5 py-2.5 ${
+                    activeSheet
+                      ? "bg-emerald-600 border-emerald-500 hover:bg-emerald-500 active:scale-95 cursor-pointer"
+                      : "bg-card/70 border-border/40 cursor-default opacity-50"
+                  }`}
+                  title={activeSheet ? "Open active running sheet" : "No running sheet selected"}
+                >
+                  <ClipboardList className={`h-5 w-5 flex-shrink-0 ${activeSheet ? "text-white" : "text-muted-foreground/40"}`} />
+                  <span className={`lg:text-[11px] text-[10px] font-semibold leading-none ${activeSheet ? "text-white" : "text-muted-foreground/40"}`}>Active RS</span>
+                </button>
+              );
+            })()}
 
-        {/* ── Mobile/Tablet Floating Pills (hidden on lg+, floats over map like laptop version) ── */}
-        <div className="lg:hidden absolute bottom-4 left-0 right-0 z-20 flex items-end justify-center gap-2 px-3 pointer-events-none">
+            {/* RS Entry pill */}
+            {(() => {
+              const hasSheet = !!rsSelectedSheetId;
+              return (
+                <button
+                  disabled={!hasSheet}
+                  onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } if (hasSheet) setMapQeOpen(true); }}
+                  className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all lg:min-w-[110px] min-w-[72px] lg:px-8 lg:py-3 px-5 py-2.5 ${
+                    hasSheet
+                      ? "bg-blue-600 border-blue-500 hover:bg-blue-500 active:scale-95 cursor-pointer"
+                      : "bg-card/70 border-border/40 cursor-default opacity-50"
+                  }`}
+                  title={hasSheet ? "RS Quick Entry" : "Select a running sheet first"}
+                >
+                  <FileText className={`h-5 w-5 flex-shrink-0 ${hasSheet ? "text-white" : "text-muted-foreground/40"}`} />
+                  <span className={`lg:text-[11px] text-[10px] font-semibold leading-none ${hasSheet ? "text-white" : "text-muted-foreground/40"}`}>RS Entry</span>
+                </button>
+              );
+            })()}
 
-          {/* Pill 1 — Home (slate) */}
-          <button
-            onClick={() => setLocation("/")}
-            className="pointer-events-auto flex flex-col items-center justify-center gap-1 px-5 py-2.5 rounded-2xl shadow-lg border bg-slate-700 border-slate-600 hover:bg-slate-600 active:scale-95 transition-all min-w-[72px]"
-            title="Home"
-          >
-            <Home className="h-5 w-5 flex-shrink-0 text-white" />
-            <span className="text-[10px] font-semibold leading-none text-white">Home</span>
-          </button>
-
-          {/* Pill 2 — Active RS (emerald) */}
-          {(() => {
-            const activeSheet = rsSelectedSheetId && rsSheetsData
-              ? (rsSheetsData as any[]).find((s: any) => s.id === rsSelectedSheetId)
-              : null;
-            return (
-              <button
-                disabled={!activeSheet}
-                onClick={() => { if (activeSheet) setLocation(`/sheet/${rsSelectedSheetId}`); }}
-                className={`pointer-events-auto flex flex-col items-center justify-center gap-1 px-5 py-2.5 rounded-2xl shadow-lg border transition-all min-w-[72px] ${
-                  activeSheet
-                    ? "bg-emerald-600 border-emerald-500 hover:bg-emerald-500 active:scale-95 cursor-pointer"
-                    : "bg-card/70 border-border/40 cursor-default opacity-50"
-                }`}
-                title={activeSheet ? "Open active running sheet" : "No running sheet selected"}
-              >
-                <ClipboardList className={`h-5 w-5 flex-shrink-0 ${activeSheet ? "text-white" : "text-muted-foreground/40"}`} />
-                <span className={`text-[10px] font-semibold leading-none ${activeSheet ? "text-white" : "text-muted-foreground/40"}`}>Active RS</span>
-              </button>
-            );
-          })()}
-
-          {/* Pill 3 — RS Entry (blue) */}
-          {(() => {
-            const hasSheet = !!rsSelectedSheetId;
-            return (
-              <button
-                disabled={!hasSheet}
-                onClick={() => { if (hasSheet) setMapQeOpen(true); }}
-                className={`pointer-events-auto flex flex-col items-center justify-center gap-1 px-5 py-2.5 rounded-2xl shadow-lg border transition-all min-w-[72px] ${
-                  hasSheet
-                    ? "bg-blue-600 border-blue-500 hover:bg-blue-500 active:scale-95 cursor-pointer"
-                    : "bg-card/70 border-border/40 cursor-default opacity-50"
-                }`}
-                title={hasSheet ? "RS Quick Entry" : "Select a running sheet first"}
-              >
-                <FileText className={`h-5 w-5 flex-shrink-0 ${hasSheet ? "text-white" : "text-muted-foreground/40"}`} />
-                <span className={`text-[10px] font-semibold leading-none ${hasSheet ? "text-white" : "text-muted-foreground/40"}`}>RS Entry</span>
-              </button>
-            );
-          })()}
-
-          {/* Pill 4 — Intel Profiles (violet) */}
-          <button
-            onClick={() => setLocation("/intelligence")}
-            className="pointer-events-auto flex flex-col items-center justify-center gap-1 px-5 py-2.5 rounded-2xl shadow-lg border bg-violet-600 border-violet-500 hover:bg-violet-500 active:scale-95 transition-all min-w-[72px]"
-            title="Intel Profiles"
-          >
-            <FolderSearch className="h-5 w-5 flex-shrink-0 text-white" />
-            <span className="text-[10px] font-semibold leading-none text-white">Intel Profiles</span>
-          </button>
-
+            {/* Intel Profiles pill */}
+            <button
+              onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } setLocation("/intelligence"); }}
+              className="flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border bg-violet-600 border-violet-500 hover:bg-violet-500 active:scale-95 transition-all lg:min-w-[110px] min-w-[72px] lg:px-8 lg:py-3 px-5 py-2.5"
+              title="Intel Profiles"
+            >
+              <FolderSearch className="h-5 w-5 flex-shrink-0 text-white" />
+              <span className="lg:text-[11px] text-[10px] font-semibold leading-none text-white">Intel Profiles</span>
+            </button>
+          </div>
         </div>
 
       </div>

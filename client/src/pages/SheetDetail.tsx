@@ -1865,6 +1865,9 @@ export default function SheetDetail() {
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
   // Target panel collapsed state — expanded by default, persisted in localStorage
+  const [teamPanelExpanded, setTeamPanelExpanded] = useState<boolean>(() => {
+    try { return localStorage.getItem("runsheet_team_panel_expanded") !== "false"; } catch { return true; }
+  });
   const [targetPanelExpanded, setTargetPanelExpanded] = useState<boolean>(() => {
     try { return localStorage.getItem("runsheet_target_panel_expanded") !== "false"; } catch { return true; }
   });
@@ -2311,49 +2314,70 @@ export default function SheetDetail() {
           </div>
         )}
 
-        {/* Daily Roster Panel with Certify All — always visible so team can be added */}
+        {/* Daily Roster Panel with Certify All — collapsible, matching target panel style */}
         {(parsedRoster.length > 0 || true) && (
-          <div className="mb-4 rounded-lg border border-border bg-card/60 px-4 py-3">
-            <div className="flex items-center gap-2 mb-2">
-              <Users className="w-3.5 h-3.5 text-muted-foreground" />
-              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex-1">TEAM — Certify All Rows</span>
+          <div className="mb-4 rounded-lg border border-border bg-card/60 overflow-hidden">
+            {/* Header row — tap to collapse/expand, pencil to edit */}
+            <button
+              className="w-full flex items-center gap-2 px-4 py-3 hover:bg-muted/30 transition-colors text-left"
+              onClick={() => {
+                const next = !teamPanelExpanded;
+                setTeamPanelExpanded(next);
+                try { localStorage.setItem("runsheet_team_panel_expanded", String(next)); } catch {}
+              }}
+            >
+              <Users className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex-1">TEAM — CERTIFY</span>
+              {/* Certified count badge */}
+              {parsedRoster.length > 0 && (
+                <span className="text-[10px] font-mono text-muted-foreground mr-1">
+                  {cinFullyCertified.size}/{parsedRoster.length}
+                </span>
+              )}
+              {/* Pencil edit button */}
               {sheet && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="gap-1.5 text-xs text-muted-foreground hover:text-foreground h-7 px-2 ml-auto"
-                  onClick={openEditRoster}
+                <span
+                  role="button"
+                  tabIndex={0}
+                  className="p-1 rounded hover:bg-muted/60 text-muted-foreground hover:text-foreground transition-colors"
+                  onClick={(e) => { e.stopPropagation(); openEditRoster(); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); openEditRoster(); } }}
                   title="Edit TEAM"
                 >
-                  <Users className="w-3 h-3" />
-                  Edit TEAM
-                </Button>
+                  <Pencil className="w-3 h-3" />
+                </span>
               )}
-            </div>
-            {parsedRoster.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {parsedRoster.map((entry) => (
-                  <button
-                    key={entry.cin}
-                    onClick={() => canCertify ? certifyAllForCin.mutate({ sheetId, cin: entry.cin }) : undefined}
-                    disabled={certifyAllForCin.isPending || !canCertify}
-                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-mono font-medium transition-colors disabled:opacity-50 ${
-                      cinFullyCertified.has(entry.cin)
-                        ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/25"
-                        : canCertify ? "border-border bg-muted/40 hover:bg-primary/10 hover:border-primary/40 text-foreground" : "border-border bg-muted/40 text-foreground cursor-default"
-                    }`}
-                    title={`${canCertify ? "Certify all rows for " : ""}CIN ${entry.cin}${entry.isTeamLeader ? " (Team Leader)" : ""}${entry.isAuthor ? " (Author)" : ""}`}
-                  >
-                    <ShieldCheck className={`w-3 h-3 ${cinFullyCertified.has(entry.cin) ? "text-emerald-500" : "text-primary"}`} />
-                    {entry.isTeamLeader && <span className="text-yellow-400" title="Team Leader">★</span>}
-                    {entry.isAuthor && <span className="text-sky-400" title="Running Sheet Author">✏️</span>}
-                    {entry.cin}
-                    {entry.hasImages && <Camera className="w-3 h-3 text-amber-400" />}
-                  </button>
-                ))}
+              <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 shrink-0 ${teamPanelExpanded ? "" : "-rotate-90"}`} />
+            </button>
+            {/* Collapsible CIN badges */}
+            {teamPanelExpanded && (
+              <div className="px-4 pb-3">
+                {parsedRoster.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {parsedRoster.map((entry) => (
+                      <button
+                        key={entry.cin}
+                        onClick={() => canCertify ? certifyAllForCin.mutate({ sheetId, cin: entry.cin }) : undefined}
+                        disabled={certifyAllForCin.isPending || !canCertify}
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-mono font-medium transition-colors disabled:opacity-50 ${
+                          cinFullyCertified.has(entry.cin)
+                            ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/25"
+                            : canCertify ? "border-border bg-muted/40 hover:bg-primary/10 hover:border-primary/40 text-foreground" : "border-border bg-muted/40 text-foreground cursor-default"
+                        }`}
+                        title={`${canCertify ? "Certify all rows for " : ""}CIN ${entry.cin}${entry.isTeamLeader ? " (Team Leader)" : ""}${entry.isAuthor ? " (Author)" : ""}`}
+                      >
+                        <ShieldCheck className={`w-3 h-3 ${cinFullyCertified.has(entry.cin) ? "text-emerald-500" : "text-primary"}`} />
+                        {entry.isTeamLeader && <span className="text-yellow-400" title="Team Leader">★</span>}
+                        {entry.isAuthor && <span className="text-sky-400" title="Running Sheet Author">✏️</span>}
+                        {entry.cin}
+                        {entry.hasImages && <Camera className="w-3 h-3 text-amber-400" />}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground italic">No team members added — tap the pencil to add CINs.</p>
+                )}
               </div>
-            ) : (
-              <p className="text-xs text-muted-foreground italic">No team members added — click Edit TEAM to add CINs.</p>
             )}
           </div>
         )}

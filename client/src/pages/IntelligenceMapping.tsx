@@ -704,6 +704,7 @@ export default function IntelligenceMapping() {
 
   // ── Custom Marker Placement State ────────────────────────────────────────────
   const [placingMarker, setPlacingMarker] = useState(false); // placement mode active
+  const [dismissedNoLocs, setDismissedNoLocs] = useState(false); // user dismissed the empty-state overlay
   const [pendingLatLng, setPendingLatLng] = useState<{ lat: number; lng: number } | null>(null);
   // POI tap: shown when user taps a Google Maps business/POI pin
   const [poiTap, setPoiTap] = useState<{ lat: number; lng: number; name: string; address: string } | null>(null);
@@ -2346,17 +2347,23 @@ export default function IntelligenceMapping() {
           </div>
         )}
 
-        {/* Empty state — only show when there are also no custom markers */}
-        {!locsLoading && locations && locations.length === 0 && !(customMarkers && customMarkers.length > 0) && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
-            <div className="bg-card border border-border rounded-xl px-8 py-6 shadow-lg text-center max-w-xs">
-              <MapPin className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
-              <p className="text-sm font-medium text-foreground mb-1">No locations to display</p>
-              <p className="text-xs text-muted-foreground">
+        {/* Empty state — only show when there are also no custom markers, and user hasn't dismissed it */}
+        {!locsLoading && !dismissedNoLocs && locations && locations.length === 0 && !(customMarkers && customMarkers.length > 0) && (
+          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 pointer-events-auto">
+            <div className="relative bg-card/90 backdrop-blur-sm border border-border rounded-lg px-4 py-2.5 shadow-md text-center max-w-[260px] flex items-center gap-2.5">
+              <MapPin className="h-4 w-4 text-muted-foreground/50 flex-shrink-0" />
+              <p className="text-[11px] text-muted-foreground leading-tight">
                 {selectedOpIds.length > 0 || selectedTargetIds.length > 0
-                  ? "No locations found for the selected filters."
-                  : "Select operations or targets in Map Settings to show locations on the map."}
+                  ? "No locations found for selected filters."
+                  : "Select operations or targets in Map Settings to show locations."}
               </p>
+              <button
+                onClick={() => setDismissedNoLocs(true)}
+                className="flex-shrink-0 ml-1 text-muted-foreground/60 hover:text-foreground transition-colors"
+                aria-label="Dismiss"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
             </div>
           </div>
         )}

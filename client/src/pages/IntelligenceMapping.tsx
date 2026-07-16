@@ -2670,10 +2670,10 @@ export default function IntelligenceMapping() {
               document.addEventListener("touchend", onEnd);
             }}
           >
-            {/* Home pill (mobile/tablet only) */}
+            {/* Home pill (all devices) */}
             <button
               onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } setLocation("/"); }}
-              className="lg:hidden flex flex-col items-center justify-center gap-1 px-5 py-2.5 rounded-2xl shadow-lg border bg-slate-600 border-slate-500 hover:bg-slate-500 active:scale-95 transition-all min-w-[80px]"
+              className="flex flex-col items-center justify-center gap-1 px-5 py-2.5 rounded-2xl shadow-lg border bg-slate-600 border-slate-500 hover:bg-slate-500 active:scale-95 transition-all min-w-[80px]"
               title="Home"
             >
               <Home className="h-5 w-5 flex-shrink-0 text-white" />

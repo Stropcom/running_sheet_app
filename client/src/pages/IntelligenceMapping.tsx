@@ -1594,6 +1594,8 @@ export default function IntelligenceMapping() {
 
   // ── Custom marker rendering ────────────────────────────────────────────────
   const customMarkerMapRefs = useRef<Map<number, google.maps.marker.AdvancedMarkerElement>>(new Map());
+  // Direct img element refs for live rotation without stale content queries
+  const customMarkerImgRefs = useRef<Map<number, HTMLImageElement>>(new Map());
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;
@@ -1620,6 +1622,8 @@ export default function IntelligenceMapping() {
       img.src = dataUrl;
       img.style.cssText = `width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));transform:rotate(${rotation}deg);`;
       el.appendChild(img);
+      // Store direct img ref for live rotation
+      customMarkerImgRefs.current.set(cm.id, img);
 
       if (existing.has(cm.id)) {
         const m = existing.get(cm.id)!;
@@ -1875,11 +1879,16 @@ export default function IntelligenceMapping() {
       const degLabel = document.getElementById(`cm-popup-deg-${id}`) as HTMLElement | null;
       if (previewImg) previewImg.style.transform = `rotate(${rotation}deg)`;
       if (degLabel) degLabel.textContent = `${rotation}°`;
-      // Also rotate the actual map marker element immediately
-      const markerEl = customMarkerMapRefs.current.get(id);
-      if (markerEl?.content instanceof HTMLElement) {
-        const img = markerEl.content.querySelector('img') as HTMLImageElement | null;
-        if (img) img.style.transform = `rotate(${rotation}deg)`;
+      // Also rotate the actual map marker element immediately via direct img ref
+      const markerImg = customMarkerImgRefs.current.get(id);
+      if (markerImg) markerImg.style.transform = `rotate(${rotation}deg)`;
+      // Fallback: query through content if direct ref not found
+      if (!markerImg) {
+        const markerEl = customMarkerMapRefs.current.get(id);
+        if (markerEl?.content instanceof HTMLElement) {
+          const img = markerEl.content.querySelector('img') as HTMLImageElement | null;
+          if (img) img.style.transform = `rotate(${rotation}deg)`;
+        }
       }
       // Debounce the DB save so we don't fire on every pixel of drag
       if (rotateTimer) clearTimeout(rotateTimer);

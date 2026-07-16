@@ -718,6 +718,11 @@ export default function IntelligenceMapping() {
   const [mapQePeriod, setMapQePeriod] = useState("AM");
   const [mapQeSelectOpen, setMapQeSelectOpen] = useState(false);
   const [mapQeAddress, setMapQeAddress] = useState(""); // pre-filled address for the observation
+  // Quick Entry shortcut chip order — persisted to localStorage so user can reorder them
+  const [qeChipOrder, setQeChipOrder] = useState<string[]>(() => {
+    try { const s = localStorage.getItem("runlog_qe_chip_order"); if (s) return JSON.parse(s); } catch {} return [];
+  });
+  const qeChipDragRef = useRef<{ dragging: string | null }>({ dragging: null });
   const [cmLabel, setCmLabel] = useState("");
   const [cmAddress, setCmAddress] = useState("");
   const [cmNote, setCmNote] = useState("");
@@ -3900,11 +3905,39 @@ export default function IntelligenceMapping() {
                         ];
                         const available = shortcuts.filter(s => s.getValue() !== null);
                         if (available.length === 0) return null;
+                        // Apply saved order
+                        const orderedChips = qeChipOrder.length > 0
+                          ? [
+                              ...qeChipOrder.map(lbl => available.find(s => s.label === lbl)).filter(Boolean) as typeof available,
+                              ...available.filter(s => !qeChipOrder.includes(s.label)),
+                            ]
+                          : available;
                         return (
                           <div className="flex flex-wrap gap-1">
-                            {available.map(s => (
-                              <button key={s.label} onClick={() => { const v = s.getValue(); if (v) appendText(v); }}
-                                className="px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all">
+                            {orderedChips.map((s, chipIdx) => (
+                              <button
+                                key={s.label}
+                                draggable
+                                onDragStart={(e) => { qeChipDragRef.current.dragging = s.label; e.dataTransfer.effectAllowed = "move"; }}
+                                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  const fromLabel = qeChipDragRef.current.dragging;
+                                  if (!fromLabel || fromLabel === s.label) return;
+                                  const labels = orderedChips.map(x => x.label);
+                                  const fromIdx = labels.indexOf(fromLabel);
+                                  const toIdx = chipIdx;
+                                  if (fromIdx === -1) return;
+                                  const newOrder = [...labels];
+                                  newOrder.splice(fromIdx, 1);
+                                  newOrder.splice(toIdx, 0, fromLabel);
+                                  setQeChipOrder(newOrder);
+                                  try { localStorage.setItem("runlog_qe_chip_order", JSON.stringify(newOrder)); } catch {};
+                                  qeChipDragRef.current.dragging = null;
+                                }}
+                                onDragEnd={() => { qeChipDragRef.current.dragging = null; }}
+                                onClick={() => { const v = s.getValue(); if (v) appendText(v); }}
+                                className="px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all cursor-grab active:cursor-grabbing">
                                 {s.display}
                               </button>
                             ))}

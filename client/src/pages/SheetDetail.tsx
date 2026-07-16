@@ -2529,24 +2529,9 @@ export default function SheetDetail() {
                           return (
                             <div
                               key={f.label}
-                              draggable
-                              onDragStart={(e) => {
-                                targetFieldDragRef.current.dragging = f.label;
-                                targetFieldDragRef.current.startIdx = idx;
-                                e.dataTransfer.effectAllowed = "move";
-                              }}
-                              onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
-                              onDrop={(e) => {
-                                e.preventDefault();
-                                const fromLabel = targetFieldDragRef.current.dragging;
-                                if (fromLabel) doReorder(fromLabel, f.label);
-                                targetFieldDragRef.current.dragging = null;
-                              }}
-                              onDragEnd={() => { targetFieldDragRef.current.dragging = null; }}
+                              // Touch handlers live on the wrapper (touch events bubble up from button)
                               onTouchStart={(e) => {
-                                // Don't preventDefault here — let the touch start normally
-                                // so the textarea doesn't lose focus prematurely
-                                targetFieldDragRef.current.dragging = null; // reset — only set after movement threshold
+                                targetFieldDragRef.current.dragging = null;
                                 targetFieldDragRef.current.startX = e.touches[0].clientX;
                                 targetFieldDragRef.current.startY = e.touches[0].clientY;
                                 targetFieldDragRef.current.startIdx = idx;
@@ -2556,12 +2541,11 @@ export default function SheetDetail() {
                                 const dx = touch.clientX - targetFieldDragRef.current.startX;
                                 const dy = touch.clientY - targetFieldDragRef.current.startY;
                                 const dist = Math.sqrt(dx * dx + dy * dy);
-                                // Only enter drag mode after 8px movement threshold
                                 if (dist > 8) {
                                   if (!targetFieldDragRef.current.dragging) {
                                     targetFieldDragRef.current.dragging = f.label;
                                   }
-                                  e.preventDefault(); // prevent scroll during drag
+                                  e.preventDefault();
                                   const el = document.elementFromPoint(touch.clientX, touch.clientY);
                                   const chipEl = el?.closest('[data-chip-label]') as HTMLElement | null;
                                   if (chipEl) {
@@ -2574,21 +2558,49 @@ export default function SheetDetail() {
                                 }
                               }}
                               onTouchEnd={(e) => {
-                                // If we never entered drag mode (no movement), treat as a tap → insert
                                 if (!targetFieldDragRef.current.dragging) {
-                                  e.preventDefault(); // prevent ghost click
+                                  e.preventDefault();
                                   insertIntoFocused();
                                 }
                                 targetFieldDragRef.current.dragging = null;
                               }}
                               data-chip-label={f.label}
-                              className="flex items-center gap-0.5 cursor-grab active:cursor-grabbing"
+                              className="flex items-center gap-0.5"
                             >
+                              {/* The button itself is draggable on desktop — this avoids the mousedown
+                                  preventDefault blocking dragstart on the wrapper div. */}
                               <button
-                                onMouseDown={(e) => e.preventDefault()} // prevent textarea blur on desktop click
-                                onClick={insertIntoFocused}
+                                draggable
+                                onDragStart={(e) => {
+                                  targetFieldDragRef.current.dragging = f.label;
+                                  targetFieldDragRef.current.startIdx = idx;
+                                  e.dataTransfer.effectAllowed = "move";
+                                  // Keep the textarea focused: schedule re-focus after dragstart
+                                  setTimeout(() => {
+                                    (document.activeElement as HTMLElement | null)?.blur?.();
+                                  }, 0);
+                                }}
+                                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  const fromLabel = targetFieldDragRef.current.dragging;
+                                  if (fromLabel) doReorder(fromLabel, f.label);
+                                  targetFieldDragRef.current.dragging = null;
+                                }}
+                                onDragEnd={() => { targetFieldDragRef.current.dragging = null; }}
+                                onMouseDown={(e) => {
+                                  // Allow dragstart to fire — do NOT call e.preventDefault() here.
+                                  // Instead, re-focus the textarea after the click settles.
+                                  // (We only need to prevent blur on a plain click, not on drag start.)
+                                }}
+                                onClick={(e) => {
+                                  // Only insert on a plain click (not after a drag)
+                                  if (!targetFieldDragRef.current.dragging) {
+                                    insertIntoFocused();
+                                  }
+                                }}
                                 title={`Insert: ${f.value}`}
-                                className="flex items-baseline gap-1 px-2 py-0.5 rounded border border-primary/30 bg-primary/8 hover:bg-primary/15 active:scale-95 transition-all group"
+                                className="flex items-baseline gap-1 px-2 py-0.5 rounded border border-primary/30 bg-primary/8 hover:bg-primary/15 active:scale-95 transition-all cursor-grab active:cursor-grabbing select-none"
                               >
                                 <span className="text-[10px] font-bold text-primary uppercase tracking-wide">{f.label}</span>
                                 {!isStandard && <span className="text-[10px] font-mono text-foreground/80 max-w-[120px] truncate">{f.value}</span>}

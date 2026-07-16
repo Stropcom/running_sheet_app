@@ -951,3 +951,18 @@
 - [x] Fix: added persistedWallpaperUrl state that holds the server-returned URL; currentWallpaper priority is now: local preview → persistedWallpaperUrl → profile DB value
 - [x] Fix: onError now clears preview and shows detailed error message
 - [x] Fix: clearWallpaper also resets persistedWallpaperUrl
+
+## Desktop Chip Drag Fix (Jul 2026)
+- [x] Fix: RS main target panel chips not draggable on desktop/laptop
+- [x] Root cause: draggable was on the wrapper div but the inner button's onMouseDown preventDefault blocked dragstart from firing on desktop
+- [x] Fix: moved draggable + HTML5 drag handlers onto the button itself; touch handlers remain on the wrapper div
+
+## Wallpaper Global Persistence Fix (Jul 2026)
+- [x] Fix: wallpaper not sticking across page navigation / page reload
+- [x] Root cause: CSS variables were only set inside MyProfilePage component; navigating away destroyed them
+- [x] Fix: added WallpaperApplier component in App.tsx that reads auth.me (which includes wallpaperUrl and wallpaperOpacity from DB) and applies CSS variables globally on every page
+
+## Desktop Chip Drag Fix (Jul 2026)
+- [x] Fix: RS main target panel chips not draggable on desktop/laptop
+- [x] Root cause: draggable was on the wrapper div but the inner button's onMouseDown preventDefault blocked dragstart from firing on desktop
+- [x] Fix: moved draggable + HTML5 drag handlers onto the button itself; touch handlers remain on the wrapper div

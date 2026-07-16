@@ -934,3 +934,7 @@
 - [x] Mobile/tablet bottom bar converted from full-width fixed strip to floating pills (absolute bottom-4, same style as laptop pills — rounded-2xl, shadow, coloured backgrounds)
 - [x] Left sidebar collapse tab coloured primary (blue) when pane is closed — acts as a visible call-to-action
 - [x] Right Map Settings collapse tab coloured amber/orange when pane is closed — visually distinct from the left tab
+## Chip Tap/Drag & Panel Style Fixes (Jul 2026)
+- [x] Team panel header style matches target panel: two separate buttons with border-l divider, chevron + pencil placement identical
+- [x] SheetDetail chips: tap inserts text into last-focused textarea (focusedTextareaRef), drag reorders — 8px movement threshold distinguishes tap from drag; onMouseDown preventDefault prevents textarea blur on desktop
+- [x] Quick Entry modal chips (IntelligenceMapping): same 8px movement threshold — short tap → appendText(), movement → drag reorder; onMouseDown preventDefault prevents input blur on desktop

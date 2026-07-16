@@ -722,7 +722,7 @@ export default function IntelligenceMapping() {
   const [qeChipOrder, setQeChipOrder] = useState<string[]>(() => {
     try { const s = localStorage.getItem("runlog_qe_chip_order"); if (s) return JSON.parse(s); } catch {} return [];
   });
-  const qeChipDragRef = useRef<{ dragging: string | null }>({ dragging: null });
+  const qeChipDragRef = useRef<{ dragging: string | null; startX: number; startY: number }>({ dragging: null, startX: 0, startY: 0 });
   const [cmLabel, setCmLabel] = useState("");
   const [cmAddress, setCmAddress] = useState("");
   const [cmNote, setCmNote] = useState("");
@@ -3947,24 +3947,46 @@ export default function IntelligenceMapping() {
                                       qeChipDragRef.current.dragging = null;
                                     }}
                                     onDragEnd={() => { qeChipDragRef.current.dragging = null; }}
-                                    onTouchStart={() => { qeChipDragRef.current.dragging = s.label; }}
+                                    onTouchStart={(e) => {
+                                      // Reset drag state — only enter drag after movement threshold
+                                      qeChipDragRef.current.dragging = null;
+                                      qeChipDragRef.current.startX = e.touches[0].clientX;
+                                      qeChipDragRef.current.startY = e.touches[0].clientY;
+                                    }}
                                     onTouchMove={(e) => {
-                                      if (!qeChipDragRef.current.dragging) return;
                                       const touch = e.touches[0];
-                                      const el = document.elementFromPoint(touch.clientX, touch.clientY);
-                                      const chipEl = el?.closest('[data-qe-chip]') as HTMLElement | null;
-                                      if (chipEl) {
-                                        const overLabel = chipEl.dataset.qeChip;
-                                        if (overLabel && overLabel !== qeChipDragRef.current.dragging) {
-                                          doQeReorder(qeChipDragRef.current.dragging, overLabel);
-                                          qeChipDragRef.current.dragging = overLabel;
+                                      const dx = touch.clientX - qeChipDragRef.current.startX;
+                                      const dy = touch.clientY - qeChipDragRef.current.startY;
+                                      const dist = Math.sqrt(dx * dx + dy * dy);
+                                      // Only enter drag mode after 8px movement threshold
+                                      if (dist > 8) {
+                                        if (!qeChipDragRef.current.dragging) {
+                                          qeChipDragRef.current.dragging = s.label;
+                                        }
+                                        e.preventDefault(); // prevent scroll during drag
+                                        const el = document.elementFromPoint(touch.clientX, touch.clientY);
+                                        const chipEl = el?.closest('[data-qe-chip]') as HTMLElement | null;
+                                        if (chipEl) {
+                                          const overLabel = chipEl.dataset.qeChip;
+                                          if (overLabel && overLabel !== qeChipDragRef.current.dragging) {
+                                            doQeReorder(qeChipDragRef.current.dragging!, overLabel);
+                                            qeChipDragRef.current.dragging = overLabel;
+                                          }
                                         }
                                       }
                                     }}
-                                    onTouchEnd={() => { qeChipDragRef.current.dragging = null; }}
+                                    onTouchEnd={(e) => {
+                                      // If no drag movement, treat as tap → insert text
+                                      if (!qeChipDragRef.current.dragging) {
+                                        e.preventDefault(); // prevent ghost click
+                                        const v = s.getValue(); if (v) appendText(v);
+                                      }
+                                      qeChipDragRef.current.dragging = null;
+                                    }}
+                                    onMouseDown={(e) => e.preventDefault()} // prevent input blur on desktop click
                                     onClick={() => { const v = s.getValue(); if (v) appendText(v); }}
                                     data-qe-chip={s.label}
-                                    className="touch-none cursor-grab active:cursor-grabbing px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all select-none"
+                                    className="cursor-grab active:cursor-grabbing px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all select-none"
                                   >
                                     {isStdQe ? s.label : s.display}
                                   </div>

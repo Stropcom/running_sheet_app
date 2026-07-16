@@ -1876,6 +1876,20 @@ export default function SheetDetail() {
     try { const s = localStorage.getItem(`runsheet_field_order_${sheetId}`); if (s) return JSON.parse(s); } catch {} return [];
   });
   const targetFieldDragRef = useRef<{ dragging: string | null; startX: number; startY: number; startIdx: number }>({ dragging: null, startX: 0, startY: 0, startIdx: -1 });
+  // Track the last focused textarea/input so chip taps can insert text even after blur
+  const focusedTextareaRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null);
+  // Track the last focused textarea/input via document focusin so chip taps can insert even after blur
+  useEffect(() => {
+    const handler = (e: FocusEvent) => {
+      const el = e.target as HTMLElement;
+      if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") {
+        focusedTextareaRef.current = el as HTMLTextAreaElement | HTMLInputElement;
+      }
+    };
+    document.addEventListener("focusin", handler, true);
+    return () => document.removeEventListener("focusin", handler, true);
+  }, []);
+
   // Persist sort preference in localStorage so it survives navigation
   const [sortReversed, setSortReversed] = useState<boolean>(() => {
     try { return localStorage.getItem("runsheet_sort_reversed") === "true"; } catch { return false; }
@@ -2317,38 +2331,37 @@ export default function SheetDetail() {
         {/* Daily Roster Panel with Certify All — collapsible, matching target panel style */}
         {(parsedRoster.length > 0 || true) && (
           <div className="mb-4 rounded-lg border border-border bg-card/60 overflow-hidden">
-            {/* Header row — tap to collapse/expand, pencil to edit */}
-            <button
-              className="w-full flex items-center gap-2 px-4 py-3 hover:bg-muted/30 transition-colors text-left"
-              onClick={() => {
-                const next = !teamPanelExpanded;
-                setTeamPanelExpanded(next);
-                try { localStorage.setItem("runsheet_team_panel_expanded", String(next)); } catch {}
-              }}
-            >
-              <Users className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex-1">TEAM — CERTIFY</span>
-              {/* Certified count badge */}
-              {parsedRoster.length > 0 && (
-                <span className="text-[10px] font-mono text-muted-foreground mr-1">
-                  {cinFullyCertified.size}/{parsedRoster.length}
-                </span>
-              )}
-              {/* Pencil edit button */}
+            {/* Header row — same structure as target panel: collapse button + separate pencil button */}
+            <div className="flex items-center">
+              <button
+                className="flex-1 flex items-center gap-2 px-4 py-3 hover:bg-muted/20 active:bg-muted/30 transition-colors select-none text-left min-w-0"
+                onClick={() => {
+                  const next = !teamPanelExpanded;
+                  setTeamPanelExpanded(next);
+                  try { localStorage.setItem("runsheet_team_panel_expanded", String(next)); } catch {}
+                }}
+              >
+                <Users className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground truncate flex-1">TEAM — CERTIFY</span>
+                {/* Certified count badge */}
+                {parsedRoster.length > 0 && (
+                  <span className="text-[10px] font-mono text-muted-foreground mr-1">
+                    {cinFullyCertified.size}/{parsedRoster.length}
+                  </span>
+                )}
+                <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 shrink-0 ${teamPanelExpanded ? "" : "-rotate-90"}`} />
+              </button>
+              {/* Edit pencil — independent tap zone, doesn't trigger collapse */}
               {sheet && (
-                <span
-                  role="button"
-                  tabIndex={0}
-                  className="p-1 rounded hover:bg-muted/60 text-muted-foreground hover:text-foreground transition-colors"
-                  onClick={(e) => { e.stopPropagation(); openEditRoster(); }}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); openEditRoster(); } }}
+                <button
+                  className="px-3 py-3 text-muted-foreground hover:text-foreground active:scale-95 transition-all shrink-0 border-l border-border/30"
+                  onClick={openEditRoster}
                   title="Edit TEAM"
                 >
-                  <Pencil className="w-3 h-3" />
-                </span>
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
               )}
-              <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 shrink-0 ${teamPanelExpanded ? "" : "-rotate-90"}`} />
-            </button>
+            </div>
             {/* Collapsible CIN badges */}
             {teamPanelExpanded && (
               <div className="px-4 pb-3">
@@ -2479,10 +2492,11 @@ export default function SheetDetail() {
                       <div className="flex flex-wrap gap-1.5 pt-2">
                         {orderedFields.map((f, idx) => {
                           const isDepArr = (f.label === "DEP" || f.label === "ARR") && !isClosed;
-                          // Insert value into the currently focused textarea via execCommand
+                          // Insert value into the last focused textarea (stored in ref to survive blur)
                           const insertIntoFocused = () => {
-                            const el = document.activeElement as HTMLTextAreaElement | HTMLInputElement | null;
-                            if (el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT")) {
+                            const el = focusedTextareaRef.current;
+                            if (el) {
+                              el.focus();
                               const start = el.selectionStart ?? el.value.length;
                               const end = el.selectionEnd ?? el.value.length;
                               const before = el.value.slice(0, start);
@@ -2490,10 +2504,9 @@ export default function SheetDetail() {
                               const insert = (before && !before.endsWith(" ")) ? ` ${f.value!}` : f.value!;
                               // Use execCommand for React-controlled inputs
                               try {
-                                el.focus();
                                 document.execCommand("insertText", false, insert);
                               } catch {
-                                // Fallback: directly set value (won't trigger React onChange on all browsers)
+                                // Fallback: directly set value and dispatch input event
                                 const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set
                                   || Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
                                 if (nativeInputValueSetter) {
@@ -2536,29 +2549,48 @@ export default function SheetDetail() {
                               }}
                               onDragEnd={() => { targetFieldDragRef.current.dragging = null; }}
                               onTouchStart={(e) => {
-                                targetFieldDragRef.current.dragging = f.label;
+                                // Don't preventDefault here — let the touch start normally
+                                // so the textarea doesn't lose focus prematurely
+                                targetFieldDragRef.current.dragging = null; // reset — only set after movement threshold
                                 targetFieldDragRef.current.startX = e.touches[0].clientX;
                                 targetFieldDragRef.current.startY = e.touches[0].clientY;
                                 targetFieldDragRef.current.startIdx = idx;
                               }}
                               onTouchMove={(e) => {
-                                if (!targetFieldDragRef.current.dragging) return;
                                 const touch = e.touches[0];
-                                const el = document.elementFromPoint(touch.clientX, touch.clientY);
-                                const chipEl = el?.closest('[data-chip-label]') as HTMLElement | null;
-                                if (chipEl) {
-                                  const overLabel = chipEl.dataset.chipLabel;
-                                  if (overLabel && overLabel !== targetFieldDragRef.current.dragging) {
-                                    doReorder(targetFieldDragRef.current.dragging, overLabel);
-                                    targetFieldDragRef.current.dragging = overLabel;
+                                const dx = touch.clientX - targetFieldDragRef.current.startX;
+                                const dy = touch.clientY - targetFieldDragRef.current.startY;
+                                const dist = Math.sqrt(dx * dx + dy * dy);
+                                // Only enter drag mode after 8px movement threshold
+                                if (dist > 8) {
+                                  if (!targetFieldDragRef.current.dragging) {
+                                    targetFieldDragRef.current.dragging = f.label;
+                                  }
+                                  e.preventDefault(); // prevent scroll during drag
+                                  const el = document.elementFromPoint(touch.clientX, touch.clientY);
+                                  const chipEl = el?.closest('[data-chip-label]') as HTMLElement | null;
+                                  if (chipEl) {
+                                    const overLabel = chipEl.dataset.chipLabel;
+                                    if (overLabel && overLabel !== targetFieldDragRef.current.dragging) {
+                                      doReorder(targetFieldDragRef.current.dragging!, overLabel);
+                                      targetFieldDragRef.current.dragging = overLabel;
+                                    }
                                   }
                                 }
                               }}
-                              onTouchEnd={() => { targetFieldDragRef.current.dragging = null; }}
+                              onTouchEnd={(e) => {
+                                // If we never entered drag mode (no movement), treat as a tap → insert
+                                if (!targetFieldDragRef.current.dragging) {
+                                  e.preventDefault(); // prevent ghost click
+                                  insertIntoFocused();
+                                }
+                                targetFieldDragRef.current.dragging = null;
+                              }}
                               data-chip-label={f.label}
-                              className="flex items-center gap-0.5 cursor-grab active:cursor-grabbing touch-none"
+                              className="flex items-center gap-0.5 cursor-grab active:cursor-grabbing"
                             >
                               <button
+                                onMouseDown={(e) => e.preventDefault()} // prevent textarea blur on desktop click
                                 onClick={insertIntoFocused}
                                 title={`Insert: ${f.value}`}
                                 className="flex items-baseline gap-1 px-2 py-0.5 rounded border border-primary/30 bg-primary/8 hover:bg-primary/15 active:scale-95 transition-all group"

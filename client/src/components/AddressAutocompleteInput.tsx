@@ -21,7 +21,7 @@
 
 import { useRef, useState, useCallback, useEffect } from "react";
 import { MapPin } from "lucide-react";
-import { convertGoogleAddresses } from "@/lib/addressFormat";
+import { convertGoogleAddresses, extractShortAddress } from "@/lib/addressFormat";
 
 // Perth CBD — used as fallback when no GPS or explicit bias is available
 const PERTH_FALLBACK = { lat: -31.9505, lng: 115.8605 };
@@ -29,6 +29,8 @@ const PERTH_FALLBACK = { lat: -31.9505, lng: 115.8605 };
 interface Props {
   value: string;
   onChange: (val: string) => void;
+  /** Called with the extracted short-form address when a suggestion is selected (for auto-filling HB) */
+  onShortAddress?: (shortVal: string) => void;
   locationBias?: { lat: number; lng: number } | null;
   placeholder?: string;
   className?: string;
@@ -38,6 +40,7 @@ interface Props {
 export function AddressAutocompleteInput({
   value,
   onChange,
+  onShortAddress,
   locationBias,
   placeholder = "Search address…",
   className = "",
@@ -134,7 +137,9 @@ export function AddressAutocompleteInput({
 
     // Geocode to get full structured address, then convert to RS format
     if (typeof google === "undefined") {
-      onChange(convertGoogleAddresses(prediction.description));
+      const rsFormatted = convertGoogleAddresses(prediction.description);
+      onChange(rsFormatted);
+      if (onShortAddress) onShortAddress(extractShortAddress(rsFormatted));
       return;
     }
 
@@ -142,10 +147,14 @@ export function AddressAutocompleteInput({
     geocoder.geocode({ placeId: prediction.place_id }, (results, status) => {
       if (status === "OK" && results && results[0]) {
         const formatted = results[0].formatted_address;
-        onChange(convertGoogleAddresses(formatted));
+        const rsFormatted = convertGoogleAddresses(formatted);
+        onChange(rsFormatted);
+        if (onShortAddress) onShortAddress(extractShortAddress(rsFormatted));
       } else {
         // Fallback to description if geocode fails
-        onChange(convertGoogleAddresses(prediction.description));
+        const rsFormatted = convertGoogleAddresses(prediction.description);
+        onChange(rsFormatted);
+        if (onShortAddress) onShortAddress(extractShortAddress(rsFormatted));
       }
     });
   };

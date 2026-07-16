@@ -202,6 +202,7 @@ function TargetCard({
             <AddressAutocompleteInput
               value={hbf}
               onChange={(v) => mark(() => setHbf(v))}
+              onShortAddress={(short) => { if (!hb) mark(() => setHb(short)); }}
               placeholder="Search or type address…"
             />
           </div>

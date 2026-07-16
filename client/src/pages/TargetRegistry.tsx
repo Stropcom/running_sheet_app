@@ -330,6 +330,7 @@ function TargetCard({
             <AddressAutocompleteInput
               value={hbf}
               onChange={(v) => mark(() => setHbf(v))}
+              onShortAddress={(short) => { if (!hb) mark(() => setHb(short)); }}
               placeholder="Search or type address…"
             />
           </div>
@@ -611,6 +612,7 @@ function AddTargetDialog({
             <AddressAutocompleteInput
               value={form.hbf}
               onChange={(v) => setForm(f => ({ ...f, hbf: v }))}
+              onShortAddress={(short) => setForm(f => ({ ...f, hb: f.hb || short }))}
               placeholder="Search or type address…"
             />
           </div>

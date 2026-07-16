@@ -4387,6 +4387,7 @@ export default function IntelligenceMapping() {
                   <AddressAutocompleteInput
                     value={val}
                     onChange={set}
+                    onShortAddress={(short) => { if (!etHb) setEtHb(short); }}
                     locationBias={mapRef.current ? (() => { const c = mapRef.current!.getCenter(); return c ? { lat: c.lat(), lng: c.lng() } : null; })() : null}
                     placeholder="Search or type address…"
                   />

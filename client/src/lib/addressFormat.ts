@@ -331,6 +331,37 @@ export function formatMapPopupAddress(shortForm: string): string {
 }
 
 /**
+ * Extract the short-form HB value from a fully-formatted RS address (HBF).
+ *
+ * The HBF format is: "27 Olding Way, MELVILLE WA (27 Olding Way)"
+ * The HB short form is the content inside the trailing brackets: "27 Olding Way"
+ *
+ * If no bracket code is present, falls back to extracting just the street
+ * portion (everything before the first comma).
+ *
+ * Returns an empty string if nothing useful can be extracted.
+ *
+ * Examples:
+ *   "27 Olding Way, MELVILLE WA (27 Olding Way)"  → "27 Olding Way"
+ *   "131 Lakey Street, SOUTHERN RIVER WA (131 Lakey Street)" → "131 Lakey Street"
+ *   "Kent St & Queens Park Rd, WILSON WA (Kent St & Queens Park Rd)" → "Kent St & Queens Park Rd"
+ *   "27 Olding Way, MELVILLE WA"                  → "27 Olding Way"  (fallback)
+ */
+export function extractShortAddress(hbf: string): string {
+  if (!hbf) return "";
+
+  // Prefer the bracket code — it is the canonical short form
+  const bracketMatch = hbf.match(/\(([^)]{1,120})\)\s*$/);
+  if (bracketMatch) return bracketMatch[1].trim();
+
+  // Fallback: everything before the first comma
+  const commaIdx = hbf.indexOf(",");
+  if (commaIdx > 0) return hbf.slice(0, commaIdx).trim();
+
+  return hbf.trim();
+}
+
+/**
  * Format a vehicle for display in the Intelligence section and map pop-ups.
  *
  * The RS shortForm is what's inside the brackets in an observation, e.g.:

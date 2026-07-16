@@ -77,9 +77,22 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerStorageProxy(app);
 
-  // Apply rate limiting to all OAuth/auth routes
+  // Apply rate limiting to OAuth routes and the credential-guessing-relevant
+  // tRPC auth calls. NOTE: tRPC routes are dot-separated (e.g.
+  // /api/trpc/auth.login), not slash-separated, so Express's normal
+  // app.use("/api/trpc/auth", ...) segment-boundary matching never actually
+  // matched them — that mount silently rate-limited nothing. Match on the
+  // real paths explicitly instead. Deliberately excludes auth.me/auth.logout,
+  // which are innocuous and called far more than 20 times per 15 minutes in
+  // normal use.
+  const RATE_LIMITED_TRPC_PATHS = ["/api/trpc/auth.login", "/api/trpc/auth.setNewPassword"];
   app.use("/api/oauth", authRateLimiter);
-  app.use("/api/trpc/auth", authRateLimiter);
+  app.use((req, res, next) => {
+    if (RATE_LIMITED_TRPC_PATHS.some(p => req.path.startsWith(p))) {
+      return authRateLimiter(req, res, next);
+    }
+    next();
+  });
 
   registerOAuthRoutes(app);
   // tRPC API

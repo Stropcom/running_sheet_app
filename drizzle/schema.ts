@@ -285,6 +285,7 @@ export const auditLogs = mysqlTable("audit_logs", {
     "user_updated",
     "user_deleted",
     "operation_status_changed",
+    "password_changed",
   ]).notNull(),
   details: text("details"),
   createdAt: bigint("createdAt", { mode: "number" }).notNull(),

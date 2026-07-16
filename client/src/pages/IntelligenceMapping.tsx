@@ -4126,8 +4126,20 @@ export default function IntelligenceMapping() {
               </button>
             </div>
 
-            {/* 0. Address — shown at top so user can verify before filling other fields */}
-            <div className="mb-4 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
+            {/* 0. Location / Business Name — shown at top for quick identification */}
+            <div className="mb-3">
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Location / Business Name</label>
+              <input
+                type="text"
+                value={cmLabel}
+                onChange={(e) => setCmLabel(e.target.value)}
+                placeholder="e.g. Target address, coffee shop..."
+                className="w-full text-sm bg-background border border-border rounded-md px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+
+            {/* 0b. Address */}
+            <div className="mb-3 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
               <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1">Address</p>
               <input
                 type="text"
@@ -4135,6 +4147,18 @@ export default function IntelligenceMapping() {
                 onChange={(e) => setCmAddress(e.target.value)}
                 placeholder="Auto-filled from coordinates…"
                 className="w-full text-sm bg-transparent border-none outline-none text-foreground placeholder:text-muted-foreground"
+              />
+            </div>
+
+            {/* 0c. Notes — directly below address */}
+            <div className="mb-4">
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Notes</label>
+              <Textarea
+                value={cmNote}
+                onChange={(e) => setCmNote(e.target.value)}
+                placeholder="Optional notes..."
+                rows={2}
+                className="text-sm resize-none"
               />
             </div>
 
@@ -4229,123 +4253,8 @@ export default function IntelligenceMapping() {
               </div>
             </div>
 
-            {/* 4. Label */}
-            <div className="mb-3">
-              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Location / Business Name</label>
-              <input
-                type="text"
-                value={cmLabel}
-                onChange={(e) => setCmLabel(e.target.value)}
-                placeholder="e.g. Target address, coffee shop..."
-                className="w-full text-sm bg-background border border-border rounded-md px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-              />
-            </div>
+            {/* 4. (Label moved to top, Operation/Person/Vehicle removed) */}
 
-            {/* 5. Operation */}
-            <div className="mb-3">
-              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Operation</label>
-              <Select
-                value={cmOpId !== null ? String(cmOpId) : ""}
-                onValueChange={(v) => setCmOpId(v ? Number(v) : null)}
-              >
-                <SelectTrigger className="w-full text-sm">
-                  <SelectValue placeholder="Select operation..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {(operations as any[] | undefined)?.map((op: any) => (
-                    <SelectItem key={op.id} value={String(op.id)}>{op.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* 6. Person(s) */}
-            <div className="mb-3">
-              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Person(s) it relates to</label>
-              <div className="flex gap-2 mb-1.5">
-                <input
-                  type="text"
-                  value={cmPersonInput}
-                  onChange={(e) => setCmPersonInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && cmPersonInput.trim()) {
-                      setCmPersons(prev => [...prev, cmPersonInput.trim()]);
-                      setCmPersonInput("");
-                    }
-                  }}
-                  list="cm-person-list"
-                  placeholder="Type name or select..."
-                  className="flex-1 text-sm bg-background border border-border rounded-md px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-                <datalist id="cm-person-list">
-                  {assocPersonOptions.map((p) => <option key={p} value={p} />)}
-                </datalist>
-                <button
-                  onClick={() => { if (cmPersonInput.trim()) { setCmPersons(prev => [...prev, cmPersonInput.trim()]); setCmPersonInput(""); } }}
-                  className="px-3 py-2 text-xs bg-primary/20 text-primary rounded-md hover:bg-primary/30"
-                >Add</button>
-              </div>
-              {cmPersons.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {cmPersons.map((p, i) => (
-                    <span key={i} className="flex items-center gap-1 text-xs bg-accent/50 border border-border rounded-full px-2.5 py-1">
-                      {p}
-                      <button onClick={() => setCmPersons(prev => prev.filter((_, j) => j !== i))} className="text-muted-foreground hover:text-foreground"><X className="h-2.5 w-2.5" /></button>
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* 7. Vehicle(s) */}
-            <div className="mb-3">
-              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Vehicle(s) it relates to</label>
-              <div className="flex gap-2 mb-1.5">
-                <input
-                  type="text"
-                  value={cmVehicleInput}
-                  onChange={(e) => setCmVehicleInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && cmVehicleInput.trim()) {
-                      setCmVehicles(prev => [...prev, cmVehicleInput.trim()]);
-                      setCmVehicleInput("");
-                    }
-                  }}
-                  list="cm-vehicle-list"
-                  placeholder="Type rego/description or select..."
-                  className="flex-1 text-sm bg-background border border-border rounded-md px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-                <datalist id="cm-vehicle-list">
-                  {vehicleOptions.map((v) => <option key={v} value={v} />)}
-                </datalist>
-                <button
-                  onClick={() => { if (cmVehicleInput.trim()) { setCmVehicles(prev => [...prev, cmVehicleInput.trim()]); setCmVehicleInput(""); } }}
-                  className="px-3 py-2 text-xs bg-primary/20 text-primary rounded-md hover:bg-primary/30"
-                >Add</button>
-              </div>
-              {cmVehicles.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {cmVehicles.map((v, i) => (
-                    <span key={i} className="flex items-center gap-1 text-xs bg-accent/50 border border-border rounded-full px-2.5 py-1">
-                      {v}
-                      <button onClick={() => setCmVehicles(prev => prev.filter((_, j) => j !== i))} className="text-muted-foreground hover:text-foreground"><X className="h-2.5 w-2.5" /></button>
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* 8. Notes */}
-            <div className="mb-4">
-              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Notes</label>
-              <Textarea
-                value={cmNote}
-                onChange={(e) => setCmNote(e.target.value)}
-                placeholder="Optional notes..."
-                rows={2}
-                className="text-sm resize-none"
-              />
-            </div>
 
             {/* Save / Cancel */}
             <div className="flex gap-3">

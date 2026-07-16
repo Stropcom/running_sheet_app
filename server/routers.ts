@@ -244,7 +244,15 @@ export const appRouter = router({
     login: publicProcedure
       .input(z.object({ username: z.string().min(1), password: z.string().min(1) }))
       .mutation(async ({ input, ctx }) => {
-        const user = await getUserByUsername(input.username.trim().toLowerCase());
+        let user;
+        try {
+          user = await getUserByUsername(input.username.trim().toLowerCase());
+        } catch {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "The server is temporarily unavailable. Please wait a moment and try again.",
+          });
+        }
         if (!user) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid username or password." });
 
         const valid = await bcrypt.compare(input.password, user.passwordHash);

@@ -1872,8 +1872,15 @@ export default function SheetDetail() {
     try { return localStorage.getItem("runsheet_target_panel_expanded") !== "false"; } catch { return true; }
   });
   // Shortcut chip order for the target panel — persisted per sheet in localStorage
+  // Canonical default chip order — used when no saved order exists in localStorage
+  const CANONICAL_CHIP_ORDER = [
+    "SC", "HBF", "V1F", "V1", "V2F", "V3",
+    "TGT", "DSO", "DR", "FP", "US", "DE", "AR", "CV", "OOS", "COOS", "PU", "PT", "RACK",
+    "DEP", "ARR",
+    "#1", "#2", "#3",
+  ];
   const [targetFieldOrder, setTargetFieldOrder] = useState<string[]>(() => {
-    try { const s = localStorage.getItem(`runsheet_field_order_${sheetId}`); if (s) return JSON.parse(s); } catch {} return [];
+    try { const s = localStorage.getItem(`runsheet_field_order_${sheetId}`); if (s) return JSON.parse(s); } catch {} return CANONICAL_CHIP_ORDER;
   });
   const targetFieldDragRef = useRef<{ dragging: string | null; startX: number; startY: number; startIdx: number }>({ dragging: null, startX: 0, startY: 0, startIdx: -1 });
   // Track the last focused textarea/input so chip taps can insert text even after blur
@@ -2440,8 +2447,8 @@ export default function SheetDetail() {
             ...wildFieldItems,
             { label: "DEP", value: t.dep },
             { label: "ARR", value: t.arr },
-            // All shortcut-folder triggers as chips (trigger only, always present)
-            ...(shortcutsData ?? []).map((s) => ({ label: s.trigger.toUpperCase(), value: s.expansion })),
+            // All shortcut-folder triggers as chips (trigger only, always present) — exclude legacy 'D' chip
+            ...(shortcutsData ?? []).filter((s) => s.trigger.toUpperCase() !== "D").map((s) => ({ label: s.trigger.toUpperCase(), value: s.expansion })),
           ];
           const hasAnyField = fields.some((f) => f.value);
           return (
@@ -2511,9 +2518,10 @@ export default function SheetDetail() {
                               }
                             }
                           };
-                          // All shortcut-folder chips and TGT show label only (trigger only, no expansion text)
+                          // All target-detail chips and shortcut-folder chips show trigger only (no expansion text)
                           const shortcutFolderLabels = new Set((shortcutsData ?? []).map(s => s.trigger.toUpperCase()));
-                          const isStandard = shortcutFolderLabels.has(f.label) || f.label === "TGT";
+                          const TARGET_DETAIL_LABELS = new Set(["TGT", "HBF", "HB", "V1F", "V1", "V2F", "V2", "DEP", "ARR"]);
+                          const isStandard = shortcutFolderLabels.has(f.label) || TARGET_DETAIL_LABELS.has(f.label) || /^V\d+F?$/.test(f.label);
                           const doReorder = (fromLabel: string, toLabel: string) => {
                             if (!fromLabel || fromLabel === toLabel) return;
                             const labels = orderedFields.map(x => x.label);

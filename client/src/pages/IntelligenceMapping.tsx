@@ -719,8 +719,14 @@ export default function IntelligenceMapping() {
   const [mapQeSelectOpen, setMapQeSelectOpen] = useState(false);
   const [mapQeAddress, setMapQeAddress] = useState(""); // pre-filled address for the observation
   // Quick Entry shortcut chip order — persisted to localStorage so user can reorder them
+  const QE_CANONICAL_ORDER = [
+    "SC", "HBF", "V1F", "V1", "V2F", "V3",
+    "TGT", "DSO", "DR", "FP", "US", "DE", "AR", "CV", "OOS", "COOS", "PU", "PT", "RACK",
+    "DEP", "ARR",
+    "#1", "#2", "#3",
+  ];
   const [qeChipOrder, setQeChipOrder] = useState<string[]>(() => {
-    try { const s = localStorage.getItem("runlog_qe_chip_order"); if (s) return JSON.parse(s); } catch {} return [];
+    try { const s = localStorage.getItem("runlog_qe_chip_order"); if (s) return JSON.parse(s); } catch {} return QE_CANONICAL_ORDER;
   });
   const qeChipDragRef = useRef<{ dragging: string | null; startX: number; startY: number }>({ dragging: null, startX: 0, startY: 0 });
   const [cmLabel, setCmLabel] = useState("");
@@ -3895,9 +3901,9 @@ export default function IntelligenceMapping() {
                         // V1: prefer v1 (short) for reg extraction; fall back to v1f
                         const v1Val = rsTargetData?.v1 ?? rsTargetData?.v1f ?? null;
                         const v1Reg = extractReg(rsTargetData?.v1) ?? extractReg(rsTargetData?.v1f);
-                        // All shortcut-folder triggers as chips (trigger only, always present)
+                        // All shortcut-folder triggers as chips (trigger only, always present) — exclude legacy 'D' chip
                         const folderShortcutChips: Array<{ label: string; display: string; getValue: () => string | null }> =
-                          (generalShortcuts as any[] ?? []).map((s: any) => ({
+                          (generalShortcuts as any[] ?? []).filter((s: any) => (s.trigger as string).toUpperCase() !== "D").map((s: any) => ({
                             label: (s.trigger as string).toUpperCase(),
                             display: (s.trigger as string).toUpperCase(),
                             getValue: () => findShortcut(s.trigger) ?? s.expansion as string,
@@ -3922,10 +3928,12 @@ export default function IntelligenceMapping() {
                           <div className="flex flex-wrap gap-1">
                             {(() => {
                               // All folder shortcut chips + TGT show trigger only — no expansion text
+                              // All target-detail chips and folder shortcuts show trigger only (no expansion text)
                               const folderQeLabels = new Set([
-                                "TGT",
+                                "TGT", "HBF", "HB", "V1F", "V1", "V2F", "V2", "DEP", "ARR",
                                 ...(generalShortcuts as any[] ?? []).map((s: any) => (s.trigger as string).toUpperCase()),
                               ]);
+                              const isTargetDetailChip = (label: string) => /^V\d+F?$/.test(label);
                               const doQeReorder = (fromLabel: string, toLabel: string) => {
                                 if (!fromLabel || fromLabel === toLabel) return;
                                 const labels = orderedChips.map(x => x.label);
@@ -4002,7 +4010,7 @@ export default function IntelligenceMapping() {
                                     data-qe-chip={s.label}
                                     className="cursor-grab active:cursor-grabbing px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all select-none"
                                   >
-                                    {isStdQe ? s.label : s.display}
+                                    {(isStdQe || isTargetDetailChip(s.label)) ? s.label : s.display}
                                   </div>
                                 );
                               });

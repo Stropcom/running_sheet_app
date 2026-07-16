@@ -975,3 +975,9 @@
 ## Back Button Navigation Improvements (Jul 2026)
 - [x] Intelligence profile pages (Target, Associate, Vehicle, Location, Operation): replaced fixed "Intelligence Folder" link with window.history.back() "Back" button so users return to wherever they came from
 - [x] OperationDetail: added "Back to Running Sheet" button to the right of the Running Sheets / Add Target tabs, visible whenever the page was opened from a running sheet (fromSheetId in URL)
+
+## Chip Label & Order Overhaul (Jul 2026)
+- [x] All target-detail chips (HBF, V1F, V2F, HB, V1, V2, DEP, ARR, extra Vn/VnF) now show trigger only — no expansion text appended
+- [x] Legacy 'D' chip removed from both RS main target panel and QE modal
+- [x] Canonical default chip order set for both RS main target panel and QE modal: SC, HBF, V1F, V1, V2F, V3..., TGT, DSO, DR, FP, US, DE, AR, CV, OOS, COOS, PU, PT, RACK, DEP, ARR, #1, #2, #3
+- [x] All chips remain individually drag-to-reorder; saved order persists in localStorage per sheet/modal

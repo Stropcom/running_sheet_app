@@ -191,12 +191,12 @@ export default function IntelligenceTargetProfile() {
   return (
     <DashboardLayout>
       <div className="max-w-3xl mx-auto px-4 py-6">
-        {/* Back button */}
+        {/* Back button — goes to previous page in history */}
         <button
-          onClick={() => navigate("/intelligence")}
+          onClick={() => window.history.back()}
           className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-5"
         >
-          <ArrowLeft className="w-4 h-4" /> Intelligence Folder
+          <ArrowLeft className="w-4 h-4" /> Back
         </button>
 
         {isLoading && (

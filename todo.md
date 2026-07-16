@@ -971,3 +971,7 @@
 - [x] Fix: QE modal chips not draggable on desktop/laptop
 - [x] Root cause: onMouseDown preventDefault on the chip div was blocking HTML5 dragstart from firing on desktop
 - [x] Fix: removed onMouseDown preventDefault; onClick now guards against inserting text after a drag using qeChipDragRef.current.dragging check
+
+## Back Button Navigation Improvements (Jul 2026)
+- [x] Intelligence profile pages (Target, Associate, Vehicle, Location, Operation): replaced fixed "Intelligence Folder" link with window.history.back() "Back" button so users return to wherever they came from
+- [x] OperationDetail: added "Back to Running Sheet" button to the right of the Running Sheets / Add Target tabs, visible whenever the page was opened from a running sheet (fromSheetId in URL)

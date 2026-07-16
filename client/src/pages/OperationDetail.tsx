@@ -1094,16 +1094,28 @@ export default function OperationDetail() {
             if (v !== "target") sp.delete("targetId");
             navigate(`/operation/${operationId}?${sp.toString()}`);
           }} className="mt-2">
-          <TabsList className="mb-4">
-            <TabsTrigger value="sheets">
-              <FileText className="w-3.5 h-3.5 mr-1.5" />
-              Running Sheets
-            </TabsTrigger>
-            <TabsTrigger value="target">
-              <Target className="w-3.5 h-3.5 mr-1.5" />
-              Add Target
-            </TabsTrigger>
-          </TabsList>
+          <div className="flex items-center gap-2 mb-4">
+            <TabsList>
+              <TabsTrigger value="sheets">
+                <FileText className="w-3.5 h-3.5 mr-1.5" />
+                Running Sheets
+              </TabsTrigger>
+              <TabsTrigger value="target">
+                <Target className="w-3.5 h-3.5 mr-1.5" />
+                Add Target
+              </TabsTrigger>
+            </TabsList>
+            {/* Back to Running Sheet — shown when navigated here from a sheet */}
+            {fromSheetId && (
+              <button
+                onClick={() => navigate(`/sheet/${fromSheetId}`)}
+                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-2.5 py-1.5 rounded-md border border-border/50 hover:border-border bg-background hover:bg-muted/40"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                Back to Running Sheet
+              </button>
+            )}
+          </div>
 
           {/* ── Running Sheets tab ── */}
           <TabsContent value="sheets">

@@ -5,10 +5,15 @@
  * When the user selects a suggestion the address is automatically converted
  * to RS format via convertGoogleAddresses() before being passed to onChange.
  *
+ * Location bias priority:
+ *   1. Explicit locationBias prop (e.g. map centre when used on the map page)
+ *   2. Browser Geolocation API (user's current GPS position)
+ *   3. Perth, WA hardcoded fallback (-31.9505, 115.8605)
+ *
  * Props:
  *   value          – controlled value
  *   onChange       – called with the new string (plain text or RS-formatted)
- *   locationBias   – optional { lat, lng } to bias suggestions towards a location
+ *   locationBias   – optional explicit { lat, lng } override
  *   placeholder    – input placeholder text
  *   className      – extra classes forwarded to the wrapper div
  *   inputClassName – extra classes forwarded to the <input> element
@@ -17,6 +22,9 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import { MapPin } from "lucide-react";
 import { convertGoogleAddresses } from "@/lib/addressFormat";
+
+// Perth CBD — used as fallback when no GPS or explicit bias is available
+const PERTH_FALLBACK = { lat: -31.9505, lng: 115.8605 };
 
 interface Props {
   value: string;
@@ -40,6 +48,8 @@ export function AddressAutocompleteInput({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const serviceRef = useRef<google.maps.places.AutocompleteService | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  // Cached GPS position from browser Geolocation (refreshed once per mount)
+  const gpsRef = useRef<{ lat: number; lng: number } | null>(null);
 
   // Lazy-init the AutocompleteService once Google Maps is loaded
   const getService = useCallback(() => {
@@ -47,6 +57,18 @@ export function AddressAutocompleteInput({
       serviceRef.current = new google.maps.places.AutocompleteService();
     }
     return serviceRef.current;
+  }, []);
+
+  // Request GPS position once on mount for use as bias centre
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        gpsRef.current = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      },
+      () => { /* silently ignore — will fall back to Perth */ },
+      { timeout: 5000, maximumAge: 60000 }
+    );
   }, []);
 
   // Close dropdown when clicking outside
@@ -59,6 +81,14 @@ export function AddressAutocompleteInput({
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
+
+  // Resolve the best available bias centre:
+  //   1. Explicit prop  2. GPS position  3. Perth fallback
+  const getBiasCentre = useCallback((): { lat: number; lng: number } => {
+    if (locationBias) return locationBias;
+    if (gpsRef.current) return gpsRef.current;
+    return PERTH_FALLBACK;
+  }, [locationBias]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
@@ -75,19 +105,16 @@ export function AddressAutocompleteInput({
       const svc = getService();
       if (!svc) return;
 
+      const centre = getBiasCentre();
       const request: google.maps.places.AutocompletionRequest = {
         input: val,
         componentRestrictions: { country: "au" },
         types: ["address"],
+        locationBias: new google.maps.Circle({
+          center: centre,
+          radius: 50000, // 50 km bias
+        }),
       };
-
-      // Apply location bias if provided — biases results within ~50 km
-      if (locationBias) {
-        request.locationBias = new google.maps.Circle({
-          center: locationBias,
-          radius: 50000, // 50 km
-        });
-      }
 
       svc.getPlacePredictions(request, (predictions, status) => {
         if (status === google.maps.places.PlacesServiceStatus.OK && predictions) {

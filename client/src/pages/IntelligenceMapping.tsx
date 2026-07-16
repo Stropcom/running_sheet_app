@@ -650,6 +650,16 @@ export default function IntelligenceMapping() {
 
   // RS Actions pane state — persisted in localStorage
   const [rsActionsPaneOpen, setRsActionsPaneOpen] = useState(false);
+
+  // Draggable side-tab vertical position (percentage from top, 0-100)
+  const [leftTabTop, setLeftTabTop] = useState<number>(() => {
+    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return JSON.parse(s).leftTabTop ?? 50; } catch { /* ignore */ } return 50;
+  });
+  const [rightTabTop, setRightTabTop] = useState<number>(() => {
+    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return JSON.parse(s).rightTabTop ?? 50; } catch { /* ignore */ } return 50;
+  });
+  const leftTabDraggingRef = useRef(false);
+  const rightTabDraggingRef = useRef(false);
   const [rsSelectedOpId, setRsSelectedOpId] = useState<number | null>(() => {
     try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return JSON.parse(s).rsSelectedOpId ?? null; } catch { /* ignore */ } return null;
   });
@@ -789,9 +799,11 @@ export default function IntelligenceMapping() {
         collapsedTeams: Array.from(collapsedTeams),
         rsQeExpanded,
         mapDarkMode,
+        leftTabTop,
+        rightTabTop,
       }));
     } catch { /* ignore */ }
-  }, [selectedOpIds, selectedTargetIds, opExpanded, rsSelectedOpId, rsSelectedSheetId, hiddenTeams, collapsedTeams, rsQeExpanded, mapDarkMode]);
+  }, [selectedOpIds, selectedTargetIds, opExpanded, rsSelectedOpId, rsSelectedSheetId, hiddenTeams, collapsedTeams, rsQeExpanded, mapDarkMode, leftTabTop, rightTabTop]);
 
   // Apply dark/light map style whenever mapDarkMode or mapReady changes
   // Dark mode is applied via CSS filter on the map container div (not setOptions — blocked by mapId)
@@ -2216,16 +2228,57 @@ export default function IntelligenceMapping() {
         {/* Collapsed panel arrow tab — positioned on left edge, vertically centred, above map type controls */}
         {!sidebarOpen && (
           <button
-            onClick={(e) => { e.stopPropagation(); setSidebarOpen(true); }}
-            className="absolute left-0 z-10 flex items-center justify-center bg-card border-2 border-l-0 border-border shadow-lg hover:bg-accent active:scale-95 transition-all"
+            onClick={(e) => { if (leftTabDraggingRef.current) { leftTabDraggingRef.current = false; return; } e.stopPropagation(); setSidebarOpen(true); }}
+            className="absolute left-0 z-10 flex items-center justify-center bg-card border-2 border-l-0 border-border shadow-lg hover:bg-accent active:scale-95 transition-colors cursor-grab active:cursor-grabbing select-none touch-none"
             style={{
-              top: "50%",
+              top: `${leftTabTop}%`,
               transform: "translateY(-50%)",
               width: "40px",
               height: "112px",
               borderRadius: "0 12px 12px 0",
             }}
-            title="Open Navigation Menu"
+            title="Open Navigation Menu (drag to reposition)"
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              const startY = e.clientY;
+              const startTop = leftTabTop;
+              const parentH = (e.currentTarget.parentElement?.clientHeight ?? window.innerHeight);
+              let moved = false;
+              const onMove = (me: MouseEvent) => {
+                const delta = me.clientY - startY;
+                if (Math.abs(delta) > 3) moved = true;
+                const newPct = Math.max(5, Math.min(95, startTop + (delta / parentH) * 100));
+                setLeftTabTop(newPct);
+              };
+              const onUp = () => {
+                if (moved) leftTabDraggingRef.current = true;
+                document.removeEventListener("mousemove", onMove);
+                document.removeEventListener("mouseup", onUp);
+              };
+              document.addEventListener("mousemove", onMove);
+              document.addEventListener("mouseup", onUp);
+            }}
+            onTouchStart={(e) => {
+              e.stopPropagation();
+              const touch = e.touches[0];
+              const startY = touch.clientY;
+              const startTop = leftTabTop;
+              const parentH = (e.currentTarget.parentElement?.clientHeight ?? window.innerHeight);
+              let moved = false;
+              const onMove = (te: TouchEvent) => {
+                const delta = te.touches[0].clientY - startY;
+                if (Math.abs(delta) > 3) moved = true;
+                const newPct = Math.max(5, Math.min(95, startTop + (delta / parentH) * 100));
+                setLeftTabTop(newPct);
+              };
+              const onEnd = () => {
+                if (moved) leftTabDraggingRef.current = true;
+                document.removeEventListener("touchmove", onMove);
+                document.removeEventListener("touchend", onEnd);
+              };
+              document.addEventListener("touchmove", onMove, { passive: true });
+              document.addEventListener("touchend", onEnd);
+            }}
           >
             <ChevronRight className="h-5 w-5 text-muted-foreground" />
           </button>
@@ -2452,19 +2505,60 @@ export default function IntelligenceMapping() {
           </div>
         </div>
 
-        {/* RS Actions pane toggle tab — right edge, vertically centred */}
+        {/* RS Actions pane toggle tab — right edge, draggable */}
         {!rsActionsPaneOpen && (
           <button
-            onClick={(e) => { e.stopPropagation(); setRsActionsPaneOpen(true); }}
-            className="absolute right-0 z-10 flex items-center justify-center bg-card border-2 border-r-0 border-border shadow-lg hover:bg-accent active:scale-95 transition-all"
+            onClick={(e) => { if (rightTabDraggingRef.current) { rightTabDraggingRef.current = false; return; } e.stopPropagation(); setRsActionsPaneOpen(true); }}
+            className="absolute right-0 z-10 flex items-center justify-center bg-card border-2 border-r-0 border-border shadow-lg hover:bg-accent active:scale-95 transition-colors cursor-grab active:cursor-grabbing select-none touch-none"
             style={{
-              top: "50%",
+              top: `${rightTabTop}%`,
               transform: "translateY(-50%)",
               width: "40px",
               height: "112px",
               borderRadius: "12px 0 0 12px",
             }}
-            title="Open Map Settings"
+            title="Open Map Settings (drag to reposition)"
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              const startY = e.clientY;
+              const startTop = rightTabTop;
+              const parentH = (e.currentTarget.parentElement?.clientHeight ?? window.innerHeight);
+              let moved = false;
+              const onMove = (me: MouseEvent) => {
+                const delta = me.clientY - startY;
+                if (Math.abs(delta) > 3) moved = true;
+                const newPct = Math.max(5, Math.min(95, startTop + (delta / parentH) * 100));
+                setRightTabTop(newPct);
+              };
+              const onUp = () => {
+                if (moved) rightTabDraggingRef.current = true;
+                document.removeEventListener("mousemove", onMove);
+                document.removeEventListener("mouseup", onUp);
+              };
+              document.addEventListener("mousemove", onMove);
+              document.addEventListener("mouseup", onUp);
+            }}
+            onTouchStart={(e) => {
+              e.stopPropagation();
+              const touch = e.touches[0];
+              const startY = touch.clientY;
+              const startTop = rightTabTop;
+              const parentH = (e.currentTarget.parentElement?.clientHeight ?? window.innerHeight);
+              let moved = false;
+              const onMove = (te: TouchEvent) => {
+                const delta = te.touches[0].clientY - startY;
+                if (Math.abs(delta) > 3) moved = true;
+                const newPct = Math.max(5, Math.min(95, startTop + (delta / parentH) * 100));
+                setRightTabTop(newPct);
+              };
+              const onEnd = () => {
+                if (moved) rightTabDraggingRef.current = true;
+                document.removeEventListener("touchmove", onMove);
+                document.removeEventListener("touchend", onEnd);
+              };
+              document.addEventListener("touchmove", onMove, { passive: true });
+              document.addEventListener("touchend", onEnd);
+            }}
           >
             <ChevronLeft className="h-5 w-5 text-muted-foreground" />
           </button>
@@ -2527,6 +2621,73 @@ export default function IntelligenceMapping() {
           >
             <FolderSearch className="h-5 w-5 flex-shrink-0 text-white" />
             <span className="text-[11px] font-semibold leading-none text-white">Intel Profiles</span>
+          </button>
+
+        </div>
+
+        {/* ── Mobile/Tablet Fixed Bottom Bar (hidden on lg+) ── */}
+        <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 flex items-stretch bg-card/95 backdrop-blur-md border-t-2 border-border shadow-2xl">
+
+          {/* Button 1 — Home (slate) */}
+          <button
+            onClick={() => setLocation("/")}
+            className="flex-1 flex flex-col items-center justify-center gap-1 py-3 px-2 hover:bg-accent active:scale-95 transition-all"
+            title="Home"
+          >
+            <Home className="h-6 w-6 text-slate-400" />
+            <span className="text-[10px] font-semibold leading-none text-slate-400">Home</span>
+          </button>
+
+          {/* Button 2 — Active RS (emerald) */}
+          {(() => {
+            const activeSheet = rsSelectedSheetId && rsSheetsData
+              ? (rsSheetsData as any[]).find((s: any) => s.id === rsSelectedSheetId)
+              : null;
+            return (
+              <button
+                disabled={!activeSheet}
+                onClick={() => { if (activeSheet) setLocation(`/sheet/${rsSelectedSheetId}`); }}
+                className={`flex-1 flex flex-col items-center justify-center gap-1 py-3 px-2 transition-all ${
+                  activeSheet
+                    ? "hover:bg-emerald-600/20 active:scale-95 cursor-pointer"
+                    : "cursor-default opacity-40"
+                }`}
+                title={activeSheet ? "Open active running sheet" : "No running sheet selected"}
+              >
+                <ClipboardList className={`h-6 w-6 ${activeSheet ? "text-emerald-400" : "text-muted-foreground/40"}`} />
+                <span className={`text-[10px] font-semibold leading-none ${activeSheet ? "text-emerald-400" : "text-muted-foreground/40"}`}>Active RS</span>
+              </button>
+            );
+          })()}
+
+          {/* Button 3 — RS Entry (blue) */}
+          {(() => {
+            const hasSheet = !!rsSelectedSheetId;
+            return (
+              <button
+                disabled={!hasSheet}
+                onClick={() => { if (hasSheet) setMapQeOpen(true); }}
+                className={`flex-1 flex flex-col items-center justify-center gap-1 py-3 px-2 transition-all ${
+                  hasSheet
+                    ? "hover:bg-blue-600/20 active:scale-95 cursor-pointer"
+                    : "cursor-default opacity-40"
+                }`}
+                title={hasSheet ? "RS Quick Entry" : "Select a running sheet first"}
+              >
+                <FileText className={`h-6 w-6 ${hasSheet ? "text-blue-400" : "text-muted-foreground/40"}`} />
+                <span className={`text-[10px] font-semibold leading-none ${hasSheet ? "text-blue-400" : "text-muted-foreground/40"}`}>RS Entry</span>
+              </button>
+            );
+          })()}
+
+          {/* Button 4 — Intel Profiles (violet) */}
+          <button
+            onClick={() => setLocation("/intelligence")}
+            className="flex-1 flex flex-col items-center justify-center gap-1 py-3 px-2 hover:bg-violet-600/20 active:scale-95 transition-all"
+            title="Intel Profiles"
+          >
+            <FolderSearch className="h-6 w-6 text-violet-400" />
+            <span className="text-[10px] font-semibold leading-none text-violet-400">Intel Profiles</span>
           </button>
 
         </div>

@@ -924,3 +924,6 @@
 - [x] SheetDetail TARGET panel: extra vehicle and wild field rows shown in collapsible target panel
 - [x] IntelligenceMapping mapQeShortcutMap: extra vehicles and wild fields injected
 - [x] IntelligenceMapping RS Quick Entry chips: V2, V3… and #1, #2… chips appear dynamically when filled in
+## Mobile Bottom Bar & Draggable Side Tabs (Jul 2026)
+- [x] Mobile/tablet fixed bottom bar: Home (slate), Active RS (emerald), RS Entry (blue), Intel Profiles (violet) — fixed at bottom, hidden on lg+
+- [x] Draggable side tabs: left and right collapse tabs can be dragged vertically along the screen edge; position persisted to localStorage

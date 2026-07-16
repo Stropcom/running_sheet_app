@@ -1005,3 +1005,12 @@
 - [x] Auto-clear rsSelectedSheetId when all operations are cleared (clearAll) or last op is deselected (toggleOp)
 - [x] Remove rsSelectedOpId fallback from effectiveOpIdsForMarkers
 - [x] Update custom marker op defaults to use selectedOpIds[0] only
+
+## Jul 2026 — HBF Address Autocomplete & Map Search Location Bias
+
+- [x] Build reusable AddressAutocompleteInput component (Google Places autocomplete + RS format conversion + location bias)
+- [x] Wire AddressAutocompleteInput to HBF field in OperationDetail.tsx target card (inline edit form)
+- [x] Wire AddressAutocompleteInput to HBF field in TargetRegistry.tsx target card (inline edit form)
+- [x] Wire AddressAutocompleteInput to HBF field in TargetRegistry.tsx Add Target dialog
+- [x] Wire AddressAutocompleteInput to HBF field in IntelligenceMapping.tsx Edit Target dialog (with map-centre location bias)
+- [x] Apply 50 km location bias (map centre) to existing map address search bar in IntelligenceMapping.tsx

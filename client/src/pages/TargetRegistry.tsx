@@ -45,6 +45,7 @@ import { ViewToggle } from "@/components/ViewToggle";
 import { useViewMode } from "@/contexts/ViewModeContext";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
+import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -317,18 +318,39 @@ function TargetCard({
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Full Name, Born</label>
             <Input value={name} onChange={e => { setName(e.target.value); setDirty(true); }} />
           </div>
-          {([
-            { label: "Target (TGT)",           val: tgt, set: (v: string) => mark(() => setTgt(v)) },
-            { label: "Home Address Full (HBF)", val: hbf, set: (v: string) => mark(() => setHbf(v)) },
-            { label: "Home (HB)",               val: hb,  set: (v: string) => mark(() => setHb(v)) },
-            { label: "Vehicle 1 Full (V1F)",    val: v1f, set: (v: string) => mark(() => setV1f(v)) },
-            { label: "Vehicle (V1)",            val: v1,  set: (v: string) => mark(() => setV1(v)) },
-          ] as { label: string; val: string; set: (v: string) => void }[]).map(({ label, val, set }) => (
-            <div key={label} className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{label}</label>
-              <Input value={val} onChange={e => set(e.target.value)} />
-            </div>
-          ))}
+          {/* Target (TGT) */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Target (TGT)</label>
+            <Input value={tgt} onChange={e => mark(() => setTgt(e.target.value))} />
+          </div>
+
+          {/* Home Address Full (HBF) — with Google Places autocomplete */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Home Address Full (HBF)</label>
+            <AddressAutocompleteInput
+              value={hbf}
+              onChange={(v) => mark(() => setHbf(v))}
+              placeholder="Search or type address…"
+            />
+          </div>
+
+          {/* Home (HB) */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Home (HB)</label>
+            <Input value={hb} onChange={e => mark(() => setHb(e.target.value))} />
+          </div>
+
+          {/* Vehicle 1 Full (V1F) */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle 1 Full (V1F)</label>
+            <Input value={v1f} onChange={e => mark(() => setV1f(e.target.value))} />
+          </div>
+
+          {/* Vehicle (V1) */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle (V1)</label>
+            <Input value={v1} onChange={e => mark(() => setV1(e.target.value))} />
+          </div>
 
           {/* ── Dynamic extra vehicles (V2, V3, …) ── */}
           {extraVehicles.map((ev, i) => {
@@ -577,18 +599,39 @@ function AddTargetDialog({
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Full Name, Born *</label>
             <Input value={form.name} onChange={setField("name")} placeholder="e.g. John SMITH, born 1 Jan 1980" autoFocus />
           </div>
-          {([
-            { label: "Target (TGT)",           field: "tgt" as keyof TargetForm },
-            { label: "Home Address Full (HBF)", field: "hbf" as keyof TargetForm },
-            { label: "Home (HB)",               field: "hb"  as keyof TargetForm },
-            { label: "Vehicle 1 Full (V1F)",    field: "v1f" as keyof TargetForm },
-            { label: "Vehicle (V1)",            field: "v1"  as keyof TargetForm },
-          ]).map(({ label, field }) => (
-            <div key={field} className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{label}</label>
-              <Input value={form[field]} onChange={setField(field)} />
-            </div>
-          ))}
+          {/* Target (TGT) */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Target (TGT)</label>
+            <Input value={form.tgt} onChange={setField("tgt")} />
+          </div>
+
+          {/* Home Address Full (HBF) — with Google Places autocomplete */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Home Address Full (HBF)</label>
+            <AddressAutocompleteInput
+              value={form.hbf}
+              onChange={(v) => setForm(f => ({ ...f, hbf: v }))}
+              placeholder="Search or type address…"
+            />
+          </div>
+
+          {/* Home (HB) */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Home (HB)</label>
+            <Input value={form.hb} onChange={setField("hb")} />
+          </div>
+
+          {/* Vehicle 1 Full (V1F) */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle 1 Full (V1F)</label>
+            <Input value={form.v1f} onChange={setField("v1f")} />
+          </div>
+
+          {/* Vehicle (V1) */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle (V1)</label>
+            <Input value={form.v1} onChange={setField("v1")} />
+          </div>
 
           {/* Dynamic extra vehicles */}
           {extraVehicles.map((ev, i) => {

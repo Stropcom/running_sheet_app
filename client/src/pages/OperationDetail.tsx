@@ -57,6 +57,7 @@ import {
 } from "@/components/ui/select";
 import { useState, useEffect } from "react";
 import { CopyMoveSheetDialog } from "@/components/CopyMoveSheetDialog";
+import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
 import { CopyPlus } from "lucide-react";
 import { useLocation, useParams, useSearch } from "wouter";
 import { format } from "date-fns";
@@ -189,18 +190,39 @@ function TargetCard({
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Full Name, Born</label>
             <Input value={name} onChange={(e) => { setName(e.target.value); setDirty(true); }} />
           </div>
-          {([
-            { label: "Target (TGT)",           val: tgt, set: (v: string) => mark(() => setTgt(v)) },
-            { label: "Home Address Full (HBF)", val: hbf, set: (v: string) => mark(() => setHbf(v)) },
-            { label: "Home (HB)",               val: hb,  set: (v: string) => mark(() => setHb(v)) },
-            { label: "Vehicle 1 Full (V1F)",    val: v1f, set: (v: string) => mark(() => setV1f(v)) },
-            { label: "Vehicle (V1)",            val: v1,  set: (v: string) => mark(() => setV1(v)) },
-          ] as { label: string; val: string; set: (v: string) => void }[]).map(({ label, val, set }) => (
-            <div key={label} className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{label}</label>
-              <Input value={val} onChange={(e) => set(e.target.value)} />
-            </div>
-          ))}
+          {/* Target (TGT) */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Target (TGT)</label>
+            <Input value={tgt} onChange={(e) => mark(() => setTgt(e.target.value))} />
+          </div>
+
+          {/* Home Address Full (HBF) — with Google Places autocomplete */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Home Address Full (HBF)</label>
+            <AddressAutocompleteInput
+              value={hbf}
+              onChange={(v) => mark(() => setHbf(v))}
+              placeholder="Search or type address…"
+            />
+          </div>
+
+          {/* Home (HB) */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Home (HB)</label>
+            <Input value={hb} onChange={(e) => mark(() => setHb(e.target.value))} />
+          </div>
+
+          {/* Vehicle 1 Full (V1F) */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle 1 Full (V1F)</label>
+            <Input value={v1f} onChange={(e) => mark(() => setV1f(e.target.value))} />
+          </div>
+
+          {/* Vehicle (V1) */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle (V1)</label>
+            <Input value={v1} onChange={(e) => mark(() => setV1(e.target.value))} />
+          </div>
 
           {/* ── Dynamic extra vehicles (V2, V3, …) ── */}
           {extraVehicles.map((ev, i) => {

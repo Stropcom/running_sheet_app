@@ -5,6 +5,7 @@ import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { MapView } from "@/components/Map";
+import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
@@ -2520,8 +2521,20 @@ export default function IntelligenceMapping() {
                     if (!val.trim()) { setAddrSuggestions([]); setAddrSearchOpen(false); return; }
                     addrSearchDebounceRef.current = setTimeout(() => {
                       if (!autocompleteServiceRef.current) return;
+                      const mapCentre = mapRef.current?.getCenter();
+                      const addrRequest: google.maps.places.AutocompletionRequest = {
+                        input: val,
+                        componentRestrictions: { country: "au" },
+                        types: ["address"],
+                      };
+                      if (mapCentre) {
+                        addrRequest.locationBias = new google.maps.Circle({
+                          center: { lat: mapCentre.lat(), lng: mapCentre.lng() },
+                          radius: 50000, // 50 km bias around current map centre
+                        });
+                      }
                       autocompleteServiceRef.current.getPlacePredictions(
-                        { input: val, componentRestrictions: { country: "au" } },
+                        addrRequest,
                         (predictions, status) => {
                           if (status === google.maps.places.PlacesServiceStatus.OK && predictions) {
                             setAddrSuggestions(predictions);
@@ -4357,20 +4370,29 @@ export default function IntelligenceMapping() {
           </DialogHeader>
           <div className="flex flex-col gap-3 py-2">
             {([
-              { label: "Full Name, Born", val: etName, set: setEtName },
-              { label: "Target (TGT)", val: etTgt, set: setEtTgt },
-              { label: "Home Address Full (HBF)", val: etHbf, set: setEtHbf },
-              { label: "Home (HB)", val: etHb, set: setEtHb },
-              { label: "Vehicle 1 Full (V1F)", val: etV1f, set: setEtV1f },
-              { label: "Vehicle (V1)", val: etV1, set: setEtV1 },
-              { label: "Vehicle 2 Full (V2F)", val: etV2f, set: setEtV2f },
-              { label: "Vehicle (V2)", val: etV2, set: setEtV2 },
-              { label: "Depart (DEP)", val: etDep, set: setEtDep },
-              { label: "Arrive (ARR)", val: etArr, set: setEtArr },
-            ] as { label: string; val: string; set: (v: string) => void }[]).map(({ label, val, set }) => (
+              { label: "Full Name, Born", val: etName, set: setEtName, isHbf: false },
+              { label: "Target (TGT)", val: etTgt, set: setEtTgt, isHbf: false },
+              { label: "Home Address Full (HBF)", val: etHbf, set: setEtHbf, isHbf: true },
+              { label: "Home (HB)", val: etHb, set: setEtHb, isHbf: false },
+              { label: "Vehicle 1 Full (V1F)", val: etV1f, set: setEtV1f, isHbf: false },
+              { label: "Vehicle (V1)", val: etV1, set: setEtV1, isHbf: false },
+              { label: "Vehicle 2 Full (V2F)", val: etV2f, set: setEtV2f, isHbf: false },
+              { label: "Vehicle (V2)", val: etV2, set: setEtV2, isHbf: false },
+              { label: "Depart (DEP)", val: etDep, set: setEtDep, isHbf: false },
+              { label: "Arrive (ARR)", val: etArr, set: setEtArr, isHbf: false },
+            ] as { label: string; val: string; set: (v: string) => void; isHbf: boolean }[]).map(({ label, val, set, isHbf }) => (
               <div key={label} className="flex flex-col gap-1">
                 <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{label}</label>
-                <Input value={val} onChange={e => set(e.target.value)} />
+                {isHbf ? (
+                  <AddressAutocompleteInput
+                    value={val}
+                    onChange={set}
+                    locationBias={mapRef.current ? (() => { const c = mapRef.current!.getCenter(); return c ? { lat: c.lat(), lng: c.lng() } : null; })() : null}
+                    placeholder="Search or type address…"
+                  />
+                ) : (
+                  <Input value={val} onChange={e => set(e.target.value)} />
+                )}
               </div>
             ))}
           </div>

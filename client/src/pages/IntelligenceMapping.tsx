@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getMarkerDataUrl, getMarkerSvg, MARKER_COLOURS, MARKER_COLOUR_LABELS, MARKER_ICON_GROUPS, MARKER_ICON_LABELS, type MarkerColour, type MarkerIcon } from "@/lib/markerSvgs";
-import { convertGoogleAddresses, buildPoiAddress, formatIntelAddress } from "@/lib/addressFormat";
+import { convertGoogleAddresses, buildPoiAddress, formatIntelAddress, extractShortVehicle } from "@/lib/addressFormat";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -4370,17 +4370,17 @@ export default function IntelligenceMapping() {
           </DialogHeader>
           <div className="flex flex-col gap-3 py-2">
             {([
-              { label: "Full Name, Born", val: etName, set: setEtName, isHbf: false },
-              { label: "Target (TGT)", val: etTgt, set: setEtTgt, isHbf: false },
-              { label: "Home Address Full (HBF)", val: etHbf, set: setEtHbf, isHbf: true },
-              { label: "Home (HB)", val: etHb, set: setEtHb, isHbf: false },
-              { label: "Vehicle 1 Full (V1F)", val: etV1f, set: setEtV1f, isHbf: false },
-              { label: "Vehicle (V1)", val: etV1, set: setEtV1, isHbf: false },
-              { label: "Vehicle 2 Full (V2F)", val: etV2f, set: setEtV2f, isHbf: false },
-              { label: "Vehicle (V2)", val: etV2, set: setEtV2, isHbf: false },
-              { label: "Depart (DEP)", val: etDep, set: setEtDep, isHbf: false },
-              { label: "Arrive (ARR)", val: etArr, set: setEtArr, isHbf: false },
-            ] as { label: string; val: string; set: (v: string) => void; isHbf: boolean }[]).map(({ label, val, set, isHbf }) => (
+              { label: "Full Name, Born", val: etName, set: setEtName, isHbf: false, isV1f: false, isV2f: false },
+              { label: "Target (TGT)", val: etTgt, set: setEtTgt, isHbf: false, isV1f: false, isV2f: false },
+              { label: "Home Address Full (HBF)", val: etHbf, set: setEtHbf, isHbf: true, isV1f: false, isV2f: false },
+              { label: "Home (HB)", val: etHb, set: setEtHb, isHbf: false, isV1f: false, isV2f: false },
+              { label: "Vehicle 1 Full (V1F)", val: etV1f, set: setEtV1f, isHbf: false, isV1f: true, isV2f: false },
+              { label: "Vehicle (V1)", val: etV1, set: setEtV1, isHbf: false, isV1f: false, isV2f: false },
+              { label: "Vehicle 2 Full (V2F)", val: etV2f, set: setEtV2f, isHbf: false, isV1f: false, isV2f: true },
+              { label: "Vehicle (V2)", val: etV2, set: setEtV2, isHbf: false, isV1f: false, isV2f: false },
+              { label: "Depart (DEP)", val: etDep, set: setEtDep, isHbf: false, isV1f: false, isV2f: false },
+              { label: "Arrive (ARR)", val: etArr, set: setEtArr, isHbf: false, isV1f: false, isV2f: false },
+            ] as { label: string; val: string; set: (v: string) => void; isHbf: boolean; isV1f: boolean; isV2f: boolean }[]).map(({ label, val, set, isHbf, isV1f, isV2f }) => (
               <div key={label} className="flex flex-col gap-1">
                 <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{label}</label>
                 {isHbf ? (
@@ -4392,7 +4392,11 @@ export default function IntelligenceMapping() {
                     placeholder="Search or type address…"
                   />
                 ) : (
-                  <Input value={val} onChange={e => set(e.target.value)} />
+                  <Input
+                    value={val}
+                    onChange={e => set(e.target.value)}
+                    onBlur={isV1f ? (e) => { const s = extractShortVehicle(e.target.value); if (s && !etV1) setEtV1(s); } : isV2f ? (e) => { const s = extractShortVehicle(e.target.value); if (s && !etV2) setEtV2(s); } : undefined}
+                  />
                 )}
               </div>
             ))}

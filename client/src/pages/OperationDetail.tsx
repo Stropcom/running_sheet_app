@@ -58,6 +58,7 @@ import {
 import { useState, useEffect } from "react";
 import { CopyMoveSheetDialog } from "@/components/CopyMoveSheetDialog";
 import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
+import { extractShortVehicle } from "@/lib/addressFormat";
 import { CopyPlus } from "lucide-react";
 import { useLocation, useParams, useSearch } from "wouter";
 import { format } from "date-fns";
@@ -216,7 +217,14 @@ function TargetCard({
           {/* Vehicle 1 Full (V1F) */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle 1 Full (V1F)</label>
-            <Input value={v1f} onChange={(e) => mark(() => setV1f(e.target.value))} />
+            <Input
+              value={v1f}
+              onChange={(e) => mark(() => setV1f(e.target.value))}
+              onBlur={(e) => {
+                const short = extractShortVehicle(e.target.value);
+                if (short && !v1) mark(() => setV1(short));
+              }}
+            />
           </div>
 
           {/* Vehicle (V1) */}
@@ -240,7 +248,15 @@ function TargetCard({
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle {num} Full (V{num}F)</label>
-                  <Input value={ev.full} onChange={e => updateVehicle(i, 'full', e.target.value)} placeholder="Full description…" />
+                  <Input
+                    value={ev.full}
+                    onChange={e => updateVehicle(i, 'full', e.target.value)}
+                    onBlur={(e) => {
+                      const short = extractShortVehicle(e.target.value);
+                      if (short && !ev.short) updateVehicle(i, 'short', short);
+                    }}
+                    placeholder="Full description…"
+                  />
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle {num} (V{num})</label>

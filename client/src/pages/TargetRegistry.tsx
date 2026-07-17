@@ -46,6 +46,7 @@ import { useViewMode } from "@/contexts/ViewModeContext";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
 import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
+import { extractShortVehicle } from "@/lib/addressFormat";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -344,7 +345,14 @@ function TargetCard({
           {/* Vehicle 1 Full (V1F) */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle 1 Full (V1F)</label>
-            <Input value={v1f} onChange={e => mark(() => setV1f(e.target.value))} />
+            <Input
+              value={v1f}
+              onChange={e => mark(() => setV1f(e.target.value))}
+              onBlur={(e) => {
+                const short = extractShortVehicle(e.target.value);
+                if (short && !v1) mark(() => setV1(short));
+              }}
+            />
           </div>
 
           {/* Vehicle (V1) */}
@@ -368,7 +376,15 @@ function TargetCard({
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle {num} Full (V{num}F)</label>
-                  <Input value={ev.full} onChange={e => updateVehicle(i, 'full', e.target.value)} placeholder="Full description…" />
+                  <Input
+                    value={ev.full}
+                    onChange={e => updateVehicle(i, 'full', e.target.value)}
+                    onBlur={(e) => {
+                      const short = extractShortVehicle(e.target.value);
+                      if (short && !ev.short) updateVehicle(i, 'short', short);
+                    }}
+                    placeholder="Full description…"
+                  />
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle {num} (V{num})</label>
@@ -626,7 +642,14 @@ function AddTargetDialog({
           {/* Vehicle 1 Full (V1F) */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle 1 Full (V1F)</label>
-            <Input value={form.v1f} onChange={setField("v1f")} />
+            <Input
+              value={form.v1f}
+              onChange={setField("v1f")}
+              onBlur={(e) => {
+                const short = extractShortVehicle(e.target.value);
+                if (short) setForm(f => ({ ...f, v1: f.v1 || short }));
+              }}
+            />
           </div>
 
           {/* Vehicle (V1) */}
@@ -644,7 +667,15 @@ function AddTargetDialog({
                   <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5"><Car className="w-3 h-3" /> Vehicle {num}</span>
                   <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => setExtraVehicles(v => v.filter((_, idx) => idx !== i))}><X className="w-3 h-3" /></Button>
                 </div>
-                <Input value={ev.full} onChange={e => setExtraVehicles(v => v.map((item, idx) => idx === i ? { ...item, full: e.target.value } : item))} placeholder={`Vehicle ${num} Full (V${num}F)…`} />
+                <Input
+                  value={ev.full}
+                  onChange={e => setExtraVehicles(v => v.map((item, idx) => idx === i ? { ...item, full: e.target.value } : item))}
+                  onBlur={(e) => {
+                    const short = extractShortVehicle(e.target.value);
+                    if (short) setExtraVehicles(v => v.map((item, idx) => idx === i ? { ...item, short: item.short || short } : item));
+                  }}
+                  placeholder={`Vehicle ${num} Full (V${num}F)…`}
+                />
                 <Input value={ev.short} onChange={e => setExtraVehicles(v => v.map((item, idx) => idx === i ? { ...item, short: e.target.value } : item))} placeholder={`Vehicle ${num} (V${num})…`} />
               </div>
             );

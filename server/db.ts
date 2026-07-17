@@ -1665,22 +1665,43 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
     }
     for (const field of locationFields) {
       if (!field.value || field.value.trim() === "") continue;
-      const shortForm = field.value.trim();
-      const key = `${field.type}::${shortForm.toLowerCase()}`;
+      let shortForm = field.value.trim();
+      // For vehicles: strip the RS bracket suffix "(Vehicle REGO)" or "(REGO)" appended
+      // by the HBF autocomplete / addressFormat so the entity key matches the observation-
+      // derived key (which never includes the bracket code in the shortForm).
+      if (field.type === "vehicle") {
+        shortForm = shortForm.replace(/\s*\([^)]{1,40}\)\s*$/, "").trim();
+      }
+      if (!shortForm) continue;
+      // Normalise whitespace so minor spacing differences don't create duplicate keys
+      const normKey = shortForm.toLowerCase().replace(/\s+/g, " ").trim();
+      const key = `${field.type}::${normKey}`;
       if (!entityMap.has(key)) {
         entityMap.set(key, { shortForm, type: field.type, occurrences: [] });
+      } else {
+        // Prefer the longer / richer shortForm
+        const existing = entityMap.get(key)!;
+        if (shortForm.length > existing.shortForm.length) existing.shortForm = shortForm;
       }
       for (const sheet of sheetEntries) {
-        entityMap.get(key)!.occurrences.push({
-          sheetId: sheet.sheetId,
-          sheetTitle: sheet.sheetTitle,
-          operationId: t.operationId ?? 0,
-          operationName: t.operationName ?? "(Registry)",
-          rowId: 0,
-          observationSnippet: `Target card — ${t.targetName} [${field.label}]`,
-          timeMinutes: null,
-          fullDescription: `${field.label}: ${shortForm} (from target: ${t.targetName}, operation: ${t.operationName ?? "Registry"})`,
-        });
+        // Deduplicate occurrences by sheetId+rowId (rowId=0 for target card entries)
+        const occKey = `${sheet.sheetId}::0::${field.label}`;
+        const alreadyAdded = entityMap.get(key)!.occurrences.some(
+          (o) => o.sheetId === sheet.sheetId && o.rowId === 0 && o.observationSnippet === `Target card — ${t.targetName} [${field.label}]`
+        );
+        if (!alreadyAdded) {
+          entityMap.get(key)!.occurrences.push({
+            sheetId: sheet.sheetId,
+            sheetTitle: sheet.sheetTitle,
+            operationId: t.operationId ?? 0,
+            operationName: t.operationName ?? "(Registry)",
+            rowId: 0,
+            observationSnippet: `Target card — ${t.targetName} [${field.label}]`,
+            timeMinutes: null,
+            fullDescription: `${field.label}: ${shortForm} (from target: ${t.targetName}, operation: ${t.operationName ?? "Registry"})`,
+          });
+        }
+        void occKey; // suppress unused variable warning
       }
     }
   }
@@ -1751,7 +1772,8 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
         }
       }
     }
-    const key = `${e.type}::${e.shortForm.toLowerCase()}`;
+    const normShortForm = e.shortForm.toLowerCase().replace(/\s+/g, " ").trim();
+    const key = `${e.type}::${normShortForm}`;
     if (!entityMap.has(key)) {
       entityMap.set(key, { shortForm: e.shortForm, type: e.type, isTarget: false, occurrences: [] });
     } else {

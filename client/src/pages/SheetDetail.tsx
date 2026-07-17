@@ -2610,9 +2610,14 @@ export default function SheetDetail() {
                                 }}
                                 onDragEnd={() => { targetFieldDragRef.current.dragging = null; }}
                                 onMouseDown={(e) => {
-                                  // Allow dragstart to fire — do NOT call e.preventDefault() here.
-                                  // Instead, re-focus the textarea after the click settles.
-                                  // (We only need to prevent blur on a plain click, not on drag start.)
+                                  // Prevent the textarea from blurring when the chip is clicked.
+                                  // Without this, the textarea commits and unmounts before onClick fires,
+                                  // leaving focusedTextareaRef pointing at a detached DOM node.
+                                  // We still allow dragstart to work — drag detection uses touchstart/mousemove,
+                                  // not mousedown, so preventing default here is safe.
+                                  if (!targetFieldDragRef.current.dragging) {
+                                    e.preventDefault();
+                                  }
                                 }}
                                 onClick={(e) => {
                                   // Only insert on a plain click (not after a drag)

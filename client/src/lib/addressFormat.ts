@@ -365,20 +365,24 @@ export function extractShortAddress(hbf: string): string {
  * Extract the short-form V1/V2 value from a fully-formatted RS vehicle description (V1F/V2F).
  *
  * The V1F format is: "grey Ford Escape, bearing WA registration 1IEK105 (Vehicle 1IEK105)"
- * The V1 short form is the content inside the trailing brackets: "Vehicle 1IEK105"
+ * The V1 short form is the REGISTRATION ONLY (not "Vehicle 1IEK105", just "1IEK105").
  *
- * If no bracket code is present, returns an empty string.
+ * Rules:
+ *  1. Extract the bracket content: "(Vehicle 1IEK105)" → "Vehicle 1IEK105"
+ *  2. Strip a leading "Vehicle " prefix (case-insensitive) to get just the rego.
+ *  3. If no bracket code is present, returns an empty string.
  *
  * Examples:
- *   "grey Ford Escape, bearing WA registration 1IEK105 (Vehicle 1IEK105)" → "Vehicle 1IEK105"
- *   "blue Toyota Hilux, bearing WA rego 1ABC123 (Vehicle 1ABC123)"        → "Vehicle 1ABC123"
+ *   "grey Ford Escape, bearing WA registration 1IEK105 (Vehicle 1IEK105)" → "1IEK105"
+ *   "blue Toyota Hilux, bearing WA rego 1ABC123 (Vehicle 1ABC123)"        → "1ABC123"
  *   "grey Ford Escape, bearing WA registration 1IEK105"                   → "" (no bracket)
  */
 export function extractShortVehicle(v1f: string): string {
   if (!v1f) return "";
   const bracketMatch = v1f.match(/\(([^)]{1,80})\)\s*$/);
-  if (bracketMatch) return bracketMatch[1].trim();
-  return "";
+  if (!bracketMatch) return "";
+  // Strip leading "Vehicle " prefix so V1 stores just the registration
+  return bracketMatch[1].trim().replace(/^Vehicle\s+/i, "").trim();
 }
 
 /**

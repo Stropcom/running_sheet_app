@@ -135,13 +135,14 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
     <div class="ops-list">${profile.operations.map(o => `<span class="op-badge">${esc(o.name)}</span>`).join("")}</div>
   </div>
 
-  ${(profile.hbf || profile.v1f || profile.v2f) ? `
+  ${(profile.hbf || profile.v1f || profile.v2f || profile.extraVehicles) ? `
   <div class="section">
     <div class="section-title">Registered Details</div>
     <div class="detail-grid">
       ${profile.hbf ? `<span class="detail-label">Home Address</span><span class="detail-value">${esc(formatIntelAddress(profile.hbf))}</span>` : ""}
       ${profile.v1f ? `<span class="detail-label">Vehicle 1</span><span class="detail-value">${esc(formatIntelVehicle(profile.v1f))}</span>` : ""}
       ${profile.v2f ? `<span class="detail-label">Vehicle 2</span><span class="detail-value">${esc(formatIntelVehicle(profile.v2f))}</span>` : ""}
+      ${profile.extraVehicles ? (() => { try { const evs: Array<{full?: string; short?: string}> = JSON.parse(profile.extraVehicles!); return evs.map((ev, i) => { const val = ev.full?.trim() || ev.short?.trim() || ""; return val ? `<span class="detail-label">Vehicle ${i + 2}</span><span class="detail-value">${esc(formatIntelVehicle(val))}</span>` : ""; }).join(""); } catch { return ""; } })() : ""}
     </div>
   </div>` : ""}
 
@@ -262,31 +263,45 @@ export default function IntelligenceTargetProfile() {
             </div>
 
             {/* Registered Details */}
-            {(profile.hbf || profile.v1f || profile.v2f) && (
-              <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
-                <SectionHeading label="Registered Details" count={[profile.hbf, profile.v1f, profile.v2f].filter(Boolean).length} />
-                <div className="grid grid-cols-1 gap-2 text-sm">
-                  {profile.hbf && (
-                    <div className="flex gap-3 items-start">
-                      <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">Home Address</span>
-                      <span className="font-mono text-xs text-foreground">{formatIntelAddress(profile.hbf)}</span>
-                    </div>
-                  )}
-                  {profile.v1f && (
-                    <div className="flex gap-3 items-start">
-                      <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">Vehicle 1</span>
-                      <span className="font-mono text-xs text-foreground">{formatIntelVehicle(profile.v1f)}</span>
-                    </div>
-                  )}
-                  {profile.v2f && (
-                    <div className="flex gap-3 items-start">
-                      <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">Vehicle 2</span>
-                      <span className="font-mono text-xs text-foreground">{formatIntelVehicle(profile.v2f)}</span>
-                    </div>
-                  )}
+            {(profile.hbf || profile.v1f || profile.v2f || profile.extraVehicles) && (() => {
+              const extraVehicleList: Array<{full?: string; short?: string}> = (() => { try { return profile.extraVehicles ? JSON.parse(profile.extraVehicles) : []; } catch { return []; } })();
+              const totalCount = [profile.hbf, profile.v1f, profile.v2f].filter(Boolean).length + extraVehicleList.filter(ev => ev.full?.trim() || ev.short?.trim()).length;
+              return (
+                <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
+                  <SectionHeading label="Registered Details" count={totalCount} />
+                  <div className="grid grid-cols-1 gap-2 text-sm">
+                    {profile.hbf && (
+                      <div className="flex gap-3 items-start">
+                        <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">Home Address</span>
+                        <span className="font-mono text-xs text-foreground">{formatIntelAddress(profile.hbf)}</span>
+                      </div>
+                    )}
+                    {profile.v1f && (
+                      <div className="flex gap-3 items-start">
+                        <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">Vehicle 1</span>
+                        <span className="font-mono text-xs text-foreground">{formatIntelVehicle(profile.v1f)}</span>
+                      </div>
+                    )}
+                    {profile.v2f && (
+                      <div className="flex gap-3 items-start">
+                        <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">Vehicle 2</span>
+                        <span className="font-mono text-xs text-foreground">{formatIntelVehicle(profile.v2f)}</span>
+                      </div>
+                    )}
+                    {extraVehicleList.map((ev, idx) => {
+                      const val = ev.full?.trim() || ev.short?.trim() || "";
+                      if (!val) return null;
+                      return (
+                        <div key={idx} className="flex gap-3 items-start">
+                          <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">Vehicle {idx + 2}</span>
+                          <span className="font-mono text-xs text-foreground">{formatIntelVehicle(val)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Running Sheets */}
             <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">

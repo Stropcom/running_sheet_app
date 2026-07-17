@@ -2938,6 +2938,8 @@ export interface IntelTargetProfile {
   v1: string | null;
   v2f: string | null;
   v2: string | null;
+  /** Extra vehicles beyond V1: JSON array of {full: string, short: string} */
+  extraVehicles: string | null;
   dep: string | null;
   arr: string | null;
   operations: Array<{ id: number; name: string }>;
@@ -3108,6 +3110,7 @@ export async function getIntelTargetProfile(targetId: number): Promise<IntelTarg
     v1: target.v1,
     v2f: target.v2f,
     v2: target.v2,
+    extraVehicles: target.extraVehicles ?? null,
     dep: target.dep,
     arr: target.arr,
     operations: opLinks,

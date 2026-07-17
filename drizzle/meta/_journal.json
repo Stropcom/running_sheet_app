@@ -274,6 +274,13 @@
       "when": 1784181032016,
       "tag": "0038_narrow_preak",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "5",
+      "when": 1784251727356,
+      "tag": "0039_chemical_champions",
+      "breakpoints": true
     }
   ]
 }

@@ -959,7 +959,7 @@ export async function createShortcut(data: Omit<InsertShortcut, 'id' | 'createdA
   await db.insert(shortcuts).values(data);
 }
 
-export async function updateShortcut(id: number, data: { trigger?: string; expansion?: string }) {
+export async function updateShortcut(id: number, data: { trigger?: string; expansion?: string; showInRs?: boolean }) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   await db.update(shortcuts).set(data).where(eq(shortcuts.id, id));

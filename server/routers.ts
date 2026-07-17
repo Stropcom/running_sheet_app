@@ -1399,11 +1399,19 @@ export const appRouter = router({
         id: z.number(),
         trigger: z.string().min(1).max(64).optional(),
         expansion: z.string().min(1).optional(),
+        showInRs: z.boolean().optional(),
       }))
       .mutation(async ({ input }) => {
         const { id, ...data } = input;
         if (data.trigger) data.trigger = data.trigger.toLowerCase();
         await updateShortcut(id, data);
+        return { success: true };
+      }),
+    /** Toggle whether a shortcut appears as a chip in RS and RS QE — any authenticated user */
+    toggleRs: protectedProcedure
+      .input(z.object({ id: z.number(), showInRs: z.boolean() }))
+      .mutation(async ({ input }) => {
+        await updateShortcut(input.id, { showInRs: input.showInRs });
         return { success: true };
       }),
     /** Delete a shortcut — admin only */

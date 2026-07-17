@@ -29,6 +29,22 @@ export default function ShortcutsPage() {
     onSuccess: () => { invalidate(); toast.success("Shortcut deleted"); },
     onError: (e) => toast.error(e.message),
   });
+  const toggleRsMutation = trpc.shortcuts.toggleRs.useMutation({
+    onMutate: async ({ id, showInRs }) => {
+      // Optimistic update
+      await utils.shortcuts.list.cancel();
+      const prev = utils.shortcuts.list.getData();
+      utils.shortcuts.list.setData(undefined, (old) =>
+        old?.map((s) => s.id === id ? { ...s, showInRs } : s)
+      );
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) utils.shortcuts.list.setData(undefined, ctx.prev);
+      toast.error("Failed to update RS chip setting");
+    },
+    onSettled: () => invalidate(),
+  });
 
   const [adding, setAdding] = useState(false);
   const [newTrigger, setNewTrigger] = useState("");
@@ -62,6 +78,7 @@ export default function ShortcutsPage() {
 
         <p className="text-sm text-muted-foreground">
           Type a shortcut trigger in the observation field and press <kbd className="px-1 py-0.5 rounded border text-xs font-mono">Space</kbd> or <kbd className="px-1 py-0.5 rounded border text-xs font-mono">Tab</kbd> to expand it automatically.
+          Use the <span className="font-semibold text-primary">+RS</span> / <span className="font-semibold text-destructive">−RS</span> buttons to control which shortcuts appear as quick-insert chips in Running Sheets and the RS Quick Entry panel.
         </p>
 
         {/* Add form */}
@@ -146,22 +163,38 @@ export default function ShortcutsPage() {
                     </span>
                     <span className="text-muted-foreground text-xs">→</span>
                     <span className="flex-1 text-sm">{s.expansion}</span>
-                    {isAdmin && (
-                      <div className="flex gap-1 shrink-0">
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => startEdit(s)}>
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-destructive hover:text-destructive"
-                          onClick={() => deleteMutation.mutate({ id: s.id })}
-                          disabled={deleteMutation.isPending}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    )}
+                    <div className="flex gap-1 shrink-0 items-center">
+                      {/* +RS / -RS toggle — available to all users */}
+                      <button
+                        onClick={() => toggleRsMutation.mutate({ id: s.id, showInRs: !s.showInRs })}
+                        disabled={toggleRsMutation.isPending}
+                        title={s.showInRs ? "Remove from RS chips" : "Add to RS chips"}
+                        className={[
+                          "h-7 px-2 rounded text-[11px] font-bold border transition-colors select-none",
+                          s.showInRs
+                            ? "bg-primary/10 border-primary/40 text-primary hover:bg-destructive/10 hover:border-destructive/40 hover:text-destructive"
+                            : "bg-muted border-border text-muted-foreground hover:bg-primary/10 hover:border-primary/40 hover:text-primary",
+                        ].join(" ")}
+                      >
+                        {s.showInRs ? "−RS" : "+RS"}
+                      </button>
+                      {isAdmin && (
+                        <>
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => startEdit(s)}>
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive hover:text-destructive"
+                            onClick={() => deleteMutation.mutate({ id: s.id })}
+                            disabled={deleteMutation.isPending}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>

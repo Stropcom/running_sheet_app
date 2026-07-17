@@ -3952,9 +3952,9 @@ export default function IntelligenceMapping() {
                         const v1fVal = rsTargetData?.v1f ?? null;
                         const v1Val = rsTargetData?.v1 ?? null;
                         const v1Reg = extractReg(v1Val);
-                        // All shortcut-folder triggers as chips (trigger only, always present) — exclude legacy 'D' chip
+                        // All shortcut-folder triggers as chips — only those with showInRs=true, exclude legacy 'D' chip
                         const folderShortcutChips: Array<{ label: string; display: string; getValue: () => string | null }> =
-                          (generalShortcuts as any[] ?? []).filter((s: any) => (s.trigger as string).toUpperCase() !== "D").map((s: any) => ({
+                          (generalShortcuts as any[] ?? []).filter((s: any) => (s.trigger as string).toUpperCase() !== "D" && s.showInRs !== false).map((s: any) => ({
                             label: (s.trigger as string).toUpperCase(),
                             display: (s.trigger as string).toUpperCase(),
                             getValue: () => findShortcut(s.trigger) ?? s.expansion as string,

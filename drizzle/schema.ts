@@ -185,6 +185,7 @@ export const shortcuts = mysqlTable("shortcuts", {
   id: int("id").autoincrement().primaryKey(),
   trigger: varchar("trigger", { length: 64 }).notNull().unique(), // e.g. "sc"
   expansion: text("expansion").notNull(),                         // e.g. "Surveillance commenced in the vicinity of"
+  showInRs: boolean("showInRs").notNull().default(true),          // whether this shortcut appears as a chip in RS and RS QE
   createdBy: int("createdBy").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

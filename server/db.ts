@@ -1532,6 +1532,7 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
       hbf: targets.hbf,
       v1f: targets.v1f,
       v2f: targets.v2f,
+      extraVehicles: targets.extraVehicles,
       operationId: targets.operationId,
       operationName: operations.name,
     })
@@ -1551,6 +1552,7 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
       hbf: targets.hbf,
       v1f: targets.v1f,
       v2f: targets.v2f,
+      extraVehicles: targets.extraVehicles,
       operationId: operationTargetLinks.operationId,
       operationName: operations.name,
     })
@@ -1565,6 +1567,7 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
     targetId: number; targetName: string; tgt: string | null;
     hb: string | null; v1: string | null; v2: string | null;
     hbf: string | null; v1f: string | null; v2f: string | null;
+    extraVehicles: string | null;
     operationId: number | null; operationName: string | null;
   }> = [];
 
@@ -1647,6 +1650,19 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
       { label: "V1F", value: t.v1f?.trim() || t.v1?.trim() || null, type: "vehicle" },
       { label: "V2F", value: t.v2f?.trim() || t.v2?.trim() || null, type: "vehicle" },
     ];
+    // Also include extra vehicles (V2, V3, V4 ...) stored as JSON array {full, short}
+    if (t.extraVehicles) {
+      try {
+        const extras: Array<{ full?: string; short?: string }> = JSON.parse(t.extraVehicles);
+        extras.forEach((ev, idx) => {
+          const vehicleLabel = `V${idx + 2}F`; // V2F, V3F, V4F ...
+          const vehicleValue = ev.full?.trim() || ev.short?.trim() || null;
+          if (vehicleValue) {
+            locationFields.push({ label: vehicleLabel, value: vehicleValue, type: "vehicle" });
+          }
+        });
+      } catch { /* malformed JSON — skip */ }
+    }
     for (const field of locationFields) {
       if (!field.value || field.value.trim() === "") continue;
       const shortForm = field.value.trim();

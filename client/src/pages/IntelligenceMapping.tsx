@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getMarkerDataUrl, getMarkerSvg, MARKER_COLOURS, MARKER_COLOUR_LABELS, MARKER_ICON_GROUPS, MARKER_ICON_LABELS, type MarkerColour, type MarkerIcon } from "@/lib/markerSvgs";
-import { convertGoogleAddresses, buildPoiAddress, formatIntelAddress, extractShortVehicle } from "@/lib/addressFormat";
+import { convertGoogleAddresses, buildPoiAddress, formatIntelAddress, extractShortVehicle, ensureBracketCode } from "@/lib/addressFormat";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -1990,7 +1990,9 @@ export default function IntelligenceMapping() {
   useEffect(() => {
     (window as any).__intelRsQuickEntry = (label: string) => {
       infoWindowRef.current?.close();
-      setMapQeAddress(label);
+      // Ensure the label has a bracket short-form — intel entity labels are already
+      // in RS format (suburb UPPERCASE, no postcode) but may lack the bracket code.
+      setMapQeAddress(ensureBracketCode(label));
       setMapQeOpen(true);
     };
     return () => { delete (window as any).__intelRsQuickEntry; };

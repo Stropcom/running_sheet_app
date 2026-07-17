@@ -386,6 +386,40 @@ export function extractShortVehicle(v1f: string): string {
 }
 
 /**
+ * Ensure an already-formatted RS address has a bracket short-form appended.
+ *
+ * If the address already ends with "(...)" it is returned unchanged.
+ * Otherwise, the street portion (everything before the first comma) is
+ * appended as the bracket code.
+ *
+ * Examples:
+ *   "25 Mccallum Crescent, ARDROSS"          → "25 Mccallum Crescent, ARDROSS (25 Mccallum Crescent)"
+ *   "25 Mccallum Crescent, ARDROSS (25 Mccallum Crescent)" → unchanged
+ *   "Blend Cafe, 25 Mccallum Crescent, ARDROSS" → "Blend Cafe, 25 Mccallum Crescent, ARDROSS (25 Mccallum Crescent)"
+ */
+export function ensureBracketCode(address: string): string {
+  if (!address) return address;
+  // Already has a bracket code — leave it
+  if (/\([^)]{1,120}\)\s*$/.test(address)) return address;
+  // Find the street portion: the first segment that starts with a number
+  // (handles "Business Name, 25 Street, SUBURB" and "25 Street, SUBURB")
+  const parts = address.split(",");
+  let streetPart = "";
+  for (const p of parts) {
+    const trimmed = p.trim();
+    if (/^\d/.test(trimmed)) {
+      streetPart = trimmed;
+      break;
+    }
+  }
+  if (!streetPart) {
+    // No numbered street found — use everything before the first comma
+    streetPart = parts[0]?.trim() ?? address;
+  }
+  return `${address} (${streetPart})`;
+}
+
+/**
  * Format a vehicle for display in the Intelligence section and map pop-ups.
  *
  * The RS shortForm is what's inside the brackets in an observation, e.g.:

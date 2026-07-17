@@ -26,6 +26,47 @@ import { convertGoogleAddresses, extractShortAddress } from "@/lib/addressFormat
 // Perth CBD — used as fallback when no GPS or explicit bias is available
 const PERTH_FALLBACK = { lat: -31.9505, lng: 115.8605 };
 
+// ── Google Maps loader (shared with Map.tsx) ──────────────────────────────────
+// We need the Maps script on pages that don't have a MapView (e.g. OperationDetail,
+// TargetRegistry). We load it lazily here so the autocomplete service is always
+// available regardless of which page the component is rendered on.
+let _mapsLoadPromise: Promise<void> | null = null;
+
+function ensureMapsLoaded(): Promise<void> {
+  // Already loaded
+  if (typeof window !== "undefined" && window.google?.maps?.places) {
+    return Promise.resolve();
+  }
+  // Already loading
+  if (_mapsLoadPromise) return _mapsLoadPromise;
+
+  _mapsLoadPromise = new Promise<void>((resolve, reject) => {
+    // If a Maps script tag already exists (loaded by Map.tsx), wait for it
+    const existing = document.querySelector('script[src*="maps/api/js"]');
+    if (existing) {
+      existing.addEventListener("load", () => resolve());
+      existing.addEventListener("error", reject);
+      return;
+    }
+
+    const apiKey = import.meta.env.VITE_FRONTEND_FORGE_API_KEY;
+    const forgeBase =
+      import.meta.env.VITE_FRONTEND_FORGE_API_URL ||
+      "https://forge.butterfly-effect.dev";
+    const src = `${forgeBase}/v1/maps/proxy/maps/api/js?key=${apiKey}&v=weekly&libraries=marker,places,geocoding,geometry,routes`;
+
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.crossOrigin = "anonymous";
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Failed to load Google Maps"));
+    document.head.appendChild(script);
+  });
+
+  return _mapsLoadPromise;
+}
+
 interface Props {
   value: string;
   onChange: (val: string) => void;
@@ -60,6 +101,11 @@ export function AddressAutocompleteInput({
       serviceRef.current = new google.maps.places.AutocompleteService();
     }
     return serviceRef.current;
+  }, []);
+
+  // Ensure Google Maps API is loaded (needed on pages without a MapView)
+  useEffect(() => {
+    ensureMapsLoaded().catch(() => { /* ignore load errors silently */ });
   }, []);
 
   // Request GPS position once on mount for use as bias centre

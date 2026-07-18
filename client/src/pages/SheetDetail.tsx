@@ -1157,9 +1157,14 @@ function TimePickerCell({
   locked: boolean;
   onSave: (display: string, minutes: number) => void;
 }) {
-  // Parse existing value into hour/minute/period
+  // Parse existing value into hour/minute/period; default to current time when empty
   const parsed = useMemo(() => {
-    if (!value) return { hour: "12", minute: "00", period: "AM" };
+    if (!value) {
+      const now = new Date();
+      const h24 = now.getHours();
+      const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+      return { hour: String(h12), minute: String(now.getMinutes()).padStart(2, "0"), period: h24 < 12 ? "AM" : "PM" };
+    }
     const m = value.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
     if (!m) return { hour: "12", minute: "00", period: "AM" };
     return { hour: String(parseInt(m[1], 10)), minute: m[2].padStart(2, "0"), period: m[3].toUpperCase() };
@@ -1240,7 +1245,7 @@ function TimePickerCell({
               </SelectTrigger>
               <SelectContent>
                 {hours.map((h) => (
-                  <SelectItem key={h} value={h} className="font-mono">
+                  <SelectItem key={h} value={h} className="font-mono text-foreground">
                     {String(parseInt(h, 10)).padStart(2, "0")}
                   </SelectItem>
                 ))}
@@ -1258,7 +1263,7 @@ function TimePickerCell({
               </SelectTrigger>
               <SelectContent>
                 {minutes.map((m) => (
-                  <SelectItem key={m} value={m} className="font-mono">{m}</SelectItem>
+                  <SelectItem key={m} value={m} className="font-mono text-foreground">{m}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -1272,18 +1277,35 @@ function TimePickerCell({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="AM">AM</SelectItem>
-                <SelectItem value="PM">PM</SelectItem>
+                <SelectItem value="AM" className="text-foreground">AM</SelectItem>
+                <SelectItem value="PM" className="text-foreground">PM</SelectItem>
               </SelectContent>
             </Select>
           </div>
-          <Button
-            size="sm"
-            className="w-full h-7 text-xs"
-            onClick={handleDone}
-          >
-            Done
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="flex-1 h-7 text-xs"
+              onClick={() => {
+                const now = new Date();
+                const h24 = now.getHours();
+                const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+                setHour(String(h12));
+                setMinute(String(now.getMinutes()).padStart(2, "0"));
+                setPeriod(h24 < 12 ? "AM" : "PM");
+              }}
+            >
+              Now
+            </Button>
+            <Button
+              size="sm"
+              className="flex-1 h-7 text-xs"
+              onClick={handleDone}
+            >
+              Done
+            </Button>
+          </div>
         </div>
       )}
     </div>
@@ -2585,6 +2607,14 @@ export default function SheetDetail() {
                                 }
                                 targetFieldDragRef.current.dragging = null;
                               }}
+                              // Desktop drag-and-drop: wrapper is the drop target so any chip can receive a drop
+                              onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                const fromLabel = targetFieldDragRef.current.dragging;
+                                if (fromLabel && fromLabel !== f.label) doReorder(fromLabel, f.label);
+                                targetFieldDragRef.current.dragging = null;
+                              }}
                               data-chip-label={f.label}
                               className="flex items-center gap-0.5"
                             >
@@ -2600,13 +2630,6 @@ export default function SheetDetail() {
                                   setTimeout(() => {
                                     (document.activeElement as HTMLElement | null)?.blur?.();
                                   }, 0);
-                                }}
-                                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
-                                onDrop={(e) => {
-                                  e.preventDefault();
-                                  const fromLabel = targetFieldDragRef.current.dragging;
-                                  if (fromLabel) doReorder(fromLabel, f.label);
-                                  targetFieldDragRef.current.dragging = null;
                                 }}
                                 onDragEnd={() => { targetFieldDragRef.current.dragging = null; }}
                                 onMouseDown={(e) => {
@@ -2726,8 +2749,8 @@ export default function SheetDetail() {
                   <tr className="bg-muted/30">
                     <th className="w-32">Time</th>
                     <th>Observation</th>
-                    <th className="w-36">CIN</th>
-                    <th className="w-24 text-center">Certify</th>
+                    <th className="col-cin w-36">CIN</th>
+                    <th className="col-certify w-24 text-center">Certify</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2759,8 +2782,8 @@ export default function SheetDetail() {
                         />
                       </td>
 
-                      {/* Member */}
-                      <td>
+                      {/* Member / CIN */}
+                      <td className="col-cin">
                         <MemberCell
                           row={row}
                           canEdit={canEdit}
@@ -2783,7 +2806,7 @@ export default function SheetDetail() {
                       </td>
 
                       {/* Certify */}
-                      <td>
+                      <td className="col-certify">
                         <CertifyCell
                           row={row}
                           canCertify={canCertify}

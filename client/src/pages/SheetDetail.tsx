@@ -2725,7 +2725,30 @@ export default function SheetDetail() {
                 <tbody>
                   {filteredRows.length === 0 && searchQuery ? (
                     <tr><td colSpan={4} className="py-12 text-center text-sm text-muted-foreground italic">No rows match your search.</td></tr>
-                  ) : filteredRows.map((row: NonNullable<typeof rows>[0]) => (
+                  ) : filteredRows.reduce((acc: React.ReactNode[], row: NonNullable<typeof rows>[0], idx: number) => {
+                    // ── Date-divider: insert a separator row when the calendar date changes ──
+                    if (row.timeMinutes != null) {
+                      const prevTimedRow = [...filteredRows].slice(0, idx).reverse().find((r: NonNullable<typeof rows>[0]) => r.timeMinutes != null);
+                      if (prevTimedRow) {
+                        const prevDate = new Date(prevTimedRow.createdAt).toLocaleDateString("en-AU", { timeZone: "Australia/Perth" });
+                        const curDate = new Date(row.createdAt).toLocaleDateString("en-AU", { timeZone: "Australia/Perth" });
+                        if (prevDate !== curDate) {
+                          const label = new Date(row.createdAt).toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "Australia/Perth" }).toUpperCase();
+                          acc.push(
+                            <tr key={`divider-${row.id}`} className="date-divider-row">
+                              <td colSpan={4} className="py-1.5 px-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="flex-1 h-px bg-border" />
+                                  <span className="text-[10px] font-semibold tracking-widest text-muted-foreground whitespace-nowrap">{label}</span>
+                                  <div className="flex-1 h-px bg-border" />
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        }
+                      }
+                    }
+                    acc.push(
                     <tr
                       key={row.id}
                       className={row.isLocked ? "row-locked" : "hover:bg-accent/20"}
@@ -2790,7 +2813,9 @@ export default function SheetDetail() {
 
 
                     </tr>
-                  ))}
+                    );
+                    return acc;
+                  }, [] as React.ReactNode[])}
                 </tbody>
               </table>
             )}

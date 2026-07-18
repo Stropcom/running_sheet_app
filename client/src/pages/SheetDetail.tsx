@@ -2751,17 +2751,21 @@ export default function SheetDetail() {
                     <tr><td colSpan={4} className="py-12 text-center text-sm text-muted-foreground italic">No rows match your search.</td></tr>
                   ) : filteredRows.reduce((acc: React.ReactNode[], row: NonNullable<typeof rows>[0], idx: number) => {
                     // ── Date-divider: insert a separator row when the day offset changes ──
+                    // In ascending order: divider goes BEFORE the first day-N row.
+                    // In reversed order: divider goes AFTER the last day-N row (i.e. before
+                    // the current row which belongs to an earlier day).
                     if (row.timeMinutes != null) {
                       const prevTimedRow = [...filteredRows].slice(0, idx).reverse().find((r: NonNullable<typeof rows>[0]) => r.timeMinutes != null);
                       if (prevTimedRow) {
                         const prevDay = rowDayOffsetMap.get(prevTimedRow.id) ?? 0;
                         const curDay = rowDayOffsetMap.get(row.id) ?? 0;
                         if (curDay !== prevDay) {
-                          // Build a label: sheet start date + curDay offset
+                          // The divider label always shows the HIGHER day (the later calendar day)
+                          const laterDay = Math.max(prevDay, curDay);
                           const sheetStartMs = sheet?.createdAt ? new Date(sheet.createdAt).getTime() : Date.now();
-                          const labelDate = new Date(sheetStartMs + curDay * 24 * 60 * 60 * 1000);
+                          const labelDate = new Date(sheetStartMs + laterDay * 24 * 60 * 60 * 1000);
                           const label = labelDate.toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "Australia/Perth" }).toUpperCase();
-                          acc.push(
+                          const dividerRow = (
                             <tr key={`divider-${row.id}`} className="date-divider-row">
                               <td colSpan={4} className="py-1.5 px-4">
                                 <div className="flex items-center gap-3">
@@ -2772,6 +2776,76 @@ export default function SheetDetail() {
                               </td>
                             </tr>
                           );
+                          if (!sortReversed) {
+                            // Ascending: divider before the higher-day row (current row)
+                            acc.push(dividerRow);
+                          } else {
+                            // Reversed: divider after the current row (which is the higher-day row
+                            // in reversed display, sitting above the lower-day rows below it).
+                            // We'll push the row first, then the divider.
+                            acc.push(
+                              <tr
+                                key={row.id}
+                                className={row.isLocked ? "row-locked" : "hover:bg-accent/20"}
+                              >
+                                {/* Time */}
+                                <td>
+                                  <TimePickerCell
+                                    value={row.time}
+                                    locked={row.isLocked}
+                                    onSave={(display, mins) => updateRow.mutate({ id: row.id, time: display, timeMinutes: mins })}
+                                  />
+                                </td>
+                                {/* Observation */}
+                                <td>
+                                  <EditableCell
+                                    value={row.observation}
+                                    locked={row.isLocked}
+                                    multiline
+                                    placeholder="Enter observation…"
+                                    onSave={(val) => updateRow.mutate({ id: row.id, observation: val })}
+                                    shortcuts={shortcutMap}
+                                  />
+                                </td>
+                                {/* Member / CIN */}
+                                <td>
+                                  <MemberCell
+                                    row={row}
+                                    canEdit={canEdit}
+                                    onAddMember={(rowId, name) => addMember.mutate({ rowId, memberName: name })}
+                                    onRemoveMember={(id, rowId) => {
+                                      const rowData = rows?.find((r) => r.id === rowId);
+                                      if (rowData?.isLocked) {
+                                        uncertifyAll.mutate({ rowId }, {
+                                          onSuccess: () => removeMember.mutate({ id, rowId }),
+                                        });
+                                      } else {
+                                        removeMember.mutate({ id, rowId });
+                                      }
+                                    }}
+                                    onReorderMembers={(rowId, orderedIds) => reorderMember.mutate({ rowId, orderedIds })}
+                                    onManualReorder={markManualReorder}
+                                    rosterCins={rosterCinList}
+                                  />
+                                </td>
+                                {/* Certify */}
+                                <td>
+                                  <CertifyCell
+                                    row={row}
+                                    canCertify={canCertify}
+                                    onCertify={(rowId, memberId) => certify.mutate({ rowId, memberId })}
+                                    onUncertify={(rowId, memberId) => uncertify.mutate({ rowId, memberId })}
+                                    onUncertifyAll={(rowId) => uncertifyAll.mutate({ rowId })}
+                                    onDeleteRow={canCertify ? (rowId) => {
+                                      if (confirm("Delete this row?")) deleteRow.mutate({ id: rowId });
+                                    } : undefined}
+                                  />
+                                </td>
+                              </tr>
+                            );
+                            acc.push(dividerRow);
+                            return acc;
+                          }
                         }
                       }
                     }

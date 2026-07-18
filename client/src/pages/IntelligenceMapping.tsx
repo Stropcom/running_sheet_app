@@ -1019,7 +1019,7 @@ export default function IntelligenceMapping() {
   const rsAddMember = trpc.member.add.useMutation();
   const rsCreateRow = trpc.row.create.useMutation();
   // General shortcuts for quick entry buttons
-  const { data: generalShortcuts } = trpc.shortcuts.list.useQuery();
+  const { data: generalShortcuts } = trpc.shortcuts.list.useQuery(undefined, { staleTime: 0 });
   // Target shortcuts for the selected sheet's target
   const { data: targetShortcuts } = trpc.targetShortcuts.list.useQuery(
     { targetId: rsTargetData?.id! },

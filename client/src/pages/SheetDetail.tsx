@@ -1958,10 +1958,13 @@ export default function SheetDetail() {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     setTargetFieldOrder(prev => {
-      const oldIndex = prev.indexOf(active.id as string);
-      const newIndex = prev.indexOf(over.id as string);
-      if (oldIndex === -1 || newIndex === -1) return prev;
-      const next = arrayMove(prev, oldIndex, newIndex);
+      // Ensure both chips are in the order array — new shortcuts/wildcards may not be
+      let base = [...prev];
+      if (!base.includes(active.id as string)) base = [...base, active.id as string];
+      if (!base.includes(over.id as string)) base = [...base, over.id as string];
+      const oldIndex = base.indexOf(active.id as string);
+      const newIndex = base.indexOf(over.id as string);
+      const next = arrayMove(base, oldIndex, newIndex);
       try { localStorage.setItem(`runsheet_field_order_${sheetId}`, JSON.stringify(next)); } catch {}
       return next;
     });
@@ -2017,7 +2020,7 @@ export default function SheetDetail() {
   });
 
   // Shortcuts: fetch once and build a trigger→expansion map
-  const { data: shortcutsData } = trpc.shortcuts.list.useQuery(undefined, { enabled: isAuthenticated });
+  const { data: shortcutsData } = trpc.shortcuts.list.useQuery(undefined, { enabled: isAuthenticated, staleTime: 0 });
   // Per-target shortcuts for the sheet's assigned target
   const { data: targetShortcutsData } = trpc.targetShortcuts.listForSheet.useQuery(
     { sheetId: sheetId! },

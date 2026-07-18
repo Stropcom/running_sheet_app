@@ -2623,29 +2623,23 @@ export default function SheetDetail() {
                                   targetFieldDragRef.current.pointerId = null;
                                 }}
                                 title={`Insert: ${f.value}`}
-                                className="flex items-baseline gap-1 px-2 py-0.5 rounded border border-primary/30 bg-primary/8 hover:bg-primary/15 active:scale-95 transition-all cursor-grab active:cursor-grabbing select-none"
+                                className="flex items-center gap-1 pl-1.5 pr-2 py-0.5 rounded border border-primary/30 bg-primary/8 hover:bg-primary/15 active:scale-95 transition-all cursor-grab active:cursor-grabbing select-none"
                               >
+                                {/* Grip handle — same dots pattern as sidebar folder grip */}
+                                <span className="flex flex-col gap-[2.5px] opacity-40 shrink-0">
+                                  <span className="flex gap-[2.5px]">
+                                    <span className="w-[3px] h-[3px] rounded-full bg-primary" />
+                                    <span className="w-[3px] h-[3px] rounded-full bg-primary" />
+                                  </span>
+                                  <span className="flex gap-[2.5px]">
+                                    <span className="w-[3px] h-[3px] rounded-full bg-primary" />
+                                    <span className="w-[3px] h-[3px] rounded-full bg-primary" />
+                                  </span>
+                                </span>
                                 <span className="text-[10px] font-bold text-primary uppercase tracking-wide">{f.label}</span>
                                 {/* Vn short chips show rego next to label; all other standard chips show trigger only */}
                                 {(isVnShort || !isStandard) && <span className="text-[10px] font-mono text-foreground/80 max-w-[80px] truncate">{f.value}</span>}
                               </button>
-                              {isDepArr && (
-                                <button
-                                  onClick={() => {
-                                    const now = new Date();
-                                    const h24 = now.getHours();
-                                    const min = now.getMinutes();
-                                    const totalMins = h24 * 60 + min;
-                                    const timeStr = minutesToTimeString(totalMins);
-                                    addRow.mutate({ sheetId, time: timeStr, timeMinutes: totalMins, observation: f.value! });
-                                  }}
-                                  disabled={addRow.isPending}
-                                  title={`Add ${f.label} row with current time`}
-                                  className="ml-0.5 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-primary/15 text-primary hover:bg-primary/25 active:scale-95 transition-all border border-primary/30"
-                                >
-                                  + Row
-                                </button>
-                              )}
                             </div>
                           );
                         })}

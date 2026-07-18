@@ -130,7 +130,13 @@ function TargetCard({
   };
 
   const update = trpc.target.update.useMutation({
-    onSuccess: () => { utils.target.list.invalidate({ operationId }); setDirty(false); toast.success("Target saved"); },
+    onSuccess: () => {
+      utils.target.list.invalidate({ operationId });
+      utils.target.getById.invalidate({ id: target.id });
+      utils.target.listAll.invalidate();
+      setDirty(false);
+      toast.success("Target saved");
+    },
     onError: (e: { message: string }) => toast.error(e.message),
   });
   const removeFromOp = trpc.target.registry.unlinkFromOperation.useMutation({

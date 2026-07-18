@@ -942,6 +942,9 @@ export default function IntelligenceMapping() {
     onSuccess: () => {
       void utils.target.registry.list.invalidate();
       void utils.intelligence.mappingLocations.invalidate();
+      // Invalidate getById so any open RS sheet refreshes chips immediately
+      if (editingTargetId) void utils.target.getById.invalidate({ id: editingTargetId });
+      void utils.target.listAll.invalidate();
       setEditingTargetId(null);
       setEtSaving(false);
       toast.success("Target saved");

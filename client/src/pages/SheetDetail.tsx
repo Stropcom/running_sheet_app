@@ -1906,7 +1906,7 @@ export default function SheetDetail() {
   const [targetFieldOrder, setTargetFieldOrder] = useState<string[]>(() => {
     try { const s = localStorage.getItem(`runsheet_field_order_${sheetId}`); if (s) return JSON.parse(s); } catch {} return CANONICAL_CHIP_ORDER;
   });
-  const targetFieldDragRef = useRef<{ dragging: string | null; startX: number; startY: number; startIdx: number }>({ dragging: null, startX: 0, startY: 0, startIdx: -1 });
+  const targetFieldDragRef = useRef<{ dragging: string | null; startX: number; startY: number; startIdx: number; pointerId: number | null }>({ dragging: null, startX: 0, startY: 0, startIdx: -1, pointerId: null });
   // Track the last focused textarea/input so chip taps can insert text even after blur
   const focusedTextareaRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null);
   // Track the last focused textarea/input via document focusin so chip taps can insert even after blur
@@ -2572,81 +2572,55 @@ export default function SheetDetail() {
                           return (
                             <div
                               key={f.label}
-                              // Touch handlers live on the wrapper (touch events bubble up from button)
-                              onTouchStart={(e) => {
-                                targetFieldDragRef.current.dragging = null;
-                                targetFieldDragRef.current.startX = e.touches[0].clientX;
-                                targetFieldDragRef.current.startY = e.touches[0].clientY;
-                                targetFieldDragRef.current.startIdx = idx;
-                              }}
-                              onTouchMove={(e) => {
-                                const touch = e.touches[0];
-                                const dx = touch.clientX - targetFieldDragRef.current.startX;
-                                const dy = touch.clientY - targetFieldDragRef.current.startY;
-                                const dist = Math.sqrt(dx * dx + dy * dy);
-                                if (dist > 8) {
-                                  if (!targetFieldDragRef.current.dragging) {
-                                    targetFieldDragRef.current.dragging = f.label;
-                                  }
-                                  e.preventDefault();
-                                  const el = document.elementFromPoint(touch.clientX, touch.clientY);
-                                  const chipEl = el?.closest('[data-chip-label]') as HTMLElement | null;
-                                  if (chipEl) {
-                                    const overLabel = chipEl.dataset.chipLabel;
-                                    if (overLabel && overLabel !== targetFieldDragRef.current.dragging) {
-                                      doReorder(targetFieldDragRef.current.dragging!, overLabel);
-                                      targetFieldDragRef.current.dragging = overLabel;
-                                    }
-                                  }
-                                }
-                              }}
-                              onTouchEnd={(e) => {
-                                if (!targetFieldDragRef.current.dragging) {
-                                  e.preventDefault();
-                                  insertIntoFocused();
-                                }
-                                targetFieldDragRef.current.dragging = null;
-                              }}
-                              // Desktop drag-and-drop: wrapper is the drop target so any chip can receive a drop
-                              onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
-                              onDrop={(e) => {
-                                e.preventDefault();
-                                const fromLabel = targetFieldDragRef.current.dragging;
-                                if (fromLabel && fromLabel !== f.label) doReorder(fromLabel, f.label);
-                                targetFieldDragRef.current.dragging = null;
-                              }}
                               data-chip-label={f.label}
                               className="flex items-center gap-0.5"
                             >
-                              {/* The button itself is draggable on desktop — this avoids the mousedown
-                                  preventDefault blocking dragstart on the wrapper div. */}
                               <button
-                                draggable
-                                onDragStart={(e) => {
-                                  targetFieldDragRef.current.dragging = f.label;
+                                onPointerDown={(e) => {
+                                  // Capture pointer so we track move/up even outside the element
+                                  (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                                  targetFieldDragRef.current.dragging = null;
+                                  targetFieldDragRef.current.startX = e.clientX;
+                                  targetFieldDragRef.current.startY = e.clientY;
                                   targetFieldDragRef.current.startIdx = idx;
-                                  e.dataTransfer.effectAllowed = "move";
-                                  // Keep the textarea focused: schedule re-focus after dragstart
-                                  setTimeout(() => {
-                                    (document.activeElement as HTMLElement | null)?.blur?.();
-                                  }, 0);
+                                  targetFieldDragRef.current.pointerId = e.pointerId;
+                                  // Prevent textarea blur on click
+                                  e.preventDefault();
                                 }}
-                                onDragEnd={() => { targetFieldDragRef.current.dragging = null; }}
-                                onMouseDown={(e) => {
-                                  // Prevent the textarea from blurring when the chip is clicked.
-                                  // Without this, the textarea commits and unmounts before onClick fires,
-                                  // leaving focusedTextareaRef pointing at a detached DOM node.
-                                  // We still allow dragstart to work — drag detection uses touchstart/mousemove,
-                                  // not mousedown, so preventing default here is safe.
-                                  if (!targetFieldDragRef.current.dragging) {
-                                    e.preventDefault();
+                                onPointerMove={(e) => {
+                                  if (targetFieldDragRef.current.pointerId !== e.pointerId) return;
+                                  const dx = e.clientX - targetFieldDragRef.current.startX;
+                                  const dy = e.clientY - targetFieldDragRef.current.startY;
+                                  const dist = Math.sqrt(dx * dx + dy * dy);
+                                  if (dist > 8) {
+                                    if (!targetFieldDragRef.current.dragging) {
+                                      targetFieldDragRef.current.dragging = f.label;
+                                    }
+                                    // Find which chip we're hovering over
+                                    const el = document.elementFromPoint(e.clientX, e.clientY);
+                                    const chipEl = el?.closest('[data-chip-label]') as HTMLElement | null;
+                                    if (chipEl) {
+                                      const overLabel = chipEl.dataset.chipLabel;
+                                      if (overLabel && overLabel !== targetFieldDragRef.current.dragging) {
+                                        doReorder(targetFieldDragRef.current.dragging!, overLabel);
+                                        targetFieldDragRef.current.dragging = overLabel;
+                                      }
+                                    }
                                   }
                                 }}
-                                onClick={(e) => {
-                                  // Only insert on a plain click (not after a drag)
+                                onPointerUp={(e) => {
+                                  if (targetFieldDragRef.current.pointerId !== e.pointerId) return;
+                                  (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
                                   if (!targetFieldDragRef.current.dragging) {
+                                    // Plain tap/click — insert into focused textarea
                                     insertIntoFocused();
                                   }
+                                  targetFieldDragRef.current.dragging = null;
+                                  targetFieldDragRef.current.pointerId = null;
+                                }}
+                                onPointerCancel={() => {
+                                  targetFieldDragRef.current.dragging = null;
+                                  targetFieldDragRef.current.pointerId = null;
                                 }}
                                 title={`Insert: ${f.value}`}
                                 className="flex items-baseline gap-1 px-2 py-0.5 rounded border border-primary/30 bg-primary/8 hover:bg-primary/15 active:scale-95 transition-all cursor-grab active:cursor-grabbing select-none"
@@ -2749,8 +2723,8 @@ export default function SheetDetail() {
                   <tr className="bg-muted/30">
                     <th className="w-32">Time</th>
                     <th>Observation</th>
-                    <th className="col-cin w-36">CIN</th>
-                    <th className="col-certify w-24 text-center">Certify</th>
+                    <th className="w-36">CIN</th>
+                    <th className="w-24 text-center">Certify</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2783,7 +2757,7 @@ export default function SheetDetail() {
                       </td>
 
                       {/* Member / CIN */}
-                      <td className="col-cin">
+                      <td>
                         <MemberCell
                           row={row}
                           canEdit={canEdit}
@@ -2806,7 +2780,7 @@ export default function SheetDetail() {
                       </td>
 
                       {/* Certify */}
-                      <td className="col-certify">
+                      <td>
                         <CertifyCell
                           row={row}
                           canCertify={canCertify}

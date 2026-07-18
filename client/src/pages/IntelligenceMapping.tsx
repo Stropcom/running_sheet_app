@@ -734,10 +734,18 @@ export default function IntelligenceMapping() {
     "DEP", "ARR",
     ...(Array.from({ length: 10 }, (_, i) => `#${i + 1}`) as string[]),
   ];
-  const [qeChipOrder, setQeChipOrder] = useState<string[]>(() => {
-    try { const s = localStorage.getItem("runlog_qe_chip_order"); if (s) return JSON.parse(s); } catch {} return QE_CANONICAL_ORDER;
-  });
-  const qeChipDragRef = useRef<{ dragging: string | null; startX: number; startY: number }>({ dragging: null, startX: 0, startY: 0 });
+  // QE chips mirror the main RS chip order (read from the active sheet's localStorage key)
+  // No drag in QE — main RS is the single source of truth for chip order
+  const [qeChipOrder, setQeChipOrder] = useState<string[]>(QE_CANONICAL_ORDER);
+  // Sync QE chip order from the active RS sheet's saved order whenever the sheet changes
+  useEffect(() => {
+    if (!rsSelectedSheetId) { setQeChipOrder(QE_CANONICAL_ORDER); return; }
+    try {
+      const s = localStorage.getItem(`runsheet_field_order_${rsSelectedSheetId}`);
+      if (s) { setQeChipOrder(JSON.parse(s)); return; }
+    } catch {}
+    setQeChipOrder(QE_CANONICAL_ORDER);
+  }, [rsSelectedSheetId]);
   const [cmLabel, setCmLabel] = useState("");
   const [cmAddress, setCmAddress] = useState("");
   const [cmNote, setCmNote] = useState("");
@@ -3991,85 +3999,19 @@ export default function IntelligenceMapping() {
                               ]);
                               const isVnShortQe = (label: string) => /^V\d+$/.test(label); // V1, V2, V3 — show rego
                               const isTargetDetailChip = (label: string) => /^V\d+F$/.test(label); // VnF — trigger only
-                              const doQeReorder = (fromLabel: string, toLabel: string) => {
-                                if (!fromLabel || fromLabel === toLabel) return;
-                                const labels = orderedChips.map(x => x.label);
-                                const fromIdx = labels.indexOf(fromLabel);
-                                const toIdx = labels.indexOf(toLabel);
-                                if (fromIdx === -1 || toIdx === -1) return;
-                                const newOrder = [...labels];
-                                newOrder.splice(fromIdx, 1);
-                                newOrder.splice(toIdx, 0, fromLabel);
-                                setQeChipOrder(newOrder);
-                                try { localStorage.setItem("runlog_qe_chip_order", JSON.stringify(newOrder)); } catch {};
-                              };
+
                               return orderedChips.map((s) => {
                                 const isStdQe = folderQeLabels.has(s.label);
                                 return (
-                                  <div
+                                  <button
                                     key={s.label}
-                                    // Desktop HTML5 drag — draggable on the div itself (it IS the interactive element)
-                                    draggable
-                                    onDragStart={(e) => {
-                                      qeChipDragRef.current.dragging = s.label;
-                                      e.dataTransfer.effectAllowed = "move";
-                                    }}
-                                    onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
-                                    onDrop={(e) => {
-                                      e.preventDefault();
-                                      const fromLabel = qeChipDragRef.current.dragging;
-                                      if (fromLabel) doQeReorder(fromLabel, s.label);
-                                      qeChipDragRef.current.dragging = null;
-                                    }}
-                                    onDragEnd={() => { qeChipDragRef.current.dragging = null; }}
-                                    // Touch drag — 8px threshold before entering drag mode
-                                    onTouchStart={(e) => {
-                                      qeChipDragRef.current.dragging = null;
-                                      qeChipDragRef.current.startX = e.touches[0].clientX;
-                                      qeChipDragRef.current.startY = e.touches[0].clientY;
-                                    }}
-                                    onTouchMove={(e) => {
-                                      const touch = e.touches[0];
-                                      const dx = touch.clientX - qeChipDragRef.current.startX;
-                                      const dy = touch.clientY - qeChipDragRef.current.startY;
-                                      const dist = Math.sqrt(dx * dx + dy * dy);
-                                      if (dist > 8) {
-                                        if (!qeChipDragRef.current.dragging) {
-                                          qeChipDragRef.current.dragging = s.label;
-                                        }
-                                        e.preventDefault();
-                                        const el = document.elementFromPoint(touch.clientX, touch.clientY);
-                                        const chipEl = el?.closest('[data-qe-chip]') as HTMLElement | null;
-                                        if (chipEl) {
-                                          const overLabel = chipEl.dataset.qeChip;
-                                          if (overLabel && overLabel !== qeChipDragRef.current.dragging) {
-                                            doQeReorder(qeChipDragRef.current.dragging!, overLabel);
-                                            qeChipDragRef.current.dragging = overLabel;
-                                          }
-                                        }
-                                      }
-                                    }}
-                                    onTouchEnd={(e) => {
-                                      if (!qeChipDragRef.current.dragging) {
-                                        e.preventDefault();
-                                        const v = s.getValue(); if (v) appendText(v);
-                                      }
-                                      qeChipDragRef.current.dragging = null;
-                                    }}
-                                    // Desktop click: insert text only if this wasn't a drag
-                                    // NOTE: do NOT call e.preventDefault() on mouseDown here —
-                                    // that would block the HTML5 dragstart event on desktop.
-                                    onClick={() => {
-                                      if (!qeChipDragRef.current.dragging) {
-                                        const v = s.getValue(); if (v) appendText(v);
-                                      }
-                                    }}
+                                    onClick={() => { const v = s.getValue(); if (v) appendText(v); }}
                                     data-qe-chip={s.label}
-                                    className="cursor-grab active:cursor-grabbing px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all select-none"
+                                    className="cursor-pointer px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all select-none"
                                   >
                                     {/* Vn short: show display (label + rego); VnF/folder/TGT: show label only */}
                                     {isVnShortQe(s.label) ? s.display : (isStdQe || isTargetDetailChip(s.label)) ? s.label : s.display}
-                                  </div>
+                                  </button>
                                 );
                               });
                             })()}

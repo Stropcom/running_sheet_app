@@ -246,32 +246,6 @@ button:active:not(:disabled) {
   border-spacing: 0;
 }
 
-/* CIN column: sticky to the right */
-.running-sheet-table th.col-cin,
-.running-sheet-table td.col-cin {
-  position: sticky;
-  right: 6rem; /* width of certify column */
-  background: var(--card);
-  z-index: 2;
-  box-shadow: -2px 0 4px -1px oklch(0 0 0 / 0.15);
-}
-
-/* CERTIFY column: sticky to the far right */
-.running-sheet-table th.col-certify,
-.running-sheet-table td.col-certify {
-  position: sticky;
-  right: 0;
-  background: var(--card);
-  z-index: 2;
-}
-
-/* Keep header cells on top of body cells */
-.running-sheet-table thead th.col-cin,
-.running-sheet-table thead th.col-certify {
-  z-index: 3;
-  background: var(--muted);
-}
-
 .running-sheet-table th {
   letter-spacing: 0.06em;
   font-size: 0.7rem;

@@ -69,6 +69,7 @@ import {
   SortableContext,
   useSortable,
   verticalListSortingStrategy,
+  horizontalListSortingStrategy,
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -1427,6 +1428,48 @@ function EditableCell({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
+// ── SortableChip — dnd-kit sortable chip for the target field chip row ──────
+function SortableChip({ id, label, value, showValue, onInsert }: {
+  id: string; label: string; value?: string | null; showValue: boolean; onInsert: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    zIndex: isDragging ? 50 : undefined,
+  };
+  return (
+    <div ref={setNodeRef} style={style} className="flex items-center">
+      <button
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={onInsert}
+        title={`Insert: ${value}`}
+        className="flex items-center gap-1 pl-1 pr-2 py-0.5 rounded border border-primary/30 bg-primary/8 hover:bg-primary/15 active:scale-95 transition-all select-none cursor-pointer"
+      >
+        {/* Grip handle */}
+        <span
+          {...attributes}
+          {...listeners}
+          className="flex flex-col gap-[2.5px] opacity-40 shrink-0 cursor-grab active:cursor-grabbing px-0.5 touch-none"
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <span className="flex gap-[2.5px]">
+            <span className="w-[3px] h-[3px] rounded-full bg-primary" />
+            <span className="w-[3px] h-[3px] rounded-full bg-primary" />
+          </span>
+          <span className="flex gap-[2.5px]">
+            <span className="w-[3px] h-[3px] rounded-full bg-primary" />
+            <span className="w-[3px] h-[3px] rounded-full bg-primary" />
+          </span>
+        </span>
+        <span className="text-[10px] font-bold text-primary uppercase tracking-wide">{label}</span>
+        {showValue && value && <span className="text-[10px] font-mono text-foreground/80 max-w-[80px] truncate">{value}</span>}
+      </button>
+    </div>
+  );
+}
+
 export default function SheetDetail() {
   const { id } = useParams<{ id: string }>();
   const sheetId = parseInt(id ?? "0", 10);
@@ -1435,6 +1478,11 @@ export default function SheetDetail() {
 
   const utils = trpc.useUtils();
   const { isOnline, syncStatus } = useOffline();
+  // Sensors for chip drag-to-reorder (separate from CinRow sensors)
+  const chipSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } })
+  );
 
   // Offline-aware local row state — used when offline
   const [offlineRows, setOfflineRows] = useState<typeof rows | null>(null);
@@ -1906,16 +1954,18 @@ export default function SheetDetail() {
   const [targetFieldOrder, setTargetFieldOrder] = useState<string[]>(() => {
     try { const s = localStorage.getItem(`runsheet_field_order_${sheetId}`); if (s) return JSON.parse(s); } catch {} return CANONICAL_CHIP_ORDER;
   });
-  const targetFieldDragRef = useRef<{ dragging: string | null; startX: number; startY: number; active: boolean }>({ dragging: null, startX: 0, startY: 0, active: false });
-  // Document-level handlers for chip drag — attached on pointerdown, removed on pointerup/cancel
-  const chipDragMoveHandler = useRef<((e: PointerEvent) => void) | null>(null);
-  const chipDragUpHandler = useRef<((e: PointerEvent) => void) | null>(null);
-  const cleanupChipDrag = useCallback(() => {
-    if (chipDragMoveHandler.current) { document.removeEventListener('pointermove', chipDragMoveHandler.current); chipDragMoveHandler.current = null; }
-    if (chipDragUpHandler.current) { document.removeEventListener('pointerup', chipDragUpHandler.current); document.removeEventListener('pointercancel', chipDragUpHandler.current); chipDragUpHandler.current = null; }
-    targetFieldDragRef.current.active = false;
-    targetFieldDragRef.current.dragging = null;
-  }, []);
+  const handleChipDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setTargetFieldOrder(prev => {
+      const oldIndex = prev.indexOf(active.id as string);
+      const newIndex = prev.indexOf(over.id as string);
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      const next = arrayMove(prev, oldIndex, newIndex);
+      try { localStorage.setItem(`runsheet_field_order_${sheetId}`, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, [sheetId]);
   // Track the last focused textarea/input so chip taps can insert text even after blur
   const focusedTextareaRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null);
   // Track the last focused textarea/input via document focusin so chip taps can insert even after blur
@@ -2530,121 +2580,58 @@ export default function SheetDetail() {
                   : visibleFields;
                 return (
                   <div className="px-4 pb-3 border-t border-border/40">
-                    {hasAnyField && (
-                      <div className="flex flex-wrap gap-1.5 pt-2">
-                        {orderedFields.map((f, idx) => {
-                          const isDepArr = (f.label === "DEP" || f.label === "ARR") && !isClosed;
-                          // Insert value into the last focused textarea (stored in ref to survive blur)
-                          const insertIntoFocused = () => {
-                            const el = focusedTextareaRef.current;
-                            if (el) {
-                              el.focus();
-                              const start = el.selectionStart ?? el.value.length;
-                              const end = el.selectionEnd ?? el.value.length;
-                              const before = el.value.slice(0, start);
-                              const after = el.value.slice(end);
-                              const insert = (before && !before.endsWith(" ")) ? ` ${f.value!}` : f.value!;
-                              // Use execCommand for React-controlled inputs
-                              try {
-                                document.execCommand("insertText", false, insert);
-                              } catch {
-                                // Fallback: directly set value and dispatch input event
-                                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set
-                                  || Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
-                                if (nativeInputValueSetter) {
-                                  nativeInputValueSetter.call(el, before + insert + after);
-                                  el.dispatchEvent(new Event("input", { bubbles: true }));
-                                }
-                              }
-                            }
-                          };
-                          // Chip display rules:
-                          // - Vn short chips (V1, V2, V3...): show label + rego value next to it
-                          // - VnF full chips, TGT, HBF, HB, DEP, ARR, folder shortcuts: trigger only (no value shown)
-                          const shortcutFolderLabels = new Set((shortcutsData ?? []).map(s => s.trigger.toUpperCase()));
-                          const TRIGGER_ONLY_LABELS = new Set(["TGT", "HBF", "HB", "V1F", "V2F", "DEP", "ARR"]);
-                          const isVnShort = /^V\d+$/.test(f.label); // V1, V2, V3 etc — show rego next to label
-                          const isVnFull  = /^V\d+F$/.test(f.label); // V1F, V2F etc — trigger only
-                          const isStandard = !isVnShort && (shortcutFolderLabels.has(f.label) || TRIGGER_ONLY_LABELS.has(f.label) || isVnFull);
-                          const doReorder = (fromLabel: string, toLabel: string) => {
-                            if (!fromLabel || fromLabel === toLabel) return;
-                            const labels = orderedFields.map(x => x.label);
-                            const fromIdx = labels.indexOf(fromLabel);
-                            const toIdx = labels.indexOf(toLabel);
-                            if (fromIdx === -1 || toIdx === -1) return;
-                            const newOrder = [...labels];
-                            newOrder.splice(fromIdx, 1);
-                            newOrder.splice(toIdx, 0, fromLabel);
-                            setTargetFieldOrder(newOrder);
-                            try { localStorage.setItem(`runsheet_field_order_${sheetId}`, JSON.stringify(newOrder)); } catch {}
-                          };
-                          return (
-                            <div
-                              key={f.label}
-                              data-chip-label={f.label}
-                              className="flex items-center gap-0.5"
-                            >
-                              <button
-                                onMouseDown={(e) => {
-                                  // Prevent textarea blur so focused cell stays active
-                                  e.preventDefault();
-                                  const startX = e.clientX;
-                                  const startY = e.clientY;
-                                  const dragLabel = f.label;
-                                  let dragging = false;
-                                  const onMove = (ev: PointerEvent) => {
-                                    const dx = ev.clientX - startX;
-                                    const dy = ev.clientY - startY;
-                                    if (!dragging && Math.sqrt(dx * dx + dy * dy) > 8) {
-                                      dragging = true;
-                                      targetFieldDragRef.current.dragging = dragLabel;
-                                    }
-                                    if (dragging) {
-                                      const el = document.elementFromPoint(ev.clientX, ev.clientY);
-                                      const chipEl = el?.closest('[data-chip-label]') as HTMLElement | null;
-                                      if (chipEl) {
-                                        const overLabel = chipEl.dataset.chipLabel;
-                                        if (overLabel && overLabel !== targetFieldDragRef.current.dragging) {
-                                          doReorder(targetFieldDragRef.current.dragging!, overLabel);
-                                          targetFieldDragRef.current.dragging = overLabel;
-                                        }
+                    {hasAnyField && (() => {
+                      const shortcutFolderLabels = new Set((shortcutsData ?? []).map(s => s.trigger.toUpperCase()));
+                      const TRIGGER_ONLY_LABELS = new Set(["TGT", "HBF", "HB", "V1F", "V2F", "DEP", "ARR"]);
+                      return (
+                        <DndContext
+                          sensors={chipSensors}
+                          collisionDetection={closestCenter}
+                          onDragEnd={handleChipDragEnd}
+                        >
+                          <SortableContext items={orderedFields.map(f => f.label)} strategy={horizontalListSortingStrategy}>
+                            <div className="flex flex-wrap gap-1.5 pt-2">
+                              {orderedFields.map((f) => {
+                                const insertIntoFocused = () => {
+                                  const el = focusedTextareaRef.current;
+                                  if (el) {
+                                    el.focus();
+                                    const start = el.selectionStart ?? el.value.length;
+                                    const end = el.selectionEnd ?? el.value.length;
+                                    const before = el.value.slice(0, start);
+                                    const after = el.value.slice(end);
+                                    const insert = (before && !before.endsWith(" ")) ? ` ${f.value!}` : f.value!;
+                                    try {
+                                      document.execCommand("insertText", false, insert);
+                                    } catch {
+                                      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set
+                                        || Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+                                      if (nativeInputValueSetter) {
+                                        nativeInputValueSetter.call(el, before + insert + after);
+                                        el.dispatchEvent(new Event("input", { bubbles: true }));
                                       }
                                     }
-                                  };
-                                  const onUp = () => {
-                                    if (!dragging) insertIntoFocused();
-                                    cleanupChipDrag();
-                                    document.removeEventListener('pointermove', onMove);
-                                    document.removeEventListener('pointerup', onUp);
-                                    document.removeEventListener('pointercancel', onUp);
-                                  };
-                                  document.addEventListener('pointermove', onMove);
-                                  document.addEventListener('pointerup', onUp);
-                                  document.addEventListener('pointercancel', onUp);
-                                }}
-                                title={`Insert: ${f.value}`}
-                                className="flex items-center gap-1 pl-1.5 pr-2 py-0.5 rounded border border-primary/30 bg-primary/8 hover:bg-primary/15 active:scale-95 transition-all cursor-grab active:cursor-grabbing select-none"
-                              >
-                                {/* Grip handle — same dots pattern as sidebar folder grip */}
-                                <span className="flex flex-col gap-[2.5px] opacity-40 shrink-0">
-                                  <span className="flex gap-[2.5px]">
-                                    <span className="w-[3px] h-[3px] rounded-full bg-primary" />
-                                    <span className="w-[3px] h-[3px] rounded-full bg-primary" />
-                                  </span>
-                                  <span className="flex gap-[2.5px]">
-                                    <span className="w-[3px] h-[3px] rounded-full bg-primary" />
-                                    <span className="w-[3px] h-[3px] rounded-full bg-primary" />
-                                  </span>
-                                </span>
-                                <span className="text-[10px] font-bold text-primary uppercase tracking-wide">{f.label}</span>
-                                {/* Vn short chips show rego next to label; all other standard chips show trigger only */}
-                                {(isVnShort || !isStandard) && <span className="text-[10px] font-mono text-foreground/80 max-w-[80px] truncate">{f.value}</span>}
-                              </button>
+                                  }
+                                };
+                                const isVnShort = /^V\d+$/.test(f.label);
+                                const isVnFull  = /^V\d+F$/.test(f.label);
+                                const isStandard = !isVnShort && (shortcutFolderLabels.has(f.label) || TRIGGER_ONLY_LABELS.has(f.label) || isVnFull);
+                                return (
+                                  <SortableChip
+                                    key={f.label}
+                                    id={f.label}
+                                    label={f.label}
+                                    value={f.value}
+                                    showValue={isVnShort || !isStandard}
+                                    onInsert={insertIntoFocused}
+                                  />
+                                );
+                              })}
                             </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                          </SortableContext>
+                        </DndContext>
+                      );
+                    })()}
                   </div>
                 );
               })()}

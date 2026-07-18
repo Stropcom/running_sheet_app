@@ -2572,12 +2572,23 @@ export default function SheetDetail() {
               {targetPanelExpanded && (() => {
                 // Apply saved order to the fields list
                 const visibleFields = fields.filter((f) => f.value);
-                const orderedFields = targetFieldOrder.length > 0
+                const isWildcard = (lbl: string) => /^#\d+$/.test(lbl);
+                const nonWildVisible = visibleFields.filter(f => !isWildcard(f.label));
+                const wildcardVisible = visibleFields.filter(f => isWildcard(f.label));
+                const orderedNonWild = targetFieldOrder.length > 0
                   ? [
-                      ...targetFieldOrder.map(lbl => visibleFields.find(f => f.label === lbl)).filter(Boolean) as typeof visibleFields,
-                      ...visibleFields.filter(f => !targetFieldOrder.includes(f.label)),
+                      ...targetFieldOrder.filter(lbl => !isWildcard(lbl)).map(lbl => nonWildVisible.find(f => f.label === lbl)).filter(Boolean) as typeof visibleFields,
+                      ...nonWildVisible.filter(f => !targetFieldOrder.includes(f.label)),
                     ]
-                  : visibleFields;
+                  : nonWildVisible;
+                // Wildcards always at the end, in their saved order
+                const orderedWild = targetFieldOrder.length > 0
+                  ? [
+                      ...targetFieldOrder.filter(isWildcard).map(lbl => wildcardVisible.find(f => f.label === lbl)).filter(Boolean) as typeof visibleFields,
+                      ...wildcardVisible.filter(f => !targetFieldOrder.includes(f.label)),
+                    ]
+                  : wildcardVisible;
+                const orderedFields = [...orderedNonWild, ...orderedWild];
                 return (
                   <div className="px-4 pb-3 border-t border-border/40">
                     {hasAnyField && (() => {

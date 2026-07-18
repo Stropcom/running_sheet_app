@@ -738,13 +738,19 @@ export default function IntelligenceMapping() {
   // No drag in QE — main RS is the single source of truth for chip order
   const [qeChipOrder, setQeChipOrder] = useState<string[]>(QE_CANONICAL_ORDER);
   // Sync QE chip order from the active RS sheet's saved order whenever the sheet changes
+  // Also listen to storage events so the QE updates live when chips are reordered on the main RS
   useEffect(() => {
-    if (!rsSelectedSheetId) { setQeChipOrder(QE_CANONICAL_ORDER); return; }
-    try {
-      const s = localStorage.getItem(`runsheet_field_order_${rsSelectedSheetId}`);
-      if (s) { setQeChipOrder(JSON.parse(s)); return; }
-    } catch {}
-    setQeChipOrder(QE_CANONICAL_ORDER);
+    const syncOrder = () => {
+      if (!rsSelectedSheetId) { setQeChipOrder(QE_CANONICAL_ORDER); return; }
+      try {
+        const s = localStorage.getItem(`runsheet_field_order_${rsSelectedSheetId}`);
+        if (s) { setQeChipOrder(JSON.parse(s)); return; }
+      } catch {}
+      setQeChipOrder(QE_CANONICAL_ORDER);
+    };
+    syncOrder();
+    window.addEventListener('storage', syncOrder);
+    return () => window.removeEventListener('storage', syncOrder);
   }, [rsSelectedSheetId]);
   const [cmLabel, setCmLabel] = useState("");
   const [cmAddress, setCmAddress] = useState("");

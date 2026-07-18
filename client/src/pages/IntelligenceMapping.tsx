@@ -595,6 +595,11 @@ export default function IntelligenceMapping() {
     try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) { const z = JSON.parse(s).mapZoom; if (typeof z === 'number') return z; } } catch { /* ignore */ }
     return 11;
   });
+  // Persist the user's chosen map type (roadmap / satellite)
+  const [mapInitialTypeId, setMapInitialTypeId] = useState<string>(() => {
+    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) { const t = JSON.parse(s).mapTypeId; if (typeof t === 'string') return t; } } catch { /* ignore */ }
+    return "roadmap";
+  });
 
   // Left pane starts closed — user opens it when needed. Never auto-open on navigation.
   // On desktop (lg+), the left pane is always open and resizable
@@ -1602,6 +1607,18 @@ export default function IntelligenceMapping() {
       });
     });
 
+    // Persist map type (roadmap / satellite) whenever the user switches
+    map.addListener("maptypeid_changed", () => {
+      const typeId = map.getMapTypeId();
+      if (!typeId) return;
+      setMapInitialTypeId(typeId);
+      try {
+        const existing = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+        const parsed = existing ? JSON.parse(existing) : {};
+        localStorage.setItem(LS_MAP_SETTINGS_KEY, JSON.stringify({ ...parsed, mapTypeId: typeId }));
+      } catch { /* ignore */ }
+    });
+
     // Tap anywhere on the map (not on a marker/POI) → close the InfoWindow
     map.addListener("click", (e: google.maps.MapMouseEvent & { placeId?: string }) => {
       if (!e.placeId) {
@@ -2468,6 +2485,7 @@ export default function IntelligenceMapping() {
             className="w-full h-full"
             initialCenter={mapInitialCenter}
             initialZoom={mapInitialZoom}
+            initialMapTypeId={mapInitialTypeId}
           />
 
           {/* Centre on me / Follow me floating buttons — top-left below search bar */}

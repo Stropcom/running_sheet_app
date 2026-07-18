@@ -3923,107 +3923,112 @@ export default function IntelligenceMapping() {
                       />
                       {/* Shortcut buttons */}
                       {(() => {
+                        // ── QE chips: exact mirror of main RS chip set, values, and order ──────────
+                        // Single source of truth: assignedTarget (target.getById) for all target fields.
+                        // Chip set matches SheetDetail exactly: TGT, HBF, HB, V1F, V1, extra vehicles, wildcards, DEP, ARR, folder shortcuts.
+                        // Order: qeChipOrder (read from RS localStorage key) with wildcards always last.
                         const appendText = (text: string) => { setRsInlineText(prev => prev ? `${prev} ${text}` : text); resetInlineTimer(); rsInlineInputRef.current?.focus(); };
-                        const findShortcut = (trigger: string) => {
-                          const tgt = (targetShortcuts as any[] | undefined)?.find((s: any) => s.trigger?.toLowerCase() === trigger.toLowerCase());
-                          if (tgt) return tgt.expansion as string;
-                          const gen = (generalShortcuts as any[] | undefined)?.find((s: any) => s.trigger?.toLowerCase() === trigger.toLowerCase());
-                          return gen ? gen.expansion as string : null;
-                        };
-                        // Helper: extract registration/short value for display preview
-                        // A rego must be 3-8 alphanumeric chars AND contain at least one digit OR letter
+                        const t = assignedTarget as any;
+                        if (!t) return null;
+
+                        // Helper: extract rego from a vehicle string (same logic as SheetDetail extractRegSD)
                         const extractReg = (val: string | null | undefined): string | null => {
                           if (!val) return null;
                           const stripped = val.replace(/^Vehicle\s+/i, '').trim();
-                          const tokens = stripped.split(/\s+/).map(t => t.replace(/[^A-Z0-9]/gi, ''));
-                          const rego = tokens.slice().reverse().find(t => /^[A-Z0-9]{3,8}$/i.test(t) && /\d/.test(t) && /[A-Z]/i.test(t));
+                          const tokens = stripped.split(/\s+/).map((tk: string) => tk.replace(/[^A-Z0-9]/gi, ''));
+                          const rego = tokens.slice().reverse().find((tk: string) => /^[A-Z0-9]{3,8}$/i.test(tk) && /\d/.test(tk) && /[A-Z]/i.test(tk));
                           if (rego) return rego;
-                          // Fallback: if stripped value looks like a plate (3-8 chars, alphanumeric), use it directly
-                          if (/^[A-Z0-9]{3,8}$/i.test(stripped)) return stripped;
-                          return null;
+                          if (/^[A-Z0-9]{3,8}$/i.test(stripped) && /\d/.test(stripped) && /[A-Z]/i.test(stripped)) return stripped;
+                          return stripped || null;
                         };
-                        // Build dynamic extra vehicle chips from assignedTarget JSON
-                        // Each extra vehicle gets both a VnF chip (full value, trigger-only label) and a Vn chip (rego-only)
+
+                        // Extra vehicle chips from JSON (V2F/V2, V3F/V3, …)
                         const extraVehicleChips: Array<{ label: string; display: string; getValue: () => string | null }> = [];
                         try {
-                          const evs: Array<{ full: string; short: string }> = JSON.parse((assignedTarget as any)?.extraVehicles ?? '[]');
-                          evs.forEach((ev, i) => {
+                          const evs: Array<{ full: string; short: string }> = JSON.parse(t.extraVehicles ?? '[]');
+                          evs.forEach((ev: { full: string; short: string }, i: number) => {
                             const num = i + 2;
                             if (ev.full) extraVehicleChips.push({ label: `V${num}F`, display: `V${num}F`, getValue: () => ev.full });
                             if (ev.short) {
                               const reg = extractReg(ev.short);
-                              extraVehicleChips.push({ label: `V${num}`, display: reg ? `V${num} ${reg}` : `V${num}`, getValue: () => ev.short });
+                              extraVehicleChips.push({ label: `V${num}`, display: reg ? `V${num} ${reg}` : `V${num}`, getValue: () => reg ?? ev.short });
                             }
                           });
                         } catch {}
-                        // Wild field chips — show full value (truncated to 12 chars)
+
+                        // Wild field chips (#1, #2, …)
                         const wildChips: Array<{ label: string; display: string; getValue: () => string | null }> = [];
                         try {
-                          const wfs: Array<{ label: string; value: string }> = JSON.parse((assignedTarget as any)?.wildFields ?? '[]');
-                          wfs.forEach((wf) => {
-                            if (wf.value) {
-                              const preview = wf.value.trim().slice(0, 12) + (wf.value.trim().length > 12 ? '…' : '');
-                              wildChips.push({ label: wf.label, display: `${wf.label} ${preview}`, getValue: () => wf.value });
-                            }
+                          const wfs: Array<{ label: string; value: string }> = JSON.parse(t.wildFields ?? '[]');
+                          wfs.forEach((wf: { label: string; value: string }) => {
+                            if (wf.value) wildChips.push({ label: wf.label, display: wf.label, getValue: () => wf.value });
                           });
                         } catch {}
-                        // V1F and V1 chips — only shown if the target has those fields set
-                        const v1fVal = rsTargetData?.v1f ?? null;
-                        const v1Val = rsTargetData?.v1 ?? null;
-                        const v1Reg = extractReg(v1Val);
-                        // All shortcut-folder triggers as chips — only those with showInRs=true, exclude legacy 'D' chip
+
+                        // Folder shortcut chips (showInRs=true, exclude legacy 'D')
                         const folderShortcutChips: Array<{ label: string; display: string; getValue: () => string | null }> =
                           (generalShortcuts as any[] ?? []).filter((s: any) => (s.trigger as string).toUpperCase() !== "D" && s.showInRs !== false).map((s: any) => ({
                             label: (s.trigger as string).toUpperCase(),
                             display: (s.trigger as string).toUpperCase(),
-                            getValue: () => findShortcut(s.trigger) ?? s.expansion as string,
+                            getValue: () => s.expansion as string,
                           }));
-                        const shortcuts: Array<{ label: string; display: string; getValue: () => string | null }> = [
-                          { label: "HBF", display: "HBF", getValue: () => rsTargetData?.hbf ?? null },
-                          { label: "V1F", display: "V1F", getValue: () => v1fVal },
-                          { label: "V1",  display: v1Reg ? `V1 ${v1Reg}` : "V1", getValue: () => v1Val },
+
+                        // Full chip list — identical order to SheetDetail fields array
+                        const v1Reg = extractReg(t.v1);
+                        const allChips: Array<{ label: string; display: string; getValue: () => string | null }> = [
+                          { label: "TGT", display: "TGT", getValue: () => t.tgt ?? null },
+                          { label: "HBF", display: "HBF", getValue: () => t.hbf ?? null },
+                          { label: "HB",  display: "HB",  getValue: () => t.hb  ?? null },
+                          { label: "V1F", display: "V1F", getValue: () => t.v1f ?? null },
+                          { label: "V1",  display: v1Reg ? `V1 ${v1Reg}` : "V1", getValue: () => v1Reg ?? t.v1 ?? null },
                           ...extraVehicleChips,
-                          { label: "TGT", display: "TGT", getValue: () => rsTargetData?.tgt ?? rsTargetData?.name ?? null },
                           ...wildChips,
+                          { label: "DEP", display: "DEP", getValue: () => t.dep ?? null },
+                          { label: "ARR", display: "ARR", getValue: () => t.arr ?? null },
                           ...folderShortcutChips,
                         ];
-                        const available = shortcuts.filter(s => s.getValue() !== null);
+
+                        const available = allChips.filter(s => s.getValue() !== null);
                         if (available.length === 0) return null;
-                        // Apply saved order
-                        const orderedChips = qeChipOrder.length > 0
+
+                        // Apply saved RS order — wildcards always last (mirrors SheetDetail)
+                        const isWildcard = (lbl: string) => /^#\d+$/.test(lbl);
+                        const nonWildAvail = available.filter(s => !isWildcard(s.label));
+                        const wildAvail    = available.filter(s => isWildcard(s.label));
+                        const orderedNonWild = qeChipOrder.length > 0
                           ? [
-                              ...qeChipOrder.map(lbl => available.find(s => s.label === lbl)).filter(Boolean) as typeof available,
-                              ...available.filter(s => !qeChipOrder.includes(s.label)),
+                              ...qeChipOrder.filter(lbl => !isWildcard(lbl)).map(lbl => nonWildAvail.find(s => s.label === lbl)).filter(Boolean) as typeof available,
+                              ...nonWildAvail.filter(s => !qeChipOrder.includes(s.label)),
                             ]
-                          : available;
+                          : nonWildAvail;
+                        const orderedWild = qeChipOrder.length > 0
+                          ? [
+                              ...qeChipOrder.filter(isWildcard).map(lbl => wildAvail.find(s => s.label === lbl)).filter(Boolean) as typeof available,
+                              ...wildAvail.filter(s => !qeChipOrder.includes(s.label)),
+                            ]
+                          : wildAvail;
+                        const orderedChips = [...orderedNonWild, ...orderedWild];
+
+                        // Display rules — same as SheetDetail:
+                        // Vn short (V1/V2/…): show label + rego; everything else: trigger label only
+                        const shortcutFolderLabels = new Set((generalShortcuts as any[] ?? []).map((s: any) => (s.trigger as string).toUpperCase()));
+                        const TRIGGER_ONLY = new Set(["TGT", "HBF", "HB", "V1F", "DEP", "ARR"]);
+                        const isVnShort = (lbl: string) => /^V\d+$/.test(lbl);
+                        const isVnFull  = (lbl: string) => /^V\d+F$/.test(lbl);
+                        const isStandard = (lbl: string) => !isVnShort(lbl) && (shortcutFolderLabels.has(lbl) || TRIGGER_ONLY.has(lbl) || isVnFull(lbl));
+
                         return (
                           <div className="flex flex-wrap gap-1">
-                            {(() => {
-                              // Chip display rules for QE modal:
-                              // - Vn short chips (V1, V2, V3...): show label + rego (from s.display which already has rego)
-                              // - VnF full chips, TGT, HBF, HB, DEP, ARR, folder shortcuts: trigger only
-                              const folderQeLabels = new Set([
-                                "TGT", "HBF", "HB", "V1F", "V2F", "DEP", "ARR",
-                                ...(generalShortcuts as any[] ?? []).map((s: any) => (s.trigger as string).toUpperCase()),
-                              ]);
-                              const isVnShortQe = (label: string) => /^V\d+$/.test(label); // V1, V2, V3 — show rego
-                              const isTargetDetailChip = (label: string) => /^V\d+F$/.test(label); // VnF — trigger only
-
-                              return orderedChips.map((s) => {
-                                const isStdQe = folderQeLabels.has(s.label);
-                                return (
-                                  <button
-                                    key={s.label}
-                                    onClick={() => { const v = s.getValue(); if (v) appendText(v); }}
-                                    data-qe-chip={s.label}
-                                    className="cursor-pointer px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all select-none"
-                                  >
-                                    {/* Vn short: show display (label + rego); VnF/folder/TGT: show label only */}
-                                    {isVnShortQe(s.label) ? s.display : (isStdQe || isTargetDetailChip(s.label)) ? s.label : s.display}
-                                  </button>
-                                );
-                              });
-                            })()}
+                            {orderedChips.map((s) => (
+                              <button
+                                key={s.label}
+                                onClick={() => { const v = s.getValue(); if (v) appendText(v); }}
+                                data-qe-chip={s.label}
+                                className="cursor-pointer px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all select-none"
+                              >
+                                {isVnShort(s.label) ? s.display : isStandard(s.label) ? s.label : s.display}
+                              </button>
+                            ))}
                           </div>
                         );
                       })()}

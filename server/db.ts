@@ -478,14 +478,17 @@ export async function getRowsBySheetId(sheetId: number) {
 
   const dayOffsetMap = new Map<number, number>();
   let currentDay = 0;
-  let prevMinutes = -1;
+  let prevEffective = -1; // running effective minutes (raw + day offset)
   for (const r of timedRows) {
     const mins = r.timeMinutes!;
-    if (prevMinutes >= 0 && mins < prevMinutes - 120) {
+    const effective = mins + currentDay * 1440;
+    // If this row's effective time is more than 2 hours BEHIND the previous
+    // effective time, it has crossed midnight — increment the day counter.
+    if (prevEffective >= 0 && effective < prevEffective - 120) {
       currentDay++;
     }
     dayOffsetMap.set(r.id, currentDay);
-    prevMinutes = mins;
+    prevEffective = mins + currentDay * 1440; // recalc with updated day
   }
 
   const effectiveMins = (r: typeof raw[0]) =>

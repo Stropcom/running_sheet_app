@@ -2205,6 +2205,28 @@ export default function SheetDetail() {
 
   // Filter rows by search query (time, observation, member names)
   // NOTE: must be above the early return to satisfy React rules-of-hooks
+  // ── Day-offset map: detect midnight rollovers from the time sequence itself ──
+  // Scans timed rows in entry order (by rowNumber); when the effective time drops
+  // by more than 2 hours it treats that as a midnight rollover and increments the
+  // day counter. Shared between the sort and the date-divider render logic.
+  const rowDayOffsetMap = useMemo(() => {
+    if (!displayRows) return new Map<number, number>();
+    const timedByRowNumber = displayRows
+      .filter((r: NonNullable<typeof rows>[0]) => r.timeMinutes != null)
+      .sort((a: NonNullable<typeof rows>[0], b: NonNullable<typeof rows>[0]) => a.rowNumber - b.rowNumber);
+    const map = new Map<number, number>();
+    let day = 0;
+    let prevEff = -1;
+    for (const r of timedByRowNumber) {
+      const mins = r.timeMinutes ?? 0;
+      const eff = mins + day * 1440;
+      if (prevEff >= 0 && eff < prevEff - 120) day++;
+      map.set(r.id, day);
+      prevEff = mins + day * 1440;
+    }
+    return map;
+  }, [displayRows]);
+
   const filteredRows = useMemo(() => {
     if (!displayRows) return [];
     const filtered = !searchQuery.trim() ? displayRows : displayRows.filter((row: NonNullable<typeof rows>[0]) => {
@@ -2217,28 +2239,8 @@ export default function SheetDetail() {
     // Rows with no time set ALWAYS float to the top (newest/being filled in)
     const withTime = filtered.filter((row: NonNullable<typeof rows>[0]) => row.timeMinutes != null);
     const noTime = filtered.filter((row: NonNullable<typeof rows>[0]) => row.timeMinutes == null);
-    // ── Day-offset sort: detect midnight rollovers from the time sequence itself ──
-    // Sort timed rows by rowNumber first to establish entry order, then scan for
-    // any drop in timeMinutes (e.g. 1380 → 60) which indicates a midnight rollover.
-    // Add 1440 * dayOffset to each row's timeMinutes so post-midnight rows sort
-    // correctly after all same-day rows — no dependency on createdAt.
-    const byRowNumber = [...withTime].sort((a: NonNullable<typeof rows>[0], b: NonNullable<typeof rows>[0]) =>
-      a.rowNumber - b.rowNumber
-    );
-    const dayOffsetMap = new Map<number, number>();
-    let currentDay = 0;
-    let prevMinutes = -1;
-    for (const r of byRowNumber) {
-      const mins = r.timeMinutes ?? 0;
-      if (prevMinutes >= 0 && mins < prevMinutes - 120) {
-        // Drop of more than 2 hours = midnight rollover
-        currentDay++;
-      }
-      dayOffsetMap.set(r.id, currentDay);
-      prevMinutes = mins;
-    }
     const effectiveMinutes = (row: NonNullable<typeof rows>[0]) =>
-      (row.timeMinutes ?? 0) + (dayOffsetMap.get(row.id) ?? 0) * 1440;
+      (row.timeMinutes ?? 0) + (rowDayOffsetMap.get(row.id) ?? 0) * 1440;
     // Sort timed rows by effective (day-offset) timeMinutes, then rowNumber as tie-break
     const sortedWithTime = [...withTime].sort((a: NonNullable<typeof rows>[0], b: NonNullable<typeof rows>[0]) => {
       const timeDiff = effectiveMinutes(a) - effectiveMinutes(b);
@@ -2251,7 +2253,7 @@ export default function SheetDetail() {
     );
     // No-time rows always at the TOP regardless of sort direction
     return [...sortedNoTime, ...sortedWithTime];
-  }, [displayRows, searchQuery, sortReversed]);
+  }, [displayRows, searchQuery, sortReversed, rowDayOffsetMap]);
 
   if (!isAuthenticated) return null;
 
@@ -2748,14 +2750,17 @@ export default function SheetDetail() {
                   {filteredRows.length === 0 && searchQuery ? (
                     <tr><td colSpan={4} className="py-12 text-center text-sm text-muted-foreground italic">No rows match your search.</td></tr>
                   ) : filteredRows.reduce((acc: React.ReactNode[], row: NonNullable<typeof rows>[0], idx: number) => {
-                    // ── Date-divider: insert a separator row when the calendar date changes ──
+                    // ── Date-divider: insert a separator row when the day offset changes ──
                     if (row.timeMinutes != null) {
                       const prevTimedRow = [...filteredRows].slice(0, idx).reverse().find((r: NonNullable<typeof rows>[0]) => r.timeMinutes != null);
                       if (prevTimedRow) {
-                        const prevDate = new Date(prevTimedRow.createdAt).toLocaleDateString("en-AU", { timeZone: "Australia/Perth" });
-                        const curDate = new Date(row.createdAt).toLocaleDateString("en-AU", { timeZone: "Australia/Perth" });
-                        if (prevDate !== curDate) {
-                          const label = new Date(row.createdAt).toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "Australia/Perth" }).toUpperCase();
+                        const prevDay = rowDayOffsetMap.get(prevTimedRow.id) ?? 0;
+                        const curDay = rowDayOffsetMap.get(row.id) ?? 0;
+                        if (curDay !== prevDay) {
+                          // Build a label: sheet start date + curDay offset
+                          const sheetStartMs = sheet?.createdAt ? new Date(sheet.createdAt).getTime() : Date.now();
+                          const labelDate = new Date(sheetStartMs + curDay * 24 * 60 * 60 * 1000);
+                          const label = labelDate.toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "Australia/Perth" }).toUpperCase();
                           acc.push(
                             <tr key={`divider-${row.id}`} className="date-divider-row">
                               <td colSpan={4} className="py-1.5 px-4">

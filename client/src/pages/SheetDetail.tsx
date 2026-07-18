@@ -2541,7 +2541,7 @@ export default function SheetDetail() {
             { label: "DEP", value: t.dep },
             { label: "ARR", value: t.arr },
             // All shortcut-folder triggers as chips — only those with showInRs=true, exclude legacy 'D' chip
-             ...(shortcutsData ?? []).filter((s) => s.trigger.toUpperCase() !== "D" && s.showInRs !== false).map((s) => ({ label: s.trigger.toUpperCase(), value: s.expansion })),
+             ...(shortcutsData ?? []).filter((s) => s.trigger.toUpperCase() !== "D" && !!s.showInRs).map((s) => ({ label: s.trigger.toUpperCase(), value: s.expansion })),
           ];
           const hasAnyField = fields.some((f) => f.value);
           return (

@@ -3967,7 +3967,7 @@ export default function IntelligenceMapping() {
 
                         // Folder shortcut chips (showInRs=true, exclude legacy 'D')
                         const folderShortcutChips: Array<{ label: string; display: string; getValue: () => string | null }> =
-                          (generalShortcuts as any[] ?? []).filter((s: any) => (s.trigger as string).toUpperCase() !== "D" && s.showInRs !== false).map((s: any) => ({
+                          (generalShortcuts as any[] ?? []).filter((s: any) => (s.trigger as string).toUpperCase() !== "D" && !!s.showInRs).map((s: any) => ({
                             label: (s.trigger as string).toUpperCase(),
                             display: (s.trigger as string).toUpperCase(),
                             getValue: () => s.expansion as string,

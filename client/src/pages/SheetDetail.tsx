@@ -1906,7 +1906,16 @@ export default function SheetDetail() {
   const [targetFieldOrder, setTargetFieldOrder] = useState<string[]>(() => {
     try { const s = localStorage.getItem(`runsheet_field_order_${sheetId}`); if (s) return JSON.parse(s); } catch {} return CANONICAL_CHIP_ORDER;
   });
-  const targetFieldDragRef = useRef<{ dragging: string | null; startX: number; startY: number; startIdx: number; pointerId: number | null }>({ dragging: null, startX: 0, startY: 0, startIdx: -1, pointerId: null });
+  const targetFieldDragRef = useRef<{ dragging: string | null; startX: number; startY: number; active: boolean }>({ dragging: null, startX: 0, startY: 0, active: false });
+  // Document-level handlers for chip drag — attached on pointerdown, removed on pointerup/cancel
+  const chipDragMoveHandler = useRef<((e: PointerEvent) => void) | null>(null);
+  const chipDragUpHandler = useRef<((e: PointerEvent) => void) | null>(null);
+  const cleanupChipDrag = useCallback(() => {
+    if (chipDragMoveHandler.current) { document.removeEventListener('pointermove', chipDragMoveHandler.current); chipDragMoveHandler.current = null; }
+    if (chipDragUpHandler.current) { document.removeEventListener('pointerup', chipDragUpHandler.current); document.removeEventListener('pointercancel', chipDragUpHandler.current); chipDragUpHandler.current = null; }
+    targetFieldDragRef.current.active = false;
+    targetFieldDragRef.current.dragging = null;
+  }, []);
   // Track the last focused textarea/input so chip taps can insert text even after blur
   const focusedTextareaRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null);
   // Track the last focused textarea/input via document focusin so chip taps can insert even after blur
@@ -2576,51 +2585,42 @@ export default function SheetDetail() {
                               className="flex items-center gap-0.5"
                             >
                               <button
-                                onPointerDown={(e) => {
-                                  // Capture pointer so we track move/up even outside the element
-                                  (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-                                  targetFieldDragRef.current.dragging = null;
-                                  targetFieldDragRef.current.startX = e.clientX;
-                                  targetFieldDragRef.current.startY = e.clientY;
-                                  targetFieldDragRef.current.startIdx = idx;
-                                  targetFieldDragRef.current.pointerId = e.pointerId;
-                                  // Prevent textarea blur on click
+                                onMouseDown={(e) => {
+                                  // Prevent textarea blur so focused cell stays active
                                   e.preventDefault();
-                                }}
-                                onPointerMove={(e) => {
-                                  if (targetFieldDragRef.current.pointerId !== e.pointerId) return;
-                                  const dx = e.clientX - targetFieldDragRef.current.startX;
-                                  const dy = e.clientY - targetFieldDragRef.current.startY;
-                                  const dist = Math.sqrt(dx * dx + dy * dy);
-                                  if (dist > 8) {
-                                    if (!targetFieldDragRef.current.dragging) {
-                                      targetFieldDragRef.current.dragging = f.label;
+                                  const startX = e.clientX;
+                                  const startY = e.clientY;
+                                  const dragLabel = f.label;
+                                  let dragging = false;
+                                  const onMove = (ev: PointerEvent) => {
+                                    const dx = ev.clientX - startX;
+                                    const dy = ev.clientY - startY;
+                                    if (!dragging && Math.sqrt(dx * dx + dy * dy) > 8) {
+                                      dragging = true;
+                                      targetFieldDragRef.current.dragging = dragLabel;
                                     }
-                                    // Find which chip we're hovering over
-                                    const el = document.elementFromPoint(e.clientX, e.clientY);
-                                    const chipEl = el?.closest('[data-chip-label]') as HTMLElement | null;
-                                    if (chipEl) {
-                                      const overLabel = chipEl.dataset.chipLabel;
-                                      if (overLabel && overLabel !== targetFieldDragRef.current.dragging) {
-                                        doReorder(targetFieldDragRef.current.dragging!, overLabel);
-                                        targetFieldDragRef.current.dragging = overLabel;
+                                    if (dragging) {
+                                      const el = document.elementFromPoint(ev.clientX, ev.clientY);
+                                      const chipEl = el?.closest('[data-chip-label]') as HTMLElement | null;
+                                      if (chipEl) {
+                                        const overLabel = chipEl.dataset.chipLabel;
+                                        if (overLabel && overLabel !== targetFieldDragRef.current.dragging) {
+                                          doReorder(targetFieldDragRef.current.dragging!, overLabel);
+                                          targetFieldDragRef.current.dragging = overLabel;
+                                        }
                                       }
                                     }
-                                  }
-                                }}
-                                onPointerUp={(e) => {
-                                  if (targetFieldDragRef.current.pointerId !== e.pointerId) return;
-                                  (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-                                  if (!targetFieldDragRef.current.dragging) {
-                                    // Plain tap/click — insert into focused textarea
-                                    insertIntoFocused();
-                                  }
-                                  targetFieldDragRef.current.dragging = null;
-                                  targetFieldDragRef.current.pointerId = null;
-                                }}
-                                onPointerCancel={() => {
-                                  targetFieldDragRef.current.dragging = null;
-                                  targetFieldDragRef.current.pointerId = null;
+                                  };
+                                  const onUp = () => {
+                                    if (!dragging) insertIntoFocused();
+                                    cleanupChipDrag();
+                                    document.removeEventListener('pointermove', onMove);
+                                    document.removeEventListener('pointerup', onUp);
+                                    document.removeEventListener('pointercancel', onUp);
+                                  };
+                                  document.addEventListener('pointermove', onMove);
+                                  document.addEventListener('pointerup', onUp);
+                                  document.addEventListener('pointercancel', onUp);
                                 }}
                                 title={`Insert: ${f.value}`}
                                 className="flex items-center gap-1 pl-1.5 pr-2 py-0.5 rounded border border-primary/30 bg-primary/8 hover:bg-primary/15 active:scale-95 transition-all cursor-grab active:cursor-grabbing select-none"

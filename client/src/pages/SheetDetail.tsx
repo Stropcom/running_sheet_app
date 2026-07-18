@@ -2217,9 +2217,31 @@ export default function SheetDetail() {
     // Rows with no time set ALWAYS float to the top (newest/being filled in)
     const withTime = filtered.filter((row: NonNullable<typeof rows>[0]) => row.timeMinutes != null);
     const noTime = filtered.filter((row: NonNullable<typeof rows>[0]) => row.timeMinutes == null);
-    // Sort timed rows by timeMinutes, then rowNumber as tie-break
+    // ── Day-offset sort: detect midnight rollovers from the time sequence itself ──
+    // Sort timed rows by rowNumber first to establish entry order, then scan for
+    // any drop in timeMinutes (e.g. 1380 → 60) which indicates a midnight rollover.
+    // Add 1440 * dayOffset to each row's timeMinutes so post-midnight rows sort
+    // correctly after all same-day rows — no dependency on createdAt.
+    const byRowNumber = [...withTime].sort((a: NonNullable<typeof rows>[0], b: NonNullable<typeof rows>[0]) =>
+      a.rowNumber - b.rowNumber
+    );
+    const dayOffsetMap = new Map<number, number>();
+    let currentDay = 0;
+    let prevMinutes = -1;
+    for (const r of byRowNumber) {
+      const mins = r.timeMinutes ?? 0;
+      if (prevMinutes >= 0 && mins < prevMinutes - 120) {
+        // Drop of more than 2 hours = midnight rollover
+        currentDay++;
+      }
+      dayOffsetMap.set(r.id, currentDay);
+      prevMinutes = mins;
+    }
+    const effectiveMinutes = (row: NonNullable<typeof rows>[0]) =>
+      (row.timeMinutes ?? 0) + (dayOffsetMap.get(row.id) ?? 0) * 1440;
+    // Sort timed rows by effective (day-offset) timeMinutes, then rowNumber as tie-break
     const sortedWithTime = [...withTime].sort((a: NonNullable<typeof rows>[0], b: NonNullable<typeof rows>[0]) => {
-      const timeDiff = (a.timeMinutes ?? 0) - (b.timeMinutes ?? 0);
+      const timeDiff = effectiveMinutes(a) - effectiveMinutes(b);
       if (timeDiff !== 0) return sortReversed ? -timeDiff : timeDiff;
       return sortReversed ? (b.rowNumber - a.rowNumber) : (a.rowNumber - b.rowNumber);
     });

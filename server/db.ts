@@ -460,20 +460,47 @@ export async function copyRunningSheet(sheetId: number, targetOperationId: numbe
 export async function getRowsBySheetId(sheetId: number) {
   const db = await getDb();
   if (!db) return [];
-  // Sort order:
-  //   1. Rows WITH a time set come first (ISNULL(timeMinutes) = 0 sorts before 1)
-  //   2. Among timed rows: ascending by timeMinutes
-  //   3. Tie-break: ascending by rowNumber (insertion order)
-  //   4. Rows WITHOUT a time float to the bottom, ordered by rowNumber
-  return db
+  // Fetch all rows ordered by rowNumber (insertion order) first so we can
+  // detect midnight rollovers from the time sequence itself.
+  const raw = await db
     .select()
     .from(sheetRows)
     .where(eq(sheetRows.sheetId, sheetId))
-    .orderBy(
-      sql`ISNULL(${sheetRows.timeMinutes}) ASC`,
-      sheetRows.timeMinutes,
-      sheetRows.rowNumber
-    );
+    .orderBy(sheetRows.rowNumber);
+
+  // ── Day-offset sort: detect midnight rollovers from the timeMinutes sequence ──
+  // Scan timed rows in entry order; when timeMinutes drops by more than 2 hours
+  // (120 min) compared to the previous timed row, treat it as a midnight rollover
+  // and increment the day counter. Add 1440 * dayOffset to each row's timeMinutes
+  // for sorting purposes so post-midnight rows always sort after same-day rows.
+  const timedRows = raw.filter((r) => r.timeMinutes != null);
+  const noTimeRows = raw.filter((r) => r.timeMinutes == null);
+
+  const dayOffsetMap = new Map<number, number>();
+  let currentDay = 0;
+  let prevMinutes = -1;
+  for (const r of timedRows) {
+    const mins = r.timeMinutes!;
+    if (prevMinutes >= 0 && mins < prevMinutes - 120) {
+      currentDay++;
+    }
+    dayOffsetMap.set(r.id, currentDay);
+    prevMinutes = mins;
+  }
+
+  const effectiveMins = (r: typeof raw[0]) =>
+    (r.timeMinutes ?? 0) + (dayOffsetMap.get(r.id) ?? 0) * 1440;
+
+  const sortedTimed = [...timedRows].sort((a, b) => {
+    const diff = effectiveMins(a) - effectiveMins(b);
+    if (diff !== 0) return diff;
+    return a.rowNumber - b.rowNumber;
+  });
+
+  // No-time rows float to the bottom, ordered by rowNumber
+  const sortedNoTime = [...noTimeRows].sort((a, b) => a.rowNumber - b.rowNumber);
+
+  return [...sortedTimed, ...sortedNoTime];
 }
 
 export async function getRowById(id: number) {

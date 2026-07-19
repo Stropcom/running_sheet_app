@@ -49,12 +49,25 @@ let _pool: Awaited<ReturnType<typeof createPromisePool>> | null = null;
 let _lastConnectAttempt = 0;
 const RECONNECT_COOLDOWN_MS = 5000; // don't retry more than once per 5s
 
+// Managed hosts (e.g. TiDB Cloud) require TLS; a local dev database normally
+// isn't configured for it. Only force SSL for non-local hosts so local
+// development keeps working without requiring a local SSL setup.
+function isLocalDatabaseHost(databaseUrl: string): boolean {
+  try {
+    const { hostname } = new URL(databaseUrl);
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  } catch {
+    return false;
+  }
+}
+
 async function createDbPool(retries = 3): Promise<ReturnType<typeof drizzle> | null> {
+  const useSsl = !isLocalDatabaseHost(process.env.DATABASE_URL!);
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const pool = createPromisePool({
         uri: process.env.DATABASE_URL!,
-        ssl: { rejectUnauthorized: false },
+        ...(useSsl ? { ssl: { rejectUnauthorized: false } } : {}),
         waitForConnections: true,
         connectionLimit: 10,
         queueLimit: 0,

@@ -281,6 +281,13 @@
       "when": 1784251727356,
       "tag": "0039_chemical_champions",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "5",
+      "when": 1784421411814,
+      "tag": "0040_volatile_hobgoblin",
+      "breakpoints": true
     }
   ]
 }

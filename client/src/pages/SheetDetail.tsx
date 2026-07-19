@@ -1228,11 +1228,15 @@ function minutesToTimeString(mins: number): string {
 function TimePickerCell({
   value,
   locked,
+  dayOffset = 0,
+  sheetHasCrossedMidnight = false,
   onSave,
 }: {
   value: string | null;
   locked: boolean;
-  onSave: (display: string, minutes: number) => void;
+  dayOffset?: number;
+  sheetHasCrossedMidnight?: boolean;
+  onSave: (display: string, minutes: number, dayOffset: number) => void;
 }) {
   // Parse existing value into hour/minute/period; default to current time when empty
   const parsed = useMemo(() => {
@@ -1251,6 +1255,7 @@ function TimePickerCell({
   const [hour, setHour] = useState(parsed.hour);
   const [minute, setMinute] = useState(parsed.minute);
   const [period, setPeriod] = useState(parsed.period);
+  const [localDayOffset, setLocalDayOffset] = useState(dayOffset);
   // Track whether any Radix Select dropdown is currently open
   const [selectOpen, setSelectOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -1261,6 +1266,11 @@ function TimePickerCell({
     setMinute(parsed.minute);
     setPeriod(parsed.period);
   }, [parsed.hour, parsed.minute, parsed.period]);
+
+  // Sync dayOffset from prop
+  useEffect(() => {
+    setLocalDayOffset(dayOffset);
+  }, [dayOffset]);
 
   // Close picker on outside click — but only when no Radix Select is open
   // (Radix portals render outside popoverRef, so we must ignore those clicks)
@@ -1284,9 +1294,9 @@ function TimePickerCell({
   const handleDone = useCallback(() => {
     const display = `${String(parseInt(hour, 10)).padStart(2, "0")}:${minute.padStart(2, "0")} ${period}`;
     const mins = timeStringToMinutes(display);
-    onSave(display, mins);
+    onSave(display, mins, localDayOffset);
     setOpen(false);
-  }, [hour, minute, period, onSave]);
+  }, [hour, minute, period, localDayOffset, onSave]);
 
   const hours = Array.from({ length: 12 }, (_, i) => String(i + 1));
   const minutes = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"));
@@ -1359,6 +1369,23 @@ function TimePickerCell({
               </SelectContent>
             </Select>
           </div>
+          {/* Previous day toggle — only shown when the sheet has crossed midnight */}
+          {sheetHasCrossedMidnight && (
+            <div className="flex items-center gap-2 mb-2 px-0.5">
+              <button
+                type="button"
+                onClick={() => setLocalDayOffset((v) => v === -1 ? 0 : -1)}
+                className={`flex items-center gap-1.5 text-xs rounded px-2 py-1 border transition-colors ${
+                  localDayOffset === -1
+                    ? "bg-amber-500/20 border-amber-500/60 text-amber-600 dark:text-amber-400"
+                    : "border-border text-muted-foreground hover:bg-accent/50"
+                }`}
+              >
+                <span className="text-base leading-none">{localDayOffset === -1 ? "↩" : "↩"}</span>
+                Previous day
+              </button>
+            </div>
+          )}
           <div className="flex gap-2">
             <Button
               size="sm"
@@ -2294,9 +2321,21 @@ export default function SheetDetail() {
       .filter((r: NonNullable<typeof rows>[0]) => r.timeMinutes != null)
       .sort((a: NonNullable<typeof rows>[0], b: NonNullable<typeof rows>[0]) => a.rowNumber - b.rowNumber);
     const map = new Map<number, number>();
+    // First pass: assign stored non-zero dayOffset values (operator-set)
+    for (const r of timedByRowNumber) {
+      if ((r as any).dayOffset !== 0 && (r as any).dayOffset != null) {
+        map.set(r.id, (r as any).dayOffset);
+      }
+    }
+    // Second pass: infer for rows with dayOffset == 0
     let day = 0;
     let prevEff = -1;
     for (const r of timedByRowNumber) {
+      if (map.has(r.id)) {
+        prevEff = (r.timeMinutes ?? 0) + map.get(r.id)! * 1440;
+        day = map.get(r.id)!;
+        continue;
+      }
       const mins = r.timeMinutes ?? 0;
       const eff = mins + day * 1440;
       if (prevEff >= 0 && eff < prevEff - 120) day++;
@@ -2305,6 +2344,12 @@ export default function SheetDetail() {
     }
     return map;
   }, [displayRows]);
+
+  // True when any row in this sheet has a day offset > 0 (sheet has crossed midnight)
+  const sheetHasCrossedMidnight = useMemo(() => {
+    if (!displayRows) return false;
+    return Array.from(rowDayOffsetMap.values()).some((v) => v > 0);
+  }, [displayRows, rowDayOffsetMap]);
 
   const filteredRows = useMemo(() => {
     if (!displayRows) return [];
@@ -2872,10 +2917,12 @@ export default function SheetDetail() {
                     >
                       {/* Time */}
                       <td>
-                        <TimePickerCell
+                         <TimePickerCell
                           value={row.time}
                           locked={row.isLocked}
-                          onSave={(display, mins) => updateRow.mutate({ id: row.id, time: display, timeMinutes: mins })}
+                          dayOffset={(row as any).dayOffset ?? 0}
+                          sheetHasCrossedMidnight={sheetHasCrossedMidnight}
+                          onSave={(display, mins, dayOff) => updateRow.mutate({ id: row.id, time: display, timeMinutes: mins, dayOffset: dayOff } as any)}
                         />
                       </td>
 

@@ -468,27 +468,43 @@ export async function getRowsBySheetId(sheetId: number) {
     .where(eq(sheetRows.sheetId, sheetId))
     .orderBy(sheetRows.rowNumber);
 
-  // ── Day-offset sort: detect midnight rollovers from the timeMinutes sequence ──
-  // Scan timed rows in entry order; when timeMinutes drops by more than 2 hours
-  // (120 min) compared to the previous timed row, treat it as a midnight rollover
-  // and increment the day counter. Add 1440 * dayOffset to each row's timeMinutes
-  // for sorting purposes so post-midnight rows always sort after same-day rows.
+  // ── Day-offset sort ──────────────────────────────────────────────────────────
+  // Each row has a stored `dayOffset` column (0 = same day as first row, 1 = next
+  // day, -1 = previous day). When the operator explicitly sets a dayOffset via the
+  // "Previous day" toggle, that value is used directly. For rows where dayOffset is
+  // still 0 (all existing rows and new rows that haven't been toggled), we fall back
+  // to the inference algorithm: scan timed rows in entry order and detect midnight
+  // rollovers from the timeMinutes sequence.
   const timedRows = raw.filter((r) => r.timeMinutes != null);
   const noTimeRows = raw.filter((r) => r.timeMinutes == null);
 
+  // Build effective day offset for each row:
+  // - If dayOffset != 0, use it directly (operator-set).
+  // - Otherwise infer from the timeMinutes sequence.
   const dayOffsetMap = new Map<number, number>();
-  let currentDay = 0;
-  let prevEffective = -1; // running effective minutes (raw + day offset)
+
+  // First pass: assign stored non-zero offsets
   for (const r of timedRows) {
+    if (r.dayOffset !== 0) dayOffsetMap.set(r.id, r.dayOffset);
+  }
+
+  // Second pass: infer for rows with dayOffset == 0
+  let currentDay = 0;
+  let prevEffective = -1;
+  for (const r of timedRows) {
+    if (dayOffsetMap.has(r.id)) {
+      // Already set explicitly — use it to update the running effective time
+      prevEffective = r.timeMinutes! + dayOffsetMap.get(r.id)! * 1440;
+      currentDay = dayOffsetMap.get(r.id)!;
+      continue;
+    }
     const mins = r.timeMinutes!;
     const effective = mins + currentDay * 1440;
-    // If this row's effective time is more than 2 hours BEHIND the previous
-    // effective time, it has crossed midnight — increment the day counter.
     if (prevEffective >= 0 && effective < prevEffective - 120) {
       currentDay++;
     }
     dayOffsetMap.set(r.id, currentDay);
-    prevEffective = mins + currentDay * 1440; // recalc with updated day
+    prevEffective = mins + currentDay * 1440;
   }
 
   const effectiveMins = (r: typeof raw[0]) =>

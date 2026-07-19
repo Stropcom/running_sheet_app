@@ -2211,7 +2211,10 @@ export default function SheetDetail() {
   // day counter. Shared between the sort and the date-divider render logic.
   const rowDayOffsetMap = useMemo(() => {
     if (!displayRows) return new Map<number, number>();
-    const timedByRowNumber = displayRows
+    // MUST sort by rowNumber (entry order) before scanning for rollovers.
+    // displayRows may already be sorted by effective time from the server,
+    // so we explicitly re-sort here to get the correct insertion sequence.
+    const timedByRowNumber = [...displayRows]
       .filter((r: NonNullable<typeof rows>[0]) => r.timeMinutes != null)
       .sort((a: NonNullable<typeof rows>[0], b: NonNullable<typeof rows>[0]) => a.rowNumber - b.rowNumber);
     const map = new Map<number, number>();

@@ -44,6 +44,7 @@ import {
   CheckCircle2,
   LockKeyhole,
   LayoutGrid,
+  Car,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -56,12 +57,25 @@ import {
 } from "@/components/ui/select";
 import { useState, useEffect } from "react";
 import { CopyMoveSheetDialog } from "@/components/CopyMoveSheetDialog";
+import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
+import { extractShortVehicle } from "@/lib/addressFormat";
 import { CopyPlus } from "lucide-react";
 import { useLocation, useParams, useSearch } from "wouter";
 import { format } from "date-fns";
 import { toast } from "sonner";
 
 type CinEntry = { cin: string; hasImages: boolean; isTeamLeader?: boolean; isAuthor?: boolean };
+
+type ExtraVehicle = { full: string; short: string };
+type WildField = { label: string; value: string };
+function parseExtraVehicles(json: string | null | undefined): ExtraVehicle[] {
+  if (!json) return [];
+  try { return JSON.parse(json) as ExtraVehicle[]; } catch { return []; }
+}
+function parseWildFields(json: string | null | undefined): WildField[] {
+  if (!json) return [];
+  try { return JSON.parse(json) as WildField[]; } catch { return []; }
+}
 
 /** Single target card — shows name + 5 type fields, inline edit, delete */
 function TargetCard({
@@ -71,7 +85,7 @@ function TargetCard({
   initialExpanded,
   fromSheetId,
 }: {
-  target: { id: number; name: string; tgt: string | null; hbf: string | null; hb: string | null; v1f: string | null; v1: string | null; v2f: string | null; v2: string | null; dep: string | null; arr: string | null };
+  target: { id: number; name: string; tgt: string | null; hbf: string | null; hb: string | null; v1f: string | null; v1: string | null; v2f: string | null; v2: string | null; dep: string | null; arr: string | null; extraVehicles?: string | null; wildFields?: string | null };
   operationId: number;
   onDeleted: () => void;
   initialExpanded?: boolean;
@@ -86,11 +100,34 @@ function TargetCard({
   const [hb, setHb] = useState(target.hb ?? "");
   const [v1f, setV1f] = useState(target.v1f ?? "");
   const [v1, setV1] = useState(target.v1 ?? "");
-  const [v2f, setV2f] = useState(target.v2f ?? "");
-  const [v2, setV2] = useState(target.v2 ?? "");
   const [dep, setDep] = useState(target.dep ?? "");
   const [arr, setArr] = useState(target.arr ?? "");
+  // Dynamic extra vehicles (V2+)
+  const [extraVehicles, setExtraVehicles] = useState<ExtraVehicle[]>(() => {
+    const parsed = parseExtraVehicles(target.extraVehicles);
+    if (parsed.length > 0) return parsed;
+    if (target.v2f || target.v2) return [{ full: target.v2f ?? "", short: target.v2 ?? "" }];
+    return [];
+  });
+  // Wild fields (#1, #2, …)
+  const [wildFields, setWildFields] = useState<WildField[]>(() => parseWildFields(target.wildFields));
   const [dirty, setDirty] = useState(false);
+
+  const addVehicle = () => { setExtraVehicles(v => [...v, { full: "", short: "" }]); setDirty(true); };
+  const removeVehicle = (i: number) => { setExtraVehicles(v => v.filter((_, idx) => idx !== i)); setDirty(true); };
+  const updateVehicle = (i: number, field: 'full' | 'short', val: string) => {
+    setExtraVehicles(v => v.map((item, idx) => idx === i ? { ...item, [field]: val } : item));
+    setDirty(true);
+  };
+  const addWildField = () => { setWildFields(v => [...v, { label: `#${v.length + 1}`, value: "" }]); setDirty(true); };
+  const removeWildField = (i: number) => {
+    setWildFields(v => v.filter((_, idx) => idx !== i).map((f, idx) => ({ ...f, label: `#${idx + 1}` })));
+    setDirty(true);
+  };
+  const updateWildField = (i: number, val: string) => {
+    setWildFields(v => v.map((item, idx) => idx === i ? { ...item, value: val } : item));
+    setDirty(true);
+  };
 
   const update = trpc.target.update.useMutation({
     onSuccess: () => { utils.target.list.invalidate({ operationId }); setDirty(false); toast.success("Target saved"); },
@@ -154,22 +191,113 @@ function TargetCard({
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Full Name, Born</label>
             <Input value={name} onChange={(e) => { setName(e.target.value); setDirty(true); }} />
           </div>
+          {/* Target (TGT) */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Target (TGT)</label>
+            <Input value={tgt} onChange={(e) => mark(() => setTgt(e.target.value))} />
+          </div>
+
+          {/* Home Address Full (HBF) — with Google Places autocomplete */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Home Address Full (HBF)</label>
+            <AddressAutocompleteInput
+              value={hbf}
+              onChange={(v) => mark(() => setHbf(v))}
+              onShortAddress={(short) => { if (!hb) mark(() => setHb(short)); }}
+              placeholder="Search or type address…"
+            />
+          </div>
+
+          {/* Home (HB) */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Home (HB)</label>
+            <Input value={hb} onChange={(e) => mark(() => setHb(e.target.value))} />
+          </div>
+
+          {/* Vehicle 1 Full (V1F) */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle 1 Full (V1F)</label>
+            <Input
+              value={v1f}
+              onChange={(e) => mark(() => setV1f(e.target.value))}
+              onBlur={(e) => {
+                const short = extractShortVehicle(e.target.value);
+                if (short && !v1) mark(() => setV1(short));
+              }}
+            />
+          </div>
+
+          {/* Vehicle (V1) */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle (V1)</label>
+            <Input value={v1} onChange={(e) => mark(() => setV1(e.target.value))} />
+          </div>
+
+          {/* ── Dynamic extra vehicles (V2, V3, …) ── */}
+          {extraVehicles.map((ev, i) => {
+            const num = i + 2;
+            return (
+              <div key={i} className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
+                    <Car className="w-3 h-3" /> Vehicle {num}
+                  </span>
+                  <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => removeVehicle(i)}>
+                    <X className="w-3 h-3" />
+                  </Button>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle {num} Full (V{num}F)</label>
+                  <Input
+                    value={ev.full}
+                    onChange={e => updateVehicle(i, 'full', e.target.value)}
+                    onBlur={(e) => {
+                      const short = extractShortVehicle(e.target.value);
+                      if (short && !ev.short) updateVehicle(i, 'short', short);
+                    }}
+                    placeholder="Full description…"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle {num} (V{num})</label>
+                  <Input value={ev.short} onChange={e => updateVehicle(i, 'short', e.target.value)} placeholder="Short (e.g. rego)…" />
+                </div>
+              </div>
+            );
+          })}
+          <Button size="sm" variant="outline" className="gap-1.5 self-start" onClick={addVehicle}>
+            <Plus className="w-3.5 h-3.5" /> Add Vehicle
+          </Button>
+
+          {/* ── Wild fields (#1, #2, …) ── */}
+          {wildFields.map((wf, i) => (
+            <div key={i} className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-amber-500 uppercase tracking-wide flex items-center gap-1.5">
+                  <Hash className="w-3 h-3" /> Wild Field {wf.label}
+                </span>
+                <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => removeWildField(i)}>
+                  <X className="w-3 h-3" />
+                </Button>
+              </div>
+              <Input value={wf.value} onChange={e => updateWildField(i, e.target.value)} placeholder={`${wf.label} value…`} />
+            </div>
+          ))}
+          <Button size="sm" variant="outline" className="gap-1.5 self-start border-amber-500/40 text-amber-500 hover:bg-amber-500/10" onClick={addWildField}>
+            <Hash className="w-3.5 h-3.5" /> Add Wild Field
+          </Button>
+
+          {/* ── Depart / Arrive ── */}
           {([
-            { label: "Target (TGT)",           val: tgt, set: (v: string) => mark(() => setTgt(v)) },
-            { label: "Home Address Full (HBF)", val: hbf, set: (v: string) => mark(() => setHbf(v)) },
-            { label: "Home (HB)",               val: hb,  set: (v: string) => mark(() => setHb(v)) },
-            { label: "Vehicle 1 Full (V1F)",    val: v1f, set: (v: string) => mark(() => setV1f(v)) },
-            { label: "Vehicle (V1)",            val: v1,  set: (v: string) => mark(() => setV1(v)) },
-            { label: "Vehicle 2 Full (V2F)",    val: v2f, set: (v: string) => mark(() => setV2f(v)) },
-            { label: "Vehicle (V2)",            val: v2,  set: (v: string) => mark(() => setV2(v)) },
-            { label: "Depart (DEP)",            val: dep, set: (v: string) => mark(() => setDep(v)) },
-            { label: "Arrive (ARR)",            val: arr, set: (v: string) => mark(() => setArr(v)) },
+            { label: "Depart (DEP)", val: dep, set: (v: string) => mark(() => setDep(v)) },
+            { label: "Arrive (ARR)", val: arr, set: (v: string) => mark(() => setArr(v)) },
           ] as { label: string; val: string; set: (v: string) => void }[]).map(({ label, val, set }) => (
             <div key={label} className="flex flex-col gap-1.5">
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{label}</label>
               <Input value={val} onChange={(e) => set(e.target.value)} />
             </div>
           ))}
+
           <div className="flex items-center justify-between">
             {fromSheetId ? (
               <Button
@@ -194,7 +322,15 @@ function TargetCard({
                 {removeFromOp.isPending ? "Removing…" : "Remove from operation"}
               </Button>
             )}
-            <Button size="sm" className="gap-2" onClick={() => update.mutate({ id: target.id, name, tgt, hbf, hb, v1f, v1, v2f, v2, dep, arr })} disabled={update.isPending || !dirty}>
+            <Button
+              size="sm" className="gap-2"
+              onClick={() => update.mutate({
+                id: target.id, name, tgt, hbf, hb, v1f, v1, dep, arr,
+                extraVehicles: JSON.stringify(extraVehicles),
+                wildFields: JSON.stringify(wildFields),
+              })}
+              disabled={update.isPending || !dirty}
+            >
               <Save className="w-3.5 h-3.5" />
               {update.isPending ? "Saving…" : "Save"}
             </Button>
@@ -997,16 +1133,28 @@ export default function OperationDetail() {
             if (v !== "target") sp.delete("targetId");
             navigate(`/operation/${operationId}?${sp.toString()}`);
           }} className="mt-2">
-          <TabsList className="mb-4">
-            <TabsTrigger value="sheets">
-              <FileText className="w-3.5 h-3.5 mr-1.5" />
-              Running Sheets
-            </TabsTrigger>
-            <TabsTrigger value="target">
-              <Target className="w-3.5 h-3.5 mr-1.5" />
-              Add Target
-            </TabsTrigger>
-          </TabsList>
+          <div className="flex items-center gap-2 mb-4">
+            <TabsList>
+              <TabsTrigger value="sheets">
+                <FileText className="w-3.5 h-3.5 mr-1.5" />
+                Running Sheets
+              </TabsTrigger>
+              <TabsTrigger value="target">
+                <Target className="w-3.5 h-3.5 mr-1.5" />
+                Add Target
+              </TabsTrigger>
+            </TabsList>
+            {/* Back to Running Sheet — shown when navigated here from a sheet */}
+            {fromSheetId && (
+              <button
+                onClick={() => navigate(`/sheet/${fromSheetId}`)}
+                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-2.5 py-1.5 rounded-md border border-border/50 hover:border-border bg-background hover:bg-muted/40"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                Back to Running Sheet
+              </button>
+            )}
+          </div>
 
           {/* ── Running Sheets tab ── */}
           <TabsContent value="sheets">

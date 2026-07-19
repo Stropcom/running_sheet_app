@@ -1,8 +1,8 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "18660d03-6790-4303-804d-400e493cd54d",
-  "prevId": "dd3d1a62-5562-473b-b014-36b78aa5b790",
+  "id": "50f2ac72-e501-4382-8695-47e73460cf0a",
+  "prevId": "64759b9a-34be-4880-be38-eb31ff9deeeb",
   "tables": {
     "audit_logs": {
       "name": "audit_logs",
@@ -1499,6 +1499,14 @@
           "notNull": true,
           "autoincrement": false
         },
+        "showInRs": {
+          "name": "showInRs",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": true
+        },
         "createdBy": {
           "name": "createdBy",
           "type": "int",
@@ -2358,6 +2366,21 @@
           "notNull": false,
           "autoincrement": false,
           "default": "'local'"
+        },
+        "wallpaperUrl": {
+          "name": "wallpaperUrl",
+          "type": "varchar(512)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "wallpaperOpacity": {
+          "name": "wallpaperOpacity",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": 40
         },
         "createdAt": {
           "name": "createdAt",

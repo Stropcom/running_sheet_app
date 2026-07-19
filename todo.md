@@ -898,3 +898,119 @@
 
 ## Visual RS Export Map Fix (Round 17 - Jul 15)
 - [x] Fix map image not appearing in Visual RS export — html2canvas fails silently due to CORS on Google Maps tiles; replace with reliable Google Static Maps API call passing live map center/zoom/markers
+
+## Intelligence Extraction Fixes (Jul 2026)
+- [x] Suppress UM1/UM2/UM3 etc. (and bracketed variants) from being recorded as entities in the intelligence folder
+- [x] Fix multi-vehicle extraction: when two vehicles appear in one observation joined by "and a", both are now extracted with correct rego-first formatting (e.g. "1HTU905 white Mitsubishi Triton utility" and "1EAI510 white Mitsubishi SUV")
+
+## Word Export (Jul 2026)
+- [x] Add Word (.docx) export option to the running sheet export dropdown alongside PDF
+- [x] Word export includes cover page (operation name, PROMIS, IMS, unit, sheet title, date, TEAM roster)
+- [x] Word export includes running sheet table (time, observation, CIN, certify columns)
+- [x] Word export matches PDF layout/content as closely as possible
+
+## Map Icon & Active RS Indicator (Jul 2026)
+- [x] Enlarge the map icon in the top-right of pages (mobile and desktop)
+- [x] Add Active RS icon/link next to the map icon — faded when no active RS, highlighted (green) when one is selected in the map pane, clicking navigates to that running sheet
+- [x] Active RS state read from localStorage (LS_MAP_SETTINGS_KEY) so DashboardLayout can show it without a context
+
+## Dynamic Vehicles & Wild Fields
+
+- [x] Add extraVehicles (JSON) and wildFields (JSON) columns to targets DB table; migrate existing v2f/v2 data into extraVehicles
+- [x] Update server db.ts and routers.ts to persist/return extraVehicles and wildFields
+- [x] TargetRegistry: V1F/V1 as sole default; Add Vehicle button creates V2F/V2, V3F/V3 pairs dynamically; Add Wild Field button creates #1, #2… fields
+- [x] TargetRegistry AddTargetDialog: same dynamic vehicles and wild fields in create dialog
+- [x] SheetDetail shortcutMap: extra vehicles (v2f/v2, v3f/v3…) and wild fields (#1, #2…) injected as shortcuts
+- [x] SheetDetail TARGET panel: extra vehicle and wild field rows shown in collapsible target panel
+- [x] IntelligenceMapping mapQeShortcutMap: extra vehicles and wild fields injected
+- [x] IntelligenceMapping RS Quick Entry chips: V2, V3… and #1, #2… chips appear dynamically when filled in
+## Mobile Bottom Bar & Draggable Side Tabs (Jul 2026)
+- [x] Mobile/tablet fixed bottom bar: Home (slate), Active RS (emerald), RS Entry (blue), Intel Profiles (violet) — fixed at bottom, hidden on lg+
+- [x] Draggable side tabs: left and right collapse tabs can be dragged vertically along the screen edge; position persisted to localStorage
+## Operations Dropdown & Map Memory (Jul 2026)
+- [x] Right-pane Operations dropdown: auto-collapse after each operation checkbox selection (multi-select but closes per tap)
+- [x] Map position memory: map restores last center/zoom on return — saved to localStorage on idle event, read back as initialCenter/initialZoom on mount
+## Floating Pills & Coloured Side Tabs (Jul 2026)
+- [x] Mobile/tablet bottom bar converted from full-width fixed strip to floating pills (absolute bottom-4, same style as laptop pills — rounded-2xl, shadow, coloured backgrounds)
+- [x] Left sidebar collapse tab coloured primary (blue) when pane is closed — acts as a visible call-to-action
+- [x] Right Map Settings collapse tab coloured amber/orange when pane is closed — visually distinct from the left tab
+## Chip Tap/Drag & Panel Style Fixes (Jul 2026)
+- [x] Team panel header style matches target panel: two separate buttons with border-l divider, chevron + pencil placement identical
+- [x] SheetDetail chips: tap inserts text into last-focused textarea (focusedTextareaRef), drag reorders — 8px movement threshold distinguishes tap from drag; onMouseDown preventDefault prevents textarea blur on desktop
+- [x] Quick Entry modal chips (IntelligenceMapping): same 8px movement threshold — short tap → appendText(), movement → drag reorder; onMouseDown preventDefault prevents input blur on desktop
+## Shortcut Chips Overhaul (Jul 2026)
+- [x] TGT chip: show trigger only (no target name / expansion text) in both RS main target panel and QE modal
+- [x] RS main target panel: all shortcut-folder triggers injected as chips (trigger only, reorderable, replaces hardcoded DSO/D/AR/CV/OOS/COOS list)
+- [x] QE modal: all shortcut-folder triggers injected as chips (trigger only, reorderable, replaces hardcoded list)
+- [x] Any new shortcut added to the Shortcuts folder automatically appears as a chip in both panels
+- [x] All chips remain drag-to-reorder with localStorage persistence
+
+## Wallpaper Upload Fix (Jul 2026)
+- [x] Fix: wallpaper image flashed then disappeared after upload
+- [x] Root cause: onSuccess cleared wallpaperPreview immediately, then profile.me.invalidate() refetch returned stale/null data causing currentWallpaper to become null
+- [x] Fix: added persistedWallpaperUrl state that holds the server-returned URL; currentWallpaper priority is now: local preview → persistedWallpaperUrl → profile DB value
+- [x] Fix: onError now clears preview and shows detailed error message
+- [x] Fix: clearWallpaper also resets persistedWallpaperUrl
+
+## Desktop Chip Drag Fix (Jul 2026)
+- [x] Fix: RS main target panel chips not draggable on desktop/laptop
+- [x] Root cause: draggable was on the wrapper div but the inner button's onMouseDown preventDefault blocked dragstart from firing on desktop
+- [x] Fix: moved draggable + HTML5 drag handlers onto the button itself; touch handlers remain on the wrapper div
+
+## Wallpaper Global Persistence Fix (Jul 2026)
+- [x] Fix: wallpaper not sticking across page navigation / page reload
+- [x] Root cause: CSS variables were only set inside MyProfilePage component; navigating away destroyed them
+- [x] Fix: added WallpaperApplier component in App.tsx that reads auth.me (which includes wallpaperUrl and wallpaperOpacity from DB) and applies CSS variables globally on every page
+
+## Desktop Chip Drag Fix (Jul 2026)
+- [x] Fix: RS main target panel chips not draggable on desktop/laptop
+- [x] Root cause: draggable was on the wrapper div but the inner button's onMouseDown preventDefault blocked dragstart from firing on desktop
+- [x] Fix: moved draggable + HTML5 drag handlers onto the button itself; touch handlers remain on the wrapper div
+
+## QE Modal Desktop Chip Drag Fix (Jul 2026)
+- [x] Fix: QE modal chips not draggable on desktop/laptop
+- [x] Root cause: onMouseDown preventDefault on the chip div was blocking HTML5 dragstart from firing on desktop
+- [x] Fix: removed onMouseDown preventDefault; onClick now guards against inserting text after a drag using qeChipDragRef.current.dragging check
+
+## Back Button Navigation Improvements (Jul 2026)
+- [x] Intelligence profile pages (Target, Associate, Vehicle, Location, Operation): replaced fixed "Intelligence Folder" link with window.history.back() "Back" button so users return to wherever they came from
+- [x] OperationDetail: added "Back to Running Sheet" button to the right of the Running Sheets / Add Target tabs, visible whenever the page was opened from a running sheet (fromSheetId in URL)
+
+## Chip Label & Order Overhaul (Jul 2026)
+- [x] All target-detail chips (HBF, V1F, V2F, HB, V1, V2, DEP, ARR, extra Vn/VnF) now show trigger only — no expansion text appended
+- [x] Legacy 'D' chip removed from both RS main target panel and QE modal
+- [x] Canonical default chip order set for both RS main target panel and QE modal: SC, HBF, V1F, V1, V2F, V3..., TGT, DSO, DR, FP, US, DE, AR, CV, OOS, COOS, PU, PT, RACK, DEP, ARR, #1, #2, #3
+- [x] All chips remain individually drag-to-reorder; saved order persists in localStorage per sheet/modal
+
+## Chip Order/Visibility Fix (Jul 2026)
+- [x] Canonical order now generates full VnF/Vn pairs: SC, HBF, V1F, V1, V2F, V2, V3F, V3 ... up to V8F/V8, then TGT, DSO, DR, FP, US, DE, AR, CV, OOS, COOS, PU, PT, RACK, DEP, ARR, #1-#10
+- [x] Vehicle chips (V1, V2, V3 etc) only visible if that field has a value on the target
+- [x] VnF chips also only visible if that field has a value
+- [x] V1/Vn short chips show rego-only (no "Vehicle " prefix, no full string)
+- [x] QE modal now includes HBF and V1F chips (previously missing)
+- [x] Extra vehicles in QE now get both VnF (full, trigger-only) and Vn (rego-only) chips
+- [x] Applied to both RS main target panel (SheetDetail) and QE modal (IntelligenceMapping)
+
+## Address Casing Fix (Jul 2026)
+- [x] convertGoogleAddresses now produces SUBURB STATE (uppercase) and (Title Case street) in bracket code
+- [x] Example: "20 Hinderwell St, SCARBOROUGH WA (20 Hinderwell St)" instead of "20 Hinderwell St, Scarborough WA (20 HINDERWELL ST)"
+- [x] Applied to both numbered addresses and intersection addresses
+- [x] toTitleCase and upperSuburb helpers added to addressFormat.ts
+
+## Jul 2026 — RS Pane Redesign (Map Right Panel)
+
+- [x] Remove separate RS Selection operation dropdown from right map pane
+- [x] Wire RS sheet list to top Operations filter (selectedOpIds) via new sheet.listByOperations procedure
+- [x] Add Clear (X) button next to RS dropdown to deselect active running sheet
+- [x] Auto-clear rsSelectedSheetId when all operations are cleared (clearAll) or last op is deselected (toggleOp)
+- [x] Remove rsSelectedOpId fallback from effectiveOpIdsForMarkers
+- [x] Update custom marker op defaults to use selectedOpIds[0] only
+
+## Jul 2026 — HBF Address Autocomplete & Map Search Location Bias
+
+- [x] Build reusable AddressAutocompleteInput component (Google Places autocomplete + RS format conversion + location bias)
+- [x] Wire AddressAutocompleteInput to HBF field in OperationDetail.tsx target card (inline edit form)
+- [x] Wire AddressAutocompleteInput to HBF field in TargetRegistry.tsx target card (inline edit form)
+- [x] Wire AddressAutocompleteInput to HBF field in TargetRegistry.tsx Add Target dialog
+- [x] Wire AddressAutocompleteInput to HBF field in IntelligenceMapping.tsx Edit Target dialog (with map-centre location bias)
+- [x] Apply 50 km location bias (map centre) to existing map address search bar in IntelligenceMapping.tsx

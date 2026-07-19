@@ -78,6 +78,103 @@ const INTERSECTION_RE = new RegExp(
 );
 
 /**
+ * Map of street type abbreviations to their full forms.
+ * Keys are lowercase abbreviations; values are title-case full forms.
+ */
+const STREET_TYPE_MAP: Record<string, string> = {
+  st: "Street",
+  rd: "Road",
+  ave: "Avenue",
+  av: "Avenue",
+  dr: "Drive",
+  ct: "Court",
+  cl: "Close",
+  pl: "Place",
+  cres: "Crescent",
+  cr: "Crescent",
+  blvd: "Boulevard",
+  bvd: "Boulevard",
+  hwy: "Highway",
+  fwy: "Freeway",
+  ln: "Lane",
+  tce: "Terrace",
+  pde: "Parade",
+  cct: "Circuit",
+  gr: "Grove",
+  gdns: "Gardens",
+  gdn: "Garden",
+  esp: "Esplanade",
+  mws: "Motorway",
+  byp: "Bypass",
+  cnr: "Corner",
+  wy: "Way",
+  way: "Way",
+  loop: "Loop",
+  rise: "Rise",
+  run: "Run",
+  trk: "Track",
+  track: "Track",
+  row: "Row",
+  rdge: "Ridge",
+  ridge: "Ridge",
+  bnd: "Bend",
+  bend: "Bend",
+  vw: "View",
+  view: "View",
+  gln: "Glen",
+  glen: "Glen",
+  hts: "Heights",
+  heights: "Heights",
+  vale: "Vale",
+  walk: "Walk",
+  wlk: "Walk",
+  mews: "Mews",
+  qy: "Quay",
+  quay: "Quay",
+  sq: "Square",
+  square: "Square",
+  pass: "Pass",
+  psge: "Passage",
+  passage: "Passage",
+  nook: "Nook",
+  chase: "Chase",
+  grange: "Grange",
+  link: "Link",
+  retreat: "Retreat",
+  approach: "Approach",
+  app: "Approach",
+  pkwy: "Parkway",
+  pwy: "Parkway",
+  parkway: "Parkway",
+};
+
+/**
+ * Expand street type abbreviations in a street name string.
+ * Only expands the LAST word if it matches a known abbreviation.
+ * e.g. "Dover Rd" → "Dover Road", "Lakey St" → "Lakey Street"
+ */
+function expandStreetType(streetName: string): string {
+  return streetName.replace(/\b([A-Za-z]+)$/, (match) => {
+    const expanded = STREET_TYPE_MAP[match.toLowerCase()];
+    return expanded ?? match;
+  });
+}
+
+/** Title-case a string: "20 hinderwell st" → "20 Hinderwell Street" */
+function toTitleCase(s: string): string {
+  const titled = s.toLowerCase().replace(/\b([a-z])/g, c => c.toUpperCase());
+  return expandStreetType(titled);
+}
+
+/** Uppercase the suburb portion of a "Suburb STATE" string, keep state as-is */
+function upperSuburb(suburbState: string): string {
+  // e.g. "Scarborough WA" → "SCARBOROUGH WA", "Southern River WA" → "SOUTHERN RIVER WA"
+  const m = suburbState.trim().match(new RegExp(`^(.+?)\\s+(${AU_STATES})$`, 'i'));
+  if (m) return `${m[1].trim().toUpperCase()} ${m[2].toUpperCase()}`;
+  return suburbState.trim().toUpperCase();
+}
+
+/**
  * Returns true if the text contains a Google Maps formatted address that has
  * NOT already been converted to running sheet format.
  */
@@ -113,10 +210,10 @@ export function convertGoogleAddresses(text: string): string {
       const afterMatch = str.slice(offset + fullMatch.length).trimStart();
       if (afterMatch.startsWith("(")) return fullMatch; // already converted
 
-      const s1 = street1.trim();
-      const s2 = street2.trim();
-      const bracketCode = `${s1} & ${s2}`.toUpperCase();
-      const cleanedAddress = `${s1} & ${s2}, ${suburbState.trim()}`;
+      const s1 = toTitleCase(street1.trim());
+      const s2 = toTitleCase(street2.trim());
+      const bracketCode = toTitleCase(`${s1} & ${s2}`);
+      const cleanedAddress = `${s1} & ${s2}, ${upperSuburb(suburbState)}`;
       return `${cleanedAddress} (${bracketCode})`;
     }
   );
@@ -128,8 +225,9 @@ export function convertGoogleAddresses(text: string): string {
       const afterMatch = str.slice(offset + fullMatch.length).trimStart();
       if (afterMatch.startsWith("(")) return fullMatch; // already converted
 
-      const bracketCode = `${streetNum} ${streetName.trim()}`.toUpperCase();
-      const cleanedAddress = `${businessPrefix ?? ""}${streetNum} ${streetName.trim()}, ${suburbState.trim()}`;
+      const streetNameClean = toTitleCase(streetName.trim());
+      const bracketCode = toTitleCase(`${streetNum} ${streetNameClean}`);
+      const cleanedAddress = `${businessPrefix ?? ""}${streetNum} ${streetNameClean}, ${upperSuburb(suburbState)}`;
       return `${cleanedAddress} (${bracketCode})`;
     }
   );
@@ -233,6 +331,95 @@ export function formatMapPopupAddress(shortForm: string): string {
 }
 
 /**
+ * Extract the short-form HB value from a fully-formatted RS address (HBF).
+ *
+ * The HBF format is: "27 Olding Way, MELVILLE WA (27 Olding Way)"
+ * The HB short form is the content inside the trailing brackets: "27 Olding Way"
+ *
+ * If no bracket code is present, falls back to extracting just the street
+ * portion (everything before the first comma).
+ *
+ * Returns an empty string if nothing useful can be extracted.
+ *
+ * Examples:
+ *   "27 Olding Way, MELVILLE WA (27 Olding Way)"  → "27 Olding Way"
+ *   "131 Lakey Street, SOUTHERN RIVER WA (131 Lakey Street)" → "131 Lakey Street"
+ *   "Kent St & Queens Park Rd, WILSON WA (Kent St & Queens Park Rd)" → "Kent St & Queens Park Rd"
+ *   "27 Olding Way, MELVILLE WA"                  → "27 Olding Way"  (fallback)
+ */
+export function extractShortAddress(hbf: string): string {
+  if (!hbf) return "";
+
+  // Prefer the bracket code — it is the canonical short form
+  const bracketMatch = hbf.match(/\(([^)]{1,120})\)\s*$/);
+  if (bracketMatch) return bracketMatch[1].trim();
+
+  // Fallback: everything before the first comma
+  const commaIdx = hbf.indexOf(",");
+  if (commaIdx > 0) return hbf.slice(0, commaIdx).trim();
+
+  return hbf.trim();
+}
+
+/**
+ * Extract the short-form V1/V2 value from a fully-formatted RS vehicle description (V1F/V2F).
+ *
+ * The V1F format is: "grey Ford Escape, bearing WA registration 1IEK105 (Vehicle 1IEK105)"
+ * The V1 short form is the REGISTRATION ONLY (not "Vehicle 1IEK105", just "1IEK105").
+ *
+ * Rules:
+ *  1. Extract the bracket content: "(Vehicle 1IEK105)" → "Vehicle 1IEK105"
+ *  2. Strip a leading "Vehicle " prefix (case-insensitive) to get just the rego.
+ *  3. If no bracket code is present, returns an empty string.
+ *
+ * Examples:
+ *   "grey Ford Escape, bearing WA registration 1IEK105 (Vehicle 1IEK105)" → "1IEK105"
+ *   "blue Toyota Hilux, bearing WA rego 1ABC123 (Vehicle 1ABC123)"        → "1ABC123"
+ *   "grey Ford Escape, bearing WA registration 1IEK105"                   → "" (no bracket)
+ */
+export function extractShortVehicle(v1f: string): string {
+  if (!v1f) return "";
+  const bracketMatch = v1f.match(/\(([^)]{1,80})\)\s*$/);
+  if (!bracketMatch) return "";
+  // Strip leading "Vehicle " prefix so V1 stores just the registration
+  return bracketMatch[1].trim().replace(/^Vehicle\s+/i, "").trim();
+}
+
+/**
+ * Ensure an already-formatted RS address has a bracket short-form appended.
+ *
+ * If the address already ends with "(...)" it is returned unchanged.
+ * Otherwise, the street portion (everything before the first comma) is
+ * appended as the bracket code.
+ *
+ * Examples:
+ *   "25 Mccallum Crescent, ARDROSS"          → "25 Mccallum Crescent, ARDROSS (25 Mccallum Crescent)"
+ *   "25 Mccallum Crescent, ARDROSS (25 Mccallum Crescent)" → unchanged
+ *   "Blend Cafe, 25 Mccallum Crescent, ARDROSS" → "Blend Cafe, 25 Mccallum Crescent, ARDROSS (25 Mccallum Crescent)"
+ */
+export function ensureBracketCode(address: string): string {
+  if (!address) return address;
+  // Already has a bracket code — leave it
+  if (/\([^)]{1,120}\)\s*$/.test(address)) return address;
+  // Find the street portion: the first segment that starts with a number
+  // (handles "Business Name, 25 Street, SUBURB" and "25 Street, SUBURB")
+  const parts = address.split(",");
+  let streetPart = "";
+  for (const p of parts) {
+    const trimmed = p.trim();
+    if (/^\d/.test(trimmed)) {
+      streetPart = trimmed;
+      break;
+    }
+  }
+  if (!streetPart) {
+    // No numbered street found — use everything before the first comma
+    streetPart = parts[0]?.trim() ?? address;
+  }
+  return `${address} (${streetPart})`;
+}
+
+/**
  * Format a vehicle for display in the Intelligence section and map pop-ups.
  *
  * The RS shortForm is what's inside the brackets in an observation, e.g.:
@@ -289,9 +476,30 @@ export function formatIntelVehicle(shortForm: string, fullObservation?: string):
 
   // Try to extract description from the full observation text
   if (fullObservation) {
-    // Pattern: "[description], bearing [jurisdiction] registration REGO (Vehicle REGO)"
-    // or:      "[description] bearing [jurisdiction] registration REGO"
-    // or:      "[description] bearing registration REGO"
+    // Find the specific bearing clause for THIS rego in the full observation.
+    // Strategy: locate "bearing ... registration REGO" by index, then look backward
+    // from that position to extract the vehicle description.
+    // We split on closing brackets ) to avoid spilling across other vehicle references
+    // like "(Vehicle 1HTU905)" when there are multiple vehicles in one observation.
+    const escapedRego = rego.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const bearingIdx = fullObservation.search(
+      new RegExp('bearing\\s+(?:[A-Z]{2,3}\\s+)?registration\\s+' + escapedRego + '\\b', 'i')
+    );
+    if (bearingIdx >= 0) {
+      // Take text before the bearing clause, strip trailing comma/space
+      const beforeBearing = fullObservation.slice(0, bearingIdx).replace(/,?\s*$/, '').trim();
+      // Split on closing brackets to isolate the last vehicle description segment
+      const segments = beforeBearing.split(')');
+      let lastSegment = segments[segments.length - 1].trim();
+      // Strip leading connectors: "and a", "and an", "and the", "a ", "an ", "the "
+      lastSegment = lastSegment.replace(/^(?:and\s+(?:a[n]?\s+|the\s+)?|a[n]?\s+|the\s+)/i, '').trim();
+      lastSegment = lastSegment.replace(/^[aA]\s+/, '').replace(/^V\d[A-Z]?:\s*/i, '').trim();
+      if (lastSegment && lastSegment.toLowerCase() !== 'vehicle') {
+        if (lastSegment.toLowerCase().startsWith(rego.toLowerCase())) return lastSegment;
+        return `${rego} ${lastSegment}`;
+      }
+    }
+    // Fallback: original approach — match from start of observation (single-vehicle case)
     const descMatch = fullObservation.match(
       /^(.+?),?\s+bearing\s+(?:[A-Z]{2,3}\s+)?registration\s+[\w\s-]+/i
     );

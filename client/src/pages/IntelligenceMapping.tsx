@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getMarkerDataUrl, getMarkerSvg, MARKER_COLOURS, MARKER_COLOUR_LABELS, MARKER_ICON_GROUPS, MARKER_ICON_LABELS, type MarkerColour, type MarkerIcon } from "@/lib/markerSvgs";
-import { convertGoogleAddresses, buildPoiAddress, formatIntelAddress } from "@/lib/addressFormat";
+import { convertGoogleAddresses, buildPoiAddress, formatIntelAddress, extractShortVehicle, ensureBracketCode } from "@/lib/addressFormat";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { MapView } from "@/components/Map";
+import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
@@ -573,12 +574,28 @@ export default function IntelligenceMapping() {
   const [selectedOpIds, setSelectedOpIds] = useState<number[]>(() => {
     try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return JSON.parse(s).selectedOpIds ?? []; } catch { /* ignore */ } return [];
   });
+  // Track whether the user has explicitly interacted with the ops selector.
+  // When true and selectedOpIds is empty, we show NO markers (user cleared).
+  // When false and selectedOpIds is empty, fall back to rsSelectedOpId context.
+  const [opsExplicitlySet, setOpsExplicitlySet] = useState<boolean>(() => {
+    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) { const p = JSON.parse(s); return p.opsExplicitlySet ?? false; } } catch { /* ignore */ } return false;
+  });
   const [selectedTargetIds, setSelectedTargetIds] = useState<number[]>(() => {
     try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return JSON.parse(s).selectedTargetIds ?? []; } catch { /* ignore */ } return [];
   });
   const [opExpanded, setOpExpanded] = useState<Set<number>>(() => {
     try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return new Set<number>(JSON.parse(s).opExpanded ?? []); } catch { /* ignore */ } return new Set();
   });
+  // Map position memory — persisted in localStorage
+  const [mapInitialCenter, setMapInitialCenter] = useState<google.maps.LatLngLiteral>(() => {
+    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) { const p = JSON.parse(s).mapCenter; if (p && typeof p.lat === 'number' && typeof p.lng === 'number') return p; } } catch { /* ignore */ }
+    return { lat: -31.9505, lng: 115.8605 };
+  });
+  const [mapInitialZoom, setMapInitialZoom] = useState<number>(() => {
+    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) { const z = JSON.parse(s).mapZoom; if (typeof z === 'number') return z; } } catch { /* ignore */ }
+    return 11;
+  });
+
   // Left pane starts closed — user opens it when needed. Never auto-open on navigation.
   // On desktop (lg+), the left pane is always open and resizable
   const isDesktop = typeof window !== "undefined" && window.innerWidth >= 1024;
@@ -650,6 +667,24 @@ export default function IntelligenceMapping() {
 
   // RS Actions pane state — persisted in localStorage
   const [rsActionsPaneOpen, setRsActionsPaneOpen] = useState(false);
+
+  // Draggable side-tab vertical position (percentage from top, 0-100)
+  const [leftTabTop, setLeftTabTop] = useState<number>(() => {
+    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return JSON.parse(s).leftTabTop ?? 50; } catch { /* ignore */ } return 50;
+  });
+  const [rightTabTop, setRightTabTop] = useState<number>(() => {
+    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return JSON.parse(s).rightTabTop ?? 50; } catch { /* ignore */ } return 50;
+  });
+  const leftTabDraggingRef = useRef(false);
+  const rightTabDraggingRef = useRef(false);
+
+  // Draggable pill bar vertical position (percentage from top, 5-95)
+  const [pillBarTop, setPillBarTop] = useState<number>(() => {
+    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) { const v = JSON.parse(s).pillBarTop; if (typeof v === 'number') return v; } } catch { /* ignore */ } return 90;
+  });
+  const pillBarDraggingRef = useRef(false);
+  const pillBarLongPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pillBarIsDraggingRef = useRef(false);
   const [rsSelectedOpId, setRsSelectedOpId] = useState<number | null>(() => {
     try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return JSON.parse(s).rsSelectedOpId ?? null; } catch { /* ignore */ } return null;
   });
@@ -676,6 +711,7 @@ export default function IntelligenceMapping() {
 
   // ── Custom Marker Placement State ────────────────────────────────────────────
   const [placingMarker, setPlacingMarker] = useState(false); // placement mode active
+  const [dismissedNoLocs, setDismissedNoLocs] = useState(false); // user dismissed the empty-state overlay
   const [pendingLatLng, setPendingLatLng] = useState<{ lat: number; lng: number } | null>(null);
   // POI tap: shown when user taps a Google Maps business/POI pin
   const [poiTap, setPoiTap] = useState<{ lat: number; lng: number; name: string; address: string } | null>(null);
@@ -690,6 +726,26 @@ export default function IntelligenceMapping() {
   const [mapQePeriod, setMapQePeriod] = useState("AM");
   const [mapQeSelectOpen, setMapQeSelectOpen] = useState(false);
   const [mapQeAddress, setMapQeAddress] = useState(""); // pre-filled address for the observation
+  // Quick Entry shortcut chip order — persisted to localStorage so user can reorder them
+  const QE_CANONICAL_ORDER = [
+    "SC", "HBF",
+    ...(Array.from({ length: 8 }, (_, i) => [`V${i + 1}F`, `V${i + 1}`]) as string[][]).flat(),
+    "TGT", "DSO", "DR", "FP", "US", "DE", "AR", "CV", "OOS", "COOS", "PU", "PT", "RACK",
+    "DEP", "ARR",
+    ...(Array.from({ length: 10 }, (_, i) => `#${i + 1}`) as string[]),
+  ];
+  // QE chips mirror the main RS chip order (read from the active sheet's localStorage key)
+  // No drag in QE — main RS is the single source of truth for chip order
+  const [qeChipOrder, setQeChipOrder] = useState<string[]>(QE_CANONICAL_ORDER);
+  // Sync QE chip order from the active RS sheet's saved order whenever the sheet changes
+  useEffect(() => {
+    if (!rsSelectedSheetId) { setQeChipOrder(QE_CANONICAL_ORDER); return; }
+    try {
+      const s = localStorage.getItem(`runsheet_field_order_${rsSelectedSheetId}`);
+      if (s) { setQeChipOrder(JSON.parse(s)); return; }
+    } catch {}
+    setQeChipOrder(QE_CANONICAL_ORDER);
+  }, [rsSelectedSheetId]);
   const [cmLabel, setCmLabel] = useState("");
   const [cmAddress, setCmAddress] = useState("");
   const [cmNote, setCmNote] = useState("");
@@ -781,6 +837,7 @@ export default function IntelligenceMapping() {
     try {
       localStorage.setItem(LS_MAP_SETTINGS_KEY, JSON.stringify({
         selectedOpIds,
+        opsExplicitlySet,
         selectedTargetIds,
         opExpanded: Array.from(opExpanded),
         rsSelectedOpId,
@@ -789,9 +846,31 @@ export default function IntelligenceMapping() {
         collapsedTeams: Array.from(collapsedTeams),
         rsQeExpanded,
         mapDarkMode,
+        leftTabTop,
+        rightTabTop,
+        pillBarTop,
       }));
     } catch { /* ignore */ }
-  }, [selectedOpIds, selectedTargetIds, opExpanded, rsSelectedOpId, rsSelectedSheetId, hiddenTeams, collapsedTeams, rsQeExpanded, mapDarkMode]);
+  }, [selectedOpIds, opsExplicitlySet, selectedTargetIds, opExpanded, rsSelectedOpId, rsSelectedSheetId, hiddenTeams, collapsedTeams, rsQeExpanded, mapDarkMode, leftTabTop, rightTabTop, pillBarTop]);
+
+  // Save map center/zoom to localStorage whenever the map stops moving (idle event)
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    const map = mapRef.current;
+    const listener = map.addListener("idle", () => {
+      const center = map.getCenter();
+      const zoom = map.getZoom();
+      if (!center || zoom === undefined) return;
+      const lat = center.lat();
+      const lng = center.lng();
+      try {
+        const existing = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+        const parsed = existing ? JSON.parse(existing) : {};
+        localStorage.setItem(LS_MAP_SETTINGS_KEY, JSON.stringify({ ...parsed, mapCenter: { lat, lng }, mapZoom: zoom }));
+      } catch { /* ignore */ }
+    });
+    return () => { google.maps.event.removeListener(listener); };
+  }, [mapReady]);
 
   // Apply dark/light map style whenever mapDarkMode or mapReady changes
   // Dark mode is applied via CSS filter on the map container div (not setOptions — blocked by mapId)
@@ -835,9 +914,10 @@ export default function IntelligenceMapping() {
   // Pass empty array only when truly no operation context exists.
   const effectiveOpIdsForMarkers = useMemo(() => {
     if (selectedOpIds.length > 0) return selectedOpIds;
-    if (rsSelectedOpId != null) return [rsSelectedOpId];
+    // If user explicitly cleared the selection, show nothing (don't fall back)
+    if (opsExplicitlySet) return [];
     return [];
-  }, [selectedOpIds, rsSelectedOpId]);
+  }, [selectedOpIds, opsExplicitlySet]);
   const { data: customMarkers, refetch: refetchCustomMarkers } = trpc.customMarker.list.useQuery(
     { operationIds: effectiveOpIdsForMarkers },
     { refetchInterval: 5000, enabled: true }
@@ -913,10 +993,13 @@ export default function IntelligenceMapping() {
   // showOwnLocation always mirrors sharingEnabled (single toggle)
   const showOwnLocation = sharingEnabled;
 
-  // RS Actions pane — sheets for selected operation
-  const { data: rsSheetsData } = trpc.sheet.listByOperation.useQuery(
-    { operationId: rsSelectedOpId! },
-    { enabled: rsSelectedOpId !== null }
+  // RS Actions pane — sheets driven by the top Operations filter
+  // When selectedOpIds is non-empty, fetch sheets for all selected operations.
+  // When selectedOpIds is empty (ops cleared), return no sheets.
+  const rsOpIdsForSheets = useMemo(() => selectedOpIds, [selectedOpIds]);
+  const { data: rsSheetsData } = trpc.sheet.listByOperations.useQuery(
+    { operationIds: rsOpIdsForSheets },
+    { enabled: rsOpIdsForSheets.length > 0 }
   );
   // RS Actions pane — target for selected sheet
   const { data: rsTargetData } = trpc.intelligence.getSheetTarget.useQuery(
@@ -959,6 +1042,22 @@ export default function IntelligenceMapping() {
       if (t.v2)  map['v2']  = t.v2;
       if (t.dep) map['dep'] = t.dep;
       if (t.arr) map['arr'] = t.arr;
+      // Extra vehicles (V2F/V2, V3F/V3, …)
+      try {
+        const evs: Array<{ full: string; short: string }> = JSON.parse(t.extraVehicles ?? '[]');
+        evs.forEach((ev: { full: string; short: string }, i: number) => {
+          const num = i + 2;
+          if (ev.full)  map[`v${num}f`] = ev.full;
+          if (ev.short) map[`v${num}`]  = ev.short;
+        });
+      } catch {}
+      // Wild fields (#1, #2, …)
+      try {
+        const wfs: Array<{ label: string; value: string }> = JSON.parse(t.wildFields ?? '[]');
+        wfs.forEach((wf: { label: string; value: string }) => {
+          if (wf.value) map[wf.label.toLowerCase()] = wf.value;
+        });
+      } catch {}
     }
     for (const s of (targetShortcutsForSheet as any[] ?? [])) map[s.trigger.toLowerCase()] = s.expansion;
     return map;
@@ -989,14 +1088,22 @@ export default function IntelligenceMapping() {
 
   // ── Filter handlers ──────────────────────────────────────────────────────────
   const toggleOp = (opId: number) => {
+    setOpsExplicitlySet(true);
     setSelectedOpIds(prev => {
       const next = prev.includes(opId) ? prev.filter(id => id !== opId) : [...prev, opId];
       if (!next.includes(opId)) {
         const opTargets = opTargetMap.get(opId) ?? [];
         setSelectedTargetIds(tPrev => tPrev.filter(tid => !opTargets.find(t => t.id === tid)));
+        // If all ops are now deselected, clear RS selection too
+        if (next.length === 0) {
+          setRsSelectedSheetId(null);
+          setRsLastEntry(null);
+        }
       }
       return next;
     });
+    // Collapse the dropdown after each selection (multi-select but auto-close per tap)
+    setOpsDropdownOpen(false);
   };
 
   const toggleTarget = (targetId: number) => {
@@ -1007,12 +1114,16 @@ export default function IntelligenceMapping() {
 
   const selectAllOps = () => {
     if (!operations) return;
+    setOpsExplicitlySet(true);
     setSelectedOpIds(operations.map((op: any) => op.id));
   };
 
   const clearAll = () => {
+    setOpsExplicitlySet(true);
     setSelectedOpIds([]);
     setSelectedTargetIds([]);
+    setRsSelectedSheetId(null);
+    setRsLastEntry(null);
   };
 
   // ── GPS / Sharing ────────────────────────────────────────────────────────────
@@ -1513,6 +1624,8 @@ export default function IntelligenceMapping() {
 
   // ── Custom marker rendering ────────────────────────────────────────────────
   const customMarkerMapRefs = useRef<Map<number, google.maps.marker.AdvancedMarkerElement>>(new Map());
+  // Direct img element refs for live rotation without stale content queries
+  const customMarkerImgRefs = useRef<Map<number, HTMLImageElement>>(new Map());
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;
@@ -1539,6 +1652,8 @@ export default function IntelligenceMapping() {
       img.src = dataUrl;
       img.style.cssText = `width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));transform:rotate(${rotation}deg);`;
       el.appendChild(img);
+      // Store direct img ref for live rotation
+      customMarkerImgRefs.current.set(cm.id, img);
 
       if (existing.has(cm.id)) {
         const m = existing.get(cm.id)!;
@@ -1794,11 +1909,16 @@ export default function IntelligenceMapping() {
       const degLabel = document.getElementById(`cm-popup-deg-${id}`) as HTMLElement | null;
       if (previewImg) previewImg.style.transform = `rotate(${rotation}deg)`;
       if (degLabel) degLabel.textContent = `${rotation}°`;
-      // Also rotate the actual map marker element immediately
-      const markerEl = customMarkerMapRefs.current.get(id);
-      if (markerEl?.content instanceof HTMLElement) {
-        const img = markerEl.content.querySelector('img') as HTMLImageElement | null;
-        if (img) img.style.transform = `rotate(${rotation}deg)`;
+      // Also rotate the actual map marker element immediately via direct img ref
+      const markerImg = customMarkerImgRefs.current.get(id);
+      if (markerImg) markerImg.style.transform = `rotate(${rotation}deg)`;
+      // Fallback: query through content if direct ref not found
+      if (!markerImg) {
+        const markerEl = customMarkerMapRefs.current.get(id);
+        if (markerEl?.content instanceof HTMLElement) {
+          const img = markerEl.content.querySelector('img') as HTMLImageElement | null;
+          if (img) img.style.transform = `rotate(${rotation}deg)`;
+        }
       }
       // Debounce the DB save so we don't fire on every pixel of drag
       if (rotateTimer) clearTimeout(rotateTimer);
@@ -1878,7 +1998,9 @@ export default function IntelligenceMapping() {
   useEffect(() => {
     (window as any).__intelRsQuickEntry = (label: string) => {
       infoWindowRef.current?.close();
-      setMapQeAddress(label);
+      // Ensure the label has a bracket short-form — intel entity labels are already
+      // in RS format (suburb UPPERCASE, no postcode) but may lack the bracket code.
+      setMapQeAddress(ensureBracketCode(label));
       setMapQeOpen(true);
     };
     return () => { delete (window as any).__intelRsQuickEntry; };
@@ -2200,16 +2322,57 @@ export default function IntelligenceMapping() {
         {/* Collapsed panel arrow tab — positioned on left edge, vertically centred, above map type controls */}
         {!sidebarOpen && (
           <button
-            onClick={(e) => { e.stopPropagation(); setSidebarOpen(true); }}
-            className="absolute left-0 z-10 flex items-center justify-center bg-card border-2 border-l-0 border-border shadow-lg hover:bg-accent active:scale-95 transition-all"
+            onClick={(e) => { if (leftTabDraggingRef.current) { leftTabDraggingRef.current = false; return; } e.stopPropagation(); setSidebarOpen(true); }}
+            className="absolute left-0 z-10 flex items-center justify-center bg-card border-2 border-l-0 border-border shadow-lg hover:bg-accent active:scale-95 transition-colors cursor-grab active:cursor-grabbing select-none touch-none"
             style={{
-              top: "50%",
+              top: `${leftTabTop}%`,
               transform: "translateY(-50%)",
               width: "40px",
               height: "112px",
               borderRadius: "0 12px 12px 0",
             }}
-            title="Open Navigation Menu"
+            title="Open Navigation Menu (drag to reposition)"
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              const startY = e.clientY;
+              const startTop = leftTabTop;
+              const parentH = (e.currentTarget.parentElement?.clientHeight ?? window.innerHeight);
+              let moved = false;
+              const onMove = (me: MouseEvent) => {
+                const delta = me.clientY - startY;
+                if (Math.abs(delta) > 3) moved = true;
+                const newPct = Math.max(5, Math.min(95, startTop + (delta / parentH) * 100));
+                setLeftTabTop(newPct);
+              };
+              const onUp = () => {
+                if (moved) leftTabDraggingRef.current = true;
+                document.removeEventListener("mousemove", onMove);
+                document.removeEventListener("mouseup", onUp);
+              };
+              document.addEventListener("mousemove", onMove);
+              document.addEventListener("mouseup", onUp);
+            }}
+            onTouchStart={(e) => {
+              e.stopPropagation();
+              const touch = e.touches[0];
+              const startY = touch.clientY;
+              const startTop = leftTabTop;
+              const parentH = (e.currentTarget.parentElement?.clientHeight ?? window.innerHeight);
+              let moved = false;
+              const onMove = (te: TouchEvent) => {
+                const delta = te.touches[0].clientY - startY;
+                if (Math.abs(delta) > 3) moved = true;
+                const newPct = Math.max(5, Math.min(95, startTop + (delta / parentH) * 100));
+                setLeftTabTop(newPct);
+              };
+              const onEnd = () => {
+                if (moved) leftTabDraggingRef.current = true;
+                document.removeEventListener("touchmove", onMove);
+                document.removeEventListener("touchend", onEnd);
+              };
+              document.addEventListener("touchmove", onMove, { passive: true });
+              document.addEventListener("touchend", onEnd);
+            }}
           >
             <ChevronRight className="h-5 w-5 text-muted-foreground" />
           </button>
@@ -2225,17 +2388,23 @@ export default function IntelligenceMapping() {
           </div>
         )}
 
-        {/* Empty state — only show when there are also no custom markers */}
-        {!locsLoading && locations && locations.length === 0 && !(customMarkers && customMarkers.length > 0) && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
-            <div className="bg-card border border-border rounded-xl px-8 py-6 shadow-lg text-center max-w-xs">
-              <MapPin className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
-              <p className="text-sm font-medium text-foreground mb-1">No locations to display</p>
-              <p className="text-xs text-muted-foreground">
+        {/* Empty state — only show when there are also no custom markers, and user hasn't dismissed it */}
+        {!locsLoading && !dismissedNoLocs && locations && locations.length === 0 && !(customMarkers && customMarkers.length > 0) && (
+          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 pointer-events-auto">
+            <div className="relative bg-card/90 backdrop-blur-sm border border-border rounded-lg px-4 py-2.5 shadow-md text-center max-w-[260px] flex items-center gap-2.5">
+              <MapPin className="h-4 w-4 text-muted-foreground/50 flex-shrink-0" />
+              <p className="text-[11px] text-muted-foreground leading-tight">
                 {selectedOpIds.length > 0 || selectedTargetIds.length > 0
-                  ? "No locations found for the selected filters."
-                  : "Select operations or targets in Map Settings to show locations on the map."}
+                  ? "No locations found for selected filters."
+                  : "Select operations or targets in Map Settings to show locations."}
               </p>
+              <button
+                onClick={() => setDismissedNoLocs(true)}
+                className="flex-shrink-0 ml-1 text-muted-foreground/60 hover:text-foreground transition-colors"
+                aria-label="Dismiss"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
             </div>
           </div>
         )}
@@ -2288,8 +2457,8 @@ export default function IntelligenceMapping() {
           <MapView
             onMapReady={handleMapReady}
             className="w-full h-full"
-            initialCenter={{ lat: -31.9505, lng: 115.8605 }}
-            initialZoom={11}
+            initialCenter={mapInitialCenter}
+            initialZoom={mapInitialZoom}
           />
 
           {/* Centre on me / Follow me floating buttons — top-left below search bar */}
@@ -2362,8 +2531,20 @@ export default function IntelligenceMapping() {
                     if (!val.trim()) { setAddrSuggestions([]); setAddrSearchOpen(false); return; }
                     addrSearchDebounceRef.current = setTimeout(() => {
                       if (!autocompleteServiceRef.current) return;
+                      const mapCentre = mapRef.current?.getCenter();
+                      const addrRequest: google.maps.places.AutocompletionRequest = {
+                        input: val,
+                        componentRestrictions: { country: "au" },
+                        types: ["address"],
+                      };
+                      if (mapCentre) {
+                        addrRequest.locationBias = new google.maps.Circle({
+                          center: { lat: mapCentre.lat(), lng: mapCentre.lng() },
+                          radius: 50000, // 50 km bias around current map centre
+                        });
+                      }
                       autocompleteServiceRef.current.getPlacePredictions(
-                        { input: val, componentRestrictions: { country: "au" } },
+                        addrRequest,
                         (predictions, status) => {
                           if (status === google.maps.places.PlacesServiceStatus.OK && predictions) {
                             setAddrSuggestions(predictions);
@@ -2436,23 +2617,195 @@ export default function IntelligenceMapping() {
           </div>
         </div>
 
-        {/* RS Actions pane toggle tab — right edge, vertically centred */}
+        {/* RS Actions pane toggle tab — right edge, draggable */}
         {!rsActionsPaneOpen && (
           <button
-            onClick={(e) => { e.stopPropagation(); setRsActionsPaneOpen(true); }}
-            className="absolute right-0 z-10 flex items-center justify-center bg-card border-2 border-r-0 border-border shadow-lg hover:bg-accent active:scale-95 transition-all"
+            onClick={(e) => { if (rightTabDraggingRef.current) { rightTabDraggingRef.current = false; return; } e.stopPropagation(); setRsActionsPaneOpen(true); }}
+            className="absolute right-0 z-10 flex items-center justify-center bg-card border-2 border-r-0 border-border shadow-lg hover:bg-accent active:scale-95 transition-colors cursor-grab active:cursor-grabbing select-none touch-none"
             style={{
-              top: "50%",
+              top: `${rightTabTop}%`,
               transform: "translateY(-50%)",
               width: "40px",
               height: "112px",
               borderRadius: "12px 0 0 12px",
             }}
-            title="Open Map Settings"
+            title="Open Map Settings (drag to reposition)"
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              const startY = e.clientY;
+              const startTop = rightTabTop;
+              const parentH = (e.currentTarget.parentElement?.clientHeight ?? window.innerHeight);
+              let moved = false;
+              const onMove = (me: MouseEvent) => {
+                const delta = me.clientY - startY;
+                if (Math.abs(delta) > 3) moved = true;
+                const newPct = Math.max(5, Math.min(95, startTop + (delta / parentH) * 100));
+                setRightTabTop(newPct);
+              };
+              const onUp = () => {
+                if (moved) rightTabDraggingRef.current = true;
+                document.removeEventListener("mousemove", onMove);
+                document.removeEventListener("mouseup", onUp);
+              };
+              document.addEventListener("mousemove", onMove);
+              document.addEventListener("mouseup", onUp);
+            }}
+            onTouchStart={(e) => {
+              e.stopPropagation();
+              const touch = e.touches[0];
+              const startY = touch.clientY;
+              const startTop = rightTabTop;
+              const parentH = (e.currentTarget.parentElement?.clientHeight ?? window.innerHeight);
+              let moved = false;
+              const onMove = (te: TouchEvent) => {
+                const delta = te.touches[0].clientY - startY;
+                if (Math.abs(delta) > 3) moved = true;
+                const newPct = Math.max(5, Math.min(95, startTop + (delta / parentH) * 100));
+                setRightTabTop(newPct);
+              };
+              const onEnd = () => {
+                if (moved) rightTabDraggingRef.current = true;
+                document.removeEventListener("touchmove", onMove);
+                document.removeEventListener("touchend", onEnd);
+              };
+              document.addEventListener("touchmove", onMove, { passive: true });
+              document.addEventListener("touchend", onEnd);
+            }}
           >
             <ChevronLeft className="h-5 w-5 text-muted-foreground" />
           </button>
         )}
+
+        {/* ── Draggable Floating Pill Bar (all devices) ──
+             Tap-hold the drag handle to reposition vertically. Position persisted to localStorage. */}
+        <div
+          className="absolute left-0 right-0 z-20 flex items-center justify-center pointer-events-none"
+          style={{ top: `${pillBarTop}%`, transform: "translateY(-50%)" }}
+        >
+          {/* Drag handle — long-press activates drag */}
+          <div
+            className={`pointer-events-auto flex items-center gap-2 lg:gap-3 px-2 py-1.5 rounded-3xl ${
+              pillBarDraggingRef.current ? "cursor-grabbing" : "cursor-grab"
+            } select-none touch-none`}
+            onMouseDown={(e) => {
+              // Long-press to drag on desktop
+              const startY = e.clientY;
+              const startTop = pillBarTop;
+              const parentH = (e.currentTarget.parentElement?.parentElement?.clientHeight ?? window.innerHeight);
+              pillBarIsDraggingRef.current = false;
+              pillBarLongPressRef.current = setTimeout(() => {
+                pillBarDraggingRef.current = true;
+                const onMove = (me: MouseEvent) => {
+                  const delta = me.clientY - startY;
+                  if (Math.abs(delta) > 3) { pillBarIsDraggingRef.current = true; }
+                  setPillBarTop(Math.max(5, Math.min(95, startTop + (delta / parentH) * 100)));
+                };
+                const onUp = () => {
+                  pillBarDraggingRef.current = false;
+                  document.removeEventListener("mousemove", onMove);
+                  document.removeEventListener("mouseup", onUp);
+                };
+                document.addEventListener("mousemove", onMove);
+                document.addEventListener("mouseup", onUp);
+              }, 300);
+              const onUp = () => {
+                if (pillBarLongPressRef.current) clearTimeout(pillBarLongPressRef.current);
+                document.removeEventListener("mouseup", onUp);
+              };
+              document.addEventListener("mouseup", onUp);
+            }}
+            onTouchStart={(e) => {
+              const touch = e.touches[0];
+              const startY = touch.clientY;
+              const startTop = pillBarTop;
+              const parentH = (e.currentTarget.parentElement?.parentElement?.clientHeight ?? window.innerHeight);
+              pillBarIsDraggingRef.current = false;
+              pillBarLongPressRef.current = setTimeout(() => {
+                pillBarDraggingRef.current = true;
+                const onMove = (te: TouchEvent) => {
+                  const delta = te.touches[0].clientY - startY;
+                  if (Math.abs(delta) > 3) { pillBarIsDraggingRef.current = true; }
+                  setPillBarTop(Math.max(5, Math.min(95, startTop + (delta / parentH) * 100)));
+                };
+                const onEnd = () => {
+                  pillBarDraggingRef.current = false;
+                  document.removeEventListener("touchmove", onMove);
+                  document.removeEventListener("touchend", onEnd);
+                };
+                document.addEventListener("touchmove", onMove, { passive: true });
+                document.addEventListener("touchend", onEnd);
+              }, 300);
+              const onEnd = () => {
+                if (pillBarLongPressRef.current) clearTimeout(pillBarLongPressRef.current);
+                document.removeEventListener("touchend", onEnd);
+              };
+              document.addEventListener("touchend", onEnd);
+            }}
+          >
+            {/* Home pill (all devices) */}
+            <button
+              onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } setLocation("/"); }}
+              className="flex flex-col items-center justify-center gap-1 px-5 py-2.5 rounded-2xl shadow-lg border bg-slate-600 border-slate-500 hover:bg-slate-500 active:scale-95 transition-all min-w-[80px]"
+              title="Home"
+            >
+              <Home className="h-5 w-5 flex-shrink-0 text-white" />
+              <span className="text-[11px] font-semibold leading-none text-white">Home</span>
+            </button>
+
+            {/* Active RS pill */}
+            {(() => {
+              const activeSheet = rsSelectedSheetId && rsSheetsData
+                ? (rsSheetsData as any[]).find((s: any) => s.id === rsSelectedSheetId)
+                : null;
+              return (
+                <button
+                  disabled={!activeSheet}
+                  onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } if (activeSheet) setLocation(`/sheet/${rsSelectedSheetId}`); }}
+                  className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all min-w-[80px] px-5 py-2.5 ${
+                    activeSheet
+                      ? "bg-emerald-700 border-emerald-600 hover:bg-emerald-600 active:scale-95 cursor-pointer"
+                      : "bg-emerald-900/50 border-emerald-800/50 cursor-default opacity-50"
+                  }`}
+                  title={activeSheet ? "Open active running sheet" : "No running sheet selected"}
+                >
+                  <ClipboardList className={`h-5 w-5 flex-shrink-0 ${activeSheet ? "text-white" : "text-white/40"}`} />
+                  <span className={`text-[11px] font-semibold leading-none ${activeSheet ? "text-white" : "text-white/40"}`}>Active RS</span>
+                </button>
+              );
+            })()}
+
+            {/* RS Entry pill */}
+            {(() => {
+              const hasSheet = !!rsSelectedSheetId;
+              return (
+                <button
+                  disabled={!hasSheet}
+                  onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } if (hasSheet) setMapQeOpen(true); }}
+                  className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all min-w-[80px] px-5 py-2.5 ${
+                    hasSheet
+                      ? "bg-blue-700 border-blue-600 hover:bg-blue-600 active:scale-95 cursor-pointer"
+                      : "bg-blue-900/50 border-blue-800/50 cursor-default opacity-50"
+                  }`}
+                  title={hasSheet ? "RS Quick Entry" : "Select a running sheet first"}
+                >
+                  <FileText className={`h-5 w-5 flex-shrink-0 ${hasSheet ? "text-white" : "text-white/40"}`} />
+                  <span className={`text-[11px] font-semibold leading-none ${hasSheet ? "text-white" : "text-white/40"}`}>RS Entry</span>
+                </button>
+              );
+            })()}
+
+            {/* Intel Profiles pill */}
+            <button
+              onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } setLocation("/intelligence"); }}
+              className="flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border bg-violet-700 border-violet-600 hover:bg-violet-600 active:scale-95 transition-all min-w-[80px] px-5 py-2.5"
+              title="Intel Profiles"
+            >
+              <FolderSearch className="h-5 w-5 flex-shrink-0 text-white" />
+              <span className="text-[11px] font-semibold leading-none text-white">Intel Profiles</span>
+            </button>
+          </div>
+        </div>
+
       </div>
 
       {/* ── RS Actions Right Pane ── */}
@@ -2578,43 +2931,42 @@ export default function IntelligenceMapping() {
           <div className="px-3 py-3 border-b border-border space-y-3">
             <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">RS Selection</span>
 
-            {/* Operation selector */}
-            <Select
-              value={rsSelectedOpId !== null ? String(rsSelectedOpId) : ""}
-              onValueChange={(val) => {
-                setRsSelectedOpId(Number(val));
-                setRsSelectedSheetId(null);
-                setRsLastEntry(null);
-              }}
-            >
-              <SelectTrigger className="w-full h-9 text-xs rounded-xl border-2">
-                <SelectValue placeholder="1. Choose operation…" />
-              </SelectTrigger>
-              <SelectContent>
-                {(operations ?? []).map((op: any) => (
-                  <SelectItem key={op.id} value={String(op.id)} className="text-xs">{op.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {/* No ops selected — prompt user */}
+            {selectedOpIds.length === 0 && (
+              <p className="text-[11px] text-muted-foreground leading-snug">
+                Select an operation above to see available running sheets.
+              </p>
+            )}
 
-            {/* Running sheet selector */}
-            {rsSelectedOpId !== null && (
-              <Select
-                value={rsSelectedSheetId !== null ? String(rsSelectedSheetId) : ""}
-                onValueChange={(val) => {
-                  setRsSelectedSheetId(Number(val));
-                  setRsLastEntry(null);
-                }}
-              >
-                <SelectTrigger className="w-full h-9 text-xs rounded-xl border-2">
-                  <SelectValue placeholder="2. Choose running sheet…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(rsSheetsData ?? []).filter((s: any) => !s.closedAt && !s.deletedAt).map((s: any) => (
-                    <SelectItem key={s.id} value={String(s.id)} className="text-xs">{s.title || `Sheet #${s.id}`}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            {/* Running sheet selector — driven by top Operations filter */}
+            {selectedOpIds.length > 0 && (
+              <div className="flex items-center gap-2">
+                <Select
+                  value={rsSelectedSheetId !== null ? String(rsSelectedSheetId) : ""}
+                  onValueChange={(val) => {
+                    setRsSelectedSheetId(Number(val));
+                    setRsLastEntry(null);
+                  }}
+                >
+                  <SelectTrigger className="flex-1 h-9 text-xs rounded-xl border-2">
+                    <SelectValue placeholder="Choose running sheet…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(rsSheetsData ?? []).filter((s: any) => !s.closedAt && !s.deletedAt).map((s: any) => (
+                      <SelectItem key={s.id} value={String(s.id)} className="text-xs">{s.title || `Sheet #${s.id}`}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {rsSelectedSheetId !== null && (
+                  <button
+                    onClick={() => { setRsSelectedSheetId(null); setRsLastEntry(null); }}
+                    className="flex-shrink-0 h-9 w-9 flex items-center justify-center rounded-xl border-2 border-border bg-muted/40 hover:bg-destructive/20 hover:border-destructive/40 active:scale-95 transition-all"
+                    title="Clear running sheet selection"
+                  >
+                    <X className="h-3.5 w-3.5 text-muted-foreground" />
+                  </button>
+                )}
+              </div>
             )}
 
             {/* Sheet link — shown below RS dropdown when sheet selected */}
@@ -2748,143 +3100,9 @@ export default function IntelligenceMapping() {
               })()}
             </div>
           </div>{/* end TEAMS */}
-        </div>
-      </div>
 
-      {/* ── Bottom Quick-Link Pills ── */}
-      {/* Mobile: 3 fixed + 1 custom | Tablet (md+): 3 fixed + 2 custom | Laptop (lg+): 3 fixed + 3 custom */}
-      <div className="absolute bottom-3 left-0 right-0 z-20 flex items-end justify-center gap-2 px-3 pointer-events-none">
-
-        {/* Pill 1 — Folders (fixed) */}
-        <button
-          onClick={() => setSidebarOpen(true)}
-          className="pointer-events-auto flex flex-col items-center justify-center gap-1 px-4 lg:px-6 py-2.5 rounded-2xl shadow-lg bg-card border border-border hover:bg-accent active:scale-95 transition-all min-w-[64px] lg:min-w-[88px]"
-        >
-          <FolderIcon className="h-5 w-5 text-blue-700" />
-          <span className="text-[10px] lg:text-[11px] font-semibold text-foreground/70 leading-none">Folders</span>
-        </button>
-
-        {/* Pill 2 — Active RS (fixed, always shows "Active RS" label, greyed when none selected) */}
-        {(() => {
-          const activeSheet = rsSelectedSheetId && rsSheetsData
-            ? (rsSheetsData as any[]).find((s: any) => s.id === rsSelectedSheetId)
-            : null;
-          let holdTimer2: ReturnType<typeof setTimeout> | null = null;
-          return (
-            <button
-              disabled={!activeSheet}
-              onClick={() => { if (activeSheet) setLocation(`/sheet/${rsSelectedSheetId}`); }}
-              onPointerDown={() => { holdTimer2 = setTimeout(() => setEditingQuickLinks(true), 600); }}
-              onPointerUp={() => { if (holdTimer2) clearTimeout(holdTimer2); }}
-              onPointerLeave={() => { if (holdTimer2) clearTimeout(holdTimer2); }}
-              className={`pointer-events-auto flex flex-col items-center justify-center gap-1 px-4 lg:px-6 py-2.5 rounded-2xl shadow-lg border transition-all min-w-[64px] lg:min-w-[88px] ${
-                activeSheet
-                  ? "bg-card border-border hover:bg-accent active:scale-95 cursor-pointer"
-                  : "bg-card/60 border-border/40 cursor-default opacity-50"
-              }`}
-              title={activeSheet ? `Open active running sheet` : "No running sheet selected"}
-            >
-              <ClipboardList className={`h-5 w-5 flex-shrink-0 ${activeSheet ? "text-emerald-500" : "text-muted-foreground/40"}`} />
-              <span className={`text-[10px] lg:text-[11px] font-semibold leading-none ${activeSheet ? "text-foreground/70" : "text-muted-foreground/40"}`}>
-                Active RS
-              </span>
-            </button>
-          );
-        })()}
-
-        {/* Pill 3 — RS Quick Entry (fixed, indigo, greyed when no sheet selected) */}
-        {(() => {
-          const hasSheet = !!rsSelectedSheetId;
-          return (
-            <button
-              disabled={!hasSheet}
-              onClick={() => { if (hasSheet) setMapQeOpen(true); }}
-              className={`pointer-events-auto flex flex-col items-center justify-center gap-1 px-4 lg:px-6 py-2.5 rounded-2xl shadow-lg border transition-all min-w-[64px] lg:min-w-[88px] ${
-                hasSheet
-                  ? "bg-indigo-600 border-indigo-500 hover:bg-indigo-500 active:scale-95 cursor-pointer"
-                  : "bg-card/60 border-border/40 cursor-default opacity-50"
-              }`}
-              title={hasSheet ? "RS Quick Entry" : "Select a running sheet first"}
-            >
-              <FileText className={`h-5 w-5 flex-shrink-0 ${hasSheet ? "text-white" : "text-muted-foreground/40"}`} />
-              <span className={`text-[10px] lg:text-[11px] font-semibold leading-none ${hasSheet ? "text-white" : "text-muted-foreground/40"}`}>
-                RS Entry
-              </span>
-            </button>
-          );
-        })()}
-
-        {/* Pill 4 — Custom slot 1 (all screen sizes) */}
-        {(() => {
-          const ql = quickLinks[0];
-          const iconEntry = ql ? ICON_MAP[ql.icon] : null;
-          const IconComp = iconEntry?.Icon ?? FolderSearch;
-          const iconColour = iconEntry?.colour ?? "text-muted-foreground";
-          let holdTimer4: ReturnType<typeof setTimeout> | null = null;
-          return (
-            <button
-              onClick={() => { if (ql) setLocation(ql.path); else setEditingQuickLinks(true); }}
-              onPointerDown={() => { holdTimer4 = setTimeout(() => setEditingQuickLinks(true), 600); }}
-              onPointerUp={() => { if (holdTimer4) clearTimeout(holdTimer4); }}
-              onPointerLeave={() => { if (holdTimer4) clearTimeout(holdTimer4); }}
-              className="pointer-events-auto flex flex-col items-center justify-center gap-1 px-4 lg:px-6 py-2.5 rounded-2xl shadow-lg bg-card border border-border hover:bg-accent active:scale-95 transition-all min-w-[64px] lg:min-w-[88px]"
-              title={ql ? `${ql.label} — hold to change` : "Hold to set shortcut"}
-            >
-              <IconComp className={`h-5 w-5 ${iconColour}`} />
-              <span className="text-[10px] lg:text-[11px] font-semibold text-foreground/70 leading-none truncate max-w-[80px]">{ql?.label ?? "Shortcut"}</span>
-            </button>
-          );
-        })()}
-
-        {/* Pill 5 — Custom slot 2 (tablet md+ only) */}
-        <div className="hidden md:block">
-          {(() => {
-            const ql = quickLinks[1];
-            const iconEntry = ql ? ICON_MAP[ql.icon] : null;
-            const IconComp = iconEntry?.Icon ?? FolderSearch;
-            const iconColour = iconEntry?.colour ?? "text-muted-foreground";
-            let holdTimer5: ReturnType<typeof setTimeout> | null = null;
-            return (
-              <button
-                onClick={() => { if (ql) setLocation(ql.path); else setEditingQuickLinks(true); }}
-                onPointerDown={() => { holdTimer5 = setTimeout(() => setEditingQuickLinks(true), 600); }}
-                onPointerUp={() => { if (holdTimer5) clearTimeout(holdTimer5); }}
-                onPointerLeave={() => { if (holdTimer5) clearTimeout(holdTimer5); }}
-                className="pointer-events-auto flex flex-col items-center justify-center gap-1 px-4 lg:px-6 py-2.5 rounded-2xl shadow-lg bg-card border border-border hover:bg-accent active:scale-95 transition-all min-w-[64px] lg:min-w-[88px]"
-                title={ql ? `${ql.label} — hold to change` : "Hold to set shortcut"}
-              >
-                <IconComp className={`h-5 w-5 ${iconColour}`} />
-                <span className="text-[10px] lg:text-[11px] font-semibold text-foreground/70 leading-none truncate max-w-[80px]">{ql?.label ?? "Shortcut"}</span>
-              </button>
-            );
-          })()}
-        </div>
-
-        {/* Pill 6 — Custom slot 3 (laptop lg+ only) */}
-        <div className="hidden lg:block">
-          {(() => {
-            const ql = quickLinks[2];
-            const iconEntry = ql ? ICON_MAP[ql.icon] : null;
-            const IconComp = iconEntry?.Icon ?? FolderSearch;
-            const iconColour = iconEntry?.colour ?? "text-muted-foreground";
-            let holdTimer6: ReturnType<typeof setTimeout> | null = null;
-            return (
-              <button
-                onClick={() => { if (ql) setLocation(ql.path); else setEditingQuickLinks(true); }}
-                onPointerDown={() => { holdTimer6 = setTimeout(() => setEditingQuickLinks(true), 600); }}
-                onPointerUp={() => { if (holdTimer6) clearTimeout(holdTimer6); }}
-                onPointerLeave={() => { if (holdTimer6) clearTimeout(holdTimer6); }}
-                className="pointer-events-auto flex flex-col items-center justify-center gap-1 px-6 py-2.5 rounded-2xl shadow-lg bg-card border border-border hover:bg-accent active:scale-95 transition-all min-w-[88px]"
-                title={ql ? `${ql.label} — hold to change` : "Hold to set shortcut"}
-              >
-                <IconComp className={`h-5 w-5 ${iconColour}`} />
-                <span className="text-[11px] font-semibold text-foreground/70 leading-none truncate max-w-[80px]">{ql?.label ?? "Shortcut"}</span>
-              </button>
-            );
-          })()}
-        </div>
-
-      </div>
+        </div>{/* end Pane Body */}
+      </div>{/* end RS Actions Right Pane */}
 
       {/* ── Quick-Link Editor Modal ── */}
       {editingQuickLinks && (
@@ -2998,7 +3216,7 @@ export default function IntelligenceMapping() {
                   setCmAddress(rsAddress);
                   setCmNote(""); setCmPersons([]); setCmVehicles([]); setCmRotation(0);
                   setCmPersonInput(""); setCmVehicleInput("");
-                  setCmOpId(selectedOpIds.length === 1 ? selectedOpIds[0] : (rsSelectedOpId ?? null));
+                  setCmOpId(selectedOpIds.length === 1 ? selectedOpIds[0] : null);
                   setPendingLatLng({ lat: poiTap.lat, lng: poiTap.lng });
                   setPoiTap(null);
                 }}
@@ -3065,7 +3283,7 @@ export default function IntelligenceMapping() {
                   setCmAddress(actionChooser.address);
                   setCmNote(""); setCmPersons([]); setCmVehicles([]); setCmRotation(0);
                   setCmPersonInput(""); setCmVehicleInput("");
-                  setCmOpId(selectedOpIds.length === 1 ? selectedOpIds[0] : (rsSelectedOpId ?? null));
+                  setCmOpId(selectedOpIds.length === 1 ? selectedOpIds[0] : null);
                   setPendingLatLng({ lat: actionChooser.lat, lng: actionChooser.lng });
                   setActionChooser(null);
                 }}
@@ -3703,27 +3921,100 @@ export default function IntelligenceMapping() {
                           const gen = (generalShortcuts as any[] | undefined)?.find((s: any) => s.trigger?.toLowerCase() === trigger.toLowerCase());
                           return gen ? gen.expansion as string : null;
                         };
-                        const shortcuts: Array<{ label: string; getValue: () => string | null }> = [
-                          { label: "V1", getValue: () => rsTargetData?.v1 ?? rsTargetData?.v1f ?? null },
-                          { label: "V2", getValue: () => rsTargetData?.v2 ?? rsTargetData?.v2f ?? null },
-                          { label: "TGT", getValue: () => rsTargetData?.tgt ?? rsTargetData?.name ?? null },
-                          { label: "DSO", getValue: () => findShortcut("dso") ?? "driver and sole occupant" },
-                          { label: "D", getValue: () => findShortcut("d") ?? "departed and" },
-                          { label: "AR", getValue: () => findShortcut("ar") ?? "arrived and" },
-                          { label: "CV", getValue: () => findShortcut("cv") ?? "continued via" },
-                          { label: "OOS", getValue: () => findShortcut("oos") ?? "out of sight" },
-                          { label: "COOS", getValue: () => findShortcut("coos") ?? "continued out of sight" },
+                        // Helper: extract registration/short value for display preview
+                        // A rego must be 3-8 alphanumeric chars AND contain at least one digit OR letter
+                        const extractReg = (val: string | null | undefined): string | null => {
+                          if (!val) return null;
+                          const stripped = val.replace(/^Vehicle\s+/i, '').trim();
+                          const tokens = stripped.split(/\s+/).map(t => t.replace(/[^A-Z0-9]/gi, ''));
+                          const rego = tokens.slice().reverse().find(t => /^[A-Z0-9]{3,8}$/i.test(t) && /\d/.test(t) && /[A-Z]/i.test(t));
+                          if (rego) return rego;
+                          // Fallback: if stripped value looks like a plate (3-8 chars, alphanumeric), use it directly
+                          if (/^[A-Z0-9]{3,8}$/i.test(stripped)) return stripped;
+                          return null;
+                        };
+                        // Build dynamic extra vehicle chips from assignedTarget JSON
+                        // Each extra vehicle gets both a VnF chip (full value, trigger-only label) and a Vn chip (rego-only)
+                        const extraVehicleChips: Array<{ label: string; display: string; getValue: () => string | null }> = [];
+                        try {
+                          const evs: Array<{ full: string; short: string }> = JSON.parse((assignedTarget as any)?.extraVehicles ?? '[]');
+                          evs.forEach((ev, i) => {
+                            const num = i + 2;
+                            if (ev.full) extraVehicleChips.push({ label: `V${num}F`, display: `V${num}F`, getValue: () => ev.full });
+                            if (ev.short) {
+                              const reg = extractReg(ev.short);
+                              extraVehicleChips.push({ label: `V${num}`, display: reg ? `V${num} ${reg}` : `V${num}`, getValue: () => ev.short });
+                            }
+                          });
+                        } catch {}
+                        // Wild field chips — show full value (truncated to 12 chars)
+                        const wildChips: Array<{ label: string; display: string; getValue: () => string | null }> = [];
+                        try {
+                          const wfs: Array<{ label: string; value: string }> = JSON.parse((assignedTarget as any)?.wildFields ?? '[]');
+                          wfs.forEach((wf) => {
+                            if (wf.value) {
+                              const preview = wf.value.trim().slice(0, 12) + (wf.value.trim().length > 12 ? '…' : '');
+                              wildChips.push({ label: wf.label, display: `${wf.label} ${preview}`, getValue: () => wf.value });
+                            }
+                          });
+                        } catch {}
+                        // V1F and V1 chips — only shown if the target has those fields set
+                        const v1fVal = rsTargetData?.v1f ?? null;
+                        const v1Val = rsTargetData?.v1 ?? null;
+                        const v1Reg = extractReg(v1Val);
+                        // All shortcut-folder triggers as chips — only those with showInRs=true, exclude legacy 'D' chip
+                        const folderShortcutChips: Array<{ label: string; display: string; getValue: () => string | null }> =
+                          (generalShortcuts as any[] ?? []).filter((s: any) => (s.trigger as string).toUpperCase() !== "D" && s.showInRs !== false).map((s: any) => ({
+                            label: (s.trigger as string).toUpperCase(),
+                            display: (s.trigger as string).toUpperCase(),
+                            getValue: () => findShortcut(s.trigger) ?? s.expansion as string,
+                          }));
+                        const shortcuts: Array<{ label: string; display: string; getValue: () => string | null }> = [
+                          { label: "HBF", display: "HBF", getValue: () => rsTargetData?.hbf ?? null },
+                          { label: "V1F", display: "V1F", getValue: () => v1fVal },
+                          { label: "V1",  display: v1Reg ? `V1 ${v1Reg}` : "V1", getValue: () => v1Val },
+                          ...extraVehicleChips,
+                          { label: "TGT", display: "TGT", getValue: () => rsTargetData?.tgt ?? rsTargetData?.name ?? null },
+                          ...wildChips,
+                          ...folderShortcutChips,
                         ];
                         const available = shortcuts.filter(s => s.getValue() !== null);
                         if (available.length === 0) return null;
+                        // Apply saved order
+                        const orderedChips = qeChipOrder.length > 0
+                          ? [
+                              ...qeChipOrder.map(lbl => available.find(s => s.label === lbl)).filter(Boolean) as typeof available,
+                              ...available.filter(s => !qeChipOrder.includes(s.label)),
+                            ]
+                          : available;
                         return (
                           <div className="flex flex-wrap gap-1">
-                            {available.map(s => (
-                              <button key={s.label} onClick={() => { const v = s.getValue(); if (v) appendText(v); }}
-                                className="px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all">
-                                {s.label}
-                              </button>
-                            ))}
+                            {(() => {
+                              // Chip display rules for QE modal:
+                              // - Vn short chips (V1, V2, V3...): show label + rego (from s.display which already has rego)
+                              // - VnF full chips, TGT, HBF, HB, DEP, ARR, folder shortcuts: trigger only
+                              const folderQeLabels = new Set([
+                                "TGT", "HBF", "HB", "V1F", "V2F", "DEP", "ARR",
+                                ...(generalShortcuts as any[] ?? []).map((s: any) => (s.trigger as string).toUpperCase()),
+                              ]);
+                              const isVnShortQe = (label: string) => /^V\d+$/.test(label); // V1, V2, V3 — show rego
+                              const isTargetDetailChip = (label: string) => /^V\d+F$/.test(label); // VnF — trigger only
+
+                              return orderedChips.map((s) => {
+                                const isStdQe = folderQeLabels.has(s.label);
+                                return (
+                                  <button
+                                    key={s.label}
+                                    onClick={() => { const v = s.getValue(); if (v) appendText(v); }}
+                                    data-qe-chip={s.label}
+                                    className="cursor-pointer px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all select-none"
+                                  >
+                                    {/* Vn short: show display (label + rego); VnF/folder/TGT: show label only */}
+                                    {isVnShortQe(s.label) ? s.display : (isStdQe || isTargetDetailChip(s.label)) ? s.label : s.display}
+                                  </button>
+                                );
+                              });
+                            })()}
                           </div>
                         );
                       })()}
@@ -3821,8 +4112,20 @@ export default function IntelligenceMapping() {
               </button>
             </div>
 
-            {/* 0. Address — shown at top so user can verify before filling other fields */}
-            <div className="mb-4 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
+            {/* 0. Location / Business Name — shown at top for quick identification */}
+            <div className="mb-3">
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Location / Business Name</label>
+              <input
+                type="text"
+                value={cmLabel}
+                onChange={(e) => setCmLabel(e.target.value)}
+                placeholder="e.g. Target address, coffee shop..."
+                className="w-full text-sm bg-background border border-border rounded-md px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+
+            {/* 0b. Address */}
+            <div className="mb-3 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
               <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1">Address</p>
               <input
                 type="text"
@@ -3830,6 +4133,18 @@ export default function IntelligenceMapping() {
                 onChange={(e) => setCmAddress(e.target.value)}
                 placeholder="Auto-filled from coordinates…"
                 className="w-full text-sm bg-transparent border-none outline-none text-foreground placeholder:text-muted-foreground"
+              />
+            </div>
+
+            {/* 0c. Notes — directly below address */}
+            <div className="mb-4">
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Notes</label>
+              <Textarea
+                value={cmNote}
+                onChange={(e) => setCmNote(e.target.value)}
+                placeholder="Optional notes..."
+                rows={2}
+                className="text-sm resize-none"
               />
             </div>
 
@@ -3924,123 +4239,8 @@ export default function IntelligenceMapping() {
               </div>
             </div>
 
-            {/* 4. Label */}
-            <div className="mb-3">
-              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Location / Business Name</label>
-              <input
-                type="text"
-                value={cmLabel}
-                onChange={(e) => setCmLabel(e.target.value)}
-                placeholder="e.g. Target address, coffee shop..."
-                className="w-full text-sm bg-background border border-border rounded-md px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-              />
-            </div>
+            {/* 4. (Label moved to top, Operation/Person/Vehicle removed) */}
 
-            {/* 5. Operation */}
-            <div className="mb-3">
-              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Operation</label>
-              <Select
-                value={cmOpId !== null ? String(cmOpId) : ""}
-                onValueChange={(v) => setCmOpId(v ? Number(v) : null)}
-              >
-                <SelectTrigger className="w-full text-sm">
-                  <SelectValue placeholder="Select operation..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {(operations as any[] | undefined)?.map((op: any) => (
-                    <SelectItem key={op.id} value={String(op.id)}>{op.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* 6. Person(s) */}
-            <div className="mb-3">
-              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Person(s) it relates to</label>
-              <div className="flex gap-2 mb-1.5">
-                <input
-                  type="text"
-                  value={cmPersonInput}
-                  onChange={(e) => setCmPersonInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && cmPersonInput.trim()) {
-                      setCmPersons(prev => [...prev, cmPersonInput.trim()]);
-                      setCmPersonInput("");
-                    }
-                  }}
-                  list="cm-person-list"
-                  placeholder="Type name or select..."
-                  className="flex-1 text-sm bg-background border border-border rounded-md px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-                <datalist id="cm-person-list">
-                  {assocPersonOptions.map((p) => <option key={p} value={p} />)}
-                </datalist>
-                <button
-                  onClick={() => { if (cmPersonInput.trim()) { setCmPersons(prev => [...prev, cmPersonInput.trim()]); setCmPersonInput(""); } }}
-                  className="px-3 py-2 text-xs bg-primary/20 text-primary rounded-md hover:bg-primary/30"
-                >Add</button>
-              </div>
-              {cmPersons.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {cmPersons.map((p, i) => (
-                    <span key={i} className="flex items-center gap-1 text-xs bg-accent/50 border border-border rounded-full px-2.5 py-1">
-                      {p}
-                      <button onClick={() => setCmPersons(prev => prev.filter((_, j) => j !== i))} className="text-muted-foreground hover:text-foreground"><X className="h-2.5 w-2.5" /></button>
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* 7. Vehicle(s) */}
-            <div className="mb-3">
-              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Vehicle(s) it relates to</label>
-              <div className="flex gap-2 mb-1.5">
-                <input
-                  type="text"
-                  value={cmVehicleInput}
-                  onChange={(e) => setCmVehicleInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && cmVehicleInput.trim()) {
-                      setCmVehicles(prev => [...prev, cmVehicleInput.trim()]);
-                      setCmVehicleInput("");
-                    }
-                  }}
-                  list="cm-vehicle-list"
-                  placeholder="Type rego/description or select..."
-                  className="flex-1 text-sm bg-background border border-border rounded-md px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-                <datalist id="cm-vehicle-list">
-                  {vehicleOptions.map((v) => <option key={v} value={v} />)}
-                </datalist>
-                <button
-                  onClick={() => { if (cmVehicleInput.trim()) { setCmVehicles(prev => [...prev, cmVehicleInput.trim()]); setCmVehicleInput(""); } }}
-                  className="px-3 py-2 text-xs bg-primary/20 text-primary rounded-md hover:bg-primary/30"
-                >Add</button>
-              </div>
-              {cmVehicles.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {cmVehicles.map((v, i) => (
-                    <span key={i} className="flex items-center gap-1 text-xs bg-accent/50 border border-border rounded-full px-2.5 py-1">
-                      {v}
-                      <button onClick={() => setCmVehicles(prev => prev.filter((_, j) => j !== i))} className="text-muted-foreground hover:text-foreground"><X className="h-2.5 w-2.5" /></button>
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* 8. Notes */}
-            <div className="mb-4">
-              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Notes</label>
-              <Textarea
-                value={cmNote}
-                onChange={(e) => setCmNote(e.target.value)}
-                placeholder="Optional notes..."
-                rows={2}
-                className="text-sm resize-none"
-              />
-            </div>
 
             {/* Save / Cancel */}
             <div className="flex gap-3">
@@ -4114,20 +4314,34 @@ export default function IntelligenceMapping() {
           </DialogHeader>
           <div className="flex flex-col gap-3 py-2">
             {([
-              { label: "Full Name, Born", val: etName, set: setEtName },
-              { label: "Target (TGT)", val: etTgt, set: setEtTgt },
-              { label: "Home Address Full (HBF)", val: etHbf, set: setEtHbf },
-              { label: "Home (HB)", val: etHb, set: setEtHb },
-              { label: "Vehicle 1 Full (V1F)", val: etV1f, set: setEtV1f },
-              { label: "Vehicle (V1)", val: etV1, set: setEtV1 },
-              { label: "Vehicle 2 Full (V2F)", val: etV2f, set: setEtV2f },
-              { label: "Vehicle (V2)", val: etV2, set: setEtV2 },
-              { label: "Depart (DEP)", val: etDep, set: setEtDep },
-              { label: "Arrive (ARR)", val: etArr, set: setEtArr },
-            ] as { label: string; val: string; set: (v: string) => void }[]).map(({ label, val, set }) => (
+              { label: "Full Name, Born", val: etName, set: setEtName, isHbf: false, isV1f: false, isV2f: false },
+              { label: "Target (TGT)", val: etTgt, set: setEtTgt, isHbf: false, isV1f: false, isV2f: false },
+              { label: "Home Address Full (HBF)", val: etHbf, set: setEtHbf, isHbf: true, isV1f: false, isV2f: false },
+              { label: "Home (HB)", val: etHb, set: setEtHb, isHbf: false, isV1f: false, isV2f: false },
+              { label: "Vehicle 1 Full (V1F)", val: etV1f, set: setEtV1f, isHbf: false, isV1f: true, isV2f: false },
+              { label: "Vehicle (V1)", val: etV1, set: setEtV1, isHbf: false, isV1f: false, isV2f: false },
+              { label: "Vehicle 2 Full (V2F)", val: etV2f, set: setEtV2f, isHbf: false, isV1f: false, isV2f: true },
+              { label: "Vehicle (V2)", val: etV2, set: setEtV2, isHbf: false, isV1f: false, isV2f: false },
+              { label: "Depart (DEP)", val: etDep, set: setEtDep, isHbf: false, isV1f: false, isV2f: false },
+              { label: "Arrive (ARR)", val: etArr, set: setEtArr, isHbf: false, isV1f: false, isV2f: false },
+            ] as { label: string; val: string; set: (v: string) => void; isHbf: boolean; isV1f: boolean; isV2f: boolean }[]).map(({ label, val, set, isHbf, isV1f, isV2f }) => (
               <div key={label} className="flex flex-col gap-1">
                 <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{label}</label>
-                <Input value={val} onChange={e => set(e.target.value)} />
+                {isHbf ? (
+                  <AddressAutocompleteInput
+                    value={val}
+                    onChange={set}
+                    onShortAddress={(short) => { if (!etHb) setEtHb(short); }}
+                    locationBias={mapRef.current ? (() => { const c = mapRef.current!.getCenter(); return c ? { lat: c.lat(), lng: c.lng() } : null; })() : null}
+                    placeholder="Search or type address…"
+                  />
+                ) : (
+                  <Input
+                    value={val}
+                    onChange={e => set(e.target.value)}
+                    onBlur={isV1f ? (e) => { const s = extractShortVehicle(e.target.value); if (s && !etV1) setEtV1(s); } : isV2f ? (e) => { const s = extractShortVehicle(e.target.value); if (s && !etV2) setEtV2(s); } : undefined}
+                  />
+                )}
               </div>
             ))}
           </div>

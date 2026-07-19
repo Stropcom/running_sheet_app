@@ -21,8 +21,11 @@ import {
   Bell,
   BellOff,
   BellRing,
+  ImageIcon,
+  Trash2,
+  Upload,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { useTheme } from "@/contexts/ThemeContext";
 
@@ -241,6 +244,88 @@ export default function MyProfilePage() {
   const roleConf = ROLE_LABELS[(profile?.role as string) ?? "observer"];
   const { theme, toggleTheme } = useTheme();
 
+  // ── Wallpaper ─────────────────────────────────────────────────────────────
+  const wallpaperInputRef = useRef<HTMLInputElement>(null);
+  const [wallpaperPreview, setWallpaperPreview] = useState<string | null>(null);
+  // persistedWallpaperUrl holds the URL returned by the server after a successful upload;
+  // it acts as a stable fallback so the image doesn't vanish while profile.me refetches.
+  const [persistedWallpaperUrl, setPersistedWallpaperUrl] = useState<string | null>(null);
+  const [wallpaperOpacity, setWallpaperOpacity] = useState<number>(40);
+
+  useEffect(() => {
+    if (profile) {
+      const p = profile as { wallpaperOpacity?: number | null; wallpaperUrl?: string | null };
+      setWallpaperOpacity(p.wallpaperOpacity ?? 40);
+      // Apply persisted wallpaper on load — also sync persistedWallpaperUrl
+      if (p.wallpaperUrl) {
+        setPersistedWallpaperUrl(p.wallpaperUrl);
+        document.documentElement.style.setProperty("--wallpaper-url", `url(${p.wallpaperUrl})`);
+        document.documentElement.style.setProperty("--wallpaper-opacity", String((100 - (p.wallpaperOpacity ?? 40)) / 100));
+      } else {
+        // Profile explicitly has no wallpaper — only clear if we haven't just uploaded one
+        if (!persistedWallpaperUrl) {
+          document.documentElement.style.removeProperty("--wallpaper-url");
+          document.documentElement.style.removeProperty("--wallpaper-opacity");
+        }
+      }
+    }
+  }, [profile]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const uploadWallpaperMutation = trpc.profile.uploadWallpaper.useMutation({
+    onSuccess: (data) => {
+      toast.success("Wallpaper updated.");
+      // Store the returned URL immediately so currentWallpaper stays non-null
+      // even while profile.me is refetching
+      setPersistedWallpaperUrl(data.url);
+      setWallpaperPreview(null);
+      document.documentElement.style.setProperty("--wallpaper-url", `url(${data.url})`);
+      document.documentElement.style.setProperty("--wallpaper-opacity", String((100 - data.opacity) / 100));
+      utils.profile.me.invalidate();
+    },
+    onError: (err) => {
+      // Upload failed — clear the local preview so stale data-URL doesn't persist
+      setWallpaperPreview(null);
+      toast.error(`Wallpaper upload failed: ${err.message}`);
+    },
+  });
+
+  const clearWallpaperMutation = trpc.profile.clearWallpaper.useMutation({
+    onSuccess: () => {
+      toast.success("Wallpaper removed.");
+      setPersistedWallpaperUrl(null);
+      setWallpaperPreview(null);
+      document.documentElement.style.removeProperty("--wallpaper-url");
+      document.documentElement.style.removeProperty("--wallpaper-opacity");
+      utils.profile.me.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const updateOpacityMutation = trpc.profile.updateWallpaperOpacity.useMutation({
+    onSuccess: () => {
+      utils.profile.me.invalidate();
+      document.documentElement.style.setProperty("--wallpaper-opacity", String((100 - wallpaperOpacity) / 100));
+    },
+  });
+
+  const handleWallpaperFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { toast.error("Image must be under 5 MB."); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      setWallpaperPreview(dataUrl);
+      const base64 = dataUrl.split(",")[1];
+      uploadWallpaperMutation.mutate({ dataBase64: base64, mimeType: file.type, opacity: wallpaperOpacity });
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
+  // Priority: local preview (data-URL during upload) → server-returned URL (after upload, before refetch) → profile DB value
+  const currentWallpaper = wallpaperPreview ?? persistedWallpaperUrl ?? (profile as { wallpaperUrl?: string | null } | undefined)?.wallpaperUrl ?? null;
+
   return (
     <DashboardLayout>
       <div className="max-w-2xl mx-auto px-4 py-8">
@@ -405,6 +490,86 @@ export default function MyProfilePage() {
             </div>
           </div>
         )}
+
+        {/* Wallpaper Card */}
+        <div className="rounded-xl border border-border bg-card p-6 mb-6 shadow-sm">
+          <h2 className="text-sm font-semibold text-foreground mb-1 flex items-center gap-2">
+            <ImageIcon className="w-4 h-4 text-primary" />
+            Background Wallpaper
+          </h2>
+          <p className="text-xs text-muted-foreground mb-4">Set a custom background image for all pages. Max 5 MB (JPEG, PNG, WebP).</p>
+
+          {/* Preview */}
+          {currentWallpaper ? (
+            <div className="relative w-full h-28 rounded-lg overflow-hidden mb-4 border border-border">
+              <img src={currentWallpaper} alt="Wallpaper preview" className="w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-black" style={{ opacity: (100 - wallpaperOpacity) / 100 }} />
+              <span className="absolute bottom-2 left-2 text-[10px] text-white/80 bg-black/40 rounded px-1.5 py-0.5">Preview</span>
+            </div>
+          ) : (
+            <div className="w-full h-28 rounded-lg border-2 border-dashed border-border flex items-center justify-center mb-4 bg-muted/20">
+              <span className="text-xs text-muted-foreground">No wallpaper set</span>
+            </div>
+          )}
+
+          {/* Opacity slider — only shown when a wallpaper is active */}
+          {currentWallpaper && (
+            <div className="mb-4">
+              <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium block mb-2">
+                Overlay darkness — {100 - wallpaperOpacity}%
+              </label>
+              <input
+                type="range" min={0} max={100} step={5}
+                value={100 - wallpaperOpacity}
+                onChange={(e) => {
+                  const darkness = Number(e.target.value);
+                  const newOpacity = 100 - darkness;
+                  setWallpaperOpacity(newOpacity);
+                  document.documentElement.style.setProperty("--wallpaper-opacity", String(darkness / 100));
+                }}
+                onMouseUp={() => updateOpacityMutation.mutate({ opacity: wallpaperOpacity })}
+                onTouchEnd={() => updateOpacityMutation.mutate({ opacity: wallpaperOpacity })}
+                className="w-full accent-primary"
+              />
+              <div className="flex justify-between text-[10px] text-muted-foreground mt-0.5">
+                <span>Transparent</span><span>Dark</span>
+              </div>
+            </div>
+          )}
+
+          {/* Buttons */}
+          <div className="flex gap-2">
+            <input
+              ref={wallpaperInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              className="hidden"
+              onChange={handleWallpaperFile}
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1 gap-1.5"
+              onClick={() => wallpaperInputRef.current?.click()}
+              disabled={uploadWallpaperMutation.isPending}
+            >
+              <Upload className="w-3.5 h-3.5" />
+              {uploadWallpaperMutation.isPending ? "Uploading…" : currentWallpaper ? "Change Wallpaper" : "Upload Wallpaper"}
+            </Button>
+            {currentWallpaper && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10"
+                onClick={() => clearWallpaperMutation.mutate()}
+                disabled={clearWallpaperMutation.isPending}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Remove
+              </Button>
+            )}
+          </div>
+        </div>
 
         {/* Change Password Card */}
         <div className="rounded-xl border border-border bg-card p-6 shadow-sm">

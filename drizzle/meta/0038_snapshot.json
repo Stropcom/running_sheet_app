@@ -1,8 +1,8 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "75959317-1cb9-4a02-8477-8cfc62cd7c9f",
-  "prevId": "f497b8a1-cd63-4d40-a383-b8d808e2f218",
+  "id": "64759b9a-34be-4880-be38-eb31ff9deeeb",
+  "prevId": "18660d03-6790-4303-804d-400e493cd54d",
   "tables": {
     "audit_logs": {
       "name": "audit_logs",
@@ -58,7 +58,7 @@
         },
         "action": {
           "name": "action",
-          "type": "enum('row_created','row_updated','row_deleted','member_added','member_removed','certified','uncertified','sheet_created','sheet_updated','sheet_deleted','sheet_closed','sheet_reopened','sheet_moved','sheet_copied','user_login','user_logout','user_created','user_updated','user_deleted','operation_status_changed','password_changed')",
+          "type": "enum('row_created','row_updated','row_deleted','member_added','member_removed','certified','uncertified','sheet_created','sheet_updated','sheet_deleted','sheet_closed','sheet_reopened','sheet_moved','sheet_copied','user_login','user_logout','user_created','user_updated','user_deleted','operation_status_changed')",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
@@ -2016,6 +2016,20 @@
           "notNull": false,
           "autoincrement": false
         },
+        "extraVehicles": {
+          "name": "extraVehicles",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "wildFields": {
+          "name": "wildFields",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "dep": {
           "name": "dep",
           "type": "text",
@@ -2345,13 +2359,20 @@
           "autoincrement": false,
           "default": "'local'"
         },
-        "mustChangePassword": {
-          "name": "mustChangePassword",
-          "type": "boolean",
+        "wallpaperUrl": {
+          "name": "wallpaperUrl",
+          "type": "varchar(512)",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "wallpaperOpacity": {
+          "name": "wallpaperOpacity",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": false,
           "autoincrement": false,
-          "default": false
+          "default": 40
         },
         "createdAt": {
           "name": "createdAt",

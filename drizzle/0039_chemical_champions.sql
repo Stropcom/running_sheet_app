@@ -1,0 +1,1 @@
+ALTER TABLE `shortcuts` ADD `showInRs` boolean DEFAULT true NOT NULL;

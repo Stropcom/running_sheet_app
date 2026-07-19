@@ -41,6 +41,32 @@ import TileHomeScreen from "@/pages/TileHomeScreen";
 import OperationManagerPage from "@/pages/OperationManagerPage";
 import { DraftModeBanner } from "@/components/DraftModeBanner";
 import { SectionColorProvider } from "@/contexts/SectionColorContext";
+import { useEffect } from "react";
+import { trpc } from "@/lib/trpc";
+
+/** Reads the logged-in user's wallpaper settings from auth.me and applies
+ * the CSS variables globally so the background persists across all pages. */
+function WallpaperApplier() {
+  const { data: user } = trpc.auth.me.useQuery(undefined, {
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+
+  useEffect(() => {
+    if (!user) return;
+    const u = user as { wallpaperUrl?: string | null; wallpaperOpacity?: number | null };
+    if (u.wallpaperUrl) {
+      document.documentElement.style.setProperty("--wallpaper-url", `url(${u.wallpaperUrl})`);
+      const opacity = u.wallpaperOpacity ?? 40;
+      document.documentElement.style.setProperty("--wallpaper-opacity", String((100 - opacity) / 100));
+    } else {
+      document.documentElement.style.removeProperty("--wallpaper-url");
+      document.documentElement.style.removeProperty("--wallpaper-opacity");
+    }
+  }, [user]);
+
+  return null;
+}
 
 function Router() {
   return (
@@ -93,6 +119,8 @@ function App() {
       <ThemeProvider defaultTheme="light" switchable>
         <TooltipProvider>
           <SectionColorProvider>
+            {/* Apply wallpaper CSS variables globally on every page */}
+            <WallpaperApplier />
             <Toaster />
             <DraftModeBanner />
             <Router />

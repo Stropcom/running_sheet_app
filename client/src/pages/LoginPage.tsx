@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { ShieldCheck, Loader2, Eye, EyeOff, Sun, Moon } from "lucide-react";
+import { ShieldCheck, Loader2, Eye, EyeOff, Sun, Moon, AlertTriangle, RefreshCw } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { toast } from "sonner";
 
@@ -13,6 +13,7 @@ export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
   const { theme, toggleTheme } = useTheme();
 
   const [, setLocation] = useLocation();
@@ -26,12 +27,26 @@ export default function LoginPage() {
 
   const login = trpc.auth.login.useMutation({
     onSuccess: (result) => {
+      setServerError(null);
       // Set auth cache immediately so DashboardLayout sees the user
       utils.auth.me.setData(undefined, result.user as any);
       setLocation(result.user.mustChangePassword ? "/change-password" : "/");
     },
     onError: (e) => {
-      toast.error(e.message || "Login failed. Please check your credentials.");
+      const code = e.data?.code;
+      const isServerDown =
+        code === "INTERNAL_SERVER_ERROR" ||
+        code === "TIMEOUT" ||
+        e.message?.toLowerCase().includes("failed query") ||
+        e.message?.toLowerCase().includes("connect") ||
+        e.message?.toLowerCase().includes("unavailable") ||
+        !code; // network error (no response at all)
+      if (isServerDown) {
+        setServerError("The server is temporarily unavailable. Please wait a moment and try again.");
+      } else {
+        setServerError(null);
+        toast.error(e.message || "Invalid username or password.");
+      }
     },
   });
 
@@ -76,6 +91,23 @@ export default function LoginPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {serverError && (
+              <div className="mx-6 mt-4 flex items-start gap-2.5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3.5 py-3 text-xs text-amber-600 dark:text-amber-400">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="font-semibold mb-0.5">Server unavailable</p>
+                  <p className="text-amber-600/80 dark:text-amber-400/80">{serverError}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setServerError(null); login.reset(); }}
+                  className="shrink-0 text-amber-500/60 hover:text-amber-500 transition-colors"
+                  title="Dismiss"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-1.5">
                 <Label htmlFor="username" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">

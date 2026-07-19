@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, like, lt, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
+import { createPool as createPromisePool } from "mysql2/promise";
 import { vaultEncrypt, vaultDecrypt } from "./wipcVault";
 import {
   auditLogs,
@@ -44,15 +45,61 @@ import {
 } from "../drizzle/schema";
 
 let _db: ReturnType<typeof drizzle> | null = null;
+let _pool: Awaited<ReturnType<typeof createPromisePool>> | null = null;
+let _lastConnectAttempt = 0;
+const RECONNECT_COOLDOWN_MS = 5000; // don't retry more than once per 5s
+
+async function createDbPool(retries = 3): Promise<ReturnType<typeof drizzle> | null> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const pool = createPromisePool({
+        uri: process.env.DATABASE_URL!,
+        ssl: { rejectUnauthorized: false },
+        waitForConnections: true,
+        connectionLimit: 10,
+        queueLimit: 0,
+        connectTimeout: 15000,
+        // Automatically re-establish broken connections
+        enableKeepAlive: true,
+        keepAliveInitialDelay: 10000,
+      });
+      // Verify the connection is actually alive
+      await pool.query("SELECT 1");
+      _pool = pool;
+      console.log(`[Database] Pool created successfully (attempt ${attempt})`);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return drizzle(pool as any);
+    } catch (error) {
+      console.warn(`[Database] Connection attempt ${attempt}/${retries} failed:`, error);
+      if (attempt < retries) {
+        await new Promise(r => setTimeout(r, 1000 * attempt)); // backoff: 1s, 2s
+      }
+    }
+  }
+  console.error("[Database] All connection attempts failed");
+  return null;
+}
 
 export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
+  // If we have a pool, do a lightweight health check to detect stale connections
+  if (_db && _pool) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
-    } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
+      await _pool.query("SELECT 1");
+      return _db;
+    } catch {
+      console.warn("[Database] Pool health check failed — reconnecting...");
       _db = null;
+      _pool = null;
     }
+  }
+  if (!_db && process.env.DATABASE_URL) {
+    const now = Date.now();
+    if (now - _lastConnectAttempt < RECONNECT_COOLDOWN_MS) {
+      // Too soon to retry — return null to avoid hammering the DB
+      return null;
+    }
+    _lastConnectAttempt = now;
+    _db = await createDbPool(3);
   }
   return _db;
 }
@@ -274,6 +321,13 @@ export async function getRunningSheetsByOperation(operationId: number) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(runningSheets).where(and(eq(runningSheets.operationId, operationId), isNull(runningSheets.deletedAt))).orderBy(desc(runningSheets.createdAt));
+}
+
+export async function getRunningSheetsByOperations(operationIds: number[]) {
+  const db = await getDb();
+  if (!db) return [];
+  if (operationIds.length === 0) return [];
+  return db.select().from(runningSheets).where(and(inArray(runningSheets.operationId, operationIds), isNull(runningSheets.deletedAt))).orderBy(desc(runningSheets.createdAt));
 }
 
 export async function getRunningSheetById(id: number) {
@@ -710,7 +764,7 @@ export async function getTargetsByOperation(operationId: number) {
   // Exclude soft-deleted targets in both paths
   const byFk = await db.select().from(targets).where(and(eq(targets.operationId, operationId), isNull(targets.deletedAt)));
   const linked = await db
-    .select({ id: targets.id, name: targets.name, tgt: targets.tgt, hbf: targets.hbf, hb: targets.hb, v1f: targets.v1f, v1: targets.v1, v2f: targets.v2f, v2: targets.v2, dep: targets.dep, arr: targets.arr, operationId: targets.operationId, createdBy: targets.createdBy, createdAt: targets.createdAt, updatedAt: targets.updatedAt })
+    .select({ id: targets.id, name: targets.name, tgt: targets.tgt, hbf: targets.hbf, hb: targets.hb, v1f: targets.v1f, v1: targets.v1, v2f: targets.v2f, v2: targets.v2, dep: targets.dep, arr: targets.arr, extraVehicles: targets.extraVehicles, wildFields: targets.wildFields, operationId: targets.operationId, createdBy: targets.createdBy, createdAt: targets.createdAt, updatedAt: targets.updatedAt })
     .from(operationTargetLinks)
     .innerJoin(targets, eq(operationTargetLinks.targetId, targets.id))
     .where(and(eq(operationTargetLinks.operationId, operationId), isNull(targets.deletedAt)));
@@ -751,7 +805,7 @@ export async function createTarget(data: InsertTarget) {
 
 export async function updateTarget(
   id: number,
-  data: Partial<Pick<InsertTarget, "name" | "tgt" | "hbf" | "hb" | "v1f" | "v1" | "v2f" | "v2" | "dep" | "arr">>
+  data: Partial<Pick<InsertTarget, "name" | "tgt" | "hbf" | "hb" | "v1f" | "v1" | "v2f" | "v2" | "dep" | "arr" | "extraVehicles" | "wildFields">>
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -905,7 +959,7 @@ export async function createShortcut(data: Omit<InsertShortcut, 'id' | 'createdA
   await db.insert(shortcuts).values(data);
 }
 
-export async function updateShortcut(id: number, data: { trigger?: string; expansion?: string }) {
+export async function updateShortcut(id: number, data: { trigger?: string; expansion?: string; showInRs?: boolean }) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   await db.update(shortcuts).set(data).where(eq(shortcuts.id, id));
@@ -1166,6 +1220,9 @@ export function extractEntitiesFromText(text: string): Array<{
     if (shortForm.length < 2) continue;
     // Skip if shortForm looks like a time (e.g. "08:00")
     if (/^\d{1,2}:\d{2}$/.test(shortForm)) continue;
+    // Skip UM references (e.g. "UM1", "UM2", "UM12") — unidentified males/persons
+    // that are not recorded in the intelligence folder by design.
+    if (/^UM\d+$/i.test(shortForm)) continue;
 
     const lowerFull = fullDescription.toLowerCase();
     const lowerShort = shortForm.toLowerCase();
@@ -1293,12 +1350,16 @@ export function extractEntitiesFromText(text: string): Array<{
       //  1. Standard: starts with a street number or cnr/corner prefix
       //  2. Intersection: "Street Type & Street Type, Suburb STATE"
       const STREET_TYPES_RE = "(?:St|Rd|Ave|Dr|Hwy|Fwy|Tce|Pde|Cct|Gr|Ln|Pl|Ct|Cl|Cres|Blvd|Way|Loop|Rise|Mews|Close|Place|Court|Lane|Terrace|Parade|Circuit|Green|Corner)";
-      const standardAddrRe = /(?:(?:cnr\s+of\s+|cnr\s+|corner\s+of\s+|lot\s+\d+\s+|\d{1,5}[A-Za-z]?\/\d{1,5}\s+|\d{1,5}[A-Za-z]?\s+)[A-Za-z][\w\s&]*(?:,\s*[A-Za-z][\w\s]+)?(?:\s+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))?(?:\s+\d{4})?(?:,\s*Australia)?)$/i;
+      // The street-number prefix must be preceded by a word boundary (start of string,
+      // space, comma, or punctuation) to prevent partial rego digits (e.g. "905" from
+      // "1HTU905") from being mistaken for a street number.
+      const standardAddrRe = /(?:^|(?<=[\s,;]))((?:cnr\s+of\s+|cnr\s+|corner\s+of\s+|lot\s+\d+\s+|\d{1,5}[A-Za-z]?\/\d{1,5}\s+|\d{1,5}[A-Za-z]?\s+)[A-Za-z][\w\s&]*(?:,\s*[A-Za-z][\w\s]+)?(?:\s+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))?(?:\s+\d{4})?(?:,\s*Australia)?)$/i;
       const intersectionAddrRe = new RegExp(
         `[A-Za-z][\\w\\s]+\\s+${STREET_TYPES_RE}\\s*&\\s*[A-Za-z][\\w\\s]+\\s+${STREET_TYPES_RE}(?:,\\s*[A-Za-z][\\w\\s]+)?(?:\\s+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))?(?:\\s+\\d{4})?(?:,\\s*Australia)?$`,
         "i"
       );
-      const addrMatch = fullDescription.match(standardAddrRe) || fullDescription.match(intersectionAddrRe);
+      const standardMatch = fullDescription.match(standardAddrRe);
+      const addrMatch = (standardMatch ? [standardMatch[1] ?? standardMatch[0]] : null) || fullDescription.match(intersectionAddrRe);
       if (addrMatch) {
         let addrText = addrMatch[0].trim();
         // Strip postcode and ", Australia"
@@ -1335,6 +1396,60 @@ export function extractEntitiesFromText(text: string): Array<{
         // e.g. "4 GLYDE ST" → "4 Glyde St"
         displayName = shortForm.replace(/\b(\w+)/g, titleCaseStreetWord);
       }
+    } else if (type === "vehicle") {
+      // For vehicle entities: build a clean display name as "REGO colour make/model".
+      // The shortForm is typically "Vehicle REGO" (e.g. "Vehicle 1FBP509") or just the rego.
+      // The fullDescription is the text immediately before the bracket, e.g.:
+      //   "A white Toyota Landcruiser, bearing WA registration 1FBP509"
+      //   "black Subaru WRX, bearing WA registration 1FDD444"
+      //   "1HTU905" (bare rego, no description)
+      //
+      // Strategy:
+      //   1. Extract the raw rego from shortForm (strip "Vehicle " prefix if present)
+      //   2. Find colour + make/model words in fullDescription that precede the rego mention
+      //   3. Build display as "REGO colour make/model" (e.g. "1FBP509 white Toyota Landcruiser")
+
+      // Step 1: extract raw rego
+      const rawRego = shortForm.replace(/^vehicle\s+/i, "").trim();
+
+      // Step 2: scan fullDescription for vehicle description words before the rego
+      // Look for colour + make/model in the text
+      const COLOURS = /\b(white|black|silver|grey|gray|red|blue|green|yellow|orange|purple|brown|gold|bronze|cream|beige|maroon|navy|dark|light|bright)\b/gi;
+      const MAKES_DISPLAY = /\b(toyota|ford|holden|honda|mazda|nissan|mitsubishi|subaru|hyundai|kia|volkswagen|vw|bmw|mercedes|audi|lexus|volvo|jeep|dodge|land rover|range rover|defender|discovery|jaguar|porsche|mini|isuzu|suzuki|daihatsu|haval|gwm|mg|byd|tesla|great wall)\b/gi;
+      const BODY_TYPES = /\b(landcruiser|land cruiser|hilux|ranger|triton|navara|amarok|colorado|dmax|d-max|fortuner|prado|patrol|pathfinder|rav4|crv|cr-v|cx-5|cx5|cx-3|cx3|tucson|sportage|tiguan|forester|outback|wrx|impreza|levorg|liberty|brz|86|corolla|camry|yaris|kluger|tarago|hiace|hilux|falcon|commodore|cruze|captiva|trax|trailblazer|everest|territory|escape|focus|fiesta|mondeo|transit|connect|courier|f-150|f150|mustang|explorer|expedition|bronco|wrangler|cherokee|grand cherokee|compass|renegade|gladiator|durango|charger|challenger|ram|1500|2500|3500|sedan|hatchback|suv|wagon|coupe|ute|van|truck|4wd|4x4|bus|minivan|people mover)\b/gi;
+
+      // Find the portion of fullDescription that describes the vehicle
+      // (everything before any mention of the rego or "bearing"/"registration" keywords)
+      const regoIdx = fullDescription.toUpperCase().indexOf(rawRego.toUpperCase());
+      const descSource = regoIdx > 0 ? fullDescription.slice(0, regoIdx) : fullDescription;
+
+      const colourMatches = Array.from(descSource.matchAll(COLOURS)).map(m => m[0].toLowerCase());
+      const makeMatches = Array.from(descSource.matchAll(MAKES_DISPLAY)).map(m => m[0]);
+      const bodyMatches = Array.from(descSource.matchAll(BODY_TYPES)).map(m => m[0]);
+
+      // Build description: colour + make + body (deduplicated, max 3 words)
+      const descParts: string[] = [];
+      if (colourMatches.length > 0) descParts.push(colourMatches[colourMatches.length - 1]);
+      if (makeMatches.length > 0) descParts.push(makeMatches[makeMatches.length - 1]);
+      if (bodyMatches.length > 0) {
+        const lastBody = bodyMatches[bodyMatches.length - 1];
+        // Don't duplicate if body type is same as make (e.g. "Toyota Toyota")
+        if (!descParts.some(p => p.toLowerCase() === lastBody.toLowerCase())) {
+          descParts.push(lastBody);
+        }
+      }
+
+      if (rawRego && rawRego !== shortForm) {
+        // Had "Vehicle REGO" format — use rego + description
+        displayName = descParts.length > 0
+          ? `${rawRego} ${descParts.join(" ")}`
+          : rawRego;
+      } else if (descParts.length > 0) {
+        // shortForm is already just the rego
+        displayName = `${rawRego} ${descParts.join(" ")}`;
+      }
+      // else: keep displayName = shortForm (bare rego, no description available)
+
     } else if (type === "person") {
       // Extract the last 2-4 words immediately before the bracket — these are most
       // likely to be the full name. E.g. "Observed Jason JOHNSON (JOHNSON)" →
@@ -1417,6 +1532,7 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
       hbf: targets.hbf,
       v1f: targets.v1f,
       v2f: targets.v2f,
+      extraVehicles: targets.extraVehicles,
       operationId: targets.operationId,
       operationName: operations.name,
     })
@@ -1436,6 +1552,7 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
       hbf: targets.hbf,
       v1f: targets.v1f,
       v2f: targets.v2f,
+      extraVehicles: targets.extraVehicles,
       operationId: operationTargetLinks.operationId,
       operationName: operations.name,
     })
@@ -1450,6 +1567,7 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
     targetId: number; targetName: string; tgt: string | null;
     hb: string | null; v1: string | null; v2: string | null;
     hbf: string | null; v1f: string | null; v2f: string | null;
+    extraVehicles: string | null;
     operationId: number | null; operationName: string | null;
   }> = [];
 
@@ -1532,24 +1650,58 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
       { label: "V1F", value: t.v1f?.trim() || t.v1?.trim() || null, type: "vehicle" },
       { label: "V2F", value: t.v2f?.trim() || t.v2?.trim() || null, type: "vehicle" },
     ];
+    // Also include extra vehicles (V2, V3, V4 ...) stored as JSON array {full, short}
+    if (t.extraVehicles) {
+      try {
+        const extras: Array<{ full?: string; short?: string }> = JSON.parse(t.extraVehicles);
+        extras.forEach((ev, idx) => {
+          const vehicleLabel = `V${idx + 2}F`; // V2F, V3F, V4F ...
+          const vehicleValue = ev.full?.trim() || ev.short?.trim() || null;
+          if (vehicleValue) {
+            locationFields.push({ label: vehicleLabel, value: vehicleValue, type: "vehicle" });
+          }
+        });
+      } catch { /* malformed JSON — skip */ }
+    }
     for (const field of locationFields) {
       if (!field.value || field.value.trim() === "") continue;
-      const shortForm = field.value.trim();
-      const key = `${field.type}::${shortForm.toLowerCase()}`;
+      let shortForm = field.value.trim();
+      // For vehicles: strip the RS bracket suffix "(Vehicle REGO)" or "(REGO)" appended
+      // by the HBF autocomplete / addressFormat so the entity key matches the observation-
+      // derived key (which never includes the bracket code in the shortForm).
+      if (field.type === "vehicle") {
+        shortForm = shortForm.replace(/\s*\([^)]{1,40}\)\s*$/, "").trim();
+      }
+      if (!shortForm) continue;
+      // Normalise whitespace so minor spacing differences don't create duplicate keys
+      const normKey = shortForm.toLowerCase().replace(/\s+/g, " ").trim();
+      const key = `${field.type}::${normKey}`;
       if (!entityMap.has(key)) {
         entityMap.set(key, { shortForm, type: field.type, occurrences: [] });
+      } else {
+        // Prefer the longer / richer shortForm
+        const existing = entityMap.get(key)!;
+        if (shortForm.length > existing.shortForm.length) existing.shortForm = shortForm;
       }
       for (const sheet of sheetEntries) {
-        entityMap.get(key)!.occurrences.push({
-          sheetId: sheet.sheetId,
-          sheetTitle: sheet.sheetTitle,
-          operationId: t.operationId ?? 0,
-          operationName: t.operationName ?? "(Registry)",
-          rowId: 0,
-          observationSnippet: `Target card — ${t.targetName} [${field.label}]`,
-          timeMinutes: null,
-          fullDescription: `${field.label}: ${shortForm} (from target: ${t.targetName}, operation: ${t.operationName ?? "Registry"})`,
-        });
+        // Deduplicate occurrences by sheetId+rowId (rowId=0 for target card entries)
+        const occKey = `${sheet.sheetId}::0::${field.label}`;
+        const alreadyAdded = entityMap.get(key)!.occurrences.some(
+          (o) => o.sheetId === sheet.sheetId && o.rowId === 0 && o.observationSnippet === `Target card — ${t.targetName} [${field.label}]`
+        );
+        if (!alreadyAdded) {
+          entityMap.get(key)!.occurrences.push({
+            sheetId: sheet.sheetId,
+            sheetTitle: sheet.sheetTitle,
+            operationId: t.operationId ?? 0,
+            operationName: t.operationName ?? "(Registry)",
+            rowId: 0,
+            observationSnippet: `Target card — ${t.targetName} [${field.label}]`,
+            timeMinutes: null,
+            fullDescription: `${field.label}: ${shortForm} (from target: ${t.targetName}, operation: ${t.operationName ?? "Registry"})`,
+          });
+        }
+        void occKey; // suppress unused variable warning
       }
     }
   }
@@ -1620,7 +1772,8 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
         }
       }
     }
-    const key = `${e.type}::${e.shortForm.toLowerCase()}`;
+    const normShortForm = e.shortForm.toLowerCase().replace(/\s+/g, " ").trim();
+    const key = `${e.type}::${normShortForm}`;
     if (!entityMap.has(key)) {
       entityMap.set(key, { shortForm: e.shortForm, type: e.type, isTarget: false, occurrences: [] });
     } else {
@@ -1888,12 +2041,17 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
               existingKeys.add(occKey);
             }
           }
-          // For vehicles: if the shorter form is a "Vehicle REGO" style shortForm
-          // (e.g. "Vehicle 1ICW519"), prefer it as the canonical shortForm over
-          // the full description text (e.g. "Silver Hyundai Santa Fe, bearing...").
-          // This ensures the intel display gets a clean shortForm to format.
-          if (entityType === "vehicle" && /^vehicle\s+/i.test(shorter.shortForm)) {
-            longer.shortForm = shorter.shortForm;
+          // For vehicles: when merging, prefer the entity with a richer display name
+          // (one that includes colour/make/model) over a bare rego or "Vehicle REGO" form.
+          // The longer entity (sorted by shortForm length) is usually richer, so we keep it.
+          // Exception: if the longer entity is actually a bare rego and the shorter has
+          // a richer description (colour+make), swap them.
+          if (entityType === "vehicle") {
+            const longerHasDesc = /[a-z]/i.test(longer.shortForm.replace(/^\d[A-Z]{2,3}\d{3}\s*/i, ""));
+            const shorterHasDesc = /[a-z]/i.test(shorter.shortForm.replace(/^\d[A-Z]{2,3}\d{3}\s*/i, ""));
+            if (!longerHasDesc && shorterHasDesc) {
+              longer.shortForm = shorter.shortForm;
+            }
           }
           absorbed.add(shorterLower);
         }
@@ -2780,6 +2938,8 @@ export interface IntelTargetProfile {
   v1: string | null;
   v2f: string | null;
   v2: string | null;
+  /** Extra vehicles beyond V1: JSON array of {full: string, short: string} */
+  extraVehicles: string | null;
   dep: string | null;
   arr: string | null;
   operations: Array<{ id: number; name: string }>;
@@ -2950,6 +3110,7 @@ export async function getIntelTargetProfile(targetId: number): Promise<IntelTarg
     v1: target.v1,
     v2f: target.v2f,
     v2: target.v2,
+    extraVehicles: target.extraVehicles ?? null,
     dep: target.dep,
     arr: target.arr,
     operations: opLinks,

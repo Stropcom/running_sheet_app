@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import { storagePut } from "./storage";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { COOKIE_NAME, SESSION_EXPIRY_MS } from "@shared/const";
@@ -35,6 +36,7 @@ import {
   getRunningSheetById,
   getRunningSheets,
   getRunningSheetsByOperation,
+  getRunningSheetsByOperations,
   getUserById,
   getUserByUsername,
   removeRowMember,
@@ -233,6 +235,39 @@ export const appRouter = router({
         });
         return { success: true };
       }),
+
+    uploadWallpaper: protectedProcedure
+      .input(z.object({
+        // base64-encoded image data
+        dataBase64: z.string().min(1),
+        mimeType: z.string().regex(/^image\/(jpeg|png|webp|gif)$/, "Only JPEG, PNG, WebP or GIF images are allowed."),
+        opacity: z.number().int().min(0).max(100).default(40),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const buffer = Buffer.from(input.dataBase64, "base64");
+        // Limit to 5 MB
+        if (buffer.byteLength > 5 * 1024 * 1024) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Wallpaper image must be under 5 MB." });
+        }
+        const ext = input.mimeType.split("/")[1];
+        const key = `wallpapers/user-${ctx.user.id}-${Date.now()}.${ext}`;
+        const { url } = await storagePut(key, buffer, input.mimeType);
+        await updateUser(ctx.user.id, { wallpaperUrl: url, wallpaperOpacity: input.opacity });
+        return { url, opacity: input.opacity };
+      }),
+
+    clearWallpaper: protectedProcedure
+      .mutation(async ({ ctx }) => {
+        await updateUser(ctx.user.id, { wallpaperUrl: null, wallpaperOpacity: 40 });
+        return { success: true };
+      }),
+
+    updateWallpaperOpacity: protectedProcedure
+      .input(z.object({ opacity: z.number().int().min(0).max(100) }))
+      .mutation(async ({ input, ctx }) => {
+        await updateUser(ctx.user.id, { wallpaperOpacity: input.opacity });
+        return { success: true };
+      }),
   }),
 
 
@@ -244,7 +279,15 @@ export const appRouter = router({
     login: publicProcedure
       .input(z.object({ username: z.string().min(1), password: z.string().min(1) }))
       .mutation(async ({ input, ctx }) => {
-        const user = await getUserByUsername(input.username.trim().toLowerCase());
+        let user;
+        try {
+          user = await getUserByUsername(input.username.trim().toLowerCase());
+        } catch {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "The server is temporarily unavailable. Please wait a moment and try again.",
+          });
+        }
         if (!user) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid username or password." });
 
         const valid = await bcrypt.compare(input.password, user.passwordHash);
@@ -442,6 +485,12 @@ export const appRouter = router({
       .input(z.object({ operationId: z.number() }))
       .query(async ({ input }) => {
         return getRunningSheetsByOperation(input.operationId);
+      }),
+
+    listByOperations: protectedProcedure
+      .input(z.object({ operationIds: z.array(z.number()) }))
+      .query(async ({ input }) => {
+        return getRunningSheetsByOperations(input.operationIds);
       }),
 
     get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
@@ -1193,6 +1242,8 @@ export const appRouter = router({
         v2f: z.string().optional(),
         dep: z.string().optional(),
         arr: z.string().optional(),
+        extraVehicles: z.string().optional(), // JSON array of {full,short}
+        wildFields: z.string().optional(),    // JSON array of {label,value}
       }))
       .mutation(async ({ ctx, input }) => {
         return createTarget({ ...input, createdBy: ctx.user.id });
@@ -1212,6 +1263,8 @@ export const appRouter = router({
         v2f: z.string().optional(),
         dep: z.string().optional(),
         arr: z.string().optional(),
+        extraVehicles: z.string().optional().nullable(),
+        wildFields: z.string().optional().nullable(),
       }))
       .mutation(async ({ input }) => {
         const { id, ...data } = input;
@@ -1271,6 +1324,8 @@ export const appRouter = router({
           v2: z.string().optional().nullable(),
           dep: z.string().optional().nullable(),
           arr: z.string().optional().nullable(),
+          extraVehicles: z.string().optional().nullable(),
+          wildFields: z.string().optional().nullable(),
           linkToOperationId: z.number().optional().nullable(),
         }))
         .mutation(async ({ input, ctx }) => {
@@ -1296,6 +1351,8 @@ export const appRouter = router({
           v2: z.string().optional().nullable(),
           dep: z.string().optional().nullable(),
           arr: z.string().optional().nullable(),
+          extraVehicles: z.string().optional().nullable(),
+          wildFields: z.string().optional().nullable(),
         }))
         .mutation(async ({ input }) => {
           const { id, ...data } = input;
@@ -1363,11 +1420,19 @@ export const appRouter = router({
         id: z.number(),
         trigger: z.string().min(1).max(64).optional(),
         expansion: z.string().min(1).optional(),
+        showInRs: z.boolean().optional(),
       }))
       .mutation(async ({ input }) => {
         const { id, ...data } = input;
         if (data.trigger) data.trigger = data.trigger.toLowerCase();
         await updateShortcut(id, data);
+        return { success: true };
+      }),
+    /** Toggle whether a shortcut appears as a chip in RS and RS QE — any authenticated user */
+    toggleRs: protectedProcedure
+      .input(z.object({ id: z.number(), showInRs: z.boolean() }))
+      .mutation(async ({ input }) => {
+        await updateShortcut(input.id, { showInRs: input.showInRs });
         return { success: true };
       }),
     /** Delete a shortcut — admin only */
@@ -1534,6 +1599,8 @@ export const appRouter = router({
           v1f: target.v1f,
           v2: target.v2,
           v2f: target.v2f,
+          extraVehicles: target.extraVehicles ?? null,
+          wildFields: target.wildFields ?? null,
         };
       }),
 

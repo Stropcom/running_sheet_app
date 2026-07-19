@@ -32,6 +32,8 @@ export const users = mysqlTable("users", {
   // Forces a password change on next login (e.g. admin-issued temporary
   // password). Enforced server-side in _core/trpc.ts, not just client UI.
   mustChangePassword: boolean("mustChangePassword").default(false).notNull(),
+  wallpaperUrl: varchar("wallpaperUrl", { length: 512 }),
+  wallpaperOpacity: int("wallpaperOpacity").default(40), // 0-100, overlay darkness
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
@@ -144,8 +146,12 @@ export const targets = mysqlTable("targets", {
   hb:  text("hb"),    // Home Base (short)
   v1f: text("v1f"),   // Vehicle 1 Full description
   v1:  text("v1"),    // Vehicle 1 (short)
-  v2f: text("v2f"),   // Vehicle 2 Full description
-  v2:  text("v2"),    // Vehicle 2 (short)
+  v2f: text("v2f"),   // Vehicle 2 Full description (legacy — migrated into extraVehicles)
+  v2:  text("v2"),    // Vehicle 2 (short) (legacy — migrated into extraVehicles)
+  // Dynamic extra vehicles beyond V1: JSON array of {full: string, short: string}
+  extraVehicles: text("extraVehicles"),
+  // Numbered wild fields: JSON array of {label: string, value: string} e.g. [{label:"#1",value:"..."},{label:"#2",value:"..."}]
+  wildFields: text("wildFields"),
   dep: text("dep"),   // Depart address/location
   arr: text("arr"),   // Arrive address/location
   createdBy: int("createdBy").notNull(),
@@ -182,6 +188,7 @@ export const shortcuts = mysqlTable("shortcuts", {
   id: int("id").autoincrement().primaryKey(),
   trigger: varchar("trigger", { length: 64 }).notNull().unique(), // e.g. "sc"
   expansion: text("expansion").notNull(),                         // e.g. "Surveillance commenced in the vicinity of"
+  showInRs: boolean("showInRs").notNull().default(true),          // whether this shortcut appears as a chip in RS and RS QE
   createdBy: int("createdBy").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

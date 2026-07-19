@@ -141,8 +141,8 @@ export default function IntelligenceOperationProfile() {
   return (
     <DashboardLayout>
       <div className="max-w-3xl mx-auto px-4 py-6">
-        <button onClick={() => navigate("/intelligence")} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-5">
-          <ArrowLeft className="w-4 h-4" /> Intelligence Folder
+        <button onClick={() => window.history.back()} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-5">
+          <ArrowLeft className="w-4 h-4" /> Back
         </button>
 
         {isLoading && <div className="space-y-3">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-14 w-full rounded-xl" />)}</div>}

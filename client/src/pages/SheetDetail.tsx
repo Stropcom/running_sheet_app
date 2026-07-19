@@ -77,6 +77,21 @@ import { useLocation, useParams } from "wouter";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { WifiOff, RefreshCw, ChevronDown } from "lucide-react";
+import {
+  Document,
+  Packer,
+  Paragraph,
+  Table,
+  TableRow,
+  TableCell,
+  TextRun,
+  WidthType,
+  AlignmentType,
+  BorderStyle,
+  HeadingLevel,
+  ShadingType,
+  VerticalAlign,
+} from "docx";
 import { useOffline } from "@/contexts/OfflineContext";
 import {
   saveCachedSheet,
@@ -442,6 +457,273 @@ function exportToPDF(
   win.document.close();
   win.focus();
   setTimeout(() => { win.print(); }, 400);
+}
+
+// ─── Word Export ─────────────────────────────────────────────────────────────
+
+async function exportToWord(
+  sheetTitle: string,
+  rows: ExportRow[],
+  operation: OperationMeta,
+  sheetCinsRaw: string | null,
+  sheetCreatedAt: Date,
+  targetFullName?: string | null,
+) {
+  // Parse TEAM roster — sort: TL first, then numerically
+  let cinRoster: CinEntry[] = [];
+  try {
+    const raw: CinEntry[] = sheetCinsRaw ? JSON.parse(sheetCinsRaw) : [];
+    cinRoster = [...raw].sort((a, b) => {
+      if (a.isTeamLeader && !b.isTeamLeader) return -1;
+      if (!a.isTeamLeader && b.isTeamLeader) return 1;
+      const aNum = parseInt(a.cin, 10); const bNum = parseInt(b.cin, 10);
+      if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
+      return a.cin.localeCompare(b.cin);
+    });
+  } catch { cinRoster = []; }
+
+  const operationName = operation?.name ?? "";
+  const promisNumber = operation?.promisNumber ?? "";
+  const imsNumber = operation?.imsNumber ?? "";
+  const investigationUnit = operation?.investigationUnit ?? "";
+  const dateStr = format(new Date(sheetCreatedAt), "d MMMM yyyy");
+
+  // Derive author CIN
+  const authorEntry = cinRoster.find((c) => c.isAuthor);
+  const authorCin = authorEntry?.cin ?? null;
+
+  // Find most recent active certification for the author
+  let preparedByText = authorCin ?? "";
+  if (authorCin) {
+    let latestCert: { certifiedByName: string; certifiedAt: number } | null = null;
+    for (const row of rows) {
+      for (const cert of row.certifications) {
+        if (!cert.isActive) continue;
+        const certCin = ('certifiedByCIN' in cert ? (cert as any).certifiedByCIN : null) || cert.certifiedByName;
+        if (certCin === authorCin) {
+          if (!latestCert || cert.certifiedAt > latestCert.certifiedAt) latestCert = cert;
+        }
+      }
+    }
+    if (latestCert) {
+      const certCin = ('certifiedByCIN' in latestCert ? (latestCert as any).certifiedByCIN : null) || latestCert.certifiedByName;
+      const certTime = format(new Date(latestCert.certifiedAt), "d MMMM yyyy h:mmaaa");
+      preparedByText = `${certCin} (certified ${certTime})`;
+    }
+  }
+
+  // Imagery entries
+  const IMAGERY_PHRASES = ["PHOTOGRAPHS TAKEN","PHOTOGRAPH/S TAKEN","PHOTOGRAPH TAKEN","VIDEO TAKEN","VIDEO FOOTAGE TAKEN","PHOTOS TAKEN","PHOTO TAKEN"];
+  const imageryEntries: { cin: string; time: string }[] = [];
+  for (const row of rows) {
+    const obs = (row.observation ?? "").toUpperCase();
+    const hasImagery = IMAGERY_PHRASES.some((p) => obs.includes(p));
+    if (hasImagery && row.time) {
+      for (const m of row.members) {
+        if (m.memberName !== "__SPACE__") imageryEntries.push({ cin: m.memberName, time: row.time });
+      }
+    }
+  }
+  const seenImagery = new Set<string>();
+  const uniqueImageryEntries = imageryEntries.filter((e) => {
+    const key = `${e.cin}|${e.time}`;
+    if (seenImagery.has(key)) return false;
+    seenImagery.add(key);
+    return true;
+  });
+  const imageryText = uniqueImageryEntries.length > 0
+    ? uniqueImageryEntries.map((e) => `${e.cin} (${e.time})`).join(", ")
+    : "Nil";
+
+  // Team roster string
+  const rosterText = cinRoster.length > 0
+    ? cinRoster.map((c) => c.cin + (c.isTeamLeader ? " (TL)" : "")).join(", ")
+    : "";
+
+  // ── Shared border/shading helpers ───────────────────────────────────────────
+  const thinBorder = { style: BorderStyle.SINGLE, size: 6, color: "94A3B8" };
+  const outerBorder = { style: BorderStyle.SINGLE, size: 12, color: "334155" };
+  const headerShading = { type: ShadingType.SOLID, color: "DBEAFE", fill: "DBEAFE" };
+
+  // ── Meta table (cover info) ──────────────────────────────────────────────────
+  function metaRow(label: string, value: string) {
+    return new TableRow({
+      children: [
+        new TableCell({
+          width: { size: 22, type: WidthType.PERCENTAGE },
+          shading: headerShading,
+          borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
+          verticalAlign: VerticalAlign.CENTER,
+          children: [new Paragraph({ children: [new TextRun({ text: label, bold: true, size: 20, color: "000000" })] })],
+        }),
+        new TableCell({
+          width: { size: 78, type: WidthType.PERCENTAGE },
+          borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
+          verticalAlign: VerticalAlign.CENTER,
+          children: [new Paragraph({ children: [new TextRun({ text: value, size: 20, color: "000000" })] })],
+        }),
+      ],
+    });
+  }
+
+  const metaRows = [
+    metaRow("OPERATION:", operationName),
+    ...(targetFullName ? [metaRow("TARGET:", targetFullName)] : []),
+    metaRow("DATE:", dateStr),
+    ...(promisNumber ? [metaRow("PROMIS:", promisNumber)] : []),
+    ...(imsNumber ? [metaRow("IMS:", imsNumber)] : []),
+    ...(investigationUnit ? [metaRow("UNIT:", investigationUnit)] : []),
+    ...(preparedByText ? [metaRow("PREPARED BY:", preparedByText)] : []),
+    ...(rosterText ? [metaRow("TEAM:", rosterText)] : []),
+    metaRow("IMAGERY:", imageryText),
+  ];
+
+  const metaTable = new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    borders: {
+      top: outerBorder, bottom: outerBorder, left: outerBorder, right: outerBorder,
+      insideHorizontal: thinBorder, insideVertical: thinBorder,
+    },
+    rows: metaRows,
+  });
+
+  // ── Running sheet table ──────────────────────────────────────────────────────
+  function thCell(text: string, widthPct: number) {
+    return new TableCell({
+      width: { size: widthPct, type: WidthType.PERCENTAGE },
+      shading: headerShading,
+      borders: { top: outerBorder, bottom: outerBorder, left: thinBorder, right: thinBorder },
+      verticalAlign: VerticalAlign.CENTER,
+      children: [new Paragraph({ children: [new TextRun({ text, bold: true, size: 20, color: "000000" })] })],
+    });
+  }
+
+  const headerRow = new TableRow({
+    tableHeader: true,
+    children: [
+      thCell("Time", 10),
+      thCell("Observation", 72),
+      thCell("CIN Certified", 18),
+    ],
+  });
+
+  const dataRows: TableRow[] = [];
+  for (const row of rows) {
+    const timeText = row.time ?? "";
+    const obsText = row.observation ?? "";
+
+    if (row.members.length === 0) {
+      dataRows.push(new TableRow({
+        children: [
+          new TableCell({
+            width: { size: 10, type: WidthType.PERCENTAGE },
+            borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
+            children: [new Paragraph({ children: [new TextRun({ text: timeText, size: 18, font: "Courier New", color: "000000" })] })],
+          }),
+          new TableCell({
+            width: { size: 72, type: WidthType.PERCENTAGE },
+            borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
+            children: obsText.split("\n").map((line) => new Paragraph({ children: [new TextRun({ text: line, size: 20, color: "000000" })] })),
+          }),
+          new TableCell({
+            width: { size: 18, type: WidthType.PERCENTAGE },
+            borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
+            children: [new Paragraph({ children: [] })],
+          }),
+        ],
+      }));
+    } else {
+      // One row per member, time+obs span via rowspan emulation (repeat in first member row only)
+      row.members.forEach((m, idx) => {
+        const isSpacer = m.memberName === "__SPACE__";
+        const cert = isSpacer ? undefined : row.certifications.find((c) => c.memberId === m.id && c.isActive);
+        const certifierCIN = cert ? (('certifiedByCIN' in cert ? (cert as any).certifiedByCIN : null) || cert.certifiedByName) : null;
+        const certText = cert
+          ? `\u2713 ${certifierCIN} ${format(new Date(cert.certifiedAt), "dd/MM/yy h:mmaaa")}`
+          : (isSpacer ? "" : `${m.memberName} Pending`);
+        const certColor = cert ? "22C55E" : (isSpacer ? "000000" : "EF4444");
+
+        // For multi-member rows, only show time and obs on the first member row
+        const timePara = idx === 0
+          ? [new Paragraph({ children: [new TextRun({ text: timeText, size: 18, font: "Courier New", color: "000000" })] })]
+          : [new Paragraph({ children: [] })];
+        const obsPara = idx === 0
+          ? obsText.split("\n").map((line) => new Paragraph({ children: [new TextRun({ text: line, size: 20, color: "000000" })] }))
+          : [new Paragraph({ children: [] })];
+
+        dataRows.push(new TableRow({
+          children: [
+            new TableCell({
+              width: { size: 10, type: WidthType.PERCENTAGE },
+              borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
+              children: timePara,
+            }),
+            new TableCell({
+              width: { size: 72, type: WidthType.PERCENTAGE },
+              borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
+              children: obsPara,
+            }),
+            new TableCell({
+              width: { size: 18, type: WidthType.PERCENTAGE },
+              borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
+              children: [new Paragraph({ children: [new TextRun({ text: certText, size: 18, color: certColor, bold: !!cert })] })],
+            }),
+          ],
+        }));
+      });
+    }
+  }
+
+  const logTable = new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    borders: {
+      top: outerBorder, bottom: outerBorder, left: outerBorder, right: outerBorder,
+      insideHorizontal: thinBorder, insideVertical: thinBorder,
+    },
+    rows: [headerRow, ...dataRows],
+  });
+
+  // ── Build document ───────────────────────────────────────────────────────────
+  const doc = new Document({
+    sections: [{
+      properties: {
+        page: {
+          margin: { top: 1134, bottom: 1134, left: 1134, right: 1134 }, // ~2cm margins
+        },
+      },
+      children: [
+        new Paragraph({
+          heading: HeadingLevel.HEADING_1,
+          alignment: AlignmentType.CENTER,
+          children: [new TextRun({ text: "WC SURVEILLANCE RUNNING SHEET", bold: true, size: 32, color: "000000", allCaps: true })],
+          spacing: { after: 200 },
+        }),
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          children: [new TextRun({ text: "PROTECTED", bold: true, size: 24, color: "DC2626", allCaps: true })],
+          spacing: { after: 240 },
+        }),
+        metaTable,
+        new Paragraph({ children: [], spacing: { after: 240 } }),
+        logTable,
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          children: [new TextRun({ text: "PROTECTED", bold: true, size: 24, color: "DC2626", allCaps: true })],
+          spacing: { before: 240 },
+        }),
+      ],
+    }],
+  });
+
+  const blob = await Packer.toBlob(doc);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${sheetTitle.replace(/[^a-zA-Z0-9\s_-]/g, "")}.docx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 // ─── Sortable CIN item ────────────────────────────────────────────────────────
@@ -875,9 +1157,14 @@ function TimePickerCell({
   locked: boolean;
   onSave: (display: string, minutes: number) => void;
 }) {
-  // Parse existing value into hour/minute/period
+  // Parse existing value into hour/minute/period; default to current time when empty
   const parsed = useMemo(() => {
-    if (!value) return { hour: "12", minute: "00", period: "AM" };
+    if (!value) {
+      const now = new Date();
+      const h24 = now.getHours();
+      const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+      return { hour: String(h12), minute: String(now.getMinutes()).padStart(2, "0"), period: h24 < 12 ? "AM" : "PM" };
+    }
     const m = value.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
     if (!m) return { hour: "12", minute: "00", period: "AM" };
     return { hour: String(parseInt(m[1], 10)), minute: m[2].padStart(2, "0"), period: m[3].toUpperCase() };
@@ -958,7 +1245,7 @@ function TimePickerCell({
               </SelectTrigger>
               <SelectContent>
                 {hours.map((h) => (
-                  <SelectItem key={h} value={h} className="font-mono">
+                  <SelectItem key={h} value={h} className="font-mono text-foreground">
                     {String(parseInt(h, 10)).padStart(2, "0")}
                   </SelectItem>
                 ))}
@@ -976,7 +1263,7 @@ function TimePickerCell({
               </SelectTrigger>
               <SelectContent>
                 {minutes.map((m) => (
-                  <SelectItem key={m} value={m} className="font-mono">{m}</SelectItem>
+                  <SelectItem key={m} value={m} className="font-mono text-foreground">{m}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -990,18 +1277,35 @@ function TimePickerCell({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="AM">AM</SelectItem>
-                <SelectItem value="PM">PM</SelectItem>
+                <SelectItem value="AM" className="text-foreground">AM</SelectItem>
+                <SelectItem value="PM" className="text-foreground">PM</SelectItem>
               </SelectContent>
             </Select>
           </div>
-          <Button
-            size="sm"
-            className="w-full h-7 text-xs"
-            onClick={handleDone}
-          >
-            Done
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="flex-1 h-7 text-xs"
+              onClick={() => {
+                const now = new Date();
+                const h24 = now.getHours();
+                const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+                setHour(String(h12));
+                setMinute(String(now.getMinutes()).padStart(2, "0"));
+                setPeriod(h24 < 12 ? "AM" : "PM");
+              }}
+            >
+              Now
+            </Button>
+            <Button
+              size="sm"
+              className="flex-1 h-7 text-xs"
+              onClick={handleDone}
+            >
+              Done
+            </Button>
+          </div>
         </div>
       )}
     </div>
@@ -1583,9 +1887,40 @@ export default function SheetDetail() {
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
   // Target panel collapsed state — expanded by default, persisted in localStorage
+  const [teamPanelExpanded, setTeamPanelExpanded] = useState<boolean>(() => {
+    try { return localStorage.getItem("runsheet_team_panel_expanded") !== "false"; } catch { return true; }
+  });
   const [targetPanelExpanded, setTargetPanelExpanded] = useState<boolean>(() => {
     try { return localStorage.getItem("runsheet_target_panel_expanded") !== "false"; } catch { return true; }
   });
+  // Shortcut chip order for the target panel — persisted per sheet in localStorage
+  // Canonical default chip order — used when no saved order exists in localStorage
+  // Generates: SC, HBF, V1F, V1, V2F, V2, V3F, V3, V4F, V4 ... (up to 8 vehicles), then fixed shortcuts, then DEP/ARR, then wild fields
+  const CANONICAL_CHIP_ORDER = [
+    "SC", "HBF",
+    ...Array.from({ length: 8 }, (_, i) => [`V${i + 1}F`, `V${i + 1}`]).flat(),
+    "TGT", "DSO", "DR", "FP", "US", "DE", "AR", "CV", "OOS", "COOS", "PU", "PT", "RACK",
+    "DEP", "ARR",
+    ...Array.from({ length: 10 }, (_, i) => `#${i + 1}`),
+  ];
+  const [targetFieldOrder, setTargetFieldOrder] = useState<string[]>(() => {
+    try { const s = localStorage.getItem(`runsheet_field_order_${sheetId}`); if (s) return JSON.parse(s); } catch {} return CANONICAL_CHIP_ORDER;
+  });
+  const targetFieldDragRef = useRef<{ dragging: string | null; startX: number; startY: number; startIdx: number; pointerId: number | null }>({ dragging: null, startX: 0, startY: 0, startIdx: -1, pointerId: null });
+  // Track the last focused textarea/input so chip taps can insert text even after blur
+  const focusedTextareaRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null);
+  // Track the last focused textarea/input via document focusin so chip taps can insert even after blur
+  useEffect(() => {
+    const handler = (e: FocusEvent) => {
+      const el = e.target as HTMLElement;
+      if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") {
+        focusedTextareaRef.current = el as HTMLTextAreaElement | HTMLInputElement;
+      }
+    };
+    document.addEventListener("focusin", handler, true);
+    return () => document.removeEventListener("focusin", handler, true);
+  }, []);
+
   // Persist sort preference in localStorage so it survives navigation
   const [sortReversed, setSortReversed] = useState<boolean>(() => {
     try { return localStorage.getItem("runsheet_sort_reversed") === "true"; } catch { return false; }
@@ -1650,6 +1985,22 @@ export default function SheetDetail() {
       if (t.v2)  map['v2']  = t.v2;
       if (t.dep) map['dep'] = t.dep;
       if (t.arr) map['arr'] = t.arr;
+      // Extra vehicles (V2F/V2, V3F/V3, …)
+      try {
+        const evs: Array<{ full: string; short: string }> = JSON.parse((t as any).extraVehicles ?? '[]');
+        evs.forEach((ev, i) => {
+          const num = i + 2;
+          if (ev.full)  map[`v${num}f`] = ev.full;
+          if (ev.short) map[`v${num}`]  = ev.short;
+        });
+      } catch {}
+      // Wild fields (#1, #2, …)
+      try {
+        const wfs: Array<{ label: string; value: string }> = JSON.parse((t as any).wildFields ?? '[]');
+        wfs.forEach((wf) => {
+          if (wf.value) map[wf.label.toLowerCase()] = wf.value;
+        });
+      } catch {}
     }
     // Per-target custom shortcuts (override global if same trigger)
     for (const s of targetShortcutsData ?? []) map[s.trigger.toLowerCase()] = s.expansion;
@@ -1683,7 +2034,7 @@ export default function SheetDetail() {
     onError: (e) => toast.error(e.message),
   });
 
-  const [pendingExportType, setPendingExportType] = useState<"pdf" | null>(null);
+  const [pendingExportType, setPendingExportType] = useState<"pdf" | "word" | null>(null);
   const [exportEnabled, setExportEnabled] = useState(false);
   const { data: exportData, isFetching: exportFetching, refetch: refetchExport } = trpc.export.sheetData.useQuery(
     { id: sheetId },
@@ -1696,14 +2047,25 @@ export default function SheetDetail() {
   // When export data arrives and there is a pending type, trigger the download
   useEffect(() => {
     if (exportData && pendingExportType && sheet) {
-      exportToPDF(
-        sheet.title,
-        exportData.rows,
-        exportData.operation ?? null,
-        exportData.sheet.sheetCins ?? null,
-        exportData.sheet.createdAt,
-        exportData.targetFullName ?? null,
-      );
+      if (pendingExportType === "pdf") {
+        exportToPDF(
+          sheet.title,
+          exportData.rows,
+          exportData.operation ?? null,
+          exportData.sheet.sheetCins ?? null,
+          exportData.sheet.createdAt,
+          exportData.targetFullName ?? null,
+        );
+      } else if (pendingExportType === "word") {
+        exportToWord(
+          sheet.title,
+          exportData.rows,
+          exportData.operation ?? null,
+          exportData.sheet.sheetCins ?? null,
+          exportData.sheet.createdAt,
+          exportData.targetFullName ?? null,
+        ).catch((e) => toast.error("Word export failed: " + e.message));
+      }
       setPendingExportType(null);
     }
   }, [exportData, pendingExportType, sheet]);
@@ -1765,14 +2127,14 @@ export default function SheetDetail() {
     setRosterInputValid(false);
   };
 
-  const handleExport = useCallback(() => {
+  const handleExport = useCallback((type: "pdf" | "word" = "pdf") => {
     if (!sheet) return;
     if (exportData && !exportFetching) {
-      setPendingExportType("pdf");
+      setPendingExportType(type);
       refetchExport();
       return;
     }
-    setPendingExportType("pdf");
+    setPendingExportType(type);
     setExportEnabled(true);
   }, [sheet, exportData, exportFetching, refetchExport]);
 
@@ -1931,13 +2293,20 @@ export default function SheetDetail() {
                   {exportFetching ? "Preparing..." : "Export"}
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuContent align="end" className="w-48">
                 <DropdownMenuItem
                   className="gap-2 cursor-pointer"
-                  onClick={() => handleExport()}
+                  onClick={() => handleExport("pdf")}
                 >
                   <FileText className="w-4 h-4 text-rose-400" />
                   Print / Save PDF
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="gap-2 cursor-pointer"
+                  onClick={() => handleExport("word")}
+                >
+                  <FileText className="w-4 h-4 text-blue-400" />
+                  Download Word (.docx)
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -1990,49 +2359,69 @@ export default function SheetDetail() {
           </div>
         )}
 
-        {/* Daily Roster Panel with Certify All — always visible so team can be added */}
+        {/* Daily Roster Panel with Certify All — collapsible, matching target panel style */}
         {(parsedRoster.length > 0 || true) && (
-          <div className="mb-4 rounded-lg border border-border bg-card/60 px-4 py-3">
-            <div className="flex items-center gap-2 mb-2">
-              <Users className="w-3.5 h-3.5 text-muted-foreground" />
-              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex-1">TEAM — Certify All Rows</span>
+          <div className="mb-4 rounded-lg border border-border bg-card/60 overflow-hidden">
+            {/* Header row — same structure as target panel: collapse button + separate pencil button */}
+            <div className="flex items-center">
+              <button
+                className="flex-1 flex items-center gap-2 px-4 py-3 hover:bg-muted/20 active:bg-muted/30 transition-colors select-none text-left min-w-0"
+                onClick={() => {
+                  const next = !teamPanelExpanded;
+                  setTeamPanelExpanded(next);
+                  try { localStorage.setItem("runsheet_team_panel_expanded", String(next)); } catch {}
+                }}
+              >
+                <Users className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground truncate flex-1">TEAM — CERTIFY</span>
+                {/* Certified count badge */}
+                {parsedRoster.length > 0 && (
+                  <span className="text-[10px] font-mono text-muted-foreground mr-1">
+                    {cinFullyCertified.size}/{parsedRoster.length}
+                  </span>
+                )}
+                <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 shrink-0 ${teamPanelExpanded ? "" : "-rotate-90"}`} />
+              </button>
+              {/* Edit pencil — independent tap zone, doesn't trigger collapse */}
               {sheet && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="gap-1.5 text-xs text-muted-foreground hover:text-foreground h-7 px-2 ml-auto"
+                <button
+                  className="px-3 py-3 text-muted-foreground hover:text-foreground active:scale-95 transition-all shrink-0 border-l border-border/30"
                   onClick={openEditRoster}
                   title="Edit TEAM"
                 >
-                  <Users className="w-3 h-3" />
-                  Edit TEAM
-                </Button>
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
               )}
             </div>
-            {parsedRoster.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {parsedRoster.map((entry) => (
-                  <button
-                    key={entry.cin}
-                    onClick={() => canCertify ? certifyAllForCin.mutate({ sheetId, cin: entry.cin }) : undefined}
-                    disabled={certifyAllForCin.isPending || !canCertify}
-                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-mono font-medium transition-colors disabled:opacity-50 ${
-                      cinFullyCertified.has(entry.cin)
-                        ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/25"
-                        : canCertify ? "border-border bg-muted/40 hover:bg-primary/10 hover:border-primary/40 text-foreground" : "border-border bg-muted/40 text-foreground cursor-default"
-                    }`}
-                    title={`${canCertify ? "Certify all rows for " : ""}CIN ${entry.cin}${entry.isTeamLeader ? " (Team Leader)" : ""}${entry.isAuthor ? " (Author)" : ""}`}
-                  >
-                    <ShieldCheck className={`w-3 h-3 ${cinFullyCertified.has(entry.cin) ? "text-emerald-500" : "text-primary"}`} />
-                    {entry.isTeamLeader && <span className="text-yellow-400" title="Team Leader">★</span>}
-                    {entry.isAuthor && <span className="text-sky-400" title="Running Sheet Author">✏️</span>}
-                    {entry.cin}
-                    {entry.hasImages && <Camera className="w-3 h-3 text-amber-400" />}
-                  </button>
-                ))}
+            {/* Collapsible CIN badges */}
+            {teamPanelExpanded && (
+              <div className="px-4 pb-3">
+                {parsedRoster.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {parsedRoster.map((entry) => (
+                      <button
+                        key={entry.cin}
+                        onClick={() => canCertify ? certifyAllForCin.mutate({ sheetId, cin: entry.cin }) : undefined}
+                        disabled={certifyAllForCin.isPending || !canCertify}
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-mono font-medium transition-colors disabled:opacity-50 ${
+                          cinFullyCertified.has(entry.cin)
+                            ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/25"
+                            : canCertify ? "border-border bg-muted/40 hover:bg-primary/10 hover:border-primary/40 text-foreground" : "border-border bg-muted/40 text-foreground cursor-default"
+                        }`}
+                        title={`${canCertify ? "Certify all rows for " : ""}CIN ${entry.cin}${entry.isTeamLeader ? " (Team Leader)" : ""}${entry.isAuthor ? " (Author)" : ""}`}
+                      >
+                        <ShieldCheck className={`w-3 h-3 ${cinFullyCertified.has(entry.cin) ? "text-emerald-500" : "text-primary"}`} />
+                        {entry.isTeamLeader && <span className="text-yellow-400" title="Team Leader">★</span>}
+                        {entry.isAuthor && <span className="text-sky-400" title="Running Sheet Author">✏️</span>}
+                        {entry.cin}
+                        {entry.hasImages && <Camera className="w-3 h-3 text-amber-400" />}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground italic">No team members added — tap the pencil to add CINs.</p>
+                )}
               </div>
-            ) : (
-              <p className="text-xs text-muted-foreground italic">No team members added — click Edit TEAM to add CINs.</p>
             )}
           </div>
         )}
@@ -2040,16 +2429,57 @@ export default function SheetDetail() {
         {/* TARGET Panel — shown when a target is assigned to this sheet */}
         {sheet?.targetId && assignedTarget && (() => {
           const t = assignedTarget;
+          // Build dynamic extra vehicle fields from JSON
+          const extraVehicleFields: { label: string; value: string | null }[] = [];
+          try {
+            const evs: Array<{ full: string; short: string }> = JSON.parse((t as any).extraVehicles ?? '[]');
+            evs.forEach((ev, i) => {
+              const num = i + 2;
+              if (ev.full)  extraVehicleFields.push({ label: `V${num}F`, value: ev.full });
+              if (ev.short) extraVehicleFields.push({ label: `V${num}`,  value: ev.short });
+            });
+          } catch {}
+          // Build wild fields
+          const wildFieldItems: { label: string; value: string | null }[] = [];
+          try {
+            const wfs: Array<{ label: string; value: string }> = JSON.parse((t as any).wildFields ?? '[]');
+            wfs.forEach((wf) => { if (wf.value) wildFieldItems.push({ label: wf.label, value: wf.value }); });
+          } catch {}
+          // Strip "Vehicle " prefix from short vehicle values for display
+          const stripVehicle = (v: string | null | undefined): string | null => {
+            if (!v) return null;
+            return v.replace(/^Vehicle\s+/i, '').trim() || null;
+          };
+          // Extract registration number from a vehicle string (last alphanumeric token with digits)
+          // Returns null if no rego-like token found — chip will be hidden (no value = not shown)
+          const extractRegSD = (v: string | null | undefined): string | null => {
+            if (!v) return null;
+            const stripped = v.replace(/^Vehicle\s+/i, '').trim();
+            const tokens = stripped.split(/\s+/).map(t => t.replace(/[^A-Z0-9]/gi, ''));
+            const rego = tokens.slice().reverse().find(t => /^[A-Z0-9]{3,8}$/i.test(t) && /\d/.test(t) && /[A-Z]/i.test(t));
+            if (rego) return rego;
+            // Fallback: if the stripped value itself looks like a plate (3-8 alphanumeric with digit+letter), use it
+            if (/^[A-Z0-9]{3,8}$/i.test(stripped) && /\d/.test(stripped) && /[A-Z]/i.test(stripped)) return stripped;
+            // No rego found — return the stripped value so the chip still shows (but only the cleaned text)
+            return stripped || null;
+          };
+          // For extra vehicles, strip "Vehicle " prefix from short values
+          const cleanedExtraVehicleFields = extraVehicleFields.map(f => ({
+            ...f,
+            value: /^V\d+$/.test(f.label) ? (extractRegSD(f.value) ?? f.value) : f.value,
+          }));
           const fields: { label: string; value: string | null }[] = [
             { label: "TGT", value: t.tgt },
             { label: "HBF", value: t.hbf },
             { label: "HB",  value: t.hb  },
             { label: "V1F", value: t.v1f },
-            { label: "V1",  value: t.v1  },
-            { label: "V2F", value: t.v2f },
-            { label: "V2",  value: t.v2  },
+            { label: "V1",  value: extractRegSD(t.v1) },
+            ...cleanedExtraVehicleFields,
+            ...wildFieldItems,
             { label: "DEP", value: t.dep },
             { label: "ARR", value: t.arr },
+            // All shortcut-folder triggers as chips — only those with showInRs=true, exclude legacy 'D' chip
+             ...(shortcutsData ?? []).filter((s) => s.trigger.toUpperCase() !== "D" && s.showInRs !== false).map((s) => ({ label: s.trigger.toUpperCase(), value: s.expansion })),
           ];
           const hasAnyField = fields.some((f) => f.value);
           return (
@@ -2080,40 +2510,150 @@ export default function SheetDetail() {
                 </button>
               </div>
               {/* Collapsible details */}
-              {targetPanelExpanded && (
-                <div className="px-4 pb-3 border-t border-border/40">
-                  {hasAnyField && (
-                    <div className="flex flex-wrap gap-x-6 gap-y-1">
-                      {fields.filter((f) => f.value).map((f) => {
-                        const isDepArr = (f.label === "DEP" || f.label === "ARR") && !isClosed;
-                        return (
-                          <div key={f.label} className="flex items-baseline gap-1.5 text-xs">
-                            <span className="font-semibold text-muted-foreground uppercase tracking-wide">{f.label}:</span>
-                            <span className="font-mono text-foreground">{f.value}</span>
-                            {isDepArr && (
+              {targetPanelExpanded && (() => {
+                // Apply saved order to the fields list
+                const visibleFields = fields.filter((f) => f.value);
+                const orderedFields = targetFieldOrder.length > 0
+                  ? [
+                      ...targetFieldOrder.map(lbl => visibleFields.find(f => f.label === lbl)).filter(Boolean) as typeof visibleFields,
+                      ...visibleFields.filter(f => !targetFieldOrder.includes(f.label)),
+                    ]
+                  : visibleFields;
+                return (
+                  <div className="px-4 pb-3 border-t border-border/40">
+                    {hasAnyField && (
+                      <div className="flex flex-wrap gap-1.5 pt-2">
+                        {orderedFields.map((f, idx) => {
+                          const isDepArr = (f.label === "DEP" || f.label === "ARR") && !isClosed;
+                          // Insert value into the last focused textarea (stored in ref to survive blur)
+                          const insertIntoFocused = () => {
+                            const el = focusedTextareaRef.current;
+                            if (el) {
+                              el.focus();
+                              const start = el.selectionStart ?? el.value.length;
+                              const end = el.selectionEnd ?? el.value.length;
+                              const before = el.value.slice(0, start);
+                              const after = el.value.slice(end);
+                              const insert = (before && !before.endsWith(" ")) ? ` ${f.value!}` : f.value!;
+                              // Use execCommand for React-controlled inputs
+                              try {
+                                document.execCommand("insertText", false, insert);
+                              } catch {
+                                // Fallback: directly set value and dispatch input event
+                                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set
+                                  || Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+                                if (nativeInputValueSetter) {
+                                  nativeInputValueSetter.call(el, before + insert + after);
+                                  el.dispatchEvent(new Event("input", { bubbles: true }));
+                                }
+                              }
+                            }
+                          };
+                          // Chip display rules:
+                          // - Vn short chips (V1, V2, V3...): show label + rego value next to it
+                          // - VnF full chips, TGT, HBF, HB, DEP, ARR, folder shortcuts: trigger only (no value shown)
+                          const shortcutFolderLabels = new Set((shortcutsData ?? []).map(s => s.trigger.toUpperCase()));
+                          const TRIGGER_ONLY_LABELS = new Set(["TGT", "HBF", "HB", "V1F", "V2F", "DEP", "ARR"]);
+                          const isVnShort = /^V\d+$/.test(f.label); // V1, V2, V3 etc — show rego next to label
+                          const isVnFull  = /^V\d+F$/.test(f.label); // V1F, V2F etc — trigger only
+                          const isStandard = !isVnShort && (shortcutFolderLabels.has(f.label) || TRIGGER_ONLY_LABELS.has(f.label) || isVnFull);
+                          const doReorder = (fromLabel: string, toLabel: string) => {
+                            if (!fromLabel || fromLabel === toLabel) return;
+                            const labels = orderedFields.map(x => x.label);
+                            const fromIdx = labels.indexOf(fromLabel);
+                            const toIdx = labels.indexOf(toLabel);
+                            if (fromIdx === -1 || toIdx === -1) return;
+                            const newOrder = [...labels];
+                            newOrder.splice(fromIdx, 1);
+                            newOrder.splice(toIdx, 0, fromLabel);
+                            setTargetFieldOrder(newOrder);
+                            try { localStorage.setItem(`runsheet_field_order_${sheetId}`, JSON.stringify(newOrder)); } catch {}
+                          };
+                          return (
+                            <div
+                              key={f.label}
+                              data-chip-label={f.label}
+                              className="flex items-center gap-0.5"
+                            >
                               <button
-                                onClick={() => {
-                                  const now = new Date();
-                                  const h24 = now.getHours();
-                                  const min = now.getMinutes();
-                                  const totalMins = h24 * 60 + min;
-                                  const timeStr = minutesToTimeString(totalMins);
-                                  addRow.mutate({ sheetId, time: timeStr, timeMinutes: totalMins, observation: f.value! });
+                                onPointerDown={(e) => {
+                                  // Capture pointer so we track move/up even outside the element
+                                  (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                                  targetFieldDragRef.current.dragging = null;
+                                  targetFieldDragRef.current.startX = e.clientX;
+                                  targetFieldDragRef.current.startY = e.clientY;
+                                  targetFieldDragRef.current.startIdx = idx;
+                                  targetFieldDragRef.current.pointerId = e.pointerId;
+                                  // Prevent textarea blur on click
+                                  e.preventDefault();
                                 }}
-                                disabled={addRow.isPending}
-                                title={`Add ${f.label} row with current time`}
-                                className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-primary/15 text-primary hover:bg-primary/25 active:scale-95 transition-all border border-primary/30"
+                                onPointerMove={(e) => {
+                                  if (targetFieldDragRef.current.pointerId !== e.pointerId) return;
+                                  const dx = e.clientX - targetFieldDragRef.current.startX;
+                                  const dy = e.clientY - targetFieldDragRef.current.startY;
+                                  const dist = Math.sqrt(dx * dx + dy * dy);
+                                  if (dist > 8) {
+                                    if (!targetFieldDragRef.current.dragging) {
+                                      targetFieldDragRef.current.dragging = f.label;
+                                    }
+                                    // Find which chip we're hovering over
+                                    const el = document.elementFromPoint(e.clientX, e.clientY);
+                                    const chipEl = el?.closest('[data-chip-label]') as HTMLElement | null;
+                                    if (chipEl) {
+                                      const overLabel = chipEl.dataset.chipLabel;
+                                      if (overLabel && overLabel !== targetFieldDragRef.current.dragging) {
+                                        doReorder(targetFieldDragRef.current.dragging!, overLabel);
+                                        targetFieldDragRef.current.dragging = overLabel;
+                                      }
+                                    }
+                                  }
+                                }}
+                                onPointerUp={(e) => {
+                                  if (targetFieldDragRef.current.pointerId !== e.pointerId) return;
+                                  (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+                                  if (!targetFieldDragRef.current.dragging) {
+                                    // Plain tap/click — insert into focused textarea
+                                    insertIntoFocused();
+                                  }
+                                  targetFieldDragRef.current.dragging = null;
+                                  targetFieldDragRef.current.pointerId = null;
+                                }}
+                                onPointerCancel={() => {
+                                  targetFieldDragRef.current.dragging = null;
+                                  targetFieldDragRef.current.pointerId = null;
+                                }}
+                                title={`Insert: ${f.value}`}
+                                className="flex items-baseline gap-1 px-2 py-0.5 rounded border border-primary/30 bg-primary/8 hover:bg-primary/15 active:scale-95 transition-all cursor-grab active:cursor-grabbing select-none"
                               >
-                                + Row
+                                <span className="text-[10px] font-bold text-primary uppercase tracking-wide">{f.label}</span>
+                                {/* Vn short chips show rego next to label; all other standard chips show trigger only */}
+                                {(isVnShort || !isStandard) && <span className="text-[10px] font-mono text-foreground/80 max-w-[80px] truncate">{f.value}</span>}
                               </button>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
+                              {isDepArr && (
+                                <button
+                                  onClick={() => {
+                                    const now = new Date();
+                                    const h24 = now.getHours();
+                                    const min = now.getMinutes();
+                                    const totalMins = h24 * 60 + min;
+                                    const timeStr = minutesToTimeString(totalMins);
+                                    addRow.mutate({ sheetId, time: timeStr, timeMinutes: totalMins, observation: f.value! });
+                                  }}
+                                  disabled={addRow.isPending}
+                                  title={`Add ${f.label} row with current time`}
+                                  className="ml-0.5 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-primary/15 text-primary hover:bg-primary/25 active:scale-95 transition-all border border-primary/30"
+                                >
+                                  + Row
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           );
         })()}
@@ -2216,7 +2756,7 @@ export default function SheetDetail() {
                         />
                       </td>
 
-                      {/* Member */}
+                      {/* Member / CIN */}
                       <td>
                         <MemberCell
                           row={row}

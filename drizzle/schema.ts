@@ -90,7 +90,8 @@ export const sheetRows = mysqlTable("sheet_rows", {
   rowNumber: int("rowNumber").notNull(),
   time: varchar("time", { length: 64 }),
   timeMinutes: int("timeMinutes"),
-  dayOffset: int("dayOffset").default(0).notNull(), // 0 = same day as first row, 1 = next day, -1 = previous day
+  dayOffset: int("dayOffset").default(0).notNull(), // legacy — kept for migration compat
+  rowDate: varchar("rowDate", { length: 16 }), // YYYY-MM-DD — explicit calendar date for this row (null = use inference)
   observation: text("observation"),
   isLocked: boolean("isLocked").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

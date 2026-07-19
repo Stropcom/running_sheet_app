@@ -45,6 +45,8 @@ import {
   ClipboardCheck,
   LockKeyhole,
   LockKeyholeOpen,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import {
   Select,
@@ -119,6 +121,9 @@ type SheetRow = {
   sheetId: number;
   rowNumber: number;
   time: string | null;
+  timeMinutes: number | null;
+  dayOffset?: number | null;
+  rowDate?: string | null;
   observation: string | null;
   isLocked: boolean;
   createdAt: Date;
@@ -134,6 +139,8 @@ type ExportRow = {
   rowNumber: number;
   time: string | null;
   timeMinutes: number | null;
+  dayOffset?: number | null;
+  rowDate?: string | null;
   observation: string | null;
   isLocked: boolean;
   members: { id: number; memberName: string }[];
@@ -149,6 +156,37 @@ type OperationMeta = {
 } | null;
 
 type CinEntry = { cin: string; hasImages: boolean; isTeamLeader?: boolean; isAuthor?: boolean };
+
+const PERTH_TIME_ZONE = "Australia/Perth";
+const PERTH_OFFSET_SUFFIX = "T00:00:00+08:00";
+
+function ymdToPerthMs(ymd: string) {
+  return new Date(`${ymd}${PERTH_OFFSET_SUFFIX}`).getTime();
+}
+
+function addDaysToYmd(ymd: string, days: number) {
+  const d = new Date(ymdToPerthMs(ymd) + days * 86400000);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+function formatPerthDateLabel(ymd: string) {
+  return new Date(`${ymd}${PERTH_OFFSET_SUFFIX}`)
+    .toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: PERTH_TIME_ZONE })
+    .toUpperCase();
+}
+
+function getTodayPerthYmd() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: PERTH_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const year = parts.find((p) => p.type === "year")?.value ?? "1970";
+  const month = parts.find((p) => p.type === "month")?.value ?? "01";
+  const day = parts.find((p) => p.type === "day")?.value ?? "01";
+  return `${year}-${month}-${day}`;
+}
 
 function exportToPDF(
   sheetTitle: string,
@@ -278,15 +316,33 @@ function exportToPDF(
   // Spacer row inserted after each log entry for breathing room
   const spacerRow = `<tr><td colspan="3" style="padding:0;height:8px;border:none;background:transparent"></td></tr>`;
 
-  // ── Build day-offset map for export rows (same rollover logic as the live RS view) ──
+  // ── Build day-offset map for export rows (rowDate-aware, falls back to inference) ──
   const exportDayOffsetMap = new Map<number, number>();
   {
     const timedByRowNumber = [...rows]
       .filter((r) => r.timeMinutes != null)
       .sort((a, b) => a.rowNumber - b.rowNumber);
+    const exportRowDates = timedByRowNumber.map((r) => r.rowDate).filter((d): d is string => !!d);
+    const exportMinRowDate = exportRowDates.length > 0 ? exportRowDates.slice().sort()[0] : null;
+    // First pass: rowDate (highest priority) or stored dayOffset (legacy)
+    for (const r of timedByRowNumber) {
+      if (r.rowDate && exportMinRowDate) {
+        const anchor = ymdToPerthMs(exportMinRowDate);
+        const rowDay = ymdToPerthMs(r.rowDate);
+        exportDayOffsetMap.set(r.id, Math.round((rowDay - anchor) / 86400000));
+      } else if (r.dayOffset && r.dayOffset !== 0) {
+        exportDayOffsetMap.set(r.id, r.dayOffset);
+      }
+    }
+    // Second pass: infer for rows with no explicit date/offset
     let day = 0;
     let prevEff = -1;
     for (const r of timedByRowNumber) {
+      if (exportDayOffsetMap.has(r.id)) {
+        prevEff = r.timeMinutes! + exportDayOffsetMap.get(r.id)! * 1440;
+        day = exportDayOffsetMap.get(r.id)!;
+        continue;
+      }
       const mins = r.timeMinutes!;
       const eff = mins + day * 1440;
       if (prevEff >= 0 && eff < prevEff - 120) { day++; }
@@ -304,9 +360,16 @@ function exportToPDF(
     for (const row of rows) {
       const day = exportDayOffsetMap.get(row.id) ?? 0;
       if (row.timeMinutes != null && day > prevDay && prevDay >= 0) {
-        const divDate = new Date(sheetCreatedAt);
-        divDate.setDate(divDate.getDate() + day);
-        const divLabel = divDate.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }).toUpperCase();
+        // Prefer an explicit rowDate from a row on that day
+        const rowOnDay = rows.find((r) => (exportDayOffsetMap.get(r.id) ?? 0) === day && r.rowDate);
+        let divLabel: string;
+        if (rowOnDay?.rowDate) {
+          divLabel = formatPerthDateLabel(rowOnDay.rowDate);
+        } else {
+          const divDate = new Date(sheetCreatedAt);
+          divDate.setDate(divDate.getDate() + day);
+          divLabel = divDate.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: PERTH_TIME_ZONE }).toUpperCase();
+        }
         parts.push(dateDividerRow(divLabel));
       }
       if (row.timeMinutes != null) prevDay = day;
@@ -646,15 +709,33 @@ async function exportToWord(
     ],
   });
 
-  // ── Build day-offset map for Word export rows ──
+  // ── Build day-offset map for Word export rows (rowDate-aware, falls back to inference) ──
   const wordDayOffsetMap = new Map<number, number>();
   {
     const timedByRowNumber = [...rows]
       .filter((r) => r.timeMinutes != null)
       .sort((a, b) => a.rowNumber - b.rowNumber);
+    const wordRowDates = timedByRowNumber.map((r) => r.rowDate).filter((d): d is string => !!d);
+    const wordMinRowDate = wordRowDates.length > 0 ? wordRowDates.slice().sort()[0] : null;
+    // First pass: rowDate (highest priority) or stored dayOffset (legacy)
+    for (const r of timedByRowNumber) {
+      if (r.rowDate && wordMinRowDate) {
+        const anchor = ymdToPerthMs(wordMinRowDate);
+        const rowDay = ymdToPerthMs(r.rowDate);
+        wordDayOffsetMap.set(r.id, Math.round((rowDay - anchor) / 86400000));
+      } else if (r.dayOffset && r.dayOffset !== 0) {
+        wordDayOffsetMap.set(r.id, r.dayOffset);
+      }
+    }
+    // Second pass: infer for rows with no explicit date/offset
     let day = 0;
     let prevEff = -1;
     for (const r of timedByRowNumber) {
+      if (wordDayOffsetMap.has(r.id)) {
+        prevEff = r.timeMinutes! + wordDayOffsetMap.get(r.id)! * 1440;
+        day = wordDayOffsetMap.get(r.id)!;
+        continue;
+      }
       const mins = r.timeMinutes!;
       const eff = mins + day * 1440;
       if (prevEff >= 0 && eff < prevEff - 120) { day++; }
@@ -668,9 +749,16 @@ async function exportToWord(
   for (const row of rows) {
     const wordDay = wordDayOffsetMap.get(row.id) ?? 0;
     if (row.timeMinutes != null && wordDay > wordPrevDay && wordPrevDay >= 0) {
-      const divDate = new Date(sheetCreatedAt);
-      divDate.setDate(divDate.getDate() + wordDay);
-      const divLabel = divDate.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }).toUpperCase();
+      // Prefer an explicit rowDate from a row on that day
+      const wordRowOnDay = rows.find((r) => (wordDayOffsetMap.get(r.id) ?? 0) === wordDay && r.rowDate);
+      let divLabel: string;
+      if (wordRowOnDay?.rowDate) {
+        divLabel = formatPerthDateLabel(wordRowOnDay.rowDate);
+      } else {
+        const divDate = new Date(sheetCreatedAt);
+        divDate.setDate(divDate.getDate() + wordDay);
+        divLabel = divDate.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: PERTH_TIME_ZONE }).toUpperCase();
+      }
       dataRows.push(new TableRow({
         children: [
           new TableCell({
@@ -1229,14 +1317,18 @@ function TimePickerCell({
   value,
   locked,
   dayOffset = 0,
+  rowDate,
+  inferredRowDate,
   sheetHasCrossedMidnight = false,
   onSave,
 }: {
   value: string | null;
   locked: boolean;
   dayOffset?: number;
+  rowDate?: string | null;
+  inferredRowDate?: string | null;
   sheetHasCrossedMidnight?: boolean;
-  onSave: (display: string, minutes: number, dayOffset: number) => void;
+  onSave: (display: string, minutes: number, dayOffset: number, rowDate?: string) => void;
 }) {
   // Parse existing value into hour/minute/period; default to current time when empty
   const parsed = useMemo(() => {
@@ -1256,6 +1348,7 @@ function TimePickerCell({
   const [minute, setMinute] = useState(parsed.minute);
   const [period, setPeriod] = useState(parsed.period);
   const [localDayOffset, setLocalDayOffset] = useState(dayOffset);
+  const [selectedRowDate, setSelectedRowDate] = useState<string>(() => rowDate ?? inferredRowDate ?? getTodayPerthYmd());
   // Track whether any Radix Select dropdown is currently open
   const [selectOpen, setSelectOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -1271,6 +1364,11 @@ function TimePickerCell({
   useEffect(() => {
     setLocalDayOffset(dayOffset);
   }, [dayOffset]);
+
+  // Sync explicit/inferred rowDate from props
+  useEffect(() => {
+    setSelectedRowDate(rowDate ?? inferredRowDate ?? getTodayPerthYmd());
+  }, [rowDate, inferredRowDate]);
 
   // Close picker on outside click — but only when no Radix Select is open
   // (Radix portals render outside popoverRef, so we must ignore those clicks)
@@ -1294,9 +1392,9 @@ function TimePickerCell({
   const handleDone = useCallback(() => {
     const display = `${String(parseInt(hour, 10)).padStart(2, "0")}:${minute.padStart(2, "0")} ${period}`;
     const mins = timeStringToMinutes(display);
-    onSave(display, mins, localDayOffset);
+    onSave(display, mins, localDayOffset, selectedRowDate);
     setOpen(false);
-  }, [hour, minute, period, localDayOffset, onSave]);
+  }, [hour, minute, period, localDayOffset, selectedRowDate, onSave]);
 
   const hours = Array.from({ length: 12 }, (_, i) => String(i + 1));
   const minutes = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"));
@@ -1369,21 +1467,29 @@ function TimePickerCell({
               </SelectContent>
             </Select>
           </div>
-          {/* Previous day toggle — only shown when the sheet has crossed midnight */}
           {sheetHasCrossedMidnight && (
-            <div className="flex items-center gap-2 mb-2 px-0.5">
-              <button
+            <div className="flex items-center justify-between gap-1 mb-3 px-0.5 py-1 rounded-md border border-border/70 bg-muted/30">
+              <Button
                 type="button"
-                onClick={() => setLocalDayOffset((v) => v === -1 ? 0 : -1)}
-                className={`flex items-center gap-1.5 text-xs rounded px-2 py-1 border transition-colors ${
-                  localDayOffset === -1
-                    ? "bg-amber-500/20 border-amber-500/60 text-amber-600 dark:text-amber-400"
-                    : "border-border text-muted-foreground hover:bg-accent/50"
-                }`}
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7 shrink-0"
+                onClick={() => setSelectedRowDate((d) => addDaysToYmd(d, -1))}
               >
-                <span className="text-base leading-none">{localDayOffset === -1 ? "↩" : "↩"}</span>
-                Previous day
-              </button>
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              <div className="min-w-[160px] text-center text-[11px] font-semibold tracking-widest text-foreground font-mono">
+                {formatPerthDateLabel(selectedRowDate)}
+              </div>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7 shrink-0"
+                onClick={() => setSelectedRowDate((d) => addDaysToYmd(d, 1))}
+              >
+                <ChevronRight className="w-4 h-4" />
+              </Button>
             </div>
           )}
           <div className="flex gap-2">
@@ -1705,7 +1811,7 @@ export default function SheetDetail() {
 
   const updateRow = useMemo(() => ({
     isPending: _updateRowOnline.isPending,
-    mutate: (input: { id: number; time?: string; timeMinutes?: number; observation?: string }) => {
+    mutate: (input: { id: number; time?: string; timeMinutes?: number; dayOffset?: number; rowDate?: string; observation?: string }) => {
       if (isOnline) {
         _updateRowOnline.mutate(input);
       } else {
@@ -2321,13 +2427,27 @@ export default function SheetDetail() {
       .filter((r: NonNullable<typeof rows>[0]) => r.timeMinutes != null)
       .sort((a: NonNullable<typeof rows>[0], b: NonNullable<typeof rows>[0]) => a.rowNumber - b.rowNumber);
     const map = new Map<number, number>();
-    // First pass: assign stored non-zero dayOffset values (operator-set)
+
+    // Find the earliest rowDate among all rows that have one (day-0 anchor)
+    const allRowDates = timedByRowNumber
+      .map((r: NonNullable<typeof rows>[0]) => (r as any).rowDate as string | null | undefined)
+      .filter((d): d is string => !!d);
+    const minRowDate = allRowDates.length > 0 ? allRowDates.slice().sort()[0] : null;
+
+    // First pass: assign offsets from rowDate (highest priority) or stored dayOffset (legacy)
     for (const r of timedByRowNumber) {
-      if ((r as any).dayOffset !== 0 && (r as any).dayOffset != null) {
+      const rd = (r as any).rowDate as string | null | undefined;
+      if (rd && minRowDate) {
+        // Day index relative to earliest rowDate in this sheet (Perth UTC+8)
+        const anchor = new Date(minRowDate + "T00:00:00+08:00").getTime();
+        const rowDay = new Date(rd + "T00:00:00+08:00").getTime();
+        const dayIdx = Math.round((rowDay - anchor) / 86400000);
+        map.set(r.id, dayIdx);
+      } else if ((r as any).dayOffset !== 0 && (r as any).dayOffset != null) {
         map.set(r.id, (r as any).dayOffset);
       }
     }
-    // Second pass: infer for rows with dayOffset == 0
+    // Second pass: infer for rows with no explicit date/offset
     let day = 0;
     let prevEff = -1;
     for (const r of timedByRowNumber) {
@@ -2886,9 +3006,19 @@ export default function SheetDetail() {
                         if (curDay !== prevDay) {
                           // The divider label always shows the HIGHER day (the later calendar day)
                           const laterDay = Math.max(prevDay, curDay);
-                          const sheetStartMs = sheet?.createdAt ? new Date(sheet.createdAt).getTime() : Date.now();
-                          const labelDate = new Date(sheetStartMs + laterDay * 24 * 60 * 60 * 1000);
-                          const label = labelDate.toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "Australia/Perth" }).toUpperCase();
+                          // Prefer an explicit rowDate from a row on that day
+                          const rowOnLaterDay = filteredRows.find(
+                            (r: NonNullable<typeof rows>[0]) =>
+                              (rowDayOffsetMap.get(r.id) ?? 0) === laterDay && (r as any).rowDate
+                          );
+                          let label: string;
+                          if (rowOnLaterDay && (rowOnLaterDay as any).rowDate) {
+                            label = formatPerthDateLabel((rowOnLaterDay as any).rowDate as string);
+                          } else {
+                            const sheetStartMs = sheet?.createdAt ? new Date(sheet.createdAt).getTime() : Date.now();
+                            const labelDate = new Date(sheetStartMs + laterDay * 24 * 60 * 60 * 1000);
+                            label = labelDate.toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: PERTH_TIME_ZONE }).toUpperCase();
+                          }
                           const dividerRow = (
                             <tr key={`divider-${row.id}`} className="date-divider-row">
                               <td colSpan={4} className="py-1.5 px-4">
@@ -2921,8 +3051,17 @@ export default function SheetDetail() {
                           value={row.time}
                           locked={row.isLocked}
                           dayOffset={(row as any).dayOffset ?? 0}
+                          rowDate={(row as any).rowDate ?? null}
+                          inferredRowDate={(() => {
+                            if (!sheetHasCrossedMidnight) return null;
+                            // Compute inferred date from day offset + sheet start date
+                            const dayOff = rowDayOffsetMap.get(row.id) ?? 0;
+                            const sheetStartMs = sheet?.createdAt ? new Date(sheet.createdAt).getTime() : Date.now();
+                            const d = new Date(sheetStartMs + dayOff * 86400000);
+                            return new Intl.DateTimeFormat("en-CA", { timeZone: PERTH_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+                          })()}
                           sheetHasCrossedMidnight={sheetHasCrossedMidnight}
-                          onSave={(display, mins, dayOff) => updateRow.mutate({ id: row.id, time: display, timeMinutes: mins, dayOffset: dayOff } as any)}
+                          onSave={(display, mins, dayOff, rd) => updateRow.mutate({ id: row.id, time: display, timeMinutes: mins, dayOffset: dayOff, rowDate: rd })}
                         />
                       </td>
 

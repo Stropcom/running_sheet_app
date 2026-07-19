@@ -755,18 +755,18 @@ export const appRouter = router({
       }),
 
     create: protectedProcedure
-      .input(z.object({ sheetId: z.number(), time: z.string().optional(), timeMinutes: z.number().optional(), dayOffset: z.number().optional(), observation: z.string().optional() }))
+      .input(z.object({ sheetId: z.number(), time: z.string().optional(), timeMinutes: z.number().optional(), dayOffset: z.number().optional(), rowDate: z.string().optional(), observation: z.string().optional() }))
       .mutation(async ({ input, ctx }) => {
         await guardActiveSheet(input.sheetId);
         const existingRows = await getRowsBySheetId(input.sheetId);
         const rowNumber = existingRows.length + 1;
-        const id = await createSheetRow({ sheetId: input.sheetId, rowNumber, time: input.time, timeMinutes: input.timeMinutes, dayOffset: input.dayOffset ?? 0, observation: input.observation, isLocked: false });
+        const id = await createSheetRow({ sheetId: input.sheetId, rowNumber, time: input.time, timeMinutes: input.timeMinutes, dayOffset: input.dayOffset ?? 0, rowDate: input.rowDate, observation: input.observation, isLocked: false });
         await createAuditLog({ sheetId: input.sheetId, rowId: id, userId: ctx.user.id, userName: ctx.user.cin ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "row_created", details: `Row ${rowNumber} created`, createdAt: Date.now() });
         return { id, rowNumber };
       }),
 
     update: protectedProcedure
-      .input(z.object({ id: z.number(), time: z.string().optional(), timeMinutes: z.number().optional(), dayOffset: z.number().optional(), observation: z.string().optional() }))
+      .input(z.object({ id: z.number(), time: z.string().optional(), timeMinutes: z.number().optional(), dayOffset: z.number().optional(), rowDate: z.string().optional(), observation: z.string().optional() }))
       .mutation(async ({ input, ctx }) => {
         const row = await getRowById(input.id);
         if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Row not found." });

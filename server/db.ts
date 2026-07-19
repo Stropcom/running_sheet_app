@@ -469,26 +469,35 @@ export async function getRowsBySheetId(sheetId: number) {
     .orderBy(sheetRows.rowNumber);
 
   // ── Day-offset sort ──────────────────────────────────────────────────────────
-  // Each row has a stored `dayOffset` column (0 = same day as first row, 1 = next
-  // day, -1 = previous day). When the operator explicitly sets a dayOffset via the
-  // "Previous day" toggle, that value is used directly. For rows where dayOffset is
-  // still 0 (all existing rows and new rows that haven't been toggled), we fall back
-  // to the inference algorithm: scan timed rows in entry order and detect midnight
-  // rollovers from the timeMinutes sequence.
+  // Priority order for determining a row's effective day:
+  //   1. rowDate (YYYY-MM-DD) — explicit operator-set date, most authoritative.
+  //      Day index is computed relative to the earliest rowDate in the sheet.
+  //   2. dayOffset != 0 — legacy explicit toggle (kept for backward compat).
+  //   3. Inference from timeMinutes sequence — for rows with neither.
   const timedRows = raw.filter((r) => r.timeMinutes != null);
   const noTimeRows = raw.filter((r) => r.timeMinutes == null);
 
-  // Build effective day offset for each row:
-  // - If dayOffset != 0, use it directly (operator-set).
-  // - Otherwise infer from the timeMinutes sequence.
+  // Build effective day offset for each row.
   const dayOffsetMap = new Map<number, number>();
 
-  // First pass: assign stored non-zero offsets
+  // Find the earliest rowDate among all rows that have one, to use as day-0 anchor.
+  const rowDates = raw.map((r) => r.rowDate).filter((d): d is string => !!d);
+  const minRowDate = rowDates.length > 0 ? rowDates.slice().sort()[0] : null;
+
+  // First pass: assign offsets from rowDate (highest priority) or stored dayOffset (legacy)
   for (const r of timedRows) {
-    if (r.dayOffset !== 0) dayOffsetMap.set(r.id, r.dayOffset);
+    if (r.rowDate && minRowDate) {
+      // Compute day index relative to the earliest date in this sheet (Perth UTC+8)
+      const anchor = new Date(minRowDate + "T00:00:00+08:00").getTime();
+      const rowDay = new Date(r.rowDate + "T00:00:00+08:00").getTime();
+      const dayIdx = Math.round((rowDay - anchor) / 86400000);
+      dayOffsetMap.set(r.id, dayIdx);
+    } else if (r.dayOffset !== 0) {
+      dayOffsetMap.set(r.id, r.dayOffset);
+    }
   }
 
-  // Second pass: infer for rows with dayOffset == 0
+  // Second pass: infer for rows with no explicit date/offset
   let currentDay = 0;
   let prevEffective = -1;
   for (const r of timedRows) {

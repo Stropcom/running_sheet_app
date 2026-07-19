@@ -2855,76 +2855,13 @@ export default function SheetDetail() {
                               </td>
                             </tr>
                           );
-                          if (!sortReversed) {
-                            // Ascending: divider before the higher-day row (current row)
-                            acc.push(dividerRow);
-                          } else {
-                            // Reversed: divider after the current row (which is the higher-day row
-                            // in reversed display, sitting above the lower-day rows below it).
-                            // We'll push the row first, then the divider.
-                            acc.push(
-                              <tr
-                                key={row.id}
-                                className={row.isLocked ? "row-locked" : "hover:bg-accent/20"}
-                              >
-                                {/* Time */}
-                                <td>
-                                  <TimePickerCell
-                                    value={row.time}
-                                    locked={row.isLocked}
-                                    onSave={(display, mins) => updateRow.mutate({ id: row.id, time: display, timeMinutes: mins })}
-                                  />
-                                </td>
-                                {/* Observation */}
-                                <td>
-                                  <EditableCell
-                                    value={row.observation}
-                                    locked={row.isLocked}
-                                    multiline
-                                    placeholder="Enter observation…"
-                                    onSave={(val) => updateRow.mutate({ id: row.id, observation: val })}
-                                    shortcuts={shortcutMap}
-                                  />
-                                </td>
-                                {/* Member / CIN */}
-                                <td>
-                                  <MemberCell
-                                    row={row}
-                                    canEdit={canEdit}
-                                    onAddMember={(rowId, name) => addMember.mutate({ rowId, memberName: name })}
-                                    onRemoveMember={(id, rowId) => {
-                                      const rowData = rows?.find((r) => r.id === rowId);
-                                      if (rowData?.isLocked) {
-                                        uncertifyAll.mutate({ rowId }, {
-                                          onSuccess: () => removeMember.mutate({ id, rowId }),
-                                        });
-                                      } else {
-                                        removeMember.mutate({ id, rowId });
-                                      }
-                                    }}
-                                    onReorderMembers={(rowId, orderedIds) => reorderMember.mutate({ rowId, orderedIds })}
-                                    onManualReorder={markManualReorder}
-                                    rosterCins={rosterCinList}
-                                  />
-                                </td>
-                                {/* Certify */}
-                                <td>
-                                  <CertifyCell
-                                    row={row}
-                                    canCertify={canCertify}
-                                    onCertify={(rowId, memberId) => certify.mutate({ rowId, memberId })}
-                                    onUncertify={(rowId, memberId) => uncertify.mutate({ rowId, memberId })}
-                                    onUncertifyAll={(rowId) => uncertifyAll.mutate({ rowId })}
-                                    onDeleteRow={canCertify ? (rowId) => {
-                                      if (confirm("Delete this row?")) deleteRow.mutate({ id: rowId });
-                                    } : undefined}
-                                  />
-                                </td>
-                              </tr>
-                            );
-                            acc.push(dividerRow);
-                            return acc;
-                          }
+                          // Always insert divider before the current row.
+                          // In ascending: divider sits above the first day-N row.
+                          // In reversed: the reduce sees rows newest-first, so the day
+                          // boundary is detected when we hit the first lower-day row;
+                          // inserting the divider before that row places it correctly
+                          // between the higher-day rows above and lower-day rows below.
+                          acc.push(dividerRow);
                         }
                       }
                     }

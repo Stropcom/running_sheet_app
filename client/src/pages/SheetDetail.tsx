@@ -1473,8 +1473,7 @@ function TimePickerCell({
               </SelectContent>
             </Select>
           </div>
-          {sheetHasCrossedMidnight && (
-            <div className="flex items-center justify-between gap-1 mb-3 px-0.5 py-1 rounded-md border border-border/70 bg-muted/30">
+          <div className="flex items-center justify-between gap-1 mb-3 px-0.5 py-1 rounded-md border border-border/70 bg-muted/30">
               <Button
                 type="button"
                 size="icon"
@@ -1497,7 +1496,6 @@ function TimePickerCell({
                 <ChevronRight className="w-4 h-4" />
               </Button>
             </div>
-          )}
           <div className="flex gap-2">
             <Button
               size="sm"

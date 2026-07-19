@@ -64,6 +64,40 @@ import {
   Clock,
 } from "lucide-react";
 
+// ── Perth date helpers (shared with SheetDetail logic) ───────────────────────
+const _PERTH_OFFSET_SUFFIX = "T00:00:00+08:00";
+const _PERTH_OFFSET_MS = 8 * 60 * 60 * 1000;
+const _PERTH_TIME_ZONE = "Australia/Perth";
+
+function _ymdToPerthMs(ymd: string) {
+  return new Date(`${ymd}${_PERTH_OFFSET_SUFFIX}`).getTime();
+}
+
+function _addDaysToYmd(ymd: string, days: number) {
+  const perthMs = _ymdToPerthMs(ymd) + days * 86400000;
+  const d = new Date(perthMs + _PERTH_OFFSET_MS);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+function _formatPerthDateLabel(ymd: string) {
+  return new Date(`${ymd}${_PERTH_OFFSET_SUFFIX}`)
+    .toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: _PERTH_TIME_ZONE })
+    .toUpperCase();
+}
+
+function _getTodayPerthYmd() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: _PERTH_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const year = parts.find((p) => p.type === "year")?.value ?? "1970";
+  const month = parts.find((p) => p.type === "month")?.value ?? "01";
+  const day = parts.find((p) => p.type === "day")?.value ?? "01";
+  return `${year}-${month}-${day}`;
+}
+
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface IntelMapLocation {
   label: string;
@@ -729,6 +763,7 @@ export default function IntelligenceMapping() {
   const [mapQeHour, setMapQeHour] = useState("12");
   const [mapQeMinute, setMapQeMinute] = useState("00");
   const [mapQePeriod, setMapQePeriod] = useState("AM");
+  const [mapQeRowDate, setMapQeRowDate] = useState<string>(() => _getTodayPerthYmd()); // explicit calendar date for the QE row
   const [mapQeSelectOpen, setMapQeSelectOpen] = useState(false);
   const [mapQeAddress, setMapQeAddress] = useState(""); // pre-filled address for the observation
   // Quick Entry shortcut chip order — persisted to localStorage so user can reorder them
@@ -2174,8 +2209,9 @@ export default function IntelligenceMapping() {
     // Capture CINs BEFORE closeInlineField clears the ref
     const cinsToAttach = new Set(rsInlineCinsRef.current);
     const timeOverride = mapQeTimeOverride;
+    const rowDateOverride = mapQeRowDate;
     closeInlineField();
-    addQuickRsEntry(finalText, cinsToAttach, timeOverride);
+    addQuickRsEntry(finalText, cinsToAttach, timeOverride, rowDateOverride);
   };
 
   const resetInlineTimer = () => {
@@ -2208,6 +2244,7 @@ export default function IntelligenceMapping() {
       setMapQeMinute(String(min).padStart(2, "0"));
       setMapQePeriod(ampm);
       setMapQeTimeOverride(`${String(h12).padStart(2,"0")}:${String(min).padStart(2,"0")} ${ampm}`);
+      setMapQeRowDate(_getTodayPerthYmd()); // reset date to today (Perth) on each open
       // Use a small delay so the sheet has rendered before we set focus
       setTimeout(() => {
         setRsInlineLabel("Entry");
@@ -2224,7 +2261,7 @@ export default function IntelligenceMapping() {
     }
   }, [mapQeOpen, rsSelectedSheetId]);
 
-  const addQuickRsEntry = (observation: string, cinsToAttach?: Set<string> | null, timeOverride?: string | null) => {
+  const addQuickRsEntry = (observation: string, cinsToAttach?: Set<string> | null, timeOverride?: string | null, rowDateOverride?: string | null) => {
     if (!rsSelectedSheetId) return;
     let timeStr: string;
     let totalMins: number;
@@ -2258,7 +2295,7 @@ export default function IntelligenceMapping() {
     // Store the CINs in a local variable captured by the mutation callback
     const cins = cinsToAttach ? Array.from(cinsToAttach) : [];
     rsCreateRow.mutate(
-      { sheetId: rsSelectedSheetId, time: timeStr, timeMinutes: totalMins, observation },
+      { sheetId: rsSelectedSheetId, time: timeStr, timeMinutes: totalMins, observation, rowDate: rowDateOverride ?? undefined },
       {
         onSuccess: (data, vars) => {
           const now2 = new Date();
@@ -3818,19 +3855,40 @@ export default function IntelligenceMapping() {
                 </SelectContent>
               </Select>
               {/* Now button */}
+                <button
+                  onClick={() => {
+                    const n = new Date();
+                    const h24 = n.getHours(); const min = n.getMinutes();
+                    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+                    const ampm = h24 < 12 ? "AM" : "PM";
+                    setMapQeHour(String(h12));
+                    setMapQeMinute(String(min).padStart(2, "0"));
+                    setMapQePeriod(ampm);
+                    setMapQeTimeOverride(`${String(h12).padStart(2,"0")}:${String(min).padStart(2,"0")} ${ampm}`);
+                  }}
+                  className="ml-1 text-[10px] text-primary hover:text-primary/80 underline font-medium"
+                >Now</button>
+            </div>
+
+            {/* Date selector — always visible so operators can set the calendar date */}
+            <div className="flex items-center justify-between gap-1 mb-3 px-0.5 py-1 rounded-md border border-border/70 bg-muted/30">
               <button
-                onClick={() => {
-                  const n = new Date();
-                  const h24 = n.getHours(); const min = n.getMinutes();
-                  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
-                  const ampm = h24 < 12 ? "AM" : "PM";
-                  setMapQeHour(String(h12));
-                  setMapQeMinute(String(min).padStart(2, "0"));
-                  setMapQePeriod(ampm);
-                  setMapQeTimeOverride(`${String(h12).padStart(2,"0")}:${String(min).padStart(2,"0")} ${ampm}`);
-                }}
-                className="ml-1 text-[10px] text-primary hover:text-primary/80 underline font-medium"
-              >Now</button>
+                type="button"
+                className="h-7 w-7 flex items-center justify-center rounded hover:bg-accent/50 transition-colors"
+                onClick={() => setMapQeRowDate((d) => _addDaysToYmd(d, -1))}
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <div className="flex-1 text-center text-[11px] font-semibold tracking-widest text-foreground font-mono">
+                {_formatPerthDateLabel(mapQeRowDate)}
+              </div>
+              <button
+                type="button"
+                className="h-7 w-7 flex items-center justify-center rounded hover:bg-accent/50 transition-colors"
+                onClick={() => setMapQeRowDate((d) => _addDaysToYmd(d, 1))}
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
 
             {/* No sheet selected warning */}

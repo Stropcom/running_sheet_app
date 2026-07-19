@@ -4059,6 +4059,10 @@ export interface RsWaypointRow {
    * Suburb context inferred from this waypoint's address (used to help geocode viaStreets).
    */
   suburbContext: string | null;
+  /** Explicit calendar date (YYYY-MM-DD, Perth) set by the operator */
+  rowDate: string | null;
+  /** Legacy day-offset (0 = sheet start day, 1 = next day, etc.) */
+  dayOffset: number;
 }
 
 /**
@@ -4247,7 +4251,9 @@ export async function getRsMappingWaypoints(sheetId: number): Promise<RsWaypoint
       segmentType,
       viaStreets,
       suburbContext,
-    });
+      rowDate: (row as any).rowDate ?? null,
+      dayOffset: (row as any).dayOffset ?? 0,
+    } as RsWaypointRow);
   }
 
   return result;

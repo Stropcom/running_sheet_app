@@ -133,6 +133,7 @@ type ExportRow = {
   id: number;
   rowNumber: number;
   time: string | null;
+  timeMinutes: number | null;
   observation: string | null;
   isLocked: boolean;
   members: { id: number; memberName: string }[];
@@ -277,53 +278,83 @@ function exportToPDF(
   // Spacer row inserted after each log entry for breathing room
   const spacerRow = `<tr><td colspan="3" style="padding:0;height:8px;border:none;background:transparent"></td></tr>`;
 
-  const tableRows = rows.map((row) => {
-    const rowBg = row.isLocked ? lockedBg : "transparent";
-    if (row.members.length === 0) {
-      const obsHtml = boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>"));
-      return `<tr style="background:${rowBg}">
-        <td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap">${row.time ?? ""}</td>
-        <td style="padding:6px 6px 8px;${bb};${cb}">${obsHtml}</td>
-        <td style="padding:6px 6px 8px;${bb};font-size:11px"></td>
-      </tr>${spacerRow}`;
+  // ── Build day-offset map for export rows (same rollover logic as the live RS view) ──
+  const exportDayOffsetMap = new Map<number, number>();
+  {
+    const timedByRowNumber = [...rows]
+      .filter((r) => r.timeMinutes != null)
+      .sort((a, b) => a.rowNumber - b.rowNumber);
+    let day = 0;
+    let prevEff = -1;
+    for (const r of timedByRowNumber) {
+      const mins = r.timeMinutes!;
+      const eff = mins + day * 1440;
+      if (prevEff >= 0 && eff < prevEff - 120) { day++; }
+      exportDayOffsetMap.set(r.id, day);
+      prevEff = mins + day * 1440;
     }
-    // Render one <tr> per member so CIN and Certified columns align perfectly
-    const memberRows = row.members.map((m, idx) => {
-      const isSpacer = m.memberName === "__SPACE__";
-      const cert = isSpacer ? undefined : row.certifications.find((c) => c.memberId === m.id && c.isActive);
-      const isFirst = idx === 0;
-      const rowspan = row.members.length;
-      const timeTd = isFirst
-        ? `<td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap" rowspan="${rowspan}">${row.time ?? ""}</td>`
-        : "";
-      const obsTd = isFirst
-        ? `<td style="padding:6px 6px 8px;${bb};${cb}" rowspan="${rowspan}">${boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>"))}</td>`
-        : "";
-      // Only draw bottom border on the last member row; no inner lines between members
-      const isLast = idx === row.members.length - 1;
-      const memberBb = isLast ? bb : "border-bottom:none";
-      // Top/bottom padding: generous on first/last, tight on inner member rows
-      const pt = isFirst ? "6px" : "2px";
-      const pb = isLast ? "8px" : "2px";
-      // Spacer: render as blank cell (no CIN, no cert)
-      if (isSpacer) {
+  }
+
+  const dateDividerRow = (label: string) =>
+    `<tr><td colspan="3" style="padding:4px 8px;background:#1e3a5f;color:#93c5fd;font-size:10px;font-weight:700;letter-spacing:0.08em;text-align:center;border-top:2px solid #334155;border-bottom:2px solid #334155">${label}</td></tr>`;
+
+  const tableRows = (() => {
+    let prevDay = -1;
+    const parts: string[] = [];
+    for (const row of rows) {
+      const day = exportDayOffsetMap.get(row.id) ?? 0;
+      if (row.timeMinutes != null && day > prevDay && prevDay >= 0) {
+        const divDate = new Date(sheetCreatedAt);
+        divDate.setDate(divDate.getDate() + day);
+        const divLabel = divDate.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }).toUpperCase();
+        parts.push(dateDividerRow(divLabel));
+      }
+      if (row.timeMinutes != null) prevDay = day;
+      const rowBg = row.isLocked ? lockedBg : "transparent";
+      if (row.members.length === 0) {
+        const obsHtml = boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>"));
+        parts.push(`<tr style="background:${rowBg}">
+          <td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap">${row.time ?? ""}</td>
+          <td style="padding:6px 6px 8px;${bb};${cb}">${obsHtml}</td>
+          <td style="padding:6px 6px 8px;${bb};font-size:11px"></td>
+        </tr>${spacerRow}`);
+        continue;
+      }
+      // Render one <tr> per member so CIN and Certified columns align perfectly
+      const memberRows = row.members.map((m, idx) => {
+        const isSpacer = m.memberName === "__SPACE__";
+        const cert = isSpacer ? undefined : row.certifications.find((c) => c.memberId === m.id && c.isActive);
+        const isFirst = idx === 0;
+        const rowspan = row.members.length;
+        const timeTd = isFirst
+          ? `<td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap" rowspan="${rowspan}">${row.time ?? ""}</td>`
+          : "";
+        const obsTd = isFirst
+          ? `<td style="padding:6px 6px 8px;${bb};${cb}" rowspan="${rowspan}">${boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>"))}</td>`
+          : "";
+        const isLast = idx === row.members.length - 1;
+        const memberBb = isLast ? bb : "border-bottom:none";
+        const pt = isFirst ? "6px" : "2px";
+        const pb = isLast ? "8px" : "2px";
+        if (isSpacer) {
+          return `<tr style="background:${rowBg}">
+            ${timeTd}${obsTd}
+            <td style="padding:${pt} 6px ${pb} 6px;${memberBb};font-size:11px">&nbsp;</td>
+          </tr>`;
+        }
+        const certifierCIN = cert ? ('certifiedByCIN' in cert ? (cert as any).certifiedByCIN || cert.certifiedByName : cert.certifiedByName) : null;
+        const cinCertCell = cert
+          ? `<span style='color:${certColor};white-space:nowrap'>&#10003; ${certifierCIN} <span style='color:#555;font-size:10px'>${format(new Date(cert.certifiedAt), "dd/MM/yy h:mmaaa")}</span></span>`
+          : `<span style='color:#ef4444;font-weight:700'>${m.memberName} Pending</span>`;
         return `<tr style="background:${rowBg}">
           ${timeTd}${obsTd}
-          <td style="padding:${pt} 6px ${pb} 6px;${memberBb};font-size:11px">&nbsp;</td>
+          <td style="padding:${pt} 6px ${pb} 6px;${memberBb};font-size:11px">${cinCertCell}</td>
         </tr>`;
-      }
-      // Build CIN Certified cell: tick + certifier CIN + date only
-      const certifierCIN = cert ? ('certifiedByCIN' in cert ? (cert as any).certifiedByCIN || cert.certifiedByName : cert.certifiedByName) : null;
-      const cinCertCell = cert
-        ? `<span style='color:${certColor};white-space:nowrap'>&#10003; ${certifierCIN} <span style='color:#555;font-size:10px'>${format(new Date(cert.certifiedAt), "dd/MM/yy h:mmaaa")}</span></span>`
-        : `<span style='color:#ef4444;font-weight:700'>${m.memberName} Pending</span>`;
-      return `<tr style="background:${rowBg}">
-        ${timeTd}${obsTd}
-        <td style="padding:${pt} 6px ${pb} 6px;${memberBb};font-size:11px">${cinCertCell}</td>
-      </tr>`;
-    }).join("");
-    return memberRows + spacerRow;
-  }).join("");
+      }).join("");
+      parts.push(memberRows + spacerRow);
+    }
+    return parts.join("");
+  })();
 
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
   <title>${sheetTitle}</title>
@@ -450,6 +481,13 @@ function exportToPDF(
     </thead>
     <tbody>${tableRows}</tbody>
   </table>
+  <!-- Close button: visible on screen, hidden during print -->
+  <div id="close-bar" style="position:fixed;bottom:0;left:0;right:0;padding:12px 16px;background:#1e293b;display:flex;justify-content:flex-end;gap:12px;z-index:9999;box-shadow:0 -2px 8px rgba(0,0,0,0.4)">
+    <button onclick="window.close()" style="background:#3b82f6;color:#fff;border:none;border-radius:6px;padding:10px 24px;font-size:14px;font-weight:700;cursor:pointer;font-family:system-ui,sans-serif">&#x2715; Close Preview</button>
+    <button onclick="window.print()" style="background:#22c55e;color:#fff;border:none;border-radius:6px;padding:10px 24px;font-size:14px;font-weight:700;cursor:pointer;font-family:system-ui,sans-serif">&#128438; Print / Save PDF</button>
+  </div>
+  <div style="height:60px"></div>
+  <style>#close-bar{display:flex !important} @media print{#close-bar{display:none !important}}</style>
 </body></html>`;
 
   const win = window.open("", "_blank");
@@ -608,8 +646,46 @@ async function exportToWord(
     ],
   });
 
+  // ── Build day-offset map for Word export rows ──
+  const wordDayOffsetMap = new Map<number, number>();
+  {
+    const timedByRowNumber = [...rows]
+      .filter((r) => r.timeMinutes != null)
+      .sort((a, b) => a.rowNumber - b.rowNumber);
+    let day = 0;
+    let prevEff = -1;
+    for (const r of timedByRowNumber) {
+      const mins = r.timeMinutes!;
+      const eff = mins + day * 1440;
+      if (prevEff >= 0 && eff < prevEff - 120) { day++; }
+      wordDayOffsetMap.set(r.id, day);
+      prevEff = mins + day * 1440;
+    }
+  }
+
   const dataRows: TableRow[] = [];
+  let wordPrevDay = -1;
   for (const row of rows) {
+    const wordDay = wordDayOffsetMap.get(row.id) ?? 0;
+    if (row.timeMinutes != null && wordDay > wordPrevDay && wordPrevDay >= 0) {
+      const divDate = new Date(sheetCreatedAt);
+      divDate.setDate(divDate.getDate() + wordDay);
+      const divLabel = divDate.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }).toUpperCase();
+      dataRows.push(new TableRow({
+        children: [
+          new TableCell({
+            columnSpan: 3,
+            shading: { type: ShadingType.SOLID, color: "1E3A5F", fill: "1E3A5F" },
+            borders: { top: outerBorder, bottom: outerBorder, left: outerBorder, right: outerBorder },
+            children: [new Paragraph({
+              alignment: AlignmentType.CENTER,
+              children: [new TextRun({ text: `── ${divLabel} ──`, bold: true, size: 18, color: "93C5FD" })],
+            })],
+          }),
+        ],
+      }));
+    }
+    if (row.timeMinutes != null) wordPrevDay = wordDay;
     const timeText = row.time ?? "";
     const obsText = row.observation ?? "";
 

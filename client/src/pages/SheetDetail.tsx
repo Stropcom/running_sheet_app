@@ -164,8 +164,14 @@ function ymdToPerthMs(ymd: string) {
   return new Date(`${ymd}${PERTH_OFFSET_SUFFIX}`).getTime();
 }
 
+const PERTH_OFFSET_MS = 8 * 60 * 60 * 1000; // UTC+8 in milliseconds
+
 function addDaysToYmd(ymd: string, days: number) {
-  const d = new Date(ymdToPerthMs(ymd) + days * 86400000);
+  // ymdToPerthMs gives Perth midnight as UTC ms (e.g. 2026-07-19 00:00 AWST = 2026-07-18 16:00 UTC).
+  // After adding N days we must shift by +8h before reading UTC date components so that
+  // the UTC year/month/day equals the Perth calendar date (otherwise +1 day stays on the same UTC date).
+  const perthMs = ymdToPerthMs(ymd) + days * 86400000;
+  const d = new Date(perthMs + PERTH_OFFSET_MS);
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
 }
 

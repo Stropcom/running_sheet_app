@@ -621,13 +621,32 @@ export default function RSMappingEmbedded() {
     if (!mapReady || !waypoints || !selectedSheetId) return;
     clearMap();
 
-    const queue = (waypoints as WaypointRow[]).filter((w) => w.address);
-    if (queue.length === 0) {
+    const allRows = (waypoints as WaypointRow[]);
+    const addressRows = allRows.filter((w) => w.address);
+    if (addressRows.length === 0) {
       setGeocoding(false);
       return;
     }
 
-    geocodeQueueRef.current = queue;
+    // Sort by effective date+time so multi-day sheets are numbered correctly.
+    // Build the date map using ALL rows (including non-address rows) so the
+    // time-regression inference has full context, then sort address rows only.
+    const sheetCreatedAt = (sheetsData as any[] | undefined)?.find((s: any) => s.id === selectedSheetId)?.createdAt ?? Date.now();
+    const dateMap = buildWpDateMap(allRows, sheetCreatedAt);
+
+    const sortedQueue = [...addressRows].sort((a, b) => {
+      const ymdA = dateMap.get(a.rowId) ?? "";
+      const ymdB = dateMap.get(b.rowId) ?? "";
+      if (ymdA !== ymdB) return ymdA < ymdB ? -1 : 1;
+      // Same date: sort by timeMinutes (nulls last)
+      const tA = a.timeMinutes ?? 9999;
+      const tB = b.timeMinutes ?? 9999;
+      if (tA !== tB) return tA - tB;
+      // Same time: preserve original rowNumber order
+      return a.rowNumber - b.rowNumber;
+    });
+
+    geocodeQueueRef.current = sortedQueue;
     geocodeIndexRef.current = 0;
     setGeocoding(true);
     geocodeNext();

@@ -952,7 +952,7 @@ export default function RSMappingEmbedded() {
         waypoints: waypointList,
         center: center ? { lat: center.lat(), lng: center.lng() } : undefined,
         zoom: zoom ?? undefined,
-        size: "800x350",
+        size: "1200x630",
       });
       mapImageDataUrl = result.dataUrl;
     } catch (err) {
@@ -988,8 +988,8 @@ export default function RSMappingEmbedded() {
     void exportIsMultiDay; // used via r.date above
 
     const mapSection = mapImageDataUrl
-      ? `<div style="margin:16px 24px 0;"><img src="${mapImageDataUrl}" style="width:100%;max-height:320px;object-fit:contain;border-radius:8px;border:1px solid #e5e7eb;display:block;" /></div>`
-      : `<div style="background:#f3f4f6;border:2px dashed #d1d5db;margin:16px 24px 0;border-radius:8px;height:200px;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:12px;">Map capture unavailable</div>`;
+      ? `<img src="${mapImageDataUrl}" style="width:100%;flex:1;object-fit:contain;display:block;" />`
+      : `<div style="flex:1;background:#f3f4f6;border:2px dashed #d1d5db;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:14px;">Map capture unavailable</div>`;
 
     const html = `<!DOCTYPE html>
 <html>
@@ -999,24 +999,52 @@ export default function RSMappingEmbedded() {
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: system-ui, sans-serif; font-size: 11px; color: #111; background: #fff; }
-  .header { background: #1e1b4b; color: #fff; padding: 14px 24px; }
-  .header h1 { font-size: 15px; font-weight: 700; margin-bottom: 2px; }
-  .header p { font-size: 10px; color: rgba(255,255,255,0.65); }
-  .table-section { padding: 0 24px 24px; }
-  .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #6366f1; margin: 14px 0 8px; }
+  /* ── Page 1: full-width map ── */
+  .map-page {
+    width: 100%;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    page-break-after: always;
+    break-after: page;
+  }
+  .map-header { background: #1e1b4b; color: #fff; padding: 12px 20px; flex-shrink: 0; }
+  .map-header h1 { font-size: 16px; font-weight: 700; margin-bottom: 2px; }
+  .map-header p { font-size: 10px; color: rgba(255,255,255,0.65); }
+  .map-image-wrap { flex: 1; overflow: hidden; display: flex; }
+  /* ── Page 2: waypoint table ── */
+  .table-page { padding: 16px 20px 24px; }
+  .table-header { background: #1e1b4b; color: #fff; padding: 10px 20px; margin: -16px -20px 14px; }
+  .table-header h2 { font-size: 13px; font-weight: 700; margin-bottom: 1px; }
+  .table-header p { font-size: 9px; color: rgba(255,255,255,0.65); }
+  .section-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #6366f1; margin-bottom: 8px; }
   table { width: 100%; border-collapse: collapse; }
   thead th { background: #1e1b4b; color: #fff; padding: 7px 10px; text-align: left; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
   tbody tr:nth-child(even) { background: #f9fafb; }
-  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } @page { size: A4 landscape; margin: 8mm; } }
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    @page { size: A4 landscape; margin: 8mm; }
+    .map-page { height: 100vh; page-break-after: always; break-after: page; }
+  }
 </style>
 </head>
 <body>
-<div class="header">
-  <h1>Visual RS — ${sheetTitle}</h1>
-  <p>${opName} · Generated: ${generatedAt}</p>
+<!-- PAGE 1: Full-width map -->
+<div class="map-page">
+  <div class="map-header">
+    <h1>Visual RS — ${sheetTitle}</h1>
+    <p>${opName} · Generated: ${generatedAt}</p>
+  </div>
+  <div class="map-image-wrap">
+    ${mapSection}
+  </div>
 </div>
-${mapSection}
-<div class="table-section">
+<!-- PAGE 2: Waypoint table -->
+<div class="table-page">
+  <div class="table-header">
+    <h2>Visual RS — ${sheetTitle}</h2>
+    <p>${opName} · Generated: ${generatedAt} · Page 2 of 2</p>
+  </div>
   <div class="section-title">Running Sheet Entries (${rows.length} waypoints)</div>
   <table>
     <thead><tr><th style="width:36px">#</th><th style="width:56px">Time</th><th style="width:32%">Address</th><th>Observation</th></tr></thead>

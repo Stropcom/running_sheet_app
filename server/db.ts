@@ -4145,19 +4145,76 @@ export async function getRsMappingWaypoints(sheetId: number): Promise<RsWaypoint
   const overrideMap = new Map(overrides.map((o) => [o.rowId, o]));
 
   // ── First pass: collect all address-bearing rows ──────────────────────────
+  // Strategy:
+  //  1. Bracketed format: "arrived at 50 Kings Park Rd, WEST PERTH WA (50 KPR)" → use extractEntitiesFromText
+  //  2. Unbracketed bare address: "50 Kings Park Road" (no brackets) → detect with street-type regex
+  //  3. Enrich unbracketed short-form addresses by matching against known full addresses seen earlier
+  //     in the sheet, so return visits get the correct full address for geocoding.
+
   interface RawWaypoint {
     row: typeof rows[number];
     address: string;
     addressFull: string;
   }
+
+  // Regex to detect a bare street address at the start of an observation or after a keyword
+  // Matches: "50 Kings Park Road", "cnr Smith St and Jones Ave", "146 Marine Parade, Cottesloe"
+  const BARE_ADDR_RE = /(?:^|(?:arrived?\s+at|departed?|at|to|from|outside|near|opposite|behind|beside|in\s+front\s+of|parked\s+(?:at|in|on|outside))\s+)((?:cnr\s+(?:of\s+)?|corner\s+of\s+|lot\s+\d+\s+|\d{1,5}[A-Za-z]?\/\d{1,5}\s+|\d{1,5}[A-Za-z]?\s+)[A-Za-z][\w\s,&'-]{3,80}?(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Highway|Hwy|Freeway|Fwy|Terrace|Tce|Parade|Pde|Circuit|Cct|Grove|Gr|Lane|Ln|Place|Pl|Court|Ct|Close|Cl|Crescent|Cres|Boulevard|Blvd|Way|Loop|Rise|Mews|Esplanade|Esp|Quay)(?:\s*,\s*[A-Za-z][\w\s]+)?)/i;
+
+  // Build a normalised-address → full-address lookup from bracketed entries seen so far
+  // Key: normalised street number + street name (lowercase, no punctuation)
+  // Value: the best full address string seen for that location
+  const knownAddressMap = new Map<string, string>(); // normKey → addressFull
+
+  const normaliseAddrKey = (addr: string): string =>
+    addr.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+
+  // Extract just the street number + street name (first two meaningful tokens) for fuzzy matching
+  const addrMatchKey = (addr: string): string => {
+    const norm = normaliseAddrKey(addr);
+    // Take up to the first comma or suburb/state boundary
+    const base = norm.split(/,|\bwa\b|\bnsw\b|\bvic\b|\bqld\b|\bsa\b|\btas\b|\bnt\b|\bact\b/)[0].trim();
+    return base;
+  };
+
   const addressRows: RawWaypoint[] = [];
+  const rowIdsWithBracketed = new Set<number>(); // rows already handled by bracketed pass
+
   for (const row of rows) {
     if (!row.observation) continue;
     const entities = extractEntitiesFromText(row.observation);
     const addrEntity = entities.find((e) => e.type === "address");
-    if (!addrEntity) continue;
-    addressRows.push({ row, address: addrEntity.shortForm, addressFull: addrEntity.fullDescription });
+    if (addrEntity) {
+      // Bracketed address found — use it and register in knownAddressMap
+      const matchKey = addrMatchKey(addrEntity.shortForm);
+      if (matchKey && !knownAddressMap.has(matchKey)) {
+        knownAddressMap.set(matchKey, addrEntity.fullDescription || addrEntity.shortForm);
+      }
+      addressRows.push({ row, address: addrEntity.shortForm, addressFull: addrEntity.fullDescription });
+      rowIdsWithBracketed.add(row.id);
+    }
   }
+
+  // Second sub-pass: detect unbracketed bare addresses in rows that had no bracketed address
+  for (const row of rows) {
+    if (!row.observation || rowIdsWithBracketed.has(row.id)) continue;
+    const obs = row.observation.trim();
+    const bareMatch = obs.match(BARE_ADDR_RE);
+    if (!bareMatch) continue;
+    const rawAddr = bareMatch[1].trim();
+    // Try to enrich with a known full address from earlier in the sheet
+    const matchKey = addrMatchKey(rawAddr);
+    const knownFull = knownAddressMap.get(matchKey);
+    addressRows.push({
+      row,
+      address: rawAddr,
+      addressFull: knownFull ?? rawAddr,
+    });
+  }
+
+  // Sort addressRows back into chronological order (same as rows array)
+  const rowOrderMap = new Map(rows.map((r, i) => [r.id, i]));
+  addressRows.sort((a, b) => (rowOrderMap.get(a.row.id) ?? 0) - (rowOrderMap.get(b.row.id) ?? 0));
 
   // ── Build a rowId → index map for the sorted full row list ───────────────
   const rowIndexMap = new Map(rows.map((r, i) => [r.id, i]));

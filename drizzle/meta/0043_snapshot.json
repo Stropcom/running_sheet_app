@@ -1,7 +1,7 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "713a9c36-2aac-4ad1-afe7-8e84c6b4fff7",
+  "id": "167948bc-05c1-4f1f-9049-16931ff46a99",
   "prevId": "760f6c67-9021-44e7-9038-5e36ce1cfad1",
   "tables": {
     "audit_logs": {
@@ -58,7 +58,7 @@
         },
         "action": {
           "name": "action",
-          "type": "enum('row_created','row_updated','row_deleted','member_added','member_removed','certified','uncertified','sheet_created','sheet_updated','sheet_deleted','sheet_closed','sheet_reopened','sheet_moved','sheet_copied','user_login','user_logout','user_created','user_updated','user_deleted','operation_status_changed','password_changed')",
+          "type": "enum('row_created','row_updated','row_deleted','member_added','member_removed','certified','uncertified','sheet_created','sheet_updated','sheet_deleted','sheet_closed','sheet_reopened','sheet_moved','sheet_copied','user_login','user_logout','user_created','user_updated','user_deleted','operation_status_changed','password_changed','attachment_added','attachment_deleted')",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
@@ -83,7 +83,9 @@
       "compositePrimaryKeys": {
         "audit_logs_id": {
           "name": "audit_logs_id",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -155,7 +157,9 @@
       "compositePrimaryKeys": {
         "certifications_id": {
           "name": "certifications_id",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -307,7 +311,9 @@
       "compositePrimaryKeys": {
         "custom_map_markers_id": {
           "name": "custom_map_markers_id",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -579,13 +585,17 @@
       "compositePrimaryKeys": {
         "governance_records_id": {
           "name": "governance_records_id",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {
         "governance_records_sheetId_unique": {
           "name": "governance_records_sheetId_unique",
-          "columns": ["sheetId"]
+          "columns": [
+            "sheetId"
+          ]
         }
       },
       "checkConstraint": {}
@@ -628,13 +638,17 @@
       "compositePrimaryKeys": {
         "op_manager_posted_weeks_id": {
           "name": "op_manager_posted_weeks_id",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {
         "op_manager_posted_weeks_weekStart_unique": {
           "name": "op_manager_posted_weeks_weekStart_unique",
-          "columns": ["weekStart"]
+          "columns": [
+            "weekStart"
+          ]
         }
       },
       "checkConstraint": {}
@@ -729,7 +743,9 @@
       "compositePrimaryKeys": {
         "op_manager_priority_rows_id": {
           "name": "op_manager_priority_rows_id",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -811,7 +827,9 @@
       "compositePrimaryKeys": {
         "op_manager_supervisor_contacts_id": {
           "name": "op_manager_supervisor_contacts_id",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -892,7 +910,9 @@
       "compositePrimaryKeys": {
         "op_manager_tasking_cells_id": {
           "name": "op_manager_tasking_cells_id",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -936,7 +956,9 @@
       "compositePrimaryKeys": {
         "operation_target_links_id": {
           "name": "operation_target_links_id",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -1032,7 +1054,9 @@
       "compositePrimaryKeys": {
         "operations_id": {
           "name": "operations_id",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -1090,7 +1114,9 @@
       "compositePrimaryKeys": {
         "push_subscriptions_id": {
           "name": "push_subscriptions_id",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -1169,7 +1195,9 @@
       "compositePrimaryKeys": {
         "row_attachments_id": {
           "name": "row_attachments_id",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -1221,7 +1249,9 @@
       "compositePrimaryKeys": {
         "row_members_id": {
           "name": "row_members_id",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -1323,7 +1353,9 @@
       "compositePrimaryKeys": {
         "rs_mapping_waypoints_id": {
           "name": "rs_mapping_waypoints_id",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -1432,7 +1464,9 @@
       "compositePrimaryKeys": {
         "running_sheets_id": {
           "name": "running_sheets_id",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -1529,7 +1563,9 @@
       "compositePrimaryKeys": {
         "sheet_rows_id": {
           "name": "sheet_rows_id",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -1597,13 +1633,17 @@
       "compositePrimaryKeys": {
         "shortcuts_id": {
           "name": "shortcuts_id",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {
         "shortcuts_trigger_unique": {
           "name": "shortcuts_trigger_unique",
-          "columns": ["trigger"]
+          "columns": [
+            "trigger"
+          ]
         }
       },
       "checkConstraint": {}
@@ -1655,7 +1695,9 @@
       "compositePrimaryKeys": {
         "style_guides_id": {
           "name": "style_guides_id",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -1745,7 +1787,9 @@
       "compositePrimaryKeys": {
         "style_rules_id": {
           "name": "style_rules_id",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -1817,7 +1861,9 @@
       "compositePrimaryKeys": {
         "sub_observation_certifications_id": {
           "name": "sub_observation_certifications_id",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -1861,7 +1907,9 @@
       "compositePrimaryKeys": {
         "sub_observation_members_id": {
           "name": "sub_observation_members_id",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -1922,7 +1970,9 @@
       "compositePrimaryKeys": {
         "sub_observations_id": {
           "name": "sub_observations_id",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -1989,7 +2039,9 @@
       "compositePrimaryKeys": {
         "target_shortcuts_id": {
           "name": "target_shortcuts_id",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -2140,7 +2192,9 @@
       "compositePrimaryKeys": {
         "targets_id": {
           "name": "targets_id",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -2232,7 +2286,10 @@
       "indexes": {
         "idx_user_device": {
           "name": "idx_user_device",
-          "columns": ["userId", "deviceId"],
+          "columns": [
+            "userId",
+            "deviceId"
+          ],
           "isUnique": true
         }
       },
@@ -2240,7 +2297,9 @@
       "compositePrimaryKeys": {
         "user_locations_id": {
           "name": "user_locations_id",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -2300,13 +2359,17 @@
       "compositePrimaryKeys": {
         "user_sidebar_order_id": {
           "name": "user_sidebar_order_id",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {
         "user_sidebar_order_userId_unique": {
           "name": "user_sidebar_order_userId_unique",
-          "columns": ["userId"]
+          "columns": [
+            "userId"
+          ]
         }
       },
       "checkConstraint": {}
@@ -2454,17 +2517,23 @@
       "compositePrimaryKeys": {
         "users_id": {
           "name": "users_id",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {
         "users_username_unique": {
           "name": "users_username_unique",
-          "columns": ["username"]
+          "columns": [
+            "username"
+          ]
         },
         "users_cin_unique": {
           "name": "users_cin_unique",
-          "columns": ["cin"]
+          "columns": [
+            "cin"
+          ]
         }
       },
       "checkConstraint": {}
@@ -2528,7 +2597,9 @@
       "compositePrimaryKeys": {
         "wipc_audit_log_id": {
           "name": "wipc_audit_log_id",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -2640,7 +2711,9 @@
       "compositePrimaryKeys": {
         "wipc_members_id": {
           "name": "wipc_members_id",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -2721,13 +2794,17 @@
       "compositePrimaryKeys": {
         "wipc_officer_profiles_id": {
           "name": "wipc_officer_profiles_id",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {
         "wipc_officer_profiles_userId_unique": {
           "name": "wipc_officer_profiles_userId_unique",
-          "columns": ["userId"]
+          "columns": [
+            "userId"
+          ]
         }
       },
       "checkConstraint": {}

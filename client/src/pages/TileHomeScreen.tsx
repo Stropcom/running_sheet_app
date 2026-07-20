@@ -40,6 +40,7 @@ import {
   List,
   ShieldCheck,
   ChevronRight,
+  Image,
 } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 
@@ -92,6 +93,15 @@ const TILE_CONFIG: Record<
     borderColor: "border-teal-500/30",
     accentColor: "#14b8a6",
     route: "/intelligence/mapping",
+  },
+  images: {
+    label: "Images",
+    icon: Image,
+    color: "text-pink-500",
+    bgColor: "bg-pink-500/10",
+    borderColor: "border-pink-500/30",
+    accentColor: "#ec4899",
+    route: "/images",
   },
   calendar: {
     label: "Calendar",
@@ -166,6 +176,7 @@ const DEFAULT_TILE_ORDER = [
   "intelligence",
   "targetRegistry",
   "mapping",
+  "images",
   "calendar",
   "shortcuts",
   "userManagement",

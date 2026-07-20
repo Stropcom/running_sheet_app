@@ -42,7 +42,7 @@ import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useTheme } from "@/contexts/ThemeContext";
 import {
-  FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen, Scale, FolderOpen, ChevronDown, ChevronRight, CalendarDays, Shield, ClipboardCheck as GovIcon, Map, ArrowRightLeft, HelpCircle, Trash2, WifiOff, Settings, UserCog, BarChart3, GripVertical, LayoutGrid, List } from "lucide-react";
+  FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen, Scale, FolderOpen, ChevronDown, ChevronRight, CalendarDays, Shield, ClipboardCheck as GovIcon, Map, ArrowRightLeft, HelpCircle, Trash2, WifiOff, Settings, UserCog, BarChart3, GripVertical, LayoutGrid, List, Image } from "lucide-react";
 import React, { CSSProperties, useEffect, useRef, useState, useCallback } from "react";
 import { useObservationFocus } from "@/contexts/ObservationFocusContext";
 import { useLocation } from "wouter";
@@ -178,6 +178,21 @@ function SortableNavItem({
       >
         <Map className="h-4 w-4 text-teal-400" />
         <span className={`flex-1 ${location === "/intelligence/mapping" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>Mapping</span>
+        {gripHandle}
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+
+  if (id === "images") return (
+    <SidebarMenuItem {...itemProps}>
+      <SidebarMenuButton
+        isActive={location === "/images" || location.startsWith("/images")}
+        onClick={() => setLocation("/images")}
+        tooltip="Images"
+        className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-pink-400/50 shadow-sm"
+      >
+        <Image className="h-4 w-4 text-pink-400" />
+        <span className={`flex-1 ${location === "/images" || location.startsWith("/images") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>Images</span>
         {gripHandle}
       </SidebarMenuButton>
     </SidebarMenuItem>
@@ -447,7 +462,7 @@ function DashboardLayoutContent({
 
   // ── Sidebar drag-to-reorder ──────────────────────────────────────────────
   const DEFAULT_NAV_ORDER = [
-    "operations", "governance", "todo", "mapping", "calendar", "shortcuts", "intelligence", "targetRegistry", "operationManager",
+    "operations", "governance", "todo", "mapping", "images", "calendar", "shortcuts", "intelligence", "targetRegistry", "operationManager",
   ];
   const [navOrder, setNavOrder] = useState<string[]>(DEFAULT_NAV_ORDER);
   const { data: sidebarOrderData } = trpc.sidebar.getOrder.useQuery(undefined, { staleTime: Infinity });

@@ -117,6 +117,16 @@ type Certification = {
   certifiedAt: number;
   isActive: boolean;
 };
+type RowAttachment = {
+  id: number;
+  rowId: number;
+  url: string;
+  mimeType: string;
+  caption: string | null;
+  uploadedByCIN: string | null;
+  createdAt: Date;
+};
+
 type SheetRow = {
   id: number;
   sheetId: number;
@@ -131,7 +141,12 @@ type SheetRow = {
   updatedAt: Date;
   members: Member[];
   certifications: Certification[];
+  attachments: RowAttachment[];
 };
+
+// Same phrase list boldImageryKeywords() highlights — used to decide whether
+// to show the "attach photo" affordance on an observation cell.
+const IMAGERY_PHRASE_PATTERN = /(PHOTOGRAPHS TAKEN|PHOTOGRAPH\/S TAKEN|PHOTOGRAPH TAKEN|VIDEO FOOTAGE TAKEN|VIDEO TAKEN|PHOTOS TAKEN|PHOTO TAKEN)/i;
 
 // ─── Export Helpers ─────────────────────────────────────────────────────────
 
@@ -146,7 +161,17 @@ type ExportRow = {
   isLocked: boolean;
   members: { id: number; memberName: string }[];
   certifications: { memberId: number; certifiedByName: string; certifiedAt: number; isActive: boolean }[];
+  attachments: { id: number; url: string }[];
 };
+
+// Renders attached photos as inline <img> tags at ~1/3 cell width, matching
+// the live table's proportions (see ObservationAttachments).
+function attachmentImagesHtml(attachments: { url: string }[]): string {
+  if (attachments.length === 0) return "";
+  return `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">` +
+    attachments.map((a) => `<img src="${a.url}" style="width:33%;max-width:160px;border:1px solid #ccc;border-radius:4px" />`).join("") +
+    `</div>`;
+}
 
 type OperationMeta = {
   name: string;
@@ -382,7 +407,7 @@ function exportToPDF(
       if (row.timeMinutes != null) prevDay = day;
       const rowBg = row.isLocked ? lockedBg : "transparent";
       if (row.members.length === 0) {
-        const obsHtml = boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>"));
+        const obsHtml = boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>")) + attachmentImagesHtml(row.attachments);
         parts.push(`<tr style="background:${rowBg}">
           <td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap">${row.time ?? ""}</td>
           <td style="padding:6px 6px 8px;${bb};${cb}">${obsHtml}</td>
@@ -400,7 +425,7 @@ function exportToPDF(
           ? `<td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap" rowspan="${rowspan}">${row.time ?? ""}</td>`
           : "";
         const obsTd = isFirst
-          ? `<td style="padding:6px 6px 8px;${bb};${cb}" rowspan="${rowspan}">${boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>"))}</td>`
+          ? `<td style="padding:6px 6px 8px;${bb};${cb}" rowspan="${rowspan}">${boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>"))}${attachmentImagesHtml(row.attachments)}</td>`
           : "";
         const isLast = idx === row.members.length - 1;
         const memberBb = isLast ? bb : "border-bottom:none";
@@ -1128,6 +1153,97 @@ function MemberCell({
             Add
           </button>
         )
+      )}
+    </div>
+  );
+}
+
+// ─── Observation Photo Attachments ─────────────────────────────────────────────
+// Shown inline under the observation text whenever it contains an imagery
+// phrase (e.g. "PHOTOGRAPH/S TAKEN" from the PT shortcut). Photos render
+// directly in the cell at ~1/3 width — same proportion used in the PDF export.
+
+function ObservationAttachments({
+  row,
+  canEdit,
+  onUpload,
+  onDelete,
+  uploading,
+}: {
+  row: SheetRow;
+  canEdit: boolean;
+  onUpload: (rowId: number, dataBase64: string, mimeType: string) => void;
+  onDelete: (id: number) => void;
+  uploading: boolean;
+}) {
+  const [preview, setPreview] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  if (!IMAGERY_PHRASE_PATTERN.test(row.observation ?? "")) return null;
+
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) { toast.error("Photo must be under 10 MB."); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      setPreview(dataUrl);
+      const base64 = dataUrl.split(",")[1];
+      onUpload(row.id, base64, file.type);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
+  return (
+    <div className="mt-2 flex flex-wrap items-end gap-2">
+      {row.attachments.map((a) => (
+        <div key={a.id} className="relative group" style={{ width: "33%", minWidth: 90, maxWidth: 160 }}>
+          <img
+            src={a.url}
+            alt="Attached photograph"
+            className="w-full rounded border border-border cursor-zoom-in"
+            onClick={() => setLightbox(a.url)}
+          />
+          {canEdit && (
+            <button
+              onClick={() => onDelete(a.id)}
+              title="Delete photo"
+              className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+      ))}
+      {preview && uploading && (
+        <div style={{ width: "33%", minWidth: 90, maxWidth: 160 }}>
+          <img src={preview} alt="Uploading…" className="w-full rounded border border-border opacity-50" />
+        </div>
+      )}
+      {canEdit && (
+        <>
+          <button
+            onClick={() => inputRef.current?.click()}
+            disabled={uploading}
+            title="Attach photo"
+            className="h-8 w-8 shrink-0 flex items-center justify-center rounded border border-dashed border-muted-foreground/40 text-muted-foreground hover:text-primary hover:border-primary/50 transition-colors"
+          >
+            <Camera className="h-4 w-4" />
+          </button>
+          <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+        </>
+      )}
+
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6"
+          onClick={() => setLightbox(null)}
+        >
+          <img src={lightbox} alt="Attached photograph" className="max-w-full max-h-full rounded shadow-2xl" />
+        </div>
       )}
     </div>
   );
@@ -1993,6 +2109,16 @@ export default function SheetDetail() {
   }), [isOnline, _removeMemberOnline, sheetId, rows]);
 
   const reorderMember = trpc.member.reorder.useMutation({
+    onSuccess: invalidateRows,
+    onError: (e) => toast.error(e.message),
+  });
+
+  const uploadAttachment = trpc.attachment.upload.useMutation({
+    onSuccess: invalidateRows,
+    onError: (e) => toast.error(e.message),
+  });
+
+  const deleteAttachment = trpc.attachment.delete.useMutation({
     onSuccess: invalidateRows,
     onError: (e) => toast.error(e.message),
   });
@@ -3110,6 +3236,13 @@ export default function SheetDetail() {
                           placeholder="Enter observation…"
                           onSave={(val) => updateRow.mutate({ id: row.id, observation: val })}
                           shortcuts={shortcutMap}
+                        />
+                        <ObservationAttachments
+                          row={row}
+                          canEdit={canEdit && !row.isLocked}
+                          onUpload={(rowId, dataBase64, mimeType) => uploadAttachment.mutate({ rowId, dataBase64, mimeType })}
+                          onDelete={(id) => deleteAttachment.mutate({ id })}
+                          uploading={uploadAttachment.isPending}
                         />
                       </td>
 

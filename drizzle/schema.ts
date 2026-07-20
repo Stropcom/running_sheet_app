@@ -134,6 +134,26 @@ export const certifications = mysqlTable("certifications", {
 export type Certification = typeof certifications.$inferSelect;
 export type InsertCertification = typeof certifications.$inferInsert;
 
+// ─── Row Attachments ────────────────────────────────────────────────────────
+// Photos attached to a specific running sheet row/observation. The file
+// itself lives in object storage (server/storage.ts); key/url just point
+// at it.
+
+export const rowAttachments = mysqlTable("row_attachments", {
+  id: int("id").autoincrement().primaryKey(),
+  rowId: int("rowId").notNull(),
+  key: varchar("key", { length: 512 }).notNull(),
+  url: varchar("url", { length: 512 }).notNull(),
+  mimeType: varchar("mimeType", { length: 64 }).notNull(),
+  caption: text("caption"),
+  uploadedBy: int("uploadedBy").notNull(),
+  uploadedByCIN: varchar("uploadedByCIN", { length: 64 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type RowAttachment = typeof rowAttachments.$inferSelect;
+export type InsertRowAttachment = typeof rowAttachments.$inferInsert;
+
 // ─── Targets ────────────────────────────────────────────────────────────────
 // One row per target in the global registry. Targets are independent of
 // operations — they are linked via the operation_target_links join table.
@@ -295,6 +315,8 @@ export const auditLogs = mysqlTable("audit_logs", {
     "user_deleted",
     "operation_status_changed",
     "password_changed",
+    "attachment_added",
+    "attachment_deleted",
   ]).notNull(),
   details: text("details"),
   createdAt: bigint("createdAt", { mode: "number" }).notNull(),

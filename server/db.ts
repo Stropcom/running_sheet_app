@@ -14,6 +14,8 @@ import {
   InsertUser,
   operations,
   rowMembers,
+  rowAttachments,
+  InsertRowAttachment,
   runningSheets,
   sheetRows,
   shortcuts,
@@ -631,6 +633,61 @@ export async function removeRowMember(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.delete(rowMembers).where(eq(rowMembers.id, id));
+}
+
+// ─── Row Attachments ────────────────────────────────────────────────────────
+
+export async function createRowAttachment(data: InsertRowAttachment) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(rowAttachments).values(data);
+  return result.insertId as number;
+}
+
+export async function getAttachmentsByRowIds(rowIds: number[]) {
+  const db = await getDb();
+  if (!db || rowIds.length === 0) return [];
+  return db.select().from(rowAttachments)
+    .where(inArray(rowAttachments.rowId, rowIds))
+    .orderBy(asc(rowAttachments.createdAt));
+}
+
+export async function getAttachmentById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(rowAttachments).where(eq(rowAttachments.id, id)).limit(1);
+  return result[0];
+}
+
+// All attachments across every running sheet in an operation, joined back to
+// their row/sheet so the Images folder can show which sheet/row each came from.
+export async function getAttachmentsByOperationId(operationId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({
+      id: rowAttachments.id,
+      rowId: rowAttachments.rowId,
+      url: rowAttachments.url,
+      mimeType: rowAttachments.mimeType,
+      caption: rowAttachments.caption,
+      uploadedByCIN: rowAttachments.uploadedByCIN,
+      createdAt: rowAttachments.createdAt,
+      sheetId: sheetRows.sheetId,
+      sheetTitle: runningSheets.title,
+      rowTime: sheetRows.time,
+    })
+    .from(rowAttachments)
+    .innerJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
+    .innerJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
+    .where(and(eq(runningSheets.operationId, operationId), isNull(runningSheets.deletedAt)))
+    .orderBy(desc(rowAttachments.createdAt));
+}
+
+export async function deleteRowAttachment(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(rowAttachments).where(eq(rowAttachments.id, id));
 }
 
 // ─── Certifications ───────────────────────────────────────────────────────────
@@ -4604,6 +4661,7 @@ export const DEFAULT_SIDEBAR_ORDER = [
   "governance",
   "todo",
   "mapping",
+  "images",
   "calendar",
   "shortcuts",
   "intelligence",
@@ -4650,7 +4708,7 @@ export const DEFAULT_TILE_ORDER = [
   "operations", "administration",          // row 1 — large (2)
   "todo", "governance", "intelligence", "targetRegistry",  // row 2 — medium (4)
   "mapping", "calendar", "shortcuts", "userManagement",    // row 3 — medium (4)
-  "operationManager",                                       // overflow — medium
+  "operationManager", "images",                             // overflow — medium
 ];
 
 export async function getHomePrefs(userId: number): Promise<{ mode: string; tileOrder: string[] }> {

@@ -122,6 +122,11 @@ import {
   getHomePrefs,
   setHomePrefs,
   DEFAULT_TILE_ORDER,
+  createRowAttachment,
+  getAttachmentsByRowIds,
+  getAttachmentById,
+  getAttachmentsByOperationId,
+  deleteRowAttachment,
 } from "./db";
 
 import { makeRequest, type RoadsResult } from "./_core/map";
@@ -761,14 +766,16 @@ export const appRouter = router({
       .query(async ({ input }) => {
         const rows = await getRowsBySheetId(input.sheetId);
         const rowIds = rows.map((r) => r.id);
-        const [members, certs] = await Promise.all([
+        const [members, certs, attachments] = await Promise.all([
           getMembersByRowIds(rowIds),
           getCertificationsByRowIds(rowIds),
+          getAttachmentsByRowIds(rowIds),
         ]);
         return rows.map((row) => ({
           ...row,
           members: members.filter((m) => m.rowId === row.id),
           certifications: certs.filter((c) => c.rowId === row.id && c.isActive),
+          attachments: attachments.filter((a) => a.rowId === row.id),
         }));
       }),
 
@@ -805,6 +812,67 @@ export const appRouter = router({
         if (row.isLocked) throw new TRPCError({ code: "FORBIDDEN", message: "Row is locked." });
         await deleteSheetRow(input.id);
         await createAuditLog({ sheetId: row.sheetId, rowId: input.id, userId: ctx.user.id, userName: ctx.user.cin ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "row_deleted", details: `Row deleted`, createdAt: Date.now() });
+        return { success: true };
+      }),
+  }),
+
+  // ─── Row Attachments (photos) ───────────────────────────────────────────────
+
+  attachment: router({
+    upload: protectedProcedure
+      .input(z.object({
+        rowId: z.number(),
+        // base64-encoded image data
+        dataBase64: z.string().min(1),
+        mimeType: z.string().regex(/^image\/(jpeg|png|webp|gif)$/, "Only JPEG, PNG, WebP or GIF images are allowed."),
+        caption: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const row = await getRowById(input.rowId);
+        if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Row not found." });
+        const buffer = Buffer.from(input.dataBase64, "base64");
+        // Limit to 10 MB — photos taken on a phone can run larger than the 5MB wallpaper cap
+        if (buffer.byteLength > 10 * 1024 * 1024) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Photo must be under 10 MB." });
+        }
+        const ext = input.mimeType.split("/")[1];
+        const key = `row-attachments/sheet-${row.sheetId}/row-${row.id}/${Date.now()}.${ext}`;
+        const { url } = await storagePut(key, buffer, input.mimeType);
+        const id = await createRowAttachment({
+          rowId: input.rowId,
+          key,
+          url,
+          mimeType: input.mimeType,
+          caption: input.caption,
+          uploadedBy: ctx.user.id,
+          uploadedByCIN: ctx.user.cin ?? undefined,
+        });
+        await createAuditLog({ sheetId: row.sheetId, rowId: row.id, userId: ctx.user.id, userName: ctx.user.cin ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "attachment_added", details: `Photo attached to row`, createdAt: Date.now() });
+        return { id, url };
+      }),
+
+    listByRow: protectedProcedure
+      .input(z.object({ rowId: z.number() }))
+      .query(async ({ input }) => {
+        return getAttachmentsByRowIds([input.rowId]);
+      }),
+
+    listByOperation: protectedProcedure
+      .input(z.object({ operationId: z.number() }))
+      .query(async ({ input }) => {
+        return getAttachmentsByOperationId(input.operationId);
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const attachment = await getAttachmentById(input.id);
+        if (!attachment) throw new TRPCError({ code: "NOT_FOUND", message: "Attachment not found." });
+        const row = await getRowById(attachment.rowId);
+        await deleteRowAttachment(input.id);
+        if (row) {
+          await createAuditLog({ sheetId: row.sheetId, rowId: row.id, userId: ctx.user.id, userName: ctx.user.cin ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "attachment_deleted", details: `Photo removed from row`, createdAt: Date.now() });
+        }
         return { success: true };
       }),
   }),
@@ -1082,9 +1150,10 @@ export const appRouter = router({
         const target = sheet.targetId ? await getTargetById(sheet.targetId) : null;
         const rows = await getRowsBySheetId(input.id);
         const rowIds = rows.map((r) => r.id);
-        const [members, certs] = await Promise.all([
+        const [members, certs, attachments] = await Promise.all([
           getMembersByRowIds(rowIds),
           getCertificationsByRowIds(rowIds),
+          getAttachmentsByRowIds(rowIds),
         ]);
         return {
           sheet,
@@ -1094,6 +1163,7 @@ export const appRouter = router({
             ...row,
             members: members.filter((m) => m.rowId === row.id),
             certifications: certs.filter((c) => c.rowId === row.id),
+            attachments: attachments.filter((a) => a.rowId === row.id),
           })),
         };
       }),

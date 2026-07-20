@@ -10,6 +10,7 @@ import { rateLimit } from "express-rate-limit";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
+import { registerLocalUploadsRoute } from "../storage";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -76,6 +77,7 @@ async function startServer() {
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerStorageProxy(app);
+  registerLocalUploadsRoute(app);
 
   // Apply rate limiting to OAuth routes and the credential-guessing-relevant
   // tRPC auth calls. NOTE: tRPC routes are dot-separated (e.g.

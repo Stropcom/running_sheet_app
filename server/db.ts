@@ -291,6 +291,8 @@ export async function deleteOperation(id: number) {
     }
   }
   await db.delete(operationTargetLinks).where(eq(operationTargetLinks.operationId, id));
+  // Delete custom map markers linked to this operation (hard delete — operation is gone)
+  await db.delete(customMapMarkers).where(eq(customMapMarkers.operationId, id));
   await db.delete(operations).where(eq(operations.id, id));
 }
 
@@ -371,6 +373,10 @@ export async function deleteRunningSheet(id: number) {
   }
   // Delete governance record for this sheet
   await db.delete(governanceRecords).where(eq(governanceRecords.sheetId, id));
+  // Delete audit logs for this sheet (retained for accountability until sheet is permanently deleted)
+  await db.delete(auditLogs).where(eq(auditLogs.sheetId, id));
+  // Delete RS mapping waypoint overrides for this sheet
+  await db.delete(rsMappingWaypoints).where(eq(rsMappingWaypoints.sheetId, id));
   await db.delete(runningSheets).where(eq(runningSheets.id, id));
 }
 

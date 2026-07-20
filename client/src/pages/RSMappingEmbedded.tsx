@@ -188,48 +188,50 @@ function offsetLatLng(lat: number, lng: number, dxM: number, dyM: number): { lat
  * Builds an offset-badge marker.
  *
  * AdvancedMarkerElement anchors at the BOTTOM-CENTRE of the content element.
- * Design: dot at bottom-centre, badge offset up-right, SVG leader line between them.
+ * So: dot MUST be at the bottom-centre of the wrapper.
+ * Badge is offset DX px to the right and DY px upward from the dot.
+ * A leader line + white halo connects dot to badge.
  *
- * Layout (all px):
- *   - DOT_R=4  : anchor dot radius
- *   - BADGE_R=10: badge radius (20px diameter)
- *   - DX=20    : badge centre rightward from dot
- *   - DY=28    : badge centre upward from dot
+ * Geometry (all px):
+ *   DOT_R  = 4   anchor dot radius
+ *   BADGE_R= 10  badge radius (20px diameter)
+ *   DX     = 20  badge centre rightward from dot
+ *   DY     = 28  badge centre upward from dot
  *
- * The wrapper width is centred on the dot (dot at horizontal centre, bottom).
+ * Wrapper size:
+ *   width  = DOT_R*2 + DX + BADGE_R + extra  (dot at left half, badge extends right)
+ *   height = DY + BADGE_R + DOT_R + extra
+ *   dot is at (DOT_R + extra/2, height - DOT_R - extra/2)  ← bottom-centre
  */
 function buildNumberPin(index: number, isFirst: boolean, isLast: boolean): HTMLElement {
   let bg = "#6366f1";
   if (isFirst) bg = "#16a34a";
   if (isLast) bg = "#dc2626";
 
-  const DX = 20;      // badge centre rightward from dot
-  const DY = 28;      // badge centre upward from dot
-  const BADGE_R = 10; // badge radius → 20px diameter
-  const DOT_R = 4;    // anchor dot radius
+  const DX = 20;       // badge centre rightward from dot
+  const DY = 28;       // badge centre upward from dot
+  const BADGE_R = 10;  // badge radius → 20px diameter
+  const DOT_R = 4;     // anchor dot radius
+  const PAD = 3;       // extra padding so circles don't clip
 
-  // The dot is at the bottom-centre of the wrapper.
-  // Wrapper must be wide enough to contain the badge (which extends DX+BADGE_R to the right of dot)
-  // and tall enough to contain the badge (which extends DY+BADGE_R above dot).
-  // Left padding: DOT_R (so dot circle doesn't clip)
-  // Right padding: DX + BADGE_R + DOT_R (badge right edge)
-  const leftPad = DOT_R + 2;
-  const rightPad = DX + BADGE_R + DOT_R + 2;
-  const svgW = leftPad + rightPad;
-  const svgH = DY + BADGE_R + DOT_R + 4;
+  // AdvancedMarkerElement anchors at the BOTTOM-CENTRE of the wrapper element.
+  // Therefore: dot MUST be at x = svgW/2 (horizontal centre), y = svgH - PAD (near bottom).
+  //
+  // The badge extends DX right and DY up from the dot.
+  // Right side needs: DX + BADGE_R + PAD from dot centre.
+  // Left side needs: DOT_R + PAD from dot centre (just enough for the dot circle).
+  // To keep dot at centre, make both halves equal to the larger side.
+  const halfW = DX + BADGE_R + PAD;   // right side dominates
+  const svgW = halfW * 2;              // dot at x = halfW (= svgW/2) ✓
+  const svgH = DY + BADGE_R + DOT_R + PAD * 2;
 
-  // Dot position within SVG
-  const dotCx = leftPad;        // dot at left-pad from left
-  const dotCy = svgH - DOT_R - 2; // dot near bottom
+  // Dot at bottom-centre of wrapper
+  const dotCx = halfW;                 // = svgW / 2 exactly
+  const dotCy = svgH - DOT_R - PAD;
 
-  // Badge centre within SVG
+  // Badge centre: dot + offset
   const badgeCx = dotCx + DX;
   const badgeCy = dotCy - DY;
-
-  // AdvancedMarkerElement anchors at bottom-centre of the wrapper.
-  // We need the dot to be at the bottom-centre.
-  // So we shift the wrapper left by (dotCx - svgW/2) using margin-left.
-  const shiftLeft = dotCx - svgW / 2;
 
   const wrapper = document.createElement("div");
   wrapper.style.cssText = [
@@ -238,17 +240,15 @@ function buildNumberPin(index: number, isFirst: boolean, isLast: boolean): HTMLE
     `height:${svgH}px`,
     "cursor:pointer",
     "user-select:none",
-    // Shift horizontally so the dot (not the centre of the wrapper) aligns with the coordinate
-    `margin-left:${-shiftLeft}px`,
   ].join(";");
 
-  // SVG: leader line + anchor dot
+  // SVG: white halo + coloured leader line + anchor dot
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("width", String(svgW));
   svg.setAttribute("height", String(svgH));
   svg.style.cssText = "position:absolute;top:0;left:0;pointer-events:none;overflow:visible;";
 
-  // White halo under leader line for visibility on any background
+  // White halo for visibility on any map background
   const lineHalo = document.createElementNS("http://www.w3.org/2000/svg", "line");
   lineHalo.setAttribute("x1", String(dotCx));
   lineHalo.setAttribute("y1", String(dotCy));
@@ -256,7 +256,7 @@ function buildNumberPin(index: number, isFirst: boolean, isLast: boolean): HTMLE
   lineHalo.setAttribute("y2", String(badgeCy));
   lineHalo.setAttribute("stroke", "#fff");
   lineHalo.setAttribute("stroke-width", "3");
-  lineHalo.setAttribute("stroke-opacity", "0.7");
+  lineHalo.setAttribute("stroke-opacity", "0.75");
   svg.appendChild(lineHalo);
 
   // Coloured leader line
@@ -270,7 +270,7 @@ function buildNumberPin(index: number, isFirst: boolean, isLast: boolean): HTMLE
   line.setAttribute("stroke-opacity", "0.9");
   svg.appendChild(line);
 
-  // Anchor dot
+  // Anchor dot at exact coordinate
   const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
   dot.setAttribute("cx", String(dotCx));
   dot.setAttribute("cy", String(dotCy));
@@ -282,7 +282,7 @@ function buildNumberPin(index: number, isFirst: boolean, isLast: boolean): HTMLE
 
   wrapper.appendChild(svg);
 
-  // Badge (positioned absolutely over the SVG)
+  // Badge div (positioned absolutely over the SVG)
   const badge = document.createElement("div");
   badge.style.cssText = [
     "position:absolute",

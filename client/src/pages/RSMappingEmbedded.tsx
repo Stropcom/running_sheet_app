@@ -436,26 +436,35 @@ export default function RSMappingEmbedded() {
       return;
     }
 
-    const addressQuery = row.addressFull || row.address || "";
-    if (!addressQuery || !geocoderRef.current) {
+    const rawQuery = row.addressFull || row.address || "";
+    if (!rawQuery || !geocoderRef.current) {
       geocodeTimerRef.current = setTimeout(geocodeNext, GEOCODE_DELAY_MS);
       return;
     }
 
-    geocoderRef.current.geocode({ address: addressQuery }, (results, status) => {
+    // Append ", Perth WA" to addresses that don't already contain a state code,
+    // so ambiguous street names resolve to Western Australia instead of overseas.
+    const hasState = /\b(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\b/.test(rawQuery);
+    const addressQuery = hasState ? rawQuery : `${rawQuery}, Perth WA`;
+
+    geocoderRef.current.geocode(
+      { address: addressQuery, componentRestrictions: { country: "au" } },
+      (results, status) => {
       if (status === "OK" && results && results[0]) {
         const pos = results[0].geometry.location;
-        placeWaypointMarker(row, pos.lat(), pos.lng());
+        placeWaypointMarker(row, pos.lat(), pos.lng(), idx);
       }
       geocodeTimerRef.current = setTimeout(geocodeNext, GEOCODE_DELAY_MS);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [updatePolyline, setWaypointCount]);
 
-  function placeWaypointMarker(row: WaypointRow, lat: number, lng: number) {
+  function placeWaypointMarker(row: WaypointRow, lat: number, lng: number, queueIndex?: number) {
     if (!mapRef.current) return;
     const total = geocodeQueueRef.current.length;
-    const index = placedWaypointsRef.current.length + 1;
+    // Use the pre-assigned queue position (1-based) so numbers always reflect
+    // the chronological RS order, regardless of geocoding completion order.
+    const index = queueIndex != null ? queueIndex + 1 : placedWaypointsRef.current.length + 1;
     const isFirst = index === 1;
     const isLast = index === total;
 

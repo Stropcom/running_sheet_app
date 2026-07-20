@@ -630,7 +630,9 @@ export default function RSMappingEmbedded() {
     if (!mapReady || !waypoints || !selectedSheetId) return;
     clearMap();
 
-    const allRows = (waypoints as WaypointRow[]);
+    // Sort ALL rows by rowNumber first so the time-regression inference in
+    // buildWpDateMap always runs in the correct entry sequence.
+    const allRows = [...(waypoints as WaypointRow[])].sort((a, b) => a.rowNumber - b.rowNumber);
     const addressRows = allRows.filter((w) => w.address);
     if (addressRows.length === 0) {
       setGeocoding(false);

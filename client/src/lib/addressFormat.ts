@@ -373,16 +373,16 @@ export function extractShortAddress(hbf: string): string {
  *  3. If no bracket code is present, returns an empty string.
  *
  * Examples:
- *   "grey Ford Escape, bearing WA registration 1IEK105 (Vehicle 1IEK105)" → "1IEK105"
- *   "blue Toyota Hilux, bearing WA rego 1ABC123 (Vehicle 1ABC123)"        → "1ABC123"
+ *   "grey Ford Escape, bearing WA registration 1IEK105 (Vehicle 1IEK105)" → "Vehicle 1IEK105"
+ *   "blue Toyota Hilux, bearing WA rego 1ABC123 (Vehicle 1ABC123)"        → "Vehicle 1ABC123"
  *   "grey Ford Escape, bearing WA registration 1IEK105"                   → "" (no bracket)
  */
 export function extractShortVehicle(v1f: string): string {
   if (!v1f) return "";
   const bracketMatch = v1f.match(/\(([^)]{1,80})\)\s*$/);
   if (!bracketMatch) return "";
-  // Strip leading "Vehicle " prefix so V1 stores just the registration
-  return bracketMatch[1].trim().replace(/^Vehicle\s+/i, "").trim();
+  // Return the full bracket content (e.g. "Vehicle 1ABC 234") unchanged
+  return bracketMatch[1].trim();
 }
 
 /**

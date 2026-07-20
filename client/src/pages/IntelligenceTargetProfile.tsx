@@ -8,6 +8,7 @@ import {
   ArrowLeft, FileDown, User, Car, MapPin, Building2, FileText, Folder,
 } from "lucide-react";
 import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
+import { EntityPhotosSection } from "@/components/EntityPhotosSection";
 
 // ─── Colour palette (matches Intelligence.tsx) ─────────────────────────────
 const CHIP = {
@@ -245,6 +246,8 @@ export default function IntelligenceTargetProfile() {
                 ))}
               </div>
             </div>
+
+            <EntityPhotosSection category="target" targetId={targetId} />
 
             {/* Operations */}
             <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">

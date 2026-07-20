@@ -16,6 +16,8 @@ import {
   rowMembers,
   rowAttachments,
   InsertRowAttachment,
+  attachmentEntityLinks,
+  InsertAttachmentEntityLink,
   runningSheets,
   sheetRows,
   shortcuts,
@@ -648,7 +650,7 @@ export async function getAttachmentsByRowIds(rowIds: number[]) {
   const db = await getDb();
   if (!db || rowIds.length === 0) return [];
   return db.select().from(rowAttachments)
-    .where(inArray(rowAttachments.rowId, rowIds))
+    .where(and(inArray(rowAttachments.rowId, rowIds), isNull(rowAttachments.deletedAt)))
     .orderBy(asc(rowAttachments.createdAt));
 }
 
@@ -680,7 +682,7 @@ export async function getAttachmentsByOperationId(operationId: number) {
     .from(rowAttachments)
     .innerJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
     .innerJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
-    .where(and(eq(runningSheets.operationId, operationId), isNull(runningSheets.deletedAt)))
+    .where(and(eq(runningSheets.operationId, operationId), isNull(runningSheets.deletedAt), isNull(rowAttachments.deletedAt)))
     .orderBy(desc(rowAttachments.createdAt));
 }
 
@@ -702,14 +704,134 @@ export async function getAttachmentsBySheetId(sheetId: number) {
     })
     .from(rowAttachments)
     .innerJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
-    .where(eq(sheetRows.sheetId, sheetId))
+    .where(and(eq(sheetRows.sheetId, sheetId), isNull(rowAttachments.deletedAt)))
     .orderBy(desc(rowAttachments.createdAt));
 }
 
+// Soft-delete — goes to the Recycle Bin for 7 days before purge
+export async function softDeleteAttachment(id: number, cin: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(rowAttachments).set({ deletedAt: Date.now(), deletedByCIN: cin }).where(eq(rowAttachments.id, id));
+}
+
+export async function reinstateAttachment(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(rowAttachments).set({ deletedAt: null, deletedByCIN: null }).where(eq(rowAttachments.id, id));
+}
+
+// Permanent delete — used when purging expired Recycle Bin items, or by an
+// admin hard-deleting straight from the Recycle Bin.
 export async function deleteRowAttachment(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  await db.delete(attachmentEntityLinks).where(eq(attachmentEntityLinks.attachmentId, id));
   await db.delete(rowAttachments).where(eq(rowAttachments.id, id));
+}
+
+// ─── Attachment Entity Links ────────────────────────────────────────────────
+// Matches the same normalization getAllIntelligenceEntities() uses to
+// de-duplicate vehicle/associate/location entities, so a link's entityKey
+// lines up with entity.shortForm regardless of casing/whitespace.
+export function normalizeEntityLabel(label: string): string {
+  return label.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+export async function linkAttachmentToEntity(data: {
+  attachmentId: number;
+  category: "target" | "vehicle" | "associate" | "location";
+  targetId?: number;
+  entityLabel: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const entityKey = data.category === "target" ? null : normalizeEntityLabel(data.entityLabel);
+  // Avoid duplicate links to the same entity
+  const existing = await db.select({ id: attachmentEntityLinks.id }).from(attachmentEntityLinks).where(and(
+    eq(attachmentEntityLinks.attachmentId, data.attachmentId),
+    eq(attachmentEntityLinks.category, data.category),
+    data.category === "target"
+      ? eq(attachmentEntityLinks.targetId, data.targetId ?? -1)
+      : eq(attachmentEntityLinks.entityKey, entityKey ?? ""),
+  )).limit(1);
+  if (existing.length > 0) return existing[0].id;
+  const insertData: InsertAttachmentEntityLink = {
+    attachmentId: data.attachmentId,
+    category: data.category,
+    targetId: data.category === "target" ? data.targetId : null,
+    entityKey,
+    entityLabel: data.entityLabel,
+  };
+  const [result] = await db.insert(attachmentEntityLinks).values(insertData);
+  return result.insertId as number;
+}
+
+export async function unlinkAttachmentFromEntity(linkId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(attachmentEntityLinks).where(eq(attachmentEntityLinks.id, linkId));
+}
+
+export async function getEntityLinksByAttachmentId(attachmentId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(attachmentEntityLinks).where(eq(attachmentEntityLinks.attachmentId, attachmentId));
+}
+
+// One row per distinct linked entity with its photo count — used to show a
+// camera badge on Intelligence Folder rows without an N+1 query per entity.
+export async function getEntityLinkCounts() {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({
+      category: attachmentEntityLinks.category,
+      targetId: attachmentEntityLinks.targetId,
+      entityKey: attachmentEntityLinks.entityKey,
+      count: sql<number>`count(*)`.as("count"),
+    })
+    .from(attachmentEntityLinks)
+    .innerJoin(rowAttachments, eq(attachmentEntityLinks.attachmentId, rowAttachments.id))
+    .where(isNull(rowAttachments.deletedAt))
+    .groupBy(attachmentEntityLinks.category, attachmentEntityLinks.targetId, attachmentEntityLinks.entityKey);
+}
+
+// All photos linked to one entity, joined back to row/sheet for display.
+export async function getAttachmentsForEntity(params: {
+  category: "target" | "vehicle" | "associate" | "location";
+  targetId?: number;
+  entityLabel?: string;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  const entityKey = params.entityLabel ? normalizeEntityLabel(params.entityLabel) : null;
+  const links = await db.select().from(attachmentEntityLinks).where(and(
+    eq(attachmentEntityLinks.category, params.category),
+    params.category === "target"
+      ? eq(attachmentEntityLinks.targetId, params.targetId ?? -1)
+      : eq(attachmentEntityLinks.entityKey, entityKey ?? ""),
+  ));
+  if (links.length === 0) return [];
+  const attachmentIds = links.map((l) => l.attachmentId);
+  const rows = await db
+    .select({
+      id: rowAttachments.id,
+      rowId: rowAttachments.rowId,
+      url: rowAttachments.url,
+      mimeType: rowAttachments.mimeType,
+      uploadedByCIN: rowAttachments.uploadedByCIN,
+      createdAt: rowAttachments.createdAt,
+      sheetId: sheetRows.sheetId,
+      sheetTitle: runningSheets.title,
+      rowTime: sheetRows.time,
+    })
+    .from(rowAttachments)
+    .innerJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
+    .innerJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
+    .where(and(inArray(rowAttachments.id, attachmentIds), isNull(rowAttachments.deletedAt)))
+    .orderBy(desc(rowAttachments.createdAt));
+  return rows.map((r) => ({ ...r, linkId: links.find((l) => l.attachmentId === r.id)!.id }));
 }
 
 // ─── Certifications ───────────────────────────────────────────────────────────
@@ -2911,7 +3033,7 @@ const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type RecycleBinItem = {
   id: number;
-  type: "operation" | "sheet" | "target" | "map_marker";
+  type: "operation" | "sheet" | "target" | "map_marker" | "attachment";
   label: string;
   sublabel?: string;
   deletedAt: number;
@@ -3007,6 +3129,37 @@ export async function getRecycleBinItems(): Promise<RecycleBinItem[]> {
     });
   }
 
+  // Deleted photo attachments
+  const deletedAttachments = await db
+    .select({
+      id: rowAttachments.id,
+      deletedAt: rowAttachments.deletedAt,
+      deletedByCIN: rowAttachments.deletedByCIN,
+      sheetId: sheetRows.sheetId,
+      sheetTitle: runningSheets.title,
+      rowTime: sheetRows.time,
+      operationId: runningSheets.operationId,
+      operationName: operations.name,
+    })
+    .from(rowAttachments)
+    .innerJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
+    .innerJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
+    .leftJoin(operations, eq(runningSheets.operationId, operations.id))
+    .where(and(isNotNull(rowAttachments.deletedAt), sql`${rowAttachments.deletedAt} > ${cutoff}`));
+  for (const a of deletedAttachments) {
+    items.push({
+      id: a.id,
+      type: "attachment",
+      label: `Photo — ${a.sheetTitle}`,
+      sublabel: a.rowTime ? `${a.operationName ?? ""} · ${a.rowTime}` : a.operationName ?? undefined,
+      deletedAt: a.deletedAt!,
+      deletedByCIN: a.deletedByCIN ?? null,
+      expiresAt: a.deletedAt! + SEVEN_DAYS_MS,
+      operationId: a.operationId,
+      operationName: a.operationName,
+    });
+  }
+
   // Sort newest deleted first
   return items.sort((a, b) => b.deletedAt - a.deletedAt);
 }
@@ -3056,6 +3209,14 @@ export async function purgeExpiredRecycleBinItems() {
     .where(and(isNotNull(targets.deletedAt), sql`${targets.deletedAt} <= ${cutoff}`));
   for (const t of expiredTargets) {
     await deleteTarget(t.id);
+  }
+  // Permanently delete expired photo attachments
+  const expiredAttachments = await db
+    .select({ id: rowAttachments.id })
+    .from(rowAttachments)
+    .where(and(isNotNull(rowAttachments.deletedAt), sql`${rowAttachments.deletedAt} <= ${cutoff}`));
+  for (const a of expiredAttachments) {
+    await deleteRowAttachment(a.id);
   }
 }
 

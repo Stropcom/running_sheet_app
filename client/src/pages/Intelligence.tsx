@@ -26,6 +26,7 @@ import {
   FileText,
   LayoutGrid,
   Route,
+  Camera,
 } from "lucide-react";
 import RSMappingEmbedded from "@/pages/RSMappingEmbedded";
 import { ViewToggle } from "@/components/ViewToggle";
@@ -1022,6 +1023,21 @@ export default function IntelligencePage() {
   const { viewMode } = useViewMode();
   const { data: entities, isLoading } = trpc.intelligence.getEntities.useQuery();
   const { data: allOps } = trpc.operation.list.useQuery();
+  const { data: entityLinkCounts } = trpc.attachment.entityLinkCounts.useQuery();
+  const photoCountByKey = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const l of entityLinkCounts ?? []) {
+      const key = l.category === "target" ? `target::${l.targetId}` : `${l.category}::${l.entityKey}`;
+      map.set(key, l.count);
+    }
+    return map;
+  }, [entityLinkCounts]);
+  const photoCountForEntity = (entity: { isTarget?: boolean; targetId?: number | null; type: string; shortForm: string }): number => {
+    const key = entity.isTarget && entity.targetId
+      ? `target::${entity.targetId}`
+      : `${entity.type === "vehicle" ? "vehicle" : entity.type === "address" || entity.type === "business" ? "location" : "associate"}::${entity.shortForm.toLowerCase().replace(/\s+/g, " ").trim()}`;
+    return photoCountByKey.get(key) ?? 0;
+  };
   const [, navigate] = useLocation();
   const [search, setSearch]         = useState("");
   const [activeTab, setActiveTab]   = useState<TabView>("operations");
@@ -1367,9 +1383,17 @@ export default function IntelligencePage() {
                           </span>
                         )}
                       </div>
-                      <p className="text-[10px] text-muted-foreground truncate">
-                        {TYPE_LABELS[entity.type]}
-                      </p>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[10px] text-muted-foreground truncate">
+                          {TYPE_LABELS[entity.type]}
+                        </p>
+                        {photoCountForEntity(entity) > 0 && (
+                          <span title={`${photoCountForEntity(entity)} linked photo${photoCountForEntity(entity) === 1 ? "" : "s"}`} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-pink-500/10 text-pink-500 border border-pink-500/30 shrink-0">
+                            <Camera className="w-3 h-3" />
+                            {photoCountForEntity(entity)}
+                          </span>
+                        )}
+                      </div>
                     </button>
                   );
                 })}
@@ -1428,6 +1452,12 @@ export default function IntelligencePage() {
                           <p className="text-xs font-medium text-foreground">{entity.occurrences.length}×</p>
                           <p className="text-xs text-muted-foreground">{uniqueSheets(entity.occurrences).length} sheet{uniqueSheets(entity.occurrences).length !== 1 ? "s" : ""}</p>
                         </div>
+                        {photoCountForEntity(entity) > 0 && (
+                          <span title={`${photoCountForEntity(entity)} linked photo${photoCountForEntity(entity) === 1 ? "" : "s"}`} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-pink-500/10 text-pink-500 border border-pink-500/30 shrink-0">
+                            <Camera className="w-3 h-3" />
+                            {photoCountForEntity(entity)}
+                          </span>
+                        )}
                         <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
                       </button>
                     );

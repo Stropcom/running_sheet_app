@@ -14,14 +14,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Trash2, RotateCcw, FolderOpen, FileText, User, MapPin, Calendar } from "lucide-react";
+import { Trash2, RotateCcw, FolderOpen, FileText, User, MapPin, Calendar, Camera } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { ViewToggle } from "@/components/ViewToggle";
 import { useViewMode } from "@/contexts/ViewModeContext";
 
 type RecycleBinItem = {
   id: number;
-  type: "operation" | "sheet" | "target" | "map_marker";
+  type: "operation" | "sheet" | "target" | "map_marker" | "attachment";
   label: string;
   sublabel?: string;
   deletedAt: number;
@@ -33,6 +33,7 @@ function typeIcon(type: RecycleBinItem["type"]) {
   if (type === "operation") return <FolderOpen className="w-5 h-5 text-blue-500" />;
   if (type === "sheet") return <FileText className="w-5 h-5 text-teal-500" />;
   if (type === "map_marker") return <MapPin className="w-5 h-5 text-orange-500" />;
+  if (type === "attachment") return <Camera className="w-5 h-5 text-pink-500" />;
   return <User className="w-5 h-5 text-purple-500" />;
 }
 
@@ -40,6 +41,7 @@ function typeLabel(type: RecycleBinItem["type"]) {
   if (type === "operation") return "Operation";
   if (type === "sheet") return "Running Sheet";
   if (type === "map_marker") return "Map Marker";
+  if (type === "attachment") return "Photo";
   return "Target";
 }
 
@@ -47,6 +49,7 @@ function typeBadgeClass(type: RecycleBinItem["type"]) {
   if (type === "operation") return "bg-blue-100 text-blue-700 border-blue-200";
   if (type === "sheet") return "bg-teal-100 text-teal-700 border-teal-200";
   if (type === "map_marker") return "bg-orange-100 text-orange-700 border-orange-200";
+  if (type === "attachment") return "bg-pink-100 text-pink-700 border-pink-200";
   return "bg-purple-100 text-purple-700 border-purple-200";
 }
 

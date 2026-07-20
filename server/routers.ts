@@ -129,6 +129,12 @@ import {
   getAttachmentsByOperationId,
   getAttachmentsBySheetId,
   deleteRowAttachment,
+  softDeleteAttachment,
+  reinstateAttachment,
+  linkAttachmentToEntity,
+  unlinkAttachmentFromEntity,
+  getEntityLinkCounts,
+  getAttachmentsForEntity,
 } from "./db";
 
 import { makeRequest, type RoadsResult } from "./_core/map";
@@ -909,11 +915,48 @@ export const appRouter = router({
         const attachment = await getAttachmentById(input.id);
         if (!attachment) throw new TRPCError({ code: "NOT_FOUND", message: "Attachment not found." });
         const row = await getRowById(attachment.rowId);
-        await deleteRowAttachment(input.id);
+        // Soft-delete — goes to the Recycle Bin for 7 days before purge
+        await softDeleteAttachment(input.id, ctx.user.cin ?? ctx.user.username ?? "Unknown");
         if (row) {
           await createAuditLog({ sheetId: row.sheetId, rowId: row.id, userId: ctx.user.id, userName: ctx.user.cin ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "attachment_deleted", details: `Photo removed from row`, createdAt: Date.now() });
         }
         return { success: true };
+      }),
+
+    linkToEntity: protectedProcedure
+      .input(z.object({
+        attachmentId: z.number(),
+        category: z.enum(["target", "vehicle", "associate", "location"]),
+        targetId: z.number().optional(),
+        entityLabel: z.string().min(1),
+      }))
+      .mutation(async ({ input }) => {
+        if (input.category === "target" && !input.targetId) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "targetId is required for target links." });
+        }
+        const id = await linkAttachmentToEntity(input);
+        return { id };
+      }),
+
+    unlinkFromEntity: protectedProcedure
+      .input(z.object({ linkId: z.number() }))
+      .mutation(async ({ input }) => {
+        await unlinkAttachmentFromEntity(input.linkId);
+        return { success: true };
+      }),
+
+    entityLinkCounts: protectedProcedure.query(async () => {
+      return getEntityLinkCounts();
+    }),
+
+    byEntity: protectedProcedure
+      .input(z.object({
+        category: z.enum(["target", "vehicle", "associate", "location"]),
+        targetId: z.number().optional(),
+        entityLabel: z.string().optional(),
+      }))
+      .query(async ({ input }) => {
+        return getAttachmentsForEntity(input);
       }),
   }),
 
@@ -2621,16 +2664,17 @@ export const appRouter = router({
       return getRecycleBinItems();
     }),
     reinstate: protectedProcedure
-      .input(z.object({ type: z.enum(["operation", "sheet", "target", "map_marker"]), id: z.number() }))
+      .input(z.object({ type: z.enum(["operation", "sheet", "target", "map_marker", "attachment"]), id: z.number() }))
       .mutation(async ({ input }) => {
         if (input.type === "operation") await reinstateOperation(input.id);
         else if (input.type === "sheet") await reinstateSheet(input.id);
         else if (input.type === "map_marker") await reinstateCustomMarker(input.id);
+        else if (input.type === "attachment") await reinstateAttachment(input.id);
         else await reinstateTarget(input.id);
         return { success: true };
       }),
     hardDelete: adminProcedure
-      .input(z.object({ type: z.enum(["operation", "sheet", "target", "map_marker"]), id: z.number() }))
+      .input(z.object({ type: z.enum(["operation", "sheet", "target", "map_marker", "attachment"]), id: z.number() }))
       .mutation(async ({ input, ctx }) => {
         if (input.type === "operation") {
           await deleteOperation(input.id);
@@ -2640,6 +2684,8 @@ export const appRouter = router({
           await createAuditLog({ sheetId: input.id, userId: ctx.user.id, userName: ctx.user.cin ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "sheet_deleted", details: `Sheet permanently deleted from Recycle Bin`, createdAt: Date.now() });
         } else if (input.type === "map_marker") {
           await hardDeleteCustomMarker(input.id);
+        } else if (input.type === "attachment") {
+          await deleteRowAttachment(input.id);
         } else {
           await deleteTarget(input.id);
         }

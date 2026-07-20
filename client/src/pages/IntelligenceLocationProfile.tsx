@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MapView } from "@/components/Map";
 import { ArrowLeft, FileDown, User, Car, MapPin, FileText } from "lucide-react";
+import { EntityPhotosSection } from "@/components/EntityPhotosSection";
 
 interface IntelProfileEntity { id: string; label: string; type: string; rowCount: number; sheetIds: number[]; operationIds: number[] }
 interface IntelLocationProfile {
@@ -166,6 +167,8 @@ export default function IntelligenceLocationProfile() {
                 ))}
               </div>
             </div>
+
+            <EntityPhotosSection category="location" entityLabel={profile.label} />
 
             {profile.linkedTargets.length > 0 && (
               <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">

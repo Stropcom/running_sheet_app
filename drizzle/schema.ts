@@ -149,10 +149,35 @@ export const rowAttachments = mysqlTable("row_attachments", {
   uploadedBy: int("uploadedBy").notNull(),
   uploadedByCIN: varchar("uploadedByCIN", { length: 64 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  // Soft-delete — goes to the Recycle Bin for 7 days before purge
+  deletedAt: bigint("deletedAt", { mode: "number" }),
+  deletedByCIN: varchar("deletedByCIN", { length: 64 }),
 });
 
 export type RowAttachment = typeof rowAttachments.$inferSelect;
 export type InsertRowAttachment = typeof rowAttachments.$inferInsert;
+
+// ─── Attachment Entity Links ─────────────────────────────────────────────────
+// Links a photo to an Intelligence entity. Targets are a real table (link by
+// targetId). Vehicles/Associates/Locations are mined live from observation
+// text with no stable row of their own (see getAllIntelligenceEntities in
+// db.ts) — those link by a normalized (lowercase, trimmed) copy of their
+// display label, the same key getAllIntelligenceEntities itself uses to
+// de-duplicate entities. entityLabel keeps the label text as shown at link
+// time for display without needing to re-run extraction.
+
+export const attachmentEntityLinks = mysqlTable("attachment_entity_links", {
+  id: int("id").autoincrement().primaryKey(),
+  attachmentId: int("attachmentId").notNull(),
+  category: mysqlEnum("category", ["target", "vehicle", "associate", "location"]).notNull(),
+  targetId: int("targetId"), // set when category = "target"
+  entityKey: varchar("entityKey", { length: 512 }), // normalized label, set when category != "target"
+  entityLabel: varchar("entityLabel", { length: 512 }).notNull(), // display label at link time
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type AttachmentEntityLink = typeof attachmentEntityLinks.$inferSelect;
+export type InsertAttachmentEntityLink = typeof attachmentEntityLinks.$inferInsert;
 
 // ─── Targets ────────────────────────────────────────────────────────────────
 // One row per target in the global registry. Targets are independent of

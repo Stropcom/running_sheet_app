@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, FileDown, User, Car, MapPin, FileText, Folder } from "lucide-react";
 import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
+import { EntityPhotosSection } from "@/components/EntityPhotosSection";
 
 interface IntelProfileEntity { id: string; label: string; type: string; rowCount: number; sheetIds: number[]; operationIds: number[] }
 interface IntelAssociateProfile {
@@ -148,6 +149,8 @@ export default function IntelligenceAssociateProfile() {
                 ))}
               </div>
             </div>
+
+            <EntityPhotosSection category="associate" entityLabel={profile.label} />
 
             {profile.linkedTargets.length > 0 && (
               <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">

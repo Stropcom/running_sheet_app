@@ -8,11 +8,26 @@ import {
   Image as ImageIcon,
   ArrowLeft,
   X,
-  Trash2,
+  Link2,
 } from "lucide-react";
 import { useLocation, useParams } from "wouter";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { LinkAttachmentDialog } from "@/components/LinkAttachmentDialog";
+
+const PERTH_TIME_ZONE = "Australia/Perth";
+
+function formatAttachmentBanner(a: { createdAt: string | Date; uploadedByCIN: string | null }): string {
+  const date = new Date(a.createdAt);
+  const dateStr = new Intl.DateTimeFormat("en-AU", {
+    timeZone: PERTH_TIME_ZONE,
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+  return a.uploadedByCIN ? `${dateStr} · ${a.uploadedByCIN}` : dateStr;
+}
 
 // Folder progression: Images → Operation → Running Sheet → RS images
 
@@ -211,6 +226,7 @@ function SheetGallery({
 }) {
   const utils = trpc.useUtils();
   const [lightbox, setLightbox] = useState<string | null>(null);
+  const [linkingId, setLinkingId] = useState<number | null>(null);
   const { data: sheet } = trpc.sheet.get.useQuery({ id: sheetId });
   const { data: attachments, isLoading } =
     trpc.attachment.listBySheet.useQuery({ sheetId });
@@ -274,17 +290,22 @@ function SheetGallery({
                 className="w-full aspect-square object-cover cursor-zoom-in"
                 onClick={() => setLightbox(a.url)}
               />
-              {a.rowTime && (
-                <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1">
-                  <p className="text-[10px] text-white truncate">{a.rowTime}</p>
-                </div>
-              )}
+              <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1">
+                <p className="text-[10px] text-white truncate">{formatAttachmentBanner(a)}</p>
+              </div>
+              <button
+                onClick={() => setLinkingId(a.id)}
+                title="Link to entity"
+                className="absolute top-1.5 left-1.5 h-6 w-6 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <Link2 className="h-3 w-3" />
+              </button>
               <button
                 onClick={() => deleteAttachment.mutate({ id: a.id })}
                 title="Delete photo"
                 className="absolute top-1.5 right-1.5 h-6 w-6 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
               >
-                <Trash2 className="h-3 w-3" />
+                <X className="h-3.5 w-3.5" />
               </button>
             </div>
           ))}
@@ -308,6 +329,14 @@ function SheetGallery({
             className="max-w-full max-h-full rounded shadow-2xl"
           />
         </div>
+      )}
+
+      {linkingId !== null && (
+        <LinkAttachmentDialog
+          attachmentId={linkingId}
+          open={linkingId !== null}
+          onOpenChange={open => { if (!open) setLinkingId(null); }}
+        />
       )}
     </div>
   );

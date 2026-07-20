@@ -4012,17 +4012,6 @@ export default function IntelligenceMapping() {
                         const t = assignedTarget as any;
                         if (!t) return null;
 
-                        // Helper: extract rego from a vehicle string (same logic as SheetDetail extractRegSD)
-                        const extractReg = (val: string | null | undefined): string | null => {
-                          if (!val) return null;
-                          const stripped = val.replace(/^Vehicle\s+/i, '').trim();
-                          const tokens = stripped.split(/\s+/).map((tk: string) => tk.replace(/[^A-Z0-9]/gi, ''));
-                          const rego = tokens.slice().reverse().find((tk: string) => /^[A-Z0-9]{3,8}$/i.test(tk) && /\d/.test(tk) && /[A-Z]/i.test(tk));
-                          if (rego) return rego;
-                          if (/^[A-Z0-9]{3,8}$/i.test(stripped) && /\d/.test(stripped) && /[A-Z]/i.test(stripped)) return stripped;
-                          return stripped || null;
-                        };
-
                         // Extra vehicle chips from JSON (V2F/V2, V3F/V3, …)
                         const extraVehicleChips: Array<{ label: string; display: string; getValue: () => string | null }> = [];
                         try {
@@ -4031,8 +4020,7 @@ export default function IntelligenceMapping() {
                             const num = i + 2;
                             if (ev.full) extraVehicleChips.push({ label: `V${num}F`, display: `V${num}F`, getValue: () => ev.full });
                             if (ev.short) {
-                              const reg = extractReg(ev.short);
-                              extraVehicleChips.push({ label: `V${num}`, display: reg ? `V${num} ${reg}` : `V${num}`, getValue: () => reg ?? ev.short });
+                              extraVehicleChips.push({ label: `V${num}`, display: ev.short ? `V${num} ${ev.short}` : `V${num}`, getValue: () => ev.short });
                             }
                           });
                         } catch {}
@@ -4055,13 +4043,12 @@ export default function IntelligenceMapping() {
                           }));
 
                         // Full chip list — identical order to SheetDetail fields array
-                        const v1Reg = extractReg(t.v1);
                         const allChips: Array<{ label: string; display: string; getValue: () => string | null }> = [
                           { label: "TGT", display: "TGT", getValue: () => t.tgt ?? null },
                           { label: "HBF", display: "HBF", getValue: () => t.hbf ?? null },
                           { label: "HB",  display: "HB",  getValue: () => t.hb  ?? null },
                           { label: "V1F", display: "V1F", getValue: () => t.v1f ?? null },
-                          { label: "V1",  display: v1Reg ? `V1 ${v1Reg}` : "V1", getValue: () => v1Reg ?? t.v1 ?? null },
+                          { label: "V1",  display: t.v1 ? `V1 ${t.v1}` : "V1", getValue: () => t.v1 ?? null },
                           ...extraVehicleChips,
                           ...wildChips,
                           { label: "DEP", display: "DEP", getValue: () => t.dep ?? null },

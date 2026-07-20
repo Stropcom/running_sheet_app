@@ -2818,29 +2818,13 @@ export default function SheetDetail() {
           };
           // Extract registration number from a vehicle string (last alphanumeric token with digits)
           // Returns null if no rego-like token found — chip will be hidden (no value = not shown)
-          const extractRegSD = (v: string | null | undefined): string | null => {
-            if (!v) return null;
-            const stripped = v.replace(/^Vehicle\s+/i, '').trim();
-            const tokens = stripped.split(/\s+/).map(t => t.replace(/[^A-Z0-9]/gi, ''));
-            const rego = tokens.slice().reverse().find(t => /^[A-Z0-9]{3,8}$/i.test(t) && /\d/.test(t) && /[A-Z]/i.test(t));
-            if (rego) return rego;
-            // Fallback: if the stripped value itself looks like a plate (3-8 alphanumeric with digit+letter), use it
-            if (/^[A-Z0-9]{3,8}$/i.test(stripped) && /\d/.test(stripped) && /[A-Z]/i.test(stripped)) return stripped;
-            // No rego found — return the stripped value so the chip still shows (but only the cleaned text)
-            return stripped || null;
-          };
-          // For extra vehicles, strip "Vehicle " prefix from short values
-          const cleanedExtraVehicleFields = extraVehicleFields.map(f => ({
-            ...f,
-            value: /^V\d+$/.test(f.label) ? (extractRegSD(f.value) ?? f.value) : f.value,
-          }));
           const fields: { label: string; value: string | null }[] = [
             { label: "TGT", value: t.tgt },
             { label: "HBF", value: t.hbf },
             { label: "HB",  value: t.hb  },
             { label: "V1F", value: t.v1f },
-            { label: "V1",  value: extractRegSD(t.v1) },
-            ...cleanedExtraVehicleFields,
+            { label: "V1",  value: t.v1 ?? null },
+            ...extraVehicleFields,
             ...wildFieldItems,
             { label: "DEP", value: t.dep },
             // All shortcut-folder triggers as chips — only those with showInRs=true, exclude legacy 'D' chip

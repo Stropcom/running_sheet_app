@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import DashboardLayout from "@/components/DashboardLayout";
+import { useIsMobile } from "@/hooks/useMobile";
 import CinInput from "@/components/CinInput";
 import {
   Dialog,
@@ -1496,7 +1497,8 @@ function TimePickerCell({
                 <ChevronRight className="w-4 h-4" />
               </Button>
             </div>
-          <div className="flex gap-2">
+          <div className="flex gap-1.5">
+            {/* Now — half of left side */}
             <Button
               size="sm"
               variant="outline"
@@ -1512,6 +1514,16 @@ function TimePickerCell({
             >
               Now
             </Button>
+            {/* Date — half of left side: stamps today's Perth date */}
+            <Button
+              size="sm"
+              variant="outline"
+              className="flex-1 h-7 text-xs"
+              onClick={() => setSelectedRowDate(getTodayPerthYmd())}
+            >
+              Date
+            </Button>
+            {/* Done — right side */}
             <Button
               size="sm"
               className="flex-1 h-7 text-xs"
@@ -1645,6 +1657,7 @@ function EditableCell({
 function SortableChip({ id, label, value, showValue, onInsert }: {
   id: string; label: string; value?: string | null; showValue: boolean; onInsert: () => void;
 }) {
+  const isMobile = useIsMobile();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -1660,22 +1673,24 @@ function SortableChip({ id, label, value, showValue, onInsert }: {
         title={`Insert: ${value}`}
         className="flex items-center gap-1 pl-1 pr-2 py-0.5 rounded border border-primary/30 bg-primary/8 hover:bg-primary/15 active:scale-95 transition-all select-none cursor-pointer"
       >
-        {/* Grip handle */}
-        <span
-          {...attributes}
-          {...listeners}
-          className="flex flex-col gap-[2.5px] opacity-40 shrink-0 cursor-grab active:cursor-grabbing px-0.5 touch-none"
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <span className="flex gap-[2.5px]">
-            <span className="w-[3px] h-[3px] rounded-full bg-primary" />
-            <span className="w-[3px] h-[3px] rounded-full bg-primary" />
+        {/* Grip handle — desktop only */}
+        {!isMobile && (
+          <span
+            {...attributes}
+            {...listeners}
+            className="flex flex-col gap-[2.5px] opacity-40 shrink-0 cursor-grab active:cursor-grabbing px-0.5 touch-none"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <span className="flex gap-[2.5px]">
+              <span className="w-[3px] h-[3px] rounded-full bg-primary" />
+              <span className="w-[3px] h-[3px] rounded-full bg-primary" />
+            </span>
+            <span className="flex gap-[2.5px]">
+              <span className="w-[3px] h-[3px] rounded-full bg-primary" />
+              <span className="w-[3px] h-[3px] rounded-full bg-primary" />
+            </span>
           </span>
-          <span className="flex gap-[2.5px]">
-            <span className="w-[3px] h-[3px] rounded-full bg-primary" />
-            <span className="w-[3px] h-[3px] rounded-full bg-primary" />
-          </span>
-        </span>
+        )}
         <span className="text-[10px] font-bold text-primary uppercase tracking-wide">{label}</span>
         {showValue && value && <span className="text-[10px] font-mono text-foreground/80 max-w-[80px] truncate">{value}</span>}
       </button>

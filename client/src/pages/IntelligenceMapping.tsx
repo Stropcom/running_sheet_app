@@ -3854,24 +3854,10 @@ export default function IntelligenceMapping() {
                   <SelectItem value="PM" className="text-xs">PM</SelectItem>
                 </SelectContent>
               </Select>
-              {/* Now button */}
-                <button
-                  onClick={() => {
-                    const n = new Date();
-                    const h24 = n.getHours(); const min = n.getMinutes();
-                    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
-                    const ampm = h24 < 12 ? "AM" : "PM";
-                    setMapQeHour(String(h12));
-                    setMapQeMinute(String(min).padStart(2, "0"));
-                    setMapQePeriod(ampm);
-                    setMapQeTimeOverride(`${String(h12).padStart(2,"0")}:${String(min).padStart(2,"0")} ${ampm}`);
-                  }}
-                  className="ml-1 text-[10px] text-primary hover:text-primary/80 underline font-medium"
-                >Now</button>
             </div>
 
             {/* Date selector — always visible so operators can set the calendar date */}
-            <div className="flex items-center justify-between gap-1 mb-3 px-0.5 py-1 rounded-md border border-border/70 bg-muted/30">
+            <div className="flex items-center justify-between gap-1 mb-1 px-0.5 py-1 rounded-md border border-border/70 bg-muted/30">
               <button
                 type="button"
                 className="h-7 w-7 flex items-center justify-center rounded hover:bg-accent/50 transition-colors"
@@ -3889,6 +3875,29 @@ export default function IntelligenceMapping() {
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
+            </div>
+
+            {/* Now / Date buttons */}
+            <div className="flex gap-1.5 mb-3">
+              <button
+                type="button"
+                onClick={() => {
+                  const n = new Date();
+                  const h24 = n.getHours(); const min = n.getMinutes();
+                  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+                  const ampm = h24 < 12 ? "AM" : "PM";
+                  setMapQeHour(String(h12));
+                  setMapQeMinute(String(min).padStart(2, "0"));
+                  setMapQePeriod(ampm);
+                  setMapQeTimeOverride(`${String(h12).padStart(2,"0")}:${String(min).padStart(2,"0")} ${ampm}`);
+                }}
+                className="flex-1 h-7 text-[11px] font-medium rounded border border-border bg-muted/30 hover:bg-accent/50 active:scale-95 transition-all"
+              >Now</button>
+              <button
+                type="button"
+                onClick={() => setMapQeRowDate(_getTodayPerthYmd())}
+                className="flex-1 h-7 text-[11px] font-medium rounded border border-border bg-muted/30 hover:bg-accent/50 active:scale-95 transition-all"
+              >Date</button>
             </div>
 
             {/* No sheet selected warning */}

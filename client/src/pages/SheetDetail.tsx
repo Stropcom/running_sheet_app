@@ -2164,11 +2164,21 @@ export default function SheetDetail() {
     "SC", "HBF",
     ...Array.from({ length: 8 }, (_, i) => [`V${i + 1}F`, `V${i + 1}`]).flat(),
     "TGT", "DSO", "DR", "FP", "US", "DE", "AR", "CV", "OOS", "COOS", "PU", "PT", "RACK",
-    "DEP", "ARR",
+    "DEP",
     ...Array.from({ length: 10 }, (_, i) => `#${i + 1}`),
   ];
   const [targetFieldOrder, setTargetFieldOrder] = useState<string[]>(() => {
-    try { const s = localStorage.getItem(`runsheet_field_order_${sheetId}`); if (s) return JSON.parse(s); } catch {} return CANONICAL_CHIP_ORDER;
+    try {
+      const s = localStorage.getItem(`runsheet_field_order_${sheetId}`);
+      if (s) {
+        // Migrate: remove ARR from any saved order
+        const saved: string[] = JSON.parse(s);
+        const migrated = saved.filter((c) => c !== "ARR");
+        if (migrated.length !== saved.length) localStorage.setItem(`runsheet_field_order_${sheetId}`, JSON.stringify(migrated));
+        return migrated;
+      }
+    } catch {}
+    return CANONICAL_CHIP_ORDER;
   });
   const handleChipDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
@@ -2814,7 +2824,6 @@ export default function SheetDetail() {
             ...cleanedExtraVehicleFields,
             ...wildFieldItems,
             { label: "DEP", value: t.dep },
-            { label: "ARR", value: t.arr },
             // All shortcut-folder triggers as chips — only those with showInRs=true, exclude legacy 'D' chip
              ...(shortcutsData ?? []).filter((s) => s.trigger.toUpperCase() !== "D" && !!s.showInRs).map((s) => ({ label: s.trigger.toUpperCase(), value: s.expansion })),
           ];
@@ -2871,7 +2880,7 @@ export default function SheetDetail() {
                   <div className="px-4 pb-3 border-t border-border/40">
                     {hasAnyField && (() => {
                       const shortcutFolderLabels = new Set((shortcutsData ?? []).map(s => s.trigger.toUpperCase()));
-                      const TRIGGER_ONLY_LABELS = new Set(["TGT", "HBF", "HB", "V1F", "V2F", "DEP", "ARR"]);
+                      const TRIGGER_ONLY_LABELS = new Set(["TGT", "HBF", "HB", "V1F", "V2F", "DEP"]);
                       return (
                         <DndContext
                           sensors={chipSensors}

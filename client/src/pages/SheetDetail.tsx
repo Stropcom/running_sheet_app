@@ -1367,6 +1367,8 @@ function TimePickerCell({
   const [selectedRowDate, setSelectedRowDate] = useState<string>(() => rowDate ?? inferredRowDate ?? sheetCreatedYmd);
   // Track whether any Radix Select dropdown is currently open
   const [selectOpen, setSelectOpen] = useState(false);
+  // Controls visibility of the date stepper (toggled by Date button)
+  const [showDateStepper, setShowDateStepper] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
 
   // Sync local state when value prop changes (e.g. row refresh)
@@ -1434,7 +1436,8 @@ function TimePickerCell({
       </button>
       {open && (
         <div className="absolute z-50 top-full left-0 mt-1 bg-popover border border-border rounded-lg shadow-xl p-3">
-          <div className="flex items-center gap-2 mb-3">
+          {/* Time selectors row + Now + Date inline */}
+          <div className="flex items-center gap-1.5 mb-2 flex-wrap">
             {/* Hour */}
             <Select
               value={hour}
@@ -1482,17 +1485,11 @@ function TimePickerCell({
                 <SelectItem value="PM" className="text-foreground">PM</SelectItem>
               </SelectContent>
             </Select>
-          </div>
-          {/* Selected date display (read-only) */}
-          <div className="text-center text-[11px] font-semibold tracking-widest text-foreground font-mono mb-2 py-1 rounded-md border border-border/70 bg-muted/30">
-            {formatPerthDateLabel(selectedRowDate)}
-          </div>
-          {/* Now (quarter) | Date (quarter) | Done (half) */}
-          <div className="flex gap-1.5">
+            {/* Now button — inline */}
             <Button
               size="sm"
               variant="outline"
-              className="w-[22%] h-7 text-xs px-1"
+              className="h-8 text-xs px-2"
               onClick={() => {
                 const now = new Date();
                 const h24 = now.getHours();
@@ -1504,22 +1501,36 @@ function TimePickerCell({
             >
               Now
             </Button>
+            {/* Date button — toggles stepper */}
             <Button
               size="sm"
-              variant="outline"
-              className="w-[22%] h-7 text-xs px-1"
-              onClick={() => setSelectedRowDate(sheetCreatedYmd)}
+              variant={showDateStepper ? "default" : "outline"}
+              className="h-8 text-xs px-2"
+              onClick={() => setShowDateStepper((v) => !v)}
             >
               Date
             </Button>
-            <Button
-              size="sm"
-              className="flex-1 h-7 text-xs"
-              onClick={handleDone}
-            >
-              Done
-            </Button>
           </div>
+          {/* Date stepper — only visible when Date button is active */}
+          {showDateStepper && (
+            <div className="flex items-center justify-between mb-2 px-1 py-1 rounded-md border border-border/70 bg-muted/30">
+              <button
+                className="px-2 py-0.5 text-base font-bold text-muted-foreground hover:text-foreground transition-colors"
+                onClick={() => setSelectedRowDate(addDaysToYmd(selectedRowDate, -1))}
+              >◀</button>
+              <span className="text-[11px] font-semibold tracking-widest text-foreground font-mono">
+                {formatPerthDateLabel(selectedRowDate)}
+              </span>
+              <button
+                className="px-2 py-0.5 text-base font-bold text-muted-foreground hover:text-foreground transition-colors"
+                onClick={() => setSelectedRowDate(addDaysToYmd(selectedRowDate, 1))}
+              >▶</button>
+            </div>
+          )}
+          {/* Done button — full width */}
+          <Button size="sm" className="w-full h-7 text-xs" onClick={handleDone}>
+            Done
+          </Button>
         </div>
       )}
     </div>

@@ -764,6 +764,7 @@ export default function IntelligenceMapping() {
   const [mapQeMinute, setMapQeMinute] = useState("00");
   const [mapQePeriod, setMapQePeriod] = useState("AM");
   const [mapQeRowDate, setMapQeRowDate] = useState<string>(() => _getTodayPerthYmd()); // explicit calendar date for the QE row
+  const [showMapQeDateStepper, setShowMapQeDateStepper] = useState(false); // toggled by Date button
   const [mapQeSelectOpen, setMapQeSelectOpen] = useState(false);
   const [mapQeAddress, setMapQeAddress] = useState(""); // pre-filled address for the observation
   // Quick Entry shortcut chip order — persisted to localStorage so user can reorder them
@@ -2252,6 +2253,7 @@ export default function IntelligenceMapping() {
       } else {
         setMapQeRowDate(_getTodayPerthYmd());
       }
+      setShowMapQeDateStepper(false); // always start with stepper hidden
       // Use a small delay so the sheet has rendered before we set focus
       setTimeout(() => {
         setRsInlineLabel("Entry");
@@ -3801,8 +3803,8 @@ export default function IntelligenceMapping() {
               </button>
             </div>
 
-            {/* Time picker — slim inline row */}
-            <div className="flex items-center gap-1 mb-3">
+            {/* Time picker — slim inline row with Now + Date buttons */}
+            <div className="flex items-center gap-1 mb-2 flex-wrap">
               <Clock className="h-3 w-3 text-muted-foreground flex-shrink-0" />
               <span className="text-[10px] text-muted-foreground font-medium mr-0.5">Time:</span>
               {/* Hour */}
@@ -3861,13 +3863,7 @@ export default function IntelligenceMapping() {
                   <SelectItem value="PM" className="text-xs">PM</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
-
-            {/* Date display (read-only) + Now/Date buttons inline */}
-            <div className="flex items-center gap-1 mb-3">
-              <div className="flex-1 text-[11px] font-semibold tracking-widest text-foreground font-mono py-1 px-2 rounded border border-border/70 bg-muted/30 truncate">
-                {_formatPerthDateLabel(mapQeRowDate)}
-              </div>
+              {/* Now button — inline */}
               <button
                 type="button"
                 onClick={() => {
@@ -3882,20 +3878,36 @@ export default function IntelligenceMapping() {
                 }}
                 className="h-6 px-2 text-[10px] font-medium rounded border border-border bg-muted/30 hover:bg-accent/50 active:scale-95 transition-all whitespace-nowrap"
               >Now</button>
+              {/* Date button — toggles stepper */}
               <button
                 type="button"
-                onClick={() => {
-                  const selectedSheet = (rsSheetsData as any[] | undefined)?.find((s: any) => s.id === rsSelectedSheetId);
-                  if (selectedSheet?.createdAt) {
-                    const sheetDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Perth", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(selectedSheet.createdAt));
-                    setMapQeRowDate(sheetDate);
-                  } else {
-                    setMapQeRowDate(_getTodayPerthYmd());
-                  }
-                }}
-                className="h-6 px-2 text-[10px] font-medium rounded border border-border bg-muted/30 hover:bg-accent/50 active:scale-95 transition-all whitespace-nowrap"
+                onClick={() => setShowMapQeDateStepper((v) => !v)}
+                className={`h-6 px-2 text-[10px] font-medium rounded border transition-all whitespace-nowrap active:scale-95 ${
+                  showMapQeDateStepper
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border bg-muted/30 hover:bg-accent/50"
+                }`}
               >Date</button>
             </div>
+
+            {/* Date stepper — only visible when Date button is toggled on */}
+            {showMapQeDateStepper && (
+              <div className="flex items-center justify-between mb-2 px-1 py-1 rounded-md border border-border/70 bg-muted/30">
+                <button
+                  type="button"
+                  className="px-2 py-0.5 text-base font-bold text-muted-foreground hover:text-foreground transition-colors"
+                  onClick={() => setMapQeRowDate(_addDaysToYmd(mapQeRowDate, -1))}
+                >◀</button>
+                <span className="text-[11px] font-semibold tracking-widest text-foreground font-mono">
+                  {_formatPerthDateLabel(mapQeRowDate)}
+                </span>
+                <button
+                  type="button"
+                  className="px-2 py-0.5 text-base font-bold text-muted-foreground hover:text-foreground transition-colors"
+                  onClick={() => setMapQeRowDate(_addDaysToYmd(mapQeRowDate, 1))}
+                >▶</button>
+              </div>
+            )}
 
             {/* No sheet selected warning */}
             {rsSelectedSheetId === null ? (
@@ -3929,20 +3941,7 @@ export default function IntelligenceMapping() {
 
                 <div className="border-t border-border" />
 
-                {/* DEP / ARR */}
-                {rsTargetData?.arr && (
-                  <button
-                    disabled={rsAddingRow}
-                    onClick={() => {
-                      const obs = `${rsTargetData!.arr!} — ${mapQeAddress}`;
-                      if (rsInlineLabel === obs) { closeInlineField(); } else { openInlineField(obs); }
-                    }}
-                    className={`flex flex-col items-start gap-0.5 rounded-md border border-green-500/30 bg-green-500/5 hover:bg-green-500/10 active:scale-95 transition-all px-2.5 py-2 disabled:opacity-50 ${rsInlineLabel?.startsWith(rsTargetData!.arr!) ? "ring-1 ring-green-400" : ""}`}
-                  >
-                    <span className="text-[9px] font-bold uppercase tracking-wide text-green-400">ARR</span>
-                    <span className="text-[10px] text-foreground font-mono leading-tight line-clamp-2">{rsTargetData.arr}</span>
-                  </button>
-                )}
+                {/* ARR panel removed per user request */}
 
                 {/* Inline observation field */}
                 {rsInlineLabel && (() => {

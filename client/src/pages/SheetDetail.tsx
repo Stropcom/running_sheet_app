@@ -1691,7 +1691,7 @@ function SortableChip({ id, label, value, showValue, onInsert }: {
           </span>
         )}
         <span className="text-[10px] font-bold text-primary uppercase tracking-wide">{label}</span>
-        {showValue && value && <span className="text-[10px] font-mono text-foreground/80 max-w-[80px] truncate">{value}</span>}
+        {showValue && value && <span className="text-[10px] font-mono text-foreground/80 max-w-[160px] truncate">{value}</span>}
       </button>
     </div>
   );

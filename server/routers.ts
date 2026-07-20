@@ -127,6 +127,7 @@ import {
   getAttachmentsByRowIds,
   getAttachmentById,
   getAttachmentsByOperationId,
+  getAttachmentsBySheetId,
   deleteRowAttachment,
 } from "./db";
 
@@ -894,6 +895,12 @@ export const appRouter = router({
       .input(z.object({ operationId: z.number() }))
       .query(async ({ input }) => {
         return getAttachmentsByOperationId(input.operationId);
+      }),
+
+    listBySheet: protectedProcedure
+      .input(z.object({ sheetId: z.number() }))
+      .query(async ({ input }) => {
+        return getAttachmentsBySheetId(input.sheetId);
       }),
 
     delete: protectedProcedure

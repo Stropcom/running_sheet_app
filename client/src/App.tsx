@@ -96,6 +96,7 @@ function Router() {
       <Route path="/target-registry" component={TargetRegistryPage} />
       <Route path="/images" component={ImagesPage} />
       <Route path="/images/:operationId" component={ImagesPage} />
+      <Route path="/images/:operationId/:sheetId" component={ImagesPage} />
       <Route path="/operation-manager" component={OperationManagerPage} />
       <Route path="/operation-management" component={OperationManagementPage} />
       <Route path="/calendar" component={CalendarPage} />

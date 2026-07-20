@@ -684,6 +684,28 @@ export async function getAttachmentsByOperationId(operationId: number) {
     .orderBy(desc(rowAttachments.createdAt));
 }
 
+// All attachments on a single running sheet, joined back to their row for a
+// time label.
+export async function getAttachmentsBySheetId(sheetId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({
+      id: rowAttachments.id,
+      rowId: rowAttachments.rowId,
+      url: rowAttachments.url,
+      mimeType: rowAttachments.mimeType,
+      caption: rowAttachments.caption,
+      uploadedByCIN: rowAttachments.uploadedByCIN,
+      createdAt: rowAttachments.createdAt,
+      rowTime: sheetRows.time,
+    })
+    .from(rowAttachments)
+    .innerJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
+    .where(eq(sheetRows.sheetId, sheetId))
+    .orderBy(desc(rowAttachments.createdAt));
+}
+
 export async function deleteRowAttachment(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");

@@ -11,23 +11,33 @@ import {
   Trash2,
 } from "lucide-react";
 import { useLocation, useParams } from "wouter";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
+
+// Folder progression: Images → Operation → Running Sheet → RS images
 
 export default function ImagesPage() {
   const { isAuthenticated } = useAuth();
   const [, navigate] = useLocation();
-  const params = useParams<{ operationId?: string }>();
+  const params = useParams<{ operationId?: string; sheetId?: string }>();
   const operationId = params.operationId
     ? parseInt(params.operationId, 10)
     : null;
+  const sheetId = params.sheetId ? parseInt(params.sheetId, 10) : null;
 
   return (
     <DashboardLayout>
-      {operationId ? (
-        <OperationGallery
+      {operationId && sheetId ? (
+        <SheetGallery
+          operationId={operationId}
+          sheetId={sheetId}
+          onBack={() => navigate(`/images/${operationId}`)}
+        />
+      ) : operationId ? (
+        <SheetFolderList
           operationId={operationId}
           onBack={() => navigate("/images")}
+          onSelect={id => navigate(`/images/${operationId}/${id}`)}
         />
       ) : (
         <OperationFolderList
@@ -102,21 +112,112 @@ function OperationFolderList({
   );
 }
 
-function OperationGallery({
+// Level 2: running sheets within the operation that have at least one
+// attached photo, grouped from the operation's flat attachment list.
+function SheetFolderList({
   operationId,
   onBack,
+  onSelect,
 }: {
   operationId: number;
   onBack: () => void;
+  onSelect: (sheetId: number) => void;
 }) {
-  const utils = trpc.useUtils();
-  const [lightbox, setLightbox] = useState<string | null>(null);
   const { data: operation } = trpc.operation.get.useQuery({ id: operationId });
   const { data: attachments, isLoading } =
     trpc.attachment.listByOperation.useQuery({ operationId });
 
+  const sheets = useMemo(() => {
+    if (!attachments) return [];
+    const bySheet = new Map<number, { sheetId: number; sheetTitle: string; count: number }>();
+    for (const a of attachments as any[]) {
+      const existing = bySheet.get(a.sheetId);
+      if (existing) existing.count += 1;
+      else bySheet.set(a.sheetId, { sheetId: a.sheetId, sheetTitle: a.sheetTitle, count: 1 });
+    }
+    return Array.from(bySheet.values());
+  }, [attachments]);
+
+  return (
+    <div className="max-w-3xl mx-auto px-4 py-8">
+      <div className="flex items-center gap-3 mb-6">
+        <Button variant="ghost" size="icon" onClick={onBack}>
+          <ArrowLeft className="w-4 h-4" />
+        </Button>
+        <div className="p-2.5 rounded-lg bg-pink-500/10 border border-pink-500/20">
+          <ImageIcon className="w-5 h-5 text-pink-500" />
+        </div>
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold text-foreground truncate">
+            {operation?.name ?? "Images"}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Running sheets with photos
+          </p>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="flex flex-col gap-3">
+          {[1, 2, 3].map(i => (
+            <Skeleton key={i} className="h-16 rounded-xl" />
+          ))}
+        </div>
+      ) : sheets.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <div className="p-4 rounded-2xl bg-muted/40 mb-4">
+            <ImageIcon className="w-8 h-8 text-muted-foreground" />
+          </div>
+          <p className="text-foreground font-medium mb-1">No photos yet</p>
+          <p className="text-muted-foreground text-sm">
+            Attach a photo to any observation containing "PHOTOGRAPH/S TAKEN" on
+            a running sheet in this operation.
+          </p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {sheets.map(s => (
+            <div
+              key={s.sheetId}
+              className="group flex items-center gap-4 p-4 rounded-xl border border-border bg-card hover:bg-accent/20 hover:border-pink-500/30 transition-all duration-150 cursor-pointer"
+              onClick={() => onSelect(s.sheetId)}
+            >
+              <div className="p-2.5 rounded-lg bg-pink-500/10 border border-pink-500/20 shrink-0">
+                <FolderOpen className="w-5 h-5 text-pink-500" />
+              </div>
+              <span className="font-semibold text-foreground truncate flex-1">
+                {s.sheetTitle || `Sheet #${s.sheetId}`}
+              </span>
+              <span className="text-xs text-muted-foreground shrink-0">
+                {s.count} photo{s.count === 1 ? "" : "s"}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Level 3: the actual photos for one running sheet.
+function SheetGallery({
+  operationId,
+  sheetId,
+  onBack,
+}: {
+  operationId: number;
+  sheetId: number;
+  onBack: () => void;
+}) {
+  const utils = trpc.useUtils();
+  const [lightbox, setLightbox] = useState<string | null>(null);
+  const { data: sheet } = trpc.sheet.get.useQuery({ id: sheetId });
+  const { data: attachments, isLoading } =
+    trpc.attachment.listBySheet.useQuery({ sheetId });
+
   const deleteAttachment = trpc.attachment.delete.useMutation({
     onSuccess: () => {
+      utils.attachment.listBySheet.invalidate({ sheetId });
       utils.attachment.listByOperation.invalidate({ operationId });
       toast.success("Photo deleted");
     },
@@ -134,7 +235,7 @@ function OperationGallery({
         </div>
         <div className="min-w-0">
           <h1 className="text-xl font-semibold text-foreground truncate">
-            {operation?.name ?? "Images"}
+            {sheet?.title ?? "Images"}
           </h1>
           <p className="text-sm text-muted-foreground">
             {attachments?.length ?? 0} photo
@@ -157,7 +258,7 @@ function OperationGallery({
           <p className="text-foreground font-medium mb-1">No photos yet</p>
           <p className="text-muted-foreground text-sm">
             Attach a photo to any observation containing "PHOTOGRAPH/S TAKEN" on
-            a running sheet.
+            this running sheet.
           </p>
         </div>
       ) : (
@@ -173,12 +274,11 @@ function OperationGallery({
                 className="w-full aspect-square object-cover cursor-zoom-in"
                 onClick={() => setLightbox(a.url)}
               />
-              <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1">
-                <p className="text-[10px] text-white truncate">
-                  {a.sheetTitle}
-                  {a.rowTime ? ` · ${a.rowTime}` : ""}
-                </p>
-              </div>
+              {a.rowTime && (
+                <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1">
+                  <p className="text-[10px] text-white truncate">{a.rowTime}</p>
+                </div>
+              )}
               <button
                 onClick={() => deleteAttachment.mutate({ id: a.id })}
                 title="Delete photo"

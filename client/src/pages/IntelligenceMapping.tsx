@@ -3078,11 +3078,11 @@ export default function IntelligenceMapping() {
               }
               return (
                 <button
-                  onClick={() => setLocation(`/images/${opId}`)}
+                  onClick={() => setLocation(`/images/${opId}/${rsSelectedSheetId}`)}
                   className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-pink-500/40 bg-pink-500/10 hover:bg-pink-500/20 active:scale-[0.98] transition-all min-w-0"
                 >
                   <ImageIcon className="h-3.5 w-3.5 text-pink-500 flex-shrink-0" />
-                  <span className="text-xs font-semibold text-pink-500 truncate flex-1 text-left">Operation images</span>
+                  <span className="text-xs font-semibold text-pink-500 truncate flex-1 text-left">RS images</span>
                   <ExternalLink className="h-3 w-3 text-pink-500/60 flex-shrink-0" />
                 </button>
               );

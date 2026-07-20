@@ -185,52 +185,81 @@ function offsetLatLng(lat: number, lng: number, dxM: number, dyM: number): { lat
 }
 
 /**
- * Builds an offset-badge marker:
- *   • A small 8px filled dot at the exact coordinate (the AdvancedMarker anchor)
- *   • An SVG leader line from the dot up-right to the badge
- *   • A 20px circular badge offset ~30px up and ~18px right
- * The whole element is positioned so the dot sits at the anchor point.
+ * Builds an offset-badge marker.
+ *
+ * AdvancedMarkerElement anchors at the BOTTOM-CENTRE of the content element.
+ * Design: dot at bottom-centre, badge offset up-right, SVG leader line between them.
+ *
+ * Layout (all px):
+ *   - DOT_R=4  : anchor dot radius
+ *   - BADGE_R=10: badge radius (20px diameter)
+ *   - DX=20    : badge centre rightward from dot
+ *   - DY=28    : badge centre upward from dot
+ *
+ * The wrapper width is centred on the dot (dot at horizontal centre, bottom).
  */
 function buildNumberPin(index: number, isFirst: boolean, isLast: boolean): HTMLElement {
   let bg = "#6366f1";
   if (isFirst) bg = "#16a34a";
   if (isLast) bg = "#dc2626";
 
-  // Offset amounts (px): badge is this far up and to the right of the dot
-  const DX = 18; // rightward offset of badge centre from dot
-  const DY = 30; // upward offset of badge centre from dot
-  const BADGE_R = 10; // badge radius (20px diameter)
-  const DOT_R = 4;   // anchor dot radius
+  const DX = 20;      // badge centre rightward from dot
+  const DY = 28;      // badge centre upward from dot
+  const BADGE_R = 10; // badge radius → 20px diameter
+  const DOT_R = 4;    // anchor dot radius
 
-  // SVG canvas is large enough to contain both dot and badge
-  const svgW = DX + BADGE_R + DOT_R + 2;
-  const svgH = DY + BADGE_R + DOT_R + 2;
-  // Dot sits at bottom-left of the SVG canvas
-  const dotCx = DOT_R + 1;
-  const dotCy = svgH - DOT_R - 1;
-  // Badge centre
+  // The dot is at the bottom-centre of the wrapper.
+  // Wrapper must be wide enough to contain the badge (which extends DX+BADGE_R to the right of dot)
+  // and tall enough to contain the badge (which extends DY+BADGE_R above dot).
+  // Left padding: DOT_R (so dot circle doesn't clip)
+  // Right padding: DX + BADGE_R + DOT_R (badge right edge)
+  const leftPad = DOT_R + 2;
+  const rightPad = DX + BADGE_R + DOT_R + 2;
+  const svgW = leftPad + rightPad;
+  const svgH = DY + BADGE_R + DOT_R + 4;
+
+  // Dot position within SVG
+  const dotCx = leftPad;        // dot at left-pad from left
+  const dotCy = svgH - DOT_R - 2; // dot near bottom
+
+  // Badge centre within SVG
   const badgeCx = dotCx + DX;
   const badgeCy = dotCy - DY;
 
+  // AdvancedMarkerElement anchors at bottom-centre of the wrapper.
+  // We need the dot to be at the bottom-centre.
+  // So we shift the wrapper left by (dotCx - svgW/2) using margin-left.
+  const shiftLeft = dotCx - svgW / 2;
+
   const wrapper = document.createElement("div");
-  // Position so the dot (anchor) is at the coordinate
   wrapper.style.cssText = [
     "position:relative",
     `width:${svgW}px`,
     `height:${svgH}px`,
     "cursor:pointer",
     "user-select:none",
-    // Shift the element so the dot (bottom-left) aligns with the map coordinate
-    `transform:translate(-${dotCx}px, -${dotCy}px)`,
+    // Shift horizontally so the dot (not the centre of the wrapper) aligns with the coordinate
+    `margin-left:${-shiftLeft}px`,
   ].join(";");
 
-  // SVG: leader line + dot
+  // SVG: leader line + anchor dot
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("width", String(svgW));
   svg.setAttribute("height", String(svgH));
   svg.style.cssText = "position:absolute;top:0;left:0;pointer-events:none;overflow:visible;";
 
-  // Leader line from dot to badge edge
+  // White halo under leader line for visibility on any background
+  const lineHalo = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  lineHalo.setAttribute("x1", String(dotCx));
+  lineHalo.setAttribute("y1", String(dotCy));
+  lineHalo.setAttribute("x2", String(badgeCx));
+  lineHalo.setAttribute("y2", String(badgeCy));
+  lineHalo.setAttribute("stroke", "#fff");
+  lineHalo.setAttribute("stroke-width", "3");
+  lineHalo.setAttribute("stroke-opacity", "0.7");
+  svg.appendChild(lineHalo);
+
+  // Coloured leader line
   const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
   line.setAttribute("x1", String(dotCx));
   line.setAttribute("y1", String(dotCy));
@@ -238,7 +267,7 @@ function buildNumberPin(index: number, isFirst: boolean, isLast: boolean): HTMLE
   line.setAttribute("y2", String(badgeCy));
   line.setAttribute("stroke", bg);
   line.setAttribute("stroke-width", "1.5");
-  line.setAttribute("stroke-opacity", "0.8");
+  line.setAttribute("stroke-opacity", "0.9");
   svg.appendChild(line);
 
   // Anchor dot
@@ -1025,11 +1054,31 @@ export default function RSMappingEmbedded() {
                : COLOUR_HEX[wp.markerColour ?? "blue"] ?? "#1E88E5",
       }));
 
-      // Fetch the clean base map (no markers) so we can draw our own markers on canvas
+      // Fetch the clean base map (no markers) so we can draw our own markers on canvas.
+      // MUST pass explicit center+zoom so the static map extent matches the live map
+      // (without them, Static Maps auto-fits to a different extent and the projection is wrong).
+      // Compute bounds-based center+zoom from waypoints if live map values are unavailable.
+      let exportCenter = center ? { lat: center.lat(), lng: center.lng() } : null;
+      let exportZoom = zoom ?? null;
+      if (!exportCenter || exportZoom == null) {
+        // Fallback: compute from waypoint bounds
+        const lats = waypointList.map((w) => w.lat);
+        const lngs = waypointList.map((w) => w.lng);
+        exportCenter = {
+          lat: (Math.min(...lats) + Math.max(...lats)) / 2,
+          lng: (Math.min(...lngs) + Math.max(...lngs)) / 2,
+        };
+        // Rough zoom from span
+        const latSpan = Math.max(...lats) - Math.min(...lats);
+        const lngSpan = Math.max(...lngs) - Math.min(...lngs);
+        const span = Math.max(latSpan, lngSpan);
+        exportZoom = span < 0.01 ? 15 : span < 0.05 ? 13 : span < 0.2 ? 11 : span < 0.5 ? 10 : 9;
+      }
+
       const result = await trpcClient.rsMapping.getStaticMapImage.query({
-        waypoints: [],   // no markers from Static Maps — we'll draw them ourselves
-        center: center ? { lat: center.lat(), lng: center.lng() } : undefined,
-        zoom: zoom ?? undefined,
+        waypoints: [],   // no markers from Static Maps — we draw them ourselves on canvas
+        center: exportCenter,
+        zoom: exportZoom,
         size: "800x1000",
       });
 
@@ -1047,10 +1096,11 @@ export default function RSMappingEmbedded() {
       const ctx = canvas.getContext("2d")!;
       ctx.drawImage(baseImg, 0, 0);
 
-      // Project lat/lng to pixel using Mercator (matching Static Maps scale=2)
-      const mapZoom = zoom ?? 13;
-      const mapCenterLat = center ? center.lat() : -31.9505;
-      const mapCenterLng = center ? center.lng() : 115.8605;
+      // Project lat/lng to pixel using Mercator (matching Static Maps scale=2).
+      // Use exportCenter/exportZoom — the exact values sent to the Static Maps request.
+      const mapZoom = exportZoom!;
+      const mapCenterLat = exportCenter!.lat;
+      const mapCenterLng = exportCenter!.lng;
       const TILE_SIZE = 256;
       const scale = 2; // scale=2 in Static Maps request
       const mapW = canvas.width;

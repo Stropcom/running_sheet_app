@@ -927,80 +927,11 @@ export default function RSMappingEmbedded() {
   }, []);
 
   const buildVisualOverlays = useCallback(() => {
-    if (!mapRef.current) return;
+    // Visual RS mode: no additional overlays needed.
+    // The dot+leader+badge markers already show the sequence number.
+    // Address details appear in the popup on click.
+    // Keeping this as a no-op so the toggle still works without errors.
     clearVisualOverlays();
-    const placed = placedWaypointsRef.current;
-    if (placed.length === 0) return;
-
-    // Build date map for all placed waypoints
-    const overlaySheetCreatedAt = (sheetsData as any[] | undefined)?.find((s: any) => s.id === selectedSheetId)?.createdAt ?? Date.now();
-    const overlayDateMap = buildWpDateMap(placed as unknown as WaypointRow[], overlaySheetCreatedAt);
-    const overlaySheetStartYmd = new Intl.DateTimeFormat("en-CA", { timeZone: RSM_PERTH_TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(overlaySheetCreatedAt));
-
-    placed.forEach((wp) => {
-      const overlay = new google.maps.OverlayView();
-      const lat = wp.lat;
-      const lng = wp.lng;
-      const time = wp.time ?? "—";
-      const address = wp.address;
-      const index = wp.index;
-      const total = placed.length;
-      const isFirst = index === 1;
-      const isLast = index === total;
-      const badgeColor = isFirst ? "#16a34a" : isLast ? "#dc2626" : "#6366f1";
-
-      // Date label for overlay (only show if different from sheet start day)
-      const wpYmd = overlayDateMap.get(wp.rowId);
-      const overlayDateLabel = wpYmd && wpYmd !== overlaySheetStartYmd ? rsmFormatPerthDateLabel(wpYmd) : null;
-
-      let div: HTMLDivElement | null = null;
-
-      overlay.onAdd = function () {
-        div = document.createElement("div");
-        div.style.cssText = [
-          "position:absolute",
-          "background:rgba(255,255,255,0.95)",
-          "border:1.5px solid " + badgeColor,
-          "border-radius:5px",
-          "padding:2px 5px",
-          "font-family:system-ui,sans-serif",
-          "font-size:8px",
-          "line-height:1.35",
-          "max-width:140px",
-          "min-width:60px",
-          "box-shadow:0 2px 6px rgba(0,0,0,0.15)",
-          "pointer-events:none",
-          "white-space:normal",
-          "word-break:break-word",
-          "z-index:10",
-          "transform:translate(-50%, calc(-100% - 26px))",
-        ].join(";");
-        div.innerHTML = [
-          `<div style="font-weight:700;color:${badgeColor};font-size:9px;">#${index} · ${time}${overlayDateLabel ? ` <span style="color:#7c3aed;font-size:7.5px;">(${overlayDateLabel})</span>` : ""}</div>`,
-          `<div style="color:#111;font-size:7.5px;margin-top:1px;">${address}</div>`,
-        ].join("");
-        const panes = this.getPanes()!;
-        panes.floatPane.appendChild(div);
-      };
-
-      overlay.draw = function () {
-        if (!div) return;
-        const proj = this.getProjection();
-        if (!proj) return;
-        const point = proj.fromLatLngToDivPixel(new google.maps.LatLng(lat, lng));
-        if (!point) return;
-        div.style.left = point.x + "px";
-        div.style.top = point.y + "px";
-      };
-
-      overlay.onRemove = function () {
-        if (div && div.parentNode) div.parentNode.removeChild(div);
-        div = null;
-      };
-
-      overlay.setMap(mapRef.current!);
-      visualOverlaysRef.current.push(overlay);
-    });
   }, [clearVisualOverlays]);
 
   // Toggle Visual RS mode
@@ -1076,120 +1007,13 @@ export default function RSMappingEmbedded() {
       }
 
       const result = await trpcClient.rsMapping.getStaticMapImage.query({
-        waypoints: [],   // no markers from Static Maps — we draw them ourselves on canvas
+        waypoints: waypointList,  // let Static Maps render the markers reliably
         center: exportCenter,
-        zoom: exportZoom,
+        zoom: exportZoom ? Math.round(exportZoom) : undefined,
         size: "800x1000",
       });
 
-      // Draw waypoints + route line on top of the static map using Canvas
-      const baseImg = await new Promise<HTMLImageElement>((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = reject;
-        img.src = result.dataUrl;
-      });
-
-      const canvas = document.createElement("canvas");
-      canvas.width = baseImg.naturalWidth;
-      canvas.height = baseImg.naturalHeight;
-      const ctx = canvas.getContext("2d")!;
-      ctx.drawImage(baseImg, 0, 0);
-
-      // Project lat/lng to pixel using Mercator (matching Static Maps scale=2).
-      // Use exportCenter/exportZoom — the exact values sent to the Static Maps request.
-      const mapZoom = exportZoom!;
-      const mapCenterLat = exportCenter!.lat;
-      const mapCenterLng = exportCenter!.lng;
-      const TILE_SIZE = 256;
-      const scale = 2; // scale=2 in Static Maps request
-      const mapW = canvas.width;
-      const mapH = canvas.height;
-
-      const mercatorProject = (lat: number, lng: number): { x: number; y: number } => {
-        const siny = Math.sin((lat * Math.PI) / 180);
-        const clampedSiny = Math.min(Math.max(siny, -0.9999), 0.9999);
-        const worldX = TILE_SIZE * (0.5 + lng / 360);
-        const worldY = TILE_SIZE * (0.5 - Math.log((1 + clampedSiny) / (1 - clampedSiny)) / (4 * Math.PI));
-        return { x: worldX, y: worldY };
-      };
-
-      const mapScale = scale * Math.pow(2, mapZoom);
-      const centerWorld = mercatorProject(mapCenterLat, mapCenterLng);
-
-      const latLngToCanvas = (lat: number, lng: number): { x: number; y: number } => {
-        const world = mercatorProject(lat, lng);
-        return {
-          x: mapW / 2 + (world.x - centerWorld.x) * mapScale / TILE_SIZE,
-          y: mapH / 2 + (world.y - centerWorld.y) * mapScale / TILE_SIZE,
-        };
-      };
-
-      // Draw route polyline
-      if (waypointList.length > 1) {
-        ctx.beginPath();
-        ctx.strokeStyle = "rgba(99,102,241,0.8)";
-        ctx.lineWidth = 3;
-        ctx.lineJoin = "round";
-        const first = latLngToCanvas(waypointList[0].lat, waypointList[0].lng);
-        ctx.moveTo(first.x, first.y);
-        for (let wi = 1; wi < waypointList.length; wi++) {
-          const pt = latLngToCanvas(waypointList[wi].lat, waypointList[wi].lng);
-          ctx.lineTo(pt.x, pt.y);
-        }
-        ctx.stroke();
-      }
-
-      // Draw each waypoint: dot + leader line + badge (matching live map style)
-      const DX_C = 18 * scale;
-      const DY_C = 30 * scale;
-      const BADGE_R_C = 10 * scale;
-      const DOT_R_C = 4 * scale;
-      const FONT_SIZE_C = 9 * scale;
-
-      for (const wp of waypointList) {
-        const { x, y } = latLngToCanvas(wp.lat, wp.lng);
-        const colour = wp.colour ?? "#6366f1";
-        const badgeCx = x + DX_C;
-        const badgeCy = y - DY_C;
-
-        // Leader line
-        ctx.beginPath();
-        ctx.strokeStyle = colour;
-        ctx.lineWidth = 1.5 * scale;
-        ctx.globalAlpha = 0.85;
-        ctx.moveTo(x, y);
-        ctx.lineTo(badgeCx, badgeCy);
-        ctx.stroke();
-        ctx.globalAlpha = 1;
-
-        // Anchor dot
-        ctx.beginPath();
-        ctx.arc(x, y, DOT_R_C, 0, Math.PI * 2);
-        ctx.fillStyle = colour;
-        ctx.fill();
-        ctx.strokeStyle = "#fff";
-        ctx.lineWidth = 1.5 * scale;
-        ctx.stroke();
-
-        // Badge circle
-        ctx.beginPath();
-        ctx.arc(badgeCx, badgeCy, BADGE_R_C, 0, Math.PI * 2);
-        ctx.fillStyle = colour;
-        ctx.fill();
-        ctx.strokeStyle = "#fff";
-        ctx.lineWidth = 1.5 * scale;
-        ctx.stroke();
-
-        // Badge number
-        ctx.fillStyle = "#fff";
-        ctx.font = `bold ${FONT_SIZE_C}px system-ui,sans-serif`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(String(wp.index), badgeCx, badgeCy);
-      }
-
-      mapImageDataUrl = canvas.toDataURL("image/png");
+      mapImageDataUrl = result.dataUrl;
     } catch (err) {
       console.warn("Static map image failed:", err);
       toast.warning("Map image unavailable — PDF will include a placeholder");

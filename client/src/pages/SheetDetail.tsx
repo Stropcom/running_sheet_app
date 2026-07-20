@@ -1437,7 +1437,7 @@ function TimePickerCell({
       {open && (
         <div className="absolute z-50 top-full left-0 mt-1 bg-popover border border-border rounded-lg shadow-xl p-3">
           {/* Time selectors row + Now + Date inline */}
-          <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+          <div className="flex items-center gap-1.5 mb-2 flex-nowrap">
             {/* Hour */}
             <Select
               value={hour}

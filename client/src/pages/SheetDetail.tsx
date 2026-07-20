@@ -1327,6 +1327,7 @@ function TimePickerCell({
   rowDate,
   inferredRowDate,
   sheetHasCrossedMidnight = false,
+  sheetCreatedAt,
   onSave,
 }: {
   value: string | null;
@@ -1335,8 +1336,15 @@ function TimePickerCell({
   rowDate?: string | null;
   inferredRowDate?: string | null;
   sheetHasCrossedMidnight?: boolean;
+  sheetCreatedAt?: number | null;
   onSave: (display: string, minutes: number, dayOffset: number, rowDate?: string) => void;
 }) {
+  // Derive the RS creation date in Perth (YYYY-MM-DD) — used as the default rowDate
+  const sheetCreatedYmd = useMemo(() => {
+    if (!sheetCreatedAt) return getTodayPerthYmd();
+    return new Intl.DateTimeFormat("en-CA", { timeZone: PERTH_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(sheetCreatedAt));
+  }, [sheetCreatedAt]);
+
   // Parse existing value into hour/minute/period; default to current time when empty
   const parsed = useMemo(() => {
     if (!value) {
@@ -1355,7 +1363,8 @@ function TimePickerCell({
   const [minute, setMinute] = useState(parsed.minute);
   const [period, setPeriod] = useState(parsed.period);
   const [localDayOffset, setLocalDayOffset] = useState(dayOffset);
-  const [selectedRowDate, setSelectedRowDate] = useState<string>(() => rowDate ?? inferredRowDate ?? getTodayPerthYmd());
+  // Default to the explicit rowDate, then inferred, then RS creation date
+  const [selectedRowDate, setSelectedRowDate] = useState<string>(() => rowDate ?? inferredRowDate ?? sheetCreatedYmd);
   // Track whether any Radix Select dropdown is currently open
   const [selectOpen, setSelectOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -1374,8 +1383,8 @@ function TimePickerCell({
 
   // Sync explicit/inferred rowDate from props
   useEffect(() => {
-    setSelectedRowDate(rowDate ?? inferredRowDate ?? getTodayPerthYmd());
-  }, [rowDate, inferredRowDate]);
+    setSelectedRowDate(rowDate ?? inferredRowDate ?? sheetCreatedYmd);
+  }, [rowDate, inferredRowDate, sheetCreatedYmd]);
 
   // Close picker on outside click — but only when no Radix Select is open
   // (Radix portals render outside popoverRef, so we must ignore those clicks)
@@ -1474,35 +1483,16 @@ function TimePickerCell({
               </SelectContent>
             </Select>
           </div>
-          <div className="flex items-center justify-between gap-1 mb-3 px-0.5 py-1 rounded-md border border-border/70 bg-muted/30">
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                className="h-7 w-7 shrink-0"
-                onClick={() => setSelectedRowDate((d) => addDaysToYmd(d, -1))}
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </Button>
-              <div className="min-w-[160px] text-center text-[11px] font-semibold tracking-widest text-foreground font-mono">
-                {formatPerthDateLabel(selectedRowDate)}
-              </div>
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                className="h-7 w-7 shrink-0"
-                onClick={() => setSelectedRowDate((d) => addDaysToYmd(d, 1))}
-              >
-                <ChevronRight className="w-4 h-4" />
-              </Button>
-            </div>
+          {/* Selected date display (read-only) */}
+          <div className="text-center text-[11px] font-semibold tracking-widest text-foreground font-mono mb-2 py-1 rounded-md border border-border/70 bg-muted/30">
+            {formatPerthDateLabel(selectedRowDate)}
+          </div>
+          {/* Now (quarter) | Date (quarter) | Done (half) */}
           <div className="flex gap-1.5">
-            {/* Now — half of left side */}
             <Button
               size="sm"
               variant="outline"
-              className="flex-1 h-7 text-xs"
+              className="w-[22%] h-7 text-xs px-1"
               onClick={() => {
                 const now = new Date();
                 const h24 = now.getHours();
@@ -1514,16 +1504,14 @@ function TimePickerCell({
             >
               Now
             </Button>
-            {/* Date — half of left side: stamps today's Perth date */}
             <Button
               size="sm"
               variant="outline"
-              className="flex-1 h-7 text-xs"
-              onClick={() => setSelectedRowDate(getTodayPerthYmd())}
+              className="w-[22%] h-7 text-xs px-1"
+              onClick={() => setSelectedRowDate(sheetCreatedYmd)}
             >
               Date
             </Button>
-            {/* Done — right side */}
             <Button
               size="sm"
               className="flex-1 h-7 text-xs"
@@ -3080,6 +3068,7 @@ export default function SheetDetail() {
                             return new Intl.DateTimeFormat("en-CA", { timeZone: PERTH_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
                           })()}
                           sheetHasCrossedMidnight={sheetHasCrossedMidnight}
+                          sheetCreatedAt={sheet?.createdAt ? new Date(sheet.createdAt).getTime() : null}
                           onSave={(display, mins, dayOff, rd) => updateRow.mutate({ id: row.id, time: display, timeMinutes: mins, dayOffset: dayOff, rowDate: rd })}
                         />
                       </td>

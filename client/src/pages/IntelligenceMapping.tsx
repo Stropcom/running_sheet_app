@@ -771,7 +771,7 @@ export default function IntelligenceMapping() {
     "SC", "HBF",
     ...(Array.from({ length: 8 }, (_, i) => [`V${i + 1}F`, `V${i + 1}`]) as string[][]).flat(),
     "TGT", "DSO", "DR", "FP", "US", "DE", "AR", "CV", "OOS", "COOS", "PU", "PT", "RACK",
-    "DEP", "ARR",
+    "DEP",
     ...(Array.from({ length: 10 }, (_, i) => `#${i + 1}`) as string[]),
   ];
   // QE chips mirror the main RS chip order (read from the active sheet's localStorage key)
@@ -2244,7 +2244,14 @@ export default function IntelligenceMapping() {
       setMapQeMinute(String(min).padStart(2, "0"));
       setMapQePeriod(ampm);
       setMapQeTimeOverride(`${String(h12).padStart(2,"0")}:${String(min).padStart(2,"0")} ${ampm}`);
-      setMapQeRowDate(_getTodayPerthYmd()); // reset date to today (Perth) on each open
+      // Default date to the RS creation date (Perth) so operators don't accidentally log on the wrong day
+      const selectedSheet = (rsSheetsData as any[] | undefined)?.find((s: any) => s.id === rsSelectedSheetId);
+      if (selectedSheet?.createdAt) {
+        const sheetDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Perth", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(selectedSheet.createdAt));
+        setMapQeRowDate(sheetDate);
+      } else {
+        setMapQeRowDate(_getTodayPerthYmd());
+      }
       // Use a small delay so the sheet has rendered before we set focus
       setTimeout(() => {
         setRsInlineLabel("Entry");
@@ -2259,7 +2266,7 @@ export default function IntelligenceMapping() {
       setRsInlineLabel(null);
       setRsInlineText("");
     }
-  }, [mapQeOpen, rsSelectedSheetId]);
+  }, [mapQeOpen, rsSelectedSheetId, rsSheetsData]);
 
   const addQuickRsEntry = (observation: string, cinsToAttach?: Set<string> | null, timeOverride?: string | null, rowDateOverride?: string | null) => {
     if (!rsSelectedSheetId) return;
@@ -3856,29 +3863,11 @@ export default function IntelligenceMapping() {
               </Select>
             </div>
 
-            {/* Date selector — always visible so operators can set the calendar date */}
-            <div className="flex items-center justify-between gap-1 mb-1 px-0.5 py-1 rounded-md border border-border/70 bg-muted/30">
-              <button
-                type="button"
-                className="h-7 w-7 flex items-center justify-center rounded hover:bg-accent/50 transition-colors"
-                onClick={() => setMapQeRowDate((d) => _addDaysToYmd(d, -1))}
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <div className="flex-1 text-center text-[11px] font-semibold tracking-widest text-foreground font-mono">
+            {/* Date display (read-only) + Now/Date buttons inline */}
+            <div className="flex items-center gap-1 mb-3">
+              <div className="flex-1 text-[11px] font-semibold tracking-widest text-foreground font-mono py-1 px-2 rounded border border-border/70 bg-muted/30 truncate">
                 {_formatPerthDateLabel(mapQeRowDate)}
               </div>
-              <button
-                type="button"
-                className="h-7 w-7 flex items-center justify-center rounded hover:bg-accent/50 transition-colors"
-                onClick={() => setMapQeRowDate((d) => _addDaysToYmd(d, 1))}
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Now / Date buttons */}
-            <div className="flex gap-1.5 mb-3">
               <button
                 type="button"
                 onClick={() => {
@@ -3891,12 +3880,20 @@ export default function IntelligenceMapping() {
                   setMapQePeriod(ampm);
                   setMapQeTimeOverride(`${String(h12).padStart(2,"0")}:${String(min).padStart(2,"0")} ${ampm}`);
                 }}
-                className="flex-1 h-7 text-[11px] font-medium rounded border border-border bg-muted/30 hover:bg-accent/50 active:scale-95 transition-all"
+                className="h-6 px-2 text-[10px] font-medium rounded border border-border bg-muted/30 hover:bg-accent/50 active:scale-95 transition-all whitespace-nowrap"
               >Now</button>
               <button
                 type="button"
-                onClick={() => setMapQeRowDate(_getTodayPerthYmd())}
-                className="flex-1 h-7 text-[11px] font-medium rounded border border-border bg-muted/30 hover:bg-accent/50 active:scale-95 transition-all"
+                onClick={() => {
+                  const selectedSheet = (rsSheetsData as any[] | undefined)?.find((s: any) => s.id === rsSelectedSheetId);
+                  if (selectedSheet?.createdAt) {
+                    const sheetDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Perth", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(selectedSheet.createdAt));
+                    setMapQeRowDate(sheetDate);
+                  } else {
+                    setMapQeRowDate(_getTodayPerthYmd());
+                  }
+                }}
+                className="h-6 px-2 text-[10px] font-medium rounded border border-border bg-muted/30 hover:bg-accent/50 active:scale-95 transition-all whitespace-nowrap"
               >Date</button>
             </div>
 

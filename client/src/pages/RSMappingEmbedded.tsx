@@ -184,22 +184,99 @@ function offsetLatLng(lat: number, lng: number, dxM: number, dyM: number): { lat
   return { lat: lat + dLat, lng: lng + dLng };
 }
 
+/**
+ * Builds an offset-badge marker:
+ *   • A small 8px filled dot at the exact coordinate (the AdvancedMarker anchor)
+ *   • An SVG leader line from the dot up-right to the badge
+ *   • A 20px circular badge offset ~30px up and ~18px right
+ * The whole element is positioned so the dot sits at the anchor point.
+ */
 function buildNumberPin(index: number, isFirst: boolean, isLast: boolean): HTMLElement {
-  const el = document.createElement("div");
   let bg = "#6366f1";
   if (isFirst) bg = "#16a34a";
   if (isLast) bg = "#dc2626";
-  el.style.cssText = `
-    width:28px;height:28px;border-radius:50%;
-    background:${bg};color:#fff;
-    font-size:11px;font-weight:700;
-    display:flex;align-items:center;justify-content:center;
-    border:2px solid #fff;
-    box-shadow:0 2px 6px rgba(0,0,0,0.35);
-    cursor:pointer;user-select:none;
-  `;
-  el.textContent = String(index);
-  return el;
+
+  // Offset amounts (px): badge is this far up and to the right of the dot
+  const DX = 18; // rightward offset of badge centre from dot
+  const DY = 30; // upward offset of badge centre from dot
+  const BADGE_R = 10; // badge radius (20px diameter)
+  const DOT_R = 4;   // anchor dot radius
+
+  // SVG canvas is large enough to contain both dot and badge
+  const svgW = DX + BADGE_R + DOT_R + 2;
+  const svgH = DY + BADGE_R + DOT_R + 2;
+  // Dot sits at bottom-left of the SVG canvas
+  const dotCx = DOT_R + 1;
+  const dotCy = svgH - DOT_R - 1;
+  // Badge centre
+  const badgeCx = dotCx + DX;
+  const badgeCy = dotCy - DY;
+
+  const wrapper = document.createElement("div");
+  // Position so the dot (anchor) is at the coordinate
+  wrapper.style.cssText = [
+    "position:relative",
+    `width:${svgW}px`,
+    `height:${svgH}px`,
+    "cursor:pointer",
+    "user-select:none",
+    // Shift the element so the dot (bottom-left) aligns with the map coordinate
+    `transform:translate(-${dotCx}px, -${dotCy}px)`,
+  ].join(";");
+
+  // SVG: leader line + dot
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("width", String(svgW));
+  svg.setAttribute("height", String(svgH));
+  svg.style.cssText = "position:absolute;top:0;left:0;pointer-events:none;overflow:visible;";
+
+  // Leader line from dot to badge edge
+  const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  line.setAttribute("x1", String(dotCx));
+  line.setAttribute("y1", String(dotCy));
+  line.setAttribute("x2", String(badgeCx));
+  line.setAttribute("y2", String(badgeCy));
+  line.setAttribute("stroke", bg);
+  line.setAttribute("stroke-width", "1.5");
+  line.setAttribute("stroke-opacity", "0.8");
+  svg.appendChild(line);
+
+  // Anchor dot
+  const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  dot.setAttribute("cx", String(dotCx));
+  dot.setAttribute("cy", String(dotCy));
+  dot.setAttribute("r", String(DOT_R));
+  dot.setAttribute("fill", bg);
+  dot.setAttribute("stroke", "#fff");
+  dot.setAttribute("stroke-width", "1.5");
+  svg.appendChild(dot);
+
+  wrapper.appendChild(svg);
+
+  // Badge (positioned absolutely over the SVG)
+  const badge = document.createElement("div");
+  badge.style.cssText = [
+    "position:absolute",
+    `width:${BADGE_R * 2}px`,
+    `height:${BADGE_R * 2}px`,
+    `left:${badgeCx - BADGE_R}px`,
+    `top:${badgeCy - BADGE_R}px`,
+    "border-radius:50%",
+    `background:${bg}`,
+    "color:#fff",
+    "font-size:9px",
+    "font-weight:700",
+    "display:flex",
+    "align-items:center",
+    "justify-content:center",
+    "border:1.5px solid #fff",
+    "box-shadow:0 1px 4px rgba(0,0,0,0.4)",
+    "pointer-events:auto",
+  ].join(";");
+  badge.textContent = String(index);
+  wrapper.appendChild(badge);
+
+  return wrapper;
 }
 
 function buildCustomPin(icon: MarkerIcon, colour: MarkerColour, rotation: number, index: number): HTMLElement {
@@ -585,12 +662,12 @@ export default function RSMappingEmbedded() {
 
         const circle = document.createElement("div");
         circle.style.cssText = [
-          "width:28px",
-          "height:28px",
+          "width:20px",
+          "height:20px",
           "border-radius:50%",
           `background:${bg}`,
           "color:#fff",
-          "font-size:11px",
+          "font-size:9px",
           "font-weight:700",
           "display:flex",
           "align-items:center",
@@ -948,13 +1025,121 @@ export default function RSMappingEmbedded() {
                : COLOUR_HEX[wp.markerColour ?? "blue"] ?? "#1E88E5",
       }));
 
+      // Fetch the clean base map (no markers) so we can draw our own markers on canvas
       const result = await trpcClient.rsMapping.getStaticMapImage.query({
-        waypoints: waypointList,
+        waypoints: [],   // no markers from Static Maps — we'll draw them ourselves
         center: center ? { lat: center.lat(), lng: center.lng() } : undefined,
         zoom: zoom ?? undefined,
         size: "800x1000",
       });
-      mapImageDataUrl = result.dataUrl;
+
+      // Draw waypoints + route line on top of the static map using Canvas
+      const baseImg = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = result.dataUrl;
+      });
+
+      const canvas = document.createElement("canvas");
+      canvas.width = baseImg.naturalWidth;
+      canvas.height = baseImg.naturalHeight;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(baseImg, 0, 0);
+
+      // Project lat/lng to pixel using Mercator (matching Static Maps scale=2)
+      const mapZoom = zoom ?? 13;
+      const mapCenterLat = center ? center.lat() : -31.9505;
+      const mapCenterLng = center ? center.lng() : 115.8605;
+      const TILE_SIZE = 256;
+      const scale = 2; // scale=2 in Static Maps request
+      const mapW = canvas.width;
+      const mapH = canvas.height;
+
+      const mercatorProject = (lat: number, lng: number): { x: number; y: number } => {
+        const siny = Math.sin((lat * Math.PI) / 180);
+        const clampedSiny = Math.min(Math.max(siny, -0.9999), 0.9999);
+        const worldX = TILE_SIZE * (0.5 + lng / 360);
+        const worldY = TILE_SIZE * (0.5 - Math.log((1 + clampedSiny) / (1 - clampedSiny)) / (4 * Math.PI));
+        return { x: worldX, y: worldY };
+      };
+
+      const mapScale = scale * Math.pow(2, mapZoom);
+      const centerWorld = mercatorProject(mapCenterLat, mapCenterLng);
+
+      const latLngToCanvas = (lat: number, lng: number): { x: number; y: number } => {
+        const world = mercatorProject(lat, lng);
+        return {
+          x: mapW / 2 + (world.x - centerWorld.x) * mapScale / TILE_SIZE,
+          y: mapH / 2 + (world.y - centerWorld.y) * mapScale / TILE_SIZE,
+        };
+      };
+
+      // Draw route polyline
+      if (waypointList.length > 1) {
+        ctx.beginPath();
+        ctx.strokeStyle = "rgba(99,102,241,0.8)";
+        ctx.lineWidth = 3;
+        ctx.lineJoin = "round";
+        const first = latLngToCanvas(waypointList[0].lat, waypointList[0].lng);
+        ctx.moveTo(first.x, first.y);
+        for (let wi = 1; wi < waypointList.length; wi++) {
+          const pt = latLngToCanvas(waypointList[wi].lat, waypointList[wi].lng);
+          ctx.lineTo(pt.x, pt.y);
+        }
+        ctx.stroke();
+      }
+
+      // Draw each waypoint: dot + leader line + badge (matching live map style)
+      const DX_C = 18 * scale;
+      const DY_C = 30 * scale;
+      const BADGE_R_C = 10 * scale;
+      const DOT_R_C = 4 * scale;
+      const FONT_SIZE_C = 9 * scale;
+
+      for (const wp of waypointList) {
+        const { x, y } = latLngToCanvas(wp.lat, wp.lng);
+        const colour = wp.colour ?? "#6366f1";
+        const badgeCx = x + DX_C;
+        const badgeCy = y - DY_C;
+
+        // Leader line
+        ctx.beginPath();
+        ctx.strokeStyle = colour;
+        ctx.lineWidth = 1.5 * scale;
+        ctx.globalAlpha = 0.85;
+        ctx.moveTo(x, y);
+        ctx.lineTo(badgeCx, badgeCy);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+
+        // Anchor dot
+        ctx.beginPath();
+        ctx.arc(x, y, DOT_R_C, 0, Math.PI * 2);
+        ctx.fillStyle = colour;
+        ctx.fill();
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 1.5 * scale;
+        ctx.stroke();
+
+        // Badge circle
+        ctx.beginPath();
+        ctx.arc(badgeCx, badgeCy, BADGE_R_C, 0, Math.PI * 2);
+        ctx.fillStyle = colour;
+        ctx.fill();
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 1.5 * scale;
+        ctx.stroke();
+
+        // Badge number
+        ctx.fillStyle = "#fff";
+        ctx.font = `bold ${FONT_SIZE_C}px system-ui,sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(String(wp.index), badgeCx, badgeCy);
+      }
+
+      mapImageDataUrl = canvas.toDataURL("image/png");
     } catch (err) {
       console.warn("Static map image failed:", err);
       toast.warning("Map image unavailable — PDF will include a placeholder");

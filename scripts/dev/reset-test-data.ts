@@ -11,6 +11,7 @@
  * DATABASE_URL. The script refuses to run unless the host looks local, or
  * --force is passed.
  */
+import "dotenv/config";
 import mysql from "mysql2/promise";
 
 const TABLES_TO_WIPE = [

@@ -17,6 +17,7 @@
  * Local dev/testing use only — refuses to run unless DATABASE_URL looks
  * local, or --force is also passed.
  */
+import "dotenv/config";
 import mysql from "mysql2/promise";
 
 function isLocalHost(databaseUrl: string): boolean {

@@ -5,6 +5,7 @@
  *
  * Usage: pnpm tsx scripts/dev/list-data.ts
  */
+import "dotenv/config";
 import mysql from "mysql2/promise";
 
 function isLocalHost(databaseUrl: string): boolean {

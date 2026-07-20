@@ -825,11 +825,11 @@ export const appRouter = router({
         rowId: z.number(),
         // base64-encoded image data
         dataBase64: z.string().min(1),
-        // Broad on purpose — HEIC/HEIF (default iPhone photo format) is
-        // converted to JPEG below, and browsers report its mimeType
-        // inconsistently (sometimes empty), so the original filename is
-        // used as a fallback signal.
-        mimeType: z.string().min(1),
+        // Deliberately unrestricted — browsers report file.type
+        // inconsistently (often empty, e.g. for HEIC on Windows), so this
+        // is validated/inferred (with the filename as a fallback) below
+        // rather than at the schema level.
+        mimeType: z.string(),
         fileName: z.string().optional(),
         caption: z.string().optional(),
       }))
@@ -842,7 +842,18 @@ export const appRouter = router({
           throw new TRPCError({ code: "BAD_REQUEST", message: "Photo must be under 10 MB." });
         }
 
-        let mimeType = input.mimeType;
+        // The browser's reported type isn't always trustworthy (or present
+        // at all), so fall back to the filename extension when it doesn't
+        // look like a real image mimeType.
+        const EXT_TO_MIME: Record<string, string> = {
+          jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
+          webp: "image/webp", gif: "image/gif", heic: "image/heic", heif: "image/heif",
+        };
+        const fileExt = (input.fileName ?? "").split(".").pop()?.toLowerCase();
+        let mimeType = /^image\//.test(input.mimeType)
+          ? input.mimeType
+          : (fileExt && EXT_TO_MIME[fileExt]) || input.mimeType;
+
         const isHeic = /^image\/hei[cf]$/i.test(mimeType) || /\.hei[cf]$/i.test(input.fileName ?? "");
         if (isHeic) {
           try {

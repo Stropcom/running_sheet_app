@@ -1172,7 +1172,7 @@ function ObservationAttachments({
 }: {
   row: SheetRow;
   canEdit: boolean;
-  onUpload: (rowId: number, dataBase64: string, mimeType: string) => void;
+  onUpload: (rowId: number, dataBase64: string, mimeType: string, fileName: string) => void;
   onDelete: (id: number) => void;
   uploading: boolean;
 }) {
@@ -1186,12 +1186,16 @@ function ObservationAttachments({
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 10 * 1024 * 1024) { toast.error("Photo must be under 10 MB."); return; }
+    // HEIC/HEIF (default iPhone format) can't be previewed by the browser —
+    // it gets converted to JPEG server-side, so skip the raw-bytes preview
+    // for it rather than show a broken image icon while uploading.
+    const isHeic = /^image\/hei[cf]$/i.test(file.type) || /\.hei[cf]$/i.test(file.name);
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = reader.result as string;
-      setPreview(dataUrl);
+      if (!isHeic) setPreview(dataUrl);
       const base64 = dataUrl.split(",")[1];
-      onUpload(row.id, base64, file.type);
+      onUpload(row.id, base64, file.type, file.name);
     };
     reader.readAsDataURL(file);
     e.target.value = "";
@@ -1233,7 +1237,7 @@ function ObservationAttachments({
           >
             <Camera className="h-4 w-4" />
           </button>
-          <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+          <input ref={inputRef} type="file" accept="image/*,.heic,.heif" className="hidden" onChange={handleFile} />
         </>
       )}
 
@@ -3240,7 +3244,7 @@ export default function SheetDetail() {
                         <ObservationAttachments
                           row={row}
                           canEdit={canEdit && !row.isLocked}
-                          onUpload={(rowId, dataBase64, mimeType) => uploadAttachment.mutate({ rowId, dataBase64, mimeType })}
+                          onUpload={(rowId, dataBase64, mimeType, fileName) => uploadAttachment.mutate({ rowId, dataBase64, mimeType, fileName })}
                           onDelete={(id) => deleteAttachment.mutate({ id })}
                           uploading={uploadAttachment.isPending}
                         />

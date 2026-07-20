@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import heicConvert from "heic-convert";
 import { storagePut } from "./storage";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -824,25 +825,46 @@ export const appRouter = router({
         rowId: z.number(),
         // base64-encoded image data
         dataBase64: z.string().min(1),
-        mimeType: z.string().regex(/^image\/(jpeg|png|webp|gif)$/, "Only JPEG, PNG, WebP or GIF images are allowed."),
+        // Broad on purpose — HEIC/HEIF (default iPhone photo format) is
+        // converted to JPEG below, and browsers report its mimeType
+        // inconsistently (sometimes empty), so the original filename is
+        // used as a fallback signal.
+        mimeType: z.string().min(1),
+        fileName: z.string().optional(),
         caption: z.string().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
         const row = await getRowById(input.rowId);
         if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Row not found." });
-        const buffer = Buffer.from(input.dataBase64, "base64");
+        let buffer: Buffer = Buffer.from(input.dataBase64, "base64");
         // Limit to 10 MB — photos taken on a phone can run larger than the 5MB wallpaper cap
         if (buffer.byteLength > 10 * 1024 * 1024) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Photo must be under 10 MB." });
         }
-        const ext = input.mimeType.split("/")[1];
+
+        let mimeType = input.mimeType;
+        const isHeic = /^image\/hei[cf]$/i.test(mimeType) || /\.hei[cf]$/i.test(input.fileName ?? "");
+        if (isHeic) {
+          try {
+            buffer = await heicConvert({ buffer, format: "JPEG", quality: 0.9 });
+          } catch {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Could not read that HEIC/HEIF photo." });
+          }
+          mimeType = "image/jpeg";
+        }
+
+        if (!/^image\/(jpeg|png|webp|gif)$/.test(mimeType)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Only JPEG, PNG, WebP, GIF, or HEIC/HEIF images are allowed." });
+        }
+
+        const ext = mimeType.split("/")[1];
         const key = `row-attachments/sheet-${row.sheetId}/row-${row.id}/${Date.now()}.${ext}`;
-        const { url } = await storagePut(key, buffer, input.mimeType);
+        const { url } = await storagePut(key, buffer, mimeType);
         const id = await createRowAttachment({
           rowId: input.rowId,
           key,
           url,
-          mimeType: input.mimeType,
+          mimeType,
           caption: input.caption,
           uploadedBy: ctx.user.id,
           uploadedByCIN: ctx.user.cin ?? undefined,

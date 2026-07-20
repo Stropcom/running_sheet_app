@@ -4220,13 +4220,11 @@ export async function getRsMappingWaypoints(sheetId: number): Promise<RsWaypoint
       const displayKey = addrMatchKey(addrEntity.shortForm);
       if (displayKey && !knownAddressMap.has(displayKey)) {
         knownAddressMap.set(displayKey, addrEntity.shortForm);
-        console.log(`[RS-MAP] knownAddressMap register displayKey="${displayKey}" → "${addrEntity.shortForm}"`);
       }
       // Also register by rawShortForm key (the exact bracket token, e.g. "4 glyde st")
       const rawKey = addrMatchKey(addrEntity.rawShortForm);
       if (rawKey && rawKey !== displayKey && !knownAddressMap.has(rawKey)) {
         knownAddressMap.set(rawKey, addrEntity.shortForm);
-        console.log(`[RS-MAP] knownAddressMap register rawKey="${rawKey}" → "${addrEntity.shortForm}"`);
       }
       addressRows.push({ row, address: addrEntity.shortForm, addressFull: addrEntity.shortForm });
       rowIdsWithBracketed.add(row.id);
@@ -4243,7 +4241,6 @@ export async function getRsMappingWaypoints(sheetId: number): Promise<RsWaypoint
     // Try to enrich with a known full address from earlier in the sheet
     const matchKey = addrMatchKey(rawAddr);
     const knownFull = knownAddressMap.get(matchKey);
-    console.log(`[RS-MAP] bare addr lookup: rawAddr="${rawAddr}" matchKey="${matchKey}" knownFull=${knownFull ? `"${knownFull}"` : 'MISS'} mapKeys=[${Array.from(knownAddressMap.keys()).join(', ')}]`);
     addressRows.push({
       row,
       address: rawAddr,

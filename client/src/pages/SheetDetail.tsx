@@ -2175,17 +2175,25 @@ export default function SheetDetail() {
     "SC", "HBF",
     ...Array.from({ length: 8 }, (_, i) => [`V${i + 1}F`, `V${i + 1}`]).flat(),
     "TGT", "DSO", "DR", "FP", "US", "DE", "AR", "CV", "OOS", "COOS", "PU", "PT", "RACK",
-    "DEP",
+    "DEP", "ARR",
     ...Array.from({ length: 10 }, (_, i) => `#${i + 1}`),
   ];
   const [targetFieldOrder, setTargetFieldOrder] = useState<string[]>(() => {
     try {
       const s = localStorage.getItem(`runsheet_field_order_${sheetId}`);
       if (s) {
-        // Migrate: remove ARR from any saved order
         const saved: string[] = JSON.parse(s);
-        const migrated = saved.filter((c) => c !== "ARR");
-        if (migrated.length !== saved.length) localStorage.setItem(`runsheet_field_order_${sheetId}`, JSON.stringify(migrated));
+        // Migrate: ensure ARR is present after DEP in any saved order
+        let migrated = [...saved];
+        if (!migrated.includes("ARR")) {
+          const depIdx = migrated.indexOf("DEP");
+          if (depIdx >= 0) {
+            migrated.splice(depIdx + 1, 0, "ARR");
+          } else {
+            migrated.push("ARR");
+          }
+          localStorage.setItem(`runsheet_field_order_${sheetId}`, JSON.stringify(migrated));
+        }
         return migrated;
       }
     } catch {}

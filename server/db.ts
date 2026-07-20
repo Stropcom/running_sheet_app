@@ -4197,12 +4197,14 @@ export async function getRsMappingWaypoints(sheetId: number): Promise<RsWaypoint
       .replace(/\bblvd\b/gi, "boulevard")
       .replace(/\besp\b/gi, "esplanade");
 
-  // Extract just the street number + street name (first two meaningful tokens) for fuzzy matching
+  // Extract just the street number + street name for fuzzy matching.
+  // IMPORTANT: split on comma BEFORE normalising (normaliseAddrKey strips commas, so
+  // splitting after normalisation never fires and the suburb bleeds into the key).
   const addrMatchKey = (addr: string): string => {
-    const norm = normaliseAddrKey(expandStreetTypes(addr));
-    // Take up to the first comma or suburb/state boundary
-    const base = norm.split(/,|\bwa\b|\bnsw\b|\bvic\b|\bqld\b|\bsa\b|\btas\b|\bnt\b|\bact\b/)[0].trim();
-    return base;
+    const expanded = expandStreetTypes(addr);
+    // Split at first comma OR at a state code word boundary (raw string, before stripping)
+    const base = expanded.split(/,|\s+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\b/i)[0].trim();
+    return normaliseAddrKey(base);
   };
 
   const addressRows: RawWaypoint[] = [];
@@ -4214,11 +4216,19 @@ export async function getRsMappingWaypoints(sheetId: number): Promise<RsWaypoint
     const addrEntity = entities.find((e) => e.type === "address");
     if (addrEntity) {
       // Bracketed address found — use it and register in knownAddressMap
-      const matchKey = addrMatchKey(addrEntity.shortForm);
-      if (matchKey && !knownAddressMap.has(matchKey)) {
-        knownAddressMap.set(matchKey, addrEntity.fullDescription || addrEntity.shortForm);
+      // Register by display shortForm key (e.g. "4 glyde street")
+      const displayKey = addrMatchKey(addrEntity.shortForm);
+      if (displayKey && !knownAddressMap.has(displayKey)) {
+        knownAddressMap.set(displayKey, addrEntity.shortForm);
+        console.log(`[RS-MAP] knownAddressMap register displayKey="${displayKey}" → "${addrEntity.shortForm}"`);
       }
-      addressRows.push({ row, address: addrEntity.shortForm, addressFull: addrEntity.fullDescription });
+      // Also register by rawShortForm key (the exact bracket token, e.g. "4 glyde st")
+      const rawKey = addrMatchKey(addrEntity.rawShortForm);
+      if (rawKey && rawKey !== displayKey && !knownAddressMap.has(rawKey)) {
+        knownAddressMap.set(rawKey, addrEntity.shortForm);
+        console.log(`[RS-MAP] knownAddressMap register rawKey="${rawKey}" → "${addrEntity.shortForm}"`);
+      }
+      addressRows.push({ row, address: addrEntity.shortForm, addressFull: addrEntity.shortForm });
       rowIdsWithBracketed.add(row.id);
     }
   }
@@ -4233,6 +4243,7 @@ export async function getRsMappingWaypoints(sheetId: number): Promise<RsWaypoint
     // Try to enrich with a known full address from earlier in the sheet
     const matchKey = addrMatchKey(rawAddr);
     const knownFull = knownAddressMap.get(matchKey);
+    console.log(`[RS-MAP] bare addr lookup: rawAddr="${rawAddr}" matchKey="${matchKey}" knownFull=${knownFull ? `"${knownFull}"` : 'MISS'} mapKeys=[${Array.from(knownAddressMap.keys()).join(', ')}]`);
     addressRows.push({
       row,
       address: rawAddr,

@@ -952,7 +952,7 @@ export default function RSMappingEmbedded() {
         waypoints: waypointList,
         center: center ? { lat: center.lat(), lng: center.lng() } : undefined,
         zoom: zoom ?? undefined,
-        size: "1200x630",
+        size: "800x1000",
       });
       mapImageDataUrl = result.dataUrl;
     } catch (err) {
@@ -1023,7 +1023,7 @@ export default function RSMappingEmbedded() {
   tbody tr:nth-child(even) { background: #f9fafb; }
   @media print {
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    @page { size: A4 landscape; margin: 8mm; }
+    @page { size: A4 portrait; margin: 8mm; }
     .map-page { height: 100vh; page-break-after: always; break-after: page; }
   }
 </style>

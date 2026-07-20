@@ -4169,9 +4169,31 @@ export async function getRsMappingWaypoints(sheetId: number): Promise<RsWaypoint
   const normaliseAddrKey = (addr: string): string =>
     addr.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
 
+  // Expand common street-type abbreviations to their full form so that
+  // "50 Kings Park Rd" and "50 Kings Park Road" produce the same key.
+  const expandStreetTypes = (s: string): string =>
+    s
+      .replace(/\brd\b/gi, "road")
+      .replace(/\bst\b/gi, "street")
+      .replace(/\bave?\b/gi, "avenue")
+      .replace(/\bdr\b/gi, "drive")
+      .replace(/\bhwy\b/gi, "highway")
+      .replace(/\bfwy\b/gi, "freeway")
+      .replace(/\btce\b/gi, "terrace")
+      .replace(/\bpde\b/gi, "parade")
+      .replace(/\bcct\b/gi, "circuit")
+      .replace(/\bgr\b/gi, "grove")
+      .replace(/\bln\b/gi, "lane")
+      .replace(/\bpl\b/gi, "place")
+      .replace(/\bct\b/gi, "court")
+      .replace(/\bcl\b/gi, "close")
+      .replace(/\bcres\b/gi, "crescent")
+      .replace(/\bblvd\b/gi, "boulevard")
+      .replace(/\besp\b/gi, "esplanade");
+
   // Extract just the street number + street name (first two meaningful tokens) for fuzzy matching
   const addrMatchKey = (addr: string): string => {
-    const norm = normaliseAddrKey(addr);
+    const norm = normaliseAddrKey(expandStreetTypes(addr));
     // Take up to the first comma or suburb/state boundary
     const base = norm.split(/,|\bwa\b|\bnsw\b|\bvic\b|\bqld\b|\bsa\b|\btas\b|\bnt\b|\bact\b/)[0].trim();
     return base;

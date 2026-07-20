@@ -184,128 +184,22 @@ function offsetLatLng(lat: number, lng: number, dxM: number, dyM: number): { lat
   return { lat: lat + dLat, lng: lng + dLng };
 }
 
-/**
- * Builds an offset-badge marker.
- *
- * AdvancedMarkerElement anchors at the BOTTOM-CENTRE of the content element.
- * So: dot MUST be at the bottom-centre of the wrapper.
- * Badge is offset DX px to the right and DY px upward from the dot.
- * A leader line + white halo connects dot to badge.
- *
- * Geometry (all px):
- *   DOT_R  = 4   anchor dot radius
- *   BADGE_R= 10  badge radius (20px diameter)
- *   DX     = 20  badge centre rightward from dot
- *   DY     = 28  badge centre upward from dot
- *
- * Wrapper size:
- *   width  = DOT_R*2 + DX + BADGE_R + extra  (dot at left half, badge extends right)
- *   height = DY + BADGE_R + DOT_R + extra
- *   dot is at (DOT_R + extra/2, height - DOT_R - extra/2)  ← bottom-centre
- */
 function buildNumberPin(index: number, isFirst: boolean, isLast: boolean): HTMLElement {
+  const el = document.createElement("div");
   let bg = "#6366f1";
   if (isFirst) bg = "#16a34a";
   if (isLast) bg = "#dc2626";
-
-  const DX = 20;       // badge centre rightward from dot
-  const DY = 28;       // badge centre upward from dot
-  const BADGE_R = 10;  // badge radius → 20px diameter
-  const DOT_R = 4;     // anchor dot radius
-  const PAD = 3;       // extra padding so circles don't clip
-
-  // AdvancedMarkerElement anchors at the BOTTOM-CENTRE of the wrapper element.
-  // Therefore: dot MUST be at x = svgW/2 (horizontal centre), y = svgH - PAD (near bottom).
-  //
-  // The badge extends DX right and DY up from the dot.
-  // Right side needs: DX + BADGE_R + PAD from dot centre.
-  // Left side needs: DOT_R + PAD from dot centre (just enough for the dot circle).
-  // To keep dot at centre, make both halves equal to the larger side.
-  const halfW = DX + BADGE_R + PAD;   // right side dominates
-  const svgW = halfW * 2;              // dot at x = halfW (= svgW/2) ✓
-  const svgH = DY + BADGE_R + DOT_R + PAD * 2;
-
-  // Dot at bottom-centre of wrapper
-  const dotCx = halfW;                 // = svgW / 2 exactly
-  const dotCy = svgH - DOT_R - PAD;
-
-  // Badge centre: dot + offset
-  const badgeCx = dotCx + DX;
-  const badgeCy = dotCy - DY;
-
-  const wrapper = document.createElement("div");
-  wrapper.style.cssText = [
-    "position:relative",
-    `width:${svgW}px`,
-    `height:${svgH}px`,
-    "cursor:pointer",
-    "user-select:none",
-  ].join(";");
-
-  // SVG: white halo + coloured leader line + anchor dot
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("width", String(svgW));
-  svg.setAttribute("height", String(svgH));
-  svg.style.cssText = "position:absolute;top:0;left:0;pointer-events:none;overflow:visible;";
-
-  // White halo for visibility on any map background
-  const lineHalo = document.createElementNS("http://www.w3.org/2000/svg", "line");
-  lineHalo.setAttribute("x1", String(dotCx));
-  lineHalo.setAttribute("y1", String(dotCy));
-  lineHalo.setAttribute("x2", String(badgeCx));
-  lineHalo.setAttribute("y2", String(badgeCy));
-  lineHalo.setAttribute("stroke", "#fff");
-  lineHalo.setAttribute("stroke-width", "3");
-  lineHalo.setAttribute("stroke-opacity", "0.75");
-  svg.appendChild(lineHalo);
-
-  // Coloured leader line
-  const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-  line.setAttribute("x1", String(dotCx));
-  line.setAttribute("y1", String(dotCy));
-  line.setAttribute("x2", String(badgeCx));
-  line.setAttribute("y2", String(badgeCy));
-  line.setAttribute("stroke", bg);
-  line.setAttribute("stroke-width", "1.5");
-  line.setAttribute("stroke-opacity", "0.9");
-  svg.appendChild(line);
-
-  // Anchor dot at exact coordinate
-  const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-  dot.setAttribute("cx", String(dotCx));
-  dot.setAttribute("cy", String(dotCy));
-  dot.setAttribute("r", String(DOT_R));
-  dot.setAttribute("fill", bg);
-  dot.setAttribute("stroke", "#fff");
-  dot.setAttribute("stroke-width", "1.5");
-  svg.appendChild(dot);
-
-  wrapper.appendChild(svg);
-
-  // Badge div (positioned absolutely over the SVG)
-  const badge = document.createElement("div");
-  badge.style.cssText = [
-    "position:absolute",
-    `width:${BADGE_R * 2}px`,
-    `height:${BADGE_R * 2}px`,
-    `left:${badgeCx - BADGE_R}px`,
-    `top:${badgeCy - BADGE_R}px`,
-    "border-radius:50%",
-    `background:${bg}`,
-    "color:#fff",
-    "font-size:9px",
-    "font-weight:700",
-    "display:flex",
-    "align-items:center",
-    "justify-content:center",
-    "border:1.5px solid #fff",
-    "box-shadow:0 1px 4px rgba(0,0,0,0.4)",
-    "pointer-events:auto",
-  ].join(";");
-  badge.textContent = String(index);
-  wrapper.appendChild(badge);
-
-  return wrapper;
+  el.style.cssText = `
+    width:28px;height:28px;border-radius:50%;
+    background:${bg};color:#fff;
+    font-size:11px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;
+    border:2px solid #fff;
+    box-shadow:0 2px 6px rgba(0,0,0,0.35);
+    cursor:pointer;user-select:none;
+  `;
+  el.textContent = String(index);
+  return el;
 }
 
 function buildCustomPin(icon: MarkerIcon, colour: MarkerColour, rotation: number, index: number): HTMLElement {
@@ -691,12 +585,12 @@ export default function RSMappingEmbedded() {
 
         const circle = document.createElement("div");
         circle.style.cssText = [
-          "width:20px",
-          "height:20px",
+          "width:28px",
+          "height:28px",
           "border-radius:50%",
           `background:${bg}`,
           "color:#fff",
-          "font-size:9px",
+          "font-size:11px",
           "font-weight:700",
           "display:flex",
           "align-items:center",
@@ -927,11 +821,80 @@ export default function RSMappingEmbedded() {
   }, []);
 
   const buildVisualOverlays = useCallback(() => {
-    // Visual RS mode: no additional overlays needed.
-    // The dot+leader+badge markers already show the sequence number.
-    // Address details appear in the popup on click.
-    // Keeping this as a no-op so the toggle still works without errors.
+    if (!mapRef.current) return;
     clearVisualOverlays();
+    const placed = placedWaypointsRef.current;
+    if (placed.length === 0) return;
+
+    // Build date map for all placed waypoints
+    const overlaySheetCreatedAt = (sheetsData as any[] | undefined)?.find((s: any) => s.id === selectedSheetId)?.createdAt ?? Date.now();
+    const overlayDateMap = buildWpDateMap(placed as unknown as WaypointRow[], overlaySheetCreatedAt);
+    const overlaySheetStartYmd = new Intl.DateTimeFormat("en-CA", { timeZone: RSM_PERTH_TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(overlaySheetCreatedAt));
+
+    placed.forEach((wp) => {
+      const overlay = new google.maps.OverlayView();
+      const lat = wp.lat;
+      const lng = wp.lng;
+      const time = wp.time ?? "—";
+      const address = wp.address;
+      const index = wp.index;
+      const total = placed.length;
+      const isFirst = index === 1;
+      const isLast = index === total;
+      const badgeColor = isFirst ? "#16a34a" : isLast ? "#dc2626" : "#6366f1";
+
+      // Date label for overlay (only show if different from sheet start day)
+      const wpYmd = overlayDateMap.get(wp.rowId);
+      const overlayDateLabel = wpYmd && wpYmd !== overlaySheetStartYmd ? rsmFormatPerthDateLabel(wpYmd) : null;
+
+      let div: HTMLDivElement | null = null;
+
+      overlay.onAdd = function () {
+        div = document.createElement("div");
+        div.style.cssText = [
+          "position:absolute",
+          "background:rgba(255,255,255,0.95)",
+          "border:1.5px solid " + badgeColor,
+          "border-radius:5px",
+          "padding:2px 5px",
+          "font-family:system-ui,sans-serif",
+          "font-size:8px",
+          "line-height:1.35",
+          "max-width:140px",
+          "min-width:60px",
+          "box-shadow:0 2px 6px rgba(0,0,0,0.15)",
+          "pointer-events:none",
+          "white-space:normal",
+          "word-break:break-word",
+          "z-index:10",
+          "transform:translate(-50%, calc(-100% - 26px))",
+        ].join(";");
+        div.innerHTML = [
+          `<div style="font-weight:700;color:${badgeColor};font-size:9px;">#${index} · ${time}${overlayDateLabel ? ` <span style="color:#7c3aed;font-size:7.5px;">(${overlayDateLabel})</span>` : ""}</div>`,
+          `<div style="color:#111;font-size:7.5px;margin-top:1px;">${address}</div>`,
+        ].join("");
+        const panes = this.getPanes()!;
+        panes.floatPane.appendChild(div);
+      };
+
+      overlay.draw = function () {
+        if (!div) return;
+        const proj = this.getProjection();
+        if (!proj) return;
+        const point = proj.fromLatLngToDivPixel(new google.maps.LatLng(lat, lng));
+        if (!point) return;
+        div.style.left = point.x + "px";
+        div.style.top = point.y + "px";
+      };
+
+      overlay.onRemove = function () {
+        if (div && div.parentNode) div.parentNode.removeChild(div);
+        div = null;
+      };
+
+      overlay.setMap(mapRef.current!);
+      visualOverlaysRef.current.push(overlay);
+    });
   }, [clearVisualOverlays]);
 
   // Toggle Visual RS mode
@@ -985,34 +948,12 @@ export default function RSMappingEmbedded() {
                : COLOUR_HEX[wp.markerColour ?? "blue"] ?? "#1E88E5",
       }));
 
-      // Fetch the clean base map (no markers) so we can draw our own markers on canvas.
-      // MUST pass explicit center+zoom so the static map extent matches the live map
-      // (without them, Static Maps auto-fits to a different extent and the projection is wrong).
-      // Compute bounds-based center+zoom from waypoints if live map values are unavailable.
-      let exportCenter = center ? { lat: center.lat(), lng: center.lng() } : null;
-      let exportZoom = zoom ?? null;
-      if (!exportCenter || exportZoom == null) {
-        // Fallback: compute from waypoint bounds
-        const lats = waypointList.map((w) => w.lat);
-        const lngs = waypointList.map((w) => w.lng);
-        exportCenter = {
-          lat: (Math.min(...lats) + Math.max(...lats)) / 2,
-          lng: (Math.min(...lngs) + Math.max(...lngs)) / 2,
-        };
-        // Rough zoom from span
-        const latSpan = Math.max(...lats) - Math.min(...lats);
-        const lngSpan = Math.max(...lngs) - Math.min(...lngs);
-        const span = Math.max(latSpan, lngSpan);
-        exportZoom = span < 0.01 ? 15 : span < 0.05 ? 13 : span < 0.2 ? 11 : span < 0.5 ? 10 : 9;
-      }
-
       const result = await trpcClient.rsMapping.getStaticMapImage.query({
-        waypoints: waypointList,  // let Static Maps render the markers reliably
-        center: exportCenter,
-        zoom: exportZoom ? Math.round(exportZoom) : undefined,
+        waypoints: waypointList,
+        center: center ? { lat: center.lat(), lng: center.lng() } : undefined,
+        zoom: zoom ?? undefined,
         size: "800x1000",
       });
-
       mapImageDataUrl = result.dataUrl;
     } catch (err) {
       console.warn("Static map image failed:", err);

@@ -473,20 +473,75 @@ export async function copyRunningSheet(sheetId: number, targetOperationId: numbe
 export async function getRowsBySheetId(sheetId: number) {
   const db = await getDb();
   if (!db) return [];
-  // Sort order:
-  //   1. Rows WITH a time set come first (ISNULL(timeMinutes) = 0 sorts before 1)
-  //   2. Among timed rows: ascending by timeMinutes
-  //   3. Tie-break: ascending by rowNumber (insertion order)
-  //   4. Rows WITHOUT a time float to the bottom, ordered by rowNumber
-  return db
+  // Fetch all rows ordered by rowNumber (insertion order) first so we can
+  // detect midnight rollovers from the time sequence itself.
+  const raw = await db
     .select()
     .from(sheetRows)
     .where(eq(sheetRows.sheetId, sheetId))
-    .orderBy(
-      sql`ISNULL(${sheetRows.timeMinutes}) ASC`,
-      sheetRows.timeMinutes,
-      sheetRows.rowNumber
-    );
+    .orderBy(sheetRows.rowNumber);
+
+  // ── Day-offset sort ──────────────────────────────────────────────────────────
+  // Priority order for determining a row's effective day:
+  //   1. rowDate (YYYY-MM-DD) — explicit operator-set date, most authoritative.
+  //      Day index is computed relative to the earliest rowDate in the sheet.
+  //   2. dayOffset != 0 — legacy explicit toggle (kept for backward compat).
+  //   3. Inference from timeMinutes sequence — for rows with neither.
+  const timedRows = raw.filter((r) => r.timeMinutes != null);
+  const noTimeRows = raw.filter((r) => r.timeMinutes == null);
+
+  // Build effective day offset for each row.
+  const dayOffsetMap = new Map<number, number>();
+
+  // Find the earliest rowDate among all rows that have one, to use as day-0 anchor.
+  const rowDates = raw.map((r) => r.rowDate).filter((d): d is string => !!d);
+  const minRowDate = rowDates.length > 0 ? rowDates.slice().sort()[0] : null;
+
+  // First pass: assign offsets from rowDate (highest priority) or stored dayOffset (legacy)
+  for (const r of timedRows) {
+    if (r.rowDate && minRowDate) {
+      // Compute day index relative to the earliest date in this sheet (Perth UTC+8)
+      const anchor = new Date(minRowDate + "T00:00:00+08:00").getTime();
+      const rowDay = new Date(r.rowDate + "T00:00:00+08:00").getTime();
+      const dayIdx = Math.round((rowDay - anchor) / 86400000);
+      dayOffsetMap.set(r.id, dayIdx);
+    } else if (r.dayOffset !== 0) {
+      dayOffsetMap.set(r.id, r.dayOffset);
+    }
+  }
+
+  // Second pass: infer for rows with no explicit date/offset
+  let currentDay = 0;
+  let prevEffective = -1;
+  for (const r of timedRows) {
+    if (dayOffsetMap.has(r.id)) {
+      // Already set explicitly — use it to update the running effective time
+      prevEffective = r.timeMinutes! + dayOffsetMap.get(r.id)! * 1440;
+      currentDay = dayOffsetMap.get(r.id)!;
+      continue;
+    }
+    const mins = r.timeMinutes!;
+    const effective = mins + currentDay * 1440;
+    if (prevEffective >= 0 && effective < prevEffective - 120) {
+      currentDay++;
+    }
+    dayOffsetMap.set(r.id, currentDay);
+    prevEffective = mins + currentDay * 1440;
+  }
+
+  const effectiveMins = (r: typeof raw[0]) =>
+    (r.timeMinutes ?? 0) + (dayOffsetMap.get(r.id) ?? 0) * 1440;
+
+  const sortedTimed = [...timedRows].sort((a, b) => {
+    const diff = effectiveMins(a) - effectiveMins(b);
+    if (diff !== 0) return diff;
+    return a.rowNumber - b.rowNumber;
+  });
+
+  // No-time rows float to the bottom, ordered by rowNumber
+  const sortedNoTime = [...noTimeRows].sort((a, b) => a.rowNumber - b.rowNumber);
+
+  return [...sortedTimed, ...sortedNoTime];
 }
 
 export async function getRowById(id: number) {
@@ -4017,6 +4072,10 @@ export interface RsWaypointRow {
    * Suburb context inferred from this waypoint's address (used to help geocode viaStreets).
    */
   suburbContext: string | null;
+  /** Explicit calendar date (YYYY-MM-DD, Perth) set by the operator */
+  rowDate: string | null;
+  /** Legacy day-offset (0 = sheet start day, 1 = next day, etc.) */
+  dayOffset: number;
 }
 
 /**
@@ -4099,19 +4158,98 @@ export async function getRsMappingWaypoints(sheetId: number): Promise<RsWaypoint
   const overrideMap = new Map(overrides.map((o) => [o.rowId, o]));
 
   // ── First pass: collect all address-bearing rows ──────────────────────────
+  // Strategy:
+  //  1. Bracketed format: "arrived at 50 Kings Park Rd, WEST PERTH WA (50 KPR)" → use extractEntitiesFromText
+  //  2. Unbracketed bare address: "50 Kings Park Road" (no brackets) → detect with street-type regex
+  //  3. Enrich unbracketed short-form addresses by matching against known full addresses seen earlier
+  //     in the sheet, so return visits get the correct full address for geocoding.
+
   interface RawWaypoint {
     row: typeof rows[number];
     address: string;
     addressFull: string;
   }
+
+  // Regex to detect a bare street address at the start of an observation or after a keyword
+  // Matches: "50 Kings Park Road", "cnr Smith St and Jones Ave", "146 Marine Parade, Cottesloe"
+  const BARE_ADDR_RE = /(?:^|(?:arrived?\s+at|departed?|at|to|from|outside|near|opposite|behind|beside|in\s+front\s+of|parked\s+(?:at|in|on|outside))\s+)((?:cnr\s+(?:of\s+)?|corner\s+of\s+|lot\s+\d+\s+|\d{1,5}[A-Za-z]?\/\d{1,5}\s+|\d{1,5}[A-Za-z]?\s+)[A-Za-z][\w\s,&'-]{3,80}?(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Highway|Hwy|Freeway|Fwy|Terrace|Tce|Parade|Pde|Circuit|Cct|Grove|Gr|Lane|Ln|Place|Pl|Court|Ct|Close|Cl|Crescent|Cres|Boulevard|Blvd|Way|Loop|Rise|Mews|Esplanade|Esp|Quay)(?:\s*,\s*[A-Za-z][\w\s]+)?)/i;
+
+  // Build a normalised-address → full-address lookup from bracketed entries seen so far
+  // Key: normalised street number + street name (lowercase, no punctuation)
+  // Value: the best full address string seen for that location
+  const knownAddressMap = new Map<string, string>(); // normKey → addressFull
+
+  const normaliseAddrKey = (addr: string): string =>
+    addr.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+
+  // Expand common street-type abbreviations to their full form so that
+  // "50 Kings Park Rd" and "50 Kings Park Road" produce the same key.
+  const expandStreetTypes = (s: string): string =>
+    s
+      .replace(/\brd\b/gi, "road")
+      .replace(/\bst\b/gi, "street")
+      .replace(/\bave?\b/gi, "avenue")
+      .replace(/\bdr\b/gi, "drive")
+      .replace(/\bhwy\b/gi, "highway")
+      .replace(/\bfwy\b/gi, "freeway")
+      .replace(/\btce\b/gi, "terrace")
+      .replace(/\bpde\b/gi, "parade")
+      .replace(/\bcct\b/gi, "circuit")
+      .replace(/\bgr\b/gi, "grove")
+      .replace(/\bln\b/gi, "lane")
+      .replace(/\bpl\b/gi, "place")
+      .replace(/\bct\b/gi, "court")
+      .replace(/\bcl\b/gi, "close")
+      .replace(/\bcres\b/gi, "crescent")
+      .replace(/\bblvd\b/gi, "boulevard")
+      .replace(/\besp\b/gi, "esplanade");
+
+  // Extract just the street number + street name (first two meaningful tokens) for fuzzy matching
+  const addrMatchKey = (addr: string): string => {
+    const norm = normaliseAddrKey(expandStreetTypes(addr));
+    // Take up to the first comma or suburb/state boundary
+    const base = norm.split(/,|\bwa\b|\bnsw\b|\bvic\b|\bqld\b|\bsa\b|\btas\b|\bnt\b|\bact\b/)[0].trim();
+    return base;
+  };
+
   const addressRows: RawWaypoint[] = [];
+  const rowIdsWithBracketed = new Set<number>(); // rows already handled by bracketed pass
+
   for (const row of rows) {
     if (!row.observation) continue;
     const entities = extractEntitiesFromText(row.observation);
     const addrEntity = entities.find((e) => e.type === "address");
-    if (!addrEntity) continue;
-    addressRows.push({ row, address: addrEntity.shortForm, addressFull: addrEntity.fullDescription });
+    if (addrEntity) {
+      // Bracketed address found — use it and register in knownAddressMap
+      const matchKey = addrMatchKey(addrEntity.shortForm);
+      if (matchKey && !knownAddressMap.has(matchKey)) {
+        knownAddressMap.set(matchKey, addrEntity.fullDescription || addrEntity.shortForm);
+      }
+      addressRows.push({ row, address: addrEntity.shortForm, addressFull: addrEntity.fullDescription });
+      rowIdsWithBracketed.add(row.id);
+    }
   }
+
+  // Second sub-pass: detect unbracketed bare addresses in rows that had no bracketed address
+  for (const row of rows) {
+    if (!row.observation || rowIdsWithBracketed.has(row.id)) continue;
+    const obs = row.observation.trim();
+    const bareMatch = obs.match(BARE_ADDR_RE);
+    if (!bareMatch) continue;
+    const rawAddr = bareMatch[1].trim();
+    // Try to enrich with a known full address from earlier in the sheet
+    const matchKey = addrMatchKey(rawAddr);
+    const knownFull = knownAddressMap.get(matchKey);
+    addressRows.push({
+      row,
+      address: rawAddr,
+      addressFull: knownFull ?? rawAddr,
+    });
+  }
+
+  // Sort addressRows back into chronological order (same as rows array)
+  const rowOrderMap = new Map(rows.map((r, i) => [r.id, i]));
+  addressRows.sort((a, b) => (rowOrderMap.get(a.row.id) ?? 0) - (rowOrderMap.get(b.row.id) ?? 0));
 
   // ── Build a rowId → index map for the sorted full row list ───────────────
   const rowIndexMap = new Map(rows.map((r, i) => [r.id, i]));
@@ -4205,7 +4343,9 @@ export async function getRsMappingWaypoints(sheetId: number): Promise<RsWaypoint
       segmentType,
       viaStreets,
       suburbContext,
-    });
+      rowDate: (row as any).rowDate ?? null,
+      dayOffset: (row as any).dayOffset ?? 0,
+    } as RsWaypointRow);
   }
 
   return result;

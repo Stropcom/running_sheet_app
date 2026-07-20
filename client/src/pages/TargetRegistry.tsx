@@ -232,6 +232,8 @@ function TargetCard({
   const update = trpc.target.registry.update.useMutation({
     onSuccess: () => {
       utils.target.registry.list.invalidate();
+      utils.target.getById.invalidate({ id: target.id });
+      utils.target.listAll.invalidate();
       setDirty(false);
       toast.success("Target saved");
     },

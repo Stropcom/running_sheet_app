@@ -65,6 +65,8 @@ interface WaypointRow {
   segmentType: "normal" | "continued_via" | "coos";
   viaStreets: string[];
   suburbContext: string | null;
+  rowDate: string | null;
+  dayOffset: number;
 }
 
 interface PlacedWaypoint {
@@ -85,6 +87,8 @@ interface PlacedWaypoint {
   segmentType: "normal" | "continued_via" | "coos";
   viaStreets: string[];
   suburbContext: string | null;
+  rowDate: string | null;
+  dayOffset: number;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -97,6 +101,66 @@ const SPIDER_THRESHOLD_M = 100;
 const DIRECTIONS_CHUNK_SIZE = 23;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+// ── Perth date helpers ────────────────────────────────────────────────────────
+
+const RSM_PERTH_TZ = "Australia/Perth";
+const RSM_PERTH_OFFSET_SUFFIX = "T00:00:00+08:00";
+const RSM_PERTH_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+function rsmFormatPerthDateLabel(ymd: string): string {
+  return new Date(`${ymd}${RSM_PERTH_OFFSET_SUFFIX}`)
+    .toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: RSM_PERTH_TZ })
+    .toUpperCase();
+}
+
+function rsmYmdToPerthMs(ymd: string): number {
+  return new Date(`${ymd}${RSM_PERTH_OFFSET_SUFFIX}`).getTime();
+}
+
+/**
+ * Build a Map<rowId, ymd> for all waypoints, using explicit rowDate,
+ * legacy dayOffset, or time-regression inference.
+ */
+function buildWpDateMap(
+  waypoints: WaypointRow[],
+  sheetCreatedAt: number,
+): Map<number, string> {
+  const map = new Map<number, string>();
+  if (waypoints.length === 0) return map;
+
+  const sheetStartYmd = new Intl.DateTimeFormat("en-CA", {
+    timeZone: RSM_PERTH_TZ, year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(new Date(sheetCreatedAt));
+
+  let currentYmd = sheetStartYmd;
+  let prevMins: number | null = null;
+
+  for (const wp of waypoints) {
+    if (wp.rowDate) {
+      currentYmd = wp.rowDate;
+      prevMins = wp.timeMinutes;
+      map.set(wp.rowId, currentYmd);
+      continue;
+    }
+    if (wp.dayOffset > 0) {
+      const ms = rsmYmdToPerthMs(sheetStartYmd) + wp.dayOffset * 86400000;
+      const d = new Date(ms + RSM_PERTH_OFFSET_MS);
+      currentYmd = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+      prevMins = wp.timeMinutes;
+      map.set(wp.rowId, currentYmd);
+      continue;
+    }
+    if (wp.timeMinutes !== null && prevMins !== null && wp.timeMinutes < prevMins - 120) {
+      const ms = rsmYmdToPerthMs(currentYmd) + 86400000;
+      const d = new Date(ms + RSM_PERTH_OFFSET_MS);
+      currentYmd = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+    }
+    if (wp.timeMinutes !== null) prevMins = wp.timeMinutes;
+    map.set(wp.rowId, currentYmd);
+  }
+  return map;
+}
 
 function formatTime(t: string | null): string {
   return t ?? "—";
@@ -283,6 +347,13 @@ export default function RSMappingEmbedded() {
     const badgeColor = isFirst ? "#16a34a" : isLast ? "#dc2626" : "#6366f1";
     const badgeLabel = isFirst ? "START" : isLast ? "END" : `STOP ${wp.index}`;
 
+    // Build date label for this waypoint
+    const sheetCreatedAt = (sheetsData as any[] | undefined)?.find((s: any) => s.id === sheetId)?.createdAt ?? Date.now();
+    const wpDateMap = buildWpDateMap(placedWaypointsRef.current as unknown as WaypointRow[], sheetCreatedAt);
+    const wpYmd = wpDateMap.get(wp.rowId);
+    const sheetStartYmd = new Intl.DateTimeFormat("en-CA", { timeZone: RSM_PERTH_TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(sheetCreatedAt));
+    const dateLabel = wpYmd && wpYmd !== sheetStartYmd ? rsmFormatPerthDateLabel(wpYmd) : null;
+
     const commentHtml = wp.comment
       ? `<div style="margin-top:6px;padding:6px 8px;background:#fef9c3;border-left:3px solid #ca8a04;border-radius:0 4px 4px 0;font-size:11px;color:#78350f;">${wp.comment}</div>`
       : "";
@@ -291,11 +362,15 @@ export default function RSMappingEmbedded() {
       ? `<div style="margin-top:4px;font-size:11px;color:#555;line-height:1.4;max-height:60px;overflow:hidden;">${wp.observation.substring(0, 180)}${wp.observation.length > 180 ? "…" : ""}</div>`
       : "";
 
+    const dateHtml = dateLabel
+      ? `<span style="font-size:9px;color:#7c3aed;font-weight:700;background:#ede9fe;border-radius:3px;padding:1px 5px;margin-left:4px;">${dateLabel}</span>`
+      : "";
+
     const html = `
       <div style="font-family:system-ui,sans-serif;min-width:220px;max-width:280px;padding:4px 0;">
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;flex-wrap:wrap;">
           <span style="background:${badgeColor};color:#fff;border-radius:4px;font-size:9px;font-weight:700;padding:2px 6px;letter-spacing:0.07em;">${badgeLabel}</span>
-          <span style="font-size:11px;color:#888;">${formatTime(wp.time)}</span>
+          <span style="font-size:11px;color:#888;">${formatTime(wp.time)}</span>${dateHtml}
         </div>
         <strong style="font-size:13px;color:#111;display:block;margin-bottom:2px;">${wp.address}</strong>
         ${obsSnippet}
@@ -361,26 +436,35 @@ export default function RSMappingEmbedded() {
       return;
     }
 
-    const addressQuery = row.addressFull || row.address || "";
-    if (!addressQuery || !geocoderRef.current) {
+    const rawQuery = row.addressFull || row.address || "";
+    if (!rawQuery || !geocoderRef.current) {
       geocodeTimerRef.current = setTimeout(geocodeNext, GEOCODE_DELAY_MS);
       return;
     }
 
-    geocoderRef.current.geocode({ address: addressQuery }, (results, status) => {
+    // Append ", Perth WA" to addresses that don't already contain a state code,
+    // so ambiguous street names resolve to Western Australia instead of overseas.
+    const hasState = /\b(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\b/.test(rawQuery);
+    const addressQuery = hasState ? rawQuery : `${rawQuery}, Perth WA`;
+
+    geocoderRef.current.geocode(
+      { address: addressQuery, componentRestrictions: { country: "au" } },
+      (results, status) => {
       if (status === "OK" && results && results[0]) {
         const pos = results[0].geometry.location;
-        placeWaypointMarker(row, pos.lat(), pos.lng());
+        placeWaypointMarker(row, pos.lat(), pos.lng(), idx);
       }
       geocodeTimerRef.current = setTimeout(geocodeNext, GEOCODE_DELAY_MS);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [updatePolyline, setWaypointCount]);
 
-  function placeWaypointMarker(row: WaypointRow, lat: number, lng: number) {
+  function placeWaypointMarker(row: WaypointRow, lat: number, lng: number, queueIndex?: number) {
     if (!mapRef.current) return;
     const total = geocodeQueueRef.current.length;
-    const index = placedWaypointsRef.current.length + 1;
+    // Use the pre-assigned queue position (1-based) so numbers always reflect
+    // the chronological RS order, regardless of geocoding completion order.
+    const index = queueIndex != null ? queueIndex + 1 : placedWaypointsRef.current.length + 1;
     const isFirst = index === 1;
     const isLast = index === total;
 
@@ -418,6 +502,8 @@ export default function RSMappingEmbedded() {
       segmentType: row.segmentType ?? "normal",
       viaStreets: row.viaStreets ?? [],
       suburbContext: row.suburbContext ?? null,
+      rowDate: row.rowDate ?? null,
+      dayOffset: row.dayOffset ?? 0,
     };
 
     placedWaypointsRef.current.push(wp);
@@ -544,13 +630,34 @@ export default function RSMappingEmbedded() {
     if (!mapReady || !waypoints || !selectedSheetId) return;
     clearMap();
 
-    const queue = (waypoints as WaypointRow[]).filter((w) => w.address);
-    if (queue.length === 0) {
+    // Sort ALL rows by rowNumber first so the time-regression inference in
+    // buildWpDateMap always runs in the correct entry sequence.
+    const allRows = [...(waypoints as WaypointRow[])].sort((a, b) => a.rowNumber - b.rowNumber);
+    const addressRows = allRows.filter((w) => w.address);
+    if (addressRows.length === 0) {
       setGeocoding(false);
       return;
     }
 
-    geocodeQueueRef.current = queue;
+    // Sort by effective date+time so multi-day sheets are numbered correctly.
+    // Build the date map using ALL rows (including non-address rows) so the
+    // time-regression inference has full context, then sort address rows only.
+    const sheetCreatedAt = (sheetsData as any[] | undefined)?.find((s: any) => s.id === selectedSheetId)?.createdAt ?? Date.now();
+    const dateMap = buildWpDateMap(allRows, sheetCreatedAt);
+
+    const sortedQueue = [...addressRows].sort((a, b) => {
+      const ymdA = dateMap.get(a.rowId) ?? "";
+      const ymdB = dateMap.get(b.rowId) ?? "";
+      if (ymdA !== ymdB) return ymdA < ymdB ? -1 : 1;
+      // Same date: sort by timeMinutes (nulls last)
+      const tA = a.timeMinutes ?? 9999;
+      const tB = b.timeMinutes ?? 9999;
+      if (tA !== tB) return tA - tB;
+      // Same time: preserve original rowNumber order
+      return a.rowNumber - b.rowNumber;
+    });
+
+    geocodeQueueRef.current = sortedQueue;
     geocodeIndexRef.current = 0;
     setGeocoding(true);
     geocodeNext();
@@ -719,6 +826,11 @@ export default function RSMappingEmbedded() {
     const placed = placedWaypointsRef.current;
     if (placed.length === 0) return;
 
+    // Build date map for all placed waypoints
+    const overlaySheetCreatedAt = (sheetsData as any[] | undefined)?.find((s: any) => s.id === selectedSheetId)?.createdAt ?? Date.now();
+    const overlayDateMap = buildWpDateMap(placed as unknown as WaypointRow[], overlaySheetCreatedAt);
+    const overlaySheetStartYmd = new Intl.DateTimeFormat("en-CA", { timeZone: RSM_PERTH_TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(overlaySheetCreatedAt));
+
     placed.forEach((wp) => {
       const overlay = new google.maps.OverlayView();
       const lat = wp.lat;
@@ -730,6 +842,10 @@ export default function RSMappingEmbedded() {
       const isFirst = index === 1;
       const isLast = index === total;
       const badgeColor = isFirst ? "#16a34a" : isLast ? "#dc2626" : "#6366f1";
+
+      // Date label for overlay (only show if different from sheet start day)
+      const wpYmd = overlayDateMap.get(wp.rowId);
+      const overlayDateLabel = wpYmd && wpYmd !== overlaySheetStartYmd ? rsmFormatPerthDateLabel(wpYmd) : null;
 
       let div: HTMLDivElement | null = null;
 
@@ -744,7 +860,7 @@ export default function RSMappingEmbedded() {
           "font-family:system-ui,sans-serif",
           "font-size:8px",
           "line-height:1.35",
-          "max-width:120px",
+          "max-width:140px",
           "min-width:60px",
           "box-shadow:0 2px 6px rgba(0,0,0,0.15)",
           "pointer-events:none",
@@ -754,7 +870,7 @@ export default function RSMappingEmbedded() {
           "transform:translate(-50%, calc(-100% - 26px))",
         ].join(";");
         div.innerHTML = [
-          `<div style="font-weight:700;color:${badgeColor};font-size:9px;">#${index} · ${time}</div>`,
+          `<div style="font-weight:700;color:${badgeColor};font-size:9px;">#${index} · ${time}${overlayDateLabel ? ` <span style="color:#7c3aed;font-size:7.5px;">(${overlayDateLabel})</span>` : ""}</div>`,
           `<div style="color:#111;font-size:7.5px;margin-top:1px;">${address}</div>`,
         ].join("");
         const panes = this.getPanes()!;
@@ -836,7 +952,7 @@ export default function RSMappingEmbedded() {
         waypoints: waypointList,
         center: center ? { lat: center.lat(), lng: center.lng() } : undefined,
         zoom: zoom ?? undefined,
-        size: "800x350",
+        size: "800x1000",
       });
       mapImageDataUrl = result.dataUrl;
     } catch (err) {
@@ -844,9 +960,15 @@ export default function RSMappingEmbedded() {
       toast.warning("Map image unavailable — PDF will include a placeholder");
     }
 
+    const exportSheetCreatedAt = (sheetsData as any[] | undefined)?.find((s: any) => s.id === selectedSheetId)?.createdAt ?? Date.now();
+    const exportDateMap = buildWpDateMap(placed as unknown as WaypointRow[], exportSheetCreatedAt);
+    const exportSheetStartYmd = new Intl.DateTimeFormat("en-CA", { timeZone: RSM_PERTH_TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(exportSheetCreatedAt));
+    const exportIsMultiDay = Array.from(exportDateMap.values()).some((ymd) => ymd !== exportSheetStartYmd);
+
     const rows = placed.map((wp) => ({
       index: wp.index,
       time: wp.time ?? "—",
+      date: (() => { const y = exportDateMap.get(wp.rowId); return y && y !== exportSheetStartYmd ? rsmFormatPerthDateLabel(y) : ""; })(),
       address: wp.address,
       observation: wp.observation ?? "",
     }));
@@ -858,15 +980,16 @@ export default function RSMappingEmbedded() {
     const tableRows = rows.map((r) => `
       <tr>
         <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-weight:700;color:#6366f1;text-align:center;white-space:nowrap;">${r.index}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;white-space:nowrap;font-weight:600;">${r.time}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;white-space:nowrap;font-weight:600;">${r.time}${r.date ? `<br><span style="font-size:8px;color:#7c3aed;font-weight:700;">${r.date}</span>` : ""}</td>
         <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;">${r.address}</td>
         <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;color:#374151;">${r.observation}</td>
       </tr>
     `).join("");
+    void exportIsMultiDay; // used via r.date above
 
     const mapSection = mapImageDataUrl
-      ? `<div style="margin:16px 24px 0;"><img src="${mapImageDataUrl}" style="width:100%;max-height:320px;object-fit:contain;border-radius:8px;border:1px solid #e5e7eb;display:block;" /></div>`
-      : `<div style="background:#f3f4f6;border:2px dashed #d1d5db;margin:16px 24px 0;border-radius:8px;height:200px;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:12px;">Map capture unavailable</div>`;
+      ? `<img src="${mapImageDataUrl}" style="width:100%;flex:1;object-fit:contain;display:block;" />`
+      : `<div style="flex:1;background:#f3f4f6;border:2px dashed #d1d5db;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:14px;">Map capture unavailable</div>`;
 
     const html = `<!DOCTYPE html>
 <html>
@@ -876,24 +999,52 @@ export default function RSMappingEmbedded() {
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: system-ui, sans-serif; font-size: 11px; color: #111; background: #fff; }
-  .header { background: #1e1b4b; color: #fff; padding: 14px 24px; }
-  .header h1 { font-size: 15px; font-weight: 700; margin-bottom: 2px; }
-  .header p { font-size: 10px; color: rgba(255,255,255,0.65); }
-  .table-section { padding: 0 24px 24px; }
-  .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #6366f1; margin: 14px 0 8px; }
+  /* ── Page 1: full-width map ── */
+  .map-page {
+    width: 100%;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    page-break-after: always;
+    break-after: page;
+  }
+  .map-header { background: #1e1b4b; color: #fff; padding: 12px 20px; flex-shrink: 0; }
+  .map-header h1 { font-size: 16px; font-weight: 700; margin-bottom: 2px; }
+  .map-header p { font-size: 10px; color: rgba(255,255,255,0.65); }
+  .map-image-wrap { flex: 1; overflow: hidden; display: flex; }
+  /* ── Page 2: waypoint table ── */
+  .table-page { padding: 16px 20px 24px; }
+  .table-header { background: #1e1b4b; color: #fff; padding: 10px 20px; margin: -16px -20px 14px; }
+  .table-header h2 { font-size: 13px; font-weight: 700; margin-bottom: 1px; }
+  .table-header p { font-size: 9px; color: rgba(255,255,255,0.65); }
+  .section-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #6366f1; margin-bottom: 8px; }
   table { width: 100%; border-collapse: collapse; }
   thead th { background: #1e1b4b; color: #fff; padding: 7px 10px; text-align: left; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
   tbody tr:nth-child(even) { background: #f9fafb; }
-  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } @page { size: A4 landscape; margin: 8mm; } }
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    @page { size: A4 portrait; margin: 8mm; }
+    .map-page { height: 100vh; page-break-after: always; break-after: page; }
+  }
 </style>
 </head>
 <body>
-<div class="header">
-  <h1>Visual RS — ${sheetTitle}</h1>
-  <p>${opName} · Generated: ${generatedAt}</p>
+<!-- PAGE 1: Full-width map -->
+<div class="map-page">
+  <div class="map-header">
+    <h1>Visual RS — ${sheetTitle}</h1>
+    <p>${opName} · Generated: ${generatedAt}</p>
+  </div>
+  <div class="map-image-wrap">
+    ${mapSection}
+  </div>
 </div>
-${mapSection}
-<div class="table-section">
+<!-- PAGE 2: Waypoint table -->
+<div class="table-page">
+  <div class="table-header">
+    <h2>Visual RS — ${sheetTitle}</h2>
+    <p>${opName} · Generated: ${generatedAt} · Page 2 of 2</p>
+  </div>
   <div class="section-title">Running Sheet Entries (${rows.length} waypoints)</div>
   <table>
     <thead><tr><th style="width:36px">#</th><th style="width:56px">Time</th><th style="width:32%">Address</th><th>Observation</th></tr></thead>

@@ -1,0 +1,1 @@
+ALTER TABLE `sheet_rows` ADD `dayOffset` int DEFAULT 0 NOT NULL;

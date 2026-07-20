@@ -1,0 +1,1 @@
+ALTER TABLE `sheet_rows` ADD `rowDate` varchar(16);

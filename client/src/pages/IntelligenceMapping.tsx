@@ -64,6 +64,40 @@ import {
   Clock,
 } from "lucide-react";
 
+// ── Perth date helpers (shared with SheetDetail logic) ───────────────────────
+const _PERTH_OFFSET_SUFFIX = "T00:00:00+08:00";
+const _PERTH_OFFSET_MS = 8 * 60 * 60 * 1000;
+const _PERTH_TIME_ZONE = "Australia/Perth";
+
+function _ymdToPerthMs(ymd: string) {
+  return new Date(`${ymd}${_PERTH_OFFSET_SUFFIX}`).getTime();
+}
+
+function _addDaysToYmd(ymd: string, days: number) {
+  const perthMs = _ymdToPerthMs(ymd) + days * 86400000;
+  const d = new Date(perthMs + _PERTH_OFFSET_MS);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+function _formatPerthDateLabel(ymd: string) {
+  return new Date(`${ymd}${_PERTH_OFFSET_SUFFIX}`)
+    .toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: _PERTH_TIME_ZONE })
+    .toUpperCase();
+}
+
+function _getTodayPerthYmd() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: _PERTH_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const year = parts.find((p) => p.type === "year")?.value ?? "1970";
+  const month = parts.find((p) => p.type === "month")?.value ?? "01";
+  const day = parts.find((p) => p.type === "day")?.value ?? "01";
+  return `${year}-${month}-${day}`;
+}
+
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface IntelMapLocation {
   label: string;
@@ -595,6 +629,11 @@ export default function IntelligenceMapping() {
     try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) { const z = JSON.parse(s).mapZoom; if (typeof z === 'number') return z; } } catch { /* ignore */ }
     return 11;
   });
+  // Persist the user's chosen map type (roadmap / satellite)
+  const [mapInitialTypeId, setMapInitialTypeId] = useState<string>(() => {
+    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) { const t = JSON.parse(s).mapTypeId; if (typeof t === 'string') return t; } } catch { /* ignore */ }
+    return "roadmap";
+  });
 
   // Left pane starts closed — user opens it when needed. Never auto-open on navigation.
   // On desktop (lg+), the left pane is always open and resizable
@@ -724,6 +763,8 @@ export default function IntelligenceMapping() {
   const [mapQeHour, setMapQeHour] = useState("12");
   const [mapQeMinute, setMapQeMinute] = useState("00");
   const [mapQePeriod, setMapQePeriod] = useState("AM");
+  const [mapQeRowDate, setMapQeRowDate] = useState<string>(() => _getTodayPerthYmd()); // explicit calendar date for the QE row
+  const [showMapQeDateStepper, setShowMapQeDateStepper] = useState(false); // toggled by Date button
   const [mapQeSelectOpen, setMapQeSelectOpen] = useState(false);
   const [mapQeAddress, setMapQeAddress] = useState(""); // pre-filled address for the observation
   // Quick Entry shortcut chip order — persisted to localStorage so user can reorder them
@@ -731,20 +772,26 @@ export default function IntelligenceMapping() {
     "SC", "HBF",
     ...(Array.from({ length: 8 }, (_, i) => [`V${i + 1}F`, `V${i + 1}`]) as string[][]).flat(),
     "TGT", "DSO", "DR", "FP", "US", "DE", "AR", "CV", "OOS", "COOS", "PU", "PT", "RACK",
-    "DEP", "ARR",
+    "DEP",
     ...(Array.from({ length: 10 }, (_, i) => `#${i + 1}`) as string[]),
   ];
   // QE chips mirror the main RS chip order (read from the active sheet's localStorage key)
   // No drag in QE — main RS is the single source of truth for chip order
   const [qeChipOrder, setQeChipOrder] = useState<string[]>(QE_CANONICAL_ORDER);
   // Sync QE chip order from the active RS sheet's saved order whenever the sheet changes
+  // Also listen to storage events so the QE updates live when chips are reordered on the main RS
   useEffect(() => {
-    if (!rsSelectedSheetId) { setQeChipOrder(QE_CANONICAL_ORDER); return; }
-    try {
-      const s = localStorage.getItem(`runsheet_field_order_${rsSelectedSheetId}`);
-      if (s) { setQeChipOrder(JSON.parse(s)); return; }
-    } catch {}
-    setQeChipOrder(QE_CANONICAL_ORDER);
+    const syncOrder = () => {
+      if (!rsSelectedSheetId) { setQeChipOrder(QE_CANONICAL_ORDER); return; }
+      try {
+        const s = localStorage.getItem(`runsheet_field_order_${rsSelectedSheetId}`);
+        if (s) { setQeChipOrder(JSON.parse(s)); return; }
+      } catch {}
+      setQeChipOrder(QE_CANONICAL_ORDER);
+    };
+    syncOrder();
+    window.addEventListener('storage', syncOrder);
+    return () => window.removeEventListener('storage', syncOrder);
   }, [rsSelectedSheetId]);
   const [cmLabel, setCmLabel] = useState("");
   const [cmAddress, setCmAddress] = useState("");
@@ -936,6 +983,9 @@ export default function IntelligenceMapping() {
     onSuccess: () => {
       void utils.target.registry.list.invalidate();
       void utils.intelligence.mappingLocations.invalidate();
+      // Invalidate getById so any open RS sheet refreshes chips immediately
+      if (editingTargetId) void utils.target.getById.invalidate({ id: editingTargetId });
+      void utils.target.listAll.invalidate();
       setEditingTargetId(null);
       setEtSaving(false);
       toast.success("Target saved");
@@ -1010,7 +1060,7 @@ export default function IntelligenceMapping() {
   const rsAddMember = trpc.member.add.useMutation();
   const rsCreateRow = trpc.row.create.useMutation();
   // General shortcuts for quick entry buttons
-  const { data: generalShortcuts } = trpc.shortcuts.list.useQuery();
+  const { data: generalShortcuts } = trpc.shortcuts.list.useQuery(undefined, { staleTime: 0 });
   // Target shortcuts for the selected sheet's target
   const { data: targetShortcuts } = trpc.targetShortcuts.list.useQuery(
     { targetId: rsTargetData?.id! },
@@ -1593,6 +1643,18 @@ export default function IntelligenceMapping() {
       });
     });
 
+    // Persist map type (roadmap / satellite) whenever the user switches
+    map.addListener("maptypeid_changed", () => {
+      const typeId = map.getMapTypeId();
+      if (!typeId) return;
+      setMapInitialTypeId(typeId);
+      try {
+        const existing = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+        const parsed = existing ? JSON.parse(existing) : {};
+        localStorage.setItem(LS_MAP_SETTINGS_KEY, JSON.stringify({ ...parsed, mapTypeId: typeId }));
+      } catch { /* ignore */ }
+    });
+
     // Tap anywhere on the map (not on a marker/POI) → close the InfoWindow
     map.addListener("click", (e: google.maps.MapMouseEvent & { placeId?: string }) => {
       if (!e.placeId) {
@@ -2148,8 +2210,9 @@ export default function IntelligenceMapping() {
     // Capture CINs BEFORE closeInlineField clears the ref
     const cinsToAttach = new Set(rsInlineCinsRef.current);
     const timeOverride = mapQeTimeOverride;
+    const rowDateOverride = mapQeRowDate;
     closeInlineField();
-    addQuickRsEntry(finalText, cinsToAttach, timeOverride);
+    addQuickRsEntry(finalText, cinsToAttach, timeOverride, rowDateOverride);
   };
 
   const resetInlineTimer = () => {
@@ -2182,6 +2245,15 @@ export default function IntelligenceMapping() {
       setMapQeMinute(String(min).padStart(2, "0"));
       setMapQePeriod(ampm);
       setMapQeTimeOverride(`${String(h12).padStart(2,"0")}:${String(min).padStart(2,"0")} ${ampm}`);
+      // Default date to the RS creation date (Perth) so operators don't accidentally log on the wrong day
+      const selectedSheet = (rsSheetsData as any[] | undefined)?.find((s: any) => s.id === rsSelectedSheetId);
+      if (selectedSheet?.createdAt) {
+        const sheetDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Perth", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(selectedSheet.createdAt));
+        setMapQeRowDate(sheetDate);
+      } else {
+        setMapQeRowDate(_getTodayPerthYmd());
+      }
+      setShowMapQeDateStepper(false); // always start with stepper hidden
       // Use a small delay so the sheet has rendered before we set focus
       setTimeout(() => {
         setRsInlineLabel("Entry");
@@ -2196,9 +2268,9 @@ export default function IntelligenceMapping() {
       setRsInlineLabel(null);
       setRsInlineText("");
     }
-  }, [mapQeOpen, rsSelectedSheetId]);
+  }, [mapQeOpen, rsSelectedSheetId, rsSheetsData]);
 
-  const addQuickRsEntry = (observation: string, cinsToAttach?: Set<string> | null, timeOverride?: string | null) => {
+  const addQuickRsEntry = (observation: string, cinsToAttach?: Set<string> | null, timeOverride?: string | null, rowDateOverride?: string | null) => {
     if (!rsSelectedSheetId) return;
     let timeStr: string;
     let totalMins: number;
@@ -2232,7 +2304,7 @@ export default function IntelligenceMapping() {
     // Store the CINs in a local variable captured by the mutation callback
     const cins = cinsToAttach ? Array.from(cinsToAttach) : [];
     rsCreateRow.mutate(
-      { sheetId: rsSelectedSheetId, time: timeStr, timeMinutes: totalMins, observation },
+      { sheetId: rsSelectedSheetId, time: timeStr, timeMinutes: totalMins, observation, rowDate: rowDateOverride ?? undefined },
       {
         onSuccess: (data, vars) => {
           const now2 = new Date();
@@ -2459,6 +2531,7 @@ export default function IntelligenceMapping() {
             className="w-full h-full"
             initialCenter={mapInitialCenter}
             initialZoom={mapInitialZoom}
+            initialMapTypeId={mapInitialTypeId}
           />
 
           {/* Centre on me / Follow me floating buttons — top-left below search bar */}
@@ -3730,8 +3803,8 @@ export default function IntelligenceMapping() {
               </button>
             </div>
 
-            {/* Time picker — slim inline row */}
-            <div className="flex items-center gap-1 mb-3">
+            {/* Time picker — slim inline row with Now + Date buttons */}
+            <div className="flex items-center gap-1 mb-2 flex-wrap">
               <Clock className="h-3 w-3 text-muted-foreground flex-shrink-0" />
               <span className="text-[10px] text-muted-foreground font-medium mr-0.5">Time:</span>
               {/* Hour */}
@@ -3790,8 +3863,9 @@ export default function IntelligenceMapping() {
                   <SelectItem value="PM" className="text-xs">PM</SelectItem>
                 </SelectContent>
               </Select>
-              {/* Now button */}
+              {/* Now button — inline */}
               <button
+                type="button"
                 onClick={() => {
                   const n = new Date();
                   const h24 = n.getHours(); const min = n.getMinutes();
@@ -3802,9 +3876,38 @@ export default function IntelligenceMapping() {
                   setMapQePeriod(ampm);
                   setMapQeTimeOverride(`${String(h12).padStart(2,"0")}:${String(min).padStart(2,"0")} ${ampm}`);
                 }}
-                className="ml-1 text-[10px] text-primary hover:text-primary/80 underline font-medium"
+                className="h-6 px-2 text-[10px] font-medium rounded border border-border bg-muted/30 hover:bg-accent/50 active:scale-95 transition-all whitespace-nowrap"
               >Now</button>
+              {/* Date button — toggles stepper */}
+              <button
+                type="button"
+                onClick={() => setShowMapQeDateStepper((v) => !v)}
+                className={`h-6 px-2 text-[10px] font-medium rounded border transition-all whitespace-nowrap active:scale-95 ${
+                  showMapQeDateStepper
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border bg-muted/30 hover:bg-accent/50"
+                }`}
+              >Date</button>
             </div>
+
+            {/* Date stepper — only visible when Date button is toggled on */}
+            {showMapQeDateStepper && (
+              <div className="flex items-center justify-between mb-2 px-1 py-1 rounded-md border border-border/70 bg-muted/30">
+                <button
+                  type="button"
+                  className="px-2 py-0.5 text-base font-bold text-muted-foreground hover:text-foreground transition-colors"
+                  onClick={() => setMapQeRowDate(_addDaysToYmd(mapQeRowDate, -1))}
+                >◀</button>
+                <span className="text-[11px] font-semibold tracking-widest text-foreground font-mono">
+                  {_formatPerthDateLabel(mapQeRowDate)}
+                </span>
+                <button
+                  type="button"
+                  className="px-2 py-0.5 text-base font-bold text-muted-foreground hover:text-foreground transition-colors"
+                  onClick={() => setMapQeRowDate(_addDaysToYmd(mapQeRowDate, 1))}
+                >▶</button>
+              </div>
+            )}
 
             {/* No sheet selected warning */}
             {rsSelectedSheetId === null ? (
@@ -3838,20 +3941,7 @@ export default function IntelligenceMapping() {
 
                 <div className="border-t border-border" />
 
-                {/* DEP / ARR */}
-                {rsTargetData?.arr && (
-                  <button
-                    disabled={rsAddingRow}
-                    onClick={() => {
-                      const obs = `${rsTargetData!.arr!} — ${mapQeAddress}`;
-                      if (rsInlineLabel === obs) { closeInlineField(); } else { openInlineField(obs); }
-                    }}
-                    className={`flex flex-col items-start gap-0.5 rounded-md border border-green-500/30 bg-green-500/5 hover:bg-green-500/10 active:scale-95 transition-all px-2.5 py-2 disabled:opacity-50 ${rsInlineLabel?.startsWith(rsTargetData!.arr!) ? "ring-1 ring-green-400" : ""}`}
-                  >
-                    <span className="text-[9px] font-bold uppercase tracking-wide text-green-400">ARR</span>
-                    <span className="text-[10px] text-foreground font-mono leading-tight line-clamp-2">{rsTargetData.arr}</span>
-                  </button>
-                )}
+                {/* ARR panel removed per user request */}
 
                 {/* Inline observation field */}
                 {rsInlineLabel && (() => {
@@ -3914,107 +4004,112 @@ export default function IntelligenceMapping() {
                       />
                       {/* Shortcut buttons */}
                       {(() => {
+                        // ── QE chips: exact mirror of main RS chip set, values, and order ──────────
+                        // Single source of truth: assignedTarget (target.getById) for all target fields.
+                        // Chip set matches SheetDetail exactly: TGT, HBF, HB, V1F, V1, extra vehicles, wildcards, DEP, ARR, folder shortcuts.
+                        // Order: qeChipOrder (read from RS localStorage key) with wildcards always last.
                         const appendText = (text: string) => { setRsInlineText(prev => prev ? `${prev} ${text}` : text); resetInlineTimer(); rsInlineInputRef.current?.focus(); };
-                        const findShortcut = (trigger: string) => {
-                          const tgt = (targetShortcuts as any[] | undefined)?.find((s: any) => s.trigger?.toLowerCase() === trigger.toLowerCase());
-                          if (tgt) return tgt.expansion as string;
-                          const gen = (generalShortcuts as any[] | undefined)?.find((s: any) => s.trigger?.toLowerCase() === trigger.toLowerCase());
-                          return gen ? gen.expansion as string : null;
-                        };
-                        // Helper: extract registration/short value for display preview
-                        // A rego must be 3-8 alphanumeric chars AND contain at least one digit OR letter
+                        const t = assignedTarget as any;
+                        if (!t) return null;
+
+                        // Helper: extract rego from a vehicle string (same logic as SheetDetail extractRegSD)
                         const extractReg = (val: string | null | undefined): string | null => {
                           if (!val) return null;
                           const stripped = val.replace(/^Vehicle\s+/i, '').trim();
-                          const tokens = stripped.split(/\s+/).map(t => t.replace(/[^A-Z0-9]/gi, ''));
-                          const rego = tokens.slice().reverse().find(t => /^[A-Z0-9]{3,8}$/i.test(t) && /\d/.test(t) && /[A-Z]/i.test(t));
+                          const tokens = stripped.split(/\s+/).map((tk: string) => tk.replace(/[^A-Z0-9]/gi, ''));
+                          const rego = tokens.slice().reverse().find((tk: string) => /^[A-Z0-9]{3,8}$/i.test(tk) && /\d/.test(tk) && /[A-Z]/i.test(tk));
                           if (rego) return rego;
-                          // Fallback: if stripped value looks like a plate (3-8 chars, alphanumeric), use it directly
-                          if (/^[A-Z0-9]{3,8}$/i.test(stripped)) return stripped;
-                          return null;
+                          if (/^[A-Z0-9]{3,8}$/i.test(stripped) && /\d/.test(stripped) && /[A-Z]/i.test(stripped)) return stripped;
+                          return stripped || null;
                         };
-                        // Build dynamic extra vehicle chips from assignedTarget JSON
-                        // Each extra vehicle gets both a VnF chip (full value, trigger-only label) and a Vn chip (rego-only)
+
+                        // Extra vehicle chips from JSON (V2F/V2, V3F/V3, …)
                         const extraVehicleChips: Array<{ label: string; display: string; getValue: () => string | null }> = [];
                         try {
-                          const evs: Array<{ full: string; short: string }> = JSON.parse((assignedTarget as any)?.extraVehicles ?? '[]');
-                          evs.forEach((ev, i) => {
+                          const evs: Array<{ full: string; short: string }> = JSON.parse(t.extraVehicles ?? '[]');
+                          evs.forEach((ev: { full: string; short: string }, i: number) => {
                             const num = i + 2;
                             if (ev.full) extraVehicleChips.push({ label: `V${num}F`, display: `V${num}F`, getValue: () => ev.full });
                             if (ev.short) {
                               const reg = extractReg(ev.short);
-                              extraVehicleChips.push({ label: `V${num}`, display: reg ? `V${num} ${reg}` : `V${num}`, getValue: () => ev.short });
+                              extraVehicleChips.push({ label: `V${num}`, display: reg ? `V${num} ${reg}` : `V${num}`, getValue: () => reg ?? ev.short });
                             }
                           });
                         } catch {}
-                        // Wild field chips — show full value (truncated to 12 chars)
+
+                        // Wild field chips (#1, #2, …)
                         const wildChips: Array<{ label: string; display: string; getValue: () => string | null }> = [];
                         try {
-                          const wfs: Array<{ label: string; value: string }> = JSON.parse((assignedTarget as any)?.wildFields ?? '[]');
-                          wfs.forEach((wf) => {
-                            if (wf.value) {
-                              const preview = wf.value.trim().slice(0, 12) + (wf.value.trim().length > 12 ? '…' : '');
-                              wildChips.push({ label: wf.label, display: `${wf.label} ${preview}`, getValue: () => wf.value });
-                            }
+                          const wfs: Array<{ label: string; value: string }> = JSON.parse(t.wildFields ?? '[]');
+                          wfs.forEach((wf: { label: string; value: string }) => {
+                            if (wf.value) wildChips.push({ label: wf.label, display: wf.label, getValue: () => wf.value });
                           });
                         } catch {}
-                        // V1F and V1 chips — only shown if the target has those fields set
-                        const v1fVal = rsTargetData?.v1f ?? null;
-                        const v1Val = rsTargetData?.v1 ?? null;
-                        const v1Reg = extractReg(v1Val);
-                        // All shortcut-folder triggers as chips — only those with showInRs=true, exclude legacy 'D' chip
+
+                        // Folder shortcut chips (showInRs=true, exclude legacy 'D')
                         const folderShortcutChips: Array<{ label: string; display: string; getValue: () => string | null }> =
-                          (generalShortcuts as any[] ?? []).filter((s: any) => (s.trigger as string).toUpperCase() !== "D" && s.showInRs !== false).map((s: any) => ({
+                          (generalShortcuts as any[] ?? []).filter((s: any) => (s.trigger as string).toUpperCase() !== "D" && !!s.showInRs).map((s: any) => ({
                             label: (s.trigger as string).toUpperCase(),
                             display: (s.trigger as string).toUpperCase(),
-                            getValue: () => findShortcut(s.trigger) ?? s.expansion as string,
+                            getValue: () => s.expansion as string,
                           }));
-                        const shortcuts: Array<{ label: string; display: string; getValue: () => string | null }> = [
-                          { label: "HBF", display: "HBF", getValue: () => rsTargetData?.hbf ?? null },
-                          { label: "V1F", display: "V1F", getValue: () => v1fVal },
-                          { label: "V1",  display: v1Reg ? `V1 ${v1Reg}` : "V1", getValue: () => v1Val },
+
+                        // Full chip list — identical order to SheetDetail fields array
+                        const v1Reg = extractReg(t.v1);
+                        const allChips: Array<{ label: string; display: string; getValue: () => string | null }> = [
+                          { label: "TGT", display: "TGT", getValue: () => t.tgt ?? null },
+                          { label: "HBF", display: "HBF", getValue: () => t.hbf ?? null },
+                          { label: "HB",  display: "HB",  getValue: () => t.hb  ?? null },
+                          { label: "V1F", display: "V1F", getValue: () => t.v1f ?? null },
+                          { label: "V1",  display: v1Reg ? `V1 ${v1Reg}` : "V1", getValue: () => v1Reg ?? t.v1 ?? null },
                           ...extraVehicleChips,
-                          { label: "TGT", display: "TGT", getValue: () => rsTargetData?.tgt ?? rsTargetData?.name ?? null },
                           ...wildChips,
+                          { label: "DEP", display: "DEP", getValue: () => t.dep ?? null },
+                          { label: "ARR", display: "ARR", getValue: () => t.arr ?? null },
                           ...folderShortcutChips,
                         ];
-                        const available = shortcuts.filter(s => s.getValue() !== null);
+
+                        const available = allChips.filter(s => s.getValue() !== null);
                         if (available.length === 0) return null;
-                        // Apply saved order
-                        const orderedChips = qeChipOrder.length > 0
+
+                        // Apply saved RS order — wildcards always last (mirrors SheetDetail)
+                        const isWildcard = (lbl: string) => /^#\d+$/.test(lbl);
+                        const nonWildAvail = available.filter(s => !isWildcard(s.label));
+                        const wildAvail    = available.filter(s => isWildcard(s.label));
+                        const orderedNonWild = qeChipOrder.length > 0
                           ? [
-                              ...qeChipOrder.map(lbl => available.find(s => s.label === lbl)).filter(Boolean) as typeof available,
-                              ...available.filter(s => !qeChipOrder.includes(s.label)),
+                              ...qeChipOrder.filter(lbl => !isWildcard(lbl)).map(lbl => nonWildAvail.find(s => s.label === lbl)).filter(Boolean) as typeof available,
+                              ...nonWildAvail.filter(s => !qeChipOrder.includes(s.label)),
                             ]
-                          : available;
+                          : nonWildAvail;
+                        const orderedWild = qeChipOrder.length > 0
+                          ? [
+                              ...qeChipOrder.filter(isWildcard).map(lbl => wildAvail.find(s => s.label === lbl)).filter(Boolean) as typeof available,
+                              ...wildAvail.filter(s => !qeChipOrder.includes(s.label)),
+                            ]
+                          : wildAvail;
+                        const orderedChips = [...orderedNonWild, ...orderedWild];
+
+                        // Display rules — same as SheetDetail:
+                        // Vn short (V1/V2/…): show label + rego; everything else: trigger label only
+                        const shortcutFolderLabels = new Set((generalShortcuts as any[] ?? []).map((s: any) => (s.trigger as string).toUpperCase()));
+                        const TRIGGER_ONLY = new Set(["TGT", "HBF", "HB", "V1F", "DEP", "ARR"]);
+                        const isVnShort = (lbl: string) => /^V\d+$/.test(lbl);
+                        const isVnFull  = (lbl: string) => /^V\d+F$/.test(lbl);
+                        const isStandard = (lbl: string) => !isVnShort(lbl) && (shortcutFolderLabels.has(lbl) || TRIGGER_ONLY.has(lbl) || isVnFull(lbl));
+
                         return (
                           <div className="flex flex-wrap gap-1">
-                            {(() => {
-                              // Chip display rules for QE modal:
-                              // - Vn short chips (V1, V2, V3...): show label + rego (from s.display which already has rego)
-                              // - VnF full chips, TGT, HBF, HB, DEP, ARR, folder shortcuts: trigger only
-                              const folderQeLabels = new Set([
-                                "TGT", "HBF", "HB", "V1F", "V2F", "DEP", "ARR",
-                                ...(generalShortcuts as any[] ?? []).map((s: any) => (s.trigger as string).toUpperCase()),
-                              ]);
-                              const isVnShortQe = (label: string) => /^V\d+$/.test(label); // V1, V2, V3 — show rego
-                              const isTargetDetailChip = (label: string) => /^V\d+F$/.test(label); // VnF — trigger only
-
-                              return orderedChips.map((s) => {
-                                const isStdQe = folderQeLabels.has(s.label);
-                                return (
-                                  <button
-                                    key={s.label}
-                                    onClick={() => { const v = s.getValue(); if (v) appendText(v); }}
-                                    data-qe-chip={s.label}
-                                    className="cursor-pointer px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all select-none"
-                                  >
-                                    {/* Vn short: show display (label + rego); VnF/folder/TGT: show label only */}
-                                    {isVnShortQe(s.label) ? s.display : (isStdQe || isTargetDetailChip(s.label)) ? s.label : s.display}
-                                  </button>
-                                );
-                              });
-                            })()}
+                            {orderedChips.map((s) => (
+                              <button
+                                key={s.label}
+                                onClick={() => { const v = s.getValue(); if (v) appendText(v); }}
+                                data-qe-chip={s.label}
+                                className="cursor-pointer px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all select-none"
+                              >
+                                {isVnShort(s.label) ? s.display : isStandard(s.label) ? s.label : s.display}
+                              </button>
+                            ))}
                           </div>
                         );
                       })()}

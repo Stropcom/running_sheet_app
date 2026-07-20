@@ -1,8 +1,8 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "ad9c1935-f083-419c-a145-28faf5cc4ab1",
-  "prevId": "50f2ac72-e501-4382-8695-47e73460cf0a",
+  "id": "760f6c67-9021-44e7-9038-5e36ce1cfad1",
+  "prevId": "0415661d-0380-4d76-b211-3ed58b41eff1",
   "tables": {
     "audit_logs": {
       "name": "audit_logs",
@@ -58,7 +58,7 @@
         },
         "action": {
           "name": "action",
-          "type": "enum('row_created','row_updated','row_deleted','member_added','member_removed','certified','uncertified','sheet_created','sheet_updated','sheet_deleted','sheet_closed','sheet_reopened','sheet_moved','sheet_copied','user_login','user_logout','user_created','user_updated','user_deleted','operation_status_changed')",
+          "type": "enum('row_created','row_updated','row_deleted','member_added','member_removed','certified','uncertified','sheet_created','sheet_updated','sheet_deleted','sheet_closed','sheet_reopened','sheet_moved','sheet_copied','user_login','user_logout','user_created','user_updated','user_deleted','operation_status_changed','password_changed')",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
@@ -1437,6 +1437,13 @@
           "autoincrement": false,
           "default": 0
         },
+        "rowDate": {
+          "name": "rowDate",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "observation": {
           "name": "observation",
           "type": "text",
@@ -2374,6 +2381,14 @@
           "notNull": false,
           "autoincrement": false,
           "default": "'local'"
+        },
+        "mustChangePassword": {
+          "name": "mustChangePassword",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
         },
         "wallpaperUrl": {
           "name": "wallpaperUrl",

@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import DashboardLayout from "@/components/DashboardLayout";
+import { useIsMobile } from "@/hooks/useMobile";
 import CinInput from "@/components/CinInput";
 import {
   Dialog,
@@ -45,6 +46,8 @@ import {
   ClipboardCheck,
   LockKeyhole,
   LockKeyholeOpen,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import {
   Select,
@@ -69,6 +72,7 @@ import {
   SortableContext,
   useSortable,
   verticalListSortingStrategy,
+  horizontalListSortingStrategy,
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -118,6 +122,9 @@ type SheetRow = {
   sheetId: number;
   rowNumber: number;
   time: string | null;
+  timeMinutes: number | null;
+  dayOffset?: number | null;
+  rowDate?: string | null;
   observation: string | null;
   isLocked: boolean;
   createdAt: Date;
@@ -132,6 +139,9 @@ type ExportRow = {
   id: number;
   rowNumber: number;
   time: string | null;
+  timeMinutes: number | null;
+  dayOffset?: number | null;
+  rowDate?: string | null;
   observation: string | null;
   isLocked: boolean;
   members: { id: number; memberName: string }[];
@@ -147,6 +157,43 @@ type OperationMeta = {
 } | null;
 
 type CinEntry = { cin: string; hasImages: boolean; isTeamLeader?: boolean; isAuthor?: boolean };
+
+const PERTH_TIME_ZONE = "Australia/Perth";
+const PERTH_OFFSET_SUFFIX = "T00:00:00+08:00";
+
+function ymdToPerthMs(ymd: string) {
+  return new Date(`${ymd}${PERTH_OFFSET_SUFFIX}`).getTime();
+}
+
+const PERTH_OFFSET_MS = 8 * 60 * 60 * 1000; // UTC+8 in milliseconds
+
+function addDaysToYmd(ymd: string, days: number) {
+  // ymdToPerthMs gives Perth midnight as UTC ms (e.g. 2026-07-19 00:00 AWST = 2026-07-18 16:00 UTC).
+  // After adding N days we must shift by +8h before reading UTC date components so that
+  // the UTC year/month/day equals the Perth calendar date (otherwise +1 day stays on the same UTC date).
+  const perthMs = ymdToPerthMs(ymd) + days * 86400000;
+  const d = new Date(perthMs + PERTH_OFFSET_MS);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+function formatPerthDateLabel(ymd: string) {
+  return new Date(`${ymd}${PERTH_OFFSET_SUFFIX}`)
+    .toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: PERTH_TIME_ZONE })
+    .toUpperCase();
+}
+
+function getTodayPerthYmd() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: PERTH_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const year = parts.find((p) => p.type === "year")?.value ?? "1970";
+  const month = parts.find((p) => p.type === "month")?.value ?? "01";
+  const day = parts.find((p) => p.type === "day")?.value ?? "01";
+  return `${year}-${month}-${day}`;
+}
 
 function exportToPDF(
   sheetTitle: string,
@@ -276,53 +323,108 @@ function exportToPDF(
   // Spacer row inserted after each log entry for breathing room
   const spacerRow = `<tr><td colspan="3" style="padding:0;height:8px;border:none;background:transparent"></td></tr>`;
 
-  const tableRows = rows.map((row) => {
-    const rowBg = row.isLocked ? lockedBg : "transparent";
-    if (row.members.length === 0) {
-      const obsHtml = boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>"));
-      return `<tr style="background:${rowBg}">
-        <td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap">${row.time ?? ""}</td>
-        <td style="padding:6px 6px 8px;${bb};${cb}">${obsHtml}</td>
-        <td style="padding:6px 6px 8px;${bb};font-size:11px"></td>
-      </tr>${spacerRow}`;
+  // ── Build day-offset map for export rows (rowDate-aware, falls back to inference) ──
+  const exportDayOffsetMap = new Map<number, number>();
+  {
+    const timedByRowNumber = [...rows]
+      .filter((r) => r.timeMinutes != null)
+      .sort((a, b) => a.rowNumber - b.rowNumber);
+    const exportRowDates = timedByRowNumber.map((r) => r.rowDate).filter((d): d is string => !!d);
+    const exportMinRowDate = exportRowDates.length > 0 ? exportRowDates.slice().sort()[0] : null;
+    // First pass: rowDate (highest priority) or stored dayOffset (legacy)
+    for (const r of timedByRowNumber) {
+      if (r.rowDate && exportMinRowDate) {
+        const anchor = ymdToPerthMs(exportMinRowDate);
+        const rowDay = ymdToPerthMs(r.rowDate);
+        exportDayOffsetMap.set(r.id, Math.round((rowDay - anchor) / 86400000));
+      } else if (r.dayOffset && r.dayOffset !== 0) {
+        exportDayOffsetMap.set(r.id, r.dayOffset);
+      }
     }
-    // Render one <tr> per member so CIN and Certified columns align perfectly
-    const memberRows = row.members.map((m, idx) => {
-      const isSpacer = m.memberName === "__SPACE__";
-      const cert = isSpacer ? undefined : row.certifications.find((c) => c.memberId === m.id && c.isActive);
-      const isFirst = idx === 0;
-      const rowspan = row.members.length;
-      const timeTd = isFirst
-        ? `<td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap" rowspan="${rowspan}">${row.time ?? ""}</td>`
-        : "";
-      const obsTd = isFirst
-        ? `<td style="padding:6px 6px 8px;${bb};${cb}" rowspan="${rowspan}">${boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>"))}</td>`
-        : "";
-      // Only draw bottom border on the last member row; no inner lines between members
-      const isLast = idx === row.members.length - 1;
-      const memberBb = isLast ? bb : "border-bottom:none";
-      // Top/bottom padding: generous on first/last, tight on inner member rows
-      const pt = isFirst ? "6px" : "2px";
-      const pb = isLast ? "8px" : "2px";
-      // Spacer: render as blank cell (no CIN, no cert)
-      if (isSpacer) {
+    // Second pass: infer for rows with no explicit date/offset
+    let day = 0;
+    let prevEff = -1;
+    for (const r of timedByRowNumber) {
+      if (exportDayOffsetMap.has(r.id)) {
+        prevEff = r.timeMinutes! + exportDayOffsetMap.get(r.id)! * 1440;
+        day = exportDayOffsetMap.get(r.id)!;
+        continue;
+      }
+      const mins = r.timeMinutes!;
+      const eff = mins + day * 1440;
+      if (prevEff >= 0 && eff < prevEff - 120) { day++; }
+      exportDayOffsetMap.set(r.id, day);
+      prevEff = mins + day * 1440;
+    }
+  }
+
+  const dateDividerRow = (label: string) =>
+    `<tr><td colspan="3" style="padding:4px 8px;background:#1e3a5f;color:#93c5fd;font-size:10px;font-weight:700;letter-spacing:0.08em;text-align:center;border-top:2px solid #334155;border-bottom:2px solid #334155">${label}</td></tr>`;
+
+  const tableRows = (() => {
+    let prevDay = -1;
+    const parts: string[] = [];
+    for (const row of rows) {
+      const day = exportDayOffsetMap.get(row.id) ?? 0;
+      if (row.timeMinutes != null && day > prevDay && prevDay >= 0) {
+        // Prefer an explicit rowDate from a row on that day
+        const rowOnDay = rows.find((r) => (exportDayOffsetMap.get(r.id) ?? 0) === day && r.rowDate);
+        let divLabel: string;
+        if (rowOnDay?.rowDate) {
+          divLabel = formatPerthDateLabel(rowOnDay.rowDate);
+        } else {
+          const divDate = new Date(sheetCreatedAt);
+          divDate.setDate(divDate.getDate() + day);
+          divLabel = divDate.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: PERTH_TIME_ZONE }).toUpperCase();
+        }
+        parts.push(dateDividerRow(divLabel));
+      }
+      if (row.timeMinutes != null) prevDay = day;
+      const rowBg = row.isLocked ? lockedBg : "transparent";
+      if (row.members.length === 0) {
+        const obsHtml = boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>"));
+        parts.push(`<tr style="background:${rowBg}">
+          <td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap">${row.time ?? ""}</td>
+          <td style="padding:6px 6px 8px;${bb};${cb}">${obsHtml}</td>
+          <td style="padding:6px 6px 8px;${bb};font-size:11px"></td>
+        </tr>${spacerRow}`);
+        continue;
+      }
+      // Render one <tr> per member so CIN and Certified columns align perfectly
+      const memberRows = row.members.map((m, idx) => {
+        const isSpacer = m.memberName === "__SPACE__";
+        const cert = isSpacer ? undefined : row.certifications.find((c) => c.memberId === m.id && c.isActive);
+        const isFirst = idx === 0;
+        const rowspan = row.members.length;
+        const timeTd = isFirst
+          ? `<td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap" rowspan="${rowspan}">${row.time ?? ""}</td>`
+          : "";
+        const obsTd = isFirst
+          ? `<td style="padding:6px 6px 8px;${bb};${cb}" rowspan="${rowspan}">${boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>"))}</td>`
+          : "";
+        const isLast = idx === row.members.length - 1;
+        const memberBb = isLast ? bb : "border-bottom:none";
+        const pt = isFirst ? "6px" : "2px";
+        const pb = isLast ? "8px" : "2px";
+        if (isSpacer) {
+          return `<tr style="background:${rowBg}">
+            ${timeTd}${obsTd}
+            <td style="padding:${pt} 6px ${pb} 6px;${memberBb};font-size:11px">&nbsp;</td>
+          </tr>`;
+        }
+        const certifierCIN = cert ? ('certifiedByCIN' in cert ? (cert as any).certifiedByCIN || cert.certifiedByName : cert.certifiedByName) : null;
+        const cinCertCell = cert
+          ? `<span style='color:${certColor};white-space:nowrap'>&#10003; ${certifierCIN} <span style='color:#555;font-size:10px'>${format(new Date(cert.certifiedAt), "dd/MM/yy h:mmaaa")}</span></span>`
+          : `<span style='color:#ef4444;font-weight:700'>${m.memberName} Pending</span>`;
         return `<tr style="background:${rowBg}">
           ${timeTd}${obsTd}
-          <td style="padding:${pt} 6px ${pb} 6px;${memberBb};font-size:11px">&nbsp;</td>
+          <td style="padding:${pt} 6px ${pb} 6px;${memberBb};font-size:11px">${cinCertCell}</td>
         </tr>`;
-      }
-      // Build CIN Certified cell: tick + certifier CIN + date only
-      const certifierCIN = cert ? ('certifiedByCIN' in cert ? (cert as any).certifiedByCIN || cert.certifiedByName : cert.certifiedByName) : null;
-      const cinCertCell = cert
-        ? `<span style='color:${certColor};white-space:nowrap'>&#10003; ${certifierCIN} <span style='color:#555;font-size:10px'>${format(new Date(cert.certifiedAt), "dd/MM/yy h:mmaaa")}</span></span>`
-        : `<span style='color:#ef4444;font-weight:700'>${m.memberName} Pending</span>`;
-      return `<tr style="background:${rowBg}">
-        ${timeTd}${obsTd}
-        <td style="padding:${pt} 6px ${pb} 6px;${memberBb};font-size:11px">${cinCertCell}</td>
-      </tr>`;
-    }).join("");
-    return memberRows + spacerRow;
-  }).join("");
+      }).join("");
+      parts.push(memberRows + spacerRow);
+    }
+    return parts.join("");
+  })();
 
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
   <title>${sheetTitle}</title>
@@ -449,6 +551,13 @@ function exportToPDF(
     </thead>
     <tbody>${tableRows}</tbody>
   </table>
+  <!-- Close button: visible on screen, hidden during print -->
+  <div id="close-bar" style="position:fixed;bottom:0;left:0;right:0;padding:12px 16px;background:#1e293b;display:flex;justify-content:flex-end;gap:12px;z-index:9999;box-shadow:0 -2px 8px rgba(0,0,0,0.4)">
+    <button onclick="window.close()" style="background:#3b82f6;color:#fff;border:none;border-radius:6px;padding:10px 24px;font-size:14px;font-weight:700;cursor:pointer;font-family:system-ui,sans-serif">&#x2715; Close Preview</button>
+    <button onclick="window.print()" style="background:#22c55e;color:#fff;border:none;border-radius:6px;padding:10px 24px;font-size:14px;font-weight:700;cursor:pointer;font-family:system-ui,sans-serif">&#128438; Print / Save PDF</button>
+  </div>
+  <div style="height:60px"></div>
+  <style>#close-bar{display:flex !important} @media print{#close-bar{display:none !important}}</style>
 </body></html>`;
 
   const win = window.open("", "_blank");
@@ -607,8 +716,71 @@ async function exportToWord(
     ],
   });
 
+  // ── Build day-offset map for Word export rows (rowDate-aware, falls back to inference) ──
+  const wordDayOffsetMap = new Map<number, number>();
+  {
+    const timedByRowNumber = [...rows]
+      .filter((r) => r.timeMinutes != null)
+      .sort((a, b) => a.rowNumber - b.rowNumber);
+    const wordRowDates = timedByRowNumber.map((r) => r.rowDate).filter((d): d is string => !!d);
+    const wordMinRowDate = wordRowDates.length > 0 ? wordRowDates.slice().sort()[0] : null;
+    // First pass: rowDate (highest priority) or stored dayOffset (legacy)
+    for (const r of timedByRowNumber) {
+      if (r.rowDate && wordMinRowDate) {
+        const anchor = ymdToPerthMs(wordMinRowDate);
+        const rowDay = ymdToPerthMs(r.rowDate);
+        wordDayOffsetMap.set(r.id, Math.round((rowDay - anchor) / 86400000));
+      } else if (r.dayOffset && r.dayOffset !== 0) {
+        wordDayOffsetMap.set(r.id, r.dayOffset);
+      }
+    }
+    // Second pass: infer for rows with no explicit date/offset
+    let day = 0;
+    let prevEff = -1;
+    for (const r of timedByRowNumber) {
+      if (wordDayOffsetMap.has(r.id)) {
+        prevEff = r.timeMinutes! + wordDayOffsetMap.get(r.id)! * 1440;
+        day = wordDayOffsetMap.get(r.id)!;
+        continue;
+      }
+      const mins = r.timeMinutes!;
+      const eff = mins + day * 1440;
+      if (prevEff >= 0 && eff < prevEff - 120) { day++; }
+      wordDayOffsetMap.set(r.id, day);
+      prevEff = mins + day * 1440;
+    }
+  }
+
   const dataRows: TableRow[] = [];
+  let wordPrevDay = -1;
   for (const row of rows) {
+    const wordDay = wordDayOffsetMap.get(row.id) ?? 0;
+    if (row.timeMinutes != null && wordDay > wordPrevDay && wordPrevDay >= 0) {
+      // Prefer an explicit rowDate from a row on that day
+      const wordRowOnDay = rows.find((r) => (wordDayOffsetMap.get(r.id) ?? 0) === wordDay && r.rowDate);
+      let divLabel: string;
+      if (wordRowOnDay?.rowDate) {
+        divLabel = formatPerthDateLabel(wordRowOnDay.rowDate);
+      } else {
+        const divDate = new Date(sheetCreatedAt);
+        divDate.setDate(divDate.getDate() + wordDay);
+        divLabel = divDate.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: PERTH_TIME_ZONE }).toUpperCase();
+      }
+      dataRows.push(new TableRow({
+        children: [
+          new TableCell({
+            columnSpan: 3,
+            shading: { type: ShadingType.SOLID, color: "1E3A5F", fill: "1E3A5F" },
+            borders: { top: outerBorder, bottom: outerBorder, left: outerBorder, right: outerBorder },
+            children: [new Paragraph({
+              alignment: AlignmentType.CENTER,
+              children: [new TextRun({ text: `── ${divLabel} ──`, bold: true, size: 18, color: "93C5FD" })],
+            })],
+          }),
+        ],
+      }));
+    }
+    if (row.timeMinutes != null) wordPrevDay = wordDay;
     const timeText = row.time ?? "";
     const obsText = row.observation ?? "";
 
@@ -1151,12 +1323,28 @@ function minutesToTimeString(mins: number): string {
 function TimePickerCell({
   value,
   locked,
+  dayOffset = 0,
+  rowDate,
+  inferredRowDate,
+  sheetHasCrossedMidnight = false,
+  sheetCreatedAt,
   onSave,
 }: {
   value: string | null;
   locked: boolean;
-  onSave: (display: string, minutes: number) => void;
+  dayOffset?: number;
+  rowDate?: string | null;
+  inferredRowDate?: string | null;
+  sheetHasCrossedMidnight?: boolean;
+  sheetCreatedAt?: number | null;
+  onSave: (display: string, minutes: number, dayOffset: number, rowDate?: string) => void;
 }) {
+  // Derive the RS creation date in Perth (YYYY-MM-DD) — used as the default rowDate
+  const sheetCreatedYmd = useMemo(() => {
+    if (!sheetCreatedAt) return getTodayPerthYmd();
+    return new Intl.DateTimeFormat("en-CA", { timeZone: PERTH_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(sheetCreatedAt));
+  }, [sheetCreatedAt]);
+
   // Parse existing value into hour/minute/period; default to current time when empty
   const parsed = useMemo(() => {
     if (!value) {
@@ -1174,8 +1362,13 @@ function TimePickerCell({
   const [hour, setHour] = useState(parsed.hour);
   const [minute, setMinute] = useState(parsed.minute);
   const [period, setPeriod] = useState(parsed.period);
+  const [localDayOffset, setLocalDayOffset] = useState(dayOffset);
+  // Default to the explicit rowDate, then inferred, then RS creation date
+  const [selectedRowDate, setSelectedRowDate] = useState<string>(() => rowDate ?? inferredRowDate ?? sheetCreatedYmd);
   // Track whether any Radix Select dropdown is currently open
   const [selectOpen, setSelectOpen] = useState(false);
+  // Controls visibility of the date stepper (toggled by Date button)
+  const [showDateStepper, setShowDateStepper] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
 
   // Sync local state when value prop changes (e.g. row refresh)
@@ -1184,6 +1377,16 @@ function TimePickerCell({
     setMinute(parsed.minute);
     setPeriod(parsed.period);
   }, [parsed.hour, parsed.minute, parsed.period]);
+
+  // Sync dayOffset from prop
+  useEffect(() => {
+    setLocalDayOffset(dayOffset);
+  }, [dayOffset]);
+
+  // Sync explicit/inferred rowDate from props
+  useEffect(() => {
+    setSelectedRowDate(rowDate ?? inferredRowDate ?? sheetCreatedYmd);
+  }, [rowDate, inferredRowDate, sheetCreatedYmd]);
 
   // Close picker on outside click — but only when no Radix Select is open
   // (Radix portals render outside popoverRef, so we must ignore those clicks)
@@ -1207,9 +1410,9 @@ function TimePickerCell({
   const handleDone = useCallback(() => {
     const display = `${String(parseInt(hour, 10)).padStart(2, "0")}:${minute.padStart(2, "0")} ${period}`;
     const mins = timeStringToMinutes(display);
-    onSave(display, mins);
+    onSave(display, mins, localDayOffset, selectedRowDate);
     setOpen(false);
-  }, [hour, minute, period, onSave]);
+  }, [hour, minute, period, localDayOffset, selectedRowDate, onSave]);
 
   const hours = Array.from({ length: 12 }, (_, i) => String(i + 1));
   const minutes = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"));
@@ -1233,7 +1436,8 @@ function TimePickerCell({
       </button>
       {open && (
         <div className="absolute z-50 top-full left-0 mt-1 bg-popover border border-border rounded-lg shadow-xl p-3">
-          <div className="flex items-center gap-2 mb-3">
+          {/* Time selectors row + Now + Date inline */}
+          <div className="flex items-center gap-1.5 mb-2 flex-nowrap">
             {/* Hour */}
             <Select
               value={hour}
@@ -1281,12 +1485,11 @@ function TimePickerCell({
                 <SelectItem value="PM" className="text-foreground">PM</SelectItem>
               </SelectContent>
             </Select>
-          </div>
-          <div className="flex gap-2">
+            {/* Now button — inline */}
             <Button
               size="sm"
               variant="outline"
-              className="flex-1 h-7 text-xs"
+              className="h-8 text-xs px-2"
               onClick={() => {
                 const now = new Date();
                 const h24 = now.getHours();
@@ -1298,14 +1501,36 @@ function TimePickerCell({
             >
               Now
             </Button>
+            {/* Date button — toggles stepper */}
             <Button
               size="sm"
-              className="flex-1 h-7 text-xs"
-              onClick={handleDone}
+              variant={showDateStepper ? "default" : "outline"}
+              className="h-8 text-xs px-2"
+              onClick={() => setShowDateStepper((v) => !v)}
             >
-              Done
+              Date
             </Button>
           </div>
+          {/* Date stepper — only visible when Date button is active */}
+          {showDateStepper && (
+            <div className="flex items-center justify-between mb-2 px-1 py-1 rounded-md border border-border/70 bg-muted/30">
+              <button
+                className="px-2 py-0.5 text-base font-bold text-muted-foreground hover:text-foreground transition-colors"
+                onClick={() => setSelectedRowDate(addDaysToYmd(selectedRowDate, -1))}
+              >◀</button>
+              <span className="text-[11px] font-semibold tracking-widest text-foreground font-mono">
+                {formatPerthDateLabel(selectedRowDate)}
+              </span>
+              <button
+                className="px-2 py-0.5 text-base font-bold text-muted-foreground hover:text-foreground transition-colors"
+                onClick={() => setSelectedRowDate(addDaysToYmd(selectedRowDate, 1))}
+              >▶</button>
+            </div>
+          )}
+          {/* Done button — full width */}
+          <Button size="sm" className="w-full h-7 text-xs" onClick={handleDone}>
+            Done
+          </Button>
         </div>
       )}
     </div>
@@ -1427,6 +1652,51 @@ function EditableCell({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
+// ── SortableChip — dnd-kit sortable chip for the target field chip row ──────
+function SortableChip({ id, label, value, showValue, onInsert }: {
+  id: string; label: string; value?: string | null; showValue: boolean; onInsert: () => void;
+}) {
+  const isMobile = useIsMobile();
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    zIndex: isDragging ? 50 : undefined,
+  };
+  return (
+    <div ref={setNodeRef} style={style} className="flex items-center">
+      <button
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={onInsert}
+        title={`Insert: ${value}`}
+        className="flex items-center gap-1 pl-1 pr-2 py-0.5 rounded border border-primary/30 bg-primary/8 hover:bg-primary/15 active:scale-95 transition-all select-none cursor-pointer"
+      >
+        {/* Grip handle — desktop only */}
+        {!isMobile && (
+          <span
+            {...attributes}
+            {...listeners}
+            className="flex flex-col gap-[2.5px] opacity-40 shrink-0 cursor-grab active:cursor-grabbing px-0.5 touch-none"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <span className="flex gap-[2.5px]">
+              <span className="w-[3px] h-[3px] rounded-full bg-primary" />
+              <span className="w-[3px] h-[3px] rounded-full bg-primary" />
+            </span>
+            <span className="flex gap-[2.5px]">
+              <span className="w-[3px] h-[3px] rounded-full bg-primary" />
+              <span className="w-[3px] h-[3px] rounded-full bg-primary" />
+            </span>
+          </span>
+        )}
+        <span className="text-[10px] font-bold text-primary uppercase tracking-wide">{label}</span>
+        {showValue && value && <span className="text-[10px] font-mono text-foreground/80 max-w-[80px] truncate">{value}</span>}
+      </button>
+    </div>
+  );
+}
+
 export default function SheetDetail() {
   const { id } = useParams<{ id: string }>();
   const sheetId = parseInt(id ?? "0", 10);
@@ -1435,6 +1705,11 @@ export default function SheetDetail() {
 
   const utils = trpc.useUtils();
   const { isOnline, syncStatus } = useOffline();
+  // Sensors for chip drag-to-reorder (separate from CinRow sensors)
+  const chipSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } })
+  );
 
   // Offline-aware local row state — used when offline
   const [offlineRows, setOfflineRows] = useState<typeof rows | null>(null);
@@ -1554,7 +1829,7 @@ export default function SheetDetail() {
 
   const updateRow = useMemo(() => ({
     isPending: _updateRowOnline.isPending,
-    mutate: (input: { id: number; time?: string; timeMinutes?: number; observation?: string }) => {
+    mutate: (input: { id: number; time?: string; timeMinutes?: number; dayOffset?: number; rowDate?: string; observation?: string }) => {
       if (isOnline) {
         _updateRowOnline.mutate(input);
       } else {
@@ -1904,9 +2179,41 @@ export default function SheetDetail() {
     ...Array.from({ length: 10 }, (_, i) => `#${i + 1}`),
   ];
   const [targetFieldOrder, setTargetFieldOrder] = useState<string[]>(() => {
-    try { const s = localStorage.getItem(`runsheet_field_order_${sheetId}`); if (s) return JSON.parse(s); } catch {} return CANONICAL_CHIP_ORDER;
+    try {
+      const s = localStorage.getItem(`runsheet_field_order_${sheetId}`);
+      if (s) {
+        const saved: string[] = JSON.parse(s);
+        // Migrate: ensure ARR is present after DEP in any saved order
+        let migrated = [...saved];
+        if (!migrated.includes("ARR")) {
+          const depIdx = migrated.indexOf("DEP");
+          if (depIdx >= 0) {
+            migrated.splice(depIdx + 1, 0, "ARR");
+          } else {
+            migrated.push("ARR");
+          }
+          localStorage.setItem(`runsheet_field_order_${sheetId}`, JSON.stringify(migrated));
+        }
+        return migrated;
+      }
+    } catch {}
+    return CANONICAL_CHIP_ORDER;
   });
-  const targetFieldDragRef = useRef<{ dragging: string | null; startX: number; startY: number; startIdx: number; pointerId: number | null }>({ dragging: null, startX: 0, startY: 0, startIdx: -1, pointerId: null });
+  const handleChipDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setTargetFieldOrder(prev => {
+      // Ensure both chips are in the order array — new shortcuts/wildcards may not be
+      let base = [...prev];
+      if (!base.includes(active.id as string)) base = [...base, active.id as string];
+      if (!base.includes(over.id as string)) base = [...base, over.id as string];
+      const oldIndex = base.indexOf(active.id as string);
+      const newIndex = base.indexOf(over.id as string);
+      const next = arrayMove(base, oldIndex, newIndex);
+      try { localStorage.setItem(`runsheet_field_order_${sheetId}`, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, [sheetId]);
   // Track the last focused textarea/input so chip taps can insert text even after blur
   const focusedTextareaRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null);
   // Track the last focused textarea/input via document focusin so chip taps can insert even after blur
@@ -1958,7 +2265,7 @@ export default function SheetDetail() {
   });
 
   // Shortcuts: fetch once and build a trigger→expansion map
-  const { data: shortcutsData } = trpc.shortcuts.list.useQuery(undefined, { enabled: isAuthenticated });
+  const { data: shortcutsData } = trpc.shortcuts.list.useQuery(undefined, { enabled: isAuthenticated, staleTime: 0 });
   // Per-target shortcuts for the sheet's assigned target
   const { data: targetShortcutsData } = trpc.targetShortcuts.listForSheet.useQuery(
     { sheetId: sheetId! },
@@ -2143,6 +2450,63 @@ export default function SheetDetail() {
 
   // Filter rows by search query (time, observation, member names)
   // NOTE: must be above the early return to satisfy React rules-of-hooks
+  // ── Day-offset map: detect midnight rollovers from the time sequence itself ──
+  // Scans timed rows in entry order (by rowNumber); when the effective time drops
+  // by more than 2 hours it treats that as a midnight rollover and increments the
+  // day counter. Shared between the sort and the date-divider render logic.
+  const rowDayOffsetMap = useMemo(() => {
+    if (!displayRows) return new Map<number, number>();
+    // MUST sort by rowNumber (entry order) before scanning for rollovers.
+    // displayRows may already be sorted by effective time from the server,
+    // so we explicitly re-sort here to get the correct insertion sequence.
+    const timedByRowNumber = [...displayRows]
+      .filter((r: NonNullable<typeof rows>[0]) => r.timeMinutes != null)
+      .sort((a: NonNullable<typeof rows>[0], b: NonNullable<typeof rows>[0]) => a.rowNumber - b.rowNumber);
+    const map = new Map<number, number>();
+
+    // Find the earliest rowDate among all rows that have one (day-0 anchor)
+    const allRowDates = timedByRowNumber
+      .map((r: NonNullable<typeof rows>[0]) => (r as any).rowDate as string | null | undefined)
+      .filter((d): d is string => !!d);
+    const minRowDate = allRowDates.length > 0 ? allRowDates.slice().sort()[0] : null;
+
+    // First pass: assign offsets from rowDate (highest priority) or stored dayOffset (legacy)
+    for (const r of timedByRowNumber) {
+      const rd = (r as any).rowDate as string | null | undefined;
+      if (rd && minRowDate) {
+        // Day index relative to earliest rowDate in this sheet (Perth UTC+8)
+        const anchor = new Date(minRowDate + "T00:00:00+08:00").getTime();
+        const rowDay = new Date(rd + "T00:00:00+08:00").getTime();
+        const dayIdx = Math.round((rowDay - anchor) / 86400000);
+        map.set(r.id, dayIdx);
+      } else if ((r as any).dayOffset !== 0 && (r as any).dayOffset != null) {
+        map.set(r.id, (r as any).dayOffset);
+      }
+    }
+    // Second pass: infer for rows with no explicit date/offset
+    let day = 0;
+    let prevEff = -1;
+    for (const r of timedByRowNumber) {
+      if (map.has(r.id)) {
+        prevEff = (r.timeMinutes ?? 0) + map.get(r.id)! * 1440;
+        day = map.get(r.id)!;
+        continue;
+      }
+      const mins = r.timeMinutes ?? 0;
+      const eff = mins + day * 1440;
+      if (prevEff >= 0 && eff < prevEff - 120) day++;
+      map.set(r.id, day);
+      prevEff = mins + day * 1440;
+    }
+    return map;
+  }, [displayRows]);
+
+  // True when any row in this sheet has a day offset > 0 (sheet has crossed midnight)
+  const sheetHasCrossedMidnight = useMemo(() => {
+    if (!displayRows) return false;
+    return Array.from(rowDayOffsetMap.values()).some((v) => v > 0);
+  }, [displayRows, rowDayOffsetMap]);
+
   const filteredRows = useMemo(() => {
     if (!displayRows) return [];
     const filtered = !searchQuery.trim() ? displayRows : displayRows.filter((row: NonNullable<typeof rows>[0]) => {
@@ -2155,9 +2519,11 @@ export default function SheetDetail() {
     // Rows with no time set ALWAYS float to the top (newest/being filled in)
     const withTime = filtered.filter((row: NonNullable<typeof rows>[0]) => row.timeMinutes != null);
     const noTime = filtered.filter((row: NonNullable<typeof rows>[0]) => row.timeMinutes == null);
-    // Sort timed rows by timeMinutes, then rowNumber as tie-break
+    const effectiveMinutes = (row: NonNullable<typeof rows>[0]) =>
+      (row.timeMinutes ?? 0) + (rowDayOffsetMap.get(row.id) ?? 0) * 1440;
+    // Sort timed rows by effective (day-offset) timeMinutes, then rowNumber as tie-break
     const sortedWithTime = [...withTime].sort((a: NonNullable<typeof rows>[0], b: NonNullable<typeof rows>[0]) => {
-      const timeDiff = (a.timeMinutes ?? 0) - (b.timeMinutes ?? 0);
+      const timeDiff = effectiveMinutes(a) - effectiveMinutes(b);
       if (timeDiff !== 0) return sortReversed ? -timeDiff : timeDiff;
       return sortReversed ? (b.rowNumber - a.rowNumber) : (a.rowNumber - b.rowNumber);
     });
@@ -2167,7 +2533,7 @@ export default function SheetDetail() {
     );
     // No-time rows always at the TOP regardless of sort direction
     return [...sortedNoTime, ...sortedWithTime];
-  }, [displayRows, searchQuery, sortReversed]);
+  }, [displayRows, searchQuery, sortReversed, rowDayOffsetMap]);
 
   if (!isAuthenticated) return null;
 
@@ -2477,9 +2843,8 @@ export default function SheetDetail() {
             ...cleanedExtraVehicleFields,
             ...wildFieldItems,
             { label: "DEP", value: t.dep },
-            { label: "ARR", value: t.arr },
             // All shortcut-folder triggers as chips — only those with showInRs=true, exclude legacy 'D' chip
-             ...(shortcutsData ?? []).filter((s) => s.trigger.toUpperCase() !== "D" && s.showInRs !== false).map((s) => ({ label: s.trigger.toUpperCase(), value: s.expansion })),
+             ...(shortcutsData ?? []).filter((s) => s.trigger.toUpperCase() !== "D" && !!s.showInRs).map((s) => ({ label: s.trigger.toUpperCase(), value: s.expansion })),
           ];
           const hasAnyField = fields.some((f) => f.value);
           return (
@@ -2513,144 +2878,77 @@ export default function SheetDetail() {
               {targetPanelExpanded && (() => {
                 // Apply saved order to the fields list
                 const visibleFields = fields.filter((f) => f.value);
-                const orderedFields = targetFieldOrder.length > 0
+                const isWildcard = (lbl: string) => /^#\d+$/.test(lbl);
+                const nonWildVisible = visibleFields.filter(f => !isWildcard(f.label));
+                const wildcardVisible = visibleFields.filter(f => isWildcard(f.label));
+                const orderedNonWild = targetFieldOrder.length > 0
                   ? [
-                      ...targetFieldOrder.map(lbl => visibleFields.find(f => f.label === lbl)).filter(Boolean) as typeof visibleFields,
-                      ...visibleFields.filter(f => !targetFieldOrder.includes(f.label)),
+                      ...targetFieldOrder.filter(lbl => !isWildcard(lbl)).map(lbl => nonWildVisible.find(f => f.label === lbl)).filter(Boolean) as typeof visibleFields,
+                      ...nonWildVisible.filter(f => !targetFieldOrder.includes(f.label)),
                     ]
-                  : visibleFields;
+                  : nonWildVisible;
+                // Wildcards always at the end, in their saved order
+                const orderedWild = targetFieldOrder.length > 0
+                  ? [
+                      ...targetFieldOrder.filter(isWildcard).map(lbl => wildcardVisible.find(f => f.label === lbl)).filter(Boolean) as typeof visibleFields,
+                      ...wildcardVisible.filter(f => !targetFieldOrder.includes(f.label)),
+                    ]
+                  : wildcardVisible;
+                const orderedFields = [...orderedNonWild, ...orderedWild];
                 return (
                   <div className="px-4 pb-3 border-t border-border/40">
-                    {hasAnyField && (
-                      <div className="flex flex-wrap gap-1.5 pt-2">
-                        {orderedFields.map((f, idx) => {
-                          const isDepArr = (f.label === "DEP" || f.label === "ARR") && !isClosed;
-                          // Insert value into the last focused textarea (stored in ref to survive blur)
-                          const insertIntoFocused = () => {
-                            const el = focusedTextareaRef.current;
-                            if (el) {
-                              el.focus();
-                              const start = el.selectionStart ?? el.value.length;
-                              const end = el.selectionEnd ?? el.value.length;
-                              const before = el.value.slice(0, start);
-                              const after = el.value.slice(end);
-                              const insert = (before && !before.endsWith(" ")) ? ` ${f.value!}` : f.value!;
-                              // Use execCommand for React-controlled inputs
-                              try {
-                                document.execCommand("insertText", false, insert);
-                              } catch {
-                                // Fallback: directly set value and dispatch input event
-                                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set
-                                  || Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
-                                if (nativeInputValueSetter) {
-                                  nativeInputValueSetter.call(el, before + insert + after);
-                                  el.dispatchEvent(new Event("input", { bubbles: true }));
-                                }
-                              }
-                            }
-                          };
-                          // Chip display rules:
-                          // - Vn short chips (V1, V2, V3...): show label + rego value next to it
-                          // - VnF full chips, TGT, HBF, HB, DEP, ARR, folder shortcuts: trigger only (no value shown)
-                          const shortcutFolderLabels = new Set((shortcutsData ?? []).map(s => s.trigger.toUpperCase()));
-                          const TRIGGER_ONLY_LABELS = new Set(["TGT", "HBF", "HB", "V1F", "V2F", "DEP", "ARR"]);
-                          const isVnShort = /^V\d+$/.test(f.label); // V1, V2, V3 etc — show rego next to label
-                          const isVnFull  = /^V\d+F$/.test(f.label); // V1F, V2F etc — trigger only
-                          const isStandard = !isVnShort && (shortcutFolderLabels.has(f.label) || TRIGGER_ONLY_LABELS.has(f.label) || isVnFull);
-                          const doReorder = (fromLabel: string, toLabel: string) => {
-                            if (!fromLabel || fromLabel === toLabel) return;
-                            const labels = orderedFields.map(x => x.label);
-                            const fromIdx = labels.indexOf(fromLabel);
-                            const toIdx = labels.indexOf(toLabel);
-                            if (fromIdx === -1 || toIdx === -1) return;
-                            const newOrder = [...labels];
-                            newOrder.splice(fromIdx, 1);
-                            newOrder.splice(toIdx, 0, fromLabel);
-                            setTargetFieldOrder(newOrder);
-                            try { localStorage.setItem(`runsheet_field_order_${sheetId}`, JSON.stringify(newOrder)); } catch {}
-                          };
-                          return (
-                            <div
-                              key={f.label}
-                              data-chip-label={f.label}
-                              className="flex items-center gap-0.5"
-                            >
-                              <button
-                                onPointerDown={(e) => {
-                                  // Capture pointer so we track move/up even outside the element
-                                  (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-                                  targetFieldDragRef.current.dragging = null;
-                                  targetFieldDragRef.current.startX = e.clientX;
-                                  targetFieldDragRef.current.startY = e.clientY;
-                                  targetFieldDragRef.current.startIdx = idx;
-                                  targetFieldDragRef.current.pointerId = e.pointerId;
-                                  // Prevent textarea blur on click
-                                  e.preventDefault();
-                                }}
-                                onPointerMove={(e) => {
-                                  if (targetFieldDragRef.current.pointerId !== e.pointerId) return;
-                                  const dx = e.clientX - targetFieldDragRef.current.startX;
-                                  const dy = e.clientY - targetFieldDragRef.current.startY;
-                                  const dist = Math.sqrt(dx * dx + dy * dy);
-                                  if (dist > 8) {
-                                    if (!targetFieldDragRef.current.dragging) {
-                                      targetFieldDragRef.current.dragging = f.label;
-                                    }
-                                    // Find which chip we're hovering over
-                                    const el = document.elementFromPoint(e.clientX, e.clientY);
-                                    const chipEl = el?.closest('[data-chip-label]') as HTMLElement | null;
-                                    if (chipEl) {
-                                      const overLabel = chipEl.dataset.chipLabel;
-                                      if (overLabel && overLabel !== targetFieldDragRef.current.dragging) {
-                                        doReorder(targetFieldDragRef.current.dragging!, overLabel);
-                                        targetFieldDragRef.current.dragging = overLabel;
+                    {hasAnyField && (() => {
+                      const shortcutFolderLabels = new Set((shortcutsData ?? []).map(s => s.trigger.toUpperCase()));
+                      const TRIGGER_ONLY_LABELS = new Set(["TGT", "HBF", "HB", "V1F", "V2F", "DEP"]);
+                      return (
+                        <DndContext
+                          sensors={chipSensors}
+                          collisionDetection={closestCenter}
+                          onDragEnd={handleChipDragEnd}
+                        >
+                          <SortableContext items={orderedFields.map(f => f.label)} strategy={horizontalListSortingStrategy}>
+                            <div className="flex flex-wrap gap-1.5 pt-2">
+                              {orderedFields.map((f) => {
+                                const insertIntoFocused = () => {
+                                  const el = focusedTextareaRef.current;
+                                  if (el) {
+                                    el.focus();
+                                    const start = el.selectionStart ?? el.value.length;
+                                    const end = el.selectionEnd ?? el.value.length;
+                                    const before = el.value.slice(0, start);
+                                    const after = el.value.slice(end);
+                                    const insert = (before && !before.endsWith(" ")) ? ` ${f.value!}` : f.value!;
+                                    try {
+                                      document.execCommand("insertText", false, insert);
+                                    } catch {
+                                      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set
+                                        || Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+                                      if (nativeInputValueSetter) {
+                                        nativeInputValueSetter.call(el, before + insert + after);
+                                        el.dispatchEvent(new Event("input", { bubbles: true }));
                                       }
                                     }
                                   }
-                                }}
-                                onPointerUp={(e) => {
-                                  if (targetFieldDragRef.current.pointerId !== e.pointerId) return;
-                                  (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-                                  if (!targetFieldDragRef.current.dragging) {
-                                    // Plain tap/click — insert into focused textarea
-                                    insertIntoFocused();
-                                  }
-                                  targetFieldDragRef.current.dragging = null;
-                                  targetFieldDragRef.current.pointerId = null;
-                                }}
-                                onPointerCancel={() => {
-                                  targetFieldDragRef.current.dragging = null;
-                                  targetFieldDragRef.current.pointerId = null;
-                                }}
-                                title={`Insert: ${f.value}`}
-                                className="flex items-baseline gap-1 px-2 py-0.5 rounded border border-primary/30 bg-primary/8 hover:bg-primary/15 active:scale-95 transition-all cursor-grab active:cursor-grabbing select-none"
-                              >
-                                <span className="text-[10px] font-bold text-primary uppercase tracking-wide">{f.label}</span>
-                                {/* Vn short chips show rego next to label; all other standard chips show trigger only */}
-                                {(isVnShort || !isStandard) && <span className="text-[10px] font-mono text-foreground/80 max-w-[80px] truncate">{f.value}</span>}
-                              </button>
-                              {isDepArr && (
-                                <button
-                                  onClick={() => {
-                                    const now = new Date();
-                                    const h24 = now.getHours();
-                                    const min = now.getMinutes();
-                                    const totalMins = h24 * 60 + min;
-                                    const timeStr = minutesToTimeString(totalMins);
-                                    addRow.mutate({ sheetId, time: timeStr, timeMinutes: totalMins, observation: f.value! });
-                                  }}
-                                  disabled={addRow.isPending}
-                                  title={`Add ${f.label} row with current time`}
-                                  className="ml-0.5 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-primary/15 text-primary hover:bg-primary/25 active:scale-95 transition-all border border-primary/30"
-                                >
-                                  + Row
-                                </button>
-                              )}
+                                };
+                                const isVnShort = /^V\d+$/.test(f.label);
+                                const isVnFull  = /^V\d+F$/.test(f.label);
+                                const isStandard = !isVnShort && (shortcutFolderLabels.has(f.label) || TRIGGER_ONLY_LABELS.has(f.label) || isVnFull);
+                                return (
+                                  <SortableChip
+                                    key={f.label}
+                                    id={f.label}
+                                    label={f.label}
+                                    value={f.value}
+                                    showValue={isVnShort || !isStandard}
+                                    onInsert={insertIntoFocused}
+                                  />
+                                );
+                              })}
                             </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                          </SortableContext>
+                        </DndContext>
+                      );
+                    })()}
                   </div>
                 );
               })()}
@@ -2730,17 +3028,76 @@ export default function SheetDetail() {
                 <tbody>
                   {filteredRows.length === 0 && searchQuery ? (
                     <tr><td colSpan={4} className="py-12 text-center text-sm text-muted-foreground italic">No rows match your search.</td></tr>
-                  ) : filteredRows.map((row: NonNullable<typeof rows>[0]) => (
+                  ) : filteredRows.reduce((acc: React.ReactNode[], row: NonNullable<typeof rows>[0], idx: number) => {
+                    // ── Date-divider: insert a separator row when the day offset changes ──
+                    // In ascending order: divider goes BEFORE the first day-N row.
+                    // In reversed order: divider goes AFTER the last day-N row (i.e. before
+                    // the current row which belongs to an earlier day).
+                    if (row.timeMinutes != null) {
+                      const prevTimedRow = [...filteredRows].slice(0, idx).reverse().find((r: NonNullable<typeof rows>[0]) => r.timeMinutes != null);
+                      if (prevTimedRow) {
+                        const prevDay = rowDayOffsetMap.get(prevTimedRow.id) ?? 0;
+                        const curDay = rowDayOffsetMap.get(row.id) ?? 0;
+                        if (curDay !== prevDay) {
+                          // The divider label always shows the HIGHER day (the later calendar day)
+                          const laterDay = Math.max(prevDay, curDay);
+                          // Prefer an explicit rowDate from a row on that day
+                          const rowOnLaterDay = filteredRows.find(
+                            (r: NonNullable<typeof rows>[0]) =>
+                              (rowDayOffsetMap.get(r.id) ?? 0) === laterDay && (r as any).rowDate
+                          );
+                          let label: string;
+                          if (rowOnLaterDay && (rowOnLaterDay as any).rowDate) {
+                            label = formatPerthDateLabel((rowOnLaterDay as any).rowDate as string);
+                          } else {
+                            const sheetStartMs = sheet?.createdAt ? new Date(sheet.createdAt).getTime() : Date.now();
+                            const labelDate = new Date(sheetStartMs + laterDay * 24 * 60 * 60 * 1000);
+                            label = labelDate.toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: PERTH_TIME_ZONE }).toUpperCase();
+                          }
+                          const dividerRow = (
+                            <tr key={`divider-${row.id}`} className="date-divider-row">
+                              <td colSpan={4} className="py-1.5 px-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="flex-1 h-px bg-border" />
+                                  <span className="text-[10px] font-semibold tracking-widest text-muted-foreground whitespace-nowrap">{label}</span>
+                                  <div className="flex-1 h-px bg-border" />
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                          // Always insert divider before the current row.
+                          // In ascending: divider sits above the first day-N row.
+                          // In reversed: the reduce sees rows newest-first, so the day
+                          // boundary is detected when we hit the first lower-day row;
+                          // inserting the divider before that row places it correctly
+                          // between the higher-day rows above and lower-day rows below.
+                          acc.push(dividerRow);
+                        }
+                      }
+                    }
+                    acc.push(
                     <tr
                       key={row.id}
                       className={row.isLocked ? "row-locked" : "hover:bg-accent/20"}
                     >
                       {/* Time */}
                       <td>
-                        <TimePickerCell
+                         <TimePickerCell
                           value={row.time}
                           locked={row.isLocked}
-                          onSave={(display, mins) => updateRow.mutate({ id: row.id, time: display, timeMinutes: mins })}
+                          dayOffset={(row as any).dayOffset ?? 0}
+                          rowDate={(row as any).rowDate ?? null}
+                          inferredRowDate={(() => {
+                            if (!sheetHasCrossedMidnight) return null;
+                            // Compute inferred date from day offset + sheet start date
+                            const dayOff = rowDayOffsetMap.get(row.id) ?? 0;
+                            const sheetStartMs = sheet?.createdAt ? new Date(sheet.createdAt).getTime() : Date.now();
+                            const d = new Date(sheetStartMs + dayOff * 86400000);
+                            return new Intl.DateTimeFormat("en-CA", { timeZone: PERTH_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+                          })()}
+                          sheetHasCrossedMidnight={sheetHasCrossedMidnight}
+                          sheetCreatedAt={sheet?.createdAt ? new Date(sheet.createdAt).getTime() : null}
+                          onSave={(display, mins, dayOff, rd) => updateRow.mutate({ id: row.id, time: display, timeMinutes: mins, dayOffset: dayOff, rowDate: rd })}
                         />
                       </td>
 
@@ -2795,7 +3152,9 @@ export default function SheetDetail() {
 
 
                     </tr>
-                  ))}
+                    );
+                    return acc;
+                  }, [] as React.ReactNode[])}
                 </tbody>
               </table>
             )}

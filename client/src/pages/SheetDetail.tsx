@@ -3292,8 +3292,27 @@ export default function SheetDetail() {
                                   return obs.split("\n")[0].trim();
                                 }
 
-                                const departAddr = extractAddressFromObs(prevObs);
-                                const arriveAddr = extractAddressFromObs(nextObs);
+                                // A bare street mention like "departed 45 Scott Street and continued
+                                // via:" has no suburb, which Google's geocoder often can't resolve on
+                                // its own. Scan every row in the sheet for a bracketed full address
+                                // sighting of the same street (e.g. "45 Scott Street, KOONGAMIA WA (45
+                                // Scott Street)") and prefer that — same enrichment the RS Map feature
+                                // already does for its own address matching.
+                                const knownAddressMap = new Map<string, string>();
+                                const bracketedAddrRe = /\b(\d{1,5}[A-Za-z]?(?:\/\d{1,5}[A-Za-z]?)?\s+[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){0,3},\s*[A-Z][A-Z ]{1,30}(?:\s+WA)?)\s*\(([^)]{3,80})\)/g;
+                                for (const r of filteredRows) {
+                                  if (!r.observation) continue;
+                                  bracketedAddrRe.lastIndex = 0;
+                                  let m: RegExpExecArray | null;
+                                  while ((m = bracketedAddrRe.exec(r.observation)) !== null) {
+                                    const key = m[2].trim().toLowerCase();
+                                    if (!knownAddressMap.has(key)) knownAddressMap.set(key, m[1].trim());
+                                  }
+                                }
+                                const enrichAddress = (addr: string): string => knownAddressMap.get(addr.toLowerCase()) ?? addr;
+
+                                const departAddr = enrichAddress(extractAddressFromObs(prevObs));
+                                const arriveAddr = enrichAddress(extractAddressFromObs(nextObs));
                                 if (!departAddr || !arriveAddr) {
                                   toast.error("TV auto-fill: could not extract addresses from surrounding rows.");
                                   updateRow.mutate({ id: row.id, observation: val });

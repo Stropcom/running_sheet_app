@@ -3152,11 +3152,16 @@ export const appRouter = router({
           const roadName = boldMatches.find((m) => m.length > 2 && !isJunk(m));
           if (roadName) return expandRoadAbbreviation(roadName);
 
-          // Fallback: plain text, take everything after the last preposition
+          // Fallback: plain text, take everything after the last preposition.
+          // Still subject to the same junk filter — otherwise a step whose only
+          // bold segment was a filtered-out route/highway number (e.g. "Merge
+          // onto National Highway 94") falls through here and slips the numbered
+          // highway back in via the unfiltered plain text.
           const plain = stripHtml(htmlInstructions);
           const ontoMatch = plain.match(/(?:onto|on|toward)\s+(.+)$/i);
           if (ontoMatch) {
-            return expandRoadAbbreviation(ontoMatch[1].replace(/\s*\/.*$/, "").trim());
+            const candidate = ontoMatch[1].replace(/\s*\/.*$/, "").trim();
+            if (candidate.length > 2 && !isJunk(candidate)) return expandRoadAbbreviation(candidate);
           }
           return null;
         }

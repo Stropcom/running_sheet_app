@@ -3127,12 +3127,31 @@ export default function SheetDetail() {
                                   updateRow.mutate({ id: row.id, observation: val });
                                   return;
                                 }
-                                // Extract address text from surrounding observation cells
+                                // Extract address text from surrounding observation cells.
+                                // The observation text is a full sentence like:
+                                //   "Vehicle 1ICW519 STROP driver and sole occupant, departed 27 Olding Way, MELVILLE WA (27 Olding Way)"
+                                // Strategy (in priority order):
+                                //   1. Bracket code at end of text: "(27 Olding Way)" → "27 Olding Way"
+                                //   2. Street number pattern anywhere in text: "27 Olding Way" extracted from sentence
+                                //   3. Full first line as last resort
                                 const prevObs = prevRow.observation ?? "";
                                 const nextObs = nextRow.observation ?? "";
-                                // Use extractShortAddress to get the cleanest address form
-                                const departAddr = extractShortAddress(prevObs) || prevObs.split("\n")[0].trim();
-                                const arriveAddr = extractShortAddress(nextObs) || nextObs.split("\n")[0].trim();
+
+                                const extractAddressFromObs = (obs: string): string => {
+                                  if (!obs) return "";
+                                  // 1. Bracket code at end: (27 Olding Way)
+                                  const bracketMatch = obs.match(/\(([^)]{3,80})\)\s*$/);
+                                  if (bracketMatch) return bracketMatch[1].trim();
+                                  // 2. Street number pattern: digits followed by street name
+                                  //    Matches things like "27 Olding Way", "131A Lakey Street", "3/12 Smith St"
+                                  const streetMatch = obs.match(/\b(\d{1,5}[A-Za-z]?(?:\/\d{1,5}[A-Za-z]?)?\s+[A-Z][a-zA-Z]+(?:\s+[A-Za-z]+){0,4})/);
+                                  if (streetMatch) return streetMatch[1].trim();
+                                  // 3. Last resort: full text (server will try to geocode it)
+                                  return obs.split("\n")[0].trim();
+                                }
+
+                                const departAddr = extractAddressFromObs(prevObs);
+                                const arriveAddr = extractAddressFromObs(nextObs);
                                 if (!departAddr || !arriveAddr) {
                                   toast.error("TV auto-fill: could not extract addresses from surrounding rows.");
                                   updateRow.mutate({ id: row.id, observation: val });

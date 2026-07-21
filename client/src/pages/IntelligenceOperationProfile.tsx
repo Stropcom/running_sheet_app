@@ -38,7 +38,7 @@ const CHIP: Record<string, string> = {
 // Compact thumbnail row for photos linked to a target or a set of associated
 // entities. `entityLabel` (when set per-photo) shows which entity a photo
 // belongs to, since this strip can aggregate photos across several chips.
-function PhotoStrip({ photos }: { photos: Array<ProfilePhoto & { entityLabel?: string }> }) {
+function PhotoStrip({ photos, size = "w-16 h-16" }: { photos: Array<ProfilePhoto & { entityLabel?: string }>; size?: string }) {
   const [lightbox, setLightbox] = useState<string | null>(null);
   if (!photos.length) return null;
   return (
@@ -49,7 +49,7 @@ function PhotoStrip({ photos }: { photos: Array<ProfilePhoto & { entityLabel?: s
             key={p.id}
             onClick={() => setLightbox(p.url)}
             title={p.entityLabel ? `${p.entityLabel} — ${formatAttachmentBanner(p)}` : formatAttachmentBanner(p)}
-            className="w-12 h-12 rounded-md overflow-hidden border border-border/60 shrink-0 hover:opacity-80 transition-opacity"
+            className={`${size} rounded-md overflow-hidden border border-border/60 shrink-0 hover:opacity-80 transition-opacity`}
           >
             <img src={p.url} alt="Linked photograph" className="w-full h-full object-cover" />
           </button>
@@ -100,11 +100,11 @@ function buildOperationProfileHtml(profile: IntelOperationProfile) {
       : label;
     return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:9999px;font-size:10px;font-weight:600;${style};margin:2px">${esc(displayLabel)} <span style="opacity:0.6">×${count}</span></span>`;
   };
-  // Small (60px) fixed-size thumbnail row for photos linked to a set of
-  // associated entities (persons/vehicles/locations), each captioned with
-  // which entity it belongs to. Smaller than the target's own photo grid
-  // since these are secondary, per-association thumbnails.
-  const ENTITY_PHOTO_PX = 60;
+  // Fixed-size thumbnail row for photos linked to a set of associated
+  // entities (persons/vehicles/locations), each captioned with which entity
+  // it belongs to. Slightly smaller than the target's own photo grid since
+  // these are secondary, per-association thumbnails.
+  const ENTITY_PHOTO_PX = 80;
   const entityPhotoGridHtml = (items: IntelProfileEntity[]): string => {
     const cells = items.flatMap(i => (i.photos ?? []).map(p => `<div style="width:${ENTITY_PHOTO_PX}px;border:1px solid ${GREY_BORDER};border-radius:6px;overflow:hidden">
       <img src="${esc(toAbsolutePhotoUrl(p.url))}" style="width:100%;aspect-ratio:1;object-fit:cover;display:block" />
@@ -124,7 +124,7 @@ function buildOperationProfileHtml(profile: IntelOperationProfile) {
         <strong style="font-size:12px;color:${BLUE_DARK}">${esc(t.name)}</strong>${t.tgt ? ` <span style="font-size:10px;color:#64748b;margin-left:8px">TGT: ${esc(t.tgt)}</span>` : ""}
       </div>
       <div style="padding:10px 14px">
-        ${t.photos.length ? `<p style="font-size:10px;color:#64748b;margin-bottom:4px;font-weight:600">Photos (${t.photos.length}):</p>${buildPhotoGridHtml(t.photos, 70)}` : ""}
+        ${t.photos.length ? `<p style="font-size:10px;color:#64748b;margin-bottom:4px;font-weight:600">Photos (${t.photos.length}):</p>${buildPhotoGridHtml(t.photos, 95)}` : ""}
         ${t.hbf ? `<p style="font-size:10px;margin-bottom:4px;margin-top:8px"><span style="color:#64748b;font-weight:600">Home:</span> ${esc(formatIntelAddress(t.hbf))}</p>` : ""}
         ${t.v1f ? `<p style="font-size:10px;margin-bottom:4px"><span style="color:#64748b;font-weight:600">Vehicle 1:</span> ${esc(formatIntelVehicle(t.v1f))}</p>` : ""}
         ${t.v2f ? `<p style="font-size:10px;margin-bottom:4px"><span style="color:#64748b;font-weight:600">Vehicle 2:</span> ${esc(formatIntelVehicle(t.v2f))}</p>` : ""}
@@ -302,7 +302,7 @@ export default function IntelligenceOperationProfile() {
                                 <div className="flex flex-wrap gap-1.5">
                                   {target.assocPersons.map(p => <EntityChip key={p.id} item={p} onClick={() => navigate(`/intelligence/associate/${encodeURIComponent(p.label)}`)} />)}
                                 </div>
-                                <PhotoStrip photos={target.assocPersons.flatMap(p => (p.photos ?? []).map(ph => ({ ...ph, entityLabel: p.label })))} />
+                                <PhotoStrip photos={target.assocPersons.flatMap(p => (p.photos ?? []).map(ph => ({ ...ph, entityLabel: p.label })))} size="w-14 h-14" />
                               </div>
                             )}
                             {target.assocVehicles.length > 0 && (
@@ -311,7 +311,7 @@ export default function IntelligenceOperationProfile() {
                                 <div className="flex flex-wrap gap-1.5">
                                   {target.assocVehicles.map(v => <EntityChip key={v.id} item={v} onClick={() => navigate(`/intelligence/vehicle/${encodeURIComponent(v.label)}`)} />)}
                                 </div>
-                                <PhotoStrip photos={target.assocVehicles.flatMap(v => (v.photos ?? []).map(ph => ({ ...ph, entityLabel: v.label })))} />
+                                <PhotoStrip photos={target.assocVehicles.flatMap(v => (v.photos ?? []).map(ph => ({ ...ph, entityLabel: v.label })))} size="w-14 h-14" />
                               </div>
                             )}
                             {target.assocLocations.length > 0 && (
@@ -320,7 +320,7 @@ export default function IntelligenceOperationProfile() {
                                 <div className="flex flex-wrap gap-1.5">
                                   {target.assocLocations.map(l => <EntityChip key={l.id} item={l} onClick={() => navigate(`/intelligence/location/${encodeURIComponent(l.label)}`)} />)}
                                 </div>
-                                <PhotoStrip photos={target.assocLocations.flatMap(l => (l.photos ?? []).map(ph => ({ ...ph, entityLabel: l.label })))} />
+                                <PhotoStrip photos={target.assocLocations.flatMap(l => (l.photos ?? []).map(ph => ({ ...ph, entityLabel: l.label })))} size="w-14 h-14" />
                               </div>
                             )}
                           </div>

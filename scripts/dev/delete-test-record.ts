@@ -157,6 +157,17 @@ async function main() {
 
       await conn.query(`DELETE FROM row_members WHERE rowId IN (${inRows})`, rowIds);
       await conn.query(`DELETE FROM rs_mapping_waypoints WHERE rowId IN (${inRows})`, rowIds);
+
+      const [attachments] = await conn.query<any[]>(
+        `SELECT id FROM row_attachments WHERE rowId IN (${inRows})`,
+        rowIds
+      );
+      const attachmentIds = attachments.map((a: any) => a.id);
+      if (attachmentIds.length) {
+        const inAttachments = attachmentIds.map(() => "?").join(",");
+        await conn.query(`DELETE FROM attachment_entity_links WHERE attachmentId IN (${inAttachments})`, attachmentIds);
+        await conn.query(`DELETE FROM row_attachments WHERE id IN (${inAttachments})`, attachmentIds);
+      }
     }
 
     if (sheetIds.length) {

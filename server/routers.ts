@@ -124,7 +124,7 @@ import {
   DEFAULT_TILE_ORDER,
 } from "./db";
 
-import { makeRequest, type RoadsResult } from "./_core/map";
+import { makeRequest, type RoadsResult, type DirectionsResult, type GeocodingResult } from "./_core/map";
 import { generateStatDecDocx } from "./statDecGenerator";
 import { generateWipcRequestDocx } from "./wipcRequestGenerator";
 import { vaultEncrypt, vaultDecrypt } from "./wipcVault";
@@ -2873,6 +2873,172 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         await removePushSubscription(input.endpoint);
         return { ok: true };
+      }),
+  }),
+
+  // ─── Travelled Via Auto-fill ────────────────────────────────────────────────
+  travelledVia: router({
+    /**
+     * Given two address strings (departure and arrival), geocodes them, calls
+     * the Google Directions API, and returns a formatted street list in the
+     * prescribed RS format:
+     *   First Street, SUBURB,
+     *   Middle Street,
+     *   Last Street, SUBURB, whereat;
+     */
+    getStreets: protectedProcedure
+      .input(z.object({
+        departAddress: z.string().min(1),
+        arriveAddress: z.string().min(1),
+      }))
+      .mutation(async ({ input }) => {
+        // ── Helper: geocode an address string → LatLng ──────────────────────
+        async function geocodeAddress(address: string): Promise<{ lat: number; lng: number; suburb: string } | null> {
+          try {
+            const result = await makeRequest<GeocodingResult>("/maps/api/geocode/json", {
+              address: address + ", Western Australia, Australia",
+              region: "au",
+            });
+            if (result.status !== "OK" || !result.results.length) return null;
+            const loc = result.results[0].geometry.location;
+            // Extract suburb (locality) from address components
+            const components = result.results[0].address_components;
+            const localityComp = components.find((c) => c.types.includes("locality"));
+            const suburb = localityComp ? localityComp.long_name.toUpperCase() : "";
+            return { lat: loc.lat, lng: loc.lng, suburb };
+          } catch {
+            return null;
+          }
+        }
+
+        // ── Helper: strip HTML tags from Directions step instructions ────────
+        function stripHtml(html: string): string {
+          return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+        }
+
+        // ── Helper: extract road name from a Directions step ─────────────────
+        // Google Directions steps have html_instructions like:
+        //   "Turn left onto <b>Canning Highway</b>"
+        //   "Continue onto <b>Stirling Highway</b>"
+        //   "Head north on <b>Stock Road</b>"
+        // We extract the bold text (road name) or fall back to the plain text.
+        function extractRoadName(htmlInstructions: string): string | null {
+          // Try to extract the last <b>...</b> content (usually the road name)
+          const boldRe = /<b>([^<]+)<\/b>/g;
+          const boldMatches: string[] = [];
+          let bm: RegExpExecArray | null;
+          while ((bm = boldRe.exec(htmlInstructions)) !== null) boldMatches.push(bm[1]);
+          if (boldMatches.length > 0) {
+            // The road name is typically the last bold segment
+            const roadName = boldMatches[boldMatches.length - 1].trim();
+            // Filter out turn directions that got bolded (e.g. "left", "right", "north")
+            if (roadName.length > 3 && !/^(left|right|north|south|east|west|slight|sharp|u-turn)$/i.test(roadName)) {
+              return roadName;
+            }
+          }
+          // Fallback: plain text, take everything after the last preposition
+          const plain = stripHtml(htmlInstructions);
+          const ontoMatch = plain.match(/(?:onto|on|toward)\s+(.+)$/i);
+          if (ontoMatch) return ontoMatch[1].trim();
+          return null;
+        }
+
+        // ── Helper: extract suburb from geocoded reverse lookup at a LatLng ──
+        async function reverseGeocodeSuburb(lat: number, lng: number): Promise<string> {
+          try {
+            const result = await makeRequest<GeocodingResult>("/maps/api/geocode/json", {
+              latlng: `${lat},${lng}`,
+              result_type: "locality",
+              region: "au",
+            });
+            if (result.status !== "OK" || !result.results.length) return "";
+            const components = result.results[0].address_components;
+            const localityComp = components.find((c) => c.types.includes("locality"));
+            return localityComp ? localityComp.long_name.toUpperCase() : "";
+          } catch {
+            return "";
+          }
+        }
+
+        // ── 1. Geocode both addresses ────────────────────────────────────────
+        const [departGeo, arriveGeo] = await Promise.all([
+          geocodeAddress(input.departAddress),
+          geocodeAddress(input.arriveAddress),
+        ]);
+
+        if (!departGeo || !arriveGeo) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Could not geocode one or both addresses. Please check the surrounding rows have valid addresses.",
+          });
+        }
+
+        // ── 2. Call Directions API ───────────────────────────────────────────
+        const directions = await makeRequest<DirectionsResult>("/maps/api/directions/json", {
+          origin: `${departGeo.lat},${departGeo.lng}`,
+          destination: `${arriveGeo.lat},${arriveGeo.lng}`,
+          mode: "driving",
+          region: "au",
+        });
+
+        if (directions.status !== "OK" || !directions.routes.length) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Directions API returned no route (status: ${directions.status}). Try entering the addresses manually.`,
+          });
+        }
+
+        const steps = directions.routes[0].legs[0].steps;
+
+        // ── 3. Extract unique road names in order ────────────────────────────
+        const roadNames: string[] = [];
+        for (const step of steps) {
+          const name = extractRoadName(step.html_instructions);
+          if (name && name !== roadNames[roadNames.length - 1]) {
+            roadNames.push(name);
+          }
+        }
+
+        if (roadNames.length === 0) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Could not extract street names from the route. Please enter the streets manually.",
+          });
+        }
+
+        // ── 4. Get suburbs for first and last road ───────────────────────────
+        // First street suburb: from the start of the first step
+        // Last street suburb: from the end of the last step
+        const firstStepStart = steps[0].start_location;
+        const lastStepEnd = steps[steps.length - 1].end_location;
+
+        const [firstSuburb, lastSuburb] = await Promise.all([
+          reverseGeocodeSuburb(firstStepStart.lat, firstStepStart.lng),
+          reverseGeocodeSuburb(lastStepEnd.lat, lastStepEnd.lng),
+        ]);
+
+        // ── 5. Format the street list ────────────────────────────────────────
+        // Format:
+        //   First Street, SUBURB,
+        //   Middle Street,
+        //   Last Street, SUBURB, whereat;
+        const lines: string[] = [];
+        for (let i = 0; i < roadNames.length; i++) {
+          const name = roadNames[i];
+          if (i === 0 && roadNames.length === 1) {
+            // Only one street — combine first+last format
+            const suburb = firstSuburb || lastSuburb;
+            lines.push(suburb ? `${name}, ${suburb}, whereat;` : `${name}, whereat;`);
+          } else if (i === 0) {
+            lines.push(firstSuburb ? `${name}, ${firstSuburb},` : `${name},`);
+          } else if (i === roadNames.length - 1) {
+            lines.push(lastSuburb ? `${name}, ${lastSuburb}, whereat;` : `${name}, whereat;`);
+          } else {
+            lines.push(`${name},`);
+          }
+        }
+
+        return { streets: lines.join("\n") };
       }),
   }),
 

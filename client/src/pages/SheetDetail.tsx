@@ -58,7 +58,7 @@ import {
 } from "@/components/ui/select";
 import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useObservationFocus } from "@/contexts/ObservationFocusContext";
-import { convertGoogleAddresses } from "@/lib/addressFormat";
+import { convertGoogleAddresses, extractShortAddress } from "@/lib/addressFormat";
 import {
   DndContext,
   closestCenter,
@@ -2024,6 +2024,16 @@ export default function SheetDetail() {
     onError: (e) => toast.error(e.message),
   });
 
+  // ─── Travelled Via auto-fill ────────────────────────────────────────────────
+  // Tracks which row is currently being auto-filled (shows spinner in that cell)
+  const [tvLoadingRowId, setTvLoadingRowId] = useState<number | null>(null);
+  const getTravelledViaStreets = trpc.travelledVia.getStreets.useMutation({
+    onError: (e) => {
+      setTvLoadingRowId(null);
+      toast.error(`TV auto-fill: ${e.message}`);
+    },
+  });
+
   // Fetch governance record to check completion for Close button
   const { data: govRecord } = trpc.governance.getBySheet.useQuery(
     { sheetId },
@@ -3087,14 +3097,70 @@ export default function SheetDetail() {
 
                       {/* Observation */}
                       <td>
-                        <EditableCell
-                          value={row.observation}
-                          locked={row.isLocked}
-                          multiline
-                          placeholder="Enter observation…"
-                          onSave={(val) => updateRow.mutate({ id: row.id, observation: val })}
-                          shortcuts={shortcutMap}
-                        />
+                        {tvLoadingRowId === row.id ? (
+                          <div className="flex items-center gap-2 py-2 px-1 text-sm text-muted-foreground">
+                            <svg className="animate-spin h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                            </svg>
+                            Fetching route streets…
+                          </div>
+                        ) : (
+                          <EditableCell
+                            value={row.observation}
+                            locked={row.isLocked}
+                            multiline
+                            placeholder="Enter observation…"
+                            onSave={(val) => {
+                              // ── TV trigger: detect case-insensitive "tv" as the entire cell value ──
+                              if (val.trim().toLowerCase() === "tv") {
+                                // Find this row's index in filteredRows
+                                const rowIdx = filteredRows.findIndex((r: NonNullable<typeof rows>[0]) => r.id === row.id);
+                                if (rowIdx < 0) { updateRow.mutate({ id: row.id, observation: val }); return; }
+                                // Get the row immediately before and after in the display list
+                                const prevRow = rowIdx > 0 ? filteredRows[rowIdx - 1] : null;
+                                const nextRow = rowIdx < filteredRows.length - 1 ? filteredRows[rowIdx + 1] : null;
+                                if (!prevRow || !nextRow) {
+                                  toast.error("TV auto-fill: no surrounding rows found. Add a departing row above and arriving row below first.");
+                                  updateRow.mutate({ id: row.id, observation: val });
+                                  return;
+                                }
+                                // Extract address text from surrounding observation cells
+                                const prevObs = prevRow.observation ?? "";
+                                const nextObs = nextRow.observation ?? "";
+                                // Use extractShortAddress to get the cleanest address form
+                                const departAddr = extractShortAddress(prevObs) || prevObs.split("\n")[0].trim();
+                                const arriveAddr = extractShortAddress(nextObs) || nextObs.split("\n")[0].trim();
+                                if (!departAddr || !arriveAddr) {
+                                  toast.error("TV auto-fill: could not extract addresses from surrounding rows.");
+                                  updateRow.mutate({ id: row.id, observation: val });
+                                  return;
+                                }
+                                // Show spinner and call the server
+                                setTvLoadingRowId(row.id);
+                                getTravelledViaStreets.mutate(
+                                  { departAddress: departAddr, arriveAddress: arriveAddr },
+                                  {
+                                    onSuccess: (data) => {
+                                      setTvLoadingRowId(null);
+                                      updateRow.mutate({ id: row.id, observation: data.streets });
+                                      toast.success("Travelled via streets auto-filled");
+                                    },
+                                    onError: () => {
+                                      setTvLoadingRowId(null);
+                                      // Error toast already shown by mutation onError
+                                      updateRow.mutate({ id: row.id, observation: val });
+                                    },
+                                  }
+                                );
+                                return;
+                              }
+                              // Normal save
+                              updateRow.mutate({ id: row.id, observation: val });
+                            }}
+                            shortcuts={shortcutMap}
+                          />
+                        )}
                       </td>
 
                       {/* Member / CIN */}

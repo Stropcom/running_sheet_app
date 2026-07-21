@@ -2599,10 +2599,12 @@ export const appRouter = router({
           lng: z.number(),
           index: z.number(),
           colour: z.string().optional(),
+          label: z.string().optional(),  // single-char label override (A-Z)
         })),
         center: z.object({ lat: z.number(), lng: z.number() }).optional(),
         zoom: z.number().optional(),
         size: z.string().optional(),
+        routePath: z.string().optional(),  // pipe-separated lat,lng pairs for route polyline
       }))
       .query(async ({ input }) => {
         const { ENV } = await import("./_core/env");
@@ -2626,11 +2628,16 @@ export const appRouter = router({
           url.searchParams.append("zoom", String(input.zoom));
         }
 
-        // Add markers for each waypoint
+        // Add route polyline path if provided
+        if (input.routePath) {
+          url.searchParams.append("path", `color:0x1E88E5C0|weight:3|${input.routePath}`);
+        }
+
+        // Add markers for each waypoint — use label override if provided (must be single char)
         for (const wp of input.waypoints) {
-          // colour map: named colours or hex (Static Maps uses 0x prefix)
           const colour = wp.colour ? wp.colour.replace("#", "0x") : "0x6366f1";
-          const markerSpec = `color:${colour}|label:${wp.index}|${wp.lat},${wp.lng}`;
+          const labelChar = wp.label ? wp.label.charAt(0) : String(wp.index).charAt(0);
+          const markerSpec = `color:${colour}|label:${labelChar}|${wp.lat},${wp.lng}`;
           url.searchParams.append("markers", markerSpec);
         }
 

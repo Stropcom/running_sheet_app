@@ -945,7 +945,7 @@ export default function RSMappingEmbedded() {
         lat: wp.lat,
         lng: wp.lng,
         index: wp.index,                     // numeric sequence number
-        label: String(wp.index % 10),         // last digit of sequence number (Static Maps: single char only)
+        label: String(wp.index),               // sequence number (Static Maps shows first char only for 10+)
         colour: i === 0 ? "#22c55e"          // first = green
                : i === placed.length - 1 ? "#E53935"  // last = red
                : COLOUR_HEX[wp.markerColour ?? "blue"] ?? "#1E88E5",

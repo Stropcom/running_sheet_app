@@ -3207,9 +3207,14 @@ export const appRouter = router({
         //   2. Fall back to suburb from geocoded address components.
         function extractSuburbFromText(text: string): string {
           if (!text) return "";
-          // Match ALL-CAPS suburb name after a comma, optionally followed by WA
-          // e.g. ", BICTON WA", ", MOUNT LAWLEY WA", ", ARDROSS ("
-          const m = text.match(/,\s*([A-Z][A-Z ]{1,30})(?:\s+WA|\s+Western Australia)?(?:[\s,)\n]|$)/);
+          // Match ALL-CAPS suburb name after a comma, optionally followed by WA.
+          // e.g. ", BICTON WA", ", MOUNT LAWLEY WA", ", ARDROSS (".
+          // The suburb must be immediately followed by "(", end-of-line/string, or
+          // punctuation (after the optional "WA") — not just any whitespace — so
+          // an earlier all-caps alias in the same sentence (e.g. "1ADF124, DRAGON
+          // driver...") doesn't get mistaken for the suburb before the real one
+          // ("...Road, HIGH WYCOMBE WA (16 Newburn Road)...") is reached.
+          const m = text.match(/,\s*([A-Z][A-Z ]{1,30}?)(?:\s+(?:WA|Western Australia))?\s*(?=[(.,\n]|$)/);
           if (m) return m[1].trim().replace(/\s+WA$/, "").trim();
           return "";
         }

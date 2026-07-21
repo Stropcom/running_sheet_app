@@ -2919,27 +2919,36 @@ export const appRouter = router({
         // ── Helper: extract road name from a Directions step ─────────────────
         // Google Directions steps have html_instructions like:
         //   "Turn left onto <b>Canning Highway</b>"
-        //   "Continue onto <b>Stirling Highway</b>"
+        //   "Merge onto <b>Canning Hwy</b>/<wbr/><b>State Route 6</b>"
         //   "Head north on <b>Stock Road</b>"
-        // We extract the bold text (road name) or fall back to the plain text.
+        // We extract the first meaningful bold segment (road name), ignoring
+        // state/national route numbers and directional words.
         function extractRoadName(htmlInstructions: string): string | null {
-          // Try to extract the last <b>...</b> content (usually the road name)
           const boldRe = /<b>([^<]+)<\/b>/g;
           const boldMatches: string[] = [];
           let bm: RegExpExecArray | null;
-          while ((bm = boldRe.exec(htmlInstructions)) !== null) boldMatches.push(bm[1]);
-          if (boldMatches.length > 0) {
-            // The road name is typically the last bold segment
-            const roadName = boldMatches[boldMatches.length - 1].trim();
-            // Filter out turn directions that got bolded (e.g. "left", "right", "north")
-            if (roadName.length > 3 && !/^(left|right|north|south|east|west|slight|sharp|u-turn)$/i.test(roadName)) {
-              return roadName;
-            }
-          }
+          while ((bm = boldRe.exec(htmlInstructions)) !== null) boldMatches.push(bm[1].trim());
+
+          // Filter out: directional words, ordinal numbers (1st/2nd/3rd), and
+          // route/highway number codes like "State Route 6", "National Highway 1", "A1", "M2"
+          const isJunk = (s: string) =>
+            /^(left|right|north|south|east|west|slight|sharp|u-turn)$/i.test(s) ||
+            /^\d+(st|nd|rd|th)$/i.test(s) ||
+            /^(state|national|federal)\s+(route|highway|road|hwy)\s*\d+/i.test(s) ||
+            /^(route|hwy|rd|st|ave|dr|pl|ct|ln|blvd)\s*\d+$/i.test(s) ||
+            /^[A-Z]\d+$/.test(s) ||
+            /^\d+$/.test(s);
+
+          // Prefer the first non-junk bold segment (road name comes first in Google's instructions)
+          const roadName = boldMatches.find((m) => m.length > 2 && !isJunk(m));
+          if (roadName) return roadName;
+
           // Fallback: plain text, take everything after the last preposition
           const plain = stripHtml(htmlInstructions);
           const ontoMatch = plain.match(/(?:onto|on|toward)\s+(.+)$/i);
-          if (ontoMatch) return ontoMatch[1].trim();
+          if (ontoMatch) {
+            return ontoMatch[1].replace(/\s*\/.*$/, "").trim();
+          }
           return null;
         }
 
@@ -3007,15 +3016,11 @@ export const appRouter = router({
         }
 
         // ── 4. Get suburbs for first and last road ───────────────────────────
-        // First street suburb: from the start of the first step
-        // Last street suburb: from the end of the last step
-        const firstStepStart = steps[0].start_location;
-        const lastStepEnd = steps[steps.length - 1].end_location;
-
-        const [firstSuburb, lastSuburb] = await Promise.all([
-          reverseGeocodeSuburb(firstStepStart.lat, firstStepStart.lng),
-          reverseGeocodeSuburb(lastStepEnd.lat, lastStepEnd.lng),
-        ]);
+        // Use the suburb extracted directly from the geocoded departure/arrival addresses.
+        // This is more accurate than reverse-geocoding the route endpoints, which can
+        // land on a suburb boundary and return the wrong locality.
+        const firstSuburb = departGeo.suburb;
+        const lastSuburb = arriveGeo.suburb;
 
         // ── 5. Format the street list ────────────────────────────────────────
         // Format:

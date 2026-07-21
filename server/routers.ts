@@ -3106,6 +3106,30 @@ export const appRouter = router({
         //   "Head north on <b>Stock Road</b>"
         // We extract the first meaningful bold segment (road name), ignoring
         // state/national route numbers and directional words.
+        // Google's Directions steps often abbreviate the road type ("Scott St",
+        // "Kalamunda Rd") — expand it to the full word for the RS street list.
+        // Case-sensitive since Google always returns these Title-Cased.
+        function expandRoadAbbreviation(name: string): string {
+          return name
+            .replace(/\bRd\b/g, "Road")
+            .replace(/\bSt\b/g, "Street")
+            .replace(/\bAve\b/g, "Avenue")
+            .replace(/\bDr\b/g, "Drive")
+            .replace(/\bHwy\b/g, "Highway")
+            .replace(/\bFwy\b/g, "Freeway")
+            .replace(/\bTce\b/g, "Terrace")
+            .replace(/\bPde\b/g, "Parade")
+            .replace(/\bCct\b/g, "Circuit")
+            .replace(/\bGr\b/g, "Grove")
+            .replace(/\bLn\b/g, "Lane")
+            .replace(/\bPl\b/g, "Place")
+            .replace(/\bCt\b/g, "Court")
+            .replace(/\bCl\b/g, "Close")
+            .replace(/\bCres\b/g, "Crescent")
+            .replace(/\bBlvd\b/g, "Boulevard")
+            .replace(/\bEsp\b/g, "Esplanade");
+        }
+
         function extractRoadName(htmlInstructions: string): string | null {
           const boldRe = /<b>([^<]+)<\/b>/g;
           const boldMatches: string[] = [];
@@ -3126,13 +3150,13 @@ export const appRouter = router({
 
           // Prefer the first non-junk bold segment (road name comes first in Google's instructions)
           const roadName = boldMatches.find((m) => m.length > 2 && !isJunk(m));
-          if (roadName) return roadName;
+          if (roadName) return expandRoadAbbreviation(roadName);
 
           // Fallback: plain text, take everything after the last preposition
           const plain = stripHtml(htmlInstructions);
           const ontoMatch = plain.match(/(?:onto|on|toward)\s+(.+)$/i);
           if (ontoMatch) {
-            return ontoMatch[1].replace(/\s*\/.*$/, "").trim();
+            return expandRoadAbbreviation(ontoMatch[1].replace(/\s*\/.*$/, "").trim());
           }
           return null;
         }

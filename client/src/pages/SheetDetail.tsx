@@ -1559,6 +1559,15 @@ function EditableCell({
   const [draft, setDraft] = useState(value ?? "");
   const { notifyObservationFocus, notifyObservationBlur } = useObservationFocus();
 
+  // Sync draft with incoming value prop whenever the cell is not being edited.
+  // This ensures that after an external update (e.g. TV auto-fill saving new text),
+  // clicking into the cell shows the newly saved content rather than the stale draft.
+  useEffect(() => {
+    if (!editing) {
+      setDraft(value ?? "");
+    }
+  }, [value, editing]);
+
   const commit = (finalDraft?: string) => {
     const val = finalDraft !== undefined ? finalDraft : draft;
     // Always call onSave for TV trigger (so it fires even if value hasn't changed)

@@ -3075,13 +3075,18 @@ export const appRouter = router({
         arriveObsText: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
+        // TEMP DIAGNOSTIC — remove once the "tv" geocoding issue is confirmed fixed.
+        console.log("[tv-geocode] input:", { departAddress: input.departAddress, arriveAddress: input.arriveAddress });
         // ── Helper: geocode an address string → LatLng ──────────────────────
         async function geocodeAddress(address: string): Promise<{ lat: number; lng: number; suburb: string } | null> {
+          const fullQuery = address + ", Western Australia, Australia";
           try {
             const result = await makeRequest<GeocodingResult>("/maps/api/geocode/json", {
-              address: address + ", Western Australia, Australia",
+              address: fullQuery,
               region: "au",
             });
+            // TEMP DIAGNOSTIC — remove once the "tv" geocoding issue is confirmed fixed.
+            console.log("[tv-geocode]", { query: fullQuery, status: result.status, resultCount: result.results?.length ?? 0 });
             if (result.status !== "OK" || !result.results.length) return null;
             const loc = result.results[0].geometry.location;
             // Extract suburb (locality) from address components
@@ -3089,7 +3094,9 @@ export const appRouter = router({
             const localityComp = components.find((c) => c.types.includes("locality"));
             const suburb = localityComp ? localityComp.long_name.toUpperCase() : "";
             return { lat: loc.lat, lng: loc.lng, suburb };
-          } catch {
+          } catch (err) {
+            // TEMP DIAGNOSTIC — remove once the "tv" geocoding issue is confirmed fixed.
+            console.log("[tv-geocode] THREW:", { query: fullQuery, error: err instanceof Error ? err.message : String(err) });
             return null;
           }
         }

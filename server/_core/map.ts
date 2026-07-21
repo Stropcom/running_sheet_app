@@ -19,17 +19,26 @@ type MapsConfig = {
 };
 
 function getMapsConfig(): MapsConfig {
+  // A directly-owned Google Maps Platform key (GOOGLE_MAPS_API_KEY) takes
+  // priority over the Manus forge proxy, so server-side maps calls (geocoding,
+  // directions, etc.) work outside the Manus hosting environment — e.g. local
+  // dev — once you have your own key. Mirrors the same fallback already used
+  // for the static map PDF export.
+  if (ENV.googleMapsApiKey) {
+    return { baseUrl: "https://maps.googleapis.com", apiKey: ENV.googleMapsApiKey };
+  }
+
   const baseUrl = ENV.forgeApiUrl;
   const apiKey = ENV.forgeApiKey;
 
   if (!baseUrl || !apiKey) {
     throw new Error(
-      "Google Maps proxy credentials missing: set BUILT_IN_FORGE_API_URL and BUILT_IN_FORGE_API_KEY"
+      "Google Maps credentials missing: set GOOGLE_MAPS_API_KEY, or BUILT_IN_FORGE_API_URL and BUILT_IN_FORGE_API_KEY"
     );
   }
 
   return {
-    baseUrl: baseUrl.replace(/\/+$/, ""),
+    baseUrl: `${baseUrl.replace(/\/+$/, "")}/v1/maps/proxy`,
     apiKey,
   };
 }
@@ -58,8 +67,9 @@ export async function makeRequest<T = unknown>(
 ): Promise<T> {
   const { baseUrl, apiKey } = getMapsConfig();
 
-  // Construct full URL: baseUrl + /v1/maps/proxy + endpoint
-  const url = new URL(`${baseUrl}/v1/maps/proxy${endpoint}`);
+  // baseUrl already includes the Manus proxy prefix (or is the direct Google
+  // API host) — see getMapsConfig().
+  const url = new URL(`${baseUrl}${endpoint}`);
 
   // Add API key as query parameter (standard Google Maps API authentication)
   url.searchParams.append("key", apiKey);

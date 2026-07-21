@@ -190,6 +190,7 @@ const NAV_KEY_MAP: Record<string, { path: string; Icon: React.ComponentType<{ cl
   governance:       { path: "/governance",           Icon: ClipboardCheck, label: "Governance",     iconColor: "text-purple-500" },
   todo:             { path: "/todo",                 Icon: ClipboardList,  label: "To-Do",          iconColor: "text-rose-500" },
   mapping:          { path: "/intelligence/mapping", Icon: MapIcon,        label: "Mapping",        iconColor: "text-teal-500" },
+  images:           { path: "/images",               Icon: ImageIcon,      label: "Images",         iconColor: "text-pink-400" },
   calendar:         { path: "/calendar",             Icon: CalendarDays,   label: "Calendar",       iconColor: "text-orange-500" },
   shortcuts:        { path: "/shortcuts",            Icon: Zap,            label: "Shortcuts",      iconColor: "text-yellow-500" },
   intelligence:     { path: "/intelligence",         Icon: FolderSearch,   label: "Intelligence",   iconColor: "text-violet-500" },
@@ -1116,7 +1117,7 @@ export default function IntelligenceMapping() {
 
   // Sidebar order (mirrors main menu) for left map pane
   const { data: sidebarOrderData } = trpc.sidebar.getOrder.useQuery(undefined, { staleTime: 30_000 });
-  const DEFAULT_MAP_NAV_ORDER = ["operations", "governance", "todo", "mapping", "calendar", "shortcuts", "intelligence", "targetRegistry", "operationManager"];
+  const DEFAULT_MAP_NAV_ORDER = ["operations", "governance", "todo", "mapping", "images", "calendar", "shortcuts", "intelligence", "targetRegistry", "operationManager"];
   const mapNavOrder = useMemo(() => {
     if (!sidebarOrderData?.order?.length) return DEFAULT_MAP_NAV_ORDER;
     const saved = sidebarOrderData.order as string[];

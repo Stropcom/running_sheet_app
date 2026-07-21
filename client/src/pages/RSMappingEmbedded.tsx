@@ -945,7 +945,7 @@ export default function RSMappingEmbedded() {
         lat: wp.lat,
         lng: wp.lng,
         index: wp.index,                     // numeric sequence number
-        label: i < 26 ? LETTERS[i] : "",    // single-char letter for map pin
+        label: String(wp.index % 10),         // last digit of sequence number (Static Maps: single char only)
         colour: i === 0 ? "#22c55e"          // first = green
                : i === placed.length - 1 ? "#E53935"  // last = red
                : COLOUR_HEX[wp.markerColour ?? "blue"] ?? "#1E88E5",
@@ -987,7 +987,7 @@ export default function RSMappingEmbedded() {
 
     const tableRows = rows.map((r) => `
       <tr>
-        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-weight:700;color:#6366f1;text-align:center;white-space:nowrap;">${r.letter ? `<span style="font-size:10px;background:#1e1b4b;color:#fff;border-radius:3px;padding:1px 4px;margin-right:3px;">${r.letter}</span>` : ""}${r.index}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-weight:700;color:#6366f1;text-align:center;white-space:nowrap;">${r.index}</td>
         <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;white-space:nowrap;font-weight:600;">${r.time}${r.date ? `<br><span style="font-size:8px;color:#7c3aed;font-weight:700;">${r.date}</span>` : ""}</td>
         <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;">${r.address}</td>
         <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;color:#374151;">${r.observation}</td>

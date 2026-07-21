@@ -926,6 +926,7 @@ export default function RSMappingEmbedded() {
     setPdfExporting(true);
     toast.info("Capturing map screenshot…");
 
+    const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     let mapImageDataUrl = "";
     try {
       // Use the server-side Static Maps proxy so we get a real map image
@@ -934,7 +935,8 @@ export default function RSMappingEmbedded() {
       const center = liveMap?.getCenter();
       const zoom = liveMap?.getZoom();
 
-      // Build waypoint list with colours matching the on-screen markers
+      // Build waypoint list — use letter labels A-Z (Static Maps only supports single chars)
+      // For sheets > 26 stops, fall back to dots (no label)
       const COLOUR_HEX: Record<string, string> = {
         red: "#E53935", yellow: "#F9A825", blue: "#1E88E5",
         purple: "#8E24AA", black: "#212121",
@@ -942,17 +944,22 @@ export default function RSMappingEmbedded() {
       const waypointList = placed.map((wp, i) => ({
         lat: wp.lat,
         lng: wp.lng,
-        index: wp.index,
-        colour: i === 0 ? "#22c55e"                          // first = green
-               : i === placed.length - 1 ? "#E53935"         // last = red
+        index: wp.index,                     // numeric sequence number
+        label: String(wp.index),               // sequence number (Static Maps shows first char only for 10+)
+        colour: i === 0 ? "#22c55e"          // first = green
+               : i === placed.length - 1 ? "#E53935"  // last = red
                : COLOUR_HEX[wp.markerColour ?? "blue"] ?? "#1E88E5",
       }));
+
+      // Build route path for the static map
+      const routePath = placed.map(wp => `${wp.lat},${wp.lng}`).join("|");
 
       const result = await trpcClient.rsMapping.getStaticMapImage.query({
         waypoints: waypointList,
         center: center ? { lat: center.lat(), lng: center.lng() } : undefined,
         zoom: zoom ?? undefined,
         size: "800x1000",
+        routePath,
       });
       mapImageDataUrl = result.dataUrl;
     } catch (err) {
@@ -965,8 +972,9 @@ export default function RSMappingEmbedded() {
     const exportSheetStartYmd = new Intl.DateTimeFormat("en-CA", { timeZone: RSM_PERTH_TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(exportSheetCreatedAt));
     const exportIsMultiDay = Array.from(exportDateMap.values()).some((ymd) => ymd !== exportSheetStartYmd);
 
-    const rows = placed.map((wp) => ({
+    const rows = placed.map((wp, i) => ({
       index: wp.index,
+      letter: i < 26 ? LETTERS[i] : "",  // map letter label
       time: wp.time ?? "—",
       date: (() => { const y = exportDateMap.get(wp.rowId); return y && y !== exportSheetStartYmd ? rsmFormatPerthDateLabel(y) : ""; })(),
       address: wp.address,
@@ -1129,29 +1137,14 @@ export default function RSMappingEmbedded() {
               <span>{waypointCount} waypoints</span>
             </div>
             {waypointCount > 0 && (
-              <>
-                <button
-                  onClick={() => setVisualRsMode((v) => !v)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-                    visualRsMode
-                      ? "bg-indigo-600 text-white border-indigo-600 shadow-md"
-                      : "bg-card text-foreground border-border hover:bg-accent"
-                  }`}
-                >
-                  {visualRsMode ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                  Visual RS
-                </button>
-                {visualRsMode && (
-                  <button
-                    onClick={() => { void exportVisualRsPdf(); }}
-                    disabled={pdfExporting}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border bg-card text-foreground border-border hover:bg-accent transition-all disabled:opacity-60"
-                  >
-                    {pdfExporting ? <Spinner className="h-3.5 w-3.5" /> : <FileDown className="h-3.5 w-3.5" />}
-                    {pdfExporting ? "Capturing…" : "Export PDF"}
-                  </button>
-                )}
-              </>
+              <button
+                onClick={() => { void exportVisualRsPdf(); }}
+                disabled={pdfExporting}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border bg-card text-foreground border-border hover:bg-accent transition-all disabled:opacity-60"
+              >
+                {pdfExporting ? <Spinner className="h-3.5 w-3.5" /> : <FileDown className="h-3.5 w-3.5" />}
+                {pdfExporting ? "Capturing…" : "Export PDF"}
+              </button>
             )}
           </div>
         )}

@@ -58,7 +58,7 @@ import {
 } from "@/components/ui/select";
 import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useObservationFocus } from "@/contexts/ObservationFocusContext";
-import { convertGoogleAddresses } from "@/lib/addressFormat";
+import { convertGoogleAddresses, extractShortAddress } from "@/lib/addressFormat";
 import {
   DndContext,
   closestCenter,
@@ -1679,8 +1679,19 @@ function EditableCell({
   const [draft, setDraft] = useState(value ?? "");
   const { notifyObservationFocus, notifyObservationBlur } = useObservationFocus();
 
-  const commit = () => {
-    if (draft !== (value ?? "")) onSave(draft);
+  // Sync draft with incoming value prop whenever the cell is not being edited.
+  // This ensures that after an external update (e.g. TV auto-fill saving new text),
+  // clicking into the cell shows the newly saved content rather than the stale draft.
+  useEffect(() => {
+    if (!editing) {
+      setDraft(value ?? "");
+    }
+  }, [value, editing]);
+
+  const commit = (finalDraft?: string) => {
+    const val = finalDraft !== undefined ? finalDraft : draft;
+    // Always call onSave for TV trigger (so it fires even if value hasn't changed)
+    if (val !== (value ?? "") || val.trim().toLowerCase() === "tv") onSave(val);
     setEditing(false);
   };
 
@@ -1737,7 +1748,7 @@ function EditableCell({
             }
           }}
           onFocus={notifyObservationFocus}
-          onBlur={() => { notifyObservationBlur(); const conv = convertGoogleAddresses(draft); if (conv !== draft) setDraft(conv); commit(); }}
+          onBlur={() => { notifyObservationBlur(); const conv = convertGoogleAddresses(draft); if (conv !== draft) { setDraft(conv); commit(conv); } else { commit(draft); } }}
           onKeyDown={(e) => {
             handleShortcutKeyDown(e as React.KeyboardEvent<HTMLTextAreaElement>);
             if (e.key === "Escape") { setDraft(value ?? ""); setEditing(false); }
@@ -1752,7 +1763,7 @@ function EditableCell({
         autoFocus
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
+        onBlur={() => commit()}
         onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setDraft(value ?? ""); setEditing(false); } }}
         className="h-8 text-sm"
         placeholder={placeholder}
@@ -1811,7 +1822,7 @@ function SortableChip({ id, label, value, showValue, onInsert }: {
           </span>
         )}
         <span className="text-[10px] font-bold text-primary uppercase tracking-wide">{label}</span>
-        {showValue && value && <span className="text-[10px] font-mono text-foreground/80 max-w-[80px] truncate">{value}</span>}
+        {showValue && value && <span className="text-[10px] font-mono text-foreground/80 max-w-[160px] truncate">{value}</span>}
       </button>
     </div>
   );
@@ -2152,6 +2163,16 @@ export default function SheetDetail() {
       toast.success(`Certified ${data.certifiedCount} row(s) across the sheet`);
     },
     onError: (e) => toast.error(e.message),
+  });
+
+  // ─── Travelled Via auto-fill ────────────────────────────────────────────────
+  // Tracks which row is currently being auto-filled (shows spinner in that cell)
+  const [tvLoadingRowId, setTvLoadingRowId] = useState<number | null>(null);
+  const getTravelledViaStreets = trpc.travelledVia.getStreets.useMutation({
+    onError: (e) => {
+      setTvLoadingRowId(null);
+      toast.error(`TV auto-fill: ${e.message}`);
+    },
   });
 
   // Fetch governance record to check completion for Close button
@@ -2948,29 +2969,13 @@ export default function SheetDetail() {
           };
           // Extract registration number from a vehicle string (last alphanumeric token with digits)
           // Returns null if no rego-like token found — chip will be hidden (no value = not shown)
-          const extractRegSD = (v: string | null | undefined): string | null => {
-            if (!v) return null;
-            const stripped = v.replace(/^Vehicle\s+/i, '').trim();
-            const tokens = stripped.split(/\s+/).map(t => t.replace(/[^A-Z0-9]/gi, ''));
-            const rego = tokens.slice().reverse().find(t => /^[A-Z0-9]{3,8}$/i.test(t) && /\d/.test(t) && /[A-Z]/i.test(t));
-            if (rego) return rego;
-            // Fallback: if the stripped value itself looks like a plate (3-8 alphanumeric with digit+letter), use it
-            if (/^[A-Z0-9]{3,8}$/i.test(stripped) && /\d/.test(stripped) && /[A-Z]/i.test(stripped)) return stripped;
-            // No rego found — return the stripped value so the chip still shows (but only the cleaned text)
-            return stripped || null;
-          };
-          // For extra vehicles, strip "Vehicle " prefix from short values
-          const cleanedExtraVehicleFields = extraVehicleFields.map(f => ({
-            ...f,
-            value: /^V\d+$/.test(f.label) ? (extractRegSD(f.value) ?? f.value) : f.value,
-          }));
           const fields: { label: string; value: string | null }[] = [
             { label: "TGT", value: t.tgt },
             { label: "HBF", value: t.hbf },
             { label: "HB",  value: t.hb  },
             { label: "V1F", value: t.v1f },
-            { label: "V1",  value: extractRegSD(t.v1) },
-            ...cleanedExtraVehicleFields,
+            { label: "V1",  value: t.v1 ?? null },
+            ...extraVehicleFields,
             ...wildFieldItems,
             { label: "DEP", value: t.dep },
             // All shortcut-folder triggers as chips — only those with showInRs=true, exclude legacy 'D' chip
@@ -3233,14 +3238,96 @@ export default function SheetDetail() {
 
                       {/* Observation */}
                       <td>
-                        <EditableCell
-                          value={row.observation}
-                          locked={row.isLocked}
-                          multiline
-                          placeholder="Enter observation…"
-                          onSave={(val) => updateRow.mutate({ id: row.id, observation: val })}
-                          shortcuts={shortcutMap}
-                        />
+                        {tvLoadingRowId === row.id ? (
+                          <div className="flex items-center gap-2 py-2 px-1 text-sm text-muted-foreground">
+                            <svg className="animate-spin h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                            </svg>
+                            Fetching route streets…
+                          </div>
+                        ) : (
+                          <EditableCell
+                            value={row.observation}
+                            locked={row.isLocked}
+                            multiline
+                            placeholder="Enter observation…"
+                            onSave={(val) => {
+                              // ── TV trigger: detect case-insensitive "tv" as the entire cell value ──
+                              if (val.trim().toLowerCase() === "tv") {
+                                // Find this row's index in filteredRows
+                                const rowIdx = filteredRows.findIndex((r: NonNullable<typeof rows>[0]) => r.id === row.id);
+                                if (rowIdx < 0) { updateRow.mutate({ id: row.id, observation: val }); return; }
+                                // Get the row immediately before and after in the display list
+                                const prevRow = rowIdx > 0 ? filteredRows[rowIdx - 1] : null;
+                                const nextRow = rowIdx < filteredRows.length - 1 ? filteredRows[rowIdx + 1] : null;
+                                if (!prevRow || !nextRow) {
+                                  toast.error("TV auto-fill: no surrounding rows found. Add a departing row above and arriving row below first.");
+                                  updateRow.mutate({ id: row.id, observation: val });
+                                  return;
+                                }
+                                // Extract address text from surrounding observation cells.
+                                // The observation text is a full sentence like:
+                                //   "Vehicle 1ICW519 STROP driver and sole occupant, departed 27 Olding Way, MELVILLE WA (27 Olding Way)"
+                                // Strategy (in priority order):
+                                //   1. Bracket code at end of text: "(27 Olding Way)" → "27 Olding Way"
+                                //   2. Street number pattern anywhere in text: "27 Olding Way" extracted from sentence
+                                //   3. Full first line as last resort
+                                const prevObs = prevRow.observation ?? "";
+                                const nextObs = nextRow.observation ?? "";
+
+                                const extractAddressFromObs = (obs: string): string => {
+                                  if (!obs) return "";
+                                  // 1. Bracket code at end: (27 Olding Way)
+                                  const bracketMatch = obs.match(/\(([^)]{3,80})\)\s*$/);
+                                  if (bracketMatch) return bracketMatch[1].trim();
+                                  // 2. Street number pattern: digits followed by street name
+                                  //    Matches things like "27 Olding Way", "131A Lakey Street", "3/12 Smith St"
+                                  const streetMatch = obs.match(/\b(\d{1,5}[A-Za-z]?(?:\/\d{1,5}[A-Za-z]?)?\s+[A-Z][a-zA-Z]+(?:\s+[A-Za-z]+){0,4})/);
+                                  if (streetMatch) return streetMatch[1].trim();
+                                  // 3. Last resort: full text (server will try to geocode it)
+                                  return obs.split("\n")[0].trim();
+                                }
+
+                                const departAddr = extractAddressFromObs(prevObs);
+                                const arriveAddr = extractAddressFromObs(nextObs);
+                                if (!departAddr || !arriveAddr) {
+                                  toast.error("TV auto-fill: could not extract addresses from surrounding rows.");
+                                  updateRow.mutate({ id: row.id, observation: val });
+                                  return;
+                                }
+                                // Show spinner and call the server
+                                setTvLoadingRowId(row.id);
+                                getTravelledViaStreets.mutate(
+                                  {
+                                    departAddress: departAddr,
+                                    arriveAddress: arriveAddr,
+                                    // Pass full observation text so server can extract
+                                    // the correct suburb directly from the text
+                                    departObsText: prevObs,
+                                    arriveObsText: nextObs,
+                                  },
+                                  {
+                                    onSuccess: (data) => {
+                                      setTvLoadingRowId(null);
+                                      updateRow.mutate({ id: row.id, observation: data.streets });
+                                      toast.success("Travelled via streets auto-filled");
+                                    },
+                                    onError: () => {
+                                      setTvLoadingRowId(null);
+                                      // Error toast already shown by mutation onError
+                                      updateRow.mutate({ id: row.id, observation: val });
+                                    },
+                                  }
+                                );
+                                return;
+                              }
+                              // Normal save
+                              updateRow.mutate({ id: row.id, observation: val });
+                            }}
+                            shortcuts={shortcutMap}
+                          />
+                        )}
                         <ObservationAttachments
                           row={row}
                           canEdit={canEdit && !row.isLocked}

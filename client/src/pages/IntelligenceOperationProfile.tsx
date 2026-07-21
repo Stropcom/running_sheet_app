@@ -7,14 +7,17 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { ArrowLeft, FileDown, User, Car, MapPin, FileText, ChevronRight } from "lucide-react";
 import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
+import { buildPhotoGridHtml, formatAttachmentBanner, toAbsolutePhotoUrl, type RowAttachmentLike } from "@/lib/attachmentBanner";
 
 // ─── Types (mirrors server IntelOperationProfile) ──────────────────────────
-interface IntelProfileEntity { id: string; label: string; type: string; rowCount: number; sheetIds: number[]; operationIds: number[] }
+type ProfilePhoto = RowAttachmentLike & { id: number; url: string };
+interface IntelProfileEntity { id: string; label: string; type: string; rowCount: number; sheetIds: number[]; operationIds: number[]; photos?: ProfilePhoto[] }
 interface OperationTarget {
   targetId: number; name: string; tgt: string | null;
   hbf: string | null; v1f: string | null; v2f: string | null; dep: string | null; arr: string | null;
   linkedSheets: Array<{ id: number; title: string }>;
   assocPersons: IntelProfileEntity[]; assocVehicles: IntelProfileEntity[]; assocLocations: IntelProfileEntity[];
+  photos: ProfilePhoto[];
 }
 interface IntelOperationProfile {
   operationId: number; operationName: string;
@@ -31,6 +34,35 @@ const CHIP: Record<string, string> = {
   business: "bg-purple-500/10 text-purple-600 border-purple-500/30 dark:text-purple-400",
   target:   "bg-blue-500/10 text-blue-600 border-blue-500/30 dark:text-blue-400",
 };
+
+// Compact thumbnail row for photos linked to a target or a set of associated
+// entities. `entityLabel` (when set per-photo) shows which entity a photo
+// belongs to, since this strip can aggregate photos across several chips.
+function PhotoStrip({ photos }: { photos: Array<ProfilePhoto & { entityLabel?: string }> }) {
+  const [lightbox, setLightbox] = useState<string | null>(null);
+  if (!photos.length) return null;
+  return (
+    <>
+      <div className="flex flex-wrap gap-1.5 mt-1.5">
+        {photos.map(p => (
+          <button
+            key={p.id}
+            onClick={() => setLightbox(p.url)}
+            title={p.entityLabel ? `${p.entityLabel} — ${formatAttachmentBanner(p)}` : formatAttachmentBanner(p)}
+            className="w-12 h-12 rounded-md overflow-hidden border border-border/60 shrink-0 hover:opacity-80 transition-opacity"
+          >
+            <img src={p.url} alt="Linked photograph" className="w-full h-full object-cover" />
+          </button>
+        ))}
+      </div>
+      {lightbox && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6" onClick={() => setLightbox(null)}>
+          <img src={lightbox} alt="Linked photograph" className="max-w-full max-h-full rounded shadow-2xl" />
+        </div>
+      )}
+    </>
+  );
+}
 
 function EntityChip({ item, onClick }: { item: IntelProfileEntity; onClick?: () => void }) {
   const cls = CHIP[item.type] ?? "bg-muted text-muted-foreground border-border";
@@ -68,6 +100,22 @@ function buildOperationProfileHtml(profile: IntelOperationProfile) {
       : label;
     return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:9999px;font-size:10px;font-weight:600;${style};margin:2px">${esc(displayLabel)} <span style="opacity:0.6">×${count}</span></span>`;
   };
+  // Small (60px) fixed-size thumbnail row for photos linked to a set of
+  // associated entities (persons/vehicles/locations), each captioned with
+  // which entity it belongs to. Smaller than the target's own photo grid
+  // since these are secondary, per-association thumbnails.
+  const ENTITY_PHOTO_PX = 60;
+  const entityPhotoGridHtml = (items: IntelProfileEntity[]): string => {
+    const cells = items.flatMap(i => (i.photos ?? []).map(p => `<div style="width:${ENTITY_PHOTO_PX}px;border:1px solid ${GREY_BORDER};border-radius:6px;overflow:hidden">
+      <img src="${esc(toAbsolutePhotoUrl(p.url))}" style="width:100%;aspect-ratio:1;object-fit:cover;display:block" />
+      <div style="background:#000;color:#fff;font-size:6px;padding:2px 3px;line-height:1.3">
+        <div style="font-weight:600">${esc(i.label)}</div>
+        <div>${esc(formatAttachmentBanner(p))}</div>
+      </div>
+    </div>`));
+    if (!cells.length) return "";
+    return `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${cells.join("")}</div>`;
+  };
   const generatedAt = new Date().toLocaleString("en-AU", { dateStyle: "long", timeStyle: "short" });
   const totalAssoc = profile.targets.reduce((s, t) => s + t.assocPersons.length + t.assocVehicles.length + t.assocLocations.length, 0);
   const targetsHtml = profile.targets.map(t => `
@@ -76,13 +124,14 @@ function buildOperationProfileHtml(profile: IntelOperationProfile) {
         <strong style="font-size:12px;color:${BLUE_DARK}">${esc(t.name)}</strong>${t.tgt ? ` <span style="font-size:10px;color:#64748b;margin-left:8px">TGT: ${esc(t.tgt)}</span>` : ""}
       </div>
       <div style="padding:10px 14px">
-        ${t.hbf ? `<p style="font-size:10px;margin-bottom:4px"><span style="color:#64748b;font-weight:600">Home:</span> ${esc(formatIntelAddress(t.hbf))}</p>` : ""}
+        ${t.photos.length ? `<p style="font-size:10px;color:#64748b;margin-bottom:4px;font-weight:600">Photos (${t.photos.length}):</p>${buildPhotoGridHtml(t.photos, 70)}` : ""}
+        ${t.hbf ? `<p style="font-size:10px;margin-bottom:4px;margin-top:8px"><span style="color:#64748b;font-weight:600">Home:</span> ${esc(formatIntelAddress(t.hbf))}</p>` : ""}
         ${t.v1f ? `<p style="font-size:10px;margin-bottom:4px"><span style="color:#64748b;font-weight:600">Vehicle 1:</span> ${esc(formatIntelVehicle(t.v1f))}</p>` : ""}
         ${t.v2f ? `<p style="font-size:10px;margin-bottom:4px"><span style="color:#64748b;font-weight:600">Vehicle 2:</span> ${esc(formatIntelVehicle(t.v2f))}</p>` : ""}
         ${t.linkedSheets.length ? `<p style="font-size:10px;color:#64748b;margin-top:6px;margin-bottom:4px;font-weight:600">Running Sheets:</p>${t.linkedSheets.map(s => `<p style="font-size:10px;padding-left:12px">• ${esc(s.title)}</p>`).join("")}` : ""}
-        ${t.assocPersons.length ? `<p style="font-size:10px;color:#64748b;margin-top:8px;margin-bottom:4px;font-weight:600">Associated Persons:</p><div style="display:flex;flex-wrap:wrap;gap:4px">${t.assocPersons.map(p => chipHtml(p.label, p.type, p.rowCount)).join("")}</div>` : ""}
-        ${t.assocVehicles.length ? `<p style="font-size:10px;color:#64748b;margin-top:8px;margin-bottom:4px;font-weight:600">Associated Vehicles:</p><div style="display:flex;flex-wrap:wrap;gap:4px">${t.assocVehicles.map(v => chipHtml(v.label, v.type, v.rowCount)).join("")}</div>` : ""}
-        ${t.assocLocations.length ? `<p style="font-size:10px;color:#64748b;margin-top:8px;margin-bottom:4px;font-weight:600">Associated Locations:</p><div style="display:flex;flex-wrap:wrap;gap:4px">${t.assocLocations.map(l => chipHtml(l.label, l.type, l.rowCount)).join("")}</div>` : ""}
+        ${t.assocPersons.length ? `<p style="font-size:10px;color:#64748b;margin-top:8px;margin-bottom:4px;font-weight:600">Associated Persons:</p><div style="display:flex;flex-wrap:wrap;gap:4px">${t.assocPersons.map(p => chipHtml(p.label, p.type, p.rowCount)).join("")}</div>${entityPhotoGridHtml(t.assocPersons)}` : ""}
+        ${t.assocVehicles.length ? `<p style="font-size:10px;color:#64748b;margin-top:8px;margin-bottom:4px;font-weight:600">Associated Vehicles:</p><div style="display:flex;flex-wrap:wrap;gap:4px">${t.assocVehicles.map(v => chipHtml(v.label, v.type, v.rowCount)).join("")}</div>${entityPhotoGridHtml(t.assocVehicles)}` : ""}
+        ${t.assocLocations.length ? `<p style="font-size:10px;color:#64748b;margin-top:8px;margin-bottom:4px;font-weight:600">Associated Locations:</p><div style="display:flex;flex-wrap:wrap;gap:4px">${t.assocLocations.map(l => chipHtml(l.label, l.type, l.rowCount)).join("")}</div>${entityPhotoGridHtml(t.assocLocations)}` : ""}
       </div>
     </div>`).join("");
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>RunLog — Operation Profile: ${esc(profile.operationName)}</title>
@@ -213,6 +262,13 @@ export default function IntelligenceOperationProfile() {
 
                     {isExpanded && (
                       <div className="border-t border-border/40 px-4 pb-4 pt-3 space-y-3">
+                        {target.photos.length > 0 && (
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Photos ({target.photos.length})</p>
+                            <PhotoStrip photos={target.photos} />
+                            <Separator className="mt-3" />
+                          </div>
+                        )}
                         {(target.hbf || target.v1f || target.v2f) && (
                           <div>
                             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Registered Details</p>
@@ -246,6 +302,7 @@ export default function IntelligenceOperationProfile() {
                                 <div className="flex flex-wrap gap-1.5">
                                   {target.assocPersons.map(p => <EntityChip key={p.id} item={p} onClick={() => navigate(`/intelligence/associate/${encodeURIComponent(p.label)}`)} />)}
                                 </div>
+                                <PhotoStrip photos={target.assocPersons.flatMap(p => (p.photos ?? []).map(ph => ({ ...ph, entityLabel: p.label })))} />
                               </div>
                             )}
                             {target.assocVehicles.length > 0 && (
@@ -254,6 +311,7 @@ export default function IntelligenceOperationProfile() {
                                 <div className="flex flex-wrap gap-1.5">
                                   {target.assocVehicles.map(v => <EntityChip key={v.id} item={v} onClick={() => navigate(`/intelligence/vehicle/${encodeURIComponent(v.label)}`)} />)}
                                 </div>
+                                <PhotoStrip photos={target.assocVehicles.flatMap(v => (v.photos ?? []).map(ph => ({ ...ph, entityLabel: v.label })))} />
                               </div>
                             )}
                             {target.assocLocations.length > 0 && (
@@ -262,6 +320,7 @@ export default function IntelligenceOperationProfile() {
                                 <div className="flex flex-wrap gap-1.5">
                                   {target.assocLocations.map(l => <EntityChip key={l.id} item={l} onClick={() => navigate(`/intelligence/location/${encodeURIComponent(l.label)}`)} />)}
                                 </div>
+                                <PhotoStrip photos={target.assocLocations.flatMap(l => (l.photos ?? []).map(ph => ({ ...ph, entityLabel: l.label })))} />
                               </div>
                             )}
                           </div>

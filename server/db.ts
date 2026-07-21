@@ -863,6 +863,72 @@ export async function getAttachmentsForEntity(params: {
   return withCins.map((r) => ({ ...r, linkId: links.find((l) => l.attachmentId === r.id)!.id }));
 }
 
+export interface OperationEntityPhoto {
+  id: number;
+  url: string;
+  rowId: number;
+  rowTime: string | null;
+  rowDate: string | null;
+  memberCINs: string[];
+}
+
+// Batched photo lookup for an Operation profile: given the targets in the
+// operation and the (normalized) labels of every associated vehicle/
+// associate/location shown against those targets, returns photos grouped
+// by targetId and by "category::entityKey" so the profile can slot each
+// entity's linked photos into its own section in one pass.
+async function getAttachmentsForOperationEntities(
+  targetIds: number[],
+  entityKeys: { vehicle: string[]; associate: string[]; location: string[] }
+): Promise<{ targetPhotos: Map<number, OperationEntityPhoto[]>; entityPhotos: Map<string, OperationEntityPhoto[]> }> {
+  const empty = { targetPhotos: new Map<number, OperationEntityPhoto[]>(), entityPhotos: new Map<string, OperationEntityPhoto[]>() };
+  const db = await getDb();
+  if (!db) return empty;
+
+  const conditions = [];
+  if (targetIds.length) conditions.push(and(eq(attachmentEntityLinks.category, "target"), inArray(attachmentEntityLinks.targetId, targetIds)));
+  if (entityKeys.vehicle.length) conditions.push(and(eq(attachmentEntityLinks.category, "vehicle"), inArray(attachmentEntityLinks.entityKey, entityKeys.vehicle)));
+  if (entityKeys.associate.length) conditions.push(and(eq(attachmentEntityLinks.category, "associate"), inArray(attachmentEntityLinks.entityKey, entityKeys.associate)));
+  if (entityKeys.location.length) conditions.push(and(eq(attachmentEntityLinks.category, "location"), inArray(attachmentEntityLinks.entityKey, entityKeys.location)));
+  if (!conditions.length) return empty;
+
+  const links = await db.select().from(attachmentEntityLinks).where(or(...conditions));
+  if (!links.length) return empty;
+
+  const attachmentIds = Array.from(new Set(links.map((l) => l.attachmentId)));
+  const rows = await db
+    .select({
+      id: rowAttachments.id,
+      rowId: rowAttachments.rowId,
+      url: rowAttachments.url,
+      rowTime: sheetRows.time,
+      rowDate: sheetRows.rowDate,
+    })
+    .from(rowAttachments)
+    .innerJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
+    .where(and(inArray(rowAttachments.id, attachmentIds), isNull(rowAttachments.deletedAt)));
+  const withCins = await attachRowMemberCins(db, rows);
+  const byAttachmentId = new Map(withCins.map((r) => [r.id, r]));
+
+  const targetPhotos = new Map<number, OperationEntityPhoto[]>();
+  const entityPhotos = new Map<string, OperationEntityPhoto[]>();
+  for (const link of links) {
+    const photo = byAttachmentId.get(link.attachmentId);
+    if (!photo) continue;
+    if (link.category === "target" && link.targetId != null) {
+      const arr = targetPhotos.get(link.targetId) ?? [];
+      arr.push(photo);
+      targetPhotos.set(link.targetId, arr);
+    } else if (link.entityKey) {
+      const key = `${link.category}::${link.entityKey}`;
+      const arr = entityPhotos.get(key) ?? [];
+      arr.push(photo);
+      entityPhotos.set(key, arr);
+    }
+  }
+  return { targetPhotos, entityPhotos };
+}
+
 // ─── Certifications ───────────────────────────────────────────────────────────
 
 export async function getCertificationsByRowId(rowId: number) {
@@ -3263,6 +3329,8 @@ export interface IntelProfileEntity {
   sheetIds: number[];
   operationIds: number[];
   rowCount: number;
+  /** Only populated on the Operation profile — photos linked to this entity. */
+  photos?: OperationEntityPhoto[];
 }
 
 export interface IntelTargetProfile {
@@ -3307,6 +3375,7 @@ export interface IntelOperationProfile {
     assocPersons: IntelProfileEntity[];
     assocVehicles: IntelProfileEntity[];
     assocLocations: IntelProfileEntity[];
+    photos: OperationEntityPhoto[];
   }>;
 }
 
@@ -3507,6 +3576,28 @@ export async function getIntelOperationProfile(operationId: number): Promise<Int
       };
     })
   )).filter(Boolean) as IntelOperationProfile["targets"];
+
+  // Batch-fetch photos for every target and every associated vehicle/
+  // associate/location shown across this operation's targets, then slot
+  // them into the matching entity below.
+  const vehicleKeys = new Set<string>();
+  const personKeys = new Set<string>();
+  const locationKeys = new Set<string>();
+  for (const t of targetProfiles) {
+    for (const v of t.assocVehicles) vehicleKeys.add(normalizeEntityLabel(v.label));
+    for (const p of t.assocPersons) if (p.type !== "target") personKeys.add(normalizeEntityLabel(p.label));
+    for (const l of t.assocLocations) locationKeys.add(normalizeEntityLabel(l.label));
+  }
+  const { targetPhotos, entityPhotos } = await getAttachmentsForOperationEntities(
+    targetProfiles.map(t => t.targetId),
+    { vehicle: Array.from(vehicleKeys), associate: Array.from(personKeys), location: Array.from(locationKeys) }
+  );
+  for (const t of targetProfiles) {
+    t.photos = targetPhotos.get(t.targetId) ?? [];
+    for (const p of t.assocPersons) p.photos = entityPhotos.get(`associate::${normalizeEntityLabel(p.label)}`) ?? [];
+    for (const v of t.assocVehicles) v.photos = entityPhotos.get(`vehicle::${normalizeEntityLabel(v.label)}`) ?? [];
+    for (const l of t.assocLocations) l.photos = entityPhotos.get(`location::${normalizeEntityLabel(l.label)}`) ?? [];
+  }
 
   return {
     operationId,

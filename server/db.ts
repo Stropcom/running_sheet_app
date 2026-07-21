@@ -1796,7 +1796,7 @@ export function extractEntitiesFromText(text: string): Array<{
       // Look for colour + make/model in the text
       const COLOURS = /\b(white|black|silver|grey|gray|red|blue|green|yellow|orange|purple|brown|gold|bronze|cream|beige|maroon|navy|dark|light|bright)\b/gi;
       const MAKES_DISPLAY = /\b(toyota|ford|holden|honda|mazda|nissan|mitsubishi|subaru|hyundai|kia|volkswagen|vw|bmw|mercedes|audi|lexus|volvo|jeep|dodge|land rover|range rover|defender|discovery|jaguar|porsche|mini|isuzu|suzuki|daihatsu|haval|gwm|mg|byd|tesla|great wall)\b/gi;
-      const BODY_TYPES = /\b(landcruiser|land cruiser|hilux|ranger|triton|navara|amarok|colorado|dmax|d-max|fortuner|prado|patrol|pathfinder|rav4|crv|cr-v|cx-5|cx5|cx-3|cx3|tucson|sportage|tiguan|forester|outback|wrx|impreza|levorg|liberty|brz|86|corolla|camry|yaris|kluger|tarago|hiace|hilux|falcon|commodore|cruze|captiva|trax|trailblazer|everest|territory|escape|focus|fiesta|mondeo|transit|connect|courier|f-150|f150|mustang|explorer|expedition|bronco|wrangler|cherokee|grand cherokee|compass|renegade|gladiator|durango|charger|challenger|ram|1500|2500|3500|sedan|hatchback|suv|wagon|coupe|ute|van|truck|4wd|4x4|bus|minivan|people mover)\b/gi;
+      const BODY_TYPES = /\b(landcruiser|land cruiser|hilux|ranger|triton|navara|amarok|colorado|dmax|d-max|fortuner|prado|patrol|pathfinder|rav4|crv|cr-v|cx-5|cx5|cx-3|cx3|tucson|santa fe|santafe|sportage|tiguan|forester|outback|wrx|impreza|levorg|liberty|brz|86|corolla|camry|yaris|kluger|tarago|hiace|hilux|falcon|commodore|cruze|captiva|trax|trailblazer|everest|territory|escape|focus|fiesta|mondeo|transit|connect|courier|f-150|f150|mustang|explorer|expedition|bronco|wrangler|cherokee|grand cherokee|compass|renegade|gladiator|durango|charger|challenger|ram|1500|2500|3500|sedan|hatchback|suv|wagon|coupe|ute|van|truck|4wd|4x4|bus|minivan|people mover)\b/gi;
 
       // Find the portion of fullDescription that describes the vehicle
       // (everything before any mention of the rego or "bearing"/"registration" keywords)
@@ -1897,6 +1897,37 @@ export interface IntelligenceEntity {
 export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]> {
   const db = await getDb();
   if (!db) return [];
+
+  // Vehicles are uniquely identified by their registration, not by whatever
+  // descriptive text happens to surround it in a given mention. The same car
+  // can show up as "1ADF124" (bare), "Vehicle 1ADF124" (chip insert),
+  // "1ADF124 red Ford Territory" (built from observation text), or "silver
+  // Hyundai Santa Fe, bearing WA registration 1ICW519" (raw target-card V1F
+  // field) — all textually very different despite being the same physical
+  // vehicle, which previously produced separate duplicate entities. Extract
+  // the WA-plate-shaped token (if any) and key on that alone so every
+  // mention of the same vehicle collapses into one entity; the richest
+  // available description is still kept for display (see "prefer longer
+  // shortForm" below).
+  const vehicleRegoKey = (text: string): string => {
+    const m = text.match(/\b\d[A-Za-z]{2,3}\d{3}\b/);
+    return (m ? m[0] : text).toLowerCase().replace(/\s+/g, " ").trim();
+  };
+
+  // When two mentions of the same vehicle merge, prefer whichever is in the
+  // canonical "REGO description" form (matches how observation text gets
+  // formatted — see extractEntitiesFromText's vehicle branch) over a raw
+  // target-card field where the rego sits mid-sentence (e.g. "silver Hyundai
+  // Santa Fe, bearing WA registration 1ICW519") — otherwise a longer but
+  // awkwardly-worded raw field value would win on length alone.
+  const isCanonicalVehicleForm = (shortForm: string, regoKey: string): boolean =>
+    shortForm.toLowerCase().startsWith(regoKey);
+  const preferVehicleShortForm = (existing: string, candidate: string, regoKey: string): boolean => {
+    const existingCanonical = isCanonicalVehicleForm(existing, regoKey);
+    const candidateCanonical = isCanonicalVehicleForm(candidate, regoKey);
+    if (candidateCanonical !== existingCanonical) return candidateCanonical;
+    return candidate.length > existing.length;
+  };
 
   // ── 1. Load formal target cards first ─────────────────────────────────────
   // Use leftJoin so registry targets with null operationId are included.
@@ -2053,15 +2084,19 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
         shortForm = shortForm.replace(/\s*\([^)]{1,40}\)\s*$/, "").trim();
       }
       if (!shortForm) continue;
-      // Normalise whitespace so minor spacing differences don't create duplicate keys
-      const normKey = shortForm.toLowerCase().replace(/\s+/g, " ").trim();
+      // Normalise whitespace so minor spacing differences don't create duplicate keys.
+      // Vehicles key on registration alone (see vehicleRegoKey above).
+      const normKey = field.type === "vehicle" ? vehicleRegoKey(shortForm) : shortForm.toLowerCase().replace(/\s+/g, " ").trim();
       const key = `${field.type}::${normKey}`;
       if (!entityMap.has(key)) {
         entityMap.set(key, { shortForm, type: field.type, occurrences: [] });
       } else {
         // Prefer the longer / richer shortForm
         const existing = entityMap.get(key)!;
-        if (shortForm.length > existing.shortForm.length) existing.shortForm = shortForm;
+        const shouldUpgrade = field.type === "vehicle"
+          ? preferVehicleShortForm(existing.shortForm, shortForm, normKey)
+          : shortForm.length > existing.shortForm.length;
+        if (shouldUpgrade) existing.shortForm = shortForm;
       }
       for (const sheet of sheetEntries) {
         // Deduplicate occurrences by sheetId+rowId (rowId=0 for target card entries)
@@ -2152,14 +2187,20 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
         }
       }
     }
-    const normShortForm = e.shortForm.toLowerCase().replace(/\s+/g, " ").trim();
+    // Vehicles key on registration alone (see vehicleRegoKey above) so a bare
+    // rego, a chip-inserted "Vehicle REGO", and a fully-described sighting of
+    // the same car all collapse into one entity instead of three.
+    const normShortForm = e.type === "vehicle" ? vehicleRegoKey(e.shortForm) : e.shortForm.toLowerCase().replace(/\s+/g, " ").trim();
     const key = `${e.type}::${normShortForm}`;
     if (!entityMap.has(key)) {
       entityMap.set(key, { shortForm: e.shortForm, type: e.type, isTarget: false, occurrences: [] });
     } else {
-      // Upgrade to longer shortForm if available
+      // Upgrade to longer / richer shortForm if available
       const existing = entityMap.get(key)!;
-      if (e.shortForm.length > existing.shortForm.length) existing.shortForm = e.shortForm;
+      const shouldUpgrade = e.type === "vehicle"
+        ? preferVehicleShortForm(existing.shortForm, e.shortForm, normShortForm)
+        : e.shortForm.length > existing.shortForm.length;
+      if (shouldUpgrade) existing.shortForm = e.shortForm;
     }
     // Flag entity as low-confidence if this occurrence was uncertain
     if (e.confidence === "low" || e.type === "unknown") {

@@ -116,3 +116,12 @@ temp/
 # Manus version file (auto-generated, not part of source)
 client/public/__manus__/version.json
 .project-config.json
+
+# Capacitor iOS — the Xcode project itself is committed, but the bundled web
+# assets and per-developer Xcode state are regenerated (public/ via
+# `npx cap sync`, the rest by Xcode itself) so they're not tracked.
+ios/App/App/public/
+ios/**/xcuserdata/
+ios/**/*.xcuserstate
+ios/DerivedData/
+

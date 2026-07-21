@@ -3169,7 +3169,14 @@ export default function SheetDetail() {
                                 // Show spinner and call the server
                                 setTvLoadingRowId(row.id);
                                 getTravelledViaStreets.mutate(
-                                  { departAddress: departAddr, arriveAddress: arriveAddr },
+                                  {
+                                    departAddress: departAddr,
+                                    arriveAddress: arriveAddr,
+                                    // Pass full observation text so server can extract
+                                    // the correct suburb directly from the text
+                                    departObsText: prevObs,
+                                    arriveObsText: nextObs,
+                                  },
                                   {
                                     onSuccess: (data) => {
                                       setTvLoadingRowId(null);

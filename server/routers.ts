@@ -2890,6 +2890,11 @@ export const appRouter = router({
       .input(z.object({
         departAddress: z.string().min(1),
         arriveAddress: z.string().min(1),
+        // Raw observation text from surrounding rows — used to extract suburb directly
+        // from the text (e.g. "arrived at 288 Canning Highway, BICTON WA") which is
+        // more reliable than geocoding when addresses straddle suburb boundaries.
+        departObsText: z.string().optional(),
+        arriveObsText: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
         // ── Helper: geocode an address string → LatLng ──────────────────────
@@ -2929,14 +2934,16 @@ export const appRouter = router({
           let bm: RegExpExecArray | null;
           while ((bm = boldRe.exec(htmlInstructions)) !== null) boldMatches.push(bm[1].trim());
 
-          // Filter out: directional words, ordinal numbers (1st/2nd/3rd), and
-          // route/highway number codes like "State Route 6", "National Highway 1", "A1", "M2"
+          // Filter out: directional words, ordinal numbers, compass directions,
+          // and ALL route/highway number codes in any form:
+          //   "State Route 6", "State Rte 6", "State Rte60", "National Route 1",
+          //   "National Highway 1", "Federal Route 1", "A1", "M2", bare numbers.
           const isJunk = (s: string) =>
-            /^(left|right|north|south|east|west|slight|sharp|u-turn)$/i.test(s) ||
+            /^(left|right|north|south|east|west|northeast|northwest|southeast|southwest|slight|sharp|u-turn)$/i.test(s) ||
             /^\d+(st|nd|rd|th)$/i.test(s) ||
-            /^(state|national|federal)\s+(route|highway|road|hwy)\s*\d+/i.test(s) ||
-            /^(route|hwy|rd|st|ave|dr|pl|ct|ln|blvd)\s*\d+$/i.test(s) ||
-            /^[A-Z]\d+$/.test(s) ||
+            /^(state|national|federal|nat|natl)\s*(route|rte|rte\.?|highway|hwy|road|rd)\s*\d+/i.test(s) ||
+            /^(route|rte)\s*\d+/i.test(s) ||
+            /^[A-Z]{1,2}\d+$/.test(s) ||
             /^\d+$/.test(s);
 
           // Prefer the first non-junk bold segment (road name comes first in Google's instructions)
@@ -3016,11 +3023,25 @@ export const appRouter = router({
         }
 
         // ── 4. Get suburbs for first and last road ───────────────────────────
-        // Use the suburb extracted directly from the geocoded departure/arrival addresses.
-        // This is more accurate than reverse-geocoding the route endpoints, which can
-        // land on a suburb boundary and return the wrong locality.
-        const firstSuburb = departGeo.suburb;
-        const lastSuburb = arriveGeo.suburb;
+        // Priority order for suburb:
+        //   1. Extract directly from raw observation text (most reliable — the text
+        //      already contains the correct suburb e.g. "BICTON WA", "MOUNT LAWLEY").
+        //   2. Fall back to suburb from geocoded address components.
+        function extractSuburbFromText(text: string): string {
+          if (!text) return "";
+          // Match ALL-CAPS suburb name after a comma, optionally followed by WA
+          // e.g. ", BICTON WA", ", MOUNT LAWLEY WA", ", ARDROSS ("
+          const m = text.match(/,\s*([A-Z][A-Z ]{1,30})(?:\s+WA|\s+Western Australia)?(?:[\s,)\n]|$)/);
+          if (m) return m[1].trim().replace(/\s+WA$/, "").trim();
+          return "";
+        }
+
+        const firstSuburb =
+          (input.departObsText ? extractSuburbFromText(input.departObsText) : "") ||
+          departGeo.suburb;
+        const lastSuburb =
+          (input.arriveObsText ? extractSuburbFromText(input.arriveObsText) : "") ||
+          arriveGeo.suburb;
 
         // ── 5. Format the street list ────────────────────────────────────────
         // Format:

@@ -14,22 +14,7 @@ import { useLocation, useParams } from "wouter";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { LinkAttachmentDialog } from "@/components/LinkAttachmentDialog";
-
-const PERTH_TIME_ZONE = "Australia/Perth";
-
-// Uses the observation row's own date/time and the CINs of members on that
-// row — not the upload timestamp/uploader — so the caption reflects when
-// and by whom the row was logged, matching the running sheet itself.
-function formatAttachmentBanner(a: { rowDate: string | null; rowTime: string | null; memberCINs: string[] }): string {
-  const parts: string[] = [];
-  if (a.rowDate) {
-    const d = new Date(`${a.rowDate}T00:00:00+08:00`);
-    parts.push(new Intl.DateTimeFormat("en-AU", { timeZone: PERTH_TIME_ZONE, day: "2-digit", month: "short" }).format(d));
-  }
-  if (a.rowTime) parts.push(a.rowTime);
-  const when = parts.join(" ") || "Time not set";
-  return a.memberCINs.length > 0 ? `${when} · ${a.memberCINs.join(", ")}` : when;
-}
+import { formatAttachmentBanner } from "@/lib/attachmentBanner";
 
 // Folder progression: Images → Operation → Running Sheet → RS images
 

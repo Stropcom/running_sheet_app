@@ -9,6 +9,9 @@ import {
 } from "lucide-react";
 import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
 import { EntityPhotosSection } from "@/components/EntityPhotosSection";
+import { buildPhotoGridHtml, type RowAttachmentLike } from "@/lib/attachmentBanner";
+
+type ProfilePhoto = RowAttachmentLike & { id: number; url: string };
 
 // ─── Colour palette (matches Intelligence.tsx) ─────────────────────────────
 const CHIP = {
@@ -53,7 +56,7 @@ function SectionHeading({ label, count }: { label: string; count: number }) {
 }
 
 // ─── PDF export ────────────────────────────────────────────────────────────
-function buildTargetProfileHtml(profile: NonNullable<ReturnType<typeof useTargetProfile>["data"]>) {
+function buildTargetProfileHtml(profile: NonNullable<ReturnType<typeof useTargetProfile>["data"]>, photos: ProfilePhoto[]) {
   const esc = (s: string | null | undefined) => (s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const BLUE_DARK  = "#1e3a8a";
   const BLUE_MID   = "#93c5fd";
@@ -131,6 +134,11 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
   <div class="stat-box"><div class="stat-num">${profile.operations.length}</div><div class="stat-label">Operations</div></div>
 </div>
 <div class="content">
+  ${photos.length ? `<div class="section">
+    <div class="section-title">Photos (${photos.length})</div>
+    ${buildPhotoGridHtml(photos)}
+  </div>` : ""}
+
   <div class="section">
     <div class="section-title">Operations</div>
     <div class="ops-list">${profile.operations.map(o => `<span class="op-badge">${esc(o.name)}</span>`).join("")}</div>
@@ -179,10 +187,15 @@ export default function IntelligenceTargetProfile() {
   const [, navigate] = useLocation();
   const targetId = parseInt(params?.id ?? "0", 10);
   const { data: profile, isLoading, error } = useTargetProfile(targetId);
+  const { data: photosData } = trpc.attachment.byEntity.useQuery(
+    { category: "target", targetId },
+    { enabled: targetId > 0 }
+  );
+  const photos = (photosData ?? []) as ProfilePhoto[];
 
   function exportPdf() {
     if (!profile) return;
-    const html = buildTargetProfileHtml(profile);
+    const html = buildTargetProfileHtml(profile, photos);
     const win = window.open("", "_blank");
     if (!win) return;
     win.document.write(html);

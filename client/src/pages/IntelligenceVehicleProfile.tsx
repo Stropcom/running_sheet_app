@@ -6,6 +6,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, FileDown, User, Car, MapPin, FileText } from "lucide-react";
 import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
 import { EntityPhotosSection } from "@/components/EntityPhotosSection";
+import { buildPhotoGridHtml, type RowAttachmentLike } from "@/lib/attachmentBanner";
+
+type ProfilePhoto = RowAttachmentLike & { id: number; url: string };
 
 interface IntelProfileEntity { id: string; label: string; type: string; rowCount: number; sheetIds: number[]; operationIds: number[] }
 interface IntelVehicleProfile {
@@ -50,7 +53,7 @@ function SectionHeading({ label, count }: { label: string; count: number }) {
   );
 }
 
-function buildVehicleProfileHtml(profile: IntelVehicleProfile) {
+function buildVehicleProfileHtml(profile: IntelVehicleProfile, photos: ProfilePhoto[]) {
   const esc = (s: string | null | undefined) => (s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const BLUE_DARK = "#1e3a8a"; const BLUE_MID = "#93c5fd"; const BLUE_LIGHT = "#dbeafe";
   const GREY_TEXT = "#1e293b"; const GREY_BORDER = "#e2e8f0";
@@ -90,6 +93,7 @@ function buildVehicleProfileHtml(profile: IntelVehicleProfile) {
   <div class="stat-box"><div class="stat-num">${profile.assocPersons.length + profile.assocLocations.length}</div><div class="stat-label">Associations</div></div>
 </div>
 <div class="content">
+  ${photos.length ? `<div style="margin-bottom:16px"><div class="section-title">Photos (${photos.length})</div>${buildPhotoGridHtml(photos)}</div>` : ""}
   ${profile.linkedTarget ? `<div style="margin-bottom:16px"><div class="section-title">Registered Target</div><p style="font-size:11px;font-weight:600">${esc(profile.linkedTarget.name)}</p></div>` : ""}
   ${profile.linkedSheets.length ? `<div style="margin-bottom:16px"><div class="section-title">Running Sheets</div>${profile.linkedSheets.map(s => `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}">${esc(s.title)} <span style="color:#64748b">— ${esc(s.operationName)}</span></p>`).join("")}</div>` : ""}
   ${profile.assocPersons.length || profile.assocLocations.length ? `<div style="margin-bottom:16px"><div class="section-title">Associations</div>
@@ -106,10 +110,15 @@ export default function IntelligenceVehicleProfile() {
   const label = decodeURIComponent(params?.label ?? "");
   const { data, isLoading, error } = trpc.intelligence.vehicleProfile.useQuery({ label }, { enabled: !!label });
   const profile = data as IntelVehicleProfile | undefined;
+  const { data: photosData } = trpc.attachment.byEntity.useQuery(
+    { category: "vehicle", entityLabel: label },
+    { enabled: !!label }
+  );
+  const photos = (photosData ?? []) as ProfilePhoto[];
 
   function exportPdf() {
     if (!profile) return;
-    const html = buildVehicleProfileHtml(profile);
+    const html = buildVehicleProfileHtml(profile, photos);
     const win = window.open("", "_blank");
     if (!win) return;
     win.document.write(html);

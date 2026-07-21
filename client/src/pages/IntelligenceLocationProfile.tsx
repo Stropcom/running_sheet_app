@@ -8,6 +8,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { MapView } from "@/components/Map";
 import { ArrowLeft, FileDown, User, Car, MapPin, FileText } from "lucide-react";
 import { EntityPhotosSection } from "@/components/EntityPhotosSection";
+import { buildPhotoGridHtml, type RowAttachmentLike } from "@/lib/attachmentBanner";
+
+type ProfilePhoto = RowAttachmentLike & { id: number; url: string };
 
 interface IntelProfileEntity { id: string; label: string; type: string; rowCount: number; sheetIds: number[]; operationIds: number[] }
 interface IntelLocationProfile {
@@ -47,7 +50,7 @@ function SectionHeading({ label, count }: { label: string; count: number }) {
   );
 }
 
-function buildLocationProfileHtml(profile: IntelLocationProfile) {
+function buildLocationProfileHtml(profile: IntelLocationProfile, photos: ProfilePhoto[]) {
   const esc = (s: string | null | undefined) => (s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const BLUE_DARK = "#1e3a8a"; const BLUE_MID = "#93c5fd"; const BLUE_LIGHT = "#dbeafe";
   const GREY_TEXT = "#1e293b"; const GREY_BORDER = "#e2e8f0";
@@ -81,6 +84,7 @@ function buildLocationProfileHtml(profile: IntelLocationProfile) {
   <div class="stat-box"><div class="stat-num">${profile.assocPersons.length + profile.assocVehicles.length}</div><div class="stat-label">Associations</div></div>
 </div>
 <div class="content">
+  ${photos.length ? `<div style="margin-bottom:16px"><div class="section-title">Photos (${photos.length})</div>${buildPhotoGridHtml(photos)}</div>` : ""}
   ${profile.linkedTargets.length ? `<div style="margin-bottom:16px"><div class="section-title">Linked Targets</div>${profile.linkedTargets.map(t => `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}"><strong>${esc(t.name)}</strong></p>`).join("")}</div>` : ""}
   ${profile.linkedSheets.length ? `<div style="margin-bottom:16px"><div class="section-title">Running Sheets</div>${profile.linkedSheets.map(s => `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}">${esc(s.title)} <span style="color:#64748b">— ${esc(s.operationName)}</span></p>`).join("")}</div>` : ""}
   ${profile.assocPersons.length || profile.assocVehicles.length ? `<div style="margin-bottom:16px"><div class="section-title">Associations</div>
@@ -98,6 +102,11 @@ export default function IntelligenceLocationProfile() {
   const displayLabel = formatIntelAddress(label);
   const { data, isLoading, error } = trpc.intelligence.locationProfile.useQuery({ label }, { enabled: !!label });
   const profile = data as IntelLocationProfile | undefined;
+  const { data: photosData } = trpc.attachment.byEntity.useQuery(
+    { category: "location", entityLabel: label },
+    { enabled: !!label }
+  );
+  const photos = (photosData ?? []) as ProfilePhoto[];
   const mapRef = useRef<google.maps.Map | null>(null);
 
   function handleMapReady(map: google.maps.Map) {
@@ -122,7 +131,7 @@ export default function IntelligenceLocationProfile() {
 
   function exportPdf() {
     if (!profile) return;
-    const html = buildLocationProfileHtml({ ...profile, label: displayLabel });
+    const html = buildLocationProfileHtml({ ...profile, label: displayLabel }, photos);
     const win = window.open("", "_blank");
     if (!win) return;
     win.document.write(html);

@@ -2,21 +2,7 @@ import { trpc } from "@/lib/trpc";
 import { X, Link2Off } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-
-const PERTH_TIME_ZONE = "Australia/Perth";
-
-// Uses the observation row's own date/time and the CINs of members on that
-// row — not the upload timestamp/uploader.
-function formatBanner(a: { rowDate: string | null; rowTime: string | null; memberCINs: string[] }): string {
-  const parts: string[] = [];
-  if (a.rowDate) {
-    const d = new Date(`${a.rowDate}T00:00:00+08:00`);
-    parts.push(new Intl.DateTimeFormat("en-AU", { timeZone: PERTH_TIME_ZONE, day: "2-digit", month: "short" }).format(d));
-  }
-  if (a.rowTime) parts.push(a.rowTime);
-  const when = parts.join(" ") || "Time not set";
-  return a.memberCINs.length > 0 ? `${when} · ${a.memberCINs.join(", ")}` : when;
-}
+import { formatAttachmentBanner } from "@/lib/attachmentBanner";
 
 /** Shows photos linked to one Intelligence entity (Target/Vehicle/Associate/Location). */
 export function EntityPhotosSection({
@@ -59,7 +45,7 @@ export function EntityPhotosSection({
               onClick={() => setLightbox(p.url)}
             />
             <div className="absolute inset-x-0 bottom-0 bg-black/60 px-1.5 py-0.5">
-              <p className="text-[9px] text-white truncate">{formatBanner(p)}</p>
+              <p className="text-[9px] text-white truncate">{formatAttachmentBanner(p)}</p>
             </div>
             <button
               onClick={() => unlink.mutate({ linkId: p.linkId })}

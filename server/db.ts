@@ -893,6 +893,8 @@ async function getAttachmentsForOperationEntities(
   if (!conditions.length) return empty;
 
   const links = await db.select().from(attachmentEntityLinks).where(or(...conditions));
+  // TEMP DIAGNOSTIC — remove once the "no photos on Operation profile" issue is confirmed fixed.
+  console.log("[op-profile-photos] raw links matched:", links.map(l => ({ id: l.id, attachmentId: l.attachmentId, category: l.category, targetId: l.targetId, entityKey: l.entityKey })));
   if (!links.length) return empty;
 
   const attachmentIds = Array.from(new Set(links.map((l) => l.attachmentId)));
@@ -909,6 +911,8 @@ async function getAttachmentsForOperationEntities(
     .where(and(inArray(rowAttachments.id, attachmentIds), isNull(rowAttachments.deletedAt)));
   const withCins = await attachRowMemberCins(db, rows);
   const byAttachmentId = new Map(withCins.map((r) => [r.id, r]));
+  // TEMP DIAGNOSTIC — remove once the "no photos on Operation profile" issue is confirmed fixed.
+  console.log("[op-profile-photos] attachmentIds:", attachmentIds, "rows joined:", rows.length);
 
   const targetPhotos = new Map<number, OperationEntityPhoto[]>();
   const entityPhotos = new Map<string, OperationEntityPhoto[]>();
@@ -3588,10 +3592,21 @@ export async function getIntelOperationProfile(operationId: number): Promise<Int
     for (const p of t.assocPersons) if (p.type !== "target") personKeys.add(normalizeEntityLabel(p.label));
     for (const l of t.assocLocations) locationKeys.add(normalizeEntityLabel(l.label));
   }
+  const targetIdsForPhotos = targetProfiles.map(t => t.targetId);
   const { targetPhotos, entityPhotos } = await getAttachmentsForOperationEntities(
-    targetProfiles.map(t => t.targetId),
+    targetIdsForPhotos,
     { vehicle: Array.from(vehicleKeys), associate: Array.from(personKeys), location: Array.from(locationKeys) }
   );
+  // TEMP DIAGNOSTIC — remove once the "no photos on Operation profile" issue is confirmed fixed.
+  console.log("[op-profile-photos]", {
+    operationId,
+    targetIdsForPhotos,
+    vehicleKeys: Array.from(vehicleKeys),
+    personKeys: Array.from(personKeys),
+    locationKeys: Array.from(locationKeys),
+    targetPhotosFound: Array.from(targetPhotos.entries()).map(([id, arr]) => [id, arr.length]),
+    entityPhotosFound: Array.from(entityPhotos.entries()).map(([key, arr]) => [key, arr.length]),
+  });
   for (const t of targetProfiles) {
     t.photos = targetPhotos.get(t.targetId) ?? [];
     for (const p of t.assocPersons) p.photos = entityPhotos.get(`associate::${normalizeEntityLabel(p.label)}`) ?? [];

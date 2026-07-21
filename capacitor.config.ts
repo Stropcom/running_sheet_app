@@ -1,9 +1,6 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
-// TODO: set this to your deployed RunLog server's real URL once known
-// (e.g. "https://your-app-name.manus.space"). Until then the app has
-// nothing to talk to — this is a placeholder, not a guess.
-const PRODUCTION_SERVER_URL = "https://REPLACE_WITH_PRODUCTION_URL";
+const PRODUCTION_SERVER_URL = "https://runlog.com.au";
 
 const config: CapacitorConfig = {
   appId: "com.stropcom.runlog",

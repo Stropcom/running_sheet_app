@@ -1559,8 +1559,10 @@ function EditableCell({
   const [draft, setDraft] = useState(value ?? "");
   const { notifyObservationFocus, notifyObservationBlur } = useObservationFocus();
 
-  const commit = () => {
-    if (draft !== (value ?? "")) onSave(draft);
+  const commit = (finalDraft?: string) => {
+    const val = finalDraft !== undefined ? finalDraft : draft;
+    // Always call onSave for TV trigger (so it fires even if value hasn't changed)
+    if (val !== (value ?? "") || val.trim().toLowerCase() === "tv") onSave(val);
     setEditing(false);
   };
 
@@ -1617,7 +1619,7 @@ function EditableCell({
             }
           }}
           onFocus={notifyObservationFocus}
-          onBlur={() => { notifyObservationBlur(); const conv = convertGoogleAddresses(draft); if (conv !== draft) setDraft(conv); commit(); }}
+          onBlur={() => { notifyObservationBlur(); const conv = convertGoogleAddresses(draft); if (conv !== draft) { setDraft(conv); commit(conv); } else { commit(draft); } }}
           onKeyDown={(e) => {
             handleShortcutKeyDown(e as React.KeyboardEvent<HTMLTextAreaElement>);
             if (e.key === "Escape") { setDraft(value ?? ""); setEditing(false); }
@@ -1632,7 +1634,7 @@ function EditableCell({
         autoFocus
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
+        onBlur={() => commit()}
         onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setDraft(value ?? ""); setEditing(false); } }}
         className="h-8 text-sm"
         placeholder={placeholder}

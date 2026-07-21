@@ -3281,9 +3281,12 @@ export default function SheetDetail() {
                                   // 1. Bracket code at end: (27 Olding Way)
                                   const bracketMatch = obs.match(/\(([^)]{3,80})\)\s*$/);
                                   if (bracketMatch) return bracketMatch[1].trim();
-                                  // 2. Street number pattern: digits followed by street name
-                                  //    Matches things like "27 Olding Way", "131A Lakey Street", "3/12 Smith St"
-                                  const streetMatch = obs.match(/\b(\d{1,5}[A-Za-z]?(?:\/\d{1,5}[A-Za-z]?)?\s+[A-Z][a-zA-Z]+(?:\s+[A-Za-z]+){0,4})/);
+                                  // 2. Street number pattern: digits followed by street name.
+                                  //    Matches things like "27 Olding Way", "131A Lakey Street", "3/12 Smith St".
+                                  //    Extra words must also be capitalised so this stops at the street name
+                                  //    instead of swallowing trailing sentence text like "and continued via"
+                                  //    (lowercase words never continue a street name).
+                                  const streetMatch = obs.match(/\b(\d{1,5}[A-Za-z]?(?:\/\d{1,5}[A-Za-z]?)?\s+[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){0,3})/);
                                   if (streetMatch) return streetMatch[1].trim();
                                   // 3. Last resort: full text (server will try to geocode it)
                                   return obs.split("\n")[0].trim();

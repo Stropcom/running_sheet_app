@@ -17,16 +17,18 @@ import { LinkAttachmentDialog } from "@/components/LinkAttachmentDialog";
 
 const PERTH_TIME_ZONE = "Australia/Perth";
 
-function formatAttachmentBanner(a: { createdAt: string | Date; uploadedByCIN: string | null }): string {
-  const date = new Date(a.createdAt);
-  const dateStr = new Intl.DateTimeFormat("en-AU", {
-    timeZone: PERTH_TIME_ZONE,
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
-  return a.uploadedByCIN ? `${dateStr} · ${a.uploadedByCIN}` : dateStr;
+// Uses the observation row's own date/time and the CINs of members on that
+// row — not the upload timestamp/uploader — so the caption reflects when
+// and by whom the row was logged, matching the running sheet itself.
+function formatAttachmentBanner(a: { rowDate: string | null; rowTime: string | null; memberCINs: string[] }): string {
+  const parts: string[] = [];
+  if (a.rowDate) {
+    const d = new Date(`${a.rowDate}T00:00:00+08:00`);
+    parts.push(new Intl.DateTimeFormat("en-AU", { timeZone: PERTH_TIME_ZONE, day: "2-digit", month: "short" }).format(d));
+  }
+  if (a.rowTime) parts.push(a.rowTime);
+  const when = parts.join(" ") || "Time not set";
+  return a.memberCINs.length > 0 ? `${when} · ${a.memberCINs.join(", ")}` : when;
 }
 
 // Folder progression: Images → Operation → Running Sheet → RS images
@@ -296,14 +298,14 @@ function SheetGallery({
               <button
                 onClick={() => setLinkingId(a.id)}
                 title="Link to entity"
-                className="absolute top-1.5 left-1.5 h-6 w-6 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                className="absolute top-1.5 left-1.5 h-6 w-6 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors"
               >
                 <Link2 className="h-3 w-3" />
               </button>
               <button
                 onClick={() => deleteAttachment.mutate({ id: a.id })}
                 title="Delete photo"
-                className="absolute top-1.5 right-1.5 h-6 w-6 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                className="absolute top-1.5 right-1.5 h-6 w-6 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center hover:opacity-90 transition-opacity"
               >
                 <X className="h-3.5 w-3.5" />
               </button>

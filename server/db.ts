@@ -661,12 +661,35 @@ export async function getAttachmentById(id: number) {
   return result[0];
 }
 
+// Batches in the CINs of members on each attachment's row (excluding the
+// __SPACE__ spacer entry) — used for the "date/time · CIN" caption shown
+// under photos, which reflects the observation row, not the upload.
+async function attachRowMemberCins<T extends { rowId: number }>(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  rows: T[]
+): Promise<(T & { memberCINs: string[] })[]> {
+  if (rows.length === 0) return [];
+  const rowIds = Array.from(new Set(rows.map((r) => r.rowId)));
+  const members = await db
+    .select({ rowId: rowMembers.rowId, memberName: rowMembers.memberName })
+    .from(rowMembers)
+    .where(inArray(rowMembers.rowId, rowIds));
+  const byRow = new Map<number, string[]>();
+  for (const m of members) {
+    if (m.memberName === "__SPACE__") continue;
+    const arr = byRow.get(m.rowId) ?? [];
+    arr.push(m.memberName);
+    byRow.set(m.rowId, arr);
+  }
+  return rows.map((r) => ({ ...r, memberCINs: byRow.get(r.rowId) ?? [] }));
+}
+
 // All attachments across every running sheet in an operation, joined back to
 // their row/sheet so the Images folder can show which sheet/row each came from.
 export async function getAttachmentsByOperationId(operationId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db
+  const rows = await db
     .select({
       id: rowAttachments.id,
       rowId: rowAttachments.rowId,
@@ -678,12 +701,14 @@ export async function getAttachmentsByOperationId(operationId: number) {
       sheetId: sheetRows.sheetId,
       sheetTitle: runningSheets.title,
       rowTime: sheetRows.time,
+      rowDate: sheetRows.rowDate,
     })
     .from(rowAttachments)
     .innerJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
     .innerJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
     .where(and(eq(runningSheets.operationId, operationId), isNull(runningSheets.deletedAt), isNull(rowAttachments.deletedAt)))
     .orderBy(desc(rowAttachments.createdAt));
+  return attachRowMemberCins(db, rows);
 }
 
 // All attachments on a single running sheet, joined back to their row for a
@@ -691,7 +716,7 @@ export async function getAttachmentsByOperationId(operationId: number) {
 export async function getAttachmentsBySheetId(sheetId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db
+  const rows = await db
     .select({
       id: rowAttachments.id,
       rowId: rowAttachments.rowId,
@@ -701,11 +726,13 @@ export async function getAttachmentsBySheetId(sheetId: number) {
       uploadedByCIN: rowAttachments.uploadedByCIN,
       createdAt: rowAttachments.createdAt,
       rowTime: sheetRows.time,
+      rowDate: sheetRows.rowDate,
     })
     .from(rowAttachments)
     .innerJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
     .where(and(eq(sheetRows.sheetId, sheetId), isNull(rowAttachments.deletedAt)))
     .orderBy(desc(rowAttachments.createdAt));
+  return attachRowMemberCins(db, rows);
 }
 
 // Soft-delete — goes to the Recycle Bin for 7 days before purge
@@ -825,13 +852,15 @@ export async function getAttachmentsForEntity(params: {
       sheetId: sheetRows.sheetId,
       sheetTitle: runningSheets.title,
       rowTime: sheetRows.time,
+      rowDate: sheetRows.rowDate,
     })
     .from(rowAttachments)
     .innerJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
     .innerJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
     .where(and(inArray(rowAttachments.id, attachmentIds), isNull(rowAttachments.deletedAt)))
     .orderBy(desc(rowAttachments.createdAt));
-  return rows.map((r) => ({ ...r, linkId: links.find((l) => l.attachmentId === r.id)!.id }));
+  const withCins = await attachRowMemberCins(db, rows);
+  return withCins.map((r) => ({ ...r, linkId: links.find((l) => l.attachmentId === r.id)!.id }));
 }
 
 // ─── Certifications ───────────────────────────────────────────────────────────

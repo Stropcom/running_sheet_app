@@ -5,15 +5,17 @@ import { toast } from "sonner";
 
 const PERTH_TIME_ZONE = "Australia/Perth";
 
-function formatBanner(a: { createdAt: string | Date; uploadedByCIN: string | null }): string {
-  const dateStr = new Intl.DateTimeFormat("en-AU", {
-    timeZone: PERTH_TIME_ZONE,
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(a.createdAt));
-  return a.uploadedByCIN ? `${dateStr} · ${a.uploadedByCIN}` : dateStr;
+// Uses the observation row's own date/time and the CINs of members on that
+// row — not the upload timestamp/uploader.
+function formatBanner(a: { rowDate: string | null; rowTime: string | null; memberCINs: string[] }): string {
+  const parts: string[] = [];
+  if (a.rowDate) {
+    const d = new Date(`${a.rowDate}T00:00:00+08:00`);
+    parts.push(new Intl.DateTimeFormat("en-AU", { timeZone: PERTH_TIME_ZONE, day: "2-digit", month: "short" }).format(d));
+  }
+  if (a.rowTime) parts.push(a.rowTime);
+  const when = parts.join(" ") || "Time not set";
+  return a.memberCINs.length > 0 ? `${when} · ${a.memberCINs.join(", ")}` : when;
 }
 
 /** Shows photos linked to one Intelligence entity (Target/Vehicle/Associate/Location). */
@@ -62,7 +64,7 @@ export function EntityPhotosSection({
             <button
               onClick={() => unlink.mutate({ linkId: p.linkId })}
               title="Unlink photo"
-              className="absolute top-1 right-1 h-5 w-5 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              className="absolute top-1 right-1 h-5 w-5 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors"
             >
               <Link2Off className="h-2.5 w-2.5" />
             </button>

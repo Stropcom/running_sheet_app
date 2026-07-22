@@ -2838,8 +2838,8 @@ export default function IntelligenceMapping() {
                   onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } if (activeSheet) setLocation(`/sheet/${rsSelectedSheetId}`); }}
                   className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all min-w-[80px] px-5 py-2.5 ${
                     activeSheet
-                      ? "bg-emerald-700 border-emerald-600 hover:bg-emerald-600 active:scale-95 cursor-pointer"
-                      : "bg-emerald-900/50 border-emerald-800/50 cursor-default opacity-50"
+                      ? "bg-blue-700 border-blue-600 hover:bg-blue-600 active:scale-95 cursor-pointer"
+                      : "bg-blue-900/50 border-blue-800/50 cursor-default opacity-50"
                   }`}
                   title={activeSheet ? "Open active running sheet" : "No running sheet selected"}
                 >
@@ -2858,8 +2858,8 @@ export default function IntelligenceMapping() {
                   onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } if (hasSheet) setMapQeOpen(true); }}
                   className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all min-w-[80px] px-5 py-2.5 ${
                     hasSheet
-                      ? "bg-blue-700 border-blue-600 hover:bg-blue-600 active:scale-95 cursor-pointer"
-                      : "bg-blue-900/50 border-blue-800/50 cursor-default opacity-50"
+                      ? "bg-emerald-700 border-emerald-600 hover:bg-emerald-600 active:scale-95 cursor-pointer"
+                      : "bg-emerald-900/50 border-emerald-800/50 cursor-default opacity-50"
                   }`}
                   title={hasSheet ? "RS Quick Entry" : "Select a running sheet first"}
                 >

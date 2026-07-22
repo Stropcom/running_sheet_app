@@ -2811,11 +2811,14 @@ export const appRouter = router({
           url.searchParams.append("path", `color:0x1E88E5C0|weight:3|${input.routePath}`);
         }
 
-        // Add markers for each waypoint — use label override if provided (must be single char)
+        // Add markers for each waypoint. Static Maps' `label` only accepts a
+        // single character — silently truncating a longer label (e.g. index
+        // "14" → "1") is misleading, so it's only sent when it's already
+        // exactly one character; otherwise the marker is drawn unlabelled.
         for (const wp of input.waypoints) {
           const colour = wp.colour ? wp.colour.replace("#", "0x") : "0x6366f1";
-          const labelChar = wp.label ? wp.label.charAt(0) : String(wp.index).charAt(0);
-          const markerSpec = `color:${colour}|label:${labelChar}|${wp.lat},${wp.lng}`;
+          const labelPart = wp.label && wp.label.length === 1 ? `label:${wp.label}|` : "";
+          const markerSpec = `color:${colour}|${labelPart}${wp.lat},${wp.lng}`;
           url.searchParams.append("markers", markerSpec);
         }
 

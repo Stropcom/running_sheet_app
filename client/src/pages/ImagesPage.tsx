@@ -9,6 +9,8 @@ import {
   ArrowLeft,
   X,
   Link2,
+  List,
+  LayoutGrid,
 } from "lucide-react";
 import { useLocation, useParams } from "wouter";
 import { useMemo, useState } from "react";
@@ -115,7 +117,11 @@ function OperationFolderList({
 }
 
 // Level 2: running sheets within the operation that have at least one
-// attached photo, grouped from the operation's flat attachment list.
+// attached photo, grouped from the operation's flat attachment list. Also
+// offers a read-only "Operation view" — every photo from every sheet on one
+// page, sectioned by a thin banner naming which running sheet each group
+// came from. Linking/deleting a photo still only happens in the per-sheet
+// gallery (level 3), reached via the "Running Sheet view" list below.
 function SheetFolderList({
   operationId,
   onBack,
@@ -125,6 +131,8 @@ function SheetFolderList({
   onBack: () => void;
   onSelect: (sheetId: number) => void;
 }) {
+  const [viewMode, setViewMode] = useState<"sheets" | "combined">("sheets");
+  const [lightbox, setLightbox] = useState<string | null>(null);
   const { data: operation } = trpc.operation.get.useQuery({ id: operationId });
   const { data: attachments, isLoading } =
     trpc.attachment.listByOperation.useQuery({ operationId });
@@ -140,9 +148,26 @@ function SheetFolderList({
     return Array.from(bySheet.values());
   }, [attachments]);
 
+  // Grouped for Operation view — attachments already arrive newest-first, so
+  // a Map keyed by sheetId (which preserves insertion order) naturally orders
+  // groups by each sheet's most recent photo without extra sorting.
+  const groupedBySheet = useMemo(() => {
+    if (!attachments) return [];
+    const bySheet = new Map<number, { sheetId: number; sheetTitle: string; photos: any[] }>();
+    for (const a of attachments as any[]) {
+      let group = bySheet.get(a.sheetId);
+      if (!group) {
+        group = { sheetId: a.sheetId, sheetTitle: a.sheetTitle, photos: [] };
+        bySheet.set(a.sheetId, group);
+      }
+      group.photos.push(a);
+    }
+    return Array.from(bySheet.values());
+  }, [attachments]);
+
   return (
     <div className="max-w-3xl mx-auto px-4 py-8">
-      <div className="flex items-center gap-3 mb-6">
+      <div className="flex items-center gap-3 mb-4">
         <Button variant="ghost" size="icon" onClick={onBack}>
           <ArrowLeft className="w-4 h-4" />
         </Button>
@@ -154,9 +179,34 @@ function SheetFolderList({
             {operation?.name ?? "Images"}
           </h1>
           <p className="text-sm text-muted-foreground">
-            Running sheets with photos
+            {viewMode === "sheets" ? "Running sheets with photos" : "All photos in this operation"}
           </p>
         </div>
+      </div>
+
+      <div className="flex items-center gap-1 mb-6 p-1 rounded-xl border border-border bg-muted/30 w-fit">
+        <button
+          onClick={() => setViewMode("sheets")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+            viewMode === "sheets"
+              ? "bg-card text-foreground shadow-sm border border-border"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <List className="w-3.5 h-3.5" />
+          Running Sheet view
+        </button>
+        <button
+          onClick={() => setViewMode("combined")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+            viewMode === "combined"
+              ? "bg-card text-foreground shadow-sm border border-border"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <LayoutGrid className="w-3.5 h-3.5" />
+          Operation view
+        </button>
       </div>
 
       {isLoading ? (
@@ -176,7 +226,7 @@ function SheetFolderList({
             a running sheet in this operation.
           </p>
         </div>
-      ) : (
+      ) : viewMode === "sheets" ? (
         <div className="flex flex-col gap-2">
           {sheets.map(s => (
             <div
@@ -195,6 +245,53 @@ function SheetFolderList({
               </span>
             </div>
           ))}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-6">
+          {groupedBySheet.map(group => (
+            <div key={group.sheetId}>
+              <div className="mb-2 px-3 py-1.5 rounded-lg bg-pink-500/10 border border-pink-500/20 text-xs font-semibold text-pink-500 truncate">
+                {group.sheetTitle || `Sheet #${group.sheetId}`}
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                {group.photos.map((a: any) => (
+                  <div
+                    key={a.id}
+                    className="group relative rounded-xl overflow-hidden border border-border bg-card"
+                  >
+                    <img
+                      src={a.url}
+                      alt="Attached photograph"
+                      className="w-full aspect-square object-cover cursor-zoom-in"
+                      onClick={() => setLightbox(a.url)}
+                    />
+                    <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1">
+                      <p className="text-[10px] text-white truncate">{formatAttachmentBanner(a)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6"
+          onClick={() => setLightbox(null)}
+        >
+          <button
+            onClick={() => setLightbox(null)}
+            className="absolute top-4 right-4 h-9 w-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <img
+            src={lightbox}
+            alt="Attached photograph"
+            className="max-w-full max-h-full rounded shadow-2xl"
+          />
         </div>
       )}
     </div>

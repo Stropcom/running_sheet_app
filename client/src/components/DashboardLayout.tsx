@@ -860,27 +860,30 @@ function DashboardLayoutContent({
         )}
         {!isMobile && location !== "/intelligence/mapping" && (
           <div className="flex justify-end items-center gap-2 px-4 pt-2 pb-0">
-            {/* Active RS quick-link (desktop) */}
+            {/* Active RS quick-link (desktop) — folder-chip style matching the
+                Operations sidebar item's blue theme; fades out when there's
+                no active RS, same as before. */}
             <button
               onClick={() => { if (activeRsId) setLocation(`/sheet/${activeRsId}`); }}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-all ${
+              className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-semibold shadow-sm transition-all ${
                 activeRsId
-                  ? "text-emerald-500 hover:bg-emerald-500/10 cursor-pointer"
-                  : "text-muted-foreground/25 cursor-default"
+                  ? "text-blue-700 border-blue-700/50 bg-blue-700/10 hover:bg-blue-700/20 cursor-pointer"
+                  : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"
               }`}
               title={activeRsId ? "Go to Active RS" : "No active RS selected"}
             >
               <ClipboardList className="h-6 w-6" />
               <span>Active RS</span>
             </button>
-            {/* Map quick-link (desktop) */}
+            {/* Map quick-link (desktop) — folder-chip style matching the
+                Mapping sidebar item's turquoise theme. */}
             <button
               onClick={() => setLocation("/intelligence/mapping")}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
-              title="Back to Map"
+              className="flex items-center gap-2 px-3 py-2 rounded-xl border border-teal-400/50 bg-teal-400/10 text-teal-400 hover:bg-teal-400/20 text-sm font-semibold shadow-sm transition-all"
+              title="Map"
             >
               <Map className="h-6 w-6" />
-              <span>Back to Map</span>
+              <span>Map</span>
             </button>
           </div>
         )}

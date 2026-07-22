@@ -1092,7 +1092,12 @@ export default function RSMappingEmbedded() {
       // (html2canvas fails on Google Maps tiles due to CORS)
       const liveMap = mapRef.current;
       const center = liveMap?.getCenter();
-      const zoom = liveMap?.getZoom();
+      // Static Maps only accepts an integer zoom and silently rounds a
+      // fractional one server-side — round it ourselves first so the pixel
+      // math below uses the exact zoom Google actually rendered at, not the
+      // live map's (possibly fractional) current zoom.
+      const rawZoom = liveMap?.getZoom();
+      const zoom = rawZoom !== undefined ? Math.round(rawZoom) : undefined;
       const centerObj = center ? { lat: center.lat(), lng: center.lng() } : undefined;
 
       // Build route path for the static map
@@ -1106,7 +1111,7 @@ export default function RSMappingEmbedded() {
       const result = await trpcClient.rsMapping.getStaticMapImage.query({
         waypoints: [],
         center: centerObj,
-        zoom: zoom ?? undefined,
+        zoom,
         size: `${STATIC_MAP_W}x${STATIC_MAP_H}`,
         routePath,
       });

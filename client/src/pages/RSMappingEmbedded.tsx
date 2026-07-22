@@ -184,158 +184,19 @@ function offsetLatLng(lat: number, lng: number, dxM: number, dyM: number): { lat
   return { lat: lat + dLat, lng: lng + dLng };
 }
 
-// ── Static Maps pixel projection (for drawing numbered pins on the PDF export) ──
-// Static Maps' own `markers=label:X` param only accepts a single character, so
-// two-digit stop numbers silently got truncated (e.g. "14" → "1"). Instead we
-// fetch a plain map image and draw the correct numbers ourselves, using the
-// same Web Mercator projection Google Maps uses to convert lat/lng → pixel.
+// ── Static Maps marker helpers (for the PDF export) ─────────────────────────
+// Static Maps' own `markers=label:X` param only accepts a single character,
+// so numeric stop numbers 10+ get silently truncated (e.g. "14" → "1").
+// Trying to recreate Google's internal pixel positioning to draw full numbers
+// ourselves proved unreliable in practice, so the export instead lets Google
+// place single-letter labels (A, B, C…) natively — guaranteed to align with
+// the route line since Google renders both — and the table shows the
+// matching letter next to each row's number for cross-reference.
 
 const MARKER_COLOUR_HEX: Record<string, string> = {
   red: "#E53935", yellow: "#F9A825", blue: "#1E88E5",
   purple: "#8E24AA", black: "#212121",
 };
-
-function mercatorWorldPoint(lat: number, lng: number): { x: number; y: number } {
-  const siny = Math.min(Math.max(Math.sin((lat * Math.PI) / 180), -0.9999), 0.9999);
-  return {
-    x: 256 * (0.5 + lng / 360),
-    y: 256 * (0.5 - Math.log((1 + siny) / (1 - siny)) / (4 * Math.PI)),
-  };
-}
-
-/** Pixel position (relative to the image's top-left) of a lat/lng on a Static
- * Maps image requested with the given center/zoom/logical size (matches
- * Google's own rendering exactly since center+zoom are always sent explicitly,
- * never left to Static Maps' auto-fit). */
-function latLngToStaticMapPixel(
-  lat: number, lng: number,
-  center: { lat: number; lng: number }, zoom: number,
-  logicalWidth: number, logicalHeight: number,
-): { x: number; y: number } {
-  const worldScale = Math.pow(2, zoom);
-  const point = mercatorWorldPoint(lat, lng);
-  const centerPoint = mercatorWorldPoint(center.lat, center.lng);
-  return {
-    x: (point.x - centerPoint.x) * worldScale + logicalWidth / 2,
-    y: (point.y - centerPoint.y) * worldScale + logicalHeight / 2,
-  };
-}
-
-function drawPinCircle(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, colour: string, label: string, fontPx: number) {
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fillStyle = colour;
-  ctx.fill();
-  ctx.lineWidth = Math.max(1, r * 0.12);
-  ctx.strokeStyle = "#ffffff";
-  ctx.stroke();
-  ctx.fillStyle = "#ffffff";
-  ctx.font = `700 ${fontPx}px system-ui, sans-serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(label, x, y + fontPx * 0.03);
-}
-
-function roundRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
-}
-
-/**
- * Composite correctly-numbered pin circles onto a fetched Static Maps image,
- * grouping co-located waypoints into a horizontal pill exactly like the live
- * map does (see groupNearbyMarkers) so the export visually matches both the
- * live Visual RS view and the page 2 waypoint table.
- */
-async function drawNumberedPinsOnMap(
-  imageDataUrl: string,
-  placed: PlacedWaypoint[],
-  center: { lat: number; lng: number },
-  zoom: number,
-  logicalWidth: number,
-  logicalHeight: number,
-): Promise<string> {
-  const img = new Image();
-  await new Promise<void>((resolve, reject) => {
-    img.onload = () => resolve();
-    img.onerror = () => reject(new Error("Failed to load map image for pin overlay"));
-    img.src = imageDataUrl;
-  });
-
-  const canvas = document.createElement("canvas");
-  canvas.width = img.naturalWidth;
-  canvas.height = img.naturalHeight;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return imageDataUrl;
-  ctx.drawImage(img, 0, 0);
-
-  const scale = img.naturalWidth / logicalWidth;
-  const pixelOf = (lat: number, lng: number) => {
-    const p = latLngToStaticMapPixel(lat, lng, center, zoom, logicalWidth, logicalHeight);
-    return { x: p.x * scale, y: p.y * scale };
-  };
-  const colourOf = (i: number): string =>
-    i === 0 ? "#16a34a"
-    : i === placed.length - 1 ? "#dc2626"
-    : MARKER_COLOUR_HEX[placed[i].markerColour ?? "blue"] ?? "#1E88E5";
-
-  // Group co-located waypoints using the same rule as the live map's
-  // groupNearbyMarkers (same normalised address, or within SPIDER_THRESHOLD_M).
-  const normalise = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-  const visited = new Set<number>();
-  const groups: number[][] = [];
-  for (let i = 0; i < placed.length; i++) {
-    if (visited.has(i)) continue;
-    const normI = normalise(placed[i].address);
-    const group = [i];
-    visited.add(i);
-    for (let j = i + 1; j < placed.length; j++) {
-      if (visited.has(j)) continue;
-      const sameAddr = normI.length > 0 && normalise(placed[j].address) === normI;
-      const nearby = distanceM(placed[i], placed[j]) < SPIDER_THRESHOLD_M;
-      if (sameAddr || nearby) { group.push(j); visited.add(j); }
-    }
-    group.sort((a, b) => placed[a].index - placed[b].index);
-    groups.push(group);
-  }
-
-  const CIRCLE_R = 16 * scale;
-  const FONT_PX = 13 * scale;
-  const GAP = 4 * scale;
-  const PADDING = 6 * scale;
-
-  for (const group of groups) {
-    const points = group.map((i) => pixelOf(placed[i].lat, placed[i].lng));
-    const cx = points.reduce((s, p) => s + p.x, 0) / points.length;
-    const cy = points.reduce((s, p) => s + p.y, 0) / points.length;
-
-    if (group.length === 1) {
-      drawPinCircle(ctx, cx, cy, CIRCLE_R, colourOf(group[0]), String(placed[group[0]].index), FONT_PX);
-      continue;
-    }
-
-    const totalWidth = group.length * CIRCLE_R * 2 + (group.length - 1) * GAP;
-    const startX = cx - totalWidth / 2 + CIRCLE_R;
-    ctx.fillStyle = "rgba(255,255,255,0.92)";
-    ctx.strokeStyle = "#ffffff";
-    ctx.lineWidth = 2 * scale;
-    roundRectPath(ctx, cx - totalWidth / 2 - PADDING, cy - CIRCLE_R - PADDING, totalWidth + PADDING * 2, CIRCLE_R * 2 + PADDING * 2, CIRCLE_R + PADDING);
-    ctx.fill();
-    ctx.stroke();
-
-    group.forEach((i, idx) => {
-      const x = startX + idx * (CIRCLE_R * 2 + GAP);
-      drawPinCircle(ctx, x, cy, CIRCLE_R, colourOf(i), String(placed[i].index), FONT_PX);
-    });
-  }
-
-  return canvas.toDataURL("image/png");
-}
 
 function buildNumberPin(index: number, isFirst: boolean, isLast: boolean): HTMLElement {
   const el = document.createElement("div");
@@ -606,6 +467,10 @@ export default function RSMappingEmbedded() {
       if (status === "OK" && results && results[0]) {
         const pos = results[0].geometry.location;
         placeWaypointMarker(row, pos.lat(), pos.lng(), idx);
+      } else {
+        // Don't drop the stop silently — a missing pin on a legal running
+        // sheet map needs to be visible, not invisible.
+        toast.warning(`Could not map "${row.address ?? "a stop"}" — it won't appear on the Visual RS map or export`);
       }
       geocodeTimerRef.current = setTimeout(geocodeNext, GEOCODE_DELAY_MS);
     });
@@ -1089,25 +954,64 @@ export default function RSMappingEmbedded() {
       const zoom = liveMap?.getZoom();
       const centerObj = center ? { lat: center.lat(), lng: center.lng() } : undefined;
 
-      // Build route path for the static map
+      // Build route path for the static map (uses each stop's real
+      // coordinates, not the nudged ones used for co-located pins below)
       const routePath = placed.map(wp => `${wp.lat},${wp.lng}`).join("|");
-      const STATIC_MAP_W = 800;
-      const STATIC_MAP_H = 1000;
 
-      // No waypoint markers requested here — Static Maps' `label` param only
-      // supports a single character, which silently truncated two-digit stop
-      // numbers (e.g. "14" → "1"). Numbers are drawn on top afterwards instead.
-      const result = await trpcClient.rsMapping.getStaticMapImage.query({
-        waypoints: [],
-        center: centerObj,
-        zoom: zoom ?? undefined,
-        size: `${STATIC_MAP_W}x${STATIC_MAP_H}`,
-        routePath,
+      // Group co-located waypoints using the same rule as the live map's
+      // groupNearbyMarkers (same normalised address, or within SPIDER_THRESHOLD_M),
+      // so stops at (almost) the same address don't render as one pin stacked
+      // on top of another.
+      const normalise = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const visited = new Set<number>();
+      const groups: number[][] = [];
+      for (let i = 0; i < placed.length; i++) {
+        if (visited.has(i)) continue;
+        const normI = normalise(placed[i].address);
+        const group = [i];
+        visited.add(i);
+        for (let j = i + 1; j < placed.length; j++) {
+          if (visited.has(j)) continue;
+          const sameAddr = normI.length > 0 && normalise(placed[j].address) === normI;
+          const nearby = distanceM(placed[i], placed[j]) < SPIDER_THRESHOLD_M;
+          if (sameAddr || nearby) { group.push(j); visited.add(j); }
+        }
+        group.sort((a, b) => placed[a].index - placed[b].index);
+        groups.push(group);
+      }
+
+      // Nudge co-located group members a few metres apart in real-world
+      // coordinates (not pixels) so Google draws separate, readable pins —
+      // Google places every marker itself, so there's no risk of a pin
+      // drifting out of alignment with the route line the way a client-side
+      // pixel-position guess could.
+      const NUDGE_M = 10;
+      const waypointList: { lat: number; lng: number; index: number; colour: string; label?: string }[] = [];
+      groups.forEach((group) => {
+        const n = group.length;
+        group.forEach((memberIdx, idx) => {
+          const wp = placed[memberIdx];
+          const nudged = n > 1
+            ? offsetLatLng(wp.lat, wp.lng, Math.cos((2 * Math.PI * idx) / n) * NUDGE_M, Math.sin((2 * Math.PI * idx) / n) * NUDGE_M)
+            : { lat: wp.lat, lng: wp.lng };
+          const colour = memberIdx === 0 ? "#22c55e"
+            : memberIdx === placed.length - 1 ? "#E53935"
+            : MARKER_COLOUR_HEX[wp.markerColour ?? "blue"] ?? "#1E88E5";
+          waypointList.push({
+            lat: nudged.lat, lng: nudged.lng, index: wp.index, colour,
+            label: memberIdx < 26 ? LETTERS[memberIdx] : undefined,
+          });
+        });
       });
 
-      mapImageDataUrl = centerObj && zoom !== undefined
-        ? await drawNumberedPinsOnMap(result.dataUrl, placed, centerObj, zoom, STATIC_MAP_W, STATIC_MAP_H)
-        : result.dataUrl;
+      const result = await trpcClient.rsMapping.getStaticMapImage.query({
+        waypoints: waypointList,
+        center: centerObj,
+        zoom: zoom ?? undefined,
+        size: "800x1000",
+        routePath,
+      });
+      mapImageDataUrl = result.dataUrl;
     } catch (err) {
       console.warn("Static map image failed:", err);
       toast.warning("Map image unavailable — PDF will include a placeholder");
@@ -1133,7 +1037,9 @@ export default function RSMappingEmbedded() {
 
     const tableRows = rows.map((r) => `
       <tr>
-        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-weight:700;color:#6366f1;text-align:center;white-space:nowrap;">${r.index}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-weight:700;color:#6366f1;text-align:center;white-space:nowrap;">
+          ${r.letter ? `<span style="display:inline-block;width:16px;height:16px;line-height:16px;border-radius:50%;background:#1e1b4b;color:#fff;font-size:9px;margin-right:4px;">${r.letter}</span>` : ""}${r.index}
+        </td>
         <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;white-space:nowrap;font-weight:600;">${r.time}${r.date ? `<br><span style="font-size:8px;color:#7c3aed;font-weight:700;">${r.date}</span>` : ""}</td>
         <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;">${r.address}</td>
         <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;color:#374151;">${r.observation}</td>

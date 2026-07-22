@@ -195,6 +195,8 @@ const MARKER_COLOUR_HEX: Record<string, string> = {
   purple: "#8E24AA", black: "#212121",
 };
 
+/** Fallback world-coordinate projection, only used if the live map's own
+ * projection isn't available yet (shouldn't normally happen at export time). */
 function mercatorWorldPoint(lat: number, lng: number): { x: number; y: number } {
   const siny = Math.min(Math.max(Math.sin((lat * Math.PI) / 180), -0.9999), 0.9999);
   return {
@@ -204,17 +206,23 @@ function mercatorWorldPoint(lat: number, lng: number): { x: number; y: number } 
 }
 
 /** Pixel position (relative to the image's top-left) of a lat/lng on a Static
- * Maps image requested with the given center/zoom/logical size (matches
- * Google's own rendering exactly since center+zoom are always sent explicitly,
- * never left to Static Maps' auto-fit). */
+ * Maps image requested with the given center/zoom/logical size. Uses the live
+ * map's own `Projection.fromLatLngToPoint` (the exact function Google Maps
+ * itself uses) rather than a hand-rolled Mercator formula, so this can never
+ * drift out of sync with how Google actually rendered the image. */
 function latLngToStaticMapPixel(
+  projection: google.maps.Projection | null,
   lat: number, lng: number,
   center: { lat: number; lng: number }, zoom: number,
   logicalWidth: number, logicalHeight: number,
 ): { x: number; y: number } {
   const worldScale = Math.pow(2, zoom);
-  const point = mercatorWorldPoint(lat, lng);
-  const centerPoint = mercatorWorldPoint(center.lat, center.lng);
+  const project = (pLat: number, pLng: number) => {
+    const p = projection?.fromLatLngToPoint(new google.maps.LatLng(pLat, pLng));
+    return p ? { x: p.x, y: p.y } : mercatorWorldPoint(pLat, pLng);
+  };
+  const point = project(lat, lng);
+  const centerPoint = project(center.lat, center.lng);
   return {
     x: (point.x - centerPoint.x) * worldScale + logicalWidth / 2,
     y: (point.y - centerPoint.y) * worldScale + logicalHeight / 2,
@@ -245,6 +253,7 @@ function drawPinCircle(ctx: CanvasRenderingContext2D, x: number, y: number, r: n
 async function drawNumberedPinsOnMap(
   imageDataUrl: string,
   placed: PlacedWaypoint[],
+  projection: google.maps.Projection | null,
   center: { lat: number; lng: number },
   zoom: number,
   logicalWidth: number,
@@ -266,7 +275,7 @@ async function drawNumberedPinsOnMap(
 
   const scale = img.naturalWidth / logicalWidth;
   const pixelOf = (lat: number, lng: number) => {
-    const p = latLngToStaticMapPixel(lat, lng, center, zoom, logicalWidth, logicalHeight);
+    const p = latLngToStaticMapPixel(projection, lat, lng, center, zoom, logicalWidth, logicalHeight);
     return { x: p.x * scale, y: p.y * scale };
   };
   const colourOf = (i: number): string =>
@@ -1117,7 +1126,7 @@ export default function RSMappingEmbedded() {
       });
 
       mapImageDataUrl = centerObj && zoom !== undefined
-        ? await drawNumberedPinsOnMap(result.dataUrl, placed, centerObj, zoom, STATIC_MAP_W, STATIC_MAP_H)
+        ? await drawNumberedPinsOnMap(result.dataUrl, placed, liveMap?.getProjection() ?? null, centerObj, zoom, STATIC_MAP_W, STATIC_MAP_H)
         : result.dataUrl;
     } catch (err) {
       console.warn("Static map image failed:", err);

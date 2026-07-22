@@ -236,16 +236,6 @@ function drawPinCircle(ctx: CanvasRenderingContext2D, x: number, y: number, r: n
   ctx.fillText(label, x, y + fontPx * 0.03);
 }
 
-function roundRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
-}
-
 /**
  * Composite correctly-numbered pin circles onto a fetched Static Maps image,
  * grouping co-located waypoints into a horizontal pill exactly like the live
@@ -304,33 +294,45 @@ async function drawNumberedPinsOnMap(
     groups.push(group);
   }
 
-  const CIRCLE_R = 16 * scale;
-  const FONT_PX = 13 * scale;
-  const GAP = 4 * scale;
-  const PADDING = 6 * scale;
+  // Small anchor dot at the true location + an offset number badge on a thin
+  // leader line — keeps the actual street/intersection under the point
+  // visible instead of a big solid circle covering it.
+  const DOT_R = 4 * scale;
+  const BADGE_R = 12 * scale;
+  const LEADER_LEN = 24 * scale;
+  const FONT_PX = 11.5 * scale;
 
   for (const group of groups) {
     const points = group.map((i) => pixelOf(placed[i].lat, placed[i].lng));
     const cx = points.reduce((s, p) => s + p.x, 0) / points.length;
     const cy = points.reduce((s, p) => s + p.y, 0) / points.length;
 
-    if (group.length === 1) {
-      drawPinCircle(ctx, cx, cy, CIRCLE_R, colourOf(group[0]), String(placed[group[0]].index), FONT_PX);
-      continue;
-    }
-
-    const totalWidth = group.length * CIRCLE_R * 2 + (group.length - 1) * GAP;
-    const startX = cx - totalWidth / 2 + CIRCLE_R;
-    ctx.fillStyle = "rgba(255,255,255,0.92)";
-    ctx.strokeStyle = "#ffffff";
-    ctx.lineWidth = 2 * scale;
-    roundRectPath(ctx, cx - totalWidth / 2 - PADDING, cy - CIRCLE_R - PADDING, totalWidth + PADDING * 2, CIRCLE_R * 2 + PADDING * 2, CIRCLE_R + PADDING);
+    // Anchor dot — marks the exact point without obscuring the map under it
+    ctx.beginPath();
+    ctx.arc(cx, cy, DOT_R, 0, Math.PI * 2);
+    ctx.fillStyle = "#111827";
     ctx.fill();
+    ctx.lineWidth = 1.5 * scale;
+    ctx.strokeStyle = "#ffffff";
     ctx.stroke();
 
-    group.forEach((i, idx) => {
-      const x = startX + idx * (CIRCLE_R * 2 + GAP);
-      drawPinCircle(ctx, x, cy, CIRCLE_R, colourOf(i), String(placed[i].index), FONT_PX);
+    // Fan the number badges out above the dot so a co-located group's
+    // badges never overlap each other or the dot itself
+    const n = group.length;
+    const spread = n > 1 ? Math.PI * 0.6 : 0;
+    group.forEach((memberIdx, idx) => {
+      const angle = -Math.PI / 2 + (n > 1 ? (idx - (n - 1) / 2) * (spread / (n - 1)) : 0);
+      const bx = cx + Math.cos(angle) * LEADER_LEN;
+      const by = cy + Math.sin(angle) * LEADER_LEN;
+
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(bx, by);
+      ctx.strokeStyle = "rgba(17,24,39,0.6)";
+      ctx.lineWidth = 1.5 * scale;
+      ctx.stroke();
+
+      drawPinCircle(ctx, bx, by, BADGE_R, colourOf(memberIdx), String(placed[memberIdx].index), FONT_PX);
     });
   }
 
@@ -606,6 +608,10 @@ export default function RSMappingEmbedded() {
       if (status === "OK" && results && results[0]) {
         const pos = results[0].geometry.location;
         placeWaypointMarker(row, pos.lat(), pos.lng(), idx);
+      } else {
+        // Don't drop the stop silently — a missing pin on a legal running
+        // sheet map needs to be visible, not invisible.
+        toast.warning(`Could not map "${row.address ?? "a stop"}" — it won't appear on the Visual RS map or export`);
       }
       geocodeTimerRef.current = setTimeout(geocodeNext, GEOCODE_DELAY_MS);
     });

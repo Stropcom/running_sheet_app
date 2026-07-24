@@ -682,6 +682,10 @@ export default function IntelligenceMapping() {
   const [collapsedTeams, setCollapsedTeams] = useState<Set<string>>(() => {
     try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return new Set<string>(JSON.parse(s).collapsedTeams ?? []); } catch { /* ignore */ } return new Set();
   });
+  // Whole TEAMS section collapsed (list hidden, Show & Share stays visible) — persisted, defaults collapsed
+  const [teamsSectionCollapsed, setTeamsSectionCollapsed] = useState<boolean>(() => {
+    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return JSON.parse(s).teamsSectionCollapsed ?? true; } catch { /* ignore */ } return true;
+  });
   // RS Quick Entry inline panel open/closed — persisted
   const [rsQeExpanded, setRsQeExpanded] = useState<boolean>(() => {
     try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return JSON.parse(s).rsQeExpanded ?? false; } catch { /* ignore */ } return false;
@@ -893,6 +897,7 @@ export default function IntelligenceMapping() {
         rsSelectedSheetId,
         hiddenTeams: Array.from(hiddenTeams),
         collapsedTeams: Array.from(collapsedTeams),
+        teamsSectionCollapsed,
         rsQeExpanded,
         mapDarkMode,
         leftTabTop,
@@ -900,7 +905,7 @@ export default function IntelligenceMapping() {
         pillBarTop,
       }));
     } catch { /* ignore */ }
-  }, [selectedOpIds, opsExplicitlySet, selectedTargetIds, opExpanded, rsSelectedOpId, rsSelectedSheetId, hiddenTeams, collapsedTeams, rsQeExpanded, mapDarkMode, leftTabTop, rightTabTop, pillBarTop]);
+  }, [selectedOpIds, opsExplicitlySet, selectedTargetIds, opExpanded, rsSelectedOpId, rsSelectedSheetId, hiddenTeams, collapsedTeams, teamsSectionCollapsed, rsQeExpanded, mapDarkMode, leftTabTop, rightTabTop, pillBarTop]);
 
   // Save map center/zoom to localStorage whenever the map stops moving (idle event)
   useEffect(() => {
@@ -3062,6 +3067,20 @@ export default function IntelligenceMapping() {
             {/* RS Quick Entry moved to bottom tab bar — use the indigo RS Entry pill instead */}
           </div>{/* end RS Selection */}
 
+          {/* ── TARGET PROFILE (linked to the selected RS's target) ── */}
+          {rsSelectedSheetId !== null && rsTargetData && (
+            <div className="px-3 py-3 border-b border-border">
+              <button
+                onClick={() => setLocation(`/intelligence/target/${rsTargetData.id}`)}
+                className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-violet-500/40 bg-violet-500/10 hover:bg-violet-500/20 active:scale-[0.98] transition-all min-w-0"
+              >
+                <User className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />
+                <span className="text-xs font-semibold text-violet-500 truncate flex-1 text-left">{rsTargetData.tgt ?? rsTargetData.name}</span>
+                <ExternalLink className="h-3 w-3 text-violet-500/60 flex-shrink-0" />
+              </button>
+            </div>
+          )}{/* end Target Profile */}
+
           {/* ── IMAGES (linked to the selected RS's operation) ── */}
           <div className="px-3 py-3 border-b border-border space-y-2">
             <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">Images</span>
@@ -3093,16 +3112,22 @@ export default function IntelligenceMapping() {
           {/* ── TEAMS (Live Location) ── */}
           <div className="px-3 py-3">
             <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
+              <button
+                onClick={() => setTeamsSectionCollapsed(prev => !prev)}
+                className="flex items-center gap-2 flex-1 min-w-0"
+              >
                 <Radio className="h-3.5 w-3.5 text-muted-foreground" />
                 <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">TEAMS</span>
-              </div>
-              <div className="flex items-center gap-2">
+                {teamsSectionCollapsed ? <ChevronRight className="h-3 w-3 text-muted-foreground" /> : <ChevronDown className="h-3 w-3 text-muted-foreground" />}
+              </button>
+              <div className="flex items-center gap-2 flex-shrink-0">
                 <span className="text-[11px] font-medium text-muted-foreground">Show &amp; Share</span>
                 <Switch checked={sharingEnabled} onCheckedChange={handleSharingToggle} className="scale-90" />
               </div>
             </div>
 
+            {!teamsSectionCollapsed && (
+              <>
             {/* GPS error */}
             {gpsError && (
               <div className="flex items-start gap-1.5 mb-3 p-2.5 rounded-xl border-2 border-amber-500/30 bg-amber-500/10">
@@ -3202,6 +3227,8 @@ export default function IntelligenceMapping() {
                 );
               })()}
             </div>
+              </>
+            )}
           </div>{/* end TEAMS */}
 
         </div>{/* end Pane Body */}

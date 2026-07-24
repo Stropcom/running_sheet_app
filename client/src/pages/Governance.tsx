@@ -14,6 +14,8 @@ import {
   ChevronDown,
   ChevronUp,
   FileText,
+  Link2,
+  Link2Off,
 } from "lucide-react";
 import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useLocation } from "wouter";
@@ -27,6 +29,14 @@ interface ImageryEntry {
   rowTime: string;
   type: "photo" | "video" | "";
   saved: boolean;
+}
+
+// Derived (never persisted) — entity-link status for a CIN's imagery, used to
+// gate the Saved tick until every photo is linked to an Intelligence entity.
+interface DisplayImageryEntry extends ImageryEntry {
+  attachmentCount: number;
+  linkedCount: number;
+  allLinked: boolean;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -385,8 +395,9 @@ export default function GovernancePage() {
     if (existingIdx >= 0) {
       next = imagery.map((e, i) => (i === existingIdx ? { ...e, ...patch } : e));
     } else {
-      // Entry not yet in stored imagery — append it
-      next = [...imagery, { ...target, ...patch }];
+      // Entry not yet in stored imagery — append it (strip derived-only fields;
+      // only cin/rowTime/type/saved are persisted)
+      next = [...imagery, { cin: target.cin, rowTime: target.rowTime, type: target.type, saved: target.saved, ...patch }];
     }
     saveImagery(next);
   }
@@ -418,19 +429,52 @@ export default function GovernancePage() {
   // - Otherwise: percentage of rows marked as saved
   //   Use autoImagery as the source of truth for CINs; merge saved flags from stored imagery.
   const imageryTakenChecked = !!(gov as Record<string, unknown> | undefined)?.imageryTaken;
+
+  // Per-CIN photo/entity-link stats — pooled across every row that CIN appears
+  // on, since the auto-derived imagery entry only tracks the first
+  // photo-phrase row's time per CIN while the actual attachments can sit on
+  // any row that CIN is a member of.
+  const cinPhotoStats = useMemo(() => {
+    const rows = exportData?.rows ?? [];
+    const map = new Map<string, { attachmentCount: number; linkedCount: number }>();
+    for (const row of rows) {
+      const atts = (row.attachments ?? []) as Array<{ linkedCount?: number }>;
+      if (atts.length === 0) continue;
+      const rowCins = (row.members ?? []).map((m: { memberName: string }) => m.memberName);
+      for (const cin of rowCins) {
+        const stat = map.get(cin) ?? { attachmentCount: 0, linkedCount: 0 };
+        stat.attachmentCount += atts.length;
+        stat.linkedCount += atts.filter((a) => (a.linkedCount ?? 0) > 0).length;
+        map.set(cin, stat);
+      }
+    }
+    return map;
+  }, [exportData]);
+
   // Build display imagery: autoImagery is the source of truth for which entries exist;
-  // merge saved flags from stored imagery. If autoImagery is empty, no imagery to show.
-  const displayImagery = useMemo<ImageryEntry[]>(() => {
+  // merge saved flags from stored imagery, and entity-link stats from cinPhotoStats.
+  // If autoImagery is empty, no imagery to show.
+  const displayImagery = useMemo<DisplayImageryEntry[]>(() => {
     if (autoImagery.length === 0) return [];
     const savedMap = new Map(imagery.map((e) => [e.cin + e.rowTime, e.saved]));
-    return autoImagery.map((e) => ({
-      ...e,
-      saved: savedMap.get(e.cin + e.rowTime) ?? false,
-    }));
-  }, [autoImagery, imagery]);
+    return autoImagery.map((e) => {
+      const stat = cinPhotoStats.get(e.cin);
+      const attachmentCount = stat?.attachmentCount ?? 0;
+      const linkedCount = stat?.linkedCount ?? 0;
+      return {
+        ...e,
+        saved: savedMap.get(e.cin + e.rowTime) ?? false,
+        attachmentCount,
+        linkedCount,
+        allLinked: attachmentCount > 0 && linkedCount === attachmentCount,
+      };
+    });
+  }, [autoImagery, imagery, cinPhotoStats]);
   const hasAnyImageryData = hasAnyImagery || autoImagery.length > 0 || imagery.length > 0;
+  // A row only counts toward completion once it's both marked saved AND every
+  // one of its photos is linked to an entity.
   const imgPercent = hasAnyImageryData
-    ? completionPercent(displayImagery.map((e) => e.saved))
+    ? completionPercent(displayImagery.map((e) => e.saved && e.allLinked))
     : 100;
 
   // Overall: TL (2) + Operative (4) + Imagery rows (only if any imagery data)
@@ -442,7 +486,7 @@ export default function GovernancePage() {
         allSigned && gov.savedAsPdf,
         allSigned && gov.uploadedToPromis,
         allSigned && gov.savedInOpFolder,
-        ...(hasAnyImageryData ? displayImagery.map((e) => e.saved) : []),
+        ...(hasAnyImageryData ? displayImagery.map((e) => e.saved && e.allLinked) : []),
       ])
     : 0;
 
@@ -682,28 +726,31 @@ export default function GovernancePage() {
           />
           {imgExpanded && gov && (
             <div className="mt-2 space-y-2">
-              {/* Imagery taken — colour reflects save status */}
+              {/* Imagery taken — colour reflects save + link status */}
               {(() => {
-                const allSavedImg = displayImagery.length > 0 && displayImagery.every((e) => e.saved);
-                const someSavedImg = displayImagery.some((e) => e.saved);
+                const allCompleteImg = displayImagery.length > 0 && displayImagery.every((e) => e.saved && e.allLinked);
+                const someSavedImg = displayImagery.some((e) => e.saved && e.allLinked);
+                const unlinkedCount = displayImagery.filter((e) => !e.allLinked).length;
                 const bannerClass = !hasAnyImagery
                   ? "bg-rose-500/10 border-rose-500/30"
-                  : allSavedImg
+                  : allCompleteImg
                     ? "bg-emerald-500/10 border-emerald-500/30"
                     : "bg-cyan-500/10 border-cyan-500/30";
                 const iconEl = !hasAnyImagery
                   ? <span className="text-rose-500 text-lg shrink-0 leading-none">✗</span>
-                  : allSavedImg
+                  : allCompleteImg
                     ? <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
                     : <AlertTriangle className="w-5 h-5 text-cyan-500 shrink-0" />;
-                const titleColor = !hasAnyImagery ? "text-rose-400" : allSavedImg ? "text-foreground" : "text-cyan-500";
+                const titleColor = !hasAnyImagery ? "text-rose-400" : allCompleteImg ? "text-foreground" : "text-cyan-500";
                 const subText = !hasAnyImagery
                   ? "No imagery flagged on team details — no imagery taken"
-                  : allSavedImg
-                    ? "All imagery saved"
-                    : someSavedImg
-                      ? "Some imagery not yet saved"
-                      : "Imagery flagged — not yet saved";
+                  : allCompleteImg
+                    ? "All imagery saved and linked to an entity"
+                    : unlinkedCount > 0
+                      ? `${unlinkedCount} row${unlinkedCount === 1 ? "" : "s"} need photos linked to an entity before they can be marked saved`
+                      : someSavedImg
+                        ? "Some imagery not yet saved"
+                        : "Imagery flagged — not yet saved";
                 return (
                   <div className={`flex items-center gap-3 px-4 py-3 rounded-lg border ${bannerClass}`}>
                     {iconEl}
@@ -720,48 +767,86 @@ export default function GovernancePage() {
               {/* Imagery entries table — auto-populated from rows */}
               {displayImagery.length > 0 && (
                 <div className="rounded-lg border border-border/40 overflow-hidden">
-                  <div className="grid grid-cols-[80px_80px_90px_60px] gap-0 text-[10px] font-semibold text-muted-foreground bg-muted/30 px-3 py-2 border-b border-border/30">
+                  <div className="grid grid-cols-[56px_56px_60px_1fr_50px] gap-1 text-[10px] font-semibold text-muted-foreground bg-muted/30 px-3 py-2 border-b border-border/30">
                     <span>CIN</span>
-                    <span>ROW TIME</span>
+                    <span>TIME</span>
                     <span>TYPE</span>
+                    <span>LINKED</span>
                     <span>SAVED</span>
                   </div>
-                  {displayImagery.map((entry, idx) => (
-                    <div
-                      key={idx}
-                      className={`grid grid-cols-[80px_80px_90px_60px] gap-0 items-center px-3 py-2 ${
-                        idx < displayImagery.length - 1 ? "border-b border-border/20" : ""
-                      }`}
-                    >
-                      <span className="text-xs text-foreground font-medium truncate pr-2">
-                        {entry.cin || "—"}
-                      </span>
-                      <span className="text-xs text-muted-foreground pr-2">
-                        {entry.rowTime || "—"}
-                      </span>
-                      <select
-                        value={entry.type}
-                        onChange={(e) =>
-                          updateImageryRow(idx, { type: e.target.value as "photo" | "video" | "" })
-                        }
-                        className="bg-transparent text-xs text-foreground outline-none border border-border/40 rounded px-1 py-0.5"
+                  {displayImagery.map((entry, idx) => {
+                    const operationId = exportData?.operation?.id;
+                    const goLinkPhotos = () => {
+                      if (operationId) navigate(`/images/${operationId}/${sheetId}`);
+                    };
+                    return (
+                      <div
+                        key={idx}
+                        className={`grid grid-cols-[56px_56px_60px_1fr_50px] gap-1 items-center px-3 py-2 ${
+                          idx < displayImagery.length - 1 ? "border-b border-border/20" : ""
+                        }`}
                       >
-                        <option value="">—</option>
-                        <option value="photo">Photo</option>
-                        <option value="video">Video</option>
-                      </select>
-                      <button
-                        onClick={() => updateImageryRow(idx, { saved: !entry.saved })}
-                        className="flex items-center justify-center"
-                      >
-                        {entry.saved ? (
-                          <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                        <span className="text-xs text-foreground font-medium truncate pr-1">
+                          {entry.cin || "—"}
+                        </span>
+                        <span className="text-xs text-muted-foreground pr-1">
+                          {entry.rowTime || "—"}
+                        </span>
+                        <select
+                          value={entry.type}
+                          onChange={(e) =>
+                            updateImageryRow(idx, { type: e.target.value as "photo" | "video" | "" })
+                          }
+                          className="bg-transparent text-xs text-foreground outline-none border border-border/40 rounded px-1 py-0.5"
+                        >
+                          <option value="">—</option>
+                          <option value="photo">Photo</option>
+                          <option value="video">Video</option>
+                        </select>
+                        {entry.allLinked ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-500 truncate">
+                            <Link2 className="w-3 h-3 shrink-0" /> Linked
+                          </span>
                         ) : (
-                          <Circle className="w-4 h-4 text-muted-foreground" />
+                          <button
+                            onClick={goLinkPhotos}
+                            disabled={!operationId}
+                            title={
+                              entry.attachmentCount === 0
+                                ? "No photo uploaded for this CIN yet — click to open the Images gallery"
+                                : `${entry.linkedCount}/${entry.attachmentCount} photos linked — click to finish linking`
+                            }
+                            className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-500 hover:text-amber-400 truncate text-left disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            <Link2Off className="w-3 h-3 shrink-0" />
+                            {entry.attachmentCount === 0
+                              ? "No photo"
+                              : `${entry.linkedCount}/${entry.attachmentCount} linked`}
+                          </button>
                         )}
-                      </button>
-                    </div>
-                  ))}
+                        <button
+                          onClick={() => {
+                            if (!entry.saved && !entry.allLinked) {
+                              toast.warning(
+                                entry.attachmentCount === 0
+                                  ? "Upload and link a photo to an entity before marking this saved."
+                                  : "Link every photo to an entity before marking this saved."
+                              );
+                              return;
+                            }
+                            updateImageryRow(idx, { saved: !entry.saved });
+                          }}
+                          className="flex items-center justify-center"
+                        >
+                          {entry.saved ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                          ) : (
+                            <Circle className="w-4 h-4 text-muted-foreground" />
+                          )}
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 

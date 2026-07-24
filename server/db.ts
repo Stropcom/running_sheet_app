@@ -662,12 +662,24 @@ export async function createRowAttachment(data: InsertRowAttachment) {
   return result.insertId as number;
 }
 
+// linkedCount = number of Intelligence entity links on the attachment — used
+// by the Governance page's Imagery section to require photos be linked to an
+// entity before that CIN's row can be marked saved.
 export async function getAttachmentsByRowIds(rowIds: number[]) {
   const db = await getDb();
   if (!db || rowIds.length === 0) return [];
-  return db.select().from(rowAttachments)
+  const attachments = await db.select().from(rowAttachments)
     .where(and(inArray(rowAttachments.rowId, rowIds), isNull(rowAttachments.deletedAt)))
     .orderBy(asc(rowAttachments.createdAt));
+  if (attachments.length === 0) return attachments.map((a) => ({ ...a, linkedCount: 0 }));
+  const attachmentIds = attachments.map((a) => a.id);
+  const linkCounts = await db
+    .select({ attachmentId: attachmentEntityLinks.attachmentId, count: sql<number>`count(*)`.as("count") })
+    .from(attachmentEntityLinks)
+    .where(inArray(attachmentEntityLinks.attachmentId, attachmentIds))
+    .groupBy(attachmentEntityLinks.attachmentId);
+  const countMap = new Map(linkCounts.map((l) => [l.attachmentId, Number(l.count)]));
+  return attachments.map((a) => ({ ...a, linkedCount: countMap.get(a.id) ?? 0 }));
 }
 
 export async function getAttachmentById(id: number) {

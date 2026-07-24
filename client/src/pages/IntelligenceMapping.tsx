@@ -712,6 +712,17 @@ export default function IntelligenceMapping() {
   const [rsActionsPaneOpen, setRsActionsPaneOpen] = useState(false);
   // Target profile sub-view shown inline within the right pane (null = normal pane content)
   const [paneTargetProfileId, setPaneTargetProfileId] = useState<number | null>(null);
+  // Pane width — resizable by dragging its left edge, remembered separately for the
+  // normal pane content vs. the Target Profile sub-view (which wants more room)
+  const [panelWidthNormal, setPanelWidthNormal] = useState<number>(() => {
+    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) { const v = JSON.parse(s).panelWidthNormal; if (typeof v === "number") return v; } } catch { /* ignore */ } return 320;
+  });
+  const [panelWidthProfile, setPanelWidthProfile] = useState<number>(() => {
+    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) { const v = JSON.parse(s).panelWidthProfile; if (typeof v === "number") return v; } } catch { /* ignore */ } return 480;
+  });
+  const paneResizeDraggingRef = useRef(false);
+  const PANE_MIN_WIDTH = 288;
+  const activePaneWidth = paneTargetProfileId !== null ? panelWidthProfile : panelWidthNormal;
 
   // Draggable side-tab vertical position (percentage from top, 0-100)
   const [leftTabTop, setLeftTabTop] = useState<number>(() => {
@@ -902,9 +913,11 @@ export default function IntelligenceMapping() {
         leftTabTop,
         rightTabTop,
         pillBarTop,
+        panelWidthNormal,
+        panelWidthProfile,
       }));
     } catch { /* ignore */ }
-  }, [selectedOpIds, opsExplicitlySet, selectedTargetIds, opExpanded, rsSelectedOpId, rsSelectedSheetId, hiddenTeams, collapsedTeams, rsQeExpanded, mapDarkMode, leftTabTop, rightTabTop, pillBarTop]);
+  }, [selectedOpIds, opsExplicitlySet, selectedTargetIds, opExpanded, rsSelectedOpId, rsSelectedSheetId, hiddenTeams, collapsedTeams, rsQeExpanded, mapDarkMode, leftTabTop, rightTabTop, pillBarTop, panelWidthNormal, panelWidthProfile]);
 
   // Save map center/zoom to localStorage whenever the map stops moving (idle event)
   useEffect(() => {
@@ -2889,10 +2902,62 @@ export default function IntelligenceMapping() {
 
       {/* ── RS Actions Right Pane ── */}
       <div
-        className={`flex flex-col border-l-2 border-border bg-card transition-all duration-200 shadow-2xl ${
-          rsActionsPaneOpen ? "w-80 min-w-[20rem] rounded-l-2xl" : "w-0 min-w-0 overflow-hidden"
-        }`}
+        className={`relative flex flex-col border-l-2 border-border bg-card shadow-2xl flex-shrink-0 ${
+          paneResizeDraggingRef.current ? "" : "transition-all duration-200"
+        } ${rsActionsPaneOpen ? "rounded-l-2xl" : "overflow-hidden"}`}
+        style={{
+          width: rsActionsPaneOpen ? `${activePaneWidth}px` : 0,
+          minWidth: rsActionsPaneOpen ? `${PANE_MIN_WIDTH}px` : 0,
+        }}
       >
+        {/* Resize handle — drag left edge to widen/narrow the pane (mouse or touch) */}
+        {rsActionsPaneOpen && (
+          <div
+            className="absolute -left-1.5 top-0 bottom-0 w-3 z-10 flex items-center justify-center cursor-col-resize touch-none select-none group"
+            title="Drag to resize"
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              paneResizeDraggingRef.current = true;
+              const startX = e.clientX;
+              const startWidth = activePaneWidth;
+              const onMove = (me: MouseEvent) => {
+                const delta = startX - me.clientX;
+                const maxW = Math.max(PANE_MIN_WIDTH, Math.min(720, window.innerWidth - 320));
+                const next = Math.min(maxW, Math.max(PANE_MIN_WIDTH, startWidth + delta));
+                if (paneTargetProfileId !== null) setPanelWidthProfile(next); else setPanelWidthNormal(next);
+              };
+              const onUp = () => {
+                paneResizeDraggingRef.current = false;
+                document.removeEventListener("mousemove", onMove);
+                document.removeEventListener("mouseup", onUp);
+              };
+              document.addEventListener("mousemove", onMove);
+              document.addEventListener("mouseup", onUp);
+            }}
+            onTouchStart={(e) => {
+              e.stopPropagation();
+              paneResizeDraggingRef.current = true;
+              const startX = e.touches[0].clientX;
+              const startWidth = activePaneWidth;
+              const onMove = (te: TouchEvent) => {
+                const delta = startX - te.touches[0].clientX;
+                const maxW = Math.max(PANE_MIN_WIDTH, Math.min(720, window.innerWidth - 320));
+                const next = Math.min(maxW, Math.max(PANE_MIN_WIDTH, startWidth + delta));
+                if (paneTargetProfileId !== null) setPanelWidthProfile(next); else setPanelWidthNormal(next);
+              };
+              const onEnd = () => {
+                paneResizeDraggingRef.current = false;
+                document.removeEventListener("touchmove", onMove);
+                document.removeEventListener("touchend", onEnd);
+              };
+              document.addEventListener("touchmove", onMove, { passive: true });
+              document.addEventListener("touchend", onEnd);
+            }}
+          >
+            <div className="w-1 h-12 rounded-full bg-border group-hover:bg-primary/60 transition-colors" />
+          </div>
+        )}
+
         {/* Pane Header */}
         <div className="flex items-center justify-between px-4 py-3.5 border-b-2 border-border flex-shrink-0 bg-muted/20">
           {paneTargetProfileId !== null ? (

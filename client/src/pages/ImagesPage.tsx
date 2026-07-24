@@ -9,6 +9,7 @@ import {
   ArrowLeft,
   X,
   Link2,
+  Link2Off,
   List,
   LayoutGrid,
 } from "lucide-react";
@@ -379,10 +380,14 @@ function SheetGallery({
               </div>
               <button
                 onClick={() => setLinkingId(a.id)}
-                title="Link to entity"
-                className="absolute top-1.5 left-1.5 h-6 w-6 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors"
+                title={a.linkedCount > 0 ? "Linked to an entity — click to link to another" : "Not linked to an entity — click to link"}
+                className={`absolute top-1.5 left-1.5 h-6 w-6 rounded-full flex items-center justify-center transition-colors ${
+                  a.linkedCount > 0
+                    ? "bg-emerald-600/90 text-white hover:bg-emerald-500"
+                    : "bg-amber-500/90 text-white hover:bg-amber-400"
+                }`}
               >
-                <Link2 className="h-3 w-3" />
+                {a.linkedCount > 0 ? <Link2 className="h-3 w-3" /> : <Link2Off className="h-3 w-3" />}
               </button>
               <button
                 onClick={() => deleteAttachment.mutate({ id: a.id })}

@@ -47,6 +47,11 @@ export function LinkAttachmentDialog({
     onSuccess: () => {
       toast.success("Photo linked");
       utils.attachment.entityLinkCounts.invalidate();
+      // Refresh every place a linked/unlinked badge is shown for this photo
+      utils.attachment.listBySheet.invalidate();
+      utils.attachment.listByOperation.invalidate();
+      utils.row.list.invalidate();
+      utils.export.sheetData.invalidate();
       onOpenChange(false);
     },
     onError: e => toast.error(e.message),

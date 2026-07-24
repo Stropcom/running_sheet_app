@@ -767,7 +767,7 @@ export default function GovernancePage() {
               {/* Imagery entries table — auto-populated from rows */}
               {displayImagery.length > 0 && (
                 <div className="rounded-lg border border-border/40 overflow-hidden">
-                  <div className="grid grid-cols-[56px_56px_60px_1fr_50px] gap-1 text-[10px] font-semibold text-muted-foreground bg-muted/30 px-3 py-2 border-b border-border/30">
+                  <div className="grid grid-cols-5 gap-1 text-center text-[10px] font-semibold text-muted-foreground bg-muted/30 px-3 py-2 border-b border-border/30">
                     <span>CIN</span>
                     <span>TIME</span>
                     <span>TYPE</span>
@@ -782,14 +782,14 @@ export default function GovernancePage() {
                     return (
                       <div
                         key={idx}
-                        className={`grid grid-cols-[56px_56px_60px_1fr_50px] gap-1 items-center px-3 py-2 ${
+                        className={`grid grid-cols-5 gap-1 items-center px-3 py-2 ${
                           idx < displayImagery.length - 1 ? "border-b border-border/20" : ""
                         }`}
                       >
-                        <span className="text-xs text-foreground font-medium truncate pr-1">
+                        <span className="text-xs text-foreground font-medium truncate text-center justify-self-center">
                           {entry.cin || "—"}
                         </span>
-                        <span className="text-xs text-muted-foreground pr-1">
+                        <span className="text-xs text-muted-foreground text-center justify-self-center">
                           {entry.rowTime || "—"}
                         </span>
                         <select
@@ -797,14 +797,14 @@ export default function GovernancePage() {
                           onChange={(e) =>
                             updateImageryRow(idx, { type: e.target.value as "photo" | "video" | "" })
                           }
-                          className="bg-transparent text-xs text-foreground outline-none border border-border/40 rounded px-1 py-0.5"
+                          className="justify-self-center bg-transparent text-xs text-foreground outline-none border border-border/40 rounded px-1 py-0.5"
                         >
                           <option value="">—</option>
                           <option value="photo">Photo</option>
                           <option value="video">Video</option>
                         </select>
                         {entry.allLinked ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-500 truncate">
+                          <span className="justify-self-center inline-flex items-center gap-1 text-[10px] font-medium text-emerald-500 truncate">
                             <Link2 className="w-3 h-3 shrink-0" /> Linked
                           </span>
                         ) : (
@@ -816,7 +816,7 @@ export default function GovernancePage() {
                                 ? "No photo uploaded for this CIN yet — click to open the Images gallery"
                                 : `${entry.linkedCount}/${entry.attachmentCount} photos linked — click to finish linking`
                             }
-                            className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-500 hover:text-amber-400 truncate text-left disabled:cursor-not-allowed disabled:opacity-60"
+                            className="justify-self-center inline-flex items-center gap-1 text-[10px] font-medium text-amber-500 hover:text-amber-400 truncate text-center disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             <Link2Off className="w-3 h-3 shrink-0" />
                             {entry.attachmentCount === 0
@@ -836,7 +836,7 @@ export default function GovernancePage() {
                             }
                             updateImageryRow(idx, { saved: !entry.saved });
                           }}
-                          className="flex items-center justify-center"
+                          className="justify-self-center flex items-center justify-center"
                         >
                           {entry.saved ? (
                             <CheckCircle2 className="w-4 h-4 text-emerald-500" />

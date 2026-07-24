@@ -6,6 +6,8 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { MapView } from "@/components/Map";
 import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
+import { TargetProfileContent } from "@/components/TargetProfileContent";
+import { DocumentZoomViewer } from "@/components/DocumentZoomViewer";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
@@ -712,6 +714,8 @@ export default function IntelligenceMapping() {
 
   // RS Actions pane state — persisted in localStorage
   const [rsActionsPaneOpen, setRsActionsPaneOpen] = useState(false);
+  // Target profile sub-view shown inline within the right pane (null = normal pane content)
+  const [paneTargetProfileId, setPaneTargetProfileId] = useState<number | null>(null);
 
   // Draggable side-tab vertical position (percentage from top, 0-100)
   const [leftTabTop, setLeftTabTop] = useState<number>(() => {
@@ -2896,16 +2900,34 @@ export default function IntelligenceMapping() {
       >
         {/* Pane Header */}
         <div className="flex items-center justify-between px-4 py-3.5 border-b-2 border-border flex-shrink-0 bg-muted/20">
-          <div className="flex items-center gap-2">
-            <Settings2 className="h-4 w-4 text-primary" />
-            <span className="font-bold text-sm tracking-tight">Map Settings</span>
-          </div>
-          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl" onClick={() => setRsActionsPaneOpen(false)}>
+          {paneTargetProfileId !== null ? (
+            <button
+              onClick={() => setPaneTargetProfileId(null)}
+              className="flex items-center gap-2 min-w-0 flex-1 text-left hover:opacity-75 transition-opacity"
+            >
+              <ChevronLeft className="h-4 w-4 text-violet-500 flex-shrink-0" />
+              <User className="h-4 w-4 text-violet-500 flex-shrink-0" />
+              <span className="font-bold text-sm tracking-tight truncate">Target Profile</span>
+            </button>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Settings2 className="h-4 w-4 text-primary" />
+              <span className="font-bold text-sm tracking-tight">Map Settings</span>
+            </div>
+          )}
+          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl flex-shrink-0" onClick={() => { setRsActionsPaneOpen(false); setPaneTargetProfileId(null); }}>
             <X className="h-4 w-4" />
           </Button>
         </div>
 
         {/* Pane Body */}
+        {paneTargetProfileId !== null ? (
+          <div className="flex-1 overflow-hidden">
+            <DocumentZoomViewer contentWidth={768} className="w-full h-full">
+              <TargetProfileContent targetId={paneTargetProfileId} />
+            </DocumentZoomViewer>
+          </div>
+        ) : (
         <div className="flex-1 overflow-y-auto" onClick={() => { if (rsInlineLabel) closeInlineField(); }}>
 
           {/* ── MAP THEME toggle ── */}
@@ -3071,7 +3093,7 @@ export default function IntelligenceMapping() {
           {rsSelectedSheetId !== null && rsTargetData && (
             <div className="px-3 py-3 border-b border-border">
               <button
-                onClick={() => setLocation(`/intelligence/target/${rsTargetData.id}`)}
+                onClick={() => setPaneTargetProfileId(rsTargetData.id)}
                 className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-violet-500/40 bg-violet-500/10 hover:bg-violet-500/20 active:scale-[0.98] transition-all min-w-0"
               >
                 <User className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />
@@ -3231,7 +3253,8 @@ export default function IntelligenceMapping() {
             )}
           </div>{/* end TEAMS */}
 
-        </div>{/* end Pane Body */}
+        </div>
+        )}{/* end Pane Body */}
       </div>{/* end RS Actions Right Pane */}
 
       {/* ── Quick-Link Editor Modal ── */}

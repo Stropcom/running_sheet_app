@@ -157,7 +157,7 @@ const pwaPlugin = VitePWA({
   strategies: "injectManifest",
   srcDir: "src",
   filename: "sw.ts",
-  includeAssets: ["favicon.ico", "apple-touch-icon.png"],
+  includeAssets: ["favicon-32.png", "apple-touch-icon.png", "icon-192.png", "icon-512.png"],
   manifest: {
     name: "Running Sheet Log",
     short_name: "RunLog",
@@ -170,13 +170,13 @@ const pwaPlugin = VitePWA({
     scope: "/",
     icons: [
       {
-        src: "/manus-storage/icon-512_b3606dcc.png",
+        src: "/icon-512.png",
         sizes: "512x512",
         type: "image/png",
         purpose: "any maskable",
       },
       {
-        src: "/manus-storage/icon-192_73e1648c.png",
+        src: "/icon-192.png",
         sizes: "192x192",
         type: "image/png",
         purpose: "any",

@@ -21,8 +21,8 @@ self.addEventListener("push", (event: PushEvent) => {
   const title = data.title ?? "RunLog";
   const options: NotificationOptions = {
     body: data.body ?? "",
-    icon: data.icon ?? "/manus-storage/icon-192_73e1648c.png",
-    badge: "/manus-storage/icon-192_73e1648c.png",
+    icon: data.icon ?? "/icon-192.png",
+    badge: "/icon-192.png",
     data: { url: data.url ?? "/" },
     requireInteraction: false,
   };

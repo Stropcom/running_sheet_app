@@ -1626,6 +1626,15 @@ export function extractEntitiesFromText(text: string): Array<{
 
     const lowerFull = fullDescription.toLowerCase();
     const lowerShort = shortForm.toLowerCase();
+    // Vehicle-keyword detection is scoped to just the clause immediately
+    // before the bracket (last comma/semicolon-separated segment), not the
+    // whole preceding sentence. Running sheet rows routinely describe several
+    // entities in one sentence — e.g. "Vehicle 1GDA876, EWEN driver, Jason
+    // SMITH (SMITH), departed..." — and without this scoping, the vehicle
+    // keyword from an earlier, unrelated clause leaks into the classification
+    // of a person's bracketed name later in the same sentence.
+    const lastClause = (fullDescription.split(/[,;]/).pop() ?? fullDescription).trim();
+    const lowerLastClause = lastClause.toLowerCase();
 
     let type: "person" | "vehicle" | "address" | "business" | "unknown" = "unknown";
 
@@ -1677,11 +1686,12 @@ export function extractEntitiesFromText(text: string): Array<{
       else if (/,\s*[A-Za-z][\w\s]+\s+(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\s+\d{4}/.test(shortForm)) confidence = "high";
       else confidence = "medium";
     }
-    // Vehicle: preceding text mentions vehicle keywords OR shortForm matches rego/make
-    // BUT only when the full description does NOT look like an address
-    else if (VEHICLE_BODY.test(lowerFull) || VEHICLE_MAKES.test(lowerFull) || VEHICLE_MAKES.test(lowerShort)) {
+    // Vehicle: the clause immediately before the bracket mentions vehicle
+    // keywords OR shortForm matches rego/make. BUT only when the full
+    // description does NOT look like an address.
+    else if (VEHICLE_BODY.test(lowerLastClause) || VEHICLE_MAKES.test(lowerLastClause) || VEHICLE_MAKES.test(lowerShort)) {
       type = "vehicle";
-      if (VEHICLE_BODY.test(lowerFull) && (VEHICLE_MAKES.test(lowerFull) || VEHICLE_MAKES.test(lowerShort))) confidence = "high";
+      if (VEHICLE_BODY.test(lowerLastClause) && (VEHICLE_MAKES.test(lowerLastClause) || VEHICLE_MAKES.test(lowerShort))) confidence = "high";
       else confidence = "medium";
     }
     // WA rego plate in shortForm — strong vehicle signal

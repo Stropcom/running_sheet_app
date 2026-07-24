@@ -64,6 +64,22 @@ function PhotoStrip({ photos, size = "w-16 h-16" }: { photos: Array<ProfilePhoto
   );
 }
 
+// Pairs a chip with its own photos directly beneath it, so which photo
+// belongs to which entity is unambiguous even when several entities in the
+// same category (e.g. two associated persons) each have photos of their own.
+function EntityWithPhotos({ item, onClick }: { item: IntelProfileEntity; onClick?: () => void }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <EntityChip item={item} onClick={onClick} />
+      {(item.photos ?? []).length > 0 && (
+        <div className="pl-1">
+          <PhotoStrip photos={item.photos!} size="w-14 h-14" />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function EntityChip({ item, onClick }: { item: IntelProfileEntity; onClick?: () => void }) {
   const cls = CHIP[item.type] ?? "bg-muted text-muted-foreground border-border";
   const icon = item.type === "vehicle" ? <Car className="w-3 h-3" /> : item.type === "address" || item.type === "business" ? <MapPin className="w-3 h-3" /> : <User className="w-3 h-3" />;
@@ -299,28 +315,31 @@ export default function IntelligenceOperationProfile() {
                             {target.assocPersons.length > 0 && (
                               <div className="mb-2">
                                 <p className="text-xs text-muted-foreground mb-1">Persons</p>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {target.assocPersons.map(p => <EntityChip key={p.id} item={p} onClick={() => navigate(`/intelligence/associate/${encodeURIComponent(p.label)}`)} />)}
+                                <div className="flex flex-col gap-2">
+                                  {target.assocPersons.map(p => (
+                                    <EntityWithPhotos key={p.id} item={p} onClick={() => navigate(`/intelligence/associate/${encodeURIComponent(p.label)}`)} />
+                                  ))}
                                 </div>
-                                <PhotoStrip photos={target.assocPersons.flatMap(p => (p.photos ?? []).map(ph => ({ ...ph, entityLabel: p.label })))} size="w-14 h-14" />
                               </div>
                             )}
                             {target.assocVehicles.length > 0 && (
                               <div className="mb-2">
                                 <p className="text-xs text-muted-foreground mb-1">Vehicles</p>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {target.assocVehicles.map(v => <EntityChip key={v.id} item={v} onClick={() => navigate(`/intelligence/vehicle/${encodeURIComponent(v.label)}`)} />)}
+                                <div className="flex flex-col gap-2">
+                                  {target.assocVehicles.map(v => (
+                                    <EntityWithPhotos key={v.id} item={v} onClick={() => navigate(`/intelligence/vehicle/${encodeURIComponent(v.label)}`)} />
+                                  ))}
                                 </div>
-                                <PhotoStrip photos={target.assocVehicles.flatMap(v => (v.photos ?? []).map(ph => ({ ...ph, entityLabel: v.label })))} size="w-14 h-14" />
                               </div>
                             )}
                             {target.assocLocations.length > 0 && (
                               <div className="mb-2">
                                 <p className="text-xs text-muted-foreground mb-1">Locations</p>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {target.assocLocations.map(l => <EntityChip key={l.id} item={l} onClick={() => navigate(`/intelligence/location/${encodeURIComponent(l.label)}`)} />)}
+                                <div className="flex flex-col gap-2">
+                                  {target.assocLocations.map(l => (
+                                    <EntityWithPhotos key={l.id} item={l} onClick={() => navigate(`/intelligence/location/${encodeURIComponent(l.label)}`)} />
+                                  ))}
                                 </div>
-                                <PhotoStrip photos={target.assocLocations.flatMap(l => (l.photos ?? []).map(ph => ({ ...ph, entityLabel: l.label })))} size="w-14 h-14" />
                               </div>
                             )}
                           </div>

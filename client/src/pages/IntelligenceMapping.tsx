@@ -3917,12 +3917,12 @@ export default function IntelligenceMapping() {
       {/* ── Map RS Quick Entry Modal ── */}
       {mapQeOpen && (
         <div
-          className="absolute inset-0 z-40 flex items-end justify-center lg:items-center lg:p-6"
+          className="absolute inset-0 z-40 flex items-end justify-center md:items-center md:p-4"
           style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(3px)" }}
           onClick={() => { setMapQeOpen(false); setMapQeAddress(""); closeInlineField(); }}
         >
           <div
-            className="w-full max-w-lg md:max-w-2xl lg:max-w-4xl bg-card border border-border rounded-t-2xl lg:rounded-2xl shadow-2xl p-5 pb-8 md:p-6 lg:p-8 max-h-[90vh] lg:max-h-[85vh] overflow-y-auto"
+            className="no-scrollbar w-full max-w-lg md:max-w-3xl lg:max-w-5xl bg-card border border-border rounded-t-2xl md:rounded-2xl shadow-2xl p-5 pb-8 md:p-6 lg:p-8 max-h-[90vh] md:max-h-[92vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}

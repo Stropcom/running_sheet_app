@@ -4341,19 +4341,15 @@ export default function IntelligenceMapping() {
                         const appendText = (text: string) => { pushInlineUndo(rsInlineText); setRsInlineText(prev => prev ? `${prev} ${text}` : text); resetInlineTimer(); rsInlineInputRef.current?.focus(); };
                         return (
                           <div className="flex flex-wrap gap-1 md:gap-1.5">
-                            {rsEntityChips.map((chip) => {
-                              const typeLabel = chip.type === "vehicle" ? "VEH" : chip.type === "address" ? "LOC" : chip.type === "business" ? "BIZ" : "PER";
-                              return (
-                                <button
-                                  key={chip.key}
-                                  onClick={() => appendText(chip.insertValue)}
-                                  className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border border-violet-500/30 bg-violet-500/5 text-violet-400 hover:bg-violet-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
-                                >
-                                  <span className="opacity-70">{typeLabel}</span>
-                                  <span className="font-mono normal-case">{chip.insertValue}</span>
-                                </button>
-                              );
-                            })}
+                            {rsEntityChips.map((chip) => (
+                              <button
+                                key={chip.key}
+                                onClick={() => appendText(chip.insertValue)}
+                                className="px-2 py-0.5 rounded text-[10px] font-bold border border-violet-500/30 bg-violet-500/5 text-violet-400 hover:bg-violet-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                              >
+                                <span className="font-mono normal-case">{chip.insertValue}</span>
+                              </button>
+                            ))}
                           </div>
                         );
                       })()}

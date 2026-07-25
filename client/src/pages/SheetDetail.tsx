@@ -3156,33 +3156,33 @@ export default function SheetDetail() {
           </div>
         )}
 
-        {/* TARGET Panel — shown when a target is assigned to this sheet */}
-        {sheet?.targetId && assignedTarget && (() => {
+        {/* TARGET Panel — target card fields (when assigned) plus entity
+            chips mined from this sheet's own observations, in one panel so
+            officers see every quick-insert chip together. */}
+        {((sheet?.targetId && assignedTarget) || (entityChips && entityChips.length > 0)) && (() => {
           const t = assignedTarget;
+          const hasTarget = !!(sheet?.targetId && t);
           // Build dynamic extra vehicle fields from JSON
           const extraVehicleFields: { label: string; value: string | null }[] = [];
-          try {
-            const evs: Array<{ full: string; short: string }> = JSON.parse((t as any).extraVehicles ?? '[]');
-            evs.forEach((ev, i) => {
-              const num = i + 2;
-              if (ev.full)  extraVehicleFields.push({ label: `V${num}F`, value: ev.full });
-              if (ev.short) extraVehicleFields.push({ label: `V${num}`,  value: ev.short });
-            });
-          } catch {}
+          if (t) {
+            try {
+              const evs: Array<{ full: string; short: string }> = JSON.parse((t as any).extraVehicles ?? '[]');
+              evs.forEach((ev, i) => {
+                const num = i + 2;
+                if (ev.full)  extraVehicleFields.push({ label: `V${num}F`, value: ev.full });
+                if (ev.short) extraVehicleFields.push({ label: `V${num}`,  value: ev.short });
+              });
+            } catch {}
+          }
           // Build wild fields
           const wildFieldItems: { label: string; value: string | null }[] = [];
-          try {
-            const wfs: Array<{ label: string; value: string }> = JSON.parse((t as any).wildFields ?? '[]');
-            wfs.forEach((wf) => { if (wf.value) wildFieldItems.push({ label: wf.label, value: wf.value }); });
-          } catch {}
-          // Strip "Vehicle " prefix from short vehicle values for display
-          const stripVehicle = (v: string | null | undefined): string | null => {
-            if (!v) return null;
-            return v.replace(/^Vehicle\s+/i, '').trim() || null;
-          };
-          // Extract registration number from a vehicle string (last alphanumeric token with digits)
-          // Returns null if no rego-like token found — chip will be hidden (no value = not shown)
-          const fields: { label: string; value: string | null }[] = [
+          if (t) {
+            try {
+              const wfs: Array<{ label: string; value: string }> = JSON.parse((t as any).wildFields ?? '[]');
+              wfs.forEach((wf) => { if (wf.value) wildFieldItems.push({ label: wf.label, value: wf.value }); });
+            } catch {}
+          }
+          const fields: { label: string; value: string | null }[] = t ? [
             { label: "TGT", value: t.tgt },
             { label: "HBF", value: t.hbf },
             { label: "HB",  value: t.hb  },
@@ -3193,8 +3193,9 @@ export default function SheetDetail() {
             { label: "DEP", value: t.dep },
             // All shortcut-folder triggers as chips — only those with showInRs=true, exclude legacy 'D' chip
              ...(shortcutsData ?? []).filter((s) => s.trigger.toUpperCase() !== "D" && !!s.showInRs).map((s) => ({ label: s.trigger.toUpperCase(), value: s.expansion })),
-          ];
+          ] : [];
           const hasAnyField = fields.some((f) => f.value);
+          const hasEntityChips = !!(entityChips && entityChips.length > 0);
           return (
             <div className="mb-4 rounded-lg border border-border bg-card/60 overflow-hidden">
               {/* Header — always visible. Tapping the main area toggles collapse; pencil navigates to edit */}
@@ -3207,20 +3208,22 @@ export default function SheetDetail() {
                     return next;
                   })}
                 >
-                  <Target className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground truncate flex-1">TARGET — {t.name}</span>
+                  {hasTarget ? <Target className="w-3.5 h-3.5 text-muted-foreground shrink-0" /> : <Tag className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
+                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground truncate flex-1">{hasTarget ? `TARGET — ${t!.name}` : "SHORTCUTS"}</span>
                   <ChevronDown
                     className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 shrink-0 ${targetPanelExpanded ? "" : "-rotate-90"}`}
                   />
                 </button>
                 {/* Edit pencil — independent tap zone, doesn't trigger collapse */}
-                <button
-                  className="px-3 py-3 text-muted-foreground hover:text-foreground active:scale-95 transition-all shrink-0 border-l border-border/30"
-                  onClick={() => navigate(`/operation/${sheet!.operationId}?tab=target&targetId=${t.id}&fromSheet=${sheetId}`)}
-                  title="Edit Target"
-                >
-                  <Pencil className="w-3.5 h-3.5" />
-                </button>
+                {hasTarget && (
+                  <button
+                    className="px-3 py-3 text-muted-foreground hover:text-foreground active:scale-95 transition-all shrink-0 border-l border-border/30"
+                    onClick={() => navigate(`/operation/${sheet!.operationId}?tab=target&targetId=${t!.id}&fromSheet=${sheetId}`)}
+                    title="Edit Target"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
               {/* Collapsible details */}
               {targetPanelExpanded && (() => {
@@ -3297,62 +3300,55 @@ export default function SheetDetail() {
                         </DndContext>
                       );
                     })()}
+                    {/* Entity chips — quick-insert shortcuts mined from this sheet's own
+                        observations (surname / short address / vehicle rego), one line
+                        under the fixed chips above, shared across every officer viewing
+                        the sheet since they come from the server, not a per-device setting. */}
+                    {hasEntityChips && (
+                      <div className="flex flex-wrap gap-1.5 pt-2">
+                        {entityChips!.map((chip) => {
+                          const insertIntoFocused = () => {
+                            const el = focusedTextareaRef.current;
+                            if (!el) return;
+                            el.focus();
+                            const start = el.selectionStart ?? el.value.length;
+                            const end = el.selectionEnd ?? el.value.length;
+                            const before = el.value.slice(0, start);
+                            const after = el.value.slice(end);
+                            const insert = (before && !before.endsWith(" ")) ? ` ${chip.insertValue}` : chip.insertValue;
+                            try {
+                              document.execCommand("insertText", false, insert);
+                            } catch {
+                              const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set
+                                || Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+                              if (nativeInputValueSetter) {
+                                nativeInputValueSetter.call(el, before + insert + after);
+                                el.dispatchEvent(new Event("input", { bubbles: true }));
+                              }
+                            }
+                          };
+                          const typeLabel = chip.type === "vehicle" ? "VEH" : chip.type === "address" ? "LOC" : chip.type === "business" ? "BIZ" : "PER";
+                          return (
+                            <button
+                              key={chip.key}
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={insertIntoFocused}
+                              title={`Insert: ${chip.insertValue}`}
+                              className="flex items-center gap-1 pl-1.5 pr-2 py-0.5 rounded border border-violet-500/30 bg-violet-500/5 text-violet-400 hover:bg-violet-500/15 active:scale-95 transition-all select-none cursor-pointer"
+                            >
+                              <span className="text-[10px] font-bold uppercase tracking-wide">{typeLabel}</span>
+                              <span className="text-[10px] font-mono max-w-[140px] truncate">{chip.insertValue}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 );
               })()}
             </div>
           );
         })()}
-
-        {/* Entity chips — quick-insert shortcuts mined from this sheet's own
-            observations (surname / short address / vehicle rego), shared
-            across every officer viewing the sheet since they come from the
-            server rather than a per-device setting. */}
-        {entityChips && entityChips.length > 0 && (
-          <div className="mb-4 rounded-lg border border-border bg-card/60 overflow-hidden">
-            <div className="flex items-center gap-2 px-4 py-3">
-              <Tag className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground truncate flex-1">FROM THIS SHEET</span>
-            </div>
-            <div className="px-4 pb-3 border-t border-border/40 flex flex-wrap gap-1.5 pt-2">
-              {entityChips.map((chip) => {
-                const insertIntoFocused = () => {
-                  const el = focusedTextareaRef.current;
-                  if (!el) return;
-                  el.focus();
-                  const start = el.selectionStart ?? el.value.length;
-                  const end = el.selectionEnd ?? el.value.length;
-                  const before = el.value.slice(0, start);
-                  const after = el.value.slice(end);
-                  const insert = (before && !before.endsWith(" ")) ? ` ${chip.insertValue}` : chip.insertValue;
-                  try {
-                    document.execCommand("insertText", false, insert);
-                  } catch {
-                    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set
-                      || Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
-                    if (nativeInputValueSetter) {
-                      nativeInputValueSetter.call(el, before + insert + after);
-                      el.dispatchEvent(new Event("input", { bubbles: true }));
-                    }
-                  }
-                };
-                const typeLabel = chip.type === "vehicle" ? "VEH" : chip.type === "address" ? "LOC" : chip.type === "business" ? "BIZ" : "PER";
-                return (
-                  <button
-                    key={chip.key}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={insertIntoFocused}
-                    title={`Insert: ${chip.insertValue}`}
-                    className="flex items-center gap-1 pl-1.5 pr-2 py-0.5 rounded border border-violet-500/30 bg-violet-500/5 text-violet-400 hover:bg-violet-500/15 active:scale-95 transition-all select-none cursor-pointer"
-                  >
-                    <span className="text-[10px] font-bold uppercase tracking-wide">{typeLabel}</span>
-                    <span className="text-[10px] font-mono text-foreground/80 max-w-[160px] truncate">{chip.display}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
 
         {/* Search bar + sort toggle + add row */}
         <div className="mb-4 flex items-center gap-2">

@@ -3593,6 +3593,19 @@ export default function SheetDetail() {
                                       setTvLoadingRowId(null);
                                       updateRowWithDupeCheck({ id: row.id, observation: data.streets });
                                       toast.success("Travelled via streets auto-filled");
+                                      // TV means the whole team travelled together — auto-add any
+                                      // roster CINs not already on this row, sequenced the same way
+                                      // as the "★ Add all team CINs" dropdown option below.
+                                      if (rosterCinList.length > 0) {
+                                        const existingNames = new Set(row.members.map((m) => m.memberName));
+                                        const missingCins = rosterCinList.filter((cin) => !existingNames.has(cin));
+                                        const addSequentially = (cins: string[], idx: number) => {
+                                          if (idx >= cins.length) return;
+                                          addMember.mutate({ rowId: row.id, memberName: cins[idx] });
+                                          setTimeout(() => addSequentially(cins, idx + 1), 80);
+                                        };
+                                        addSequentially(missingCins, 0);
+                                      }
                                     },
                                     onError: () => {
                                       setTvLoadingRowId(null);

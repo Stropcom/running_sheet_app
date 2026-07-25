@@ -1,7 +1,7 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "ae583891-066f-4414-b29e-bb8a38b865b4",
+  "id": "3b069e21-950f-411d-a1e4-e246f9374be7",
   "prevId": "94ff2573-66e8-4ac8-801c-653a85ea5ddd",
   "tables": {
     "attachment_entity_links": {
@@ -487,14 +487,14 @@
         },
         "keyA": {
           "name": "keyA",
-          "type": "varchar(512)",
+          "type": "varchar(255)",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
         "keyB": {
           "name": "keyB",
-          "type": "varchar(512)",
+          "type": "varchar(255)",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false

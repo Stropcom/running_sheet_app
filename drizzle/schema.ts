@@ -216,8 +216,8 @@ export const entityDedupDecisions = mysqlTable(
   {
     id: int("id").autoincrement().primaryKey(),
     type: mysqlEnum("type", ["person", "vehicle", "address", "business"]).notNull(),
-    keyA: varchar("keyA", { length: 512 }).notNull(), // alphabetically-lesser of the pair
-    keyB: varchar("keyB", { length: 512 }).notNull(),
+    keyA: varchar("keyA", { length: 255 }).notNull(), // alphabetically-lesser of the pair
+    keyB: varchar("keyB", { length: 255 }).notNull(),
     decidedByCIN: varchar("decidedByCIN", { length: 64 }),
     decidedAt: bigint("decidedAt", { mode: "number" }).notNull(),
   },

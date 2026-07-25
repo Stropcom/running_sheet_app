@@ -14,8 +14,8 @@ CREATE TABLE `entity_aliases` (
 CREATE TABLE `entity_dedup_decisions` (
 	`id` int AUTO_INCREMENT NOT NULL,
 	`type` enum('person','vehicle','address','business') NOT NULL,
-	`keyA` varchar(512) NOT NULL,
-	`keyB` varchar(512) NOT NULL,
+	`keyA` varchar(255) NOT NULL,
+	`keyB` varchar(255) NOT NULL,
 	`decidedByCIN` varchar(64),
 	`decidedAt` bigint NOT NULL,
 	CONSTRAINT `entity_dedup_decisions_id` PRIMARY KEY(`id`),

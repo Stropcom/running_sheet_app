@@ -65,7 +65,7 @@ import {
   FolderOpen as FolderIcon,
   Clock,
   Image as ImageIcon,
-  Keyboard,
+  Undo2,
 } from "lucide-react";
 
 // Phone/tablet (touch, no physical keyboard) vs laptop/desktop (mouse +
@@ -778,9 +778,14 @@ export default function IntelligenceMapping() {
   const rsInlineInputRef = useRef<HTMLTextAreaElement | null>(null);
   // RSQE is built for tapping shortcut chips, not typing — the observation
   // textarea starts read-only (so focusing it, including the auto-focus on
-  // open, never summons the on-screen keyboard) until the user explicitly
-  // taps the keyboard icon to switch into typing mode.
+  // open, never summons the on-screen keyboard) until the user taps directly
+  // into the field to switch into typing mode.
   const [rsInlineTypingMode, setRsInlineTypingMode] = useState(false);
+  // Undo history for the observation textarea — snapshots of the text
+  // before each chip insert / shortcut expansion / burst of typing, so the
+  // undo button can step backwards repeatedly (continuous undo).
+  const [rsInlineUndoStack, setRsInlineUndoStack] = useState<string[]>([]);
+  const rsInlineTypingPushRef = useRef<number>(0);
 
   // Right-pane collapsible RS Quick Entry panel state (separate from modal inline field)
   const [rsQeText, setRsQeText] = useState("");
@@ -2244,6 +2249,7 @@ export default function IntelligenceMapping() {
     rsInlineCinsRef.current = new Set();
     setRsCountdown(30);
     setRsInlineTypingMode(false);
+    setRsInlineUndoStack([]);
   };
 
   const submitInlineField = () => {
@@ -2273,6 +2279,24 @@ export default function IntelligenceMapping() {
     });
   };
 
+  // Snapshot the observation text before a change is applied, so undoInlineText
+  // can step back to it. Call with the pre-change value.
+  const pushInlineUndo = (prevText: string) => {
+    setRsInlineUndoStack((stack) => [...stack, prevText]);
+  };
+
+  // Steps the observation text back one snapshot at a time — repeated taps
+  // keep undoing further back, all the way to the empty starting text.
+  const undoInlineText = () => {
+    setRsInlineUndoStack((stack) => {
+      if (stack.length === 0) return stack;
+      const restored = stack[stack.length - 1];
+      setRsInlineText(restored);
+      return stack.slice(0, -1);
+    });
+    resetInlineTimer();
+  };
+
   const openInlineField = (label: string) => {
     if (!rsSelectedSheetId) return;
     setRsInlineLabel(label);
@@ -2280,6 +2304,7 @@ export default function IntelligenceMapping() {
     setRsInlineCins(new Set());
     rsInlineCinsRef.current = new Set();
     setRsInlineTypingMode(false);
+    setRsInlineUndoStack([]);
     // Focus the textarea after render
     setTimeout(() => rsInlineInputRef.current?.focus(), 50);
     // Start auto-submit countdown
@@ -4115,28 +4140,34 @@ export default function IntelligenceMapping() {
                     <div className="rounded-lg border border-border bg-muted/40 p-2.5 md:p-3.5 flex flex-col gap-2 md:gap-2.5" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] md:text-xs font-bold uppercase tracking-wide text-muted-foreground">Observation</span>
-                        {isTouchDevice && (
-                          <button
-                            type="button"
-                            onClick={enableInlineTyping}
-                            title={inlineReadOnly ? "Tap to type" : "Typing enabled"}
-                            className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold border transition-all active:scale-95 ${
-                              inlineReadOnly
-                                ? "border-border text-muted-foreground hover:bg-accent/50"
-                                : "border-primary/40 bg-primary/10 text-primary"
-                            }`}
-                          >
-                            <Keyboard className="h-3 w-3" />
-                            {inlineReadOnly ? "Tap to type" : "Typing"}
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={undoInlineText}
+                          disabled={rsInlineUndoStack.length === 0}
+                          title="Undo"
+                          className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold border border-border text-muted-foreground transition-all active:scale-95 hover:bg-accent/50 disabled:opacity-40 disabled:pointer-events-none"
+                        >
+                          <Undo2 className="h-3 w-3" />
+                          Undo
+                        </button>
                       </div>
                       <textarea
                         ref={rsInlineInputRef}
                         value={rsInlineText}
                         readOnly={inlineReadOnly}
                         onClick={() => { if (inlineReadOnly) enableInlineTyping(); }}
-                        onChange={(e) => { setRsInlineText(e.target.value); resetInlineTimer(); }}
+                        onChange={(e) => {
+                          const next = e.target.value;
+                          const now = Date.now();
+                          // Group rapid keystrokes into a single undo step; only
+                          // snapshot when there's been a pause since the last one.
+                          if (now - rsInlineTypingPushRef.current > 600) {
+                            pushInlineUndo(rsInlineText);
+                          }
+                          rsInlineTypingPushRef.current = now;
+                          setRsInlineText(next);
+                          resetInlineTimer();
+                        }}
                         onFocus={resetInlineTimer}
                         onKeyDown={(e) => {
                           if (e.key === " " || e.key === "Tab") {
@@ -4152,6 +4183,7 @@ export default function IntelligenceMapping() {
                                 const before = textBefore.slice(0, textBefore.length - match[1].length);
                                 const after = rsInlineText.slice(pos);
                                 const newText = before + expansion + " " + after;
+                                pushInlineUndo(rsInlineText);
                                 setRsInlineText(newText);
                                 resetInlineTimer();
                                 requestAnimationFrame(() => {
@@ -4162,7 +4194,7 @@ export default function IntelligenceMapping() {
                             }
                           }
                         }}
-                        placeholder={inlineReadOnly ? "Tap shortcuts below, or tap the keyboard icon to type…" : "Add details (optional)…"}
+                        placeholder={inlineReadOnly ? "Tap shortcuts below, or tap here to type…" : "Add details (optional)…"}
                         rows={4}
                         className={`w-full resize-none rounded-md border border-border bg-background px-2.5 py-1.5 text-[11px] placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring md:px-3 md:py-2 md:text-sm lg:min-h-[140px] ${inlineReadOnly ? "cursor-pointer" : ""}`}
                       />
@@ -4172,7 +4204,7 @@ export default function IntelligenceMapping() {
                         // Single source of truth: assignedTarget (target.getById) for all target fields.
                         // Chip set matches SheetDetail exactly: TGT, HBF, HB, V1F, V1, extra vehicles, wildcards, DEP, ARR, folder shortcuts.
                         // Order: qeChipOrder (read from RS localStorage key) with wildcards always last.
-                        const appendText = (text: string) => { setRsInlineText(prev => prev ? `${prev} ${text}` : text); resetInlineTimer(); rsInlineInputRef.current?.focus(); };
+                        const appendText = (text: string) => { pushInlineUndo(rsInlineText); setRsInlineText(prev => prev ? `${prev} ${text}` : text); resetInlineTimer(); rsInlineInputRef.current?.focus(); };
                         const t = assignedTarget as any;
                         if (!t) return null;
 
@@ -4266,7 +4298,7 @@ export default function IntelligenceMapping() {
                       })()}
                       {/* Address chips — full RS address and short street address */}
                       {mapQeAddress && (() => {
-                        const appendText = (text: string) => { setRsInlineText(prev => prev ? `${prev} ${text}` : text); resetInlineTimer(); rsInlineInputRef.current?.focus(); };
+                        const appendText = (text: string) => { pushInlineUndo(rsInlineText); setRsInlineText(prev => prev ? `${prev} ${text}` : text); resetInlineTimer(); rsInlineInputRef.current?.focus(); };
                         // Extract short address from bracket code: e.g. "21 Olding Way, MELVILLE WA (21 OLDING WAY)" → "21 Olding Way"
                         const bracketMatch = mapQeAddress.match(/^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/);
                         // Short address: title-case the bracket code content (e.g. "21 OLDING WAY" → "21 Olding Way")

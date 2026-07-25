@@ -3327,16 +3327,14 @@ export default function SheetDetail() {
                               }
                             }
                           };
-                          const typeLabel = chip.type === "vehicle" ? "VEH" : chip.type === "address" ? "LOC" : chip.type === "business" ? "BIZ" : "PER";
                           return (
                             <button
                               key={chip.key}
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={insertIntoFocused}
                               title={`Insert: ${chip.insertValue}`}
-                              className="flex items-center gap-1 pl-1.5 pr-2 py-0.5 rounded border border-violet-500/30 bg-violet-500/5 text-violet-400 hover:bg-violet-500/15 active:scale-95 transition-all select-none cursor-pointer"
+                              className="px-2 py-0.5 rounded border border-violet-500/30 bg-violet-500/5 text-violet-400 hover:bg-violet-500/15 active:scale-95 transition-all select-none cursor-pointer"
                             >
-                              <span className="text-[10px] font-bold uppercase tracking-wide">{typeLabel}</span>
                               <span className="text-[10px] font-mono max-w-[140px] truncate">{chip.insertValue}</span>
                             </button>
                           );

@@ -5,13 +5,14 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, FileDown, User, Car, MapPin, FileText, ChevronRight } from "lucide-react";
+import { ArrowLeft, FileDown, User, FileText, ChevronRight } from "lucide-react";
 import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
-import { buildPhotoGridHtml, formatAttachmentBanner, toAbsolutePhotoUrl, type RowAttachmentLike } from "@/lib/attachmentBanner";
+import { buildPhotoGridHtml, buildEntityListWithPhotosHtml, type RowAttachmentLike } from "@/lib/attachmentBanner";
+import { IntelEntityWithPhotos, IntelPhotoStrip, type IntelAssocEntity } from "@/components/IntelEntityChip";
 
 // ─── Types (mirrors server IntelOperationProfile) ──────────────────────────
 type ProfilePhoto = RowAttachmentLike & { id: number; url: string };
-interface IntelProfileEntity { id: string; label: string; type: string; rowCount: number; sheetIds: number[]; operationIds: number[]; photos?: ProfilePhoto[] }
+type IntelProfileEntity = IntelAssocEntity;
 interface OperationTarget {
   targetId: number; name: string; tgt: string | null;
   hbf: string | null; v1f: string | null; v2f: string | null; dep: string | null; arr: string | null;
@@ -26,96 +27,11 @@ interface IntelOperationProfile {
   targets: OperationTarget[];
 }
 
-// ─── Colour palette ────────────────────────────────────────────────────────
-const CHIP: Record<string, string> = {
-  person:   "bg-blue-500/10 text-blue-600 border-blue-500/30 dark:text-blue-400",
-  vehicle:  "bg-amber-500/10 text-amber-600 border-amber-500/30 dark:text-amber-400",
-  address:  "bg-emerald-500/10 text-emerald-600 border-emerald-500/30 dark:text-emerald-400",
-  business: "bg-purple-500/10 text-purple-600 border-purple-500/30 dark:text-purple-400",
-  target:   "bg-blue-500/10 text-blue-600 border-blue-500/30 dark:text-blue-400",
-};
-
-// Compact thumbnail row for photos linked to a target or a set of associated
-// entities. `entityLabel` (when set per-photo) shows which entity a photo
-// belongs to, since this strip can aggregate photos across several chips.
-function PhotoStrip({ photos, size = "w-16 h-16" }: { photos: Array<ProfilePhoto & { entityLabel?: string }>; size?: string }) {
-  const [lightbox, setLightbox] = useState<string | null>(null);
-  if (!photos.length) return null;
-  return (
-    <>
-      <div className="flex flex-wrap gap-1.5 mt-1.5">
-        {photos.map(p => (
-          <button
-            key={p.id}
-            onClick={() => setLightbox(p.url)}
-            title={p.entityLabel ? `${p.entityLabel} — ${formatAttachmentBanner(p)}` : formatAttachmentBanner(p)}
-            className={`${size} rounded-md overflow-hidden border border-border/60 shrink-0 hover:opacity-80 transition-opacity`}
-          >
-            <img src={p.url} alt="Linked photograph" className="w-full h-full object-cover" />
-          </button>
-        ))}
-      </div>
-      {lightbox && (
-        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6" onClick={() => setLightbox(null)}>
-          <img src={lightbox} alt="Linked photograph" className="max-w-full max-h-full rounded shadow-2xl" />
-        </div>
-      )}
-    </>
-  );
-}
-
-function EntityChip({ item, onClick }: { item: IntelProfileEntity; onClick?: () => void }) {
-  const cls = CHIP[item.type] ?? "bg-muted text-muted-foreground border-border";
-  const icon = item.type === "vehicle" ? <Car className="w-3 h-3" /> : item.type === "address" || item.type === "business" ? <MapPin className="w-3 h-3" /> : <User className="w-3 h-3" />;
-  const label = item.type === "vehicle"
-    ? formatIntelVehicle(item.label)
-    : (item.type === "address" || item.type === "business")
-    ? formatIntelAddress(item.label)
-    : item.label;
-  return (
-    <button onClick={onClick} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-opacity hover:opacity-80 ${cls}`}>
-      {icon}{label}<span className="opacity-60">×{item.rowCount}</span>
-    </button>
-  );
-}
-
 // ─── PDF export ────────────────────────────────────────────────────────────
 function buildOperationProfileHtml(profile: IntelOperationProfile) {
   const esc = (s: string | null | undefined) => (s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const BLUE_DARK = "#1e3a8a"; const BLUE_MID = "#93c5fd"; const BLUE_LIGHT = "#dbeafe";
   const GREY_TEXT = "#1e293b"; const GREY_BORDER = "#e2e8f0";
-  const chipHtml = (label: string, type: string, count: number) => {
-    const colors: Record<string, string> = {
-      person: "background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd",
-      vehicle: "background:#fef3c7;color:#d97706;border:1px solid #fcd34d",
-      address: "background:#d1fae5;color:#059669;border:1px solid #6ee7b7",
-      business: "background:#ede9fe;color:#7c3aed;border:1px solid #c4b5fd",
-      target: "background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd",
-    };
-    const style = colors[type] ?? "background:#f1f5f9;color:#475569;border:1px solid #cbd5e1";
-    const displayLabel = type === "vehicle"
-      ? formatIntelVehicle(label)
-      : (type === "address" || type === "business")
-      ? formatIntelAddress(label)
-      : label;
-    return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:9999px;font-size:10px;font-weight:600;${style};margin:2px">${esc(displayLabel)} <span style="opacity:0.6">×${count}</span></span>`;
-  };
-  // Fixed-size thumbnail row for photos linked to a set of associated
-  // entities (persons/vehicles/locations), each captioned with which entity
-  // it belongs to. Slightly smaller than the target's own photo grid since
-  // these are secondary, per-association thumbnails.
-  const ENTITY_PHOTO_PX = 80;
-  const entityPhotoGridHtml = (items: IntelProfileEntity[]): string => {
-    const cells = items.flatMap(i => (i.photos ?? []).map(p => `<div style="width:${ENTITY_PHOTO_PX}px;border:1px solid ${GREY_BORDER};border-radius:6px;overflow:hidden">
-      <img src="${esc(toAbsolutePhotoUrl(p.url))}" style="width:100%;aspect-ratio:1;object-fit:cover;display:block" />
-      <div style="background:#000;color:#fff;font-size:6px;padding:2px 3px;line-height:1.3">
-        <div style="font-weight:600">${esc(i.label)}</div>
-        <div>${esc(formatAttachmentBanner(p))}</div>
-      </div>
-    </div>`));
-    if (!cells.length) return "";
-    return `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${cells.join("")}</div>`;
-  };
   const generatedAt = new Date().toLocaleString("en-AU", { dateStyle: "long", timeStyle: "short" });
   const totalAssoc = profile.targets.reduce((s, t) => s + t.assocPersons.length + t.assocVehicles.length + t.assocLocations.length, 0);
   const targetsHtml = profile.targets.map(t => `
@@ -129,9 +45,9 @@ function buildOperationProfileHtml(profile: IntelOperationProfile) {
         ${t.v1f ? `<p style="font-size:10px;margin-bottom:4px"><span style="color:#64748b;font-weight:600">Vehicle 1:</span> ${esc(formatIntelVehicle(t.v1f))}</p>` : ""}
         ${t.v2f ? `<p style="font-size:10px;margin-bottom:4px"><span style="color:#64748b;font-weight:600">Vehicle 2:</span> ${esc(formatIntelVehicle(t.v2f))}</p>` : ""}
         ${t.linkedSheets.length ? `<p style="font-size:10px;color:#64748b;margin-top:6px;margin-bottom:4px;font-weight:600">Running Sheets:</p>${t.linkedSheets.map(s => `<p style="font-size:10px;padding-left:12px">• ${esc(s.title)}</p>`).join("")}` : ""}
-        ${t.assocPersons.length ? `<p style="font-size:10px;color:#64748b;margin-top:8px;margin-bottom:4px;font-weight:600">Associated Persons:</p><div style="display:flex;flex-wrap:wrap;gap:4px">${t.assocPersons.map(p => chipHtml(p.label, p.type, p.rowCount)).join("")}</div>${entityPhotoGridHtml(t.assocPersons)}` : ""}
-        ${t.assocVehicles.length ? `<p style="font-size:10px;color:#64748b;margin-top:8px;margin-bottom:4px;font-weight:600">Associated Vehicles:</p><div style="display:flex;flex-wrap:wrap;gap:4px">${t.assocVehicles.map(v => chipHtml(v.label, v.type, v.rowCount)).join("")}</div>${entityPhotoGridHtml(t.assocVehicles)}` : ""}
-        ${t.assocLocations.length ? `<p style="font-size:10px;color:#64748b;margin-top:8px;margin-bottom:4px;font-weight:600">Associated Locations:</p><div style="display:flex;flex-wrap:wrap;gap:4px">${t.assocLocations.map(l => chipHtml(l.label, l.type, l.rowCount)).join("")}</div>${entityPhotoGridHtml(t.assocLocations)}` : ""}
+        ${t.assocPersons.length ? `<p style="font-size:10px;color:#64748b;margin-top:8px;margin-bottom:4px;font-weight:600">Associated Persons:</p>${buildEntityListWithPhotosHtml(t.assocPersons)}` : ""}
+        ${t.assocVehicles.length ? `<p style="font-size:10px;color:#64748b;margin-top:8px;margin-bottom:4px;font-weight:600">Associated Vehicles:</p>${buildEntityListWithPhotosHtml(t.assocVehicles)}` : ""}
+        ${t.assocLocations.length ? `<p style="font-size:10px;color:#64748b;margin-top:8px;margin-bottom:4px;font-weight:600">Associated Locations:</p>${buildEntityListWithPhotosHtml(t.assocLocations)}` : ""}
       </div>
     </div>`).join("");
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>RunLog — Operation Profile: ${esc(profile.operationName)}</title>
@@ -265,7 +181,7 @@ export default function IntelligenceOperationProfile() {
                         {target.photos.length > 0 && (
                           <div>
                             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Photos ({target.photos.length})</p>
-                            <PhotoStrip photos={target.photos} />
+                            <IntelPhotoStrip photos={target.photos} />
                             <Separator className="mt-3" />
                           </div>
                         )}
@@ -299,28 +215,31 @@ export default function IntelligenceOperationProfile() {
                             {target.assocPersons.length > 0 && (
                               <div className="mb-2">
                                 <p className="text-xs text-muted-foreground mb-1">Persons</p>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {target.assocPersons.map(p => <EntityChip key={p.id} item={p} onClick={() => navigate(`/intelligence/associate/${encodeURIComponent(p.label)}`)} />)}
+                                <div className="flex flex-col gap-2">
+                                  {target.assocPersons.map(p => (
+                                    <IntelEntityWithPhotos key={p.id} item={p} onClick={() => navigate(`/intelligence/associate/${encodeURIComponent(p.label)}`)} />
+                                  ))}
                                 </div>
-                                <PhotoStrip photos={target.assocPersons.flatMap(p => (p.photos ?? []).map(ph => ({ ...ph, entityLabel: p.label })))} size="w-14 h-14" />
                               </div>
                             )}
                             {target.assocVehicles.length > 0 && (
                               <div className="mb-2">
                                 <p className="text-xs text-muted-foreground mb-1">Vehicles</p>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {target.assocVehicles.map(v => <EntityChip key={v.id} item={v} onClick={() => navigate(`/intelligence/vehicle/${encodeURIComponent(v.label)}`)} />)}
+                                <div className="flex flex-col gap-2">
+                                  {target.assocVehicles.map(v => (
+                                    <IntelEntityWithPhotos key={v.id} item={v} onClick={() => navigate(`/intelligence/vehicle/${encodeURIComponent(v.label)}`)} />
+                                  ))}
                                 </div>
-                                <PhotoStrip photos={target.assocVehicles.flatMap(v => (v.photos ?? []).map(ph => ({ ...ph, entityLabel: v.label })))} size="w-14 h-14" />
                               </div>
                             )}
                             {target.assocLocations.length > 0 && (
                               <div className="mb-2">
                                 <p className="text-xs text-muted-foreground mb-1">Locations</p>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {target.assocLocations.map(l => <EntityChip key={l.id} item={l} onClick={() => navigate(`/intelligence/location/${encodeURIComponent(l.label)}`)} />)}
+                                <div className="flex flex-col gap-2">
+                                  {target.assocLocations.map(l => (
+                                    <IntelEntityWithPhotos key={l.id} item={l} onClick={() => navigate(`/intelligence/location/${encodeURIComponent(l.label)}`)} />
+                                  ))}
                                 </div>
-                                <PhotoStrip photos={target.assocLocations.flatMap(l => (l.photos ?? []).map(ph => ({ ...ph, entityLabel: l.label })))} size="w-14 h-14" />
                               </div>
                             )}
                           </div>

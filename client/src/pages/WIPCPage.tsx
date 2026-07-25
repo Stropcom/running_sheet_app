@@ -21,17 +21,7 @@ import {
   Save,
   UserCheck,
 } from "lucide-react";
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function downloadBase64(base64: string, filename: string, mime: string) {
-  const link = document.createElement("a");
-  link.href = `data:${mime};base64,${base64}`;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-}
+import { downloadBase64File } from "@/lib/downloadFile";
 
 /** Returns today as DD/MM/YYYY */
 function todayDDMMYYYY() {
@@ -437,7 +427,7 @@ export default function WIPCPage() {
 
   const generateStatDecMutation = trpc.wipc.generateStatDec.useMutation({
     onSuccess(data) {
-      downloadBase64(data.base64, data.filename, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+      downloadBase64File(data.base64, data.filename, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
       toast.success("Statutory Declaration generated");
       setIsGenerating(false);
     },
@@ -449,7 +439,7 @@ export default function WIPCPage() {
 
   const generateWipcRequestMutation = trpc.wipc.generateWipcRequest.useMutation({
     onSuccess(data) {
-      downloadBase64(data.base64, data.filename, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+      downloadBase64File(data.base64, data.filename, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
       toast.success("WIPC Request generated");
       setIsGenerating(false);
     },

@@ -18,17 +18,7 @@ import {
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function downloadBase64(base64: string, filename: string, mime: string) {
-  const link = document.createElement("a");
-  link.href = `data:${mime};base64,${base64}`;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-}
+import { downloadBase64File } from "@/lib/downloadFile";
 
 function formatDateShort(ts: number) {
   return format(new Date(ts), "d MMM yyyy");
@@ -85,7 +75,7 @@ export default function WitnessListPage() {
     },
     onSuccess: (data) => {
       setGenerating(false);
-      downloadBase64(
+      downloadBase64File(
         data.base64,
         data.filename,
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"

@@ -16,6 +16,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { useIsMobile } from "@/hooks/useMobile";
 import CinInput from "@/components/CinInput";
 import { LinkAttachmentDialog } from "@/components/LinkAttachmentDialog";
+import { EntityDuplicateDialog, type DedupType } from "@/components/EntityDuplicateDialog";
 import {
   Dialog,
   DialogContent,
@@ -457,15 +458,18 @@ function exportToPDF(
 
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
   <title>${sheetTitle}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet"/>
   <style>
     @page{
       margin:20mm 15mm;
-      @top-center{content:'PROTECTED';font-family:system-ui,sans-serif;font-size:12px;font-weight:700;color:#dc2626;letter-spacing:0.08em}
-      @bottom-center{content:'PROTECTED';font-family:system-ui,sans-serif;font-size:12px;font-weight:700;color:#dc2626;letter-spacing:0.08em}
+      @top-center{content:'PROTECTED';font-family:'Roboto',sans-serif;font-size:12px;font-weight:700;color:#dc2626;letter-spacing:0.08em}
+      @bottom-center{content:'PROTECTED';font-family:'Roboto',sans-serif;font-size:12px;font-weight:700;color:#dc2626;letter-spacing:0.08em}
     }
     /* Force background colours to print — Chrome strips backgrounds by default */
     *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;color-adjust:exact !important}
-    body{font-family:system-ui,sans-serif;background:#fff;color:#000;margin:0;padding:0;font-size:12px}
+    body{font-family:'Roboto',sans-serif;background:#fff;color:#000;margin:0;padding:0;font-size:11px}
     .page-title{font-size:20px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;text-align:center;margin-bottom:1.2em}
     .page-title-sm{font-size:15px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;text-align:center;margin-bottom:0.5em;margin-top:4px}
     /* Meta info table — light blue label cells */
@@ -679,6 +683,8 @@ async function exportToWord(
     : "";
 
   // ── Shared border/shading helpers ───────────────────────────────────────────
+  const FONT = "Roboto";
+  const BODY_SIZE = 22; // 11pt (docx size is in half-points)
   const thinBorder = { style: BorderStyle.SINGLE, size: 6, color: "94A3B8" };
   const outerBorder = { style: BorderStyle.SINGLE, size: 12, color: "334155" };
   const headerShading = { type: ShadingType.SOLID, color: "DBEAFE", fill: "DBEAFE" };
@@ -692,13 +698,13 @@ async function exportToWord(
           shading: headerShading,
           borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
           verticalAlign: VerticalAlign.CENTER,
-          children: [new Paragraph({ children: [new TextRun({ text: label, bold: true, size: 20, color: "000000" })] })],
+          children: [new Paragraph({ children: [new TextRun({ text: label, font: FONT, bold: true, size: BODY_SIZE, color: "000000" })] })],
         }),
         new TableCell({
           width: { size: 78, type: WidthType.PERCENTAGE },
           borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
           verticalAlign: VerticalAlign.CENTER,
-          children: [new Paragraph({ children: [new TextRun({ text: value, size: 20, color: "000000" })] })],
+          children: [new Paragraph({ children: [new TextRun({ text: value, font: FONT, size: BODY_SIZE, color: "000000" })] })],
         }),
       ],
     });
@@ -732,7 +738,7 @@ async function exportToWord(
       shading: headerShading,
       borders: { top: outerBorder, bottom: outerBorder, left: thinBorder, right: thinBorder },
       verticalAlign: VerticalAlign.CENTER,
-      children: [new Paragraph({ children: [new TextRun({ text, bold: true, size: 20, color: "000000" })] })],
+      children: [new Paragraph({ children: [new TextRun({ text, font: FONT, bold: true, size: BODY_SIZE, color: "000000" })] })],
     });
   }
 
@@ -803,7 +809,7 @@ async function exportToWord(
             borders: { top: outerBorder, bottom: outerBorder, left: outerBorder, right: outerBorder },
             children: [new Paragraph({
               alignment: AlignmentType.CENTER,
-              children: [new TextRun({ text: `── ${divLabel} ──`, bold: true, size: 18, color: "93C5FD" })],
+              children: [new TextRun({ text: `── ${divLabel} ──`, font: FONT, bold: true, size: 18, color: "93C5FD" })],
             })],
           }),
         ],
@@ -824,7 +830,7 @@ async function exportToWord(
           new TableCell({
             width: { size: 72, type: WidthType.PERCENTAGE },
             borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
-            children: obsText.split("\n").map((line) => new Paragraph({ children: [new TextRun({ text: line, size: 20, color: "000000" })] })),
+            children: obsText.split("\n").map((line) => new Paragraph({ children: [new TextRun({ text: line, font: FONT, size: BODY_SIZE, color: "000000" })] })),
           }),
           new TableCell({
             width: { size: 18, type: WidthType.PERCENTAGE },
@@ -849,7 +855,7 @@ async function exportToWord(
           ? [new Paragraph({ children: [new TextRun({ text: timeText, size: 18, font: "Courier New", color: "000000" })] })]
           : [new Paragraph({ children: [] })];
         const obsPara = idx === 0
-          ? obsText.split("\n").map((line) => new Paragraph({ children: [new TextRun({ text: line, size: 20, color: "000000" })] }))
+          ? obsText.split("\n").map((line) => new Paragraph({ children: [new TextRun({ text: line, font: FONT, size: BODY_SIZE, color: "000000" })] }))
           : [new Paragraph({ children: [] })];
 
         dataRows.push(new TableRow({
@@ -867,7 +873,7 @@ async function exportToWord(
             new TableCell({
               width: { size: 18, type: WidthType.PERCENTAGE },
               borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
-              children: [new Paragraph({ children: [new TextRun({ text: certText, size: 18, color: certColor, bold: !!cert })] })],
+              children: [new Paragraph({ children: [new TextRun({ text: certText, font: FONT, size: 18, color: certColor, bold: !!cert })] })],
             }),
           ],
         }));
@@ -896,12 +902,12 @@ async function exportToWord(
         new Paragraph({
           heading: HeadingLevel.HEADING_1,
           alignment: AlignmentType.CENTER,
-          children: [new TextRun({ text: "WC SURVEILLANCE RUNNING SHEET", bold: true, size: 32, color: "000000", allCaps: true })],
+          children: [new TextRun({ text: "WC SURVEILLANCE RUNNING SHEET", font: FONT, bold: true, size: 32, color: "000000", allCaps: true })],
           spacing: { after: 200 },
         }),
         new Paragraph({
           alignment: AlignmentType.CENTER,
-          children: [new TextRun({ text: "PROTECTED", bold: true, size: 24, color: "DC2626", allCaps: true })],
+          children: [new TextRun({ text: "PROTECTED", font: FONT, bold: true, size: 24, color: "DC2626", allCaps: true })],
           spacing: { after: 240 },
         }),
         metaTable,
@@ -909,7 +915,7 @@ async function exportToWord(
         logTable,
         new Paragraph({
           alignment: AlignmentType.CENTER,
-          children: [new TextRun({ text: "PROTECTED", bold: true, size: 24, color: "DC2626", allCaps: true })],
+          children: [new TextRun({ text: "PROTECTED", font: FONT, bold: true, size: 24, color: "DC2626", allCaps: true })],
           spacing: { before: 240 },
         }),
       ],
@@ -1167,6 +1173,76 @@ function MemberCell({
 // phrase (e.g. "PHOTOGRAPH/S TAKEN" from the PT shortcut). Photos render
 // directly in the cell at ~1/3 width — same proportion used in the PDF export.
 
+// Attachment photos are for display only, not evidentiary originals, so every
+// upload is downscaled/re-encoded client-side to a consistent small JPEG —
+// this also sidesteps the iOS HEIC→JPEG-on-share size blowup (see the 25MB
+// cap below) since everything gets normalized regardless of source format.
+const ATTACHMENT_MAX_DIMENSION = 1920;
+const ATTACHMENT_JPEG_QUALITY = 0.82;
+
+function drawToJpegBlob(
+  source: CanvasImageSource,
+  srcWidth: number,
+  srcHeight: number
+): Promise<Blob | null> {
+  let width = srcWidth;
+  let height = srcHeight;
+  if (width > ATTACHMENT_MAX_DIMENSION || height > ATTACHMENT_MAX_DIMENSION) {
+    const scale = ATTACHMENT_MAX_DIMENSION / Math.max(width, height);
+    width = Math.round(width * scale);
+    height = Math.round(height * scale);
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return Promise.resolve(null);
+  ctx.drawImage(source, 0, 0, width, height);
+  return new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", ATTACHMENT_JPEG_QUALITY));
+}
+
+async function compressAttachmentImage(
+  file: File
+): Promise<{ blob: Blob; mimeType: string; fileName: string } | null> {
+  const fileName = file.name.replace(/\.[^.]+$/, "") + ".jpg";
+
+  // Primary path — fast, works for the vast majority of photos.
+  try {
+    const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+    const blob = await drawToJpegBlob(bitmap, bitmap.width, bitmap.height);
+    bitmap.close();
+    if (blob) return { blob, mimeType: "image/jpeg", fileName };
+  } catch {
+    // fall through to the <img>-based fallback below
+  }
+
+  // Fallback — Portrait-mode HEIC photos (embedded depth map, a multi-image
+  // container) are known to fail createImageBitmap on iOS Safari even though
+  // the browser can still render them fine via a plain <img>. Without this,
+  // compression silently gives up and the full-size original (often several
+  // MB) gets base64-JSON-uploaded as-is, which is much more likely to fail
+  // outright on a weak mobile connection.
+  try {
+    const objectUrl = URL.createObjectURL(file);
+    try {
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = () => reject(new Error("image element failed to load"));
+        el.src = objectUrl;
+      });
+      const blob = await drawToJpegBlob(img, img.naturalWidth, img.naturalHeight);
+      if (blob) return { blob, mimeType: "image/jpeg", fileName };
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
+  } catch {
+    // fall through
+  }
+
+  return null; // both paths failed — fall back to uploading the original file untouched
+}
+
 function ObservationAttachments({
   row,
   canEdit,
@@ -1187,23 +1263,35 @@ function ObservationAttachments({
 
   if (!IMAGERY_PHRASE_PATTERN.test(row.observation ?? "")) return null;
 
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 10 * 1024 * 1024) { toast.error("Photo must be under 10 MB."); return; }
-    // HEIC/HEIF (default iPhone format) can't be previewed by the browser —
-    // it gets converted to JPEG server-side, so skip the raw-bytes preview
-    // for it rather than show a broken image icon while uploading.
-    const isHeic = /^image\/hei[cf]$/i.test(file.type) || /\.hei[cf]$/i.test(file.name);
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
-      if (!isHeic) setPreview(dataUrl);
-      const base64 = dataUrl.split(",")[1];
-      onUpload(row.id, base64, file.type, file.name);
-    };
-    reader.readAsDataURL(file);
     e.target.value = "";
+    if (!file) return;
+
+    try {
+      const compressed = await compressAttachmentImage(file);
+      const blob: Blob = compressed?.blob ?? file;
+      const mimeType = compressed?.mimeType ?? file.type;
+      const fileName = compressed?.fileName ?? file.name;
+
+      if (blob.size > 25 * 1024 * 1024) { toast.error("Photo must be under 25 MB."); return; }
+
+      // If compression failed, the original may be a HEIC/HEIF file the browser
+      // can't preview (it gets converted to JPEG server-side) — skip the
+      // raw-bytes preview for it rather than show a broken image icon.
+      const isHeic = !compressed && (/^image\/hei[cf]/i.test(file.type) || /\.hei[cf]$/i.test(file.name));
+      const reader = new FileReader();
+      reader.onerror = () => toast.error("Couldn't read that photo — try again.");
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        if (!isHeic) setPreview(dataUrl);
+        const base64 = dataUrl.split(",")[1];
+        onUpload(row.id, base64, mimeType, fileName);
+      };
+      reader.readAsDataURL(blob);
+    } catch {
+      toast.error("Couldn't process that photo — try again, or use a different photo.");
+    }
   };
 
   return (
@@ -2018,6 +2106,76 @@ export default function SheetDetail() {
     },
   }), [isOnline, _updateRowOnline, sheetId, rows]);
 
+  // ── Live possible-duplicate check on observation save ──────────────────────
+  // Before an edited observation actually saves, extract its entities the same
+  // way the Intelligence folder does and fuzzy-check each one against every
+  // existing entity. Any near-miss matches are queued and shown one at a time
+  // via EntityDuplicateDialog; the real save only fires once the queue (which
+  // may be empty) is drained, so this never silently loses an edit.
+  type RowSaveInput = { id: number; time?: string; timeMinutes?: number; dayOffset?: number; rowDate?: string; observation?: string };
+  interface PendingDupe {
+    type: DedupType;
+    label: string;
+    match: { label: string; rowCount: number; reason: string };
+  }
+  const [dupeQueue, setDupeQueue] = useState<PendingDupe[]>([]);
+  const [dupeIndex, setDupeIndex] = useState(0);
+  const [dupeDialogOpen, setDupeDialogOpen] = useState(false);
+  const [pendingSaveInput, setPendingSaveInput] = useState<RowSaveInput | null>(null);
+
+  const updateRowWithDupeCheck = useCallback(async (input: RowSaveInput) => {
+    // Offline, or no meaningful observation text — nothing to fuzzy-check, save directly.
+    if (!isOnline || !input.observation || !input.observation.trim()) {
+      updateRow.mutate(input);
+      return;
+    }
+    try {
+      const extracted = await utils.intelligence.previewEntities.fetch({ text: input.observation });
+      const relevant = extracted.filter((e) => e.type !== "unknown");
+      const queue: PendingDupe[] = [];
+      const seen = new Set<string>();
+      for (const e of relevant) {
+        const dedupeKey = `${e.type}::${e.shortForm.toLowerCase()}`;
+        if (seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
+        const matches = await utils.intelligence.checkPossibleDuplicates.fetch({
+          type: e.type as DedupType,
+          label: e.shortForm,
+        });
+        if (matches.length > 0) {
+          queue.push({ type: e.type as DedupType, label: e.shortForm, match: matches[0] });
+        }
+      }
+      if (queue.length === 0) {
+        updateRow.mutate(input);
+        return;
+      }
+      setPendingSaveInput(input);
+      setDupeQueue(queue);
+      setDupeIndex(0);
+      setDupeDialogOpen(true);
+    } catch {
+      // If the duplicate check itself fails for any reason, don't block the save.
+      updateRow.mutate(input);
+    }
+  }, [isOnline, updateRow, utils]);
+
+  function handleDupeDialogResolved() {
+    const nextIndex = dupeIndex + 1;
+    if (nextIndex < dupeQueue.length) {
+      setDupeIndex(nextIndex);
+      setDupeDialogOpen(true);
+    } else {
+      setDupeDialogOpen(false);
+      setDupeQueue([]);
+      setDupeIndex(0);
+      if (pendingSaveInput) {
+        updateRow.mutate(pendingSaveInput);
+        setPendingSaveInput(null);
+      }
+    }
+  }
+
   const deleteRow = useMemo(() => ({
     isPending: _deleteRowOnline.isPending,
     mutate: (input: { id: number }) => {
@@ -2153,6 +2311,10 @@ export default function SheetDetail() {
   });
 
   const uploadAttachment = trpc.attachment.upload.useMutation({
+    // Field officers are often on weak signal — retry transient network
+    // failures automatically rather than making them re-tap the photo.
+    retry: 2,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 4000),
     onSuccess: invalidateRows,
     onError: (e) => toast.error(e.message),
   });
@@ -3281,13 +3443,13 @@ export default function SheetDetail() {
                               if (val.trim().toLowerCase() === "tv") {
                                 // Find this row's index in filteredRows
                                 const rowIdx = filteredRows.findIndex((r: NonNullable<typeof rows>[0]) => r.id === row.id);
-                                if (rowIdx < 0) { updateRow.mutate({ id: row.id, observation: val }); return; }
+                                if (rowIdx < 0) { updateRowWithDupeCheck({ id: row.id, observation: val }); return; }
                                 // Get the row immediately before and after in the display list
                                 const prevRow = rowIdx > 0 ? filteredRows[rowIdx - 1] : null;
                                 const nextRow = rowIdx < filteredRows.length - 1 ? filteredRows[rowIdx + 1] : null;
                                 if (!prevRow || !nextRow) {
                                   toast.error("TV auto-fill: no surrounding rows found. Add a departing row above and arriving row below first.");
-                                  updateRow.mutate({ id: row.id, observation: val });
+                                  updateRowWithDupeCheck({ id: row.id, observation: val });
                                   return;
                                 }
                                 // Extract address text from surrounding observation cells.
@@ -3339,7 +3501,7 @@ export default function SheetDetail() {
                                 const arriveAddr = enrichAddress(extractAddressFromObs(nextObs));
                                 if (!departAddr || !arriveAddr) {
                                   toast.error("TV auto-fill: could not extract addresses from surrounding rows.");
-                                  updateRow.mutate({ id: row.id, observation: val });
+                                  updateRowWithDupeCheck({ id: row.id, observation: val });
                                   return;
                                 }
                                 // Show spinner and call the server
@@ -3356,20 +3518,20 @@ export default function SheetDetail() {
                                   {
                                     onSuccess: (data) => {
                                       setTvLoadingRowId(null);
-                                      updateRow.mutate({ id: row.id, observation: data.streets });
+                                      updateRowWithDupeCheck({ id: row.id, observation: data.streets });
                                       toast.success("Travelled via streets auto-filled");
                                     },
                                     onError: () => {
                                       setTvLoadingRowId(null);
                                       // Error toast already shown by mutation onError
-                                      updateRow.mutate({ id: row.id, observation: val });
+                                      updateRowWithDupeCheck({ id: row.id, observation: val });
                                     },
                                   }
                                 );
                                 return;
                               }
                               // Normal save
-                              updateRow.mutate({ id: row.id, observation: val });
+                              updateRowWithDupeCheck({ id: row.id, observation: val });
                             }}
                             shortcuts={shortcutMap}
                           />
@@ -3756,6 +3918,20 @@ export default function SheetDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {dupeQueue.length > 0 && dupeQueue[dupeIndex] && (
+        <EntityDuplicateDialog
+          key={dupeIndex}
+          open={dupeDialogOpen}
+          onOpenChange={setDupeDialogOpen}
+          type={dupeQueue[dupeIndex].type}
+          mode="auto"
+          candidate={{ label: dupeQueue[dupeIndex].label, rowCount: 0 }}
+          existing={{ label: dupeQueue[dupeIndex].match.label, rowCount: dupeQueue[dupeIndex].match.rowCount }}
+          reason={dupeQueue[dupeIndex].match.reason}
+          onResolved={handleDupeDialogResolved}
+        />
+      )}
     </DashboardLayout>
   );
 }

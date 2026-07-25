@@ -189,12 +189,14 @@ function useTileBadges() {
   const { data: operations } = trpc.operation.list.useQuery(undefined, { staleTime: 30_000 });
   const { data: outstanding } = trpc.sheet.outstandingForMe.useQuery(undefined, { staleTime: 30_000 });
   const { data: governanceTodo } = trpc.sheet.governanceTodo.useQuery(undefined, { staleTime: 30_000 });
+  const { data: unlinkedImagesTodo } = trpc.sheet.unlinkedImagesTodo.useQuery(undefined, { staleTime: 30_000 });
   const { data: allTargets } = trpc.target.listAll.useQuery(undefined, { staleTime: 60_000 });
   const { data: calendarEvents } = trpc.calendar.events.useQuery(undefined, { staleTime: 60_000 });
 
   const certifyCount = outstanding?.length ?? 0;
   const govCount = governanceTodo?.filter((g: any) => g.outstanding.length > 0).length ?? 0;
-  const todoCount = certifyCount + govCount;
+  const unlinkedImagesCount = unlinkedImagesTodo?.length ?? 0;
+  const todoCount = certifyCount + govCount + unlinkedImagesCount;
   const activeOps = operations?.filter((o: any) => o.status === 'active')?.length ?? 0;
   const closedOps = operations?.filter((o: any) => o.status !== 'active')?.length ?? 0;
   const totalOps = operations?.length ?? 0;
@@ -228,9 +230,10 @@ function useTileBadges() {
     },
     todo: {
       badge: todoCount > 0 ? todoCount : null,
-      subtitle: `${certifyCount} to certify · ${govCount} governance`,
+      subtitle: `${certifyCount} to certify · ${unlinkedImagesCount} to link · ${govCount} governance`,
       stats: [
         { label: "Certify", value: String(certifyCount) },
+        { label: "Link Images", value: String(unlinkedImagesCount) },
         { label: "Governance", value: String(govCount) },
         { label: "Total", value: String(todoCount) },
       ],

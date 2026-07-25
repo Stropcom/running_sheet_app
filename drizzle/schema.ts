@@ -179,6 +179,56 @@ export const attachmentEntityLinks = mysqlTable("attachment_entity_links", {
 export type AttachmentEntityLink = typeof attachmentEntityLinks.$inferSelect;
 export type InsertAttachmentEntityLink = typeof attachmentEntityLinks.$inferInsert;
 
+// ─── Entity Aliases (confirmed duplicate merges) ───────────────────────────
+// Records a confirmed "these are the same real-world entity" decision, from
+// either the auto-detected possible-duplicate prompt (officer answers "Yes")
+// or the manual Merge Entities tool. getAllIntelligenceEntities() consults
+// this table to fold the loser's occurrences into the winner entity, the same
+// way it already folds TGT aliases into their canonical target. Scoped to
+// non-target entities only (person/vehicle/address/business) — targets have
+// their own registry-based identity and are not part of this system.
+export const entityAliases = mysqlTable(
+  "entity_aliases",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    type: mysqlEnum("type", ["person", "vehicle", "address", "business"]).notNull(),
+    loserKey: varchar("loserKey", { length: 512 }).notNull(), // normalized key merged away
+    loserLabel: varchar("loserLabel", { length: 512 }).notNull(), // kept as "also known as" on the winner
+    winnerKey: varchar("winnerKey", { length: 512 }).notNull(), // normalized key that survives
+    winnerLabel: varchar("winnerLabel", { length: 512 }).notNull(),
+    mergedByCIN: varchar("mergedByCIN", { length: 64 }),
+    mergedAt: bigint("mergedAt", { mode: "number" }).notNull(),
+  },
+  (table) => ({
+    // A given loser key can only ever be merged into one winner at a time.
+    loserKeyIdx: uniqueIndex("entity_aliases_loser_idx").on(table.type, table.loserKey),
+  })
+);
+
+export type EntityAlias = typeof entityAliases.$inferSelect;
+export type InsertEntityAlias = typeof entityAliases.$inferInsert;
+
+// ─── Entity Dedup Decisions (confirmed non-duplicates) ─────────────────────
+// Records a confirmed "these are NOT the same entity" decision so the
+// possible-duplicate prompt never asks about this exact pair again.
+export const entityDedupDecisions = mysqlTable(
+  "entity_dedup_decisions",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    type: mysqlEnum("type", ["person", "vehicle", "address", "business"]).notNull(),
+    keyA: varchar("keyA", { length: 255 }).notNull(), // alphabetically-lesser of the pair
+    keyB: varchar("keyB", { length: 255 }).notNull(),
+    decidedByCIN: varchar("decidedByCIN", { length: 64 }),
+    decidedAt: bigint("decidedAt", { mode: "number" }).notNull(),
+  },
+  (table) => ({
+    pairIdx: uniqueIndex("entity_dedup_decisions_pair_idx").on(table.type, table.keyA, table.keyB),
+  })
+);
+
+export type EntityDedupDecision = typeof entityDedupDecisions.$inferSelect;
+export type InsertEntityDedupDecision = typeof entityDedupDecisions.$inferInsert;
+
 // ─── Targets ────────────────────────────────────────────────────────────────
 // One row per target in the global registry. Targets are independent of
 // operations — they are linked via the operation_target_links join table.

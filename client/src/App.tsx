@@ -13,6 +13,7 @@ import LoginPage from "./pages/LoginPage";
 import ChangePasswordPage from "./pages/ChangePasswordPage";
 import MyProfilePage from "./pages/MyProfilePage";
 import TodoPage from "./pages/TodoPage";
+import TodoImagesPage from "./pages/TodoImagesPage";
 import TodoGovernancePage from "./pages/TodoGovernancePage";
 import ShortcutsPage from "./pages/ShortcutsPage";
 import IntelligencePage from "./pages/Intelligence";
@@ -79,6 +80,7 @@ function Router() {
       <Route path="/operation/:id" component={OperationDetail} />
       <Route path="/sheet/:id" component={SheetDetail} />
       <Route path="/todo" component={TodoPage} />
+      <Route path="/todo/images" component={TodoImagesPage} />
       <Route path="/todo/governance" component={TodoGovernancePage} />
       <Route path="/shortcuts" component={ShortcutsPage} />
       <Route path="/intelligence" component={IntelligencePage} />

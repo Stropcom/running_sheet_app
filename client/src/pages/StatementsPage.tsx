@@ -24,20 +24,7 @@ import {
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function downloadBase64(base64: string, filename: string, mime: string) {
-  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
-  const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-}
+import { downloadBase64File } from "@/lib/downloadFile";
 
 function formatDateShort(ts: number) {
   return format(new Date(ts), "d MMM yyyy");
@@ -120,7 +107,7 @@ export default function StatementsPage() {
       }
       if (data.results.length === 1) {
         // Single statement — download directly
-        downloadBase64(
+        downloadBase64File(
           data.results[0].base64,
           data.results[0].filename,
           "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -129,7 +116,7 @@ export default function StatementsPage() {
       } else if (data.zipBase64) {
         // Multiple — download ZIP
         const zipName = `Statements_${data.operationName.replace(/[^a-zA-Z0-9]/g, "_")}_${format(new Date(data.producedAt), "yyyyMMdd")}.zip`;
-        downloadBase64(data.zipBase64, zipName, "application/zip");
+        downloadBase64File(data.zipBase64, zipName, "application/zip");
         toast.success(`${data.results.length} statements downloaded as ZIP`);
       }
     },

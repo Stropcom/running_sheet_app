@@ -3,65 +3,22 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
-import { FileDown, User, Car, MapPin, Folder, FileText } from "lucide-react";
+import { FileDown, User, Folder, FileText } from "lucide-react";
 import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
 import { EntityPhotosSection } from "@/components/EntityPhotosSection";
 import {
   buildPhotoGridHtml,
+  buildEntityListWithPhotosHtml,
   type RowAttachmentLike,
 } from "@/lib/attachmentBanner";
+import {
+  IntelEntityWithPhotos,
+  type IntelAssocEntity,
+} from "@/components/IntelEntityChip";
 
 type ProfilePhoto = RowAttachmentLike & { id: number; url: string };
 
-// ─── Colour palette (matches Intelligence.tsx) ─────────────────────────────
-const CHIP = {
-  person: "bg-blue-500/10 text-blue-600 border-blue-500/30 dark:text-blue-400",
-  vehicle:
-    "bg-amber-500/10 text-amber-600 border-amber-500/30 dark:text-amber-400",
-  address:
-    "bg-emerald-500/10 text-emerald-600 border-emerald-500/30 dark:text-emerald-400",
-  business:
-    "bg-purple-500/10 text-purple-600 border-purple-500/30 dark:text-purple-400",
-  target: "bg-blue-500/10 text-blue-600 border-blue-500/30 dark:text-blue-400",
-};
-
-type EntityItem = { id: string; label: string; type: string; rowCount: number };
-
-function EntityChip({
-  item,
-  onClick,
-}: {
-  item: EntityItem;
-  onClick?: () => void;
-}) {
-  const cls =
-    CHIP[item.type as keyof typeof CHIP] ??
-    "bg-muted text-muted-foreground border-border";
-  const icon =
-    item.type === "vehicle" ? (
-      <Car className="w-3 h-3" />
-    ) : item.type === "address" || item.type === "business" ? (
-      <MapPin className="w-3 h-3" />
-    ) : (
-      <User className="w-3 h-3" />
-    );
-  const label =
-    item.type === "vehicle"
-      ? formatIntelVehicle(item.label)
-      : item.type === "address" || item.type === "business"
-        ? formatIntelAddress(item.label)
-        : item.label;
-  return (
-    <button
-      onClick={onClick}
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-opacity hover:opacity-80 ${cls}`}
-    >
-      {icon}
-      {label}
-      <span className="opacity-60">×{item.rowCount}</span>
-    </button>
-  );
-}
+type EntityItem = IntelAssocEntity;
 
 function SectionHeading({ label, count }: { label: string; count: number }) {
   return (
@@ -93,32 +50,12 @@ function buildTargetProfileHtml(
   const GREY_BORDER = "#e2e8f0";
   const GREY_LIGHT = "#f8fafc";
 
-  const chipHtml = (label: string, type: string, count: number) => {
-    const colors: Record<string, string> = {
-      person: "background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd",
-      vehicle: "background:#fef3c7;color:#d97706;border:1px solid #fcd34d",
-      address: "background:#d1fae5;color:#059669;border:1px solid #6ee7b7",
-      business: "background:#ede9fe;color:#7c3aed;border:1px solid #c4b5fd",
-      target: "background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd",
-    };
-    const style =
-      colors[type] ??
-      "background:#f1f5f9;color:#475569;border:1px solid #cbd5e1";
-    const displayLabel =
-      type === "vehicle"
-        ? formatIntelVehicle(label)
-        : type === "address" || type === "business"
-          ? formatIntelAddress(label)
-          : label;
-    return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:9999px;font-size:10px;font-weight:600;${style};margin:2px">${esc(displayLabel)} <span style="opacity:0.6">×${count}</span></span>`;
-  };
-
   const sectionHtml = (title: string, items: EntityItem[]) => {
     if (!items.length) return "";
     return `
       <div style="margin-bottom:16px">
         <p style="font-size:9px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b;margin-bottom:6px;border-bottom:1px solid ${GREY_BORDER};padding-bottom:4px">${esc(title)}</p>
-        <div style="display:flex;flex-wrap:wrap;gap:4px">${items.map(i => chipHtml(i.label, i.type, i.rowCount)).join("")}</div>
+        ${buildEntityListWithPhotosHtml(items)}
       </div>`;
   };
 
@@ -506,9 +443,9 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
                     label="Associated Persons"
                     count={profile.assocPersons.length}
                   />
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-col gap-2">
                     {profile.assocPersons.map(p => (
-                      <EntityChip
+                      <IntelEntityWithPhotos
                         key={p.id}
                         item={p}
                         onClick={() =>
@@ -530,9 +467,9 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
                     label="Associated Vehicles"
                     count={profile.assocVehicles.length}
                   />
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-col gap-2">
                     {profile.assocVehicles.map(v => (
-                      <EntityChip
+                      <IntelEntityWithPhotos
                         key={v.id}
                         item={v}
                         onClick={() =>
@@ -552,9 +489,9 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
                     label="Associated Locations"
                     count={profile.assocLocations.length}
                   />
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-col gap-2">
                     {profile.assocLocations.map(l => (
-                      <EntityChip
+                      <IntelEntityWithPhotos
                         key={l.id}
                         item={l}
                         onClick={() =>

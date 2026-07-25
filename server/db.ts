@@ -3553,6 +3553,24 @@ async function buildTargetOperationalAssociations(
   };
 }
 
+// Populates `.photos` on a set of associated-entity arrays (mutates in place),
+// mirroring the batched lookup already used by getIntelOperationProfile — so
+// every profile page (Target/Associate/Vehicle/Location) shows an associated
+// entity's own linked photos, not just the Operation profile.
+async function populateAssocPhotos(
+  assocPersons: IntelProfileEntity[],
+  assocVehicles: IntelProfileEntity[],
+  assocLocations: IntelProfileEntity[],
+): Promise<void> {
+  const vehicleKeys = assocVehicles.map(v => normalizeEntityLabel(v.label));
+  const personKeys = assocPersons.filter(p => p.type !== "target").map(p => normalizeEntityLabel(p.label));
+  const locationKeys = assocLocations.map(l => normalizeEntityLabel(l.label));
+  const { entityPhotos } = await getAttachmentsForOperationEntities([], { vehicle: vehicleKeys, associate: personKeys, location: locationKeys });
+  for (const p of assocPersons) p.photos = entityPhotos.get(`associate::${normalizeEntityLabel(p.label)}`) ?? [];
+  for (const v of assocVehicles) v.photos = entityPhotos.get(`vehicle::${normalizeEntityLabel(v.label)}`) ?? [];
+  for (const l of assocLocations) l.photos = entityPhotos.get(`location::${normalizeEntityLabel(l.label)}`) ?? [];
+}
+
 export async function getIntelTargetProfile(targetId: number): Promise<IntelTargetProfile | null> {
   const db = await getDb();
   if (!db) return null;
@@ -3592,6 +3610,7 @@ export async function getIntelTargetProfile(targetId: number): Promise<IntelTarg
   const allEntities = await getAllIntelligenceEntities();
   const targetLabel = target.tgt ?? target.name;
   const { assocPersons, assocVehicles, assocLocations } = await buildTargetOperationalAssociations(targetId, targetLabel, allEntities);
+  await populateAssocPhotos(assocPersons, assocVehicles, assocLocations);
 
   return {
     targetId,
@@ -3765,13 +3784,17 @@ export async function getIntelAssociateProfile(label: string): Promise<IntelAsso
     else if (other.type === "address" || other.type === "business") assocLocationsMap.set(key, profileEntity);
   }
 
+  const assocVehicles = Array.from(assocVehiclesMap.values()).sort((a, b) => a.label.localeCompare(b.label));
+  const assocLocations = Array.from(assocLocationsMap.values()).sort((a, b) => a.label.localeCompare(b.label));
+  await populateAssocPhotos([], assocVehicles, assocLocations);
+
   return {
     label: entity.shortForm,
     type: entity.type as "person" | "business",
     linkedTargets,
     linkedSheets: Array.from(sheetMap.values()),
-    assocLocations: Array.from(assocLocationsMap.values()).sort((a, b) => a.label.localeCompare(b.label)),
-    assocVehicles: Array.from(assocVehiclesMap.values()).sort((a, b) => a.label.localeCompare(b.label)),
+    assocLocations,
+    assocVehicles,
   };
 }
 
@@ -3845,14 +3868,18 @@ export async function getIntelVehicleProfile(label: string): Promise<IntelVehicl
   // Find the first observation text that contains the full vehicle description
   const firstObservation = entity.occurrences.find(o => o.fullDescription)?.fullDescription ?? null;
 
+  const assocPersons = Array.from(assocPersonsMap.values()).sort((a, b) => a.label.localeCompare(b.label));
+  const assocLocations = Array.from(assocLocationsMap.values()).sort((a, b) => a.label.localeCompare(b.label));
+  await populateAssocPhotos(assocPersons, [], assocLocations);
+
   return {
     label: entity.shortForm,
     firstObservation,
     linkedTarget,
     linkedOperations: Array.from(opMap.values()),
     linkedSheets: Array.from(sheetMap.values()),
-    assocPersons: Array.from(assocPersonsMap.values()).sort((a, b) => a.label.localeCompare(b.label)),
-    assocLocations: Array.from(assocLocationsMap.values()).sort((a, b) => a.label.localeCompare(b.label)),
+    assocPersons,
+    assocLocations,
   };
 }
 
@@ -3926,13 +3953,17 @@ export async function getIntelLocationProfile(label: string): Promise<IntelLocat
     else if (other.type === "vehicle") assocVehiclesMap.set(key, profileEntity);
   }
 
+  const assocPersons = Array.from(assocPersonsMap.values()).sort((a, b) => a.label.localeCompare(b.label));
+  const assocVehicles = Array.from(assocVehiclesMap.values()).sort((a, b) => a.label.localeCompare(b.label));
+  await populateAssocPhotos(assocPersons, assocVehicles, []);
+
   return {
     label: entity.shortForm,
     linkedTargets,
     linkedOperations: Array.from(opMap.values()),
     linkedSheets: Array.from(sheetMap.values()),
-    assocPersons: Array.from(assocPersonsMap.values()).sort((a, b) => a.label.localeCompare(b.label)),
-    assocVehicles: Array.from(assocVehiclesMap.values()).sort((a, b) => a.label.localeCompare(b.label)),
+    assocPersons,
+    assocVehicles,
   };
 }
 

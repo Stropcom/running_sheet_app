@@ -3,42 +3,19 @@ import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, FileDown, User, Car, MapPin, FileText, Folder } from "lucide-react";
-import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
+import { ArrowLeft, FileDown, User, FileText } from "lucide-react";
 import { EntityPhotosSection } from "@/components/EntityPhotosSection";
-import { buildPhotoGridHtml, type RowAttachmentLike } from "@/lib/attachmentBanner";
+import { buildPhotoGridHtml, buildEntityListWithPhotosHtml, type RowAttachmentLike } from "@/lib/attachmentBanner";
+import { IntelEntityWithPhotos, type IntelAssocEntity } from "@/components/IntelEntityChip";
 
 type ProfilePhoto = RowAttachmentLike & { id: number; url: string };
 
-interface IntelProfileEntity { id: string; label: string; type: string; rowCount: number; sheetIds: number[]; operationIds: number[] }
+type IntelProfileEntity = IntelAssocEntity;
 interface IntelAssociateProfile {
   label: string; type: "person" | "business";
   linkedTargets: Array<{ targetId: number; name: string; operationId: number; operationName: string }>;
   linkedSheets: Array<{ id: number; title: string; operationId: number; operationName: string }>;
   assocLocations: IntelProfileEntity[]; assocVehicles: IntelProfileEntity[];
-}
-
-const CHIP: Record<string, string> = {
-  person:   "bg-blue-500/10 text-blue-600 border-blue-500/30 dark:text-blue-400",
-  vehicle:  "bg-amber-500/10 text-amber-600 border-amber-500/30 dark:text-amber-400",
-  address:  "bg-emerald-500/10 text-emerald-600 border-emerald-500/30 dark:text-emerald-400",
-  business: "bg-purple-500/10 text-purple-600 border-purple-500/30 dark:text-purple-400",
-  target:   "bg-blue-500/10 text-blue-600 border-blue-500/30 dark:text-blue-400",
-};
-
-function EntityChip({ item, onClick }: { item: IntelProfileEntity; onClick?: () => void }) {
-  const cls = CHIP[item.type] ?? "bg-muted text-muted-foreground border-border";
-  const icon = item.type === "vehicle" ? <Car className="w-3 h-3" /> : item.type === "address" || item.type === "business" ? <MapPin className="w-3 h-3" /> : <User className="w-3 h-3" />;
-  const label = item.type === "vehicle"
-    ? formatIntelVehicle(item.label)
-    : (item.type === "address" || item.type === "business")
-    ? formatIntelAddress(item.label)
-    : item.label;
-  return (
-    <button onClick={onClick} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-opacity hover:opacity-80 ${cls}`}>
-      {icon}{label}<span className="opacity-60">×{item.rowCount}</span>
-    </button>
-  );
 }
 
 function SectionHeading({ label, count }: { label: string; count: number }) {
@@ -54,16 +31,6 @@ function buildAssociateProfileHtml(profile: IntelAssociateProfile, photos: Profi
   const esc = (s: string | null | undefined) => (s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const BLUE_DARK = "#1e3a8a"; const BLUE_MID = "#93c5fd"; const BLUE_LIGHT = "#dbeafe";
   const GREY_TEXT = "#1e293b"; const GREY_BORDER = "#e2e8f0";
-  const chipHtml = (label: string, type: string, count: number) => {
-    const colors: Record<string, string> = { person: "background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd", vehicle: "background:#fef3c7;color:#d97706;border:1px solid #fcd34d", address: "background:#d1fae5;color:#059669;border:1px solid #6ee7b7", business: "background:#ede9fe;color:#7c3aed;border:1px solid #c4b5fd", target: "background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd" };
-    const style = colors[type] ?? "background:#f1f5f9;color:#475569;border:1px solid #cbd5e1";
-    const displayLabel = type === "vehicle"
-      ? formatIntelVehicle(label)
-      : (type === "address" || type === "business")
-      ? formatIntelAddress(label)
-      : label;
-    return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:9999px;font-size:10px;font-weight:600;${style};margin:2px">${esc(displayLabel)} <span style="opacity:0.6">×${count}</span></span>`;
-  };
   const generatedAt = new Date().toLocaleString("en-AU", { dateStyle: "long", timeStyle: "short" });
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>RunLog — Associate Profile: ${esc(profile.label)}</title>
 <style>* { box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; } body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.6; color:${GREY_TEXT}; background:#fff; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
@@ -92,8 +59,8 @@ function buildAssociateProfileHtml(profile: IntelAssociateProfile, photos: Profi
   ${profile.linkedTargets.length ? `<div style="margin-bottom:16px"><div class="section-title">Linked Targets</div>${profile.linkedTargets.map(t => `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}"><strong>${esc(t.name)}</strong> <span style="color:#64748b">— ${esc(t.operationName)}</span></p>`).join("")}</div>` : ""}
   ${profile.linkedSheets.length ? `<div style="margin-bottom:16px"><div class="section-title">Running Sheets</div>${profile.linkedSheets.map(s => `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}">${esc(s.title)} <span style="color:#64748b">— ${esc(s.operationName)}</span></p>`).join("")}</div>` : ""}
   ${profile.assocVehicles.length || profile.assocLocations.length ? `<div style="margin-bottom:16px"><div class="section-title">Associations</div>
-    ${profile.assocVehicles.length ? `<div class="sub-title">Vehicles</div><div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px">${profile.assocVehicles.map(v => chipHtml(v.label, v.type, v.rowCount)).join("")}</div>` : ""}
-    ${profile.assocLocations.length ? `<div class="sub-title">Locations</div><div style="display:flex;flex-wrap:wrap;gap:4px">${profile.assocLocations.map(l => chipHtml(l.label, l.type, l.rowCount)).join("")}</div>` : ""}
+    ${profile.assocVehicles.length ? `<div class="sub-title">Vehicles</div>${buildEntityListWithPhotosHtml(profile.assocVehicles)}` : ""}
+    ${profile.assocLocations.length ? `<div class="sub-title">Locations</div>${buildEntityListWithPhotosHtml(profile.assocLocations)}` : ""}
   </div>` : ""}
   <div class="footer"><span>RunLog — Associate Intelligence Profile</span><span>SENSITIVE — FOR OFFICIAL USE ONLY — ${generatedAt}</span></div>
 </div></body></html>`;
@@ -197,16 +164,16 @@ export default function IntelligenceAssociateProfile() {
                 {profile.assocVehicles.length > 0 && (
                   <div className="mb-3">
                     <p className="text-xs text-muted-foreground mb-1">Vehicles</p>
-                    <div className="flex flex-wrap gap-2">
-                      {profile.assocVehicles.map(v => <EntityChip key={v.id} item={v} onClick={() => navigate(`/intelligence/vehicle/${encodeURIComponent(v.label)}`)} />)}
+                    <div className="flex flex-col gap-2">
+                      {profile.assocVehicles.map(v => <IntelEntityWithPhotos key={v.id} item={v} onClick={() => navigate(`/intelligence/vehicle/${encodeURIComponent(v.label)}`)} />)}
                     </div>
                   </div>
                 )}
                 {profile.assocLocations.length > 0 && (
                   <div className="mb-3">
                     <p className="text-xs text-muted-foreground mb-1">Locations</p>
-                    <div className="flex flex-wrap gap-2">
-                      {profile.assocLocations.map(l => <EntityChip key={l.id} item={l} onClick={() => navigate(`/intelligence/location/${encodeURIComponent(l.label)}`)} />)}
+                    <div className="flex flex-col gap-2">
+                      {profile.assocLocations.map(l => <IntelEntityWithPhotos key={l.id} item={l} onClick={() => navigate(`/intelligence/location/${encodeURIComponent(l.label)}`)} />)}
                     </div>
                   </div>
                 )}

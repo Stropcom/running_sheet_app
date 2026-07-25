@@ -458,15 +458,18 @@ function exportToPDF(
 
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
   <title>${sheetTitle}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet"/>
   <style>
     @page{
       margin:20mm 15mm;
-      @top-center{content:'PROTECTED';font-family:system-ui,sans-serif;font-size:12px;font-weight:700;color:#dc2626;letter-spacing:0.08em}
-      @bottom-center{content:'PROTECTED';font-family:system-ui,sans-serif;font-size:12px;font-weight:700;color:#dc2626;letter-spacing:0.08em}
+      @top-center{content:'PROTECTED';font-family:'Roboto',sans-serif;font-size:12px;font-weight:700;color:#dc2626;letter-spacing:0.08em}
+      @bottom-center{content:'PROTECTED';font-family:'Roboto',sans-serif;font-size:12px;font-weight:700;color:#dc2626;letter-spacing:0.08em}
     }
     /* Force background colours to print — Chrome strips backgrounds by default */
     *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;color-adjust:exact !important}
-    body{font-family:system-ui,sans-serif;background:#fff;color:#000;margin:0;padding:0;font-size:12px}
+    body{font-family:'Roboto',sans-serif;background:#fff;color:#000;margin:0;padding:0;font-size:11px}
     .page-title{font-size:20px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;text-align:center;margin-bottom:1.2em}
     .page-title-sm{font-size:15px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;text-align:center;margin-bottom:0.5em;margin-top:4px}
     /* Meta info table — light blue label cells */
@@ -680,6 +683,8 @@ async function exportToWord(
     : "";
 
   // ── Shared border/shading helpers ───────────────────────────────────────────
+  const FONT = "Roboto";
+  const BODY_SIZE = 22; // 11pt (docx size is in half-points)
   const thinBorder = { style: BorderStyle.SINGLE, size: 6, color: "94A3B8" };
   const outerBorder = { style: BorderStyle.SINGLE, size: 12, color: "334155" };
   const headerShading = { type: ShadingType.SOLID, color: "DBEAFE", fill: "DBEAFE" };
@@ -693,13 +698,13 @@ async function exportToWord(
           shading: headerShading,
           borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
           verticalAlign: VerticalAlign.CENTER,
-          children: [new Paragraph({ children: [new TextRun({ text: label, bold: true, size: 20, color: "000000" })] })],
+          children: [new Paragraph({ children: [new TextRun({ text: label, font: FONT, bold: true, size: BODY_SIZE, color: "000000" })] })],
         }),
         new TableCell({
           width: { size: 78, type: WidthType.PERCENTAGE },
           borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
           verticalAlign: VerticalAlign.CENTER,
-          children: [new Paragraph({ children: [new TextRun({ text: value, size: 20, color: "000000" })] })],
+          children: [new Paragraph({ children: [new TextRun({ text: value, font: FONT, size: BODY_SIZE, color: "000000" })] })],
         }),
       ],
     });
@@ -733,7 +738,7 @@ async function exportToWord(
       shading: headerShading,
       borders: { top: outerBorder, bottom: outerBorder, left: thinBorder, right: thinBorder },
       verticalAlign: VerticalAlign.CENTER,
-      children: [new Paragraph({ children: [new TextRun({ text, bold: true, size: 20, color: "000000" })] })],
+      children: [new Paragraph({ children: [new TextRun({ text, font: FONT, bold: true, size: BODY_SIZE, color: "000000" })] })],
     });
   }
 
@@ -804,7 +809,7 @@ async function exportToWord(
             borders: { top: outerBorder, bottom: outerBorder, left: outerBorder, right: outerBorder },
             children: [new Paragraph({
               alignment: AlignmentType.CENTER,
-              children: [new TextRun({ text: `── ${divLabel} ──`, bold: true, size: 18, color: "93C5FD" })],
+              children: [new TextRun({ text: `── ${divLabel} ──`, font: FONT, bold: true, size: 18, color: "93C5FD" })],
             })],
           }),
         ],
@@ -825,7 +830,7 @@ async function exportToWord(
           new TableCell({
             width: { size: 72, type: WidthType.PERCENTAGE },
             borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
-            children: obsText.split("\n").map((line) => new Paragraph({ children: [new TextRun({ text: line, size: 20, color: "000000" })] })),
+            children: obsText.split("\n").map((line) => new Paragraph({ children: [new TextRun({ text: line, font: FONT, size: BODY_SIZE, color: "000000" })] })),
           }),
           new TableCell({
             width: { size: 18, type: WidthType.PERCENTAGE },
@@ -850,7 +855,7 @@ async function exportToWord(
           ? [new Paragraph({ children: [new TextRun({ text: timeText, size: 18, font: "Courier New", color: "000000" })] })]
           : [new Paragraph({ children: [] })];
         const obsPara = idx === 0
-          ? obsText.split("\n").map((line) => new Paragraph({ children: [new TextRun({ text: line, size: 20, color: "000000" })] }))
+          ? obsText.split("\n").map((line) => new Paragraph({ children: [new TextRun({ text: line, font: FONT, size: BODY_SIZE, color: "000000" })] }))
           : [new Paragraph({ children: [] })];
 
         dataRows.push(new TableRow({
@@ -868,7 +873,7 @@ async function exportToWord(
             new TableCell({
               width: { size: 18, type: WidthType.PERCENTAGE },
               borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
-              children: [new Paragraph({ children: [new TextRun({ text: certText, size: 18, color: certColor, bold: !!cert })] })],
+              children: [new Paragraph({ children: [new TextRun({ text: certText, font: FONT, size: 18, color: certColor, bold: !!cert })] })],
             }),
           ],
         }));
@@ -897,12 +902,12 @@ async function exportToWord(
         new Paragraph({
           heading: HeadingLevel.HEADING_1,
           alignment: AlignmentType.CENTER,
-          children: [new TextRun({ text: "WC SURVEILLANCE RUNNING SHEET", bold: true, size: 32, color: "000000", allCaps: true })],
+          children: [new TextRun({ text: "WC SURVEILLANCE RUNNING SHEET", font: FONT, bold: true, size: 32, color: "000000", allCaps: true })],
           spacing: { after: 200 },
         }),
         new Paragraph({
           alignment: AlignmentType.CENTER,
-          children: [new TextRun({ text: "PROTECTED", bold: true, size: 24, color: "DC2626", allCaps: true })],
+          children: [new TextRun({ text: "PROTECTED", font: FONT, bold: true, size: 24, color: "DC2626", allCaps: true })],
           spacing: { after: 240 },
         }),
         metaTable,
@@ -910,7 +915,7 @@ async function exportToWord(
         logTable,
         new Paragraph({
           alignment: AlignmentType.CENTER,
-          children: [new TextRun({ text: "PROTECTED", bold: true, size: 24, color: "DC2626", allCaps: true })],
+          children: [new TextRun({ text: "PROTECTED", font: FONT, bold: true, size: 24, color: "DC2626", allCaps: true })],
           spacing: { before: 240 },
         }),
       ],

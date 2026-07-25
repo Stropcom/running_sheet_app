@@ -34,6 +34,7 @@ import {
   getOperations,
   getRowById,
   getRowsBySheetId,
+  getSheetEntityChips,
   getRunningSheetById,
   getRunningSheets,
   getRunningSheetsByOperation,
@@ -803,6 +804,14 @@ export const appRouter = router({
           certifications: certs.filter((c) => c.rowId === row.id && c.isActive),
           attachments: attachments.filter((a) => a.rowId === row.id),
         }));
+      }),
+
+    // Quick-insert chips (person/vehicle/address/business) mined from this
+    // sheet's own observations so far — see getSheetEntityChips.
+    entityChips: protectedProcedure
+      .input(z.object({ sheetId: z.number() }))
+      .query(async ({ input }) => {
+        return getSheetEntityChips(input.sheetId);
       }),
 
     create: protectedProcedure

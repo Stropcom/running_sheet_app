@@ -65,7 +65,23 @@ import {
   FolderOpen as FolderIcon,
   Clock,
   Image as ImageIcon,
+  Keyboard,
 } from "lucide-react";
+
+// Phone/tablet (touch, no physical keyboard) vs laptop/desktop (mouse +
+// physical keyboard) — viewport width can't tell these apart (a tablet in
+// landscape is often wider than a small laptop window), so this checks
+// actual touch capability instead. Laptop/desktop always has the RSQE
+// observation field editable; phone/tablet starts it read-only so tapping
+// it doesn't summon the on-screen keyboard (see rsInlineTypingMode).
+function useIsTouchDevice(): boolean {
+  const [isTouch] = useState(() =>
+    typeof window !== "undefined"
+      ? "ontouchstart" in window || navigator.maxTouchPoints > 0
+      : false
+  );
+  return isTouch;
+}
 
 // ── Perth date helpers (shared with SheetDetail logic) ───────────────────────
 const _PERTH_OFFSET_SUFFIX = "T00:00:00+08:00";
@@ -749,6 +765,7 @@ export default function IntelligenceMapping() {
   });
   const [rsAddingRow, setRsAddingRow] = useState(false);
   const [rsLastEntry, setRsLastEntry] = useState<{ label: string; time: string } | null>(null);
+  const isTouchDevice = useIsTouchDevice();
 
   // Inline observation field state
   const [rsInlineLabel, setRsInlineLabel] = useState<string | null>(null); // null = closed
@@ -759,6 +776,11 @@ export default function IntelligenceMapping() {
   const rsInlineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rsCountdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const rsInlineInputRef = useRef<HTMLTextAreaElement | null>(null);
+  // RSQE is built for tapping shortcut chips, not typing — the observation
+  // textarea starts read-only (so focusing it, including the auto-focus on
+  // open, never summons the on-screen keyboard) until the user explicitly
+  // taps the keyboard icon to switch into typing mode.
+  const [rsInlineTypingMode, setRsInlineTypingMode] = useState(false);
 
   // Right-pane collapsible RS Quick Entry panel state (separate from modal inline field)
   const [rsQeText, setRsQeText] = useState("");
@@ -2221,6 +2243,7 @@ export default function IntelligenceMapping() {
     setRsInlineCins(new Set());
     rsInlineCinsRef.current = new Set();
     setRsCountdown(30);
+    setRsInlineTypingMode(false);
   };
 
   const submitInlineField = () => {
@@ -2238,12 +2261,25 @@ export default function IntelligenceMapping() {
     startInlineCountdown();
   };
 
+  // Switches the observation field from tap-only to typing mode, then
+  // re-focuses it — blur+focus (not just focus) is needed because the field
+  // may already be focused as read-only, and browsers only summon the
+  // on-screen keyboard on a fresh focus event against an editable field.
+  const enableInlineTyping = () => {
+    setRsInlineTypingMode(true);
+    requestAnimationFrame(() => {
+      const el = rsInlineInputRef.current;
+      if (el) { el.blur(); el.focus(); }
+    });
+  };
+
   const openInlineField = (label: string) => {
     if (!rsSelectedSheetId) return;
     setRsInlineLabel(label);
     setRsInlineText("");
     setRsInlineCins(new Set());
     rsInlineCinsRef.current = new Set();
+    setRsInlineTypingMode(false);
     // Focus the textarea after render
     setTimeout(() => rsInlineInputRef.current?.focus(), 50);
     // Start auto-submit countdown
@@ -2279,6 +2315,7 @@ export default function IntelligenceMapping() {
         setRsInlineText("");
         setRsInlineCins(new Set());
         rsInlineCinsRef.current = new Set();
+        setRsInlineTypingMode(false);
         setTimeout(() => rsInlineInputRef.current?.focus(), 80);
       }, 50);
     }
@@ -3917,12 +3954,12 @@ export default function IntelligenceMapping() {
       {/* ── Map RS Quick Entry Modal ── */}
       {mapQeOpen && (
         <div
-          className="absolute inset-0 z-40 flex items-end justify-center md:items-center md:p-4"
+          className="absolute inset-0 z-40 flex items-start justify-center overflow-y-auto p-3 pt-6 md:p-4 md:pt-10"
           style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(3px)" }}
           onClick={() => { setMapQeOpen(false); setMapQeAddress(""); closeInlineField(); }}
         >
           <div
-            className="no-scrollbar w-full max-w-lg md:max-w-3xl lg:max-w-5xl bg-card border border-border rounded-t-2xl md:rounded-2xl shadow-2xl p-5 pb-8 md:p-6 lg:p-8 max-h-[90vh] md:max-h-[92vh] overflow-y-auto"
+            className="no-scrollbar w-full max-w-lg md:max-w-3xl lg:max-w-5xl bg-card border border-border rounded-2xl shadow-2xl p-5 pb-6 md:p-6 lg:p-8 max-h-[90vh] md:max-h-[92vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
@@ -4050,30 +4087,6 @@ export default function IntelligenceMapping() {
               </div>
             ) : (
               <div className="space-y-2 md:space-y-3">
-                {/* Sheet + target strip */}
-                <div className="flex items-center gap-2">
-                  {rsSheetsData && (() => {
-                    const sheet = (rsSheetsData as any[]).find((s: any) => s.id === rsSelectedSheetId);
-                    return sheet ? (
-                      <button
-                        onClick={() => { setMapQeOpen(false); setMapQeAddress(""); closeInlineField(); setLocation(`/sheet/${rsSelectedSheetId}`); }}
-                        className="flex-1 flex items-center gap-1.5 px-2 py-1.5 md:px-3 md:py-2 rounded-md border border-primary/40 bg-primary/10 hover:bg-primary/20 active:scale-[0.98] transition-all min-w-0"
-                      >
-                        <MapIcon className="h-3 w-3 md:h-4 md:w-4 text-primary flex-shrink-0" />
-                        <span className="text-[11px] md:text-sm font-semibold text-primary truncate">{sheet.title || `Sheet #${sheet.id}`}</span>
-                        <ExternalLink className="h-3 w-3 md:h-4 md:w-4 text-primary/60 flex-shrink-0 ml-auto" />
-                      </button>
-                    ) : null;
-                  })()}
-                  {rsTargetData && (
-                    <div className="flex-shrink-0 rounded-md border border-border bg-muted/30 px-2 py-1 md:px-3 md:py-1.5">
-                      <p className="text-[10px] md:text-xs font-bold text-foreground leading-none">{rsTargetData.tgt ?? rsTargetData.name}</p>
-                    </div>
-                  )}
-                </div>
-
-                <div className="border-t border-border" />
-
                 {/* ARR panel removed per user request */}
 
                 {/* Inline observation field */}
@@ -4097,14 +4110,32 @@ export default function IntelligenceMapping() {
                         .forEach(c => { if (c.cin) rosterCins.push(c.cin); });
                     } catch { /* ignore */ }
                   }
+                  const inlineReadOnly = isTouchDevice && !rsInlineTypingMode;
                   return (
                     <div className="rounded-lg border border-border bg-muted/40 p-2.5 md:p-3.5 flex flex-col gap-2 md:gap-2.5" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] md:text-xs font-bold uppercase tracking-wide text-muted-foreground">Observation</span>
+                        {isTouchDevice && (
+                          <button
+                            type="button"
+                            onClick={enableInlineTyping}
+                            title={inlineReadOnly ? "Tap to type" : "Typing enabled"}
+                            className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold border transition-all active:scale-95 ${
+                              inlineReadOnly
+                                ? "border-border text-muted-foreground hover:bg-accent/50"
+                                : "border-primary/40 bg-primary/10 text-primary"
+                            }`}
+                          >
+                            <Keyboard className="h-3 w-3" />
+                            {inlineReadOnly ? "Tap to type" : "Typing"}
+                          </button>
+                        )}
                       </div>
                       <textarea
                         ref={rsInlineInputRef}
                         value={rsInlineText}
+                        readOnly={inlineReadOnly}
+                        onClick={() => { if (inlineReadOnly) enableInlineTyping(); }}
                         onChange={(e) => { setRsInlineText(e.target.value); resetInlineTimer(); }}
                         onFocus={resetInlineTimer}
                         onKeyDown={(e) => {
@@ -4131,9 +4162,9 @@ export default function IntelligenceMapping() {
                             }
                           }
                         }}
-                        placeholder="Add details (optional)…"
+                        placeholder={inlineReadOnly ? "Tap shortcuts below, or tap the keyboard icon to type…" : "Add details (optional)…"}
                         rows={4}
-                        className="w-full resize-none rounded-md border border-border bg-background px-2.5 py-1.5 text-[11px] placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring md:px-3 md:py-2 md:text-sm lg:min-h-[140px]"
+                        className={`w-full resize-none rounded-md border border-border bg-background px-2.5 py-1.5 text-[11px] placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring md:px-3 md:py-2 md:text-sm lg:min-h-[140px] ${inlineReadOnly ? "cursor-pointer" : ""}`}
                       />
                       {/* Shortcut buttons */}
                       {(() => {

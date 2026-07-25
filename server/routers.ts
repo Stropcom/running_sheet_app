@@ -1,10 +1,10 @@
 import bcrypt from "bcryptjs";
-import heicConvert from "heic-convert";
 import { storagePut } from "./storage";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { COOKIE_NAME, SESSION_EXPIRY_MS } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
+import { processAttachmentUpload, AttachmentUploadError } from "./attachmentUpload";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { sdk } from "./_core/sdk";
@@ -859,60 +859,25 @@ export const appRouter = router({
         caption: z.string().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
-        const row = await getRowById(input.rowId);
-        if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Row not found." });
-        let buffer: Buffer = Buffer.from(input.dataBase64, "base64");
-        // Limit to 25 MB — iOS silently converts HEIC to JPEG on share/pick
-        // (Settings > Photos > Transfer to Mac or PC > Automatic), which can
-        // more than double a phone photo's size before the app ever sees it.
-        if (buffer.byteLength > 25 * 1024 * 1024) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Photo must be under 25 MB." });
-        }
-
-        // The browser's reported type isn't always trustworthy (or present
-        // at all), so fall back to the filename extension when it doesn't
-        // look like a real image mimeType.
-        const EXT_TO_MIME: Record<string, string> = {
-          jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
-          webp: "image/webp", gif: "image/gif", heic: "image/heic", heif: "image/heif",
-        };
-        const fileExt = (input.fileName ?? "").split(".").pop()?.toLowerCase();
-        let mimeType = /^image\//.test(input.mimeType)
-          ? input.mimeType
-          : (fileExt && EXT_TO_MIME[fileExt]) || input.mimeType;
-
-        // No trailing $ on the mimeType check — iOS reports variants like
-        // "image/heic-sequence" for Portrait/Burst/Live photos, which are
-        // still HEIC containers heicConvert can read.
-        const isHeic = /^image\/hei[cf]/i.test(mimeType) || /\.hei[cf]$/i.test(input.fileName ?? "");
-        if (isHeic) {
-          try {
-            buffer = await heicConvert({ buffer, format: "JPEG", quality: 0.9 });
-          } catch (err) {
-            console.error("HEIC conversion failed:", err);
-            throw new TRPCError({ code: "BAD_REQUEST", message: "Could not read that HEIC/HEIF photo." });
+        try {
+          return await processAttachmentUpload({
+            rowId: input.rowId,
+            buffer: Buffer.from(input.dataBase64, "base64"),
+            reportedMimeType: input.mimeType,
+            fileName: input.fileName,
+            caption: input.caption,
+            userId: ctx.user.id,
+            userCIN: ctx.user.cin ?? undefined,
+          });
+        } catch (err) {
+          if (err instanceof AttachmentUploadError) {
+            throw new TRPCError({
+              code: err.status === 404 ? "NOT_FOUND" : "BAD_REQUEST",
+              message: err.message,
+            });
           }
-          mimeType = "image/jpeg";
+          throw err;
         }
-
-        if (!/^image\/(jpeg|png|webp|gif)$/.test(mimeType)) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Only JPEG, PNG, WebP, GIF, or HEIC/HEIF images are allowed." });
-        }
-
-        const ext = mimeType.split("/")[1];
-        const key = `row-attachments/sheet-${row.sheetId}/row-${row.id}/${Date.now()}.${ext}`;
-        const { url } = await storagePut(key, buffer, mimeType);
-        const id = await createRowAttachment({
-          rowId: input.rowId,
-          key,
-          url,
-          mimeType,
-          caption: input.caption,
-          uploadedBy: ctx.user.id,
-          uploadedByCIN: ctx.user.cin ?? undefined,
-        });
-        await createAuditLog({ sheetId: row.sheetId, rowId: row.id, userId: ctx.user.id, userName: ctx.user.cin ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "attachment_added", details: `Photo attached to row`, createdAt: Date.now() });
-        return { id, url };
       }),
 
     listByRow: protectedProcedure

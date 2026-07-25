@@ -1,5 +1,6 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
+import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -1252,7 +1253,7 @@ function ObservationAttachments({
 }: {
   row: SheetRow;
   canEdit: boolean;
-  onUpload: (rowId: number, dataBase64: string, mimeType: string, fileName: string) => void;
+  onUpload: (rowId: number, blob: Blob, mimeType: string, fileName: string) => void;
   onDelete: (id: number) => void;
   uploading: boolean;
 }) {
@@ -1278,17 +1279,15 @@ function ObservationAttachments({
 
       // If compression failed, the original may be a HEIC/HEIF file the browser
       // can't preview (it gets converted to JPEG server-side) — skip the
-      // raw-bytes preview for it rather than show a broken image icon.
+      // raw-bytes preview for it rather than show a broken image icon. Preview
+      // generation is fire-and-forget and doesn't block the actual upload.
       const isHeic = !compressed && (/^image\/hei[cf]/i.test(file.type) || /\.hei[cf]$/i.test(file.name));
-      const reader = new FileReader();
-      reader.onerror = () => toast.error("Couldn't read that photo — try again.");
-      reader.onload = () => {
-        const dataUrl = reader.result as string;
-        if (!isHeic) setPreview(dataUrl);
-        const base64 = dataUrl.split(",")[1];
-        onUpload(row.id, base64, mimeType, fileName);
-      };
-      reader.readAsDataURL(blob);
+      if (!isHeic) {
+        const reader = new FileReader();
+        reader.onload = () => setPreview(reader.result as string);
+        reader.readAsDataURL(blob);
+      }
+      onUpload(row.id, blob, mimeType, fileName);
     } catch {
       toast.error("Couldn't process that photo — try again, or use a different photo.");
     }
@@ -2310,13 +2309,32 @@ export default function SheetDetail() {
     onError: (e) => toast.error(e.message),
   });
 
-  const uploadAttachment = trpc.attachment.upload.useMutation({
+  // Uploads go straight to a plain HTTP route as raw bytes rather than
+  // through tRPC's base64/JSON path — a several-MB Portrait-mode iPhone
+  // photo, base64-encoded into one giant JSON string, was what intermittently
+  // failed on weak mobile connections with a cryptic browser error. Raw
+  // binary avoids both the ~33% base64 size inflation and that giant string.
+  const uploadAttachment = useMutation({
+    mutationFn: async ({ rowId, blob, mimeType, fileName }: { rowId: number; blob: Blob; mimeType: string; fileName: string }) => {
+      const params = new URLSearchParams({ rowId: String(rowId), fileName, mimeType });
+      const res = await fetch(`/api/attachments/upload-raw?${params.toString()}`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": mimeType || "application/octet-stream" },
+        body: blob,
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}) as { error?: string });
+        throw new Error(data.error || `Upload failed (${res.status})`);
+      }
+      return res.json() as Promise<{ id: number; url: string }>;
+    },
     // Field officers are often on weak signal — retry transient network
     // failures automatically rather than making them re-tap the photo.
     retry: 2,
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 4000),
     onSuccess: invalidateRows,
-    onError: (e) => toast.error(e.message),
+    onError: (e: Error) => toast.error(e.message),
   });
 
   const deleteAttachment = trpc.attachment.delete.useMutation({
@@ -3539,7 +3557,7 @@ export default function SheetDetail() {
                         <ObservationAttachments
                           row={row}
                           canEdit={canEdit && !row.isLocked}
-                          onUpload={(rowId, dataBase64, mimeType, fileName) => uploadAttachment.mutate({ rowId, dataBase64, mimeType, fileName })}
+                          onUpload={(rowId, blob, mimeType, fileName) => uploadAttachment.mutate({ rowId, blob, mimeType, fileName })}
                           onDelete={(id) => deleteAttachment.mutate({ id })}
                           uploading={uploadAttachment.isPending}
                         />

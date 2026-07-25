@@ -763,6 +763,13 @@ export default function IntelligenceMapping() {
   const [rsSelectedSheetId, setRsSelectedSheetId] = useState<number | null>(() => {
     try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return JSON.parse(s).rsSelectedSheetId ?? null; } catch { /* ignore */ } return null;
   });
+  // Quick-insert chips mined from this sheet's own observations so far
+  // (surname / short address / vehicle rego) — same query SheetDetail uses,
+  // so both surfaces show the same shared, server-computed chip set.
+  const { data: rsEntityChips } = trpc.row.entityChips.useQuery(
+    { sheetId: rsSelectedSheetId ?? 0 },
+    { enabled: !!rsSelectedSheetId }
+  );
   const [rsAddingRow, setRsAddingRow] = useState(false);
   const [rsLastEntry, setRsLastEntry] = useState<{ label: string; time: string } | null>(null);
   const isTouchDevice = useIsTouchDevice();
@@ -2403,6 +2410,8 @@ export default function IntelligenceMapping() {
           toast.success("RS entry added");
           // Refetch intel pins so any new address in this observation appears on the map
           void refetchLocations();
+          // Refetch entity chips so a newly-mentioned entity shows up as a chip immediately
+          if (rsSelectedSheetId) void utils.row.entityChips.invalidate({ sheetId: rsSelectedSheetId });
         },
         onError: (e) => {
           setRsAddingRow(false);
@@ -4322,6 +4331,29 @@ export default function IntelligenceMapping() {
                               <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-teal-500/70 block mb-0.5">Short Address</span>
                               <span className="text-[10px] md:text-sm font-mono leading-tight">{shortAddr}</span>
                             </button>
+                          </div>
+                        );
+                      })()}
+                      {/* Entity chips — quick-insert shortcuts mined from this sheet's own
+                          observations (surname / short address / vehicle rego), shared
+                          across every officer on the sheet via the server. */}
+                      {rsEntityChips && rsEntityChips.length > 0 && (() => {
+                        const appendText = (text: string) => { pushInlineUndo(rsInlineText); setRsInlineText(prev => prev ? `${prev} ${text}` : text); resetInlineTimer(); rsInlineInputRef.current?.focus(); };
+                        return (
+                          <div className="flex flex-wrap gap-1 md:gap-1.5">
+                            {rsEntityChips.map((chip) => {
+                              const typeLabel = chip.type === "vehicle" ? "VEH" : chip.type === "address" ? "LOC" : chip.type === "business" ? "BIZ" : "PER";
+                              return (
+                                <button
+                                  key={chip.key}
+                                  onClick={() => appendText(chip.insertValue)}
+                                  className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border border-violet-500/30 bg-violet-500/5 text-violet-400 hover:bg-violet-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                                >
+                                  <span className="opacity-70">{typeLabel}</span>
+                                  <span className="font-mono normal-case">{chip.display}</span>
+                                </button>
+                              );
+                            })}
                           </div>
                         );
                       })()}

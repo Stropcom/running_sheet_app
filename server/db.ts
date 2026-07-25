@@ -1953,6 +1953,57 @@ export function computeEntityKey(type: DedupType, shortForm: string): string {
   return `${type}::${norm}`;
 }
 
+export interface SheetEntityChip {
+  key: string;
+  type: "person" | "vehicle" | "address" | "business";
+  /** The short bracket token as typed — surname / rego / short address — inserted when the chip is tapped. */
+  insertValue: string;
+  /** The fuller recovered name/description shown on the chip button itself. */
+  display: string;
+  occurrenceCount: number;
+}
+
+// Surfaces a quick-tap chip for every distinct person/vehicle/address/business
+// mentioned in this sheet's observations so far, reusing the same
+// "Full description (SHORT)" bracket convention extractEntitiesFromText
+// already parses — e.g. "Jason JOHNSON (JOHNSON)" surfaces a JOHNSON chip,
+// "white Toyota Landcruiser (1FBP509)" surfaces a 1FBP509 chip. Scoped to
+// just this sheet's rows (not the whole operation/registry), computed on
+// read rather than stored, so every officer viewing the sheet sees the same
+// chips — not a per-device thing. Low-confidence extractions are excluded
+// to keep the chip bar from filling with noise from ambiguous text.
+export async function getSheetEntityChips(sheetId: number): Promise<SheetEntityChip[]> {
+  const rows = await getRowsBySheetId(sheetId);
+  const byKey = new Map<string, SheetEntityChip>();
+
+  for (const row of rows) {
+    if (!row.observation) continue;
+    const entities = extractEntitiesFromText(row.observation);
+    for (const e of entities) {
+      if (e.confidence === "low") continue;
+      if (e.type === "unknown") continue;
+      const key = computeEntityKey(e.type, e.rawShortForm);
+      const existing = byKey.get(key);
+      if (existing) {
+        existing.occurrenceCount++;
+        if (e.shortForm.length > existing.display.length) existing.display = e.shortForm;
+      } else {
+        byKey.set(key, {
+          key,
+          type: e.type,
+          insertValue: e.rawShortForm,
+          display: e.shortForm,
+          occurrenceCount: 1,
+        });
+      }
+    }
+  }
+
+  return Array.from(byKey.values())
+    .sort((a, b) => b.occurrenceCount - a.occurrenceCount || a.display.localeCompare(b.display))
+    .slice(0, 24);
+}
+
 export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]> {
   const db = await getDb();
   if (!db) return [];

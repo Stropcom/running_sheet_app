@@ -53,6 +53,7 @@ import {
   LockKeyholeOpen,
   ChevronLeft,
   ChevronRight,
+  Tag,
 } from "lucide-react";
 import {
   Select,
@@ -1974,7 +1975,15 @@ export default function SheetDetail() {
     { enabled: isAuthenticated && !!sheetId && isOnline, refetchInterval: isOnline ? 10000 : false }
   );
 
-  const invalidateRows = useCallback(() => utils.row.list.invalidate({ sheetId }), [utils, sheetId]);
+  const { data: entityChips } = trpc.row.entityChips.useQuery(
+    { sheetId },
+    { enabled: isAuthenticated && !!sheetId && isOnline, refetchInterval: isOnline ? 10000 : false }
+  );
+
+  const invalidateRows = useCallback(() => {
+    utils.row.list.invalidate({ sheetId });
+    utils.row.entityChips.invalidate({ sheetId });
+  }, [utils, sheetId]);
 
   // Cache sheet data to IndexedDB whenever we have fresh data online
   useEffect(() => {
@@ -3294,6 +3303,56 @@ export default function SheetDetail() {
             </div>
           );
         })()}
+
+        {/* Entity chips — quick-insert shortcuts mined from this sheet's own
+            observations (surname / short address / vehicle rego), shared
+            across every officer viewing the sheet since they come from the
+            server rather than a per-device setting. */}
+        {entityChips && entityChips.length > 0 && (
+          <div className="mb-4 rounded-lg border border-border bg-card/60 overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-3">
+              <Tag className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground truncate flex-1">FROM THIS SHEET</span>
+            </div>
+            <div className="px-4 pb-3 border-t border-border/40 flex flex-wrap gap-1.5 pt-2">
+              {entityChips.map((chip) => {
+                const insertIntoFocused = () => {
+                  const el = focusedTextareaRef.current;
+                  if (!el) return;
+                  el.focus();
+                  const start = el.selectionStart ?? el.value.length;
+                  const end = el.selectionEnd ?? el.value.length;
+                  const before = el.value.slice(0, start);
+                  const after = el.value.slice(end);
+                  const insert = (before && !before.endsWith(" ")) ? ` ${chip.insertValue}` : chip.insertValue;
+                  try {
+                    document.execCommand("insertText", false, insert);
+                  } catch {
+                    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set
+                      || Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+                    if (nativeInputValueSetter) {
+                      nativeInputValueSetter.call(el, before + insert + after);
+                      el.dispatchEvent(new Event("input", { bubbles: true }));
+                    }
+                  }
+                };
+                const typeLabel = chip.type === "vehicle" ? "VEH" : chip.type === "address" ? "LOC" : chip.type === "business" ? "BIZ" : "PER";
+                return (
+                  <button
+                    key={chip.key}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={insertIntoFocused}
+                    title={`Insert: ${chip.insertValue}`}
+                    className="flex items-center gap-1 pl-1.5 pr-2 py-0.5 rounded border border-violet-500/30 bg-violet-500/5 text-violet-400 hover:bg-violet-500/15 active:scale-95 transition-all select-none cursor-pointer"
+                  >
+                    <span className="text-[10px] font-bold uppercase tracking-wide">{typeLabel}</span>
+                    <span className="text-[10px] font-mono text-foreground/80 max-w-[160px] truncate">{chip.display}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Search bar + sort toggle + add row */}
         <div className="mb-4 flex items-center gap-2">

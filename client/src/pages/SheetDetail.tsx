@@ -1173,6 +1173,42 @@ function MemberCell({
 // phrase (e.g. "PHOTOGRAPH/S TAKEN" from the PT shortcut). Photos render
 // directly in the cell at ~1/3 width — same proportion used in the PDF export.
 
+// Attachment photos are for display only, not evidentiary originals, so every
+// upload is downscaled/re-encoded client-side to a consistent small JPEG —
+// this also sidesteps the iOS HEIC→JPEG-on-share size blowup (see the 25MB
+// cap below) since everything gets normalized regardless of source format.
+const ATTACHMENT_MAX_DIMENSION = 1920;
+const ATTACHMENT_JPEG_QUALITY = 0.82;
+
+async function compressAttachmentImage(
+  file: File
+): Promise<{ blob: Blob; mimeType: string; fileName: string } | null> {
+  try {
+    const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+    let { width, height } = bitmap;
+    if (width > ATTACHMENT_MAX_DIMENSION || height > ATTACHMENT_MAX_DIMENSION) {
+      const scale = ATTACHMENT_MAX_DIMENSION / Math.max(width, height);
+      width = Math.round(width * scale);
+      height = Math.round(height * scale);
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) { bitmap.close(); return null; }
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close();
+    const blob: Blob | null = await new Promise((resolve) =>
+      canvas.toBlob(resolve, "image/jpeg", ATTACHMENT_JPEG_QUALITY)
+    );
+    if (!blob) return null;
+    const fileName = file.name.replace(/\.[^.]+$/, "") + ".jpg";
+    return { blob, mimeType: "image/jpeg", fileName };
+  } catch {
+    return null; // fall back to uploading the original file untouched
+  }
+}
+
 function ObservationAttachments({
   row,
   canEdit,
@@ -1193,23 +1229,30 @@ function ObservationAttachments({
 
   if (!IMAGERY_PHRASE_PATTERN.test(row.observation ?? "")) return null;
 
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = "";
     if (!file) return;
-    if (file.size > 25 * 1024 * 1024) { toast.error("Photo must be under 25 MB."); return; }
-    // HEIC/HEIF (default iPhone format) can't be previewed by the browser —
-    // it gets converted to JPEG server-side, so skip the raw-bytes preview
-    // for it rather than show a broken image icon while uploading.
-    const isHeic = /^image\/hei[cf]$/i.test(file.type) || /\.hei[cf]$/i.test(file.name);
+
+    const compressed = await compressAttachmentImage(file);
+    const blob: Blob = compressed?.blob ?? file;
+    const mimeType = compressed?.mimeType ?? file.type;
+    const fileName = compressed?.fileName ?? file.name;
+
+    if (blob.size > 25 * 1024 * 1024) { toast.error("Photo must be under 25 MB."); return; }
+
+    // If compression failed, the original may be a HEIC/HEIF file the browser
+    // can't preview (it gets converted to JPEG server-side) — skip the
+    // raw-bytes preview for it rather than show a broken image icon.
+    const isHeic = !compressed && (/^image\/hei[cf]$/i.test(file.type) || /\.hei[cf]$/i.test(file.name));
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = reader.result as string;
       if (!isHeic) setPreview(dataUrl);
       const base64 = dataUrl.split(",")[1];
-      onUpload(row.id, base64, file.type, file.name);
+      onUpload(row.id, base64, mimeType, fileName);
     };
-    reader.readAsDataURL(file);
-    e.target.value = "";
+    reader.readAsDataURL(blob);
   };
 
   return (

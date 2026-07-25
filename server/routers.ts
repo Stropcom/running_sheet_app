@@ -68,6 +68,7 @@ import {
   getGovernanceRecordsBySheetIds,
   computeGovernancePercent,
   getGovernanceTodoForCin,
+  getUnlinkedImagesTodoForCin,
   getOperationDeleteStats,
   getTargetShortcuts,
   createTargetShortcut,
@@ -619,6 +620,16 @@ export const appRouter = router({
       const cin = ctx.user.cin;
       if (!cin) return [];
       return getGovernanceTodoForCin(cin);
+    }),
+
+    /**
+     * Returns sheets authored by the current CIN that have photo attachments
+     * not yet linked to an Intelligence entity. Used by the To-Do page.
+     */
+    unlinkedImagesTodo: protectedProcedure.query(async ({ ctx }) => {
+      const cin = ctx.user.cin;
+      if (!cin) return [];
+      return getUnlinkedImagesTodoForCin(cin);
     }),
 
     close: certifierOrAdminProcedure

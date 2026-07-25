@@ -22,12 +22,15 @@ import { format } from "date-fns";
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function downloadBase64(base64: string, filename: string, mime: string) {
+  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
   const link = document.createElement("a");
-  link.href = `data:${mime};base64,${base64}`;
+  link.href = url;
   link.download = filename;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
 
 function formatDateShort(ts: number) {

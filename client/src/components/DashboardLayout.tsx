@@ -42,7 +42,7 @@ import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useTheme } from "@/contexts/ThemeContext";
 import {
-  FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen, Scale, FolderOpen, ChevronDown, ChevronRight, CalendarDays, Shield, ClipboardCheck as GovIcon, Map, ArrowRightLeft, HelpCircle, Trash2, WifiOff, Settings, UserCog, BarChart3, GripVertical, LayoutGrid, List, Image } from "lucide-react";
+  FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen, Scale, FolderOpen, ChevronDown, ChevronRight, CalendarDays, Shield, ClipboardCheck as GovIcon, Map, ArrowRightLeft, HelpCircle, Trash2, WifiOff, Settings, UserCog, BarChart3, GripVertical, LayoutGrid, List, Image, Link2 } from "lucide-react";
 import React, { CSSProperties, useEffect, useRef, useState, useCallback } from "react";
 import { useObservationFocus } from "@/contexts/ObservationFocusContext";
 import { useLocation } from "wouter";
@@ -59,6 +59,7 @@ type SortableNavItemProps = {
   setLocation: (path: string) => void;
   todoCount: number;
   certifyCount: number;
+  unlinkedImagesCount: number;
   govCount: number;
   todoExpanded: boolean;
   setTodoExpanded: React.Dispatch<React.SetStateAction<boolean>>;
@@ -75,6 +76,7 @@ function SortableNavItem({
   setLocation,
   todoCount,
   certifyCount,
+  unlinkedImagesCount,
   govCount,
   todoExpanded,
   setTodoExpanded,
@@ -138,13 +140,13 @@ function SortableNavItem({
   if (id === "todo") return (
     <SidebarMenuItem {...itemProps}>
       <SidebarMenuButton
-        isActive={location === "/todo" || location === "/todo/governance"}
+        isActive={location === "/todo" || location === "/todo/images" || location === "/todo/governance"}
         onClick={() => setTodoExpanded((v) => !v)}
         tooltip="To-Do"
         className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-red-400/50 shadow-sm"
       >
         <ClipboardList className={`h-4 w-4 ${todoCount > 0 ? "text-red-500" : "text-red-400"}`} />
-        <span className={`flex-1 ${todoCount > 0 ? "text-red-500 font-medium" : location === "/todo" || location === "/todo/governance" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>To-Do</span>
+        <span className={`flex-1 ${todoCount > 0 ? "text-red-500 font-medium" : location === "/todo" || location === "/todo/images" || location === "/todo/governance" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>To-Do</span>
         {todoCount > 0 && !isCollapsed && (
           <span className="inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-[10px] font-bold bg-red-500/20 border border-red-500/40 text-red-500">{todoCount}</span>
         )}
@@ -157,6 +159,11 @@ function SortableNavItem({
             <Shield className={`h-3.5 w-3.5 shrink-0 ${certifyCount > 0 ? "text-red-400" : "text-emerald-400"}`} />
             <span className="flex-1">Certify</span>
             {certifyCount > 0 && <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[9px] font-bold bg-red-500/20 border border-red-500/40 text-red-400">{certifyCount}</span>}
+          </button>
+          <button onClick={() => setLocation("/todo/images")} className={subItemClass(location === "/todo/images")}>
+            <Link2 className={`h-3.5 w-3.5 shrink-0 ${unlinkedImagesCount > 0 ? "text-amber-400" : "text-emerald-400"}`} />
+            <span className="flex-1">Link Images</span>
+            {unlinkedImagesCount > 0 && <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[9px] font-bold bg-amber-500/20 border border-amber-500/40 text-amber-400">{unlinkedImagesCount}</span>}
           </button>
           <button onClick={() => setLocation("/todo/governance")} className={subItemClass(location === "/todo/governance")}>
             <GovIcon className={`h-3.5 w-3.5 shrink-0 ${govCount > 0 ? "text-blue-400" : "text-emerald-400"}`} />
@@ -379,9 +386,14 @@ function DashboardLayoutContent({
     staleTime: 30_000,
     refetchOnWindowFocus: true,
   });
+  const { data: unlinkedImagesTodo } = trpc.sheet.unlinkedImagesTodo.useQuery(undefined, {
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
+  });
   const certifyCount = outstanding?.length ?? 0;
   const govCount = governanceTodo?.filter(g => g.outstanding.length > 0).length ?? 0;
-  const todoCount = certifyCount + govCount;
+  const unlinkedImagesCount = unlinkedImagesTodo?.length ?? 0;
+  const todoCount = certifyCount + govCount + unlinkedImagesCount;
 
   const { draftCounts } = useOffline();
   const { isObservationFocused } = useObservationFocus();
@@ -402,7 +414,7 @@ function DashboardLayoutContent({
   }, [isObservationFocused, shortcutsPanelHovered]);
 
   const [courtExpanded, setCourtExpanded] = useState(() => location.startsWith("/court"));
-  const [todoExpanded, setTodoExpanded] = useState(() => location === "/todo" || location === "/todo/governance");
+  const [todoExpanded, setTodoExpanded] = useState(() => location === "/todo" || location === "/todo/images" || location === "/todo/governance");
   const [adminFolderExpanded, setAdminFolderExpanded] = useState(false);
   const [userMgmtFolderExpanded, setUserMgmtFolderExpanded] = useState(false);
 
@@ -598,6 +610,7 @@ function DashboardLayoutContent({
                       setLocation={setLocation}
                       todoCount={todoCount}
                       certifyCount={certifyCount}
+                      unlinkedImagesCount={unlinkedImagesCount}
                       govCount={govCount}
                       todoExpanded={todoExpanded}
                       setTodoExpanded={setTodoExpanded}

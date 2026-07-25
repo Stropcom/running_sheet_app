@@ -3016,6 +3016,62 @@ export async function getGovernanceTodoForCin(cin: string): Promise<
   return results;
 }
 
+/**
+ * Returns running sheets authored by this CIN that have one or more photo
+ * attachments not yet linked to an Intelligence entity — surfaced to the
+ * author as a To-Do item so photos don't get left unlinked.
+ */
+export async function getUnlinkedImagesTodoForCin(cin: string): Promise<
+  {
+    sheetId: number;
+    sheetTitle: string;
+    operationId: number;
+    operationName: string;
+    unlinkedCount: number;
+  }[]
+> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const allSheets = await db.select().from(runningSheets).where(isNull(runningSheets.deletedAt));
+  const authoredSheets = allSheets.filter((s) => {
+    try {
+      const cins: { cin: string; isAuthor?: boolean }[] = JSON.parse(s.sheetCins ?? "[]");
+      return cins.some((c) => c.cin === cin && c.isAuthor);
+    } catch { return false; }
+  });
+  if (authoredSheets.length === 0) return [];
+
+  const opIds = Array.from(new Set(authoredSheets.map((s) => s.operationId)));
+  const ops = await db.select().from(operations).where(inArray(operations.id, opIds));
+  const validOpIds = new Set(ops.map((o) => o.id));
+  const validSheets = authoredSheets.filter((s) => validOpIds.has(s.operationId));
+  if (validSheets.length === 0) return [];
+
+  const results: Awaited<ReturnType<typeof getUnlinkedImagesTodoForCin>> = [];
+
+  for (const sheet of validSheets) {
+    const rows = await getRowsBySheetId(sheet.id);
+    const rowIds = rows.map((r) => r.id);
+    const attachments = await getAttachmentsByRowIds(rowIds);
+    if (attachments.length === 0) continue;
+    const withLinkCounts = await attachLinkedCounts(db, attachments);
+    const unlinkedCount = withLinkCounts.filter((a) => a.linkedCount === 0).length;
+    if (unlinkedCount === 0) continue;
+
+    const op = ops.find((o) => o.id === sheet.operationId);
+    results.push({
+      sheetId: sheet.id,
+      sheetTitle: sheet.title,
+      operationId: sheet.operationId,
+      operationName: op?.name ?? "Unknown",
+      unlinkedCount,
+    });
+  }
+
+  return results;
+}
+
 // ─── Target Shortcuts ─────────────────────────────────────────────────────────
 
 export async function getTargetShortcuts(targetId: number) {
@@ -3494,9 +3550,18 @@ export interface IntelLocationProfile {
   assocVehicles: IntelProfileEntity[];
 }
 
+// A target's registered name is often followed by descriptive detail
+// ("JOHN SMITH, born 1 Jan 1980") — take everything before the first comma
+// as the "core" name to compare against observation-derived person entities.
+function targetCoreName(name: string): string {
+  const commaIdx = name.indexOf(",");
+  return (commaIdx > 0 ? name.slice(0, commaIdx) : name).trim().toLowerCase();
+}
+
 async function buildTargetOperationalAssociations(
   targetId: number,
   targetLabel: string,
+  targetName: string,
   allEntities: IntelligenceEntity[],
 ): Promise<{ assocPersons: IntelProfileEntity[]; assocVehicles: IntelProfileEntity[]; assocLocations: IntelProfileEntity[] }> {
   const db = await getDb();
@@ -3517,6 +3582,11 @@ async function buildTargetOperationalAssociations(
 
   const targetRowIds = new Set(rows.map(r => r.id));
   const targetLabelLower = targetLabel.toLowerCase();
+  // Catches observation-derived person entities that are just the target's own
+  // name in different wording (e.g. "Sighted JOHN SMITH" vs the target card's
+  // "JOHN SMITH, born 1 Jan 1980") — without this, the same real person shows
+  // up both as the profile's main subject and again in its own associate list.
+  const coreName = targetCoreName(targetName);
 
   const assocPersonsMap = new Map<string, IntelProfileEntity>();
   const assocVehiclesMap = new Map<string, IntelProfileEntity>();
@@ -3524,6 +3594,11 @@ async function buildTargetOperationalAssociations(
 
   for (const entity of allEntities) {
     if (entity.shortForm.toLowerCase() === targetLabelLower) continue;
+    if (entity.isTarget && entity.targetId === targetId) continue;
+    if (!entity.isTarget && entity.type === "person" && coreName) {
+      const entityLower = entity.shortForm.toLowerCase().trim();
+      if (entityLower === coreName || entityLower.endsWith(` ${coreName}`)) continue;
+    }
     const relevantOccs = entity.occurrences.filter(occ => occ.rowId > 0 && targetRowIds.has(occ.rowId));
     if (!relevantOccs.length) continue;
 
@@ -3609,7 +3684,7 @@ export async function getIntelTargetProfile(targetId: number): Promise<IntelTarg
 
   const allEntities = await getAllIntelligenceEntities();
   const targetLabel = target.tgt ?? target.name;
-  const { assocPersons, assocVehicles, assocLocations } = await buildTargetOperationalAssociations(targetId, targetLabel, allEntities);
+  const { assocPersons, assocVehicles, assocLocations } = await buildTargetOperationalAssociations(targetId, targetLabel, target.name, allEntities);
   await populateAssocPhotos(assocPersons, assocVehicles, assocLocations);
 
   return {
@@ -3665,7 +3740,7 @@ export async function getIntelOperationProfile(operationId: number): Promise<Int
       if (!target) return null;
       const targetLabel = target.tgt ?? target.name;
       const targetSheets = sheets.filter(s => s.targetId === targetId);
-      const { assocPersons, assocVehicles, assocLocations } = await buildTargetOperationalAssociations(targetId, targetLabel, allEntities);
+      const { assocPersons, assocVehicles, assocLocations } = await buildTargetOperationalAssociations(targetId, targetLabel, target.name, allEntities);
       return {
         targetId,
         name: target.name,

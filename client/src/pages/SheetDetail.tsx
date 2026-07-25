@@ -1180,33 +1180,67 @@ function MemberCell({
 const ATTACHMENT_MAX_DIMENSION = 1920;
 const ATTACHMENT_JPEG_QUALITY = 0.82;
 
+function drawToJpegBlob(
+  source: CanvasImageSource,
+  srcWidth: number,
+  srcHeight: number
+): Promise<Blob | null> {
+  let width = srcWidth;
+  let height = srcHeight;
+  if (width > ATTACHMENT_MAX_DIMENSION || height > ATTACHMENT_MAX_DIMENSION) {
+    const scale = ATTACHMENT_MAX_DIMENSION / Math.max(width, height);
+    width = Math.round(width * scale);
+    height = Math.round(height * scale);
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return Promise.resolve(null);
+  ctx.drawImage(source, 0, 0, width, height);
+  return new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", ATTACHMENT_JPEG_QUALITY));
+}
+
 async function compressAttachmentImage(
   file: File
 ): Promise<{ blob: Blob; mimeType: string; fileName: string } | null> {
+  const fileName = file.name.replace(/\.[^.]+$/, "") + ".jpg";
+
+  // Primary path — fast, works for the vast majority of photos.
   try {
     const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
-    let { width, height } = bitmap;
-    if (width > ATTACHMENT_MAX_DIMENSION || height > ATTACHMENT_MAX_DIMENSION) {
-      const scale = ATTACHMENT_MAX_DIMENSION / Math.max(width, height);
-      width = Math.round(width * scale);
-      height = Math.round(height * scale);
-    }
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) { bitmap.close(); return null; }
-    ctx.drawImage(bitmap, 0, 0, width, height);
+    const blob = await drawToJpegBlob(bitmap, bitmap.width, bitmap.height);
     bitmap.close();
-    const blob: Blob | null = await new Promise((resolve) =>
-      canvas.toBlob(resolve, "image/jpeg", ATTACHMENT_JPEG_QUALITY)
-    );
-    if (!blob) return null;
-    const fileName = file.name.replace(/\.[^.]+$/, "") + ".jpg";
-    return { blob, mimeType: "image/jpeg", fileName };
+    if (blob) return { blob, mimeType: "image/jpeg", fileName };
   } catch {
-    return null; // fall back to uploading the original file untouched
+    // fall through to the <img>-based fallback below
   }
+
+  // Fallback — Portrait-mode HEIC photos (embedded depth map, a multi-image
+  // container) are known to fail createImageBitmap on iOS Safari even though
+  // the browser can still render them fine via a plain <img>. Without this,
+  // compression silently gives up and the full-size original (often several
+  // MB) gets base64-JSON-uploaded as-is, which is much more likely to fail
+  // outright on a weak mobile connection.
+  try {
+    const objectUrl = URL.createObjectURL(file);
+    try {
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = () => reject(new Error("image element failed to load"));
+        el.src = objectUrl;
+      });
+      const blob = await drawToJpegBlob(img, img.naturalWidth, img.naturalHeight);
+      if (blob) return { blob, mimeType: "image/jpeg", fileName };
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
+  } catch {
+    // fall through
+  }
+
+  return null; // both paths failed — fall back to uploading the original file untouched
 }
 
 function ObservationAttachments({
@@ -1234,25 +1268,30 @@ function ObservationAttachments({
     e.target.value = "";
     if (!file) return;
 
-    const compressed = await compressAttachmentImage(file);
-    const blob: Blob = compressed?.blob ?? file;
-    const mimeType = compressed?.mimeType ?? file.type;
-    const fileName = compressed?.fileName ?? file.name;
+    try {
+      const compressed = await compressAttachmentImage(file);
+      const blob: Blob = compressed?.blob ?? file;
+      const mimeType = compressed?.mimeType ?? file.type;
+      const fileName = compressed?.fileName ?? file.name;
 
-    if (blob.size > 25 * 1024 * 1024) { toast.error("Photo must be under 25 MB."); return; }
+      if (blob.size > 25 * 1024 * 1024) { toast.error("Photo must be under 25 MB."); return; }
 
-    // If compression failed, the original may be a HEIC/HEIF file the browser
-    // can't preview (it gets converted to JPEG server-side) — skip the
-    // raw-bytes preview for it rather than show a broken image icon.
-    const isHeic = !compressed && (/^image\/hei[cf]$/i.test(file.type) || /\.hei[cf]$/i.test(file.name));
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
-      if (!isHeic) setPreview(dataUrl);
-      const base64 = dataUrl.split(",")[1];
-      onUpload(row.id, base64, mimeType, fileName);
-    };
-    reader.readAsDataURL(blob);
+      // If compression failed, the original may be a HEIC/HEIF file the browser
+      // can't preview (it gets converted to JPEG server-side) — skip the
+      // raw-bytes preview for it rather than show a broken image icon.
+      const isHeic = !compressed && (/^image\/hei[cf]/i.test(file.type) || /\.hei[cf]$/i.test(file.name));
+      const reader = new FileReader();
+      reader.onerror = () => toast.error("Couldn't read that photo — try again.");
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        if (!isHeic) setPreview(dataUrl);
+        const base64 = dataUrl.split(",")[1];
+        onUpload(row.id, base64, mimeType, fileName);
+      };
+      reader.readAsDataURL(blob);
+    } catch {
+      toast.error("Couldn't process that photo — try again, or use a different photo.");
+    }
   };
 
   return (
@@ -2272,6 +2311,10 @@ export default function SheetDetail() {
   });
 
   const uploadAttachment = trpc.attachment.upload.useMutation({
+    // Field officers are often on weak signal — retry transient network
+    // failures automatically rather than making them re-tap the photo.
+    retry: 2,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 4000),
     onSuccess: invalidateRows,
     onError: (e) => toast.error(e.message),
   });

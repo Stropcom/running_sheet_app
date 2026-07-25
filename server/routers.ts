@@ -881,11 +881,15 @@ export const appRouter = router({
           ? input.mimeType
           : (fileExt && EXT_TO_MIME[fileExt]) || input.mimeType;
 
-        const isHeic = /^image\/hei[cf]$/i.test(mimeType) || /\.hei[cf]$/i.test(input.fileName ?? "");
+        // No trailing $ on the mimeType check — iOS reports variants like
+        // "image/heic-sequence" for Portrait/Burst/Live photos, which are
+        // still HEIC containers heicConvert can read.
+        const isHeic = /^image\/hei[cf]/i.test(mimeType) || /\.hei[cf]$/i.test(input.fileName ?? "");
         if (isHeic) {
           try {
             buffer = await heicConvert({ buffer, format: "JPEG", quality: 0.9 });
-          } catch {
+          } catch (err) {
+            console.error("HEIC conversion failed:", err);
             throw new TRPCError({ code: "BAD_REQUEST", message: "Could not read that HEIC/HEIF photo." });
           }
           mimeType = "image/jpeg";

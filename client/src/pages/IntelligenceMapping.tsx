@@ -3917,29 +3917,29 @@ export default function IntelligenceMapping() {
       {/* ── Map RS Quick Entry Modal ── */}
       {mapQeOpen && (
         <div
-          className="absolute inset-0 z-40 flex items-end justify-center"
+          className="absolute inset-0 z-40 flex items-end justify-center lg:items-center lg:p-6"
           style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(3px)" }}
           onClick={() => { setMapQeOpen(false); setMapQeAddress(""); closeInlineField(); }}
         >
           <div
-            className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8 max-h-[90vh] overflow-y-auto"
+            className="w-full max-w-lg md:max-w-2xl lg:max-w-4xl bg-card border border-border rounded-t-2xl lg:rounded-2xl shadow-2xl p-5 pb-8 md:p-6 lg:p-8 max-h-[90vh] lg:max-h-[85vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex items-start justify-between mb-4">
+            <div className="flex items-start justify-between mb-4 lg:mb-6">
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold text-foreground">RS Quick Entry</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{mapQeAddress}</p>
+                <p className="text-sm md:text-base lg:text-lg font-bold text-foreground">RS Quick Entry</p>
+                <p className="text-[11px] md:text-xs lg:text-sm text-muted-foreground mt-0.5 truncate">{mapQeAddress}</p>
               </div>
               <button onClick={() => { setMapQeOpen(false); setMapQeAddress(""); closeInlineField(); }} className="ml-3 text-muted-foreground hover:text-foreground flex-shrink-0">
-                <X className="h-4 w-4" />
+                <X className="h-4 w-4 md:h-5 md:w-5" />
               </button>
             </div>
 
             {/* Time picker — slim inline row with Now + Date buttons */}
-            <div className="flex items-center gap-1 mb-2 flex-wrap">
-              <Clock className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-              <span className="text-[10px] text-muted-foreground font-medium mr-0.5">Time:</span>
+            <div className="flex items-center gap-1 md:gap-1.5 mb-2 lg:mb-3 flex-wrap">
+              <Clock className="h-3 w-3 md:h-3.5 md:w-3.5 text-muted-foreground flex-shrink-0" />
+              <span className="text-[10px] md:text-xs text-muted-foreground font-medium mr-0.5">Time:</span>
               {/* Hour */}
               <Select
                 value={mapQeHour}
@@ -3949,7 +3949,7 @@ export default function IntelligenceMapping() {
                   setMapQeTimeOverride(`${String(parseInt(v)).padStart(2,"0")}:${mapQeMinute} ${mapQePeriod}`);
                 }}
               >
-                <SelectTrigger className="w-16 h-6 text-[11px] font-mono px-1.5 py-0">
+                <SelectTrigger className="w-16 h-6 text-[11px] font-mono px-1.5 py-0 md:w-20 md:h-8 md:text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -3960,7 +3960,7 @@ export default function IntelligenceMapping() {
                   ))}
                 </SelectContent>
               </Select>
-              <span className="text-muted-foreground font-mono text-[11px]">:</span>
+              <span className="text-muted-foreground font-mono text-[11px] md:text-sm">:</span>
               {/* Minute */}
               <Select
                 value={mapQeMinute}
@@ -3970,7 +3970,7 @@ export default function IntelligenceMapping() {
                   setMapQeTimeOverride(`${String(parseInt(mapQeHour)).padStart(2,"0")}:${v} ${mapQePeriod}`);
                 }}
               >
-                <SelectTrigger className="w-16 h-6 text-[11px] font-mono px-1.5 py-0">
+                <SelectTrigger className="w-16 h-6 text-[11px] font-mono px-1.5 py-0 md:w-20 md:h-8 md:text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -3988,7 +3988,7 @@ export default function IntelligenceMapping() {
                   setMapQeTimeOverride(`${String(parseInt(mapQeHour)).padStart(2,"0")}:${mapQeMinute} ${v}`);
                 }}
               >
-                <SelectTrigger className="w-14 h-6 text-[11px] px-1.5 py-0">
+                <SelectTrigger className="w-14 h-6 text-[11px] px-1.5 py-0 md:w-16 md:h-8 md:text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -4009,13 +4009,13 @@ export default function IntelligenceMapping() {
                   setMapQePeriod(ampm);
                   setMapQeTimeOverride(`${String(h12).padStart(2,"0")}:${String(min).padStart(2,"0")} ${ampm}`);
                 }}
-                className="h-6 px-2 text-[10px] font-medium rounded border border-border bg-muted/30 hover:bg-accent/50 active:scale-95 transition-all whitespace-nowrap"
+                className="h-6 px-2 text-[10px] font-medium rounded border border-border bg-muted/30 hover:bg-accent/50 active:scale-95 transition-all whitespace-nowrap md:h-8 md:px-3 md:text-xs"
               >Now</button>
               {/* Date button — toggles stepper */}
               <button
                 type="button"
                 onClick={() => setShowMapQeDateStepper((v) => !v)}
-                className={`h-6 px-2 text-[10px] font-medium rounded border transition-all whitespace-nowrap active:scale-95 ${
+                className={`h-6 px-2 text-[10px] font-medium rounded border transition-all whitespace-nowrap active:scale-95 md:h-8 md:px-3 md:text-xs ${
                   showMapQeDateStepper
                     ? "border-primary bg-primary text-primary-foreground"
                     : "border-border bg-muted/30 hover:bg-accent/50"
@@ -4044,12 +4044,12 @@ export default function IntelligenceMapping() {
 
             {/* No sheet selected warning */}
             {rsSelectedSheetId === null ? (
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-3 text-center">
-                <p className="text-xs font-semibold text-amber-400 mb-1">No running sheet selected</p>
-                <p className="text-[11px] text-muted-foreground">Select an operation and running sheet in the right panel first, then tap &amp; hold the map again.</p>
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-3 md:px-4 md:py-4 text-center">
+                <p className="text-xs md:text-sm font-semibold text-amber-400 mb-1">No running sheet selected</p>
+                <p className="text-[11px] md:text-xs text-muted-foreground">Select an operation and running sheet in the right panel first, then tap &amp; hold the map again.</p>
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-2 md:space-y-3">
                 {/* Sheet + target strip */}
                 <div className="flex items-center gap-2">
                   {rsSheetsData && (() => {
@@ -4057,17 +4057,17 @@ export default function IntelligenceMapping() {
                     return sheet ? (
                       <button
                         onClick={() => { setMapQeOpen(false); setMapQeAddress(""); closeInlineField(); setLocation(`/sheet/${rsSelectedSheetId}`); }}
-                        className="flex-1 flex items-center gap-1.5 px-2 py-1.5 rounded-md border border-primary/40 bg-primary/10 hover:bg-primary/20 active:scale-[0.98] transition-all min-w-0"
+                        className="flex-1 flex items-center gap-1.5 px-2 py-1.5 md:px-3 md:py-2 rounded-md border border-primary/40 bg-primary/10 hover:bg-primary/20 active:scale-[0.98] transition-all min-w-0"
                       >
-                        <MapIcon className="h-3 w-3 text-primary flex-shrink-0" />
-                        <span className="text-[11px] font-semibold text-primary truncate">{sheet.title || `Sheet #${sheet.id}`}</span>
-                        <ExternalLink className="h-3 w-3 text-primary/60 flex-shrink-0 ml-auto" />
+                        <MapIcon className="h-3 w-3 md:h-4 md:w-4 text-primary flex-shrink-0" />
+                        <span className="text-[11px] md:text-sm font-semibold text-primary truncate">{sheet.title || `Sheet #${sheet.id}`}</span>
+                        <ExternalLink className="h-3 w-3 md:h-4 md:w-4 text-primary/60 flex-shrink-0 ml-auto" />
                       </button>
                     ) : null;
                   })()}
                   {rsTargetData && (
-                    <div className="flex-shrink-0 rounded-md border border-border bg-muted/30 px-2 py-1">
-                      <p className="text-[10px] font-bold text-foreground leading-none">{rsTargetData.tgt ?? rsTargetData.name}</p>
+                    <div className="flex-shrink-0 rounded-md border border-border bg-muted/30 px-2 py-1 md:px-3 md:py-1.5">
+                      <p className="text-[10px] md:text-xs font-bold text-foreground leading-none">{rsTargetData.tgt ?? rsTargetData.name}</p>
                     </div>
                   )}
                 </div>
@@ -4098,9 +4098,9 @@ export default function IntelligenceMapping() {
                     } catch { /* ignore */ }
                   }
                   return (
-                    <div className="rounded-lg border border-border bg-muted/40 p-2.5 flex flex-col gap-2" onClick={(e) => e.stopPropagation()}>
+                    <div className="rounded-lg border border-border bg-muted/40 p-2.5 md:p-3.5 flex flex-col gap-2 md:gap-2.5" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Observation</span>
+                        <span className="text-[10px] md:text-xs font-bold uppercase tracking-wide text-muted-foreground">Observation</span>
                       </div>
                       <textarea
                         ref={rsInlineInputRef}
@@ -4133,7 +4133,7 @@ export default function IntelligenceMapping() {
                         }}
                         placeholder="Add details (optional)…"
                         rows={4}
-                        className="w-full resize-none rounded-md border border-border bg-background px-2.5 py-1.5 text-[11px] placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                        className="w-full resize-none rounded-md border border-border bg-background px-2.5 py-1.5 text-[11px] placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring md:px-3 md:py-2 md:text-sm lg:min-h-[140px]"
                       />
                       {/* Shortcut buttons */}
                       {(() => {
@@ -4219,13 +4219,13 @@ export default function IntelligenceMapping() {
                         const isStandard = (lbl: string) => !isVnShort(lbl) && (shortcutFolderLabels.has(lbl) || TRIGGER_ONLY.has(lbl) || isVnFull(lbl));
 
                         return (
-                          <div className="flex flex-wrap gap-1">
+                          <div className="flex flex-wrap gap-1 md:gap-1.5">
                             {orderedChips.map((s) => (
                               <button
                                 key={s.label}
                                 onClick={() => { const v = s.getValue(); if (v) appendText(v); }}
                                 data-qe-chip={s.label}
-                                className="cursor-pointer px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all select-none"
+                                className="cursor-pointer px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
                               >
                                 {isVnShort(s.label) ? s.display : isStandard(s.label) ? s.label : s.display}
                               </button>
@@ -4244,34 +4244,34 @@ export default function IntelligenceMapping() {
                           ? toTitleCase(bracketMatch[2])
                           : mapQeAddress.split(",")[0]?.trim() ?? mapQeAddress;
                         return (
-                          <div className="flex flex-col gap-1">
+                          <div className="flex flex-col gap-1 md:gap-1.5">
                             <button
                               onClick={() => appendText(mapQeAddress)}
-                              className="w-full text-left px-2.5 py-1.5 rounded-md border border-teal-500/30 bg-teal-500/5 text-teal-400 hover:bg-teal-500/15 active:scale-[0.98] transition-all"
+                              className="w-full text-left px-2.5 py-1.5 rounded-md border border-teal-500/30 bg-teal-500/5 text-teal-400 hover:bg-teal-500/15 active:scale-[0.98] transition-all md:px-3.5 md:py-2.5"
                             >
-                              <span className="text-[9px] font-bold uppercase tracking-wide text-teal-500/70 block mb-0.5">Full Address</span>
-                              <span className="text-[10px] font-mono leading-tight break-all">{mapQeAddress}</span>
+                              <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-teal-500/70 block mb-0.5">Full Address</span>
+                              <span className="text-[10px] md:text-sm font-mono leading-tight break-all">{mapQeAddress}</span>
                             </button>
                             <button
                               onClick={() => appendText(shortAddr)}
-                              className="w-full text-left px-2.5 py-1.5 rounded-md border border-teal-500/20 bg-teal-500/5 text-teal-300 hover:bg-teal-500/10 active:scale-[0.98] transition-all"
+                              className="w-full text-left px-2.5 py-1.5 rounded-md border border-teal-500/20 bg-teal-500/5 text-teal-300 hover:bg-teal-500/10 active:scale-[0.98] transition-all md:px-3.5 md:py-2.5"
                             >
-                              <span className="text-[9px] font-bold uppercase tracking-wide text-teal-500/70 block mb-0.5">Short Address</span>
-                              <span className="text-[10px] font-mono leading-tight">{shortAddr}</span>
+                              <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-teal-500/70 block mb-0.5">Short Address</span>
+                              <span className="text-[10px] md:text-sm font-mono leading-tight">{shortAddr}</span>
                             </button>
                           </div>
                         );
                       })()}
                       {/* CIN picker — multi-select with TEAM */}
                       {rosterCins.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5">
+                        <div className="flex flex-wrap gap-1.5 md:gap-2">
                           <button
                             onClick={() => { const allSel = rosterCins.every(c => rsInlineCins.has(c)); const next = allSel ? new Set<string>() : new Set(rosterCins); setRsInlineCins(next); rsInlineCinsRef.current = next; resetInlineTimer(); }}
-                            className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all active:scale-95 ${rosterCins.every(c => rsInlineCins.has(c)) ? "bg-amber-500/20 border-amber-500/60 text-amber-400" : "bg-muted/40 border-amber-500/30 text-amber-500/80 hover:bg-amber-500/10"}`}
+                            className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all active:scale-95 md:px-3.5 md:py-1.5 md:text-sm ${rosterCins.every(c => rsInlineCins.has(c)) ? "bg-amber-500/20 border-amber-500/60 text-amber-400" : "bg-muted/40 border-amber-500/30 text-amber-500/80 hover:bg-amber-500/10"}`}
                           >TEAM</button>
                           {rosterCins.map((cin) => (
                             <button key={cin} onClick={() => { const next = new Set(rsInlineCins); if (next.has(cin)) { next.delete(cin); } else { next.add(cin); } setRsInlineCins(next); rsInlineCinsRef.current = next; resetInlineTimer(); }}
-                              className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all active:scale-95 ${rsInlineCins.has(cin) ? "bg-primary/20 border-primary/60 text-primary" : "bg-muted/40 border-border text-foreground/80 hover:bg-muted/70 hover:text-foreground"}`}>
+                              className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all active:scale-95 md:px-3.5 md:py-1.5 md:text-sm ${rsInlineCins.has(cin) ? "bg-primary/20 border-primary/60 text-primary" : "bg-muted/40 border-border text-foreground/80 hover:bg-muted/70 hover:text-foreground"}`}>
                               {cin}
                             </button>
                           ))}
@@ -4279,8 +4279,8 @@ export default function IntelligenceMapping() {
                       )}
                       <div className="flex items-center justify-end gap-2">
                         <button onClick={submitInlineField} disabled={rsAddingRow}
-                          className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-[10px] font-semibold text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-50">
-                          {rsAddingRow ? <Spinner className="h-3 w-3" /> : <Send className="h-3 w-3" />}
+                          className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-[10px] font-semibold text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-50 md:px-4 md:py-2 md:text-sm md:gap-1.5">
+                          {rsAddingRow ? <Spinner className="h-3 w-3 md:h-4 md:w-4" /> : <Send className="h-3 w-3 md:h-4 md:w-4" />}
                           Submit
                         </button>
                       </div>
@@ -4292,9 +4292,9 @@ export default function IntelligenceMapping() {
 
                 {/* Last entry confirmation */}
                 {rsLastEntry && (
-                  <div className="rounded-md border border-green-500/30 bg-green-500/10 px-2.5 py-2">
-                    <p className="text-[9px] font-bold uppercase tracking-wide text-green-400 mb-0.5">Last Entry</p>
-                    <p className="text-[11px] font-mono text-foreground">{rsLastEntry.time} — {rsLastEntry.label}</p>
+                  <div className="rounded-md border border-green-500/30 bg-green-500/10 px-2.5 py-2 md:px-3.5 md:py-3">
+                    <p className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-green-400 mb-0.5">Last Entry</p>
+                    <p className="text-[11px] md:text-sm font-mono text-foreground">{rsLastEntry.time} — {rsLastEntry.label}</p>
                   </div>
                 )}
               </div>

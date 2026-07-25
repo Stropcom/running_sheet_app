@@ -1191,7 +1191,7 @@ function ObservationAttachments({
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 10 * 1024 * 1024) { toast.error("Photo must be under 10 MB."); return; }
+    if (file.size > 25 * 1024 * 1024) { toast.error("Photo must be under 25 MB."); return; }
     // HEIC/HEIF (default iPhone format) can't be previewed by the browser —
     // it gets converted to JPEG server-side, so skip the raw-bytes preview
     // for it rather than show a broken image icon while uploading.

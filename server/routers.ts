@@ -862,9 +862,11 @@ export const appRouter = router({
         const row = await getRowById(input.rowId);
         if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Row not found." });
         let buffer: Buffer = Buffer.from(input.dataBase64, "base64");
-        // Limit to 10 MB — photos taken on a phone can run larger than the 5MB wallpaper cap
-        if (buffer.byteLength > 10 * 1024 * 1024) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Photo must be under 10 MB." });
+        // Limit to 25 MB — iOS silently converts HEIC to JPEG on share/pick
+        // (Settings > Photos > Transfer to Mac or PC > Automatic), which can
+        // more than double a phone photo's size before the app ever sees it.
+        if (buffer.byteLength > 25 * 1024 * 1024) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Photo must be under 25 MB." });
         }
 
         // The browser's reported type isn't always trustworthy (or present

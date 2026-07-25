@@ -16,6 +16,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { useIsMobile } from "@/hooks/useMobile";
 import CinInput from "@/components/CinInput";
 import { LinkAttachmentDialog } from "@/components/LinkAttachmentDialog";
+import { EntityDuplicateDialog, type DedupType } from "@/components/EntityDuplicateDialog";
 import {
   Dialog,
   DialogContent,
@@ -2018,6 +2019,76 @@ export default function SheetDetail() {
     },
   }), [isOnline, _updateRowOnline, sheetId, rows]);
 
+  // ── Live possible-duplicate check on observation save ──────────────────────
+  // Before an edited observation actually saves, extract its entities the same
+  // way the Intelligence folder does and fuzzy-check each one against every
+  // existing entity. Any near-miss matches are queued and shown one at a time
+  // via EntityDuplicateDialog; the real save only fires once the queue (which
+  // may be empty) is drained, so this never silently loses an edit.
+  type RowSaveInput = { id: number; time?: string; timeMinutes?: number; dayOffset?: number; rowDate?: string; observation?: string };
+  interface PendingDupe {
+    type: DedupType;
+    label: string;
+    match: { label: string; rowCount: number; reason: string };
+  }
+  const [dupeQueue, setDupeQueue] = useState<PendingDupe[]>([]);
+  const [dupeIndex, setDupeIndex] = useState(0);
+  const [dupeDialogOpen, setDupeDialogOpen] = useState(false);
+  const [pendingSaveInput, setPendingSaveInput] = useState<RowSaveInput | null>(null);
+
+  const updateRowWithDupeCheck = useCallback(async (input: RowSaveInput) => {
+    // Offline, or no meaningful observation text — nothing to fuzzy-check, save directly.
+    if (!isOnline || !input.observation || !input.observation.trim()) {
+      updateRow.mutate(input);
+      return;
+    }
+    try {
+      const extracted = await utils.intelligence.previewEntities.fetch({ text: input.observation });
+      const relevant = extracted.filter((e) => e.type !== "unknown");
+      const queue: PendingDupe[] = [];
+      const seen = new Set<string>();
+      for (const e of relevant) {
+        const dedupeKey = `${e.type}::${e.shortForm.toLowerCase()}`;
+        if (seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
+        const matches = await utils.intelligence.checkPossibleDuplicates.fetch({
+          type: e.type as DedupType,
+          label: e.shortForm,
+        });
+        if (matches.length > 0) {
+          queue.push({ type: e.type as DedupType, label: e.shortForm, match: matches[0] });
+        }
+      }
+      if (queue.length === 0) {
+        updateRow.mutate(input);
+        return;
+      }
+      setPendingSaveInput(input);
+      setDupeQueue(queue);
+      setDupeIndex(0);
+      setDupeDialogOpen(true);
+    } catch {
+      // If the duplicate check itself fails for any reason, don't block the save.
+      updateRow.mutate(input);
+    }
+  }, [isOnline, updateRow, utils]);
+
+  function handleDupeDialogResolved() {
+    const nextIndex = dupeIndex + 1;
+    if (nextIndex < dupeQueue.length) {
+      setDupeIndex(nextIndex);
+      setDupeDialogOpen(true);
+    } else {
+      setDupeDialogOpen(false);
+      setDupeQueue([]);
+      setDupeIndex(0);
+      if (pendingSaveInput) {
+        updateRow.mutate(pendingSaveInput);
+        setPendingSaveInput(null);
+      }
+    }
+  }
+
   const deleteRow = useMemo(() => ({
     isPending: _deleteRowOnline.isPending,
     mutate: (input: { id: number }) => {
@@ -3281,13 +3352,13 @@ export default function SheetDetail() {
                               if (val.trim().toLowerCase() === "tv") {
                                 // Find this row's index in filteredRows
                                 const rowIdx = filteredRows.findIndex((r: NonNullable<typeof rows>[0]) => r.id === row.id);
-                                if (rowIdx < 0) { updateRow.mutate({ id: row.id, observation: val }); return; }
+                                if (rowIdx < 0) { updateRowWithDupeCheck({ id: row.id, observation: val }); return; }
                                 // Get the row immediately before and after in the display list
                                 const prevRow = rowIdx > 0 ? filteredRows[rowIdx - 1] : null;
                                 const nextRow = rowIdx < filteredRows.length - 1 ? filteredRows[rowIdx + 1] : null;
                                 if (!prevRow || !nextRow) {
                                   toast.error("TV auto-fill: no surrounding rows found. Add a departing row above and arriving row below first.");
-                                  updateRow.mutate({ id: row.id, observation: val });
+                                  updateRowWithDupeCheck({ id: row.id, observation: val });
                                   return;
                                 }
                                 // Extract address text from surrounding observation cells.
@@ -3339,7 +3410,7 @@ export default function SheetDetail() {
                                 const arriveAddr = enrichAddress(extractAddressFromObs(nextObs));
                                 if (!departAddr || !arriveAddr) {
                                   toast.error("TV auto-fill: could not extract addresses from surrounding rows.");
-                                  updateRow.mutate({ id: row.id, observation: val });
+                                  updateRowWithDupeCheck({ id: row.id, observation: val });
                                   return;
                                 }
                                 // Show spinner and call the server
@@ -3356,20 +3427,20 @@ export default function SheetDetail() {
                                   {
                                     onSuccess: (data) => {
                                       setTvLoadingRowId(null);
-                                      updateRow.mutate({ id: row.id, observation: data.streets });
+                                      updateRowWithDupeCheck({ id: row.id, observation: data.streets });
                                       toast.success("Travelled via streets auto-filled");
                                     },
                                     onError: () => {
                                       setTvLoadingRowId(null);
                                       // Error toast already shown by mutation onError
-                                      updateRow.mutate({ id: row.id, observation: val });
+                                      updateRowWithDupeCheck({ id: row.id, observation: val });
                                     },
                                   }
                                 );
                                 return;
                               }
                               // Normal save
-                              updateRow.mutate({ id: row.id, observation: val });
+                              updateRowWithDupeCheck({ id: row.id, observation: val });
                             }}
                             shortcuts={shortcutMap}
                           />
@@ -3756,6 +3827,20 @@ export default function SheetDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {dupeQueue.length > 0 && dupeQueue[dupeIndex] && (
+        <EntityDuplicateDialog
+          key={dupeIndex}
+          open={dupeDialogOpen}
+          onOpenChange={setDupeDialogOpen}
+          type={dupeQueue[dupeIndex].type}
+          mode="auto"
+          candidate={{ label: dupeQueue[dupeIndex].label, rowCount: 0 }}
+          existing={{ label: dupeQueue[dupeIndex].match.label, rowCount: dupeQueue[dupeIndex].match.rowCount }}
+          reason={dupeQueue[dupeIndex].match.reason}
+          onResolved={handleDupeDialogResolved}
+        />
+      )}
     </DashboardLayout>
   );
 }

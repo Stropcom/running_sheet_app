@@ -46,7 +46,12 @@ import {
   opManagerSupervisorContacts,
   opManagerPostedWeeks,
   pushSubscriptions,
+  entityAliases,
+  InsertEntityAlias,
+  entityDedupDecisions,
+  InsertEntityDedupDecision,
 } from "../drizzle/schema";
+import { findPossibleDuplicates, type DedupType, type DedupCandidateEntity } from "./entityDedup";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 let _pool: Awaited<ReturnType<typeof createPromisePool>> | null = null;
@@ -1912,6 +1917,8 @@ export interface IntelligenceEntity {
   targetId?: number | null;
   /** True when at least one occurrence was extracted with low confidence (type=unknown or ambiguous pattern) */
   lowConfidence?: boolean;
+  /** Labels of entities merged into this one via a confirmed duplicate decision. */
+  aliasLabels?: string[];
   occurrences: Array<{
     sheetId: number;
     sheetTitle: string;
@@ -1924,25 +1931,42 @@ export interface IntelligenceEntity {
   }>;
 }
 
+// Vehicles are uniquely identified by their registration, not by whatever
+// descriptive text happens to surround it in a given mention. The same car
+// can show up as "1ADF124" (bare), "Vehicle 1ADF124" (chip insert),
+// "1ADF124 red Ford Territory" (built from observation text), or "silver
+// Hyundai Santa Fe, bearing WA registration 1ICW519" (raw target-card V1F
+// field) — all textually very different despite being the same physical
+// vehicle, which previously produced separate duplicate entities. Extract
+// the WA-plate-shaped token (if any) and key on that alone so every
+// mention of the same vehicle collapses into one entity; the richest
+// available description is still kept for display (see "prefer longer
+// shortForm" below).
+export function vehicleRegoKey(text: string): string {
+  const m = text.match(/\b\d[A-Za-z]{2,3}\d{3}\b/);
+  return (m ? m[0] : text).toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+/** Same "type::normalizedShortForm" key scheme getAllIntelligenceEntities uses internally. */
+export function computeEntityKey(type: DedupType, shortForm: string): string {
+  const norm = type === "vehicle" ? vehicleRegoKey(shortForm) : normalizeEntityLabel(shortForm);
+  return `${type}::${norm}`;
+}
+
 export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]> {
   const db = await getDb();
   if (!db) return [];
 
-  // Vehicles are uniquely identified by their registration, not by whatever
-  // descriptive text happens to surround it in a given mention. The same car
-  // can show up as "1ADF124" (bare), "Vehicle 1ADF124" (chip insert),
-  // "1ADF124 red Ford Territory" (built from observation text), or "silver
-  // Hyundai Santa Fe, bearing WA registration 1ICW519" (raw target-card V1F
-  // field) — all textually very different despite being the same physical
-  // vehicle, which previously produced separate duplicate entities. Extract
-  // the WA-plate-shaped token (if any) and key on that alone so every
-  // mention of the same vehicle collapses into one entity; the richest
-  // available description is still kept for display (see "prefer longer
-  // shortForm" below).
-  const vehicleRegoKey = (text: string): string => {
-    const m = text.match(/\b\d[A-Za-z]{2,3}\d{3}\b/);
-    return (m ? m[0] : text).toLowerCase().replace(/\s+/g, " ").trim();
-  };
+  // Confirmed entity-alias merges (fuzzy-duplicate prompt "Yes", or the manual
+  // Merge Entities tool) — fold the loser's occurrences into the winner the
+  // same way TGT aliases fold into their canonical target below. loserLabel
+  // is attached to the winner entity's aliasLabels ("also known as") the
+  // first time an occurrence is redirected through it — see registerOccurrence.
+  const aliasRows = await db.select().from(entityAliases);
+  const entityAliasMap = new Map<string, { key: string; label: string }>();
+  for (const a of aliasRows) {
+    entityAliasMap.set(`${a.type}::${a.loserKey}`, { key: `${a.type}::${a.winnerKey}`, label: a.winnerLabel });
+  }
 
   // When two mentions of the same vehicle merge, prefer whichever is in the
   // canonical "REGO description" form (matches how observation text gets
@@ -2221,16 +2245,35 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
     // rego, a chip-inserted "Vehicle REGO", and a fully-described sighting of
     // the same car all collapse into one entity instead of three.
     const normShortForm = e.type === "vehicle" ? vehicleRegoKey(e.shortForm) : e.shortForm.toLowerCase().replace(/\s+/g, " ").trim();
-    const key = `${e.type}::${normShortForm}`;
+    let key = `${e.type}::${normShortForm}`;
+
+    // Confirmed entity-alias merge (fuzzy-duplicate prompt "Yes", or the
+    // manual Merge Entities tool) — redirect this occurrence to the winner
+    // entity instead of creating/growing a separate one under the loser key.
+    let displayShortForm = e.shortForm;
+    const resolved = e.type !== "unknown" ? entityAliasMap.get(key) : undefined;
+    if (resolved) {
+      key = resolved.key;
+      displayShortForm = resolved.label;
+    }
+
     if (!entityMap.has(key)) {
-      entityMap.set(key, { shortForm: e.shortForm, type: e.type, isTarget: false, occurrences: [] });
-    } else {
-      // Upgrade to longer / richer shortForm if available
+      entityMap.set(key, { shortForm: displayShortForm, type: e.type, isTarget: false, occurrences: [] });
+    } else if (!resolved) {
+      // Upgrade to longer / richer shortForm if available — skipped when this
+      // occurrence was redirected via an alias, since the winner's label is
+      // the confirmed canonical display form and shouldn't be overwritten by
+      // whatever the loser's raw text happened to say.
       const existing = entityMap.get(key)!;
       const shouldUpgrade = e.type === "vehicle"
         ? preferVehicleShortForm(existing.shortForm, e.shortForm, normShortForm)
         : e.shortForm.length > existing.shortForm.length;
       if (shouldUpgrade) existing.shortForm = e.shortForm;
+    }
+    if (resolved && e.shortForm.toLowerCase().trim() !== displayShortForm.toLowerCase().trim()) {
+      const winner = entityMap.get(key)!;
+      winner.aliasLabels = winner.aliasLabels ?? [];
+      if (!winner.aliasLabels.includes(e.shortForm)) winner.aliasLabels.push(e.shortForm);
     }
     // Flag entity as low-confidence if this occurrence was uncertain
     if (e.confidence === "low" || e.type === "unknown") {
@@ -2492,6 +2535,12 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
               existingKeys.add(occKey);
             }
           }
+          if (shorter.aliasLabels?.length) {
+            longer.aliasLabels = longer.aliasLabels ?? [];
+            for (const label of shorter.aliasLabels) {
+              if (!longer.aliasLabels.includes(label)) longer.aliasLabels.push(label);
+            }
+          }
           // For vehicles: when merging, prefer the entity with a richer display name
           // (one that includes colour/make/model) over a bare rego or "Vehicle REGO" form.
           // The longer entity (sorted by shortForm length) is usually richer, so we keep it.
@@ -2523,6 +2572,174 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
   }
 
   return Array.from(mergedMap.values());
+}
+
+// ─── Entity Deduplication ───────────────────────────────────────────────────
+// Deterministic fuzzy-duplicate detection and manual/confirmed merging for
+// non-target Intelligence entities (person/vehicle/address/business). See
+// server/entityDedup.ts for the matching heuristics themselves — everything
+// here is plain DB plumbing around entity_aliases / entity_dedup_decisions.
+
+/** Bare normalized key (no "type::" prefix) — what entity_aliases/entity_dedup_decisions store. */
+function normOnly(type: DedupType, shortForm: string): string {
+  return type === "vehicle" ? vehicleRegoKey(shortForm) : normalizeEntityLabel(shortForm);
+}
+
+export interface DuplicateMatchResult {
+  key: string;
+  label: string;
+  type: DedupType;
+  rowCount: number;
+  score: number;
+  reason: string;
+}
+
+/**
+ * Fuzzy-matches a candidate label (not yet saved as an entity — this is
+ * called as an officer types/saves an observation row) against every
+ * existing entity of the same type, excluding pairs already confirmed as
+ * distinct via a previous "No" answer.
+ */
+export async function checkPossibleDuplicates(type: DedupType, label: string): Promise<DuplicateMatchResult[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const candidateCombinedKey = computeEntityKey(type, label);
+  const candidateBareKey = normOnly(type, label);
+
+  // Already a confirmed alias (either side) — getAllIntelligenceEntities will
+  // silently fold this into its winner, so there's nothing new to ask about.
+  const existingAlias = await db
+    .select()
+    .from(entityAliases)
+    .where(and(eq(entityAliases.type, type), or(eq(entityAliases.loserKey, candidateBareKey), eq(entityAliases.winnerKey, candidateBareKey))))
+    .limit(1);
+  if (existingAlias.length > 0) return [];
+
+  const allEntities = await getAllIntelligenceEntities();
+  const candidates: DedupCandidateEntity[] = allEntities
+    .filter((e) => !e.isTarget && e.type === type)
+    .map((e) => ({
+      key: computeEntityKey(type, e.shortForm),
+      label: e.shortForm,
+      type,
+      rowCount: e.occurrences.filter((o) => o.rowId > 0).length,
+    }));
+
+  const decisions = await db.select().from(entityDedupDecisions).where(eq(entityDedupDecisions.type, type));
+  const decidedDifferentBareKeys = new Set<string>();
+  for (const d of decisions) {
+    if (d.keyA === candidateBareKey) decidedDifferentBareKeys.add(d.keyB);
+    else if (d.keyB === candidateBareKey) decidedDifferentBareKeys.add(d.keyA);
+  }
+  const filtered = candidates.filter((c) => !decidedDifferentBareKeys.has(normOnly(type, c.label)));
+
+  return findPossibleDuplicates(label, type, candidateCombinedKey, filtered);
+}
+
+/** Records a confirmed "these are NOT the same entity" decision so the prompt never asks about this pair again. */
+export async function markEntitiesNotDuplicate(
+  type: DedupType,
+  labelA: string,
+  labelB: string,
+  decidedByCIN: string | undefined
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const bareA = normOnly(type, labelA);
+  const bareB = normOnly(type, labelB);
+  if (bareA === bareB) return; // same normalized key — nothing to record
+  const [keyA, keyB] = bareA < bareB ? [bareA, bareB] : [bareB, bareA];
+  const existing = await db
+    .select()
+    .from(entityDedupDecisions)
+    .where(and(eq(entityDedupDecisions.type, type), eq(entityDedupDecisions.keyA, keyA), eq(entityDedupDecisions.keyB, keyB)))
+    .limit(1);
+  if (existing.length > 0) return;
+  await db.insert(entityDedupDecisions).values({ type, keyA, keyB, decidedByCIN, decidedAt: Date.now() });
+}
+
+/** Walks the existing alias chain from `winnerKey` to detect a would-be cycle before writing a new merge. */
+async function wouldCreateAliasCycle(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  type: DedupType,
+  winnerKey: string,
+  loserKey: string
+): Promise<boolean> {
+  const rows = await db.select().from(entityAliases).where(eq(entityAliases.type, type));
+  const map = new Map(rows.map((r) => [r.loserKey, r.winnerKey]));
+  let current = winnerKey;
+  const seen = new Set<string>();
+  while (map.has(current)) {
+    if (seen.has(current)) return false; // pre-existing unrelated cycle — not ours to fix here
+    seen.add(current);
+    current = map.get(current)!;
+    if (current === loserKey) return true;
+  }
+  return false;
+}
+
+/**
+ * Confirms two entities are the same real-world thing. Used by both the
+ * auto-detected duplicate prompt ("Yes") and the manual Merge Entities tool.
+ * `winnerLabel` survives as the canonical entity; `loserLabel` is folded into
+ * it and kept as an "also known as" — see aliasLabels on IntelligenceEntity.
+ */
+export async function mergeEntities(
+  type: DedupType,
+  winnerLabel: string,
+  loserLabel: string,
+  mergedByCIN: string | undefined
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const winnerKey = normOnly(type, winnerLabel);
+  const loserKey = normOnly(type, loserLabel);
+  if (winnerKey === loserKey) throw new Error("Cannot merge an entity into itself.");
+  if (await wouldCreateAliasCycle(db, type, winnerKey, loserKey)) {
+    throw new Error("This merge would create a loop with an existing merge — check current merges first.");
+  }
+  const existing = await db
+    .select()
+    .from(entityAliases)
+    .where(and(eq(entityAliases.type, type), eq(entityAliases.loserKey, loserKey)))
+    .limit(1);
+  if (existing.length > 0) {
+    await db
+      .update(entityAliases)
+      .set({ winnerKey, winnerLabel, loserLabel, mergedByCIN, mergedAt: Date.now() })
+      .where(eq(entityAliases.id, existing[0].id));
+  } else {
+    await db.insert(entityAliases).values({ type, loserKey, loserLabel, winnerKey, winnerLabel, mergedByCIN, mergedAt: Date.now() });
+  }
+}
+
+/** Reverses a previous merge. `loserKey` must be the bare key from an existing entity_aliases row (see listEntityMerges). */
+export async function unmergeEntity(type: DedupType, loserKey: string): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(entityAliases).where(and(eq(entityAliases.type, type), eq(entityAliases.loserKey, loserKey)));
+}
+
+export async function listEntityMerges() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(entityAliases).orderBy(desc(entityAliases.mergedAt));
+}
+
+/** Search existing entities of one type by substring — backs the manual Merge Entities picker. */
+export async function searchIntelligenceEntities(type: DedupType, query: string): Promise<DedupCandidateEntity[]> {
+  const allEntities = await getAllIntelligenceEntities();
+  const q = query.trim().toLowerCase();
+  return allEntities
+    .filter((e) => !e.isTarget && e.type === type && (!q || e.shortForm.toLowerCase().includes(q)))
+    .map((e) => ({
+      key: computeEntityKey(type, e.shortForm),
+      label: e.shortForm,
+      type,
+      rowCount: e.occurrences.filter((o) => o.rowId > 0).length,
+    }))
+    .sort((a, b) => b.rowCount - a.rowCount)
+    .slice(0, 25);
 }
 
 // ─── Association Graph ───────────────────────────────────────────────────────

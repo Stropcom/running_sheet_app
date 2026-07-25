@@ -58,6 +58,13 @@ import {
   setSheetTarget,
   deepSearchOperations,
   getAllIntelligenceEntities,
+  extractEntitiesFromText,
+  checkPossibleDuplicates,
+  markEntitiesNotDuplicate,
+  mergeEntities,
+  unmergeEntity,
+  listEntityMerges,
+  searchIntelligenceEntities,
   listShortcuts,
   createShortcut,
   updateShortcut,
@@ -1781,6 +1788,78 @@ export const appRouter = router({
       .input(z.object({ deviceId: z.string() }))
       .query(async ({ ctx, input }) => {
         return getUserLocationState(ctx.user.id, input.deviceId);
+      }),
+
+    /** Preview the entities a chunk of observation text would extract, without saving anything. */
+    previewEntities: protectedProcedure
+      .input(z.object({ text: z.string() }))
+      .query(async ({ input }) => {
+        return extractEntitiesFromText(input.text);
+      }),
+
+    /** Fuzzy-duplicate check for a not-yet-saved entity label — backs the live confirm-dialog prompt. */
+    checkPossibleDuplicates: protectedProcedure
+      .input(z.object({
+        type: z.enum(["person", "vehicle", "address", "business"]),
+        label: z.string().min(1),
+      }))
+      .query(async ({ input }) => {
+        return checkPossibleDuplicates(input.type, input.label);
+      }),
+
+    /** Records "these are NOT the same entity" so the prompt never asks about this pair again. */
+    markEntitiesNotDuplicate: protectedProcedure
+      .input(z.object({
+        type: z.enum(["person", "vehicle", "address", "business"]),
+        labelA: z.string().min(1),
+        labelB: z.string().min(1),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await markEntitiesNotDuplicate(input.type, input.labelA, input.labelB, ctx.user.cin ?? undefined);
+        return { ok: true };
+      }),
+
+    /** Confirms two entities are the same — used by both the auto-prompt "Yes" and the manual Merge Entities tool. */
+    mergeEntities: protectedProcedure
+      .input(z.object({
+        type: z.enum(["person", "vehicle", "address", "business"]),
+        winnerLabel: z.string().min(1),
+        loserLabel: z.string().min(1),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        try {
+          await mergeEntities(input.type, input.winnerLabel, input.loserLabel, ctx.user.cin ?? undefined);
+        } catch (err) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: err instanceof Error ? err.message : "Merge failed." });
+        }
+        return { ok: true };
+      }),
+
+    /** Reverses a previous merge. */
+    unmergeEntity: protectedProcedure
+      .input(z.object({
+        type: z.enum(["person", "vehicle", "address", "business"]),
+        loserKey: z.string().min(1),
+      }))
+      .mutation(async ({ input }) => {
+        await unmergeEntity(input.type, input.loserKey);
+        return { ok: true };
+      }),
+
+    /** Lists all confirmed entity merges (most recent first) — backs an "undo merge" view. */
+    listEntityMerges: protectedProcedure
+      .query(async () => {
+        return listEntityMerges();
+      }),
+
+    /** Substring search over existing entities of one type — backs the manual Merge Entities picker. */
+    searchEntities: protectedProcedure
+      .input(z.object({
+        type: z.enum(["person", "vehicle", "address", "business"]),
+        query: z.string().default(""),
+      }))
+      .query(async ({ input }) => {
+        return searchIntelligenceEntities(input.type, input.query);
       }),
   }),
 

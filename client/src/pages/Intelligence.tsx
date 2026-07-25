@@ -32,6 +32,7 @@ import RSMappingEmbedded from "@/pages/RSMappingEmbedded";
 import { ViewToggle } from "@/components/ViewToggle";
 import { useViewMode } from "@/contexts/ViewModeContext";
 import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
+import { MergeEntitiesButton } from "@/components/MergeEntitiesButton";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1159,6 +1160,7 @@ export default function IntelligencePage() {
               {isLoading ? "Loading…" : `${totalEntities} entities extracted from observation records`}
             </p>
           </div>
+          <MergeEntitiesButton />
           <ViewToggle />
         </div>
 

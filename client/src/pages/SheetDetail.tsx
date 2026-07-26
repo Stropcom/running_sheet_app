@@ -17,6 +17,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { useIsMobile } from "@/hooks/useMobile";
 import CinInput from "@/components/CinInput";
 import { LinkAttachmentDialog } from "@/components/LinkAttachmentDialog";
+import { AttachmentLinkBadge } from "@/components/AttachmentLinkBadge";
 import { EntityDuplicateDialog, type DedupType } from "@/components/EntityDuplicateDialog";
 import {
   Dialog,
@@ -42,8 +43,6 @@ import {
   Pencil,
   Camera,
   X,
-  Link2,
-  Link2Off,
   Search,
   Users,
   ArrowUpDown,
@@ -132,6 +131,7 @@ type RowAttachment = {
   uploadedByCIN: string | null;
   createdAt: Date;
   linkedCount?: number;
+  linkedCategories?: string[];
 };
 
 type SheetRow = {
@@ -1304,17 +1304,12 @@ function ObservationAttachments({
             className="w-full rounded border border-border cursor-zoom-in"
             onClick={() => setLightbox(a.url)}
           />
-          <button
+          <AttachmentLinkBadge
+            linkedCount={a.linkedCount ?? 0}
+            linkedCategories={a.linkedCategories}
             onClick={() => setLinkingId(a.id)}
-            title={(a.linkedCount ?? 0) > 0 ? "Linked to an entity — click to link to another" : "Not linked to an entity — click to link"}
-            className={`absolute -top-1.5 -left-1.5 h-5 w-5 rounded-full flex items-center justify-center transition-colors ${
-              (a.linkedCount ?? 0) > 0
-                ? "bg-emerald-600/90 text-white hover:bg-emerald-500"
-                : "bg-amber-500/90 text-white hover:bg-amber-400"
-            }`}
-          >
-            {(a.linkedCount ?? 0) > 0 ? <Link2 className="h-3 w-3" /> : <Link2Off className="h-3 w-3" />}
-          </button>
+            className="absolute -top-1.5 -left-1.5 h-5 w-5"
+          />
           {canEdit && (
             <button
               onClick={() => onDelete(a.id)}

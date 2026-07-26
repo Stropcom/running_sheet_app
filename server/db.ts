@@ -670,20 +670,41 @@ export async function createRowAttachment(data: InsertRowAttachment) {
 // linkedCount = number of Intelligence entity links on each attachment — used
 // to require photos be linked to an entity before a Governance row can be
 // marked saved, and to show a linked/unlinked badge in the Images gallery and
-// on inline running-sheet photo attachments.
+// on inline running-sheet photo attachments. linkedCategories is the distinct
+// set of entity categories ("target"/"vehicle"/"associate"/"location") linked
+// to that attachment, so the badge can show which kind of thing a photo is
+// linked to at a glance (a category-specific icon when there's exactly one,
+// a generic "linked" icon when it spans more than one) without a second
+// round-trip per thumbnail.
 async function attachLinkedCounts<T extends { id: number }>(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
   rows: T[]
-): Promise<(T & { linkedCount: number })[]> {
+): Promise<(T & { linkedCount: number; linkedCategories: string[] })[]> {
   if (rows.length === 0) return [];
   const attachmentIds = rows.map((r) => r.id);
-  const linkCounts = await db
-    .select({ attachmentId: attachmentEntityLinks.attachmentId, count: sql<number>`count(*)`.as("count") })
-    .from(attachmentEntityLinks)
-    .where(inArray(attachmentEntityLinks.attachmentId, attachmentIds))
-    .groupBy(attachmentEntityLinks.attachmentId);
+  const [linkCounts, linkCategoryRows] = await Promise.all([
+    db
+      .select({ attachmentId: attachmentEntityLinks.attachmentId, count: sql<number>`count(*)`.as("count") })
+      .from(attachmentEntityLinks)
+      .where(inArray(attachmentEntityLinks.attachmentId, attachmentIds))
+      .groupBy(attachmentEntityLinks.attachmentId),
+    db
+      .selectDistinct({ attachmentId: attachmentEntityLinks.attachmentId, category: attachmentEntityLinks.category })
+      .from(attachmentEntityLinks)
+      .where(inArray(attachmentEntityLinks.attachmentId, attachmentIds)),
+  ]);
   const countMap = new Map(linkCounts.map((l) => [l.attachmentId, Number(l.count)]));
-  return rows.map((r) => ({ ...r, linkedCount: countMap.get(r.id) ?? 0 }));
+  const categoryMap = new Map<number, string[]>();
+  for (const l of linkCategoryRows) {
+    const arr = categoryMap.get(l.attachmentId) ?? [];
+    arr.push(l.category);
+    categoryMap.set(l.attachmentId, arr);
+  }
+  return rows.map((r) => ({
+    ...r,
+    linkedCount: countMap.get(r.id) ?? 0,
+    linkedCategories: categoryMap.get(r.id) ?? [],
+  }));
 }
 
 export async function getAttachmentsByRowIds(rowIds: number[]) {

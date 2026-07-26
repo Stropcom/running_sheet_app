@@ -8,8 +8,6 @@ import {
   Image as ImageIcon,
   ArrowLeft,
   X,
-  Link2,
-  Link2Off,
   List,
   LayoutGrid,
 } from "lucide-react";
@@ -17,6 +15,7 @@ import { useLocation, useParams } from "wouter";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { LinkAttachmentDialog } from "@/components/LinkAttachmentDialog";
+import { AttachmentLinkBadge } from "@/components/AttachmentLinkBadge";
 import { formatAttachmentBanner } from "@/lib/attachmentBanner";
 
 // Folder progression: Images → Operation → Running Sheet → RS images
@@ -378,17 +377,12 @@ function SheetGallery({
               <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1">
                 <p className="text-[10px] text-white truncate">{formatAttachmentBanner(a)}</p>
               </div>
-              <button
+              <AttachmentLinkBadge
+                linkedCount={a.linkedCount}
+                linkedCategories={a.linkedCategories}
                 onClick={() => setLinkingId(a.id)}
-                title={a.linkedCount > 0 ? "Linked to an entity — click to link to another" : "Not linked to an entity — click to link"}
-                className={`absolute top-1.5 left-1.5 h-6 w-6 rounded-full flex items-center justify-center transition-colors ${
-                  a.linkedCount > 0
-                    ? "bg-emerald-600/90 text-white hover:bg-emerald-500"
-                    : "bg-amber-500/90 text-white hover:bg-amber-400"
-                }`}
-              >
-                {a.linkedCount > 0 ? <Link2 className="h-3 w-3" /> : <Link2Off className="h-3 w-3" />}
-              </button>
+                className="absolute top-1.5 left-1.5 h-6 w-6"
+              />
               <button
                 onClick={() => deleteAttachment.mutate({ id: a.id })}
                 title="Delete photo"

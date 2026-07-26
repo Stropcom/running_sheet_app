@@ -6,7 +6,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Users, Car, User, MapPin, Search } from "lucide-react";
+import { Users, Car, User, MapPin, Search, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -18,6 +18,13 @@ const CATEGORY_TABS: { key: Category; label: string; icon: typeof Users }[] = [
   { key: "associate", label: "Associates", icon: User },
   { key: "location", label: "Locations", icon: MapPin },
 ];
+
+const CATEGORY_ICON: Record<Category, typeof Users> = {
+  target: Users,
+  vehicle: Car,
+  associate: User,
+  location: MapPin,
+};
 
 function categoryForEntity(e: { type: string; isTarget?: boolean }): Category {
   if (e.isTarget) return "target";
@@ -43,16 +50,33 @@ export function LinkAttachmentDialog({
     enabled: open,
   });
 
+  const { data: currentLinks } = trpc.attachment.linksFor.useQuery(
+    { attachmentId },
+    { enabled: open }
+  );
+
+  const invalidateLinkViews = () => {
+    utils.attachment.linksFor.invalidate({ attachmentId });
+    utils.attachment.entityLinkCounts.invalidate();
+    // Refresh every place a linked/unlinked badge is shown for this photo
+    utils.attachment.listBySheet.invalidate();
+    utils.attachment.listByOperation.invalidate();
+    utils.row.list.invalidate();
+    utils.export.sheetData.invalidate();
+  };
+
   const linkToEntity = trpc.attachment.linkToEntity.useMutation({
     onSuccess: () => {
       toast.success("Photo linked");
-      utils.attachment.entityLinkCounts.invalidate();
-      // Refresh every place a linked/unlinked badge is shown for this photo
-      utils.attachment.listBySheet.invalidate();
-      utils.attachment.listByOperation.invalidate();
-      utils.row.list.invalidate();
-      utils.export.sheetData.invalidate();
-      onOpenChange(false);
+      invalidateLinkViews();
+    },
+    onError: e => toast.error(e.message),
+  });
+
+  const unlinkFromEntity = trpc.attachment.unlinkFromEntity.useMutation({
+    onSuccess: () => {
+      toast.success("Photo unlinked");
+      invalidateLinkViews();
     },
     onError: e => toast.error(e.message),
   });
@@ -71,6 +95,38 @@ export function LinkAttachmentDialog({
         <DialogHeader>
           <DialogTitle>Link photo to entity</DialogTitle>
         </DialogHeader>
+
+        {currentLinks && currentLinks.length > 0 && (
+          <div className="flex flex-col gap-1.5 pb-2 border-b border-border">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Currently linked</p>
+            <div className="flex flex-wrap gap-1.5">
+              {currentLinks.map((link: any) => {
+                const Icon = CATEGORY_ICON[link.category as Category] ?? Users;
+                return (
+                  <span
+                    key={link.id}
+                    className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full bg-emerald-600/10 text-emerald-700 dark:text-emerald-400 text-xs font-medium"
+                  >
+                    <Icon className="h-3 w-3 shrink-0" />
+                    <span className="truncate max-w-[160px]">{link.entityLabel}</span>
+                    <button
+                      onClick={() => unlinkFromEntity.mutate({ linkId: link.id })}
+                      disabled={unlinkFromEntity.isPending}
+                      title="Unlink"
+                      className="h-4 w-4 rounded-full flex items-center justify-center hover:bg-emerald-600/20 transition-colors"
+                    >
+                      <X className="h-2.5 w-2.5" />
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          {currentLinks && currentLinks.length > 0 ? "Link to another" : "Link to"}
+        </p>
 
         <div className="flex gap-1 border-b border-border pb-2">
           {CATEGORY_TABS.map(t => (

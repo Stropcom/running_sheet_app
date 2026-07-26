@@ -412,22 +412,12 @@ function exportToPDF(
       }
       if (row.timeMinutes != null) prevDay = day;
       const rowBg = row.isLocked ? lockedBg : "transparent";
-      // Only the very last rendered row of the whole sheet gets the card's rounded bottom
-      // corners. Every row is followed by an invisible spacer <tr style="border:none"> for
-      // breathing room, which is always tbody's true last-child and whose inline style always
-      // wins over any stylesheet rule — so CSS structural selectors (:last-child / a class on
-      // the <tr>) can never reliably find "the last real row" here. Compute the right border
-      // per cell directly in JS instead, keyed off this flag.
-      const isLastDataRow = row === rows[rows.length - 1];
-      const edgeBottom = isLastDataRow ? "border-bottom:1.5px solid #1e3a8a" : bb;
       if (row.members.length === 0) {
         const obsHtml = boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>")) + attachmentImagesHtml(row.attachments);
-        const leftRadius = isLastDataRow ? ";border-bottom-left-radius:10px" : "";
-        const rightRadius = isLastDataRow ? ";border-bottom-right-radius:10px" : "";
         parts.push(`<tr style="background:${rowBg}">
-          <td class="col-time" style="padding:6px 6px 8px;${edgeBottom}${leftRadius};${cb};font-family:monospace;font-size:11px;white-space:nowrap">${row.time ?? ""}</td>
-          <td style="padding:6px 6px 8px;${edgeBottom};${cb}">${obsHtml}</td>
-          <td style="padding:6px 6px 8px;${edgeBottom}${rightRadius};font-size:11px"></td>
+          <td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap">${row.time ?? ""}</td>
+          <td style="padding:6px 6px 8px;${bb};${cb}">${obsHtml}</td>
+          <td style="padding:6px 6px 8px;${bb};font-size:11px"></td>
         </tr>${spacerRow}`);
         continue;
       }
@@ -437,16 +427,14 @@ function exportToPDF(
         const cert = isSpacer ? undefined : row.certifications.find((c) => c.memberId === m.id && c.isActive);
         const isFirst = idx === 0;
         const rowspan = row.members.length;
-        const timeLeftRadius = isLastDataRow ? ";border-bottom-left-radius:10px" : "";
         const timeTd = isFirst
-          ? `<td class="col-time" style="padding:6px 6px 8px;${edgeBottom}${timeLeftRadius};${cb};font-family:monospace;font-size:11px;white-space:nowrap" rowspan="${rowspan}">${row.time ?? ""}</td>`
+          ? `<td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap" rowspan="${rowspan}">${row.time ?? ""}</td>`
           : "";
         const obsTd = isFirst
-          ? `<td style="padding:6px 6px 8px;${edgeBottom};${cb}" rowspan="${rowspan}">${boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>"))}${attachmentImagesHtml(row.attachments)}</td>`
+          ? `<td style="padding:6px 6px 8px;${bb};${cb}" rowspan="${rowspan}">${boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>"))}${attachmentImagesHtml(row.attachments)}</td>`
           : "";
         const isLast = idx === row.members.length - 1;
-        const certRightRadius = isLastDataRow && isLast ? ";border-bottom-right-radius:10px" : "";
-        const memberBb = isLast ? `${edgeBottom}${certRightRadius}` : "border-bottom:none";
+        const memberBb = isLast ? bb : "border-bottom:none";
         const pt = isFirst ? "6px" : "2px";
         const pb = isLast ? "8px" : "2px";
         if (isSpacer) {
@@ -485,41 +473,28 @@ function exportToPDF(
     body{font-family:'Roboto',sans-serif;background:#fff;color:#000;margin:0;padding:0;font-size:11px}
     .page-title{font-size:20px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;text-align:center;margin-bottom:1.2em}
     .page-title-sm{font-size:15px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;text-align:center;margin-bottom:0.5em;margin-top:4px}
-    /* Rounded blue card — wraps the meta info block only (page-1 header and the repeating page header).
-       Deliberately NOT used around the log table itself: the log table draws its own card border
-       directly on its cells (below) so it floats independently of the meta card above it, on every page. */
-    .rs-card{border:1.5px solid #1e3a8a;border-radius:10px;overflow:hidden}
+    /* Blue card — wraps the meta info block (page-1 header and the repeating page header).
+       Square corners, deliberately: a single border on a <div> like this is always drawn as
+       one unbroken rectangle by the browser, with no edge cases. */
+    .rs-card{border:1.5px solid #1e3a8a}
     /* Meta info table — light blue label cells */
     .meta-table{width:100%;border-collapse:collapse;table-layout:auto}
     .meta-table tr:not(:last-child) td{border-bottom:1px solid #c7d5ee}
     .meta-label{padding:5px 8px;font-weight:700;font-size:11px;white-space:nowrap;background:#dbeafe;border-right:1px solid #93c5fd;text-transform:uppercase;width:1%;color:#1e3a8a}
     .meta-value{padding:5px 8px;font-size:11px;color:#000;background:#fff}
-    /* Log table — floats as its own rounded card, independent of the meta card above it.
-       The card border is drawn directly on the header/body cells (not a wrapping div) so the
-       rounded top corners reappear at the top of the table's own box on every printed page,
-       since the header row repeats via thead but the meta card above it does not share this border. */
-    /* border-collapse:separate (not collapse) — Chrome silently ignores border-radius on
-       table cells under collapse, which is what was making the log table's corners square. */
-    table.log-table{width:100%;border-collapse:separate;border-spacing:0;table-layout:auto}
+    /* Log table — the outer border is a single declaration on the <table> element itself
+       (border-collapse:collapse), not assembled from separate per-cell rules. That's what
+       guarantees it always renders as one continuous, unbroken, uniform-width rectangle
+       regardless of rowspan, spacer rows, or which row happens to be last. */
+    table.log-table{width:100%;border:1.5px solid #1e3a8a;border-collapse:collapse;table-layout:auto}
     col.c-time{width:80px}
     col.c-obs{width:auto}
     col.c-cert{width:1%}
-    .log-table thead tr:last-of-type th{background:#dbeafe;color:#1e3a8a;font-weight:700;padding:6px;text-align:left;
-       border-top:1.5px solid #1e3a8a;border-bottom:2px solid #1e3a8a;border-right:1px solid #c7d5ee}
-    .log-table thead tr:last-of-type th:first-child{border-left:1.5px solid #1e3a8a;border-top-left-radius:10px}
-    .log-table thead tr:last-of-type th:last-child{border-right:1.5px solid #1e3a8a;border-top-right-radius:10px}
+    .log-table th{background:#dbeafe;color:#1e3a8a;font-weight:700;padding:6px;text-align:left;
+       border-bottom:2px solid #1e3a8a;border-right:1px solid #c7d5ee}
+    .log-table th:last-child,.log-table td:last-child{border-right:none}
     .log-table td{vertical-align:top;word-break:break-word;overflow:hidden;color:#000;border-right:1px solid #e2e9f6;border-bottom:1px solid #eef2fb}
-    .log-table td:last-child{white-space:nowrap;word-break:normal;border-right:none;width:1%}
-    /* Target the actual Time column by class, not :first-child — member rows after the first
-       don't repeat the (rowspanned) Time/Observation cells, so the CIN-certified <td> ends up
-       as the sole/first child of its own <tr> and would wrongly catch a :first-child rule. */
-    .log-table tbody td.col-time{border-left:1.5px solid #1e3a8a}
-    .log-table tbody td:last-child{border-right:1.5px solid #1e3a8a}
-    /* Bottom edge (border + rounded corners) is computed per-cell directly in the row-building
-       JS below, not via CSS — every row is followed by an invisible spacer <tr style="border:
-       none"> for breathing room, which is always tbody's actual last-child and whose inline
-       style always wins over any stylesheet rule, so no CSS selector could reliably target
-       "the last real row" here. */
+    .log-table td:last-child{white-space:nowrap;word-break:normal;width:1%}
     /* thead wrapper cell — no border/padding/bg so the meta card floats free of the log table's own border */
     .thead-meta-cell{padding:0 !important;border:none !important;background:transparent !important}
     .thead-meta-inner{padding-bottom:10px}

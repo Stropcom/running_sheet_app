@@ -362,10 +362,27 @@ export function extractShortAddress(hbf: string): string {
 }
 
 /**
+ * Extract the short-form target code from a target's "Full Name, Born" text.
+ *
+ * Format: "Benjamin KING, born 9 September 1966 (KING)"
+ * The TGT short form is the content inside the trailing brackets: "KING"
+ *
+ * Returns an empty string if no bracket code is present — unlike address
+ * short-forms, there's no reliable fallback for a person's name/DOB text.
+ */
+export function extractShortTarget(fullNameBorn: string): string {
+  if (!fullNameBorn) return "";
+  const bracketMatch = fullNameBorn.match(/\(([^)]{1,80})\)\s*$/);
+  return bracketMatch ? bracketMatch[1].trim() : "";
+}
+
+/**
  * Extract the short-form V1/V2 value from a fully-formatted RS vehicle description (V1F/V2F).
  *
  * The V1F format is: "grey Ford Escape, bearing WA registration 1IEK105 (Vehicle 1IEK105)"
- * The V1 short form is the REGISTRATION ONLY (not "Vehicle 1IEK105", just "1IEK105").
+ * The V1 short form is the full bracket content, "Vehicle 1IEK105" — kept with
+ * the "Vehicle " prefix since that's how vehicle mentions read in observation
+ * text (see the RS chip/entity extraction conventions elsewhere in this file).
  *
  * Rules:
  *  1. Extract the bracket content: "(Vehicle 1IEK105)" → "Vehicle 1IEK105"

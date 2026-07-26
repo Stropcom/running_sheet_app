@@ -486,7 +486,9 @@ function exportToPDF(
        The card border is drawn directly on the header/body cells (not a wrapping div) so the
        rounded top corners reappear at the top of the table's own box on every printed page,
        since the header row repeats via thead but the meta card above it does not share this border. */
-    table.log-table{width:100%;border-collapse:collapse;table-layout:auto}
+    /* border-collapse:separate (not collapse) — Chrome silently ignores border-radius on
+       table cells under collapse, which is what was making the log table's corners square. */
+    table.log-table{width:100%;border-collapse:separate;border-spacing:0;table-layout:auto}
     col.c-time{width:80px}
     col.c-obs{width:auto}
     col.c-cert{width:1%}

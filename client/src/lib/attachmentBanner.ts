@@ -71,6 +71,9 @@ export interface EntityChipLike {
   photos?: Array<RowAttachmentLike & { id: number; url: string }>;
 }
 
+// Full-width bar (not a shrink-to-content pill) to match the web page's
+// IntelEntityChip — spans the page so any photos grouped beneath it (see
+// buildEntityWithPhotosHtml) read as one clearly-delineated section.
 export function buildChipHtml(label: string, type: string, count: number): string {
   const style = CHIP_PDF_COLORS[type] ?? "background:#f1f5f9;color:#475569;border:1px solid #cbd5e1";
   const displayLabel = type === "vehicle"
@@ -78,7 +81,7 @@ export function buildChipHtml(label: string, type: string, count: number): strin
     : (type === "address" || type === "business")
     ? formatIntelAddress(label)
     : label;
-  return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:9999px;font-size:10px;font-weight:600;${style};margin:2px">${escHtml(displayLabel)} <span style="opacity:0.6">×${count}</span></span>`;
+  return `<div style="display:flex;align-items:center;gap:4px;width:100%;box-sizing:border-box;padding:4px 12px;border-radius:9999px;font-size:10px;font-weight:600;${style};margin:2px 0">${escHtml(displayLabel)} <span style="opacity:0.6">×${count}</span></div>`;
 }
 
 // One chip + its own photo thumbnails directly beneath it.

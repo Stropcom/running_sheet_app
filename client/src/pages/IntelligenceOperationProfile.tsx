@@ -41,7 +41,8 @@ function buildOperationProfileHtml(profile: IntelOperationProfile) {
       </div>
       <div style="padding:10px 14px">
         ${t.photos.length ? `<p style="font-size:10px;color:#64748b;margin-bottom:4px;font-weight:600">Photos (${t.photos.length}):</p>${buildPhotoGridHtml(t.photos, 95)}` : ""}
-        ${t.hbf ? `<p style="font-size:10px;margin-bottom:4px;margin-top:8px"><span style="color:#64748b;font-weight:600">Home:</span> ${esc(formatIntelAddress(t.hbf))}</p>` : ""}
+        ${(t.hbf || t.v1f || t.v2f) ? `<p style="font-size:10px;color:#64748b;margin-top:8px;margin-bottom:4px;font-weight:600">Registered Details:</p>` : ""}
+        ${t.hbf ? `<p style="font-size:10px;margin-bottom:4px"><span style="color:#64748b;font-weight:600">Home:</span> ${esc(formatIntelAddress(t.hbf))}</p>` : ""}
         ${t.v1f ? `<p style="font-size:10px;margin-bottom:4px"><span style="color:#64748b;font-weight:600">Vehicle 1:</span> ${esc(formatIntelVehicle(t.v1f))}</p>` : ""}
         ${t.v2f ? `<p style="font-size:10px;margin-bottom:4px"><span style="color:#64748b;font-weight:600">Vehicle 2:</span> ${esc(formatIntelVehicle(t.v2f))}</p>` : ""}
         ${t.linkedSheets.length ? `<p style="font-size:10px;color:#64748b;margin-top:6px;margin-bottom:4px;font-weight:600">Running Sheets:</p>${t.linkedSheets.map(s => `<p style="font-size:10px;padding-left:12px">• ${esc(s.title)}</p>`).join("")}` : ""}
@@ -54,7 +55,7 @@ function buildOperationProfileHtml(profile: IntelOperationProfile) {
 <style>* { box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; } body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.6; color:${GREY_TEXT}; background:#fff; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 .cover-header { background:${BLUE_DARK} !important; color:#fff !important; padding:28px 32px 22px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 .brand-label { font-size:10px; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; color:${BLUE_MID} !important; margin-bottom:14px; }
-.entity-name { font-size:22px; font-weight:700; } .entity-sub { font-size:11px; opacity:0.7; margin-top:4px; } .gen-time { font-size:9px; opacity:0.6; margin-top:12px; }
+.entity-name { font-size:22px; font-weight:700; } .entity-sub-row { display:flex; flex-wrap:wrap; gap:12px; margin-top:4px; } .entity-sub { font-size:11px; opacity:0.7; } .gen-time { font-size:9px; opacity:0.6; margin-top:12px; }
 .stats-row { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; padding:16px 32px; background:${BLUE_LIGHT} !important; border-bottom:2px solid ${BLUE_MID}; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 .stat-box { text-align:center; } .stat-num { font-size:20px; font-weight:700; color:${BLUE_DARK} !important; } .stat-label { font-size:9px; text-transform:uppercase; letter-spacing:0.08em; color:#64748b; }
 .content { padding:20px 32px; } .section-title { font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${BLUE_DARK} !important; padding:6px 10px; background:${BLUE_LIGHT} !important; border-left:3px solid ${BLUE_MID}; margin-bottom:12px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
@@ -64,9 +65,11 @@ function buildOperationProfileHtml(profile: IntelOperationProfile) {
 <div class="cover-header">
   <div class="brand-label">RunLog Intelligence Profile — Operation</div>
   <div class="entity-name">${esc(profile.operationName)}</div>
-  ${profile.promisNumber ? `<div class="entity-sub">PROMIS: ${esc(profile.promisNumber)}</div>` : ""}
-  ${profile.imsNumber ? `<div class="entity-sub">IMS: ${esc(profile.imsNumber)}</div>` : ""}
-  ${profile.investigationUnit ? `<div class="entity-sub">Unit: ${esc(profile.investigationUnit)}</div>` : ""}
+  ${(profile.promisNumber || profile.imsNumber || profile.investigationUnit) ? `<div class="entity-sub-row">
+    ${profile.promisNumber ? `<span class="entity-sub">PROMIS: ${esc(profile.promisNumber)}</span>` : ""}
+    ${profile.imsNumber ? `<span class="entity-sub">IMS: ${esc(profile.imsNumber)}</span>` : ""}
+    ${profile.investigationUnit ? `<span class="entity-sub">Unit: ${esc(profile.investigationUnit)}</span>` : ""}
+  </div>` : ""}
   <div class="gen-time">Generated: ${generatedAt}</div>
 </div>
 <div class="stats-row">

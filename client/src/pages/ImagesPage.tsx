@@ -381,14 +381,14 @@ function SheetGallery({
                 linkedCount={a.linkedCount}
                 linkedCategories={a.linkedCategories}
                 onClick={() => setLinkingId(a.id)}
-                className="absolute top-1.5 left-1.5 h-6 w-6"
+                positionClassName="absolute top-1.5 left-1.5"
               />
               <button
                 onClick={() => deleteAttachment.mutate({ id: a.id })}
                 title="Delete photo"
-                className="absolute top-1.5 right-1.5 h-6 w-6 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center hover:opacity-90 transition-opacity"
+                className="absolute top-1.5 right-1.5 h-5 w-5 sm:h-6 sm:w-6 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center hover:opacity-90 transition-opacity"
               >
-                <X className="h-3.5 w-3.5" />
+                <X className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
               </button>
             </div>
           ))}

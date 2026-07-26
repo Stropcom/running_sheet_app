@@ -15,52 +15,67 @@ const CATEGORY_LABEL: Record<string, string> = {
 };
 
 /**
- * The small circular badge shown on a photo thumbnail indicating whether
- * it's linked to an Intelligence entity, and to what kind — a category
- * icon when every link is the same category, a generic link icon when it
- * spans more than one. Click opens LinkAttachmentDialog, which shows the
- * current links (with unlink) and lets you add more.
+ * Shown on a photo thumbnail indicating whether/what it's linked to. Click
+ * (anywhere in the row) opens LinkAttachmentDialog, which shows the current
+ * links (with unlink) and lets you add more.
  *
- * Deliberately kept to the same single small badge the app already used
- * (no extra icons/labels on the thumbnail itself) — the actual entity
- * name(s) only show once you tap through, to keep image grids uncluttered.
+ * Not linked: a single amber "unlinked" icon, same as before.
+ * Linked: one small green icon per distinct entity *category* linked (target/
+ * vehicle/person/location) laid out across the top of the image — e.g. linked
+ * to a target and a person shows two icons, not one generic "linked" icon.
+ * Multiple links within the same category (e.g. two people) still collapse
+ * to one icon for that category, so this can't grow past 4 icons.
  */
 export function AttachmentLinkBadge({
   linkedCount,
   linkedCategories,
   onClick,
-  className = "h-6 w-6",
+  positionClassName = "absolute top-1.5 left-1.5",
+  iconSize = "h-4 w-4 sm:h-5 sm:w-5",
+  glyphSize = "h-2.5 w-2.5 sm:h-3 sm:w-3",
 }: {
   linkedCount: number;
   linkedCategories?: string[];
   onClick: () => void;
-  /** Full class list for size/position — defaults to just a size, no positioning. */
-  className?: string;
+  /** Positioning only (e.g. "absolute top-1.5 left-1.5") — sizing is separate. */
+  positionClassName?: string;
+  /** Size of each icon circle, responsive-capable (e.g. "h-4 w-4 sm:h-5 sm:w-5"). */
+  iconSize?: string;
+  /** Size of the glyph inside each circle. */
+  glyphSize?: string;
 }) {
-  const categories = linkedCategories ?? [];
+  const categories = Array.from(new Set(linkedCategories ?? []));
   const isLinked = linkedCount > 0;
-  const Icon = !isLinked
-    ? Link2Off
-    : categories.length === 1
-      ? (CATEGORY_ICON[categories[0]] ?? Link2)
-      : Link2;
-  const title = !isLinked
-    ? "Not linked to an entity — click to link"
-    : categories.length === 1
-      ? `Linked to ${CATEGORY_LABEL[categories[0]] ?? "an entity"} — click to view or link another`
-      : "Linked to multiple entities — click to view or link another";
+
+  if (!isLinked) {
+    return (
+      <button
+        onClick={onClick}
+        title="Not linked to an entity — click to link"
+        className={`${positionClassName} ${iconSize} rounded-full flex items-center justify-center transition-colors bg-amber-500/90 text-white hover:bg-amber-400`}
+      >
+        <Link2Off className={glyphSize} />
+      </button>
+    );
+  }
 
   return (
     <button
       onClick={onClick}
-      title={title}
-      className={`${className} rounded-full flex items-center justify-center transition-colors ${
-        isLinked
-          ? "bg-emerald-600/90 text-white hover:bg-emerald-500"
-          : "bg-amber-500/90 text-white hover:bg-amber-400"
-      }`}
+      title={`Linked to ${categories.map((c) => CATEGORY_LABEL[c] ?? "an entity").join(", ")} — click to view or link another`}
+      className={`${positionClassName} flex items-center gap-1`}
     >
-      <Icon className="h-3 w-3" />
+      {categories.map((cat) => {
+        const Icon = CATEGORY_ICON[cat] ?? Link2;
+        return (
+          <span
+            key={cat}
+            className={`${iconSize} rounded-full flex items-center justify-center bg-emerald-600/90 text-white transition-colors hover:bg-emerald-500`}
+          >
+            <Icon className={glyphSize} />
+          </span>
+        );
+      })}
     </button>
   );
 }

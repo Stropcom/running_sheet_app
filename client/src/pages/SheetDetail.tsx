@@ -235,10 +235,9 @@ function exportToPDF(
   sheetCreatedAt: Date,
   targetFullName?: string | null,
 ) {
-  const certColor = "#22c55e";
   const lockedBg = "#ffffff"; // White in PDF — dark green is screen-only via CSS class
-  const cb = "border-right:1px solid #334155";
-  const bb = "border-bottom:1px solid #1e293b";
+  const cb = "border-right:1px solid #e2e9f6";
+  const bb = "border-bottom:1px solid #eef2fb";
 
   // Parse TEAM roster — sort: TL first, then numerically
   let cinRoster: CinEntry[] = [];
@@ -391,7 +390,7 @@ function exportToPDF(
   }
 
   const dateDividerRow = (label: string) =>
-    `<tr><td colspan="3" style="padding:4px 8px;background:#1e3a5f;color:#93c5fd;font-size:10px;font-weight:700;letter-spacing:0.08em;text-align:center;border-top:2px solid #334155;border-bottom:2px solid #334155">${label}</td></tr>`;
+    `<tr class="date-divider-row"><td colspan="3"><span class="date-divider-pill">${label}</span></td></tr>`;
 
   const tableRows = (() => {
     let prevDay = -1;
@@ -446,8 +445,8 @@ function exportToPDF(
         }
         const certifierCIN = cert ? ('certifiedByCIN' in cert ? (cert as any).certifiedByCIN || cert.certifiedByName : cert.certifiedByName) : null;
         const cinCertCell = cert
-          ? `<span style='color:${certColor};white-space:nowrap'>&#10003; ${certifierCIN} <span style='color:#555;font-size:10px'>${format(new Date(cert.certifiedAt), "dd/MM/yy h:mmaaa")}</span></span>`
-          : `<span style='color:#ef4444;font-weight:700'>${m.memberName} Pending</span>`;
+          ? `<span class="pill pill-certified">&#10003; ${certifierCIN} <span style='opacity:.7;font-weight:500'>${format(new Date(cert.certifiedAt), "dd/MM/yy h:mmaaa")}</span></span>`
+          : `<span class="pill pill-pending">${m.memberName} Pending</span>`;
         return `<tr style="background:${rowBg}">
           ${timeTd}${obsTd}
           <td style="padding:${pt} 6px ${pb} 6px;${memberBb};font-size:11px">${cinCertCell}</td>
@@ -467,31 +466,41 @@ function exportToPDF(
     @page{
       margin:20mm 15mm;
       @top-center{content:'PROTECTED';font-family:'Roboto',sans-serif;font-size:12px;font-weight:700;color:#dc2626;letter-spacing:0.08em}
-      @bottom-center{content:'PROTECTED';font-family:'Roboto',sans-serif;font-size:12px;font-weight:700;color:#dc2626;letter-spacing:0.08em}
+      @bottom-center{content:"Page " counter(page) " of " counter(pages);font-family:'Roboto',sans-serif;font-size:11px;font-weight:700;color:#1e3a8a;letter-spacing:0.04em}
     }
     /* Force background colours to print — Chrome strips backgrounds by default */
     *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;color-adjust:exact !important}
     body{font-family:'Roboto',sans-serif;background:#fff;color:#000;margin:0;padding:0;font-size:11px}
     .page-title{font-size:20px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;text-align:center;margin-bottom:1.2em}
     .page-title-sm{font-size:15px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;text-align:center;margin-bottom:0.5em;margin-top:4px}
+    /* Rounded blue card wrapper — shared by the meta block and the log table */
+    .rs-card{border:1.5px solid #1e3a8a;border-radius:10px;overflow:hidden}
     /* Meta info table — light blue label cells */
-    .meta-table{width:100%;border-collapse:collapse;border:2px solid #334155;table-layout:auto}
-    .meta-label{padding:5px 8px;font-weight:700;font-size:11px;white-space:nowrap;background:#dbeafe;border:1px solid #94a3b8;text-transform:uppercase;width:1%;color:#000}
-    .meta-value{padding:5px 8px;font-size:11px;border:1px solid #94a3b8;color:#000;background:#fff}
+    .meta-table{width:100%;border-collapse:collapse;table-layout:auto}
+    .meta-table tr:not(:last-child) td{border-bottom:1px solid #c7d5ee}
+    .meta-label{padding:5px 8px;font-weight:700;font-size:11px;white-space:nowrap;background:#dbeafe;border-right:1px solid #93c5fd;text-transform:uppercase;width:1%;color:#1e3a8a}
+    .meta-value{padding:5px 8px;font-size:11px;color:#000;background:#fff}
     /* Log table */
-    table.log-table{width:100%;border-collapse:collapse;table-layout:auto;border:2px solid #334155}
+    table.log-table{width:100%;border-collapse:collapse;table-layout:auto}
     col.c-time{width:80px}
     col.c-obs{width:auto}
     col.c-cert{width:1%;white-space:nowrap}
     /* Column header row — light blue to match meta labels */
-    .log-table th{background:#dbeafe;color:#000;font-weight:700;padding:6px;text-align:left;
-       border-bottom:2px solid #334155;border-right:1px solid #94a3b8}
+    .log-table th{background:#dbeafe;color:#1e3a8a;font-weight:700;padding:6px;text-align:left;
+       border-bottom:2px solid #1e3a8a;border-right:1px solid #c7d5ee}
     .log-table th:last-child,.log-table td:last-child{border-right:none}
-    .log-table td{vertical-align:top;word-break:break-word;overflow:hidden;color:#000;border-right:1px solid #94a3b8}
+    .log-table td{vertical-align:top;word-break:break-word;overflow:hidden;color:#000;border-right:1px solid #e2e9f6;border-bottom:1px solid #eef2fb}
     .log-table td:last-child{white-space:nowrap;word-break:normal;border-right:none}
     /* thead wrapper cell — no border/padding/bg so it's invisible as a table cell */
     .thead-meta-cell{padding:0 !important;border:none !important;background:transparent !important}
     .thead-meta-inner{padding-bottom:8px}
+    /* Certification pills */
+    .pill{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:9999px;font-size:10px;font-weight:700;white-space:nowrap}
+    .pill-certified{background:#d1fae5;color:#059669;border:1px solid #6ee7b7}
+    .pill-pending{background:#fee2e2;color:#dc2626;border:1px solid #fca5a5}
+    /* Date divider — centered pill instead of a full-width bar */
+    .date-divider-row td{background:#f1f6ff;text-align:center;padding:6px 0}
+    .date-divider-pill{display:inline-block;padding:3px 14px;border-radius:9999px;background:#1e3a8a;color:#fff;font-size:10px;font-weight:700;letter-spacing:0.06em}
     /* Screen: show first-page-header (with imagery); hide print-only blocks */
     .first-page-header{text-align:left;margin-bottom:10px}
     .print-only{display:none !important}
@@ -552,11 +561,14 @@ function exportToPDF(
   <!-- SCREEN VIEW: full header with imagery — hidden during print -->
   <div class="first-page-header" id="first-page-header">
     <div class="page-title">WC SURVEILLANCE RUNNING SHEET</div>
-    <table class="meta-table"><tbody>
-      ${metaRowsHtml}
-      <tr><td class="meta-label">IMAGERY:</td><td class="meta-value">${imageryRowHtml}</td></tr>
-    </tbody></table>
+    <div class="rs-card">
+      <table class="meta-table"><tbody>
+        ${metaRowsHtml}
+        <tr><td class="meta-label">IMAGERY:</td><td class="meta-value">${imageryRowHtml}</td></tr>
+      </tbody></table>
+    </div>
   </div>
+  <div class="rs-card">
   <table class="log-table">
     <colgroup>
       <col class="c-time"/>
@@ -571,10 +583,12 @@ function exportToPDF(
         <td colspan="3" class="thead-meta-cell">
           <div class="thead-meta-inner">
             <div class="page-title-sm">WC SURVEILLANCE RUNNING SHEET</div>
-            <table class="meta-table"><tbody>
-              ${metaRowsHtml}
-              <tr><td class="meta-label">IMAGERY:</td><td class="meta-value">${imageryRowHtml}</td></tr>
-            </tbody></table>
+            <div class="rs-card">
+              <table class="meta-table"><tbody>
+                ${metaRowsHtml}
+                <tr><td class="meta-label">IMAGERY:</td><td class="meta-value">${imageryRowHtml}</td></tr>
+              </tbody></table>
+            </div>
           </div>
         </td>
       </tr>
@@ -586,6 +600,7 @@ function exportToPDF(
     </thead>
     <tbody>${tableRows}</tbody>
   </table>
+  </div>
   <!-- Close button: visible on screen, hidden during print -->
   <div id="close-bar" style="position:fixed;bottom:0;left:0;right:0;padding:12px 16px;background:#1e293b;display:flex;justify-content:flex-end;gap:12px;z-index:9999;box-shadow:0 -2px 8px rgba(0,0,0,0.4)">
     <button onclick="window.close()" style="background:#3b82f6;color:#fff;border:none;border-radius:6px;padding:10px 24px;font-size:14px;font-weight:700;cursor:pointer;font-family:system-ui,sans-serif">&#x2715; Close Preview</button>

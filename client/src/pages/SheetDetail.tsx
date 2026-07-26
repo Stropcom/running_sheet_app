@@ -412,12 +412,22 @@ function exportToPDF(
       }
       if (row.timeMinutes != null) prevDay = day;
       const rowBg = row.isLocked ? lockedBg : "transparent";
+      // Only the very last rendered row of the whole sheet gets the card's rounded bottom
+      // corners. Every row is followed by an invisible spacer <tr style="border:none"> for
+      // breathing room, which is always tbody's true last-child and whose inline style always
+      // wins over any stylesheet rule — so CSS structural selectors (:last-child / a class on
+      // the <tr>) can never reliably find "the last real row" here. Compute the right border
+      // per cell directly in JS instead, keyed off this flag.
+      const isLastDataRow = row === rows[rows.length - 1];
+      const edgeBottom = isLastDataRow ? "border-bottom:1.5px solid #1e3a8a" : bb;
       if (row.members.length === 0) {
         const obsHtml = boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>")) + attachmentImagesHtml(row.attachments);
+        const leftRadius = isLastDataRow ? ";border-bottom-left-radius:10px" : "";
+        const rightRadius = isLastDataRow ? ";border-bottom-right-radius:10px" : "";
         parts.push(`<tr style="background:${rowBg}">
-          <td class="col-time" style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap">${row.time ?? ""}</td>
-          <td style="padding:6px 6px 8px;${bb};${cb}">${obsHtml}</td>
-          <td style="padding:6px 6px 8px;${bb};font-size:11px"></td>
+          <td class="col-time" style="padding:6px 6px 8px;${edgeBottom}${leftRadius};${cb};font-family:monospace;font-size:11px;white-space:nowrap">${row.time ?? ""}</td>
+          <td style="padding:6px 6px 8px;${edgeBottom};${cb}">${obsHtml}</td>
+          <td style="padding:6px 6px 8px;${edgeBottom}${rightRadius};font-size:11px"></td>
         </tr>${spacerRow}`);
         continue;
       }
@@ -427,14 +437,16 @@ function exportToPDF(
         const cert = isSpacer ? undefined : row.certifications.find((c) => c.memberId === m.id && c.isActive);
         const isFirst = idx === 0;
         const rowspan = row.members.length;
+        const timeLeftRadius = isLastDataRow ? ";border-bottom-left-radius:10px" : "";
         const timeTd = isFirst
-          ? `<td class="col-time" style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap" rowspan="${rowspan}">${row.time ?? ""}</td>`
+          ? `<td class="col-time" style="padding:6px 6px 8px;${edgeBottom}${timeLeftRadius};${cb};font-family:monospace;font-size:11px;white-space:nowrap" rowspan="${rowspan}">${row.time ?? ""}</td>`
           : "";
         const obsTd = isFirst
-          ? `<td style="padding:6px 6px 8px;${bb};${cb}" rowspan="${rowspan}">${boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>"))}${attachmentImagesHtml(row.attachments)}</td>`
+          ? `<td style="padding:6px 6px 8px;${edgeBottom};${cb}" rowspan="${rowspan}">${boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>"))}${attachmentImagesHtml(row.attachments)}</td>`
           : "";
         const isLast = idx === row.members.length - 1;
-        const memberBb = isLast ? bb : "border-bottom:none";
+        const certRightRadius = isLastDataRow && isLast ? ";border-bottom-right-radius:10px" : "";
+        const memberBb = isLast ? `${edgeBottom}${certRightRadius}` : "border-bottom:none";
         const pt = isFirst ? "6px" : "2px";
         const pb = isLast ? "8px" : "2px";
         if (isSpacer) {
@@ -503,9 +515,11 @@ function exportToPDF(
        as the sole/first child of its own <tr> and would wrongly catch a :first-child rule. */
     .log-table tbody td.col-time{border-left:1.5px solid #1e3a8a}
     .log-table tbody td:last-child{border-right:1.5px solid #1e3a8a}
-    .log-table tbody tr:last-child td{border-bottom:1.5px solid #1e3a8a}
-    .log-table tbody tr:last-child td:first-child{border-bottom-left-radius:10px}
-    .log-table tbody tr:last-child td:last-child{border-bottom-right-radius:10px}
+    /* Bottom edge (border + rounded corners) is computed per-cell directly in the row-building
+       JS below, not via CSS — every row is followed by an invisible spacer <tr style="border:
+       none"> for breathing room, which is always tbody's actual last-child and whose inline
+       style always wins over any stylesheet rule, so no CSS selector could reliably target
+       "the last real row" here. */
     /* thead wrapper cell — no border/padding/bg so the meta card floats free of the log table's own border */
     .thead-meta-cell{padding:0 !important;border:none !important;background:transparent !important}
     .thead-meta-inner{padding-bottom:10px}

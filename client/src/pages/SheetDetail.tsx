@@ -415,7 +415,7 @@ function exportToPDF(
       if (row.members.length === 0) {
         const obsHtml = boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>")) + attachmentImagesHtml(row.attachments);
         parts.push(`<tr style="background:${rowBg}">
-          <td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap">${row.time ?? ""}</td>
+          <td class="col-time" style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap">${row.time ?? ""}</td>
           <td style="padding:6px 6px 8px;${bb};${cb}">${obsHtml}</td>
           <td style="padding:6px 6px 8px;${bb};font-size:11px"></td>
         </tr>${spacerRow}`);
@@ -428,7 +428,7 @@ function exportToPDF(
         const isFirst = idx === 0;
         const rowspan = row.members.length;
         const timeTd = isFirst
-          ? `<td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap" rowspan="${rowspan}">${row.time ?? ""}</td>`
+          ? `<td class="col-time" style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap" rowspan="${rowspan}">${row.time ?? ""}</td>`
           : "";
         const obsTd = isFirst
           ? `<td style="padding:6px 6px 8px;${bb};${cb}" rowspan="${rowspan}">${boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>"))}${attachmentImagesHtml(row.attachments)}</td>`
@@ -498,7 +498,10 @@ function exportToPDF(
     .log-table thead tr:last-of-type th:last-child{border-right:1.5px solid #1e3a8a;border-top-right-radius:10px}
     .log-table td{vertical-align:top;word-break:break-word;overflow:hidden;color:#000;border-right:1px solid #e2e9f6;border-bottom:1px solid #eef2fb}
     .log-table td:last-child{white-space:nowrap;word-break:normal;border-right:none;width:1%}
-    .log-table tbody td:first-child{border-left:1.5px solid #1e3a8a}
+    /* Target the actual Time column by class, not :first-child — member rows after the first
+       don't repeat the (rowspanned) Time/Observation cells, so the CIN-certified <td> ends up
+       as the sole/first child of its own <tr> and would wrongly catch a :first-child rule. */
+    .log-table tbody td.col-time{border-left:1.5px solid #1e3a8a}
     .log-table tbody td:last-child{border-right:1.5px solid #1e3a8a}
     .log-table tbody tr:last-child td{border-bottom:1.5px solid #1e3a8a}
     .log-table tbody tr:last-child td:first-child{border-bottom-left-radius:10px}

@@ -58,7 +58,7 @@ import {
 import { useState, useEffect } from "react";
 import { CopyMoveSheetDialog } from "@/components/CopyMoveSheetDialog";
 import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
-import { extractShortVehicle } from "@/lib/addressFormat";
+import { extractShortVehicle, extractShortTarget, extractShortAddress } from "@/lib/addressFormat";
 import { CopyPlus } from "lucide-react";
 import { useLocation, useParams, useSearch } from "wouter";
 import { format } from "date-fns";
@@ -195,7 +195,14 @@ function TargetCard({
         <div className="px-4 pb-4 pt-1 flex flex-col gap-3 border-t border-border/50">
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Full Name, Born</label>
-            <Input value={name} onChange={(e) => { setName(e.target.value); setDirty(true); }} />
+            <Input
+              value={name}
+              onChange={(e) => { setName(e.target.value); setDirty(true); }}
+              onBlur={(e) => {
+                const short = extractShortTarget(e.target.value);
+                if (short && !tgt) mark(() => setTgt(short));
+              }}
+            />
           </div>
           {/* Target (TGT) */}
           <div className="flex flex-col gap-1.5">
@@ -210,6 +217,10 @@ function TargetCard({
               value={hbf}
               onChange={(v) => mark(() => setHbf(v))}
               onShortAddress={(short) => { if (!hb) mark(() => setHb(short)); }}
+              onBlur={(e) => {
+                const short = extractShortAddress(e.target.value);
+                if (short && !hb) mark(() => setHb(short));
+              }}
               placeholder="Search or type address…"
             />
           </div>

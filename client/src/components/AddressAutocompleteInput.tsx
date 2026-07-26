@@ -19,7 +19,7 @@
  *   inputClassName – extra classes forwarded to the <input> element
  */
 
-import { useRef, useState, useCallback, useEffect } from "react";
+import { useRef, useState, useCallback, useEffect, type FocusEvent } from "react";
 import { MapPin } from "lucide-react";
 import { convertGoogleAddresses, extractShortAddress } from "@/lib/addressFormat";
 
@@ -72,6 +72,7 @@ interface Props {
   onChange: (val: string) => void;
   /** Called with the extracted short-form address when a suggestion is selected (for auto-filling HB) */
   onShortAddress?: (shortVal: string) => void;
+  onBlur?: (e: FocusEvent<HTMLInputElement>) => void;
   locationBias?: { lat: number; lng: number } | null;
   placeholder?: string;
   className?: string;
@@ -82,6 +83,7 @@ export function AddressAutocompleteInput({
   value,
   onChange,
   onShortAddress,
+  onBlur,
   locationBias,
   placeholder = "Search address…",
   className = "",
@@ -211,6 +213,7 @@ export function AddressAutocompleteInput({
         type="text"
         value={value}
         onChange={handleChange}
+        onBlur={onBlur}
         onFocus={() => { if (suggestions.length > 0) setOpen(true); }}
         onKeyDown={(e) => {
           if (e.key === "Escape") { setSuggestions([]); setOpen(false); }

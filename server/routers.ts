@@ -142,6 +142,7 @@ import {
   reinstateAttachment,
   linkAttachmentToEntity,
   unlinkAttachmentFromEntity,
+  getEntityLinksByAttachmentId,
   getEntityLinkCounts,
   getAttachmentsForEntity,
 } from "./db";
@@ -941,6 +942,14 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         await unlinkAttachmentFromEntity(input.linkId);
         return { success: true };
+      }),
+
+    // Every entity a given photo is currently linked to — powers the
+    // "Currently linked" list in LinkAttachmentDialog.
+    linksFor: protectedProcedure
+      .input(z.object({ attachmentId: z.number() }))
+      .query(async ({ input }) => {
+        return getEntityLinksByAttachmentId(input.attachmentId);
       }),
 
     entityLinkCounts: protectedProcedure.query(async () => {

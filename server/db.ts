@@ -670,20 +670,41 @@ export async function createRowAttachment(data: InsertRowAttachment) {
 // linkedCount = number of Intelligence entity links on each attachment — used
 // to require photos be linked to an entity before a Governance row can be
 // marked saved, and to show a linked/unlinked badge in the Images gallery and
-// on inline running-sheet photo attachments.
+// on inline running-sheet photo attachments. linkedCategories is the distinct
+// set of entity categories ("target"/"vehicle"/"associate"/"location") linked
+// to that attachment, so the badge can show which kind of thing a photo is
+// linked to at a glance (a category-specific icon when there's exactly one,
+// a generic "linked" icon when it spans more than one) without a second
+// round-trip per thumbnail.
 async function attachLinkedCounts<T extends { id: number }>(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
   rows: T[]
-): Promise<(T & { linkedCount: number })[]> {
+): Promise<(T & { linkedCount: number; linkedCategories: string[] })[]> {
   if (rows.length === 0) return [];
   const attachmentIds = rows.map((r) => r.id);
-  const linkCounts = await db
-    .select({ attachmentId: attachmentEntityLinks.attachmentId, count: sql<number>`count(*)`.as("count") })
-    .from(attachmentEntityLinks)
-    .where(inArray(attachmentEntityLinks.attachmentId, attachmentIds))
-    .groupBy(attachmentEntityLinks.attachmentId);
+  const [linkCounts, linkCategoryRows] = await Promise.all([
+    db
+      .select({ attachmentId: attachmentEntityLinks.attachmentId, count: sql<number>`count(*)`.as("count") })
+      .from(attachmentEntityLinks)
+      .where(inArray(attachmentEntityLinks.attachmentId, attachmentIds))
+      .groupBy(attachmentEntityLinks.attachmentId),
+    db
+      .selectDistinct({ attachmentId: attachmentEntityLinks.attachmentId, category: attachmentEntityLinks.category })
+      .from(attachmentEntityLinks)
+      .where(inArray(attachmentEntityLinks.attachmentId, attachmentIds)),
+  ]);
   const countMap = new Map(linkCounts.map((l) => [l.attachmentId, Number(l.count)]));
-  return rows.map((r) => ({ ...r, linkedCount: countMap.get(r.id) ?? 0 }));
+  const categoryMap = new Map<number, string[]>();
+  for (const l of linkCategoryRows) {
+    const arr = categoryMap.get(l.attachmentId) ?? [];
+    arr.push(l.category);
+    categoryMap.set(l.attachmentId, arr);
+  }
+  return rows.map((r) => ({
+    ...r,
+    linkedCount: countMap.get(r.id) ?? 0,
+    linkedCategories: categoryMap.get(r.id) ?? [],
+  }));
 }
 
 export async function getAttachmentsByRowIds(rowIds: number[]) {
@@ -1972,8 +1993,37 @@ export interface SheetEntityChip {
 // read rather than stored, so every officer viewing the sheet sees the same
 // chips — not a per-device thing. Low-confidence extractions are excluded
 // to keep the chip bar from filling with noise from ambiguous text.
+//
+// Anything already covered by the sheet's assigned target card (TGT/HB/
+// V1/V2.../DEP/ARR/wild fields — the blue chips) is skipped, since those
+// already have their own chip; these purple chips are for genuinely new
+// information logged in this sheet, not a duplicate of the target card.
 export async function getSheetEntityChips(sheetId: number): Promise<SheetEntityChip[]> {
-  const rows = await getRowsBySheetId(sheetId);
+  const [rows, sheet] = await Promise.all([getRowsBySheetId(sheetId), getRunningSheetById(sheetId)]);
+
+  const targetKeys = new Set<string>();
+  if (sheet?.targetId) {
+    const t = await getTargetById(sheet.targetId);
+    if (t) {
+      const addKey = (type: DedupType, v?: string | null) => { if (v) targetKeys.add(computeEntityKey(type, v)); };
+      addKey("person", t.tgt);
+      addKey("address", t.hb);
+      addKey("address", t.dep);
+      addKey("address", t.arr);
+      addKey("vehicle", t.v1);
+      try {
+        const evs: Array<{ full: string; short: string }> = JSON.parse(t.extraVehicles ?? "[]");
+        evs.forEach((ev) => addKey("vehicle", ev.short));
+      } catch {}
+      try {
+        const wfs: Array<{ label: string; value: string }> = JSON.parse(t.wildFields ?? "[]");
+        // A wild field's type isn't known ahead of time, so cover all three —
+        // an accidental cross-type key collision on arbitrary text is negligible.
+        wfs.forEach((wf) => { addKey("person", wf.value); addKey("vehicle", wf.value); addKey("address", wf.value); });
+      } catch {}
+    }
+  }
+
   const byKey = new Map<string, SheetEntityChip>();
 
   for (const row of rows) {
@@ -1983,6 +2033,7 @@ export async function getSheetEntityChips(sheetId: number): Promise<SheetEntityC
       if (e.confidence === "low") continue;
       if (e.type === "unknown") continue;
       const key = computeEntityKey(e.type, e.rawShortForm);
+      if (targetKeys.has(key)) continue;
       const existing = byKey.get(key);
       if (existing) {
         existing.occurrenceCount++;
@@ -1999,8 +2050,13 @@ export async function getSheetEntityChips(sheetId: number): Promise<SheetEntityC
     }
   }
 
+  // Group by type — vehicles, then persons, then locations, then business —
+  // preserving each entity's original generation order within its group
+  // (Array.prototype.sort is a stable sort, so equal-type items keep their
+  // relative Map-insertion order rather than being re-sorted by name/count).
+  const TYPE_ORDER: Record<SheetEntityChip["type"], number> = { vehicle: 0, person: 1, address: 2, business: 3 };
   return Array.from(byKey.values())
-    .sort((a, b) => b.occurrenceCount - a.occurrenceCount || a.display.localeCompare(b.display))
+    .sort((a, b) => TYPE_ORDER[a.type] - TYPE_ORDER[b.type])
     .slice(0, 24);
 }
 

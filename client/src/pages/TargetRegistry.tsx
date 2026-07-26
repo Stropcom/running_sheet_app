@@ -46,7 +46,7 @@ import { useViewMode } from "@/contexts/ViewModeContext";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
 import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
-import { extractShortVehicle } from "@/lib/addressFormat";
+import { extractShortVehicle, extractShortTarget, extractShortAddress } from "@/lib/addressFormat";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -319,7 +319,14 @@ function TargetCard({
 
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Full Name, Born</label>
-            <Input value={name} onChange={e => { setName(e.target.value); setDirty(true); }} />
+            <Input
+              value={name}
+              onChange={e => { setName(e.target.value); setDirty(true); }}
+              onBlur={(e) => {
+                const short = extractShortTarget(e.target.value);
+                if (short && !tgt) mark(() => setTgt(short));
+              }}
+            />
           </div>
           {/* Target (TGT) */}
           <div className="flex flex-col gap-1.5">
@@ -334,6 +341,10 @@ function TargetCard({
               value={hbf}
               onChange={(v) => mark(() => setHbf(v))}
               onShortAddress={(short) => { if (!hb) mark(() => setHb(short)); }}
+              onBlur={(e) => {
+                const short = extractShortAddress(e.target.value);
+                if (short && !hb) mark(() => setHb(short));
+              }}
               placeholder="Search or type address…"
             />
           </div>
@@ -616,7 +627,16 @@ function AddTargetDialog({
         <div className="flex flex-col gap-3 py-2">
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Full Name, Born *</label>
-            <Input value={form.name} onChange={setField("name")} placeholder="e.g. John SMITH, born 1 Jan 1980" autoFocus />
+            <Input
+              value={form.name}
+              onChange={setField("name")}
+              onBlur={(e) => {
+                const short = extractShortTarget(e.target.value);
+                if (short) setForm(f => ({ ...f, tgt: f.tgt || short }));
+              }}
+              placeholder="e.g. John SMITH, born 1 Jan 1980"
+              autoFocus
+            />
           </div>
           {/* Target (TGT) */}
           <div className="flex flex-col gap-1.5">
@@ -631,6 +651,10 @@ function AddTargetDialog({
               value={form.hbf}
               onChange={(v) => setForm(f => ({ ...f, hbf: v }))}
               onShortAddress={(short) => setForm(f => ({ ...f, hb: f.hb || short }))}
+              onBlur={(e) => {
+                const short = extractShortAddress(e.target.value);
+                if (short) setForm(f => ({ ...f, hb: f.hb || short }));
+              }}
               placeholder="Search or type address…"
             />
           </div>

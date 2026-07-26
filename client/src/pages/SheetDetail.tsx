@@ -445,8 +445,8 @@ function exportToPDF(
         }
         const certifierCIN = cert ? ('certifiedByCIN' in cert ? (cert as any).certifiedByCIN || cert.certifiedByName : cert.certifiedByName) : null;
         const cinCertCell = cert
-          ? `<span class="pill pill-certified">&#10003; ${certifierCIN} <span style='opacity:.7;font-weight:500'>${format(new Date(cert.certifiedAt), "dd/MM/yy h:mmaaa")}</span></span>`
-          : `<span class="pill pill-pending">${m.memberName} Pending</span>`;
+          ? `<span class="pill pill-certified">&#10003; ${certifierCIN}</span>`
+          : `<span class="pill pill-pending">${m.memberName}</span>`;
         return `<tr style="background:${rowBg}">
           ${timeTd}${obsTd}
           <td style="padding:${pt} 6px ${pb} 6px;${memberBb};font-size:11px">${cinCertCell}</td>
@@ -473,27 +473,37 @@ function exportToPDF(
     body{font-family:'Roboto',sans-serif;background:#fff;color:#000;margin:0;padding:0;font-size:11px}
     .page-title{font-size:20px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;text-align:center;margin-bottom:1.2em}
     .page-title-sm{font-size:15px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;text-align:center;margin-bottom:0.5em;margin-top:4px}
-    /* Rounded blue card wrapper — shared by the meta block and the log table */
+    /* Rounded blue card — wraps the meta info block only (page-1 header and the repeating page header).
+       Deliberately NOT used around the log table itself: the log table draws its own card border
+       directly on its cells (below) so it floats independently of the meta card above it, on every page. */
     .rs-card{border:1.5px solid #1e3a8a;border-radius:10px;overflow:hidden}
     /* Meta info table — light blue label cells */
     .meta-table{width:100%;border-collapse:collapse;table-layout:auto}
     .meta-table tr:not(:last-child) td{border-bottom:1px solid #c7d5ee}
     .meta-label{padding:5px 8px;font-weight:700;font-size:11px;white-space:nowrap;background:#dbeafe;border-right:1px solid #93c5fd;text-transform:uppercase;width:1%;color:#1e3a8a}
     .meta-value{padding:5px 8px;font-size:11px;color:#000;background:#fff}
-    /* Log table */
+    /* Log table — floats as its own rounded card, independent of the meta card above it.
+       The card border is drawn directly on the header/body cells (not a wrapping div) so the
+       rounded top corners reappear at the top of the table's own box on every printed page,
+       since the header row repeats via thead but the meta card above it does not share this border. */
     table.log-table{width:100%;border-collapse:collapse;table-layout:auto}
     col.c-time{width:80px}
     col.c-obs{width:auto}
-    col.c-cert{width:1%;white-space:nowrap}
-    /* Column header row — light blue to match meta labels */
-    .log-table th{background:#dbeafe;color:#1e3a8a;font-weight:700;padding:6px;text-align:left;
-       border-bottom:2px solid #1e3a8a;border-right:1px solid #c7d5ee}
-    .log-table th:last-child,.log-table td:last-child{border-right:none}
+    col.c-cert{width:1%}
+    .log-table thead tr:last-of-type th{background:#dbeafe;color:#1e3a8a;font-weight:700;padding:6px;text-align:left;
+       border-top:1.5px solid #1e3a8a;border-bottom:2px solid #1e3a8a;border-right:1px solid #c7d5ee}
+    .log-table thead tr:last-of-type th:first-child{border-left:1.5px solid #1e3a8a;border-top-left-radius:10px}
+    .log-table thead tr:last-of-type th:last-child{border-right:1.5px solid #1e3a8a;border-top-right-radius:10px}
     .log-table td{vertical-align:top;word-break:break-word;overflow:hidden;color:#000;border-right:1px solid #e2e9f6;border-bottom:1px solid #eef2fb}
-    .log-table td:last-child{white-space:nowrap;word-break:normal;border-right:none}
-    /* thead wrapper cell — no border/padding/bg so it's invisible as a table cell */
+    .log-table td:last-child{white-space:nowrap;word-break:normal;border-right:none;width:1%}
+    .log-table tbody td:first-child{border-left:1.5px solid #1e3a8a}
+    .log-table tbody td:last-child{border-right:1.5px solid #1e3a8a}
+    .log-table tbody tr:last-child td{border-bottom:1.5px solid #1e3a8a}
+    .log-table tbody tr:last-child td:first-child{border-bottom-left-radius:10px}
+    .log-table tbody tr:last-child td:last-child{border-bottom-right-radius:10px}
+    /* thead wrapper cell — no border/padding/bg so the meta card floats free of the log table's own border */
     .thead-meta-cell{padding:0 !important;border:none !important;background:transparent !important}
-    .thead-meta-inner{padding-bottom:8px}
+    .thead-meta-inner{padding-bottom:10px}
     /* Certification pills */
     .pill{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:9999px;font-size:10px;font-weight:700;white-space:nowrap}
     .pill-certified{background:#d1fae5;color:#059669;border:1px solid #6ee7b7}
@@ -568,7 +578,6 @@ function exportToPDF(
       </tbody></table>
     </div>
   </div>
-  <div class="rs-card">
   <table class="log-table">
     <colgroup>
       <col class="c-time"/>
@@ -600,7 +609,6 @@ function exportToPDF(
     </thead>
     <tbody>${tableRows}</tbody>
   </table>
-  </div>
   <!-- Close button: visible on screen, hidden during print -->
   <div id="close-bar" style="position:fixed;bottom:0;left:0;right:0;padding:12px 16px;background:#1e293b;display:flex;justify-content:flex-end;gap:12px;z-index:9999;box-shadow:0 -2px 8px rgba(0,0,0,0.4)">
     <button onclick="window.close()" style="background:#3b82f6;color:#fff;border:none;border-radius:6px;padding:10px 24px;font-size:14px;font-weight:700;cursor:pointer;font-family:system-ui,sans-serif">&#x2715; Close Preview</button>

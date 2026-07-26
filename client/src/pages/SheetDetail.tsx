@@ -3691,23 +3691,22 @@ export default function SheetDetail() {
           </div>
         </div>
 
-        {/* Legend */}
-        <div className="flex items-center gap-6 mt-4 text-xs text-muted-foreground">
-          <div className="flex items-center gap-1.5">
-            <CheckCircle2 className="w-3.5 h-3.5 text-[var(--certified-color)]" />
-            Certified
+        {/* Add Row — duplicate of the button above the table, so long sheets don't require
+            scrolling back to the top just to add the next row. */}
+        {!isClosed && (
+          <div className="mt-4">
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-2 shrink-0"
+              onClick={() => addRow.mutate({ sheetId })}
+              disabled={addRow.isPending}
+            >
+              <Plus className="w-4 h-4" />
+              Add Row
+            </Button>
           </div>
-          <div className="flex items-center gap-1.5">
-            <Lock className="w-3.5 h-3.5 text-[var(--certified-color)]" />
-            Row locked (all members certified)
-          </div>
-          {canCertify && (
-            <div className="flex items-center gap-1.5">
-              <ShieldCheck className="w-3.5 h-3.5 text-primary" />
-              Click to certify a member
-            </div>
-          )}
-        </div>
+        )}
       </div>
       {/* Edit Sheet Title Dialog */}
       <Dialog open={editSheetOpen} onOpenChange={setEditSheetOpen}>

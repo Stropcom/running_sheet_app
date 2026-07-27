@@ -176,10 +176,16 @@ type ExportRow = {
 };
 
 // Renders attached photos as inline <img> tags at ~1/3 cell width, matching
-// the live table's proportions (see ObservationAttachments).
+// the live table's proportions (see ObservationAttachments). align-items
+// must be set explicitly — flex's default "stretch" forces every image in a
+// row to the height of its tallest sibling, distorting a landscape photo's
+// proportions the moment it sits next to a portrait one. ObservationAttachments
+// avoids this with its own "items-end" on the equivalent live container;
+// matching that here so a photo prints/exports at its natural aspect ratio,
+// same as it already appears on the running sheet itself.
 function attachmentImagesHtml(attachments: { url: string }[]): string {
   if (attachments.length === 0) return "";
-  return `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">` +
+  return `<div style="margin-top:6px;display:flex;flex-wrap:wrap;align-items:flex-end;gap:6px">` +
     attachments.map((a) => `<img src="${a.url}" style="width:33%;max-width:160px;border:1px solid #ccc;border-radius:4px" />`).join("") +
     `</div>`;
 }

@@ -149,6 +149,10 @@ import {
   getLinkedOperationsForEntity,
   getAllManualUploads,
   createPersonDetection,
+  findSimilarFaces,
+  confirmFaceMatch as confirmFaceMatchDb,
+  createFaceMatchDismissal,
+  type FaceMatchCandidate,
 } from "./db";
 
 import { makeRequest, type RoadsResult, type DirectionsResult, type GeocodingResult } from "./_core/map";
@@ -1068,7 +1072,7 @@ export const appRouter = router({
           throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Face detection failed." });
         }
 
-        const results: Array<{ linkId: number; index: number }> = [];
+        const results: Array<{ linkId: number; index: number; matches: FaceMatchCandidate[] }> = [];
         for (const idx of input.faceIndices) {
           const face = faces[idx];
           if (!face) continue;
@@ -1085,12 +1089,80 @@ export const appRouter = router({
             embedding: face.embedding,
             detectionConfidence: face.confidence,
           });
-          results.push({ linkId, index: idx });
+          const matches = await findSimilarFaces(face.embedding, linkId);
+          results.push({ linkId, index: idx, matches });
         }
         if (results.length === 0) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "None of the selected faces were found." });
         }
         return { results };
+      }),
+
+    // Single-face counterpart for Target/Associate links — the officer
+    // already knows the identity (they picked it from the list), so this
+    // just needs to know which detected face in the photo is that person,
+    // then stores its embedding against the normal entity link so later
+    // face-confirms elsewhere can suggest a match against a real identity,
+    // not just other Unidentified Person entries.
+    confirmEntityFace: protectedProcedure
+      .input(z.object({
+        attachmentId: z.number(),
+        faceIndex: z.number(),
+        category: z.enum(["target", "associate"]),
+        targetId: z.number().optional(),
+        entityLabel: z.string().min(1),
+      }))
+      .mutation(async ({ input }) => {
+        if (input.category === "target" && !input.targetId) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "targetId is required for target links." });
+        }
+        const attachment = await getAttachmentById(input.attachmentId);
+        if (!attachment) throw new TRPCError({ code: "NOT_FOUND", message: "Attachment not found." });
+        let faces;
+        try {
+          const buffer = await storageGetBytes(attachment.key);
+          faces = await detectAndEmbedFaces(buffer);
+        } catch (err) {
+          console.error("Face detection failed:", err);
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Face detection failed." });
+        }
+        const face = faces[input.faceIndex];
+        if (!face) throw new TRPCError({ code: "BAD_REQUEST", message: "Selected face was not found." });
+
+        const linkId = await linkAttachmentToEntity({
+          attachmentId: input.attachmentId,
+          category: input.category,
+          targetId: input.targetId,
+          entityLabel: input.entityLabel,
+        });
+        await createPersonDetection({
+          attachmentId: input.attachmentId,
+          entityLinkId: linkId,
+          bbox: face.bbox,
+          landmarks: face.landmarks,
+          embedding: face.embedding,
+          detectionConfidence: face.confidence,
+        });
+        const matches = await findSimilarFaces(face.embedding, linkId);
+        return { linkId, matches };
+      }),
+
+    // Officer accepted a suggested possible-match — the new link adopts the
+    // matched link's identity wholesale (see confirmFaceMatch in db.ts).
+    confirmFaceMatch: protectedProcedure
+      .input(z.object({ newLinkId: z.number(), matchedLinkId: z.number() }))
+      .mutation(async ({ input }) => {
+        await confirmFaceMatchDb(input.newLinkId, input.matchedLinkId);
+        return { success: true };
+      }),
+
+    // Officer rejected a suggested possible-match — remembered so the same
+    // pair isn't suggested again.
+    dismissFaceMatch: protectedProcedure
+      .input(z.object({ newLinkId: z.number(), matchedLinkId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await createFaceMatchDismissal(input.newLinkId, input.matchedLinkId, ctx.user.cin ?? undefined);
+        return { success: true };
       }),
   }),
 

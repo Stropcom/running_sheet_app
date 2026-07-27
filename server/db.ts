@@ -2,6 +2,7 @@ import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, like, lt, or, sql }
 import { drizzle } from "drizzle-orm/mysql2";
 import { createPool as createPromisePool } from "mysql2/promise";
 import { vaultEncrypt, vaultDecrypt } from "./wipcVault";
+import { cosineSimilarity } from "./faceRecognition";
 import {
   auditLogs,
   certifications,
@@ -20,6 +21,7 @@ import {
   InsertAttachmentEntityLink,
   personDetections,
   InsertPersonDetection,
+  faceMatchDismissals,
   runningSheets,
   sheetRows,
   shortcuts,
@@ -937,6 +939,126 @@ export async function createPersonDetection(data: {
   };
   const [result] = await db.insert(personDetections).values(insertData);
   return result.insertId as number;
+}
+
+export interface FaceMatchCandidate {
+  entityLinkId: number;
+  category: string;
+  targetId: number | null;
+  entityLabel: string;
+  similarity: number;
+  attachmentId: number;
+  photoUrl: string;
+}
+
+// Threshold picked from empirical testing against one real multi-face photo
+// (same face re-encoded ~0.99, mirrored ~0.89, different people ~0.1-0.3) —
+// deliberately generous since a missed real match is worse than an extra
+// candidate the officer just rejects. Needs calibration against real
+// evidentiary photos before this is relied on operationally (tracked as a
+// follow-up, not blocking: matches are always human-confirmed, never applied
+// automatically, so a loose threshold only means more suggestions to review).
+const FACE_MATCH_THRESHOLD = 0.35;
+const FACE_MATCH_MAX_RESULTS = 5;
+
+// Compares a newly-confirmed face's embedding against every other confirmed
+// face on file (other Unidentified Person entries and identified
+// Targets/Associates alike) and returns the closest candidates above
+// threshold, excluding whatever this face's own link is and anything the
+// officer has already dismissed as "not a match" against it. Never called
+// automatically outside a face-confirm flow, and never applied without a
+// human explicitly accepting a specific candidate (see confirmFaceMatch).
+export async function findSimilarFaces(
+  embedding: number[],
+  excludeEntityLinkId: number
+): Promise<FaceMatchCandidate[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const dismissals = await db
+    .select()
+    .from(faceMatchDismissals)
+    .where(
+      or(
+        eq(faceMatchDismissals.entityLinkIdA, excludeEntityLinkId),
+        eq(faceMatchDismissals.entityLinkIdB, excludeEntityLinkId)
+      )
+    );
+  const dismissedPartners = new Set<number>();
+  for (const d of dismissals) {
+    dismissedPartners.add(d.entityLinkIdA === excludeEntityLinkId ? d.entityLinkIdB : d.entityLinkIdA);
+  }
+
+  const rows = await db
+    .select({
+      entityLinkId: personDetections.entityLinkId,
+      embedding: personDetections.embedding,
+      attachmentId: personDetections.attachmentId,
+      category: attachmentEntityLinks.category,
+      targetId: attachmentEntityLinks.targetId,
+      entityLabel: attachmentEntityLinks.entityLabel,
+      photoUrl: rowAttachments.url,
+    })
+    .from(personDetections)
+    .innerJoin(attachmentEntityLinks, eq(personDetections.entityLinkId, attachmentEntityLinks.id))
+    .innerJoin(rowAttachments, eq(personDetections.attachmentId, rowAttachments.id))
+    .where(isNull(rowAttachments.deletedAt));
+
+  const candidates: FaceMatchCandidate[] = [];
+  for (const r of rows) {
+    if (r.entityLinkId === excludeEntityLinkId) continue;
+    if (dismissedPartners.has(r.entityLinkId)) continue;
+    const otherEmbedding: number[] = JSON.parse(r.embedding);
+    const similarity = cosineSimilarity(embedding, otherEmbedding);
+    if (similarity >= FACE_MATCH_THRESHOLD) {
+      candidates.push({
+        entityLinkId: r.entityLinkId,
+        category: r.category,
+        targetId: r.targetId,
+        entityLabel: r.entityLabel,
+        similarity,
+        attachmentId: r.attachmentId,
+        photoUrl: r.photoUrl,
+      });
+    }
+  }
+  candidates.sort((a, b) => b.similarity - a.similarity);
+  return candidates.slice(0, FACE_MATCH_MAX_RESULTS);
+}
+
+// Officer confirmed "yes, this is the same person" — the newly-created link
+// (almost always a fresh Unidentified Person entry) adopts the matched
+// link's identity wholesale. If the match was a real Target/Associate, this
+// is exactly "the photo becomes a normal linked photo on that real profile";
+// if the match was another Unidentified Person entry, this merges the two
+// pool entries under one shared identity going forward.
+export async function confirmFaceMatch(newLinkId: number, matchedLinkId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [matched] = await db
+    .select()
+    .from(attachmentEntityLinks)
+    .where(eq(attachmentEntityLinks.id, matchedLinkId))
+    .limit(1);
+  if (!matched) throw new Error("Matched entity link not found");
+  await db
+    .update(attachmentEntityLinks)
+    .set({
+      category: matched.category,
+      targetId: matched.targetId,
+      entityKey: matched.entityKey,
+      entityLabel: matched.entityLabel,
+    })
+    .where(eq(attachmentEntityLinks.id, newLinkId));
+}
+
+// Officer confirmed "no, not the same person" — stored unordered (smaller id
+// first) so findSimilarFaces only needs one OR lookup to check both directions.
+export async function createFaceMatchDismissal(entityLinkIdA: number, entityLinkIdB: number, cin?: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [a, b] = entityLinkIdA < entityLinkIdB ? [entityLinkIdA, entityLinkIdB] : [entityLinkIdB, entityLinkIdA];
+  await db.insert(faceMatchDismissals).values({ entityLinkIdA: a, entityLinkIdB: b, dismissedByCIN: cin });
 }
 
 // One row per distinct linked entity with its photo count — used to show a

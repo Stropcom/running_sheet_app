@@ -351,6 +351,13 @@
       "when": 1785127696795,
       "tag": "0049_clumsy_chamber",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "5",
+      "when": 1785128705518,
+      "tag": "0050_faulty_vin_gonzales",
+      "breakpoints": true
     }
   ]
 }

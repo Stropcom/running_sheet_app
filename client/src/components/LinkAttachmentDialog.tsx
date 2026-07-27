@@ -49,6 +49,7 @@ export function LinkAttachmentDialog({
 }) {
   const [tab, setTab] = useState<Category>("target");
   const [search, setSearch] = useState("");
+  const [pickingEntity, setPickingEntity] = useState<{ category: "target" | "associate"; targetId?: number; entityLabel: string } | null>(null);
   const utils = trpc.useUtils();
 
   const { data: entities, isLoading } = trpc.intelligence.getEntities.useQuery(undefined, {
@@ -137,7 +138,7 @@ export function LinkAttachmentDialog({
           {CATEGORY_TABS.map(t => (
             <button
               key={t.key}
-              onClick={() => setTab(t.key)}
+              onClick={() => { setTab(t.key); setPickingEntity(null); }}
               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                 tab === t.key
                   ? "bg-primary/10 text-primary"
@@ -178,6 +179,17 @@ export function LinkAttachmentDialog({
               </button>
             </div>
           )
+        ) : pickingEntity && photoUrl ? (
+          <FaceSelectPicker
+            mode="entity"
+            attachmentId={attachmentId}
+            photoUrl={photoUrl}
+            category={pickingEntity.category}
+            targetId={pickingEntity.targetId}
+            entityLabel={pickingEntity.entityLabel}
+            onDone={() => { setPickingEntity(null); onOpenChange(false); }}
+            onCancel={() => setPickingEntity(null)}
+          />
         ) : (
           <>
             <div className="relative">
@@ -200,14 +212,18 @@ export function LinkAttachmentDialog({
                   <button
                     key={`${e.shortForm}-${idx}`}
                     disabled={linkToEntity.isPending}
-                    onClick={() =>
+                    onClick={() => {
+                      if (photoUrl && (tab === "target" || tab === "associate")) {
+                        setPickingEntity({ category: tab, targetId: e.targetId, entityLabel: e.shortForm });
+                        return;
+                      }
                       linkToEntity.mutate({
                         attachmentId,
                         category: tab,
                         targetId: e.targetId,
                         entityLabel: e.shortForm,
-                      })
-                    }
+                      });
+                    }}
                     className="text-left px-3 py-2 rounded-lg text-sm hover:bg-accent/50 transition-colors truncate"
                   >
                     {e.shortForm}

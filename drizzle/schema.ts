@@ -192,10 +192,10 @@ export type AttachmentEntityLink = typeof attachmentEntityLinks.$inferSelect;
 export type InsertAttachmentEntityLink = typeof attachmentEntityLinks.$inferInsert;
 
 // ─── Person Detections (face recognition) ──────────────────────────────────
-// One row per face an officer confirmed in a photo via the multi-face-select
+// One row per face an officer confirmed in a photo via the face-select
 // picker when linking that photo to an entity — not one row per face RetinaFace
 // merely detected. bbox/landmarks are pixel coordinates in the original photo;
-// embedding is a JSON-encoded 192-d MobileFaceNet vector, computed once at
+// embedding is a JSON-encoded 256-d MobileFace vector, computed once at
 // confirm time entirely on-device (see server/faceRecognition) and reused for
 // similarity search against every other confirmed face — never recomputed
 // from a live model call at match time. entityLinkId ties this detection back
@@ -211,13 +211,29 @@ export const personDetections = mysqlTable("person_detections", {
   bboxX1: double("bboxX1").notNull(),
   bboxY1: double("bboxY1").notNull(),
   landmarks: text("landmarks").notNull(), // JSON: [[x,y], ...] x5 (eyes, nose, mouth corners)
-  embedding: text("embedding").notNull(), // JSON: number[192]
+  embedding: text("embedding").notNull(), // JSON: number[256]
   detectionConfidence: double("detectionConfidence").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
 export type PersonDetection = typeof personDetections.$inferSelect;
 export type InsertPersonDetection = typeof personDetections.$inferInsert;
+
+// ─── Face Match Dismissals ──────────────────────────────────────────────────
+// Records an officer's "no, not a match" answer to a possible-match
+// suggestion so the same pair isn't re-suggested on every subsequent face
+// confirm. Stored unordered (always insert with the smaller id first) so a
+// single lookup covers both directions.
+export const faceMatchDismissals = mysqlTable("face_match_dismissals", {
+  id: int("id").autoincrement().primaryKey(),
+  entityLinkIdA: int("entityLinkIdA").notNull(),
+  entityLinkIdB: int("entityLinkIdB").notNull(),
+  dismissedByCIN: varchar("dismissedByCIN", { length: 64 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type FaceMatchDismissal = typeof faceMatchDismissals.$inferSelect;
+export type InsertFaceMatchDismissal = typeof faceMatchDismissals.$inferInsert;
 
 // ─── Entity Aliases (confirmed duplicate merges) ───────────────────────────
 // Records a confirmed "these are the same real-world entity" decision, from

@@ -70,10 +70,14 @@ export function UploadImageDialog({
   const [rowId, setRowId] = useState<number | null>(null);
 
   // Set once the upload itself has succeeded and the officer picked
-  // Unidentified Person — the dialog then switches to the face-select step
-  // instead of closing, since which specific face(s) are the UP subject(s)
-  // still needs a human tap-to-confirm.
-  const [uploadedForFaceSelect, setUploadedForFaceSelect] = useState<{ id: number; url: string } | null>(null);
+  // Unidentified Person, or a Target/Associate — the dialog then switches to
+  // the face-select step instead of closing, since which specific face is
+  // the subject still needs a human tap-to-confirm.
+  const [faceSelectState, setFaceSelectState] = useState<
+    | { id: number; url: string; mode: "unidentified" }
+    | { id: number; url: string; mode: "entity"; category: "target" | "associate"; targetId?: number; entityLabel: string }
+    | null
+  >(null);
 
   const knownEntitySelected = entityTab && entityTab !== "unidentified_person" && !!selectedEntity;
 
@@ -124,7 +128,7 @@ export function UploadImageDialog({
     setOperationSearch("");
     setSheetId(null);
     setRowId(null);
-    setUploadedForFaceSelect(null);
+    setFaceSelectState(null);
   };
 
   const uploadManual = trpc.attachment.uploadManual.useMutation();
@@ -185,7 +189,24 @@ export function UploadImageDialog({
         utils.attachment.listUploaded.invalidate();
         if (sheetId != null) utils.attachment.listBySheet.invalidate({ sheetId });
         if (rowId != null) utils.row.list.invalidate({ sheetId: sheetId ?? undefined });
-        setUploadedForFaceSelect({ id: result.id, url: result.url });
+        setFaceSelectState({ id: result.id, url: result.url, mode: "unidentified" });
+        return;
+      } else if ((entityTab === "target" || entityTab === "associate") && selectedEntity) {
+        // Same hand-off, but the officer already knows the identity — the
+        // face-select step just needs to know which face in the photo is
+        // that person, so its embedding can feed future match suggestions.
+        utils.attachment.listByOperation.invalidate({ operationId });
+        utils.attachment.listUploaded.invalidate();
+        if (sheetId != null) utils.attachment.listBySheet.invalidate({ sheetId });
+        if (rowId != null) utils.row.list.invalidate({ sheetId: sheetId ?? undefined });
+        setFaceSelectState({
+          id: result.id,
+          url: result.url,
+          mode: "entity",
+          category: entityTab,
+          targetId: selectedEntity.targetId,
+          entityLabel: selectedEntity.entityLabel ?? "",
+        });
         return;
       } else if (entityTab && selectedEntity) {
         await linkToEntity.mutateAsync({
@@ -218,13 +239,38 @@ export function UploadImageDialog({
     >
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{uploadedForFaceSelect ? "Tag Unidentified Person" : "Upload photo"}</DialogTitle>
+          <DialogTitle>
+            {faceSelectState?.mode === "unidentified"
+              ? "Tag Unidentified Person"
+              : faceSelectState?.mode === "entity"
+                ? "Confirm face"
+                : "Upload photo"}
+          </DialogTitle>
         </DialogHeader>
 
-        {uploadedForFaceSelect ? (
+        {faceSelectState?.mode === "unidentified" ? (
           <FaceSelectPicker
-            attachmentId={uploadedForFaceSelect.id}
-            photoUrl={uploadedForFaceSelect.url}
+            attachmentId={faceSelectState.id}
+            photoUrl={faceSelectState.url}
+            onDone={() => {
+              toast.success("Photo uploaded");
+              onOpenChange(false);
+              reset();
+            }}
+            onCancel={() => {
+              toast.success("Photo uploaded");
+              onOpenChange(false);
+              reset();
+            }}
+          />
+        ) : faceSelectState?.mode === "entity" ? (
+          <FaceSelectPicker
+            mode="entity"
+            attachmentId={faceSelectState.id}
+            photoUrl={faceSelectState.url}
+            category={faceSelectState.category}
+            targetId={faceSelectState.targetId}
+            entityLabel={faceSelectState.entityLabel}
             onDone={() => {
               toast.success("Photo uploaded");
               onOpenChange(false);

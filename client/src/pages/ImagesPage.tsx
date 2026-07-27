@@ -17,6 +17,7 @@ import { useLocation, useParams } from "wouter";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { LinkAttachmentDialog } from "@/components/LinkAttachmentDialog";
+import { DeletePhotoButton } from "@/components/DeletePhotoButton";
 import { AttachmentLinkBadge } from "@/components/AttachmentLinkBadge";
 import { UploadImageDialog } from "@/components/UploadImageDialog";
 import { formatAttachmentBanner } from "@/lib/attachmentBanner";
@@ -157,9 +158,19 @@ function OperationFolderList({
 // Flat, cross-operation list of every manually-uploaded photo, newest
 // first, sub-grouped by upload date so a large backlog is still scannable.
 function UploadedGallery() {
+  const utils = trpc.useUtils();
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [linking, setLinking] = useState<{ id: number; url: string } | null>(null);
   const { data: attachments, isLoading } = trpc.attachment.listUploaded.useQuery();
+
+  const deleteAttachment = trpc.attachment.delete.useMutation({
+    onSuccess: () => {
+      utils.attachment.listUploaded.invalidate();
+      utils.attachment.listByOperation.invalidate();
+      toast.success("Photo deleted");
+    },
+    onError: e => toast.error(e.message),
+  });
 
   const groupedByDate = useMemo(() => {
     if (!attachments) return [];
@@ -229,8 +240,12 @@ function UploadedGallery() {
                   onClick={() => setLinking({ id: a.id, url: a.url })}
                   positionClassName="absolute top-1.5 left-1.5"
                 />
+                <DeletePhotoButton
+                  pending={deleteAttachment.isPending}
+                  onConfirm={() => deleteAttachment.mutate({ id: a.id })}
+                />
                 {a.operationName && (
-                  <div className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/60 text-[9px] text-white truncate max-w-[70%]">
+                  <div className="absolute top-8 sm:top-9 right-1.5 px-1.5 py-0.5 rounded bg-black/60 text-[9px] text-white truncate max-w-[70%]">
                     {a.operationName}
                   </div>
                 )}
@@ -561,13 +576,10 @@ function SheetGallery({
                 onClick={() => setLinking({ id: a.id, url: a.url })}
                 positionClassName="absolute top-1.5 left-1.5"
               />
-              <button
-                onClick={() => deleteAttachment.mutate({ id: a.id })}
-                title="Delete photo"
-                className="absolute top-1.5 right-1.5 h-5 w-5 sm:h-6 sm:w-6 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center hover:opacity-90 transition-opacity"
-              >
-                <X className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
-              </button>
+              <DeletePhotoButton
+                pending={deleteAttachment.isPending}
+                onConfirm={() => deleteAttachment.mutate({ id: a.id })}
+              />
             </div>
           ))}
         </div>

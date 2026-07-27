@@ -1079,7 +1079,7 @@ export const appRouter = router({
           const linkId = await linkAttachmentToEntity({
             attachmentId: input.attachmentId,
             category: "unidentified_person",
-            entityLabel: `Unidentified Person #${input.attachmentId}-${idx}-${Date.now()}`,
+            entityLabel: `Unidentified Person #${input.attachmentId}-${idx}`,
           });
           await createPersonDetection({
             attachmentId: input.attachmentId,

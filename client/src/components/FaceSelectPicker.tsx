@@ -213,7 +213,7 @@ export function FaceSelectPicker(props: FaceSelectPickerProps) {
                 : fallbackMutation.mutate({
                     attachmentId,
                     category: "unidentified_person",
-                    entityLabel: `Unidentified Person #${attachmentId}-${Date.now()}`,
+                    entityLabel: `Unidentified Person #${attachmentId}`,
                   })
             }
             className="gap-1.5"

@@ -114,7 +114,9 @@ export function LinkAttachmentDialog({
                     className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full bg-emerald-600/10 text-emerald-700 dark:text-emerald-400 text-xs font-medium"
                   >
                     <Icon className="h-3 w-3 shrink-0" />
-                    <span className="truncate max-w-[160px]">{link.entityLabel}</span>
+                    <span className="truncate max-w-[260px]" title={link.entityLabel}>
+                      {link.entityLabel}
+                    </span>
                     <button
                       onClick={() => unlinkFromEntity.mutate({ linkId: link.id })}
                       disabled={unlinkFromEntity.isPending}
@@ -170,7 +172,7 @@ export function LinkAttachmentDialog({
                   linkToEntity.mutate({
                     attachmentId,
                     category: "unidentified_person",
-                    entityLabel: `Unidentified Person #${attachmentId}-${Date.now()}`,
+                    entityLabel: `Unidentified Person #${attachmentId}`,
                   })
                 }
                 className="text-left px-3 py-2 rounded-lg text-sm border border-border hover:bg-accent/50 transition-colors"

@@ -139,7 +139,9 @@
     },
     "onlyBuiltDependencies": [
       "@tailwindcss/oxide",
-      "esbuild"
+      "@tensorflow/tfjs-node",
+      "esbuild",
+      "onnxruntime-node"
     ]
   }
 }

@@ -6,12 +6,24 @@ export interface RowAttachmentLike {
   rowDate: string | null;
   rowTime: string | null;
   memberCINs: string[];
+  isManualUpload?: boolean;
+  createdAt?: string | number | Date | null;
 }
 
 // Uses the observation row's own date/time and the CINs of members on that
 // row — not the upload timestamp/uploader — so the caption reflects when
 // and by whom the row was logged, matching the running sheet itself.
+// Manually-uploaded photos have no row to draw that from (and must stay
+// visually distinguishable from row-attached ones per design), so they show
+// "Uploaded: <date>" instead.
 export function formatAttachmentBanner(a: RowAttachmentLike): string {
+  if (a.isManualUpload) {
+    const d = a.createdAt ? new Date(a.createdAt) : null;
+    const when = d && !isNaN(d.getTime())
+      ? new Intl.DateTimeFormat("en-AU", { timeZone: PERTH_TIME_ZONE, day: "2-digit", month: "short", year: "numeric" }).format(d)
+      : "Unknown date";
+    return `Uploaded: ${when}`;
+  }
   const parts: string[] = [];
   if (a.rowDate) {
     const d = new Date(`${a.rowDate}T00:00:00+08:00`);

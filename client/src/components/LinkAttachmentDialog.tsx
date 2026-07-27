@@ -6,17 +6,18 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Users, Car, User, MapPin, Search, X } from "lucide-react";
+import { Users, Car, User, MapPin, HelpCircle, Search, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
-type Category = "target" | "vehicle" | "associate" | "location";
+type Category = "target" | "vehicle" | "associate" | "location" | "unidentified_person";
 
 const CATEGORY_TABS: { key: Category; label: string; icon: typeof Users }[] = [
   { key: "target", label: "Targets", icon: Users },
   { key: "vehicle", label: "Vehicles", icon: Car },
   { key: "associate", label: "Associates", icon: User },
   { key: "location", label: "Locations", icon: MapPin },
+  { key: "unidentified_person", label: "Unidentified Person", icon: HelpCircle },
 ];
 
 const CATEGORY_ICON: Record<Category, typeof Users> = {
@@ -24,6 +25,7 @@ const CATEGORY_ICON: Record<Category, typeof Users> = {
   vehicle: Car,
   associate: User,
   location: MapPin,
+  unidentified_person: HelpCircle,
 };
 
 function categoryForEntity(e: { type: string; isTarget?: boolean }): Category {
@@ -145,41 +147,64 @@ export function LinkAttachmentDialog({
           ))}
         </div>
 
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search…"
-            className="pl-8 h-9 text-sm"
-          />
-        </div>
+        {tab === "unidentified_person" ? (
+          <div className="flex flex-col gap-2 py-2">
+            <p className="text-sm text-muted-foreground">
+              Tags this photo as a new, distinct Unidentified Person pool entry. Tap once per person if the photo shows more than one unidentified individual.
+            </p>
+            <button
+              disabled={linkToEntity.isPending}
+              onClick={() =>
+                linkToEntity.mutate({
+                  attachmentId,
+                  category: "unidentified_person",
+                  entityLabel: `Unidentified Person #${attachmentId}-${Date.now()}`,
+                })
+              }
+              className="text-left px-3 py-2 rounded-lg text-sm border border-border hover:bg-accent/50 transition-colors"
+            >
+              + Tag as new Unidentified Person
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search…"
+                className="pl-8 h-9 text-sm"
+              />
+            </div>
 
-        <div className="max-h-72 overflow-y-auto flex flex-col gap-1">
-          {isLoading ? (
-            <p className="text-sm text-muted-foreground text-center py-6">Loading…</p>
-          ) : filtered.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-6">No matches</p>
-          ) : (
-            filtered.map((e, idx) => (
-              <button
-                key={`${e.shortForm}-${idx}`}
-                disabled={linkToEntity.isPending}
-                onClick={() =>
-                  linkToEntity.mutate({
-                    attachmentId,
-                    category: tab,
-                    targetId: e.targetId,
-                    entityLabel: e.shortForm,
-                  })
-                }
-                className="text-left px-3 py-2 rounded-lg text-sm hover:bg-accent/50 transition-colors truncate"
-              >
-                {e.shortForm}
-              </button>
-            ))
-          )}
-        </div>
+            <div className="max-h-72 overflow-y-auto flex flex-col gap-1">
+              {isLoading ? (
+                <p className="text-sm text-muted-foreground text-center py-6">Loading…</p>
+              ) : filtered.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-6">No matches</p>
+              ) : (
+                filtered.map((e, idx) => (
+                  <button
+                    key={`${e.shortForm}-${idx}`}
+                    disabled={linkToEntity.isPending}
+                    onClick={() =>
+                      linkToEntity.mutate({
+                        attachmentId,
+                        category: tab,
+                        targetId: e.targetId,
+                        entityLabel: e.shortForm,
+                      })
+                    }
+                    className="text-left px-3 py-2 rounded-lg text-sm hover:bg-accent/50 transition-colors truncate"
+                  >
+                    {e.shortForm}
+                  </button>
+                ))
+              )}
+            </div>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );

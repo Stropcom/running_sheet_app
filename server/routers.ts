@@ -4,7 +4,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { COOKIE_NAME, SESSION_EXPIRY_MS } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
-import { processAttachmentUpload, AttachmentUploadError } from "./attachmentUpload";
+import { processAttachmentUpload, processManualAttachmentUpload, AttachmentUploadError } from "./attachmentUpload";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { sdk } from "./_core/sdk";
@@ -145,6 +145,8 @@ import {
   getEntityLinksByAttachmentId,
   getEntityLinkCounts,
   getAttachmentsForEntity,
+  getLinkedOperationsForEntity,
+  getAllManualUploads,
 } from "./db";
 
 import { makeRequest, type RoadsResult, type DirectionsResult, type GeocodingResult } from "./_core/map";
@@ -890,6 +892,38 @@ export const appRouter = router({
         }
       }),
 
+    uploadManual: protectedProcedure
+      .input(z.object({
+        operationId: z.number(),
+        rowId: z.number().optional(),
+        dataBase64: z.string().min(1),
+        mimeType: z.string(),
+        fileName: z.string().optional(),
+        caption: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        try {
+          return await processManualAttachmentUpload({
+            operationId: input.operationId,
+            rowId: input.rowId,
+            buffer: Buffer.from(input.dataBase64, "base64"),
+            reportedMimeType: input.mimeType,
+            fileName: input.fileName,
+            caption: input.caption,
+            userId: ctx.user.id,
+            userCIN: ctx.user.cin ?? undefined,
+          });
+        } catch (err) {
+          if (err instanceof AttachmentUploadError) {
+            throw new TRPCError({
+              code: err.status === 404 ? "NOT_FOUND" : "BAD_REQUEST",
+              message: err.message,
+            });
+          }
+          throw err;
+        }
+      }),
+
     listByRow: protectedProcedure
       .input(z.object({ rowId: z.number() }))
       .query(async ({ input }) => {
@@ -902,6 +936,10 @@ export const appRouter = router({
         return getAttachmentsByOperationId(input.operationId);
       }),
 
+    listUploaded: protectedProcedure.query(async () => {
+      return getAllManualUploads();
+    }),
+
     listBySheet: protectedProcedure
       .input(z.object({ sheetId: z.number() }))
       .query(async ({ input }) => {
@@ -913,11 +951,13 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         const attachment = await getAttachmentById(input.id);
         if (!attachment) throw new TRPCError({ code: "NOT_FOUND", message: "Attachment not found." });
-        const row = await getRowById(attachment.rowId);
+        const row = attachment.rowId != null ? await getRowById(attachment.rowId) : undefined;
         // Soft-delete — goes to the Recycle Bin for 7 days before purge
         await softDeleteAttachment(input.id, ctx.user.cin ?? ctx.user.username ?? "Unknown");
         if (row) {
           await createAuditLog({ sheetId: row.sheetId, rowId: row.id, userId: ctx.user.id, userName: ctx.user.cin ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "attachment_deleted", details: `Photo removed from row`, createdAt: Date.now() });
+        } else {
+          await createAuditLog({ sheetId: 0, userId: ctx.user.id, userName: ctx.user.cin ?? "Unknown", userCIN: ctx.user.cin ?? undefined, action: "attachment_deleted", details: `Manually-uploaded photo deleted`, createdAt: Date.now() });
         }
         return { success: true };
       }),
@@ -925,7 +965,7 @@ export const appRouter = router({
     linkToEntity: protectedProcedure
       .input(z.object({
         attachmentId: z.number(),
-        category: z.enum(["target", "vehicle", "associate", "location"]),
+        category: z.enum(["target", "vehicle", "associate", "location", "unidentified_person"]),
         targetId: z.number().optional(),
         entityLabel: z.string().min(1),
       }))
@@ -958,12 +998,33 @@ export const appRouter = router({
 
     byEntity: protectedProcedure
       .input(z.object({
-        category: z.enum(["target", "vehicle", "associate", "location"]),
+        category: z.enum(["target", "vehicle", "associate", "location", "unidentified_person"]),
         targetId: z.number().optional(),
         entityLabel: z.string().optional(),
       }))
       .query(async ({ input }) => {
         return getAttachmentsForEntity(input);
+      }),
+
+    // Operations a given entity is already linked to — used to restrict the
+    // manual-upload "link to operation" dropdown for a known Target/Vehicle/
+    // Associate/Location. Unidentified Person has no linked operations (it's
+    // not yet an identified entity), so the client leaves that dropdown
+    // unrestricted with a search bar instead of calling this.
+    linkedOperationsForEntity: protectedProcedure
+      .input(z.object({
+        category: z.enum(["target", "vehicle", "associate", "location"]),
+        targetId: z.number().optional(),
+        entityLabel: z.string().optional(),
+      }))
+      .query(async ({ input }) => {
+        if (input.category === "target") {
+          if (!input.targetId) throw new TRPCError({ code: "BAD_REQUEST", message: "targetId is required." });
+          const links = await getLinkedOperationsForTarget(input.targetId);
+          return links.map((l) => ({ id: l.operationId, name: l.operationName ?? "Unknown" }));
+        }
+        if (!input.entityLabel) throw new TRPCError({ code: "BAD_REQUEST", message: "entityLabel is required." });
+        return getLinkedOperationsForEntity(input.category, input.entityLabel);
       }),
   }),
 

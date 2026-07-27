@@ -726,16 +726,19 @@ export async function getAttachmentById(id: number) {
 // Batches in the CINs of members on each attachment's row (excluding the
 // __SPACE__ spacer entry) — used for the "date/time · CIN" caption shown
 // under photos, which reflects the observation row, not the upload.
-async function attachRowMemberCins<T extends { rowId: number }>(
+async function attachRowMemberCins<T extends { rowId: number | null }>(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
   rows: T[]
 ): Promise<(T & { memberCINs: string[] })[]> {
   if (rows.length === 0) return [];
-  const rowIds = Array.from(new Set(rows.map((r) => r.rowId)));
-  const members = await db
-    .select({ rowId: rowMembers.rowId, memberName: rowMembers.memberName })
-    .from(rowMembers)
-    .where(inArray(rowMembers.rowId, rowIds));
+  // Manually-uploaded photos may have no row at all — nothing to look up for those.
+  const rowIds = Array.from(new Set(rows.map((r) => r.rowId).filter((id): id is number => id != null)));
+  const members = rowIds.length > 0
+    ? await db
+        .select({ rowId: rowMembers.rowId, memberName: rowMembers.memberName })
+        .from(rowMembers)
+        .where(inArray(rowMembers.rowId, rowIds))
+    : [];
   const byRow = new Map<number, string[]>();
   for (const m of members) {
     if (m.memberName === "__SPACE__") continue;
@@ -743,7 +746,7 @@ async function attachRowMemberCins<T extends { rowId: number }>(
     arr.push(m.memberName);
     byRow.set(m.rowId, arr);
   }
-  return rows.map((r) => ({ ...r, memberCINs: byRow.get(r.rowId) ?? [] }));
+  return rows.map((r) => ({ ...r, memberCINs: r.rowId != null ? (byRow.get(r.rowId) ?? []) : [] }));
 }
 
 // All attachments across every running sheet in an operation, joined back to
@@ -751,10 +754,16 @@ async function attachRowMemberCins<T extends { rowId: number }>(
 export async function getAttachmentsByOperationId(operationId: number) {
   const db = await getDb();
   if (!db) return [];
+  // Left-joined: manually-uploaded photos (rowId null) belong to the
+  // operation directly via rowAttachments.operationId and have no sheet/row
+  // to join through. isNull(runningSheets.deletedAt) still excludes photos
+  // whose sheet was soft-deleted, since the join only NULLs out for photos
+  // that never had a sheet in the first place.
   const rows = await db
     .select({
       id: rowAttachments.id,
       rowId: rowAttachments.rowId,
+      isManualUpload: rowAttachments.isManualUpload,
       url: rowAttachments.url,
       mimeType: rowAttachments.mimeType,
       caption: rowAttachments.caption,
@@ -766,9 +775,41 @@ export async function getAttachmentsByOperationId(operationId: number) {
       rowDate: sheetRows.rowDate,
     })
     .from(rowAttachments)
-    .innerJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
-    .innerJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
-    .where(and(eq(runningSheets.operationId, operationId), isNull(runningSheets.deletedAt), isNull(rowAttachments.deletedAt)))
+    .leftJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
+    .leftJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
+    .where(and(eq(rowAttachments.operationId, operationId), isNull(runningSheets.deletedAt), isNull(rowAttachments.deletedAt)))
+    .orderBy(desc(rowAttachments.createdAt));
+  return attachLinkedCounts(db, await attachRowMemberCins(db, rows));
+}
+
+// Every manually-uploaded photo across all operations — powers the top-level
+// "Uploaded" view/filter in the Images folder, sub-filterable by upload date
+// client-side off createdAt.
+export async function getAllManualUploads() {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({
+      id: rowAttachments.id,
+      rowId: rowAttachments.rowId,
+      isManualUpload: rowAttachments.isManualUpload,
+      url: rowAttachments.url,
+      mimeType: rowAttachments.mimeType,
+      caption: rowAttachments.caption,
+      uploadedByCIN: rowAttachments.uploadedByCIN,
+      createdAt: rowAttachments.createdAt,
+      operationId: rowAttachments.operationId,
+      operationName: operations.name,
+      sheetId: sheetRows.sheetId,
+      sheetTitle: runningSheets.title,
+      rowTime: sheetRows.time,
+      rowDate: sheetRows.rowDate,
+    })
+    .from(rowAttachments)
+    .leftJoin(operations, eq(rowAttachments.operationId, operations.id))
+    .leftJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
+    .leftJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
+    .where(and(eq(rowAttachments.isManualUpload, true), isNull(rowAttachments.deletedAt)))
     .orderBy(desc(rowAttachments.createdAt));
   return attachLinkedCounts(db, await attachRowMemberCins(db, rows));
 }
@@ -782,6 +823,7 @@ export async function getAttachmentsBySheetId(sheetId: number) {
     .select({
       id: rowAttachments.id,
       rowId: rowAttachments.rowId,
+      isManualUpload: rowAttachments.isManualUpload,
       url: rowAttachments.url,
       mimeType: rowAttachments.mimeType,
       caption: rowAttachments.caption,
@@ -829,7 +871,7 @@ export function normalizeEntityLabel(label: string): string {
 
 export async function linkAttachmentToEntity(data: {
   attachmentId: number;
-  category: "target" | "vehicle" | "associate" | "location";
+  category: "target" | "vehicle" | "associate" | "location" | "unidentified_person";
   targetId?: number;
   entityLabel: string;
 }) {
@@ -888,7 +930,7 @@ export async function getEntityLinkCounts() {
 
 // All photos linked to one entity, joined back to row/sheet for display.
 export async function getAttachmentsForEntity(params: {
-  category: "target" | "vehicle" | "associate" | "location";
+  category: "target" | "vehicle" | "associate" | "location" | "unidentified_person";
   targetId?: number;
   entityLabel?: string;
 }) {
@@ -907,6 +949,7 @@ export async function getAttachmentsForEntity(params: {
     .select({
       id: rowAttachments.id,
       rowId: rowAttachments.rowId,
+      isManualUpload: rowAttachments.isManualUpload,
       url: rowAttachments.url,
       mimeType: rowAttachments.mimeType,
       uploadedByCIN: rowAttachments.uploadedByCIN,
@@ -917,8 +960,8 @@ export async function getAttachmentsForEntity(params: {
       rowDate: sheetRows.rowDate,
     })
     .from(rowAttachments)
-    .innerJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
-    .innerJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
+    .leftJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
+    .leftJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
     .where(and(inArray(rowAttachments.id, attachmentIds), isNull(rowAttachments.deletedAt)))
     .orderBy(desc(rowAttachments.createdAt));
   const withCins = await attachRowMemberCins(db, rows);
@@ -928,7 +971,7 @@ export async function getAttachmentsForEntity(params: {
 export interface OperationEntityPhoto {
   id: number;
   url: string;
-  rowId: number;
+  rowId: number | null;
   rowTime: string | null;
   rowDate: string | null;
   memberCINs: string[];
@@ -967,7 +1010,7 @@ async function getAttachmentsForOperationEntities(
       rowDate: sheetRows.rowDate,
     })
     .from(rowAttachments)
-    .innerJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
+    .leftJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
     .where(and(inArray(rowAttachments.id, attachmentIds), isNull(rowAttachments.deletedAt)));
   const withCins = await attachRowMemberCins(db, rows);
   const byAttachmentId = new Map(withCins.map((r) => [r.id, r]));
@@ -4113,6 +4156,33 @@ export async function getIntelOperationProfile(operationId: number): Promise<Int
     linkedSheets: sheets,
     targets: targetProfiles,
   };
+}
+
+/**
+ * Operations a vehicle/associate/location entity has appeared in, for the
+ * manual-upload "link to operation" dropdown — reuses the same
+ * getAllIntelligenceEntities() + opMap pattern as getIntelVehicleProfile.
+ */
+export async function getLinkedOperationsForEntity(
+  category: "vehicle" | "associate" | "location",
+  entityLabel: string
+): Promise<Array<{ id: number; name: string }>> {
+  const allEntities = await getAllIntelligenceEntities();
+  const labelLower = entityLabel.toLowerCase();
+
+  const entity = allEntities.find(e => {
+    if (e.shortForm.toLowerCase() !== labelLower) return false;
+    if (category === "vehicle") return e.type === "vehicle";
+    if (category === "associate") return (e.type === "person" || e.type === "business") && !e.isTarget;
+    return (e.type === "address" || e.type === "business") && !e.isTarget;
+  });
+  if (!entity) return [];
+
+  const opMap = new Map<number, { id: number; name: string }>();
+  for (const occ of entity.occurrences) {
+    if (!opMap.has(occ.operationId)) opMap.set(occ.operationId, { id: occ.operationId, name: occ.operationName });
+  }
+  return Array.from(opMap.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function getIntelAssociateProfile(label: string): Promise<IntelAssociateProfile | null> {

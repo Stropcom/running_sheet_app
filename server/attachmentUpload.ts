@@ -3,7 +3,7 @@ import express from "express";
 import heicConvert from "heic-convert";
 import { sdk } from "./_core/sdk";
 import { storagePut } from "./storage";
-import { createAuditLog, createRowAttachment, getRowById } from "./db";
+import { createAuditLog, createRowAttachment, getRowById, getRunningSheetById } from "./db";
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 const EXT_TO_MIME: Record<string, string> = {
@@ -18,23 +18,15 @@ export class AttachmentUploadError extends Error {
 }
 
 /**
- * Core logic shared by the tRPC (base64/JSON) upload mutation and the raw
- * binary upload route below. Kept in one place so HEIC handling, mimeType
- * normalization, size limits, and the storage key format can't drift
- * between the two entry points.
+ * Size/mimeType/HEIC handling shared by every upload entry point — row-
+ * attached, manual, tRPC, and the raw binary route — so none of them can
+ * drift from each other on what counts as a valid photo.
  */
-export async function processAttachmentUpload(params: {
-  rowId: number;
+async function normalizeAndValidateImage(params: {
   buffer: Buffer;
   reportedMimeType: string;
   fileName?: string;
-  caption?: string;
-  userId: number;
-  userCIN?: string;
-}): Promise<{ id: number; url: string }> {
-  const row = await getRowById(params.rowId);
-  if (!row) throw new AttachmentUploadError(404, "Row not found.");
-
+}): Promise<{ buffer: Buffer; mimeType: string }> {
   let buffer = params.buffer;
   if (buffer.byteLength > MAX_ATTACHMENT_BYTES) {
     throw new AttachmentUploadError(400, "Photo must be under 25 MB.");
@@ -63,11 +55,35 @@ export async function processAttachmentUpload(params: {
     throw new AttachmentUploadError(400, "Only JPEG, PNG, WebP, GIF, or HEIC/HEIF images are allowed.");
   }
 
+  return { buffer, mimeType };
+}
+
+/**
+ * Core logic shared by the tRPC (base64/JSON) upload mutation and the raw
+ * binary upload route below, for photos attached to a running sheet row.
+ */
+export async function processAttachmentUpload(params: {
+  rowId: number;
+  buffer: Buffer;
+  reportedMimeType: string;
+  fileName?: string;
+  caption?: string;
+  userId: number;
+  userCIN?: string;
+}): Promise<{ id: number; url: string }> {
+  const row = await getRowById(params.rowId);
+  if (!row) throw new AttachmentUploadError(404, "Row not found.");
+  const sheet = await getRunningSheetById(row.sheetId);
+  if (!sheet) throw new AttachmentUploadError(404, "Running sheet not found.");
+
+  const { buffer, mimeType } = await normalizeAndValidateImage(params);
+
   const ext = mimeType.split("/")[1];
   const key = `row-attachments/sheet-${row.sheetId}/row-${row.id}/${Date.now()}.${ext}`;
   const { url } = await storagePut(key, buffer, mimeType);
   const id = await createRowAttachment({
     rowId: row.id,
+    operationId: sheet.operationId,
     key,
     url,
     mimeType,
@@ -83,6 +99,55 @@ export async function processAttachmentUpload(params: {
     userCIN: params.userCIN,
     action: "attachment_added",
     details: `Photo attached to row`,
+    createdAt: Date.now(),
+  });
+
+  return { id, url };
+}
+
+/**
+ * Manual upload from the Images folder — no running sheet row required.
+ * Always belongs to an Operation directly; a Running Sheet row is optional.
+ */
+export async function processManualAttachmentUpload(params: {
+  operationId: number;
+  rowId?: number;
+  buffer: Buffer;
+  reportedMimeType: string;
+  fileName?: string;
+  caption?: string;
+  userId: number;
+  userCIN?: string;
+}): Promise<{ id: number; url: string }> {
+  if (params.rowId != null) {
+    const row = await getRowById(params.rowId);
+    if (!row) throw new AttachmentUploadError(404, "Running sheet row not found.");
+  }
+
+  const { buffer, mimeType } = await normalizeAndValidateImage(params);
+
+  const ext = mimeType.split("/")[1];
+  const key = `manual-uploads/operation-${params.operationId}/${Date.now()}.${ext}`;
+  const { url } = await storagePut(key, buffer, mimeType);
+  const id = await createRowAttachment({
+    rowId: params.rowId ?? null,
+    operationId: params.operationId,
+    isManualUpload: true,
+    key,
+    url,
+    mimeType,
+    caption: params.caption,
+    uploadedBy: params.userId,
+    uploadedByCIN: params.userCIN,
+  });
+  await createAuditLog({
+    sheetId: 0,
+    rowId: params.rowId ?? 0,
+    userId: params.userId,
+    userName: params.userCIN ?? "Unknown",
+    userCIN: params.userCIN,
+    action: "attachment_added",
+    details: `Photo manually uploaded to operation`,
     createdAt: Date.now(),
   });
 

@@ -141,7 +141,19 @@ export type InsertCertification = typeof certifications.$inferInsert;
 
 export const rowAttachments = mysqlTable("row_attachments", {
   id: int("id").autoincrement().primaryKey(),
-  rowId: int("rowId").notNull(),
+  // Nullable — a manually-uploaded photo (see isManualUpload) may not belong
+  // to any running sheet row. Row-captured photos (the original path) always
+  // set this.
+  rowId: int("rowId"),
+  // Always set, either derived from rowId's sheet at upload time (row-captured
+  // photos) or chosen directly by the officer (manual uploads) — every photo
+  // has a home Operation regardless of whether it has a row.
+  operationId: int("operationId").notNull(),
+  // True only for photos added via the standalone Images-folder upload flow,
+  // never for photos attached to a running sheet row. Drives the "Uploaded:
+  // [date]" banner (see client/src/lib/attachmentBanner.ts), which always
+  // shows for these even if optionally linked to a row afterward.
+  isManualUpload: boolean("isManualUpload").default(false).notNull(),
   key: varchar("key", { length: 512 }).notNull(),
   url: varchar("url", { length: 512 }).notNull(),
   mimeType: varchar("mimeType", { length: 64 }).notNull(),
@@ -169,7 +181,7 @@ export type InsertRowAttachment = typeof rowAttachments.$inferInsert;
 export const attachmentEntityLinks = mysqlTable("attachment_entity_links", {
   id: int("id").autoincrement().primaryKey(),
   attachmentId: int("attachmentId").notNull(),
-  category: mysqlEnum("category", ["target", "vehicle", "associate", "location"]).notNull(),
+  category: mysqlEnum("category", ["target", "vehicle", "associate", "location", "unidentified_person"]).notNull(),
   targetId: int("targetId"), // set when category = "target"
   entityKey: varchar("entityKey", { length: 512 }), // normalized label, set when category != "target"
   entityLabel: varchar("entityLabel", { length: 512 }).notNull(), // display label at link time

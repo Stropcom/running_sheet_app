@@ -79,8 +79,8 @@ export async function processAttachmentUpload(params: {
   const { buffer, mimeType } = await normalizeAndValidateImage(params);
 
   const ext = mimeType.split("/")[1];
-  const key = `row-attachments/sheet-${row.sheetId}/row-${row.id}/${Date.now()}.${ext}`;
-  const { url } = await storagePut(key, buffer, mimeType);
+  const keyBase = `row-attachments/sheet-${row.sheetId}/row-${row.id}/${Date.now()}.${ext}`;
+  const { key, url } = await storagePut(keyBase, buffer, mimeType);
   const id = await createRowAttachment({
     rowId: row.id,
     operationId: sheet.operationId,
@@ -127,8 +127,8 @@ export async function processManualAttachmentUpload(params: {
   const { buffer, mimeType } = await normalizeAndValidateImage(params);
 
   const ext = mimeType.split("/")[1];
-  const key = `manual-uploads/operation-${params.operationId}/${Date.now()}.${ext}`;
-  const { url } = await storagePut(key, buffer, mimeType);
+  const keyBase = `manual-uploads/operation-${params.operationId}/${Date.now()}.${ext}`;
+  const { key, url } = await storagePut(keyBase, buffer, mimeType);
   const id = await createRowAttachment({
     rowId: params.rowId ?? null,
     operationId: params.operationId,

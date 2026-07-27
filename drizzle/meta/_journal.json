@@ -344,6 +344,13 @@
       "when": 1785121008321,
       "tag": "0048_yellow_molecule_man",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "5",
+      "when": 1785127696795,
+      "tag": "0049_clumsy_chamber",
+      "breakpoints": true
     }
   ]
 }

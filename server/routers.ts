@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
-import { storagePut } from "./storage";
+import { storagePut, storageGetBytes } from "./storage";
+import { detectAndEmbedFaces } from "./faceRecognition";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { COOKIE_NAME, SESSION_EXPIRY_MS } from "@shared/const";
@@ -147,6 +148,7 @@ import {
   getAttachmentsForEntity,
   getLinkedOperationsForEntity,
   getAllManualUploads,
+  createPersonDetection,
 } from "./db";
 
 import { makeRequest, type RoadsResult, type DirectionsResult, type GeocodingResult } from "./_core/map";
@@ -1025,6 +1027,70 @@ export const appRouter = router({
         }
         if (!input.entityLabel) throw new TRPCError({ code: "BAD_REQUEST", message: "entityLabel is required." });
         return getLinkedOperationsForEntity(input.category, input.entityLabel);
+      }),
+
+    // Runs RetinaFace detection (+ MobileFace embedding, held server-side
+    // only) over a photo so the client can render a tap-to-select overlay
+    // per face — nothing is written to the database and no identification
+    // is made here. Detection is deterministic, so re-running it in
+    // confirmUnidentifiedPersonFaces below reproduces the same ordered face
+    // list without needing to cache embeddings between the two calls.
+    detectFaces: protectedProcedure
+      .input(z.object({ attachmentId: z.number() }))
+      .query(async ({ input }) => {
+        const attachment = await getAttachmentById(input.attachmentId);
+        if (!attachment) throw new TRPCError({ code: "NOT_FOUND", message: "Attachment not found." });
+        try {
+          const buffer = await storageGetBytes(attachment.key);
+          const faces = await detectAndEmbedFaces(buffer);
+          return faces.map((f, index) => ({ index, bbox: f.bbox, confidence: f.confidence }));
+        } catch (err) {
+          console.error("Face detection failed:", err);
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Face detection failed." });
+        }
+      }),
+
+    // Officer-confirmed step: for each face index the officer tapped, create
+    // its own Unidentified Person pool entry (attachment_entity_links row)
+    // plus the stored embedding (person_detections row) that later
+    // similarity-search matching will compare against — never automatic.
+    confirmUnidentifiedPersonFaces: protectedProcedure
+      .input(z.object({ attachmentId: z.number(), faceIndices: z.array(z.number()).min(1) }))
+      .mutation(async ({ input }) => {
+        const attachment = await getAttachmentById(input.attachmentId);
+        if (!attachment) throw new TRPCError({ code: "NOT_FOUND", message: "Attachment not found." });
+        let faces;
+        try {
+          const buffer = await storageGetBytes(attachment.key);
+          faces = await detectAndEmbedFaces(buffer);
+        } catch (err) {
+          console.error("Face detection failed:", err);
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Face detection failed." });
+        }
+
+        const results: Array<{ linkId: number; index: number }> = [];
+        for (const idx of input.faceIndices) {
+          const face = faces[idx];
+          if (!face) continue;
+          const linkId = await linkAttachmentToEntity({
+            attachmentId: input.attachmentId,
+            category: "unidentified_person",
+            entityLabel: `Unidentified Person #${input.attachmentId}-${idx}-${Date.now()}`,
+          });
+          await createPersonDetection({
+            attachmentId: input.attachmentId,
+            entityLinkId: linkId,
+            bbox: face.bbox,
+            landmarks: face.landmarks,
+            embedding: face.embedding,
+            detectionConfidence: face.confidence,
+          });
+          results.push({ linkId, index: idx });
+        }
+        if (results.length === 0) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "None of the selected faces were found." });
+        }
+        return { results };
       }),
   }),
 

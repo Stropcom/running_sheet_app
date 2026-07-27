@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Users, Car, User, MapPin, HelpCircle, Search, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { FaceSelectPicker } from "@/components/FaceSelectPicker";
 
 type Category = "target" | "vehicle" | "associate" | "location" | "unidentified_person";
 
@@ -37,10 +38,12 @@ function categoryForEntity(e: { type: string; isTarget?: boolean }): Category {
 
 export function LinkAttachmentDialog({
   attachmentId,
+  photoUrl,
   open,
   onOpenChange,
 }: {
   attachmentId: number;
+  photoUrl?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -148,24 +151,33 @@ export function LinkAttachmentDialog({
         </div>
 
         {tab === "unidentified_person" ? (
-          <div className="flex flex-col gap-2 py-2">
-            <p className="text-sm text-muted-foreground">
-              Tags this photo as a new, distinct Unidentified Person pool entry. Tap once per person if the photo shows more than one unidentified individual.
-            </p>
-            <button
-              disabled={linkToEntity.isPending}
-              onClick={() =>
-                linkToEntity.mutate({
-                  attachmentId,
-                  category: "unidentified_person",
-                  entityLabel: `Unidentified Person #${attachmentId}-${Date.now()}`,
-                })
-              }
-              className="text-left px-3 py-2 rounded-lg text-sm border border-border hover:bg-accent/50 transition-colors"
-            >
-              + Tag as new Unidentified Person
-            </button>
-          </div>
+          photoUrl ? (
+            <FaceSelectPicker
+              attachmentId={attachmentId}
+              photoUrl={photoUrl}
+              onDone={() => onOpenChange(false)}
+              onCancel={() => setTab("target")}
+            />
+          ) : (
+            <div className="flex flex-col gap-2 py-2">
+              <p className="text-sm text-muted-foreground">
+                Tags this photo as a new, distinct Unidentified Person pool entry. Tap once per person if the photo shows more than one unidentified individual.
+              </p>
+              <button
+                disabled={linkToEntity.isPending}
+                onClick={() =>
+                  linkToEntity.mutate({
+                    attachmentId,
+                    category: "unidentified_person",
+                    entityLabel: `Unidentified Person #${attachmentId}-${Date.now()}`,
+                  })
+                }
+                className="text-left px-3 py-2 rounded-lg text-sm border border-border hover:bg-accent/50 transition-colors"
+              >
+                + Tag as new Unidentified Person
+              </button>
+            </div>
+          )
         ) : (
           <>
             <div className="relative">

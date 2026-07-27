@@ -158,7 +158,7 @@ function OperationFolderList({
 // first, sub-grouped by upload date so a large backlog is still scannable.
 function UploadedGallery() {
   const [lightbox, setLightbox] = useState<string | null>(null);
-  const [linkingId, setLinkingId] = useState<number | null>(null);
+  const [linking, setLinking] = useState<{ id: number; url: string } | null>(null);
   const { data: attachments, isLoading } = trpc.attachment.listUploaded.useQuery();
 
   const groupedByDate = useMemo(() => {
@@ -226,7 +226,7 @@ function UploadedGallery() {
                 <AttachmentLinkBadge
                   linkedCount={a.linkedCount}
                   linkedCategories={a.linkedCategories}
-                  onClick={() => setLinkingId(a.id)}
+                  onClick={() => setLinking({ id: a.id, url: a.url })}
                   positionClassName="absolute top-1.5 left-1.5"
                 />
                 {a.operationName && (
@@ -255,11 +255,12 @@ function UploadedGallery() {
         </div>
       )}
 
-      {linkingId !== null && (
+      {linking !== null && (
         <LinkAttachmentDialog
-          attachmentId={linkingId}
-          open={linkingId !== null}
-          onOpenChange={open => { if (!open) setLinkingId(null); }}
+          attachmentId={linking.id}
+          photoUrl={linking.url}
+          open={linking !== null}
+          onOpenChange={open => { if (!open) setLinking(null); }}
         />
       )}
     </div>
@@ -487,7 +488,7 @@ function SheetGallery({
 }) {
   const utils = trpc.useUtils();
   const [lightbox, setLightbox] = useState<string | null>(null);
-  const [linkingId, setLinkingId] = useState<number | null>(null);
+  const [linking, setLinking] = useState<{ id: number; url: string } | null>(null);
   const { data: sheet } = trpc.sheet.get.useQuery({ id: sheetId });
   const { data: attachments, isLoading } =
     trpc.attachment.listBySheet.useQuery({ sheetId });
@@ -557,7 +558,7 @@ function SheetGallery({
               <AttachmentLinkBadge
                 linkedCount={a.linkedCount}
                 linkedCategories={a.linkedCategories}
-                onClick={() => setLinkingId(a.id)}
+                onClick={() => setLinking({ id: a.id, url: a.url })}
                 positionClassName="absolute top-1.5 left-1.5"
               />
               <button
@@ -591,11 +592,12 @@ function SheetGallery({
         </div>
       )}
 
-      {linkingId !== null && (
+      {linking !== null && (
         <LinkAttachmentDialog
-          attachmentId={linkingId}
-          open={linkingId !== null}
-          onOpenChange={open => { if (!open) setLinkingId(null); }}
+          attachmentId={linking.id}
+          photoUrl={linking.url}
+          open={linking !== null}
+          onOpenChange={open => { if (!open) setLinking(null); }}
         />
       )}
     </div>

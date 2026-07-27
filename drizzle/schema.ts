@@ -191,6 +191,34 @@ export const attachmentEntityLinks = mysqlTable("attachment_entity_links", {
 export type AttachmentEntityLink = typeof attachmentEntityLinks.$inferSelect;
 export type InsertAttachmentEntityLink = typeof attachmentEntityLinks.$inferInsert;
 
+// ─── Person Detections (face recognition) ──────────────────────────────────
+// One row per face an officer confirmed in a photo via the multi-face-select
+// picker when linking that photo to an entity — not one row per face RetinaFace
+// merely detected. bbox/landmarks are pixel coordinates in the original photo;
+// embedding is a JSON-encoded 192-d MobileFaceNet vector, computed once at
+// confirm time entirely on-device (see server/faceRecognition) and reused for
+// similarity search against every other confirmed face — never recomputed
+// from a live model call at match time. entityLinkId ties this detection back
+// to the specific attachment_entity_links row the officer created for that
+// face (target/associate/unidentified_person), so re-identifying a face later
+// is just updating that link's category/label, not this table.
+export const personDetections = mysqlTable("person_detections", {
+  id: int("id").autoincrement().primaryKey(),
+  attachmentId: int("attachmentId").notNull(),
+  entityLinkId: int("entityLinkId").notNull(),
+  bboxX0: double("bboxX0").notNull(),
+  bboxY0: double("bboxY0").notNull(),
+  bboxX1: double("bboxX1").notNull(),
+  bboxY1: double("bboxY1").notNull(),
+  landmarks: text("landmarks").notNull(), // JSON: [[x,y], ...] x5 (eyes, nose, mouth corners)
+  embedding: text("embedding").notNull(), // JSON: number[192]
+  detectionConfidence: double("detectionConfidence").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type PersonDetection = typeof personDetections.$inferSelect;
+export type InsertPersonDetection = typeof personDetections.$inferInsert;
+
 // ─── Entity Aliases (confirmed duplicate merges) ───────────────────────────
 // Records a confirmed "these are the same real-world entity" decision, from
 // either the auto-detected possible-duplicate prompt (officer answers "Yes")

@@ -1208,7 +1208,7 @@ function ObservationAttachments({
 }) {
   const [preview, setPreview] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<string | null>(null);
-  const [linkingId, setLinkingId] = useState<number | null>(null);
+  const [linking, setLinking] = useState<{ id: number; url: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   if (!IMAGERY_PHRASE_PATTERN.test(row.observation ?? "")) return null;
@@ -1255,7 +1255,7 @@ function ObservationAttachments({
           <AttachmentLinkBadge
             linkedCount={a.linkedCount ?? 0}
             linkedCategories={a.linkedCategories}
-            onClick={() => setLinkingId(a.id)}
+            onClick={() => setLinking({ id: a.id, url: a.url })}
             positionClassName="absolute -top-1.5 -left-1.5"
             iconSize="h-3.5 w-3.5 sm:h-4 sm:w-4"
             glyphSize="h-2 w-2 sm:h-2.5 sm:w-2.5"
@@ -1299,11 +1299,12 @@ function ObservationAttachments({
         </div>
       )}
 
-      {linkingId !== null && (
+      {linking !== null && (
         <LinkAttachmentDialog
-          attachmentId={linkingId}
-          open={linkingId !== null}
-          onOpenChange={(open) => { if (!open) setLinkingId(null); }}
+          attachmentId={linking.id}
+          photoUrl={linking.url}
+          open={linking !== null}
+          onOpenChange={(open) => { if (!open) setLinking(null); }}
         />
       )}
     </div>

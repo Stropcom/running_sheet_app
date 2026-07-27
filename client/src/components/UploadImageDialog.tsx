@@ -19,6 +19,7 @@ import {
 import { Users, Car, User, MapPin, HelpCircle, Search, ImagePlus } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { FaceSelectPicker } from "@/components/FaceSelectPicker";
 
 type Category = "target" | "vehicle" | "associate" | "location" | "unidentified_person";
 
@@ -67,6 +68,12 @@ export function UploadImageDialog({
   const [operationSearch, setOperationSearch] = useState("");
   const [sheetId, setSheetId] = useState<number | null>(null);
   const [rowId, setRowId] = useState<number | null>(null);
+
+  // Set once the upload itself has succeeded and the officer picked
+  // Unidentified Person — the dialog then switches to the face-select step
+  // instead of closing, since which specific face(s) are the UP subject(s)
+  // still needs a human tap-to-confirm.
+  const [uploadedForFaceSelect, setUploadedForFaceSelect] = useState<{ id: number; url: string } | null>(null);
 
   const knownEntitySelected = entityTab && entityTab !== "unidentified_person" && !!selectedEntity;
 
@@ -117,6 +124,7 @@ export function UploadImageDialog({
     setOperationSearch("");
     setSheetId(null);
     setRowId(null);
+    setUploadedForFaceSelect(null);
   };
 
   const uploadManual = trpc.attachment.uploadManual.useMutation();
@@ -170,15 +178,15 @@ export function UploadImageDialog({
       });
 
       if (entityTab === "unidentified_person") {
-        // Each manually-uploaded UP photo is its own pool entry (matching/
-        // merging is a human-confirmed step, not automatic) — the label is
-        // keyed off the new attachment id so it can never collide with
-        // another sighting's entry.
-        await linkToEntity.mutateAsync({
-          attachmentId: result.id,
-          category: "unidentified_person",
-          entityLabel: `Unidentified Person #${result.id}`,
-        });
+        // The upload itself is done — hand off to the face-select step so
+        // the officer can tap which detected face(s) are the unidentified
+        // person(s) rather than tagging the whole photo blindly.
+        utils.attachment.listByOperation.invalidate({ operationId });
+        utils.attachment.listUploaded.invalidate();
+        if (sheetId != null) utils.attachment.listBySheet.invalidate({ sheetId });
+        if (rowId != null) utils.row.list.invalidate({ sheetId: sheetId ?? undefined });
+        setUploadedForFaceSelect({ id: result.id, url: result.url });
+        return;
       } else if (entityTab && selectedEntity) {
         await linkToEntity.mutateAsync({
           attachmentId: result.id,
@@ -210,9 +218,26 @@ export function UploadImageDialog({
     >
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Upload photo</DialogTitle>
+          <DialogTitle>{uploadedForFaceSelect ? "Tag Unidentified Person" : "Upload photo"}</DialogTitle>
         </DialogHeader>
 
+        {uploadedForFaceSelect ? (
+          <FaceSelectPicker
+            attachmentId={uploadedForFaceSelect.id}
+            photoUrl={uploadedForFaceSelect.url}
+            onDone={() => {
+              toast.success("Photo uploaded");
+              onOpenChange(false);
+              reset();
+            }}
+            onCancel={() => {
+              toast.success("Photo uploaded");
+              onOpenChange(false);
+              reset();
+            }}
+          />
+        ) : (
+          <>
         <div className="flex flex-col gap-2">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Photo</p>
           <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
@@ -261,7 +286,7 @@ export function UploadImageDialog({
 
           {entityTab === "unidentified_person" && (
             <p className="text-sm text-muted-foreground px-1">
-              This photo will be tagged as a new Unidentified Person entry.
+              After uploading, you'll be asked to tap which face(s) in the photo are the unidentified person(s).
             </p>
           )}
 
@@ -401,6 +426,8 @@ export function UploadImageDialog({
             {uploadManual.isPending || linkToEntity.isPending ? "Uploading…" : "Upload"}
           </Button>
         </DialogFooter>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );

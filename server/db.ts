@@ -18,6 +18,8 @@ import {
   InsertRowAttachment,
   attachmentEntityLinks,
   InsertAttachmentEntityLink,
+  personDetections,
+  InsertPersonDetection,
   runningSheets,
   sheetRows,
   shortcuts,
@@ -908,6 +910,33 @@ export async function getEntityLinksByAttachmentId(attachmentId: number) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(attachmentEntityLinks).where(eq(attachmentEntityLinks.attachmentId, attachmentId));
+}
+
+// ─── Person Detections (face recognition) ──────────────────────────────────
+
+export async function createPersonDetection(data: {
+  attachmentId: number;
+  entityLinkId: number;
+  bbox: [number, number, number, number];
+  landmarks: [number, number][];
+  embedding: number[];
+  detectionConfidence: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const insertData: InsertPersonDetection = {
+    attachmentId: data.attachmentId,
+    entityLinkId: data.entityLinkId,
+    bboxX0: data.bbox[0],
+    bboxY0: data.bbox[1],
+    bboxX1: data.bbox[2],
+    bboxY1: data.bbox[3],
+    landmarks: JSON.stringify(data.landmarks),
+    embedding: JSON.stringify(data.embedding),
+    detectionConfidence: data.detectionConfidence,
+  };
+  const [result] = await db.insert(personDetections).values(insertData);
+  return result.insertId as number;
 }
 
 // One row per distinct linked entity with its photo count — used to show a

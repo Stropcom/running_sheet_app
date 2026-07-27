@@ -36,6 +36,49 @@ function categoryForEntity(e: { type: string; isTarget?: boolean }): Category {
   return "associate";
 }
 
+// Shown under each "currently linked" pill so an officer can see at a glance
+// which other photos are already tied to that same entity — most useful for
+// Unidentified Person entries, which otherwise have no profile page to check.
+function OtherLinkedPhotos({
+  category,
+  targetId,
+  entityLabel,
+  excludeAttachmentId,
+}: {
+  category: Category;
+  targetId?: number | null;
+  entityLabel: string;
+  excludeAttachmentId: number;
+}) {
+  const { data, isLoading } = trpc.attachment.byEntity.useQuery({
+    category,
+    targetId: targetId ?? undefined,
+    entityLabel,
+  });
+
+  const others = (data ?? []).filter((p: any) => p.id !== excludeAttachmentId);
+
+  if (isLoading || others.length === 0) return null;
+
+  return (
+    <div className="flex items-center gap-1.5 pl-1 pt-0.5 pb-1 overflow-x-auto">
+      <span className="text-[10px] text-muted-foreground shrink-0">
+        Also in {others.length} other photo{others.length === 1 ? "" : "s"}:
+      </span>
+      {others.map((p: any) => (
+        <img
+          key={p.id}
+          src={p.url}
+          alt="Other photo linked to this entity"
+          title="Click to open"
+          onClick={() => window.open(p.url, "_blank", "noopener,noreferrer")}
+          className="h-8 w-8 rounded object-cover border border-border cursor-pointer shrink-0 hover:opacity-80 transition-opacity"
+        />
+      ))}
+    </div>
+  );
+}
+
 export function LinkAttachmentDialog({
   attachmentId,
   photoUrl,
@@ -105,27 +148,32 @@ export function LinkAttachmentDialog({
         {currentLinks && currentLinks.length > 0 && (
           <div className="flex flex-col gap-1.5 pb-2 border-b border-border">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Currently linked</p>
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-col gap-1">
               {currentLinks.map((link: any) => {
                 const Icon = CATEGORY_ICON[link.category as Category] ?? Users;
                 return (
-                  <span
-                    key={link.id}
-                    className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full bg-emerald-600/10 text-emerald-700 dark:text-emerald-400 text-xs font-medium"
-                  >
-                    <Icon className="h-3 w-3 shrink-0" />
-                    <span className="truncate max-w-[260px]" title={link.entityLabel}>
-                      {link.entityLabel}
+                  <div key={link.id} className="flex flex-col gap-0.5">
+                    <span className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full bg-emerald-600/10 text-emerald-700 dark:text-emerald-400 text-xs font-medium w-fit max-w-full">
+                      <Icon className="h-3 w-3 shrink-0" />
+                      <span className="truncate max-w-[260px]" title={link.entityLabel}>
+                        {link.entityLabel}
+                      </span>
+                      <button
+                        onClick={() => unlinkFromEntity.mutate({ linkId: link.id })}
+                        disabled={unlinkFromEntity.isPending}
+                        title="Unlink"
+                        className="h-4 w-4 rounded-full flex items-center justify-center hover:bg-emerald-600/20 transition-colors shrink-0"
+                      >
+                        <X className="h-2.5 w-2.5" />
+                      </button>
                     </span>
-                    <button
-                      onClick={() => unlinkFromEntity.mutate({ linkId: link.id })}
-                      disabled={unlinkFromEntity.isPending}
-                      title="Unlink"
-                      className="h-4 w-4 rounded-full flex items-center justify-center hover:bg-emerald-600/20 transition-colors"
-                    >
-                      <X className="h-2.5 w-2.5" />
-                    </button>
-                  </span>
+                    <OtherLinkedPhotos
+                      category={link.category as Category}
+                      targetId={link.targetId}
+                      entityLabel={link.entityLabel}
+                      excludeAttachmentId={attachmentId}
+                    />
+                  </div>
                 );
               })}
             </div>

@@ -245,7 +245,7 @@ function UploadedGallery() {
                   onConfirm={() => deleteAttachment.mutate({ id: a.id })}
                 />
                 {a.operationName && (
-                  <div className="absolute top-8 sm:top-9 right-1.5 px-1.5 py-0.5 rounded bg-black/60 text-[9px] text-white truncate max-w-[70%]">
+                  <div className="absolute top-1.5 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded bg-black/60 text-[9px] text-white truncate max-w-[55%] text-center">
                     {a.operationName}
                   </div>
                 )}

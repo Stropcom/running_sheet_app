@@ -1,10 +1,11 @@
-import { Target, Car, User, MapPin, Link2, Link2Off } from "lucide-react";
+import { Target, Car, User, MapPin, HelpCircle, Link2Off } from "lucide-react";
 
 const CATEGORY_ICON: Record<string, typeof Target> = {
   target: Target,
   vehicle: Car,
   associate: User,
   location: MapPin,
+  unidentified_person: HelpCircle,
 };
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -12,6 +13,7 @@ const CATEGORY_LABEL: Record<string, string> = {
   vehicle: "a vehicle",
   associate: "a person",
   location: "a location",
+  unidentified_person: "an unidentified person",
 };
 
 /**
@@ -66,7 +68,7 @@ export function AttachmentLinkBadge({
       className={`${positionClassName} flex items-center gap-1`}
     >
       {categories.map((cat) => {
-        const Icon = CATEGORY_ICON[cat] ?? Link2;
+        const Icon = CATEGORY_ICON[cat] ?? HelpCircle;
         return (
           <span
             key={cat}

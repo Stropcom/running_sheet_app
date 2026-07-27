@@ -16,9 +16,18 @@ import {
 export function DeletePhotoButton({
   onConfirm,
   pending,
+  positionClassName = "absolute top-1.5 right-1.5",
+  iconSize = "h-4 w-4 sm:h-5 sm:w-5",
+  glyphSize = "h-2.5 w-2.5 sm:h-3 sm:w-3",
 }: {
   onConfirm: () => void;
   pending?: boolean;
+  /** Positioning only — sizing is separate. Match the paired AttachmentLinkBadge's own positionClassName. */
+  positionClassName?: string;
+  /** Size of the button circle — match the paired AttachmentLinkBadge's iconSize so both read as one size. */
+  iconSize?: string;
+  /** Size of the X glyph inside the button — match the paired AttachmentLinkBadge's glyphSize. */
+  glyphSize?: string;
 }) {
   const [confirming, setConfirming] = useState(false);
 
@@ -30,9 +39,9 @@ export function DeletePhotoButton({
           setConfirming(true);
         }}
         title="Delete photo"
-        className="absolute top-1.5 right-1.5 h-5 w-5 sm:h-6 sm:w-6 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center hover:opacity-90 transition-opacity"
+        className={`${positionClassName} ${iconSize} rounded-full bg-destructive text-destructive-foreground flex items-center justify-center hover:opacity-90 transition-opacity`}
       >
-        <X className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+        <X className={glyphSize} />
       </button>
 
       <AlertDialog open={confirming} onOpenChange={setConfirming}>

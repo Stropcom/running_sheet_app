@@ -18,6 +18,7 @@ import { useIsMobile } from "@/hooks/useMobile";
 import CinInput from "@/components/CinInput";
 import { LinkAttachmentDialog } from "@/components/LinkAttachmentDialog";
 import { AttachmentLinkBadge } from "@/components/AttachmentLinkBadge";
+import { DeletePhotoButton } from "@/components/DeletePhotoButton";
 import { EntityDuplicateDialog, type DedupType } from "@/components/EntityDuplicateDialog";
 import {
   Dialog,
@@ -1199,12 +1200,14 @@ function ObservationAttachments({
   onUpload,
   onDelete,
   uploading,
+  deletePending,
 }: {
   row: SheetRow;
   canEdit: boolean;
   onUpload: (rowId: number, blob: Blob, mimeType: string, fileName: string) => void;
   onDelete: (id: number) => void;
   uploading: boolean;
+  deletePending?: boolean;
 }) {
   const [preview, setPreview] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<string | null>(null);
@@ -1261,13 +1264,13 @@ function ObservationAttachments({
             glyphSize="h-2 w-2 sm:h-2.5 sm:w-2.5"
           />
           {canEdit && (
-            <button
-              onClick={() => onDelete(a.id)}
-              title="Delete photo"
-              className="absolute -top-1.5 -right-1.5 h-4 w-4 sm:h-5 sm:w-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center hover:opacity-90 transition-opacity"
-            >
-              <X className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
-            </button>
+            <DeletePhotoButton
+              pending={deletePending}
+              onConfirm={() => onDelete(a.id)}
+              positionClassName="absolute -top-1.5 -right-1.5"
+              iconSize="h-3.5 w-3.5 sm:h-4 sm:w-4"
+              glyphSize="h-2 w-2 sm:h-2.5 sm:w-2.5"
+            />
           )}
         </div>
       ))}
@@ -3572,6 +3575,7 @@ export default function SheetDetail() {
                           onUpload={(rowId, blob, mimeType, fileName) => uploadAttachment.mutate({ rowId, blob, mimeType, fileName })}
                           onDelete={(id) => deleteAttachment.mutate({ id })}
                           uploading={uploadAttachment.isPending}
+                          deletePending={deleteAttachment.isPending}
                         />
                       </td>
 

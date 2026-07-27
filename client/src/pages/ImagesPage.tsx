@@ -155,8 +155,11 @@ function OperationFolderList({
   );
 }
 
-// Flat, cross-operation list of every manually-uploaded photo, newest
-// first, sub-grouped by upload date so a large backlog is still scannable.
+// Flat, cross-operation list of every manually-uploaded photo, sub-grouped
+// by operation (every upload requires one, see UploadImageDialog) rather
+// than upload date — the date is still shown per-photo in the bottom
+// banner, but which operation a photo belongs to is the more useful way to
+// scan a backlog since that's what these photos are ultimately filed under.
 function UploadedGallery() {
   const utils = trpc.useUtils();
   const [lightbox, setLightbox] = useState<string | null>(null);
@@ -172,23 +175,20 @@ function UploadedGallery() {
     onError: e => toast.error(e.message),
   });
 
-  const groupedByDate = useMemo(() => {
+  const groupedByOperation = useMemo(() => {
     if (!attachments) return [];
-    const byDate = new Map<string, { label: string; photos: any[] }>();
+    const byOperation = new Map<number | string, { label: string; photos: any[] }>();
     for (const a of attachments as any[]) {
-      const d = new Date(a.createdAt);
-      const key = isNaN(d.getTime()) ? "unknown" : d.toISOString().slice(0, 10);
-      const label = isNaN(d.getTime())
-        ? "Unknown date"
-        : new Intl.DateTimeFormat("en-AU", { timeZone: "Australia/Perth", day: "2-digit", month: "short", year: "numeric" }).format(d);
-      let group = byDate.get(key);
+      const key = a.operationId ?? "unknown";
+      const label = a.operationName ?? "Unknown Operation";
+      let group = byOperation.get(key);
       if (!group) {
         group = { label, photos: [] };
-        byDate.set(key, group);
+        byOperation.set(key, group);
       }
       group.photos.push(a);
     }
-    return Array.from(byDate.values());
+    return Array.from(byOperation.values()).sort((a, b) => a.label.localeCompare(b.label));
   }, [attachments]);
 
   if (isLoading) {
@@ -217,7 +217,7 @@ function UploadedGallery() {
 
   return (
     <div className="flex flex-col gap-6">
-      {groupedByDate.map(group => (
+      {groupedByOperation.map(group => (
         <div key={group.label}>
           <div className="mb-2 px-3 py-1.5 rounded-lg bg-pink-500/10 border border-pink-500/20 text-xs font-semibold text-pink-500 truncate w-fit">
             {group.label}
@@ -244,11 +244,6 @@ function UploadedGallery() {
                   pending={deleteAttachment.isPending}
                   onConfirm={() => deleteAttachment.mutate({ id: a.id })}
                 />
-                {a.operationName && (
-                  <div className="absolute top-1.5 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded bg-black/60 text-[9px] text-white truncate max-w-[55%] text-center">
-                    {a.operationName}
-                  </div>
-                )}
               </div>
             ))}
           </div>

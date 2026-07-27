@@ -1058,30 +1058,61 @@ export async function findSimilarFaces(
   return candidates.slice(0, FACE_MATCH_MAX_RESULTS);
 }
 
-// Officer confirmed "yes, this is the same person" — the newly-created link
-// (almost always a fresh Unidentified Person entry) adopts the matched
-// link's identity wholesale. If the match was a real Target/Associate, this
-// is exactly "the photo becomes a normal linked photo on that real profile";
-// if the match was another Unidentified Person entry, this merges the two
-// pool entries under one shared identity going forward.
+// Officer confirmed "yes, this is the same person" — merges the two links'
+// identities. Whichever side carries the stronger identification wins (a
+// real Target/Associate outranks an anonymous Unidentified Person
+// placeholder), and every link sharing the *weaker* side's identity is
+// upgraded to the stronger one — never the other way around. This used to
+// unconditionally make the newly-confirmed link adopt the matched link's
+// identity on the assumption the new side was "almost always a fresh
+// Unidentified Person entry" — which broke exactly when an officer
+// positively IDs someone as a Target/Associate and the match happens to be
+// an existing Unidentified Person: the fresh Target link got silently
+// overwritten back to "unidentified". A confirmed positive ID must never be
+// downgraded by a merge, regardless of which side of the match it's on.
+const FACE_IDENTITY_PRIORITY: Record<string, number> = {
+  unidentified_person: 0,
+  associate: 1,
+  target: 2,
+};
+
 export async function confirmFaceMatch(newLinkId: number, matchedLinkId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  const [newLink] = await db
+    .select()
+    .from(attachmentEntityLinks)
+    .where(eq(attachmentEntityLinks.id, newLinkId))
+    .limit(1);
   const [matched] = await db
     .select()
     .from(attachmentEntityLinks)
     .where(eq(attachmentEntityLinks.id, matchedLinkId))
     .limit(1);
+  if (!newLink) throw new Error("New entity link not found");
   if (!matched) throw new Error("Matched entity link not found");
+
+  const newPriority = FACE_IDENTITY_PRIORITY[newLink.category] ?? 0;
+  const matchedPriority = FACE_IDENTITY_PRIORITY[matched.category] ?? 0;
+  // Ties (including the common Unidentified-Person-joins-an-existing-
+  // Unidentified-Person-pool case) favor the matched/existing side, so a
+  // single freshly-confirmed face doesn't rename an already-established pool.
+  const [winner, loser] = newPriority > matchedPriority ? [newLink, matched] : [matched, newLink];
+
+  const loserGroupWhere =
+    loser.category === "target"
+      ? and(eq(attachmentEntityLinks.category, "target"), eq(attachmentEntityLinks.targetId, loser.targetId ?? -1))
+      : and(eq(attachmentEntityLinks.category, loser.category), eq(attachmentEntityLinks.entityKey, loser.entityKey ?? ""));
+
   await db
     .update(attachmentEntityLinks)
     .set({
-      category: matched.category,
-      targetId: matched.targetId,
-      entityKey: matched.entityKey,
-      entityLabel: matched.entityLabel,
+      category: winner.category,
+      targetId: winner.targetId,
+      entityKey: winner.entityKey,
+      entityLabel: winner.entityLabel,
     })
-    .where(eq(attachmentEntityLinks.id, newLinkId));
+    .where(loserGroupWhere);
 }
 
 // Officer confirmed "no, not the same person" — stored unordered (smaller id

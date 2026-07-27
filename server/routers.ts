@@ -1147,8 +1147,9 @@ export const appRouter = router({
         return { linkId, matches };
       }),
 
-    // Officer accepted a suggested possible-match — the new link adopts the
-    // matched link's identity wholesale (see confirmFaceMatch in db.ts).
+    // Officer accepted a suggested possible-match — whichever side is the
+    // stronger identification (Target/Associate over Unidentified Person)
+    // wins the merge (see confirmFaceMatch in db.ts).
     confirmFaceMatch: protectedProcedure
       .input(z.object({ newLinkId: z.number(), matchedLinkId: z.number() }))
       .mutation(async ({ input }) => {

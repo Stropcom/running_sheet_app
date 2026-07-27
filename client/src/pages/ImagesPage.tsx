@@ -163,7 +163,7 @@ function OperationFolderList({
 function UploadedGallery() {
   const utils = trpc.useUtils();
   const [lightbox, setLightbox] = useState<string | null>(null);
-  const [linking, setLinking] = useState<{ id: number; url: string } | null>(null);
+  const [linking, setLinking] = useState<{ id: number; url: string; operationId?: number } | null>(null);
   const { data: attachments, isLoading } = trpc.attachment.listUploaded.useQuery();
 
   const deleteAttachment = trpc.attachment.delete.useMutation({
@@ -237,7 +237,7 @@ function UploadedGallery() {
                 <AttachmentLinkBadge
                   linkedCount={a.linkedCount}
                   linkedCategories={a.linkedCategories}
-                  onClick={() => setLinking({ id: a.id, url: a.url })}
+                  onClick={() => setLinking({ id: a.id, url: a.url, operationId: a.operationId ?? undefined })}
                   positionClassName="absolute top-1.5 left-1.5"
                 />
                 <DeletePhotoButton
@@ -271,6 +271,7 @@ function UploadedGallery() {
           photoUrl={linking.url}
           open={linking !== null}
           onOpenChange={open => { if (!open) setLinking(null); }}
+          currentOperationId={linking.operationId}
         />
       )}
     </div>
@@ -605,6 +606,7 @@ function SheetGallery({
           photoUrl={linking.url}
           open={linking !== null}
           onOpenChange={open => { if (!open) setLinking(null); }}
+          currentOperationId={operationId}
         />
       )}
     </div>

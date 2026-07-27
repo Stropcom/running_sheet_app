@@ -36,6 +36,24 @@ function categoryForEntity(e: { type: string; isTarget?: boolean }): Category {
   return "associate";
 }
 
+// Every IntelligenceEntity (including targets, via operation_target_links —
+// see getAllIntelligenceEntities) already carries one occurrence per
+// operation it's linked to, so which operation(s) an entity belongs to is
+// derivable from data already being fetched here — no separate query needed.
+function operationNamesFor(e: { occurrences?: Array<{ operationName: string }> } | undefined): string[] {
+  if (!e?.occurrences) return [];
+  return Array.from(new Set(e.occurrences.map(o => o.operationName).filter(Boolean)));
+}
+
+function findEntityForLink(link: { category: string; targetId?: number | null; entityLabel: string }, entities: any[] | undefined) {
+  if (!entities) return undefined;
+  if (link.category === "target") {
+    return entities.find(e => e.isTarget && e.targetId === link.targetId);
+  }
+  if (link.category === "unidentified_person") return undefined;
+  return entities.find(e => categoryForEntity(e) === link.category && e.shortForm === link.entityLabel);
+}
+
 // Shown under each "currently linked" pill so an officer can see at a glance
 // which other photos are already tied to that same entity — most useful for
 // Unidentified Person entries, which otherwise have no profile page to check.
@@ -79,16 +97,47 @@ function OtherLinkedPhotos({
   );
 }
 
+function EntityCandidateRow({
+  e,
+  disabled,
+  onPick,
+}: {
+  e: any;
+  disabled: boolean;
+  onPick: () => void;
+}) {
+  const ops = operationNamesFor(e);
+  return (
+    <button
+      disabled={disabled}
+      onClick={onPick}
+      className="text-left px-3 py-2 rounded-lg text-sm hover:bg-accent/50 transition-colors"
+    >
+      <span className="block truncate">{e.shortForm}</span>
+      {ops.length > 0 && (
+        <span className="block text-[10px] text-muted-foreground truncate" title={ops.join(", ")}>
+          {ops.length === 1 ? "Op: " : "Ops: "}
+          {ops.join(", ")}
+        </span>
+      )}
+    </button>
+  );
+}
+
 export function LinkAttachmentDialog({
   attachmentId,
   photoUrl,
   open,
   onOpenChange,
+  currentOperationId,
 }: {
   attachmentId: number;
   photoUrl?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** The operation this photo itself belongs to, if known — entities already
+   * linked to it are surfaced first in "Link to another" (see filtered). */
+  currentOperationId?: number;
 }) {
   const [tab, setTab] = useState<Category>("target");
   const [search, setSearch] = useState("");
@@ -135,8 +184,24 @@ export function LinkAttachmentDialog({
     const q = search.trim().toLowerCase();
     return (entities as any[])
       .filter(e => categoryForEntity(e) === tab)
-      .filter(e => !q || e.shortForm.toLowerCase().includes(q));
+      .filter(e => !q || e.shortForm.toLowerCase().includes(q))
+      .sort((a, b) => a.shortForm.localeCompare(b.shortForm));
   }, [entities, tab, search]);
+
+  // With hundreds of entities across every operation, the entities actually
+  // relevant to the running sheet/operation this photo belongs to are what
+  // an officer is almost always looking for — split those out to the top
+  // instead of leaving them to scroll past everything else alphabetically.
+  const { inCurrentOp, otherEntities } = useMemo(() => {
+    if (!currentOperationId) return { inCurrentOp: [] as any[], otherEntities: filtered };
+    const inOp: any[] = [];
+    const rest: any[] = [];
+    for (const e of filtered) {
+      const linked = (e.occurrences ?? []).some((o: any) => o.operationId === currentOperationId);
+      (linked ? inOp : rest).push(e);
+    }
+    return { inCurrentOp: inOp, otherEntities: rest };
+  }, [filtered, currentOperationId]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -151,6 +216,7 @@ export function LinkAttachmentDialog({
             <div className="flex flex-col gap-1">
               {currentLinks.map((link: any) => {
                 const Icon = CATEGORY_ICON[link.category as Category] ?? Users;
+                const linkedOps = operationNamesFor(findEntityForLink(link, entities as any[] | undefined));
                 return (
                   <div key={link.id} className="flex flex-col gap-0.5">
                     <span className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full bg-emerald-600/10 text-emerald-700 dark:text-emerald-400 text-xs font-medium w-fit max-w-full">
@@ -167,6 +233,12 @@ export function LinkAttachmentDialog({
                         <X className="h-2.5 w-2.5" />
                       </button>
                     </span>
+                    {linkedOps.length > 0 && (
+                      <p className="text-[10px] text-muted-foreground pl-2 truncate" title={linkedOps.join(", ")}>
+                        {linkedOps.length === 1 ? "Op: " : "Ops: "}
+                        {linkedOps.join(", ")}
+                      </p>
+                    )}
                     <OtherLinkedPhotos
                       category={link.category as Category}
                       targetId={link.targetId}
@@ -258,27 +330,46 @@ export function LinkAttachmentDialog({
               ) : filtered.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-6">No matches</p>
               ) : (
-                filtered.map((e, idx) => (
-                  <button
-                    key={`${e.shortForm}-${idx}`}
-                    disabled={linkToEntity.isPending}
-                    onClick={() => {
-                      if (photoUrl && (tab === "target" || tab === "associate")) {
-                        setPickingEntity({ category: tab, targetId: e.targetId, entityLabel: e.shortForm });
-                        return;
-                      }
-                      linkToEntity.mutate({
-                        attachmentId,
-                        category: tab,
-                        targetId: e.targetId,
-                        entityLabel: e.shortForm,
-                      });
-                    }}
-                    className="text-left px-3 py-2 rounded-lg text-sm hover:bg-accent/50 transition-colors truncate"
-                  >
-                    {e.shortForm}
-                  </button>
-                ))
+                <>
+                  {inCurrentOp.length > 0 && (
+                    <>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground px-3 pt-1">
+                        In this operation
+                      </p>
+                      {inCurrentOp.map((e, idx) => (
+                        <EntityCandidateRow
+                          key={`cur-${e.shortForm}-${idx}`}
+                          e={e}
+                          disabled={linkToEntity.isPending}
+                          onPick={() => {
+                            if (photoUrl && (tab === "target" || tab === "associate")) {
+                              setPickingEntity({ category: tab, targetId: e.targetId, entityLabel: e.shortForm });
+                              return;
+                            }
+                            linkToEntity.mutate({ attachmentId, category: tab, targetId: e.targetId, entityLabel: e.shortForm });
+                          }}
+                        />
+                      ))}
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground px-3 pt-2">
+                        Other operations
+                      </p>
+                    </>
+                  )}
+                  {otherEntities.map((e, idx) => (
+                    <EntityCandidateRow
+                      key={`other-${e.shortForm}-${idx}`}
+                      e={e}
+                      disabled={linkToEntity.isPending}
+                      onPick={() => {
+                        if (photoUrl && (tab === "target" || tab === "associate")) {
+                          setPickingEntity({ category: tab, targetId: e.targetId, entityLabel: e.shortForm });
+                          return;
+                        }
+                        linkToEntity.mutate({ attachmentId, category: tab, targetId: e.targetId, entityLabel: e.shortForm });
+                      }}
+                    />
+                  ))}
+                </>
               )}
             </div>
           </>

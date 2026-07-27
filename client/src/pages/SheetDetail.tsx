@@ -1201,6 +1201,7 @@ function ObservationAttachments({
   onDelete,
   uploading,
   deletePending,
+  operationId,
 }: {
   row: SheetRow;
   canEdit: boolean;
@@ -1208,6 +1209,7 @@ function ObservationAttachments({
   onDelete: (id: number) => void;
   uploading: boolean;
   deletePending?: boolean;
+  operationId?: number;
 }) {
   const [preview, setPreview] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<string | null>(null);
@@ -1308,6 +1310,7 @@ function ObservationAttachments({
           photoUrl={linking.url}
           open={linking !== null}
           onOpenChange={(open) => { if (!open) setLinking(null); }}
+          currentOperationId={operationId}
         />
       )}
     </div>
@@ -3576,6 +3579,7 @@ export default function SheetDetail() {
                           onDelete={(id) => deleteAttachment.mutate({ id })}
                           uploading={uploadAttachment.isPending}
                           deletePending={deleteAttachment.isPending}
+                          operationId={sheet?.operationId}
                         />
                       </td>
 

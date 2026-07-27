@@ -37,7 +37,6 @@ export interface WitnessListInput {
   }[];
   producedAt: number;
   certifierCin: string;
-  userByCin: Map<string, { cin: string; name?: string | null }>;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -125,7 +124,6 @@ export async function generateWitnessListDocx(input: WitnessListInput): Promise<
     sheets,
     producedAt,
     certifierCin,
-    userByCin,
   } = input;
 
   const cinLabel = (cin: string) => `CIN${cin}`;
@@ -204,7 +202,6 @@ export async function generateWitnessListDocx(input: WitnessListInput): Promise<
 
   // ── Witness entry helper ─────────────────────────────────────────────────────
   const witnessEntry = (cin: string, index: number) => {
-    const user = userByCin.get(cin.toUpperCase());
     const label = cinLabel(cin);
     return para(
       [run(`${index + 1}.   ${label}`)],

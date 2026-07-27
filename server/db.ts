@@ -882,14 +882,16 @@ export async function linkAttachmentToEntity(data: {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const entityKey = data.category === "target" ? null : normalizeEntityLabel(data.entityLabel);
+  const findExisting = () =>
+    db.select({ id: attachmentEntityLinks.id }).from(attachmentEntityLinks).where(and(
+      eq(attachmentEntityLinks.attachmentId, data.attachmentId),
+      eq(attachmentEntityLinks.category, data.category),
+      data.category === "target"
+        ? eq(attachmentEntityLinks.targetId, data.targetId ?? -1)
+        : eq(attachmentEntityLinks.entityKey, entityKey ?? ""),
+    )).limit(1);
   // Avoid duplicate links to the same entity
-  const existing = await db.select({ id: attachmentEntityLinks.id }).from(attachmentEntityLinks).where(and(
-    eq(attachmentEntityLinks.attachmentId, data.attachmentId),
-    eq(attachmentEntityLinks.category, data.category),
-    data.category === "target"
-      ? eq(attachmentEntityLinks.targetId, data.targetId ?? -1)
-      : eq(attachmentEntityLinks.entityKey, entityKey ?? ""),
-  )).limit(1);
+  const existing = await findExisting();
   if (existing.length > 0) return existing[0].id;
   const insertData: InsertAttachmentEntityLink = {
     attachmentId: data.attachmentId,
@@ -898,8 +900,21 @@ export async function linkAttachmentToEntity(data: {
     entityKey,
     entityLabel: data.entityLabel,
   };
-  const [result] = await db.insert(attachmentEntityLinks).values(insertData);
-  return result.insertId as number;
+  try {
+    const [result] = await db.insert(attachmentEntityLinks).values(insertData);
+    return result.insertId as number;
+  } catch (err) {
+    // The check above is a plain SELECT-then-INSERT, so two requests for the
+    // same face landing close together (e.g. a fast double-tap on the
+    // face-select Confirm button) can both pass it before either commits.
+    // The unique index on (attachmentId, category, entityKey) is the real
+    // guard — on conflict, the other request won the race, so reuse its row.
+    if (err && typeof err === "object" && "code" in err && err.code === "ER_DUP_ENTRY" && entityKey !== null) {
+      const raceWinner = await findExisting();
+      if (raceWinner.length > 0) return raceWinner[0].id;
+    }
+    throw err;
+  }
 }
 
 export async function unlinkAttachmentFromEntity(linkId: number) {
@@ -937,8 +952,21 @@ export async function createPersonDetection(data: {
     embedding: JSON.stringify(data.embedding),
     detectionConfidence: data.detectionConfidence,
   };
-  const [result] = await db.insert(personDetections).values(insertData);
-  return result.insertId as number;
+  try {
+    const [result] = await db.insert(personDetections).values(insertData);
+    return result.insertId as number;
+  } catch (err) {
+    // entityLinkId is unique (one detection per link, see schema comment) —
+    // a racing duplicate confirm request (see linkAttachmentToEntity) can
+    // reach here with the same linkId the other request already saved a
+    // detection for. Treat that as already-done rather than erroring.
+    if (err && typeof err === "object" && "code" in err && err.code === "ER_DUP_ENTRY") {
+      const [existing] = await db.select({ id: personDetections.id }).from(personDetections)
+        .where(eq(personDetections.entityLinkId, data.entityLinkId)).limit(1);
+      if (existing) return existing.id;
+    }
+    throw err;
+  }
 }
 
 export interface FaceMatchCandidate {
@@ -954,11 +982,15 @@ export interface FaceMatchCandidate {
 // Threshold picked from empirical testing against one real multi-face photo
 // (same face re-encoded ~0.99, mirrored ~0.89, different people ~0.1-0.3) —
 // deliberately generous since a missed real match is worse than an extra
-// candidate the officer just rejects. Needs calibration against real
-// evidentiary photos before this is relied on operationally (tracked as a
-// follow-up, not blocking: matches are always human-confirmed, never applied
-// automatically, so a loose threshold only means more suggestions to review).
-const FACE_MATCH_THRESHOLD = 0.35;
+// candidate the officer just rejects. Lowered from an initial 0.35 after
+// real operational photos showed the on-device MobileFace embedding's
+// discriminative margin is narrow under real lighting/angle/pose variation
+// (different people ranged roughly -0.06 to 0.31, one confirmed same-person
+// cross-photo pair scored 0.45) — 0.35 was missing true matches that sat
+// just under it. Still just a starting point for further calibration:
+// matches are always human-confirmed, never applied automatically, so a
+// loose threshold only means more suggestions to review, not bad data.
+const FACE_MATCH_THRESHOLD = 0.25;
 const FACE_MATCH_MAX_RESULTS = 5;
 
 // Compares a newly-confirmed face's embedding against every other confirmed

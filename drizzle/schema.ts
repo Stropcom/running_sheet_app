@@ -186,7 +186,13 @@ export const attachmentEntityLinks = mysqlTable("attachment_entity_links", {
   entityKey: varchar("entityKey", { length: 512 }), // normalized label, set when category != "target"
   entityLabel: varchar("entityLabel", { length: 512 }).notNull(), // display label at link time
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => ({
+  // Guards the non-target linkAttachmentToEntity path (entityKey is only
+  // set there) against a request landing twice — e.g. a fast double-tap on
+  // the face-select Confirm button before it disables — creating two
+  // Unidentified Person pool entries for what's really one confirmed face.
+  entityKeyDedupIdx: uniqueIndex("attachment_entity_links_dedup_idx").on(table.attachmentId, table.category, table.entityKey),
+}));
 
 export type AttachmentEntityLink = typeof attachmentEntityLinks.$inferSelect;
 export type InsertAttachmentEntityLink = typeof attachmentEntityLinks.$inferInsert;
@@ -205,7 +211,7 @@ export type InsertAttachmentEntityLink = typeof attachmentEntityLinks.$inferInse
 export const personDetections = mysqlTable("person_detections", {
   id: int("id").autoincrement().primaryKey(),
   attachmentId: int("attachmentId").notNull(),
-  entityLinkId: int("entityLinkId").notNull(),
+  entityLinkId: int("entityLinkId").notNull().unique(),
   bboxX0: double("bboxX0").notNull(),
   bboxY0: double("bboxY0").notNull(),
   bboxX1: double("bboxX1").notNull(),

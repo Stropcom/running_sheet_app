@@ -1,6 +1,7 @@
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { useMemo, useRef, useState } from "react";
+import type { MouseEventHandler } from "react";
 import { toast } from "sonner";
 import { Check, User } from "lucide-react";
 import { PossibleMatchDialog, type PendingMatch } from "@/components/PossibleMatchDialog";
@@ -58,6 +59,12 @@ export function FaceSelectPicker(props: FaceSelectPickerProps) {
   const [pendingMatches, setPendingMatches] = useState<PendingMatch[] | null>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const utils = trpc.useUtils();
+  // confirmPending only flips true once React commits the mutation's isPending
+  // state — async relative to the click itself — so a fast double-tap (common
+  // on the touchscreen devices this is used on) can fire twice before the
+  // button disables, creating two confirmed entries for the same face. This
+  // ref is set synchronously in the click handler to close that window.
+  const submittingRef = useRef(false);
 
   const invalidateLinkViews = () => {
     utils.attachment.linksFor.invalidate({ attachmentId });
@@ -84,7 +91,10 @@ export function FaceSelectPicker(props: FaceSelectPickerProps) {
         )
       );
     },
-    onError: e => toast.error(e.message),
+    onError: e => {
+      submittingRef.current = false;
+      toast.error(e.message);
+    },
   });
 
   const confirmEntity = trpc.attachment.confirmEntityFace.useMutation({
@@ -92,7 +102,10 @@ export function FaceSelectPicker(props: FaceSelectPickerProps) {
       toast.success("Photo linked");
       finishWithMatches(data.matches.map(match => ({ newLinkId: data.linkId, newPhotoUrl: photoUrl, match })));
     },
-    onError: e => toast.error(e.message),
+    onError: e => {
+      submittingRef.current = false;
+      toast.error(e.message);
+    },
   });
 
   const fallbackMutation = trpc.attachment.linkToEntity.useMutation({
@@ -101,8 +114,17 @@ export function FaceSelectPicker(props: FaceSelectPickerProps) {
       invalidateLinkViews();
       onDone();
     },
-    onError: e => toast.error(e.message),
+    onError: e => {
+      submittingRef.current = false;
+      toast.error(e.message);
+    },
   });
+
+  const guardedSubmit = (fn: () => void): MouseEventHandler => () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    fn();
+  };
 
   const toggle = (index: number) => {
     setSelected(prev => {
@@ -202,7 +224,7 @@ export function FaceSelectPicker(props: FaceSelectPickerProps) {
         {noFacesDetected ? (
           <Button
             disabled={fallbackMutation.isPending}
-            onClick={() =>
+            onClick={guardedSubmit(() =>
               isEntityMode
                 ? fallbackMutation.mutate({
                     attachmentId,
@@ -215,7 +237,7 @@ export function FaceSelectPicker(props: FaceSelectPickerProps) {
                     category: "unidentified_person",
                     entityLabel: `Unidentified Person #${attachmentId}`,
                   })
-            }
+            )}
             className="gap-1.5"
           >
             <User className="h-3.5 w-3.5" />
@@ -224,7 +246,7 @@ export function FaceSelectPicker(props: FaceSelectPickerProps) {
         ) : (
           <Button
             disabled={selected.size === 0 || confirmPending}
-            onClick={() =>
+            onClick={guardedSubmit(() =>
               isEntityMode
                 ? confirmEntity.mutate({
                     attachmentId,
@@ -237,7 +259,7 @@ export function FaceSelectPicker(props: FaceSelectPickerProps) {
                     attachmentId,
                     faceIndices: Array.from(selected),
                   })
-            }
+            )}
           >
             {confirmPending ? "Linking…" : isEntityMode ? "Confirm" : `Confirm (${selected.size})`}
           </Button>

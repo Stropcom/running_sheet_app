@@ -1,0 +1,2 @@
+ALTER TABLE `attachment_entity_links` ADD CONSTRAINT `attachment_entity_links_dedup_idx` UNIQUE(`attachmentId`,`category`,`entityKey`);--> statement-breakpoint
+ALTER TABLE `person_detections` ADD CONSTRAINT `person_detections_entityLinkId_unique` UNIQUE(`entityLinkId`);

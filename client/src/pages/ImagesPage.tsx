@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { LinkAttachmentDialog } from "@/components/LinkAttachmentDialog";
 import { DeletePhotoButton } from "@/components/DeletePhotoButton";
 import { AttachmentLinkBadge } from "@/components/AttachmentLinkBadge";
+import { LinkedEntityPills } from "@/components/LinkedEntityPills";
 import { UploadImageDialog } from "@/components/UploadImageDialog";
 import { formatAttachmentBanner } from "@/lib/attachmentBanner";
 
@@ -224,26 +225,29 @@ function UploadedGallery() {
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
             {group.photos.map((a: any) => (
-              <div key={a.id} className="group relative rounded-xl overflow-hidden border border-border bg-card">
-                <img
-                  src={a.url}
-                  alt="Uploaded photograph"
-                  className="w-full aspect-square object-cover cursor-zoom-in"
-                  onClick={() => setLightbox(a.url)}
-                />
-                <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1">
-                  <p className="text-[10px] text-white truncate">{formatAttachmentBanner(a)}</p>
+              <div key={a.id} className="group relative rounded-xl overflow-hidden border border-border bg-card flex flex-col">
+                <div className="relative">
+                  <img
+                    src={a.url}
+                    alt="Uploaded photograph"
+                    className="w-full aspect-square object-cover cursor-zoom-in"
+                    onClick={() => setLightbox(a.url)}
+                  />
+                  <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1">
+                    <p className="text-[10px] text-white truncate">{formatAttachmentBanner(a)}</p>
+                  </div>
+                  <AttachmentLinkBadge
+                    linkedCount={a.linkedCount}
+                    linkedCategories={a.linkedCategories}
+                    onClick={() => setLinking({ id: a.id, url: a.url, operationId: a.operationId ?? undefined })}
+                    positionClassName="absolute top-1.5 left-1.5"
+                  />
+                  <DeletePhotoButton
+                    pending={deleteAttachment.isPending}
+                    onConfirm={() => deleteAttachment.mutate({ id: a.id })}
+                  />
                 </div>
-                <AttachmentLinkBadge
-                  linkedCount={a.linkedCount}
-                  linkedCategories={a.linkedCategories}
-                  onClick={() => setLinking({ id: a.id, url: a.url, operationId: a.operationId ?? undefined })}
-                  positionClassName="absolute top-1.5 left-1.5"
-                />
-                <DeletePhotoButton
-                  pending={deleteAttachment.isPending}
-                  onConfirm={() => deleteAttachment.mutate({ id: a.id })}
-                />
+                <LinkedEntityPills entities={a.linkedEntities} />
               </div>
             ))}
           </div>
@@ -444,17 +448,20 @@ function SheetFolderList({
                 {group.photos.map((a: any) => (
                   <div
                     key={a.id}
-                    className="group relative rounded-xl overflow-hidden border border-border bg-card"
+                    className="group relative rounded-xl overflow-hidden border border-border bg-card flex flex-col"
                   >
-                    <img
-                      src={a.url}
-                      alt="Attached photograph"
-                      className="w-full aspect-square object-cover cursor-zoom-in"
-                      onClick={() => setLightbox(a.url)}
-                    />
-                    <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1">
-                      <p className="text-[10px] text-white truncate">{formatAttachmentBanner(a)}</p>
+                    <div className="relative">
+                      <img
+                        src={a.url}
+                        alt="Attached photograph"
+                        className="w-full aspect-square object-cover cursor-zoom-in"
+                        onClick={() => setLightbox(a.url)}
+                      />
+                      <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1">
+                        <p className="text-[10px] text-white truncate">{formatAttachmentBanner(a)}</p>
+                      </div>
                     </div>
+                    <LinkedEntityPills entities={a.linkedEntities} />
                   </div>
                 ))}
               </div>
@@ -555,27 +562,30 @@ function SheetGallery({
           {attachments.map((a: any) => (
             <div
               key={a.id}
-              className="group relative rounded-xl overflow-hidden border border-border bg-card"
+              className="group relative rounded-xl overflow-hidden border border-border bg-card flex flex-col"
             >
-              <img
-                src={a.url}
-                alt="Attached photograph"
-                className="w-full aspect-square object-cover cursor-zoom-in"
-                onClick={() => setLightbox(a.url)}
-              />
-              <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1">
-                <p className="text-[10px] text-white truncate">{formatAttachmentBanner(a)}</p>
+              <div className="relative">
+                <img
+                  src={a.url}
+                  alt="Attached photograph"
+                  className="w-full aspect-square object-cover cursor-zoom-in"
+                  onClick={() => setLightbox(a.url)}
+                />
+                <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1">
+                  <p className="text-[10px] text-white truncate">{formatAttachmentBanner(a)}</p>
+                </div>
+                <AttachmentLinkBadge
+                  linkedCount={a.linkedCount}
+                  linkedCategories={a.linkedCategories}
+                  onClick={() => setLinking({ id: a.id, url: a.url })}
+                  positionClassName="absolute top-1.5 left-1.5"
+                />
+                <DeletePhotoButton
+                  pending={deleteAttachment.isPending}
+                  onConfirm={() => deleteAttachment.mutate({ id: a.id })}
+                />
               </div>
-              <AttachmentLinkBadge
-                linkedCount={a.linkedCount}
-                linkedCategories={a.linkedCategories}
-                onClick={() => setLinking({ id: a.id, url: a.url })}
-                positionClassName="absolute top-1.5 left-1.5"
-              />
-              <DeletePhotoButton
-                pending={deleteAttachment.isPending}
-                onConfirm={() => deleteAttachment.mutate({ id: a.id })}
-              />
+              <LinkedEntityPills entities={a.linkedEntities} />
             </div>
           ))}
         </div>

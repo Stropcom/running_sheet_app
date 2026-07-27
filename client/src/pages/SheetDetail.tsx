@@ -18,6 +18,7 @@ import { useIsMobile } from "@/hooks/useMobile";
 import CinInput from "@/components/CinInput";
 import { LinkAttachmentDialog } from "@/components/LinkAttachmentDialog";
 import { AttachmentLinkBadge } from "@/components/AttachmentLinkBadge";
+import { LinkedEntityPills } from "@/components/LinkedEntityPills";
 import { DeletePhotoButton } from "@/components/DeletePhotoButton";
 import { EntityDuplicateDialog, type DedupType } from "@/components/EntityDuplicateDialog";
 import {
@@ -134,6 +135,7 @@ type RowAttachment = {
   createdAt: Date;
   linkedCount?: number;
   linkedCategories?: string[];
+  linkedEntities?: Array<{ category: string; label: string }>;
 };
 
 type SheetRow = {
@@ -1274,6 +1276,7 @@ function ObservationAttachments({
               glyphSize="h-2 w-2 sm:h-2.5 sm:w-2.5"
             />
           )}
+          <LinkedEntityPills entities={a.linkedEntities} />
         </div>
       ))}
       {preview && uploading && (

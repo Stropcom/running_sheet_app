@@ -679,35 +679,46 @@ export async function createRowAttachment(data: InsertRowAttachment) {
 // to that attachment, so the badge can show which kind of thing a photo is
 // linked to at a glance (a category-specific icon when there's exactly one,
 // a generic "linked" icon when it spans more than one) without a second
-// round-trip per thumbnail.
+// round-trip per thumbnail. linkedEntities carries the actual label per link
+// (target name, vehicle rego, Unidentified Person placeholder, etc.) so
+// thumbnails can show *who/what* a photo is linked to, not just that it is.
 async function attachLinkedCounts<T extends { id: number }>(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
   rows: T[]
-): Promise<(T & { linkedCount: number; linkedCategories: string[] })[]> {
+): Promise<(T & { linkedCount: number; linkedCategories: string[]; linkedEntities: Array<{ category: string; label: string }> })[]> {
   if (rows.length === 0) return [];
   const attachmentIds = rows.map((r) => r.id);
-  const [linkCounts, linkCategoryRows] = await Promise.all([
+  const [linkCounts, linkRows] = await Promise.all([
     db
       .select({ attachmentId: attachmentEntityLinks.attachmentId, count: sql<number>`count(*)`.as("count") })
       .from(attachmentEntityLinks)
       .where(inArray(attachmentEntityLinks.attachmentId, attachmentIds))
       .groupBy(attachmentEntityLinks.attachmentId),
     db
-      .selectDistinct({ attachmentId: attachmentEntityLinks.attachmentId, category: attachmentEntityLinks.category })
+      .select({
+        attachmentId: attachmentEntityLinks.attachmentId,
+        category: attachmentEntityLinks.category,
+        entityLabel: attachmentEntityLinks.entityLabel,
+      })
       .from(attachmentEntityLinks)
       .where(inArray(attachmentEntityLinks.attachmentId, attachmentIds)),
   ]);
   const countMap = new Map(linkCounts.map((l) => [l.attachmentId, Number(l.count)]));
   const categoryMap = new Map<number, string[]>();
-  for (const l of linkCategoryRows) {
-    const arr = categoryMap.get(l.attachmentId) ?? [];
-    arr.push(l.category);
-    categoryMap.set(l.attachmentId, arr);
+  const entityMap = new Map<number, Array<{ category: string; label: string }>>();
+  for (const l of linkRows) {
+    const cats = categoryMap.get(l.attachmentId) ?? [];
+    if (!cats.includes(l.category)) cats.push(l.category);
+    categoryMap.set(l.attachmentId, cats);
+    const ents = entityMap.get(l.attachmentId) ?? [];
+    ents.push({ category: l.category, label: l.entityLabel });
+    entityMap.set(l.attachmentId, ents);
   }
   return rows.map((r) => ({
     ...r,
     linkedCount: countMap.get(r.id) ?? 0,
     linkedCategories: categoryMap.get(r.id) ?? [],
+    linkedEntities: entityMap.get(r.id) ?? [],
   }));
 }
 

@@ -441,7 +441,7 @@ export function UploadImageDialog({
                           setSelectedEntity({ targetId: e.targetId, entityLabel: e.shortForm });
                           setOperationId(null);
                         }}
-                        className={`text-left px-3 py-2 rounded-lg text-sm transition-colors truncate ${
+                        className={`text-left px-3 py-2 rounded-lg text-sm transition-colors truncate shrink-0 ${
                           isSelected ? "bg-primary/10 text-primary" : "hover:bg-accent/50"
                         }`}
                       >

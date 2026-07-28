@@ -113,7 +113,7 @@ function EntityCandidateRow({
     <button
       disabled={disabled}
       onClick={onPick}
-      className="text-left px-3 py-2 rounded-lg text-sm hover:bg-accent/50 transition-colors"
+      className="text-left px-3 py-2 rounded-lg text-sm hover:bg-accent/50 transition-colors shrink-0"
     >
       <span className="block truncate">{e.shortForm}</span>
       {ops.length > 0 && (
@@ -337,7 +337,7 @@ export function LinkAttachmentDialog({
                 <>
                   {inCurrentOp.length > 0 && (
                     <>
-                      <span className="inline-flex items-center w-fit mx-3 mt-1 mb-0.5 px-2 py-0.5 rounded-full border border-blue-700/50 bg-blue-700/10 text-[10px] font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-400">
+                      <span className="inline-flex items-center w-fit mx-3 mt-1 mb-0.5 px-2 py-0.5 rounded-full border border-blue-700/50 bg-blue-700/10 text-[10px] font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-400 shrink-0">
                         In this operation
                       </span>
                       {inCurrentOp.map((e, idx) => (
@@ -354,7 +354,7 @@ export function LinkAttachmentDialog({
                           }}
                         />
                       ))}
-                      <span className="inline-flex items-center w-fit mx-3 mt-2 mb-0.5 px-2 py-0.5 rounded-full border border-slate-500/50 bg-slate-500/10 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">
+                      <span className="inline-flex items-center w-fit mx-3 mt-2 mb-0.5 px-2 py-0.5 rounded-full border border-slate-500/50 bg-slate-500/10 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400 shrink-0">
                         Other operations
                       </span>
                     </>

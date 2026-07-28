@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import { storagePut, storageGetBytes } from "./storage";
-import { detectAndEmbedFaces } from "./faceRecognition";
+import { detectAndEmbedFaces, cosineSimilarity } from "./faceRecognition";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { COOKIE_NAME, SESSION_EXPIRY_MS } from "@shared/const";
@@ -150,6 +150,7 @@ import {
   getLinkedOperationsForEntity,
   createPersonDetection,
   findSimilarFaces,
+  FACE_MATCH_THRESHOLD,
   confirmFaceMatch as confirmFaceMatchDb,
   createFaceMatchDismissal,
   type FaceMatchCandidate,
@@ -1048,6 +1049,49 @@ export const appRouter = router({
           console.error("Face detection failed:", err);
           throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Face detection failed." });
         }
+      }),
+
+    // Manual "Compare Faces" tool — an officer picks one face from each of
+    // 2+ photos (any operation) and gets a pairwise similarity score back.
+    // Unlike confirmUnidentifiedPersonFaces/confirmEntityFace, this never
+    // writes anything (no entity link, no stored embedding) — it's a
+    // one-off comparison, not an identification. Detection re-runs per
+    // attachment (cached within the call for repeats) since embeddings are
+    // never persisted or sent to the client, matching detectFaces above.
+    compareFaces: protectedProcedure
+      .input(z.object({
+        faces: z.array(z.object({ attachmentId: z.number(), faceIndex: z.number() })).min(2).max(8),
+      }))
+      .query(async ({ input }) => {
+        const detectionCache = new Map<number, Awaited<ReturnType<typeof detectAndEmbedFaces>>>();
+        const embeddings: number[][] = [];
+        for (const f of input.faces) {
+          let faces = detectionCache.get(f.attachmentId);
+          if (!faces) {
+            const attachment = await getAttachmentById(f.attachmentId);
+            if (!attachment) throw new TRPCError({ code: "NOT_FOUND", message: "Attachment not found." });
+            try {
+              const buffer = await storageGetBytes(attachment.key);
+              faces = await detectAndEmbedFaces(buffer);
+            } catch (err) {
+              console.error("Face detection failed:", err);
+              throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Face detection failed." });
+            }
+            detectionCache.set(f.attachmentId, faces);
+          }
+          const face = faces[f.faceIndex];
+          if (!face) throw new TRPCError({ code: "BAD_REQUEST", message: "Selected face was not found." });
+          embeddings.push(face.embedding);
+        }
+
+        const results: Array<{ aIndex: number; bIndex: number; similarity: number; isPossibleMatch: boolean }> = [];
+        for (let i = 0; i < embeddings.length; i++) {
+          for (let j = i + 1; j < embeddings.length; j++) {
+            const similarity = cosineSimilarity(embeddings[i], embeddings[j]);
+            results.push({ aIndex: i, bIndex: j, similarity, isPossibleMatch: similarity >= FACE_MATCH_THRESHOLD });
+          }
+        }
+        return results;
       }),
 
     // Officer-confirmed step: for each face index the officer tapped, create

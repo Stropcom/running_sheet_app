@@ -969,7 +969,7 @@ export interface FaceMatchCandidate {
 // just under it. Still just a starting point for further calibration:
 // matches are always human-confirmed, never applied automatically, so a
 // loose threshold only means more suggestions to review, not bad data.
-const FACE_MATCH_THRESHOLD = 0.25;
+export const FACE_MATCH_THRESHOLD = 0.25;
 const FACE_MATCH_MAX_RESULTS = 5;
 
 // Compares a newly-confirmed face's embedding against every other confirmed

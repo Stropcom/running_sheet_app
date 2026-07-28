@@ -11,6 +11,7 @@ import {
   List,
   LayoutGrid,
   Upload,
+  ScanFace,
 } from "lucide-react";
 import { useLocation, useParams } from "wouter";
 import { useMemo, useState } from "react";
@@ -20,6 +21,7 @@ import { DeletePhotoButton } from "@/components/DeletePhotoButton";
 import { AttachmentLinkBadge } from "@/components/AttachmentLinkBadge";
 import { LinkedEntityPills } from "@/components/LinkedEntityPills";
 import { UploadImageDialog } from "@/components/UploadImageDialog";
+import { CompareFacesDialog } from "@/components/CompareFacesDialog";
 import { formatAttachmentBanner } from "@/lib/attachmentBanner";
 
 // Folder progression: Images → Operation → Running Sheet → RS images
@@ -65,6 +67,7 @@ function OperationFolderList({
   onSelect: (id: number) => void;
 }) {
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [compareOpen, setCompareOpen] = useState(false);
   const { data: operations, isLoading } = trpc.operation.list.useQuery(
     undefined,
     {
@@ -84,6 +87,10 @@ function OperationFolderList({
             Photos attached to running sheet observations, by operation.
           </p>
         </div>
+        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setCompareOpen(true)}>
+          <ScanFace className="w-3.5 h-3.5" />
+          Compare Faces
+        </Button>
         <Button size="sm" className="gap-1.5" onClick={() => setUploadOpen(true)}>
           <Upload className="w-3.5 h-3.5" />
           Upload
@@ -123,6 +130,7 @@ function OperationFolderList({
       )}
 
       <UploadImageDialog open={uploadOpen} onOpenChange={setUploadOpen} />
+      <CompareFacesDialog open={compareOpen} onOpenChange={setCompareOpen} />
     </div>
   );
 }

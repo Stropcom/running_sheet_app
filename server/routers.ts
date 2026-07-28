@@ -18,6 +18,7 @@ import {
   addCtoRosterMember,
   deleteCtoRosterMember,
   moveCtoRosterMember,
+  changeCtoRosterMemberTeam,
   reorderCtoRosterMembers,
   writeCtoRosterAudit,
 } from "./ctoRoster";
@@ -3331,6 +3332,18 @@ export const appRouter = router({
         .input(z.array(z.object({ id: z.number(), teamId: z.number(), sortOrder: z.number() })))
         .mutation(async ({ input }) => {
           await reorderCtoRosterMembers(input);
+          return { success: true };
+        }),
+
+      /** Change a member's team, clearing future shifts except the codes to keep — admin only */
+      changeTeam: adminProcedure
+        .input(z.object({
+          memberId: z.number(),
+          newTeamId: z.number(),
+          keepShiftCodes: z.array(z.string()),
+        }))
+        .mutation(async ({ input }) => {
+          await changeCtoRosterMemberTeam(input.memberId, input.newTeamId, input.keepShiftCodes);
           return { success: true };
         }),
     }),

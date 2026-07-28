@@ -42,6 +42,8 @@ import TileHomeScreen from "@/pages/TileHomeScreen";
 import ImagesPage from "@/pages/ImagesPage";
 import OperationManagerPage from "@/pages/OperationManagerPage";
 import CtoRosterPage from "@/pages/CtoRoster/RosterPage";
+import CtoRosterMyShiftsPage from "@/pages/CtoRoster/MyShiftsPage";
+import CtoRosterMemberManagementPage from "@/pages/CtoRoster/MemberManagementPage";
 import { DraftModeBanner } from "@/components/DraftModeBanner";
 import { SectionColorProvider } from "@/contexts/SectionColorContext";
 import { useEffect } from "react";
@@ -102,6 +104,8 @@ function Router() {
       <Route path="/images/:operationId/:sheetId" component={ImagesPage} />
       <Route path="/operation-manager" component={OperationManagerPage} />
       <Route path="/cto-roster" component={CtoRosterPage} />
+      <Route path="/cto-roster/my-shifts" component={CtoRosterMyShiftsPage} />
+      <Route path="/cto-roster/members" component={CtoRosterMemberManagementPage} />
       <Route path="/operation-management" component={OperationManagementPage} />
       <Route path="/calendar" component={CalendarPage} />
       <Route path="/court/statements" component={StatementsPage} />

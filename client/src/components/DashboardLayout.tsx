@@ -65,6 +65,8 @@ type SortableNavItemProps = {
   setTodoExpanded: React.Dispatch<React.SetStateAction<boolean>>;
   opManagerExpanded: boolean;
   setOpManagerExpanded: React.Dispatch<React.SetStateAction<boolean>>;
+  ctoRosterSubExpanded: boolean;
+  setCtoRosterSubExpanded: React.Dispatch<React.SetStateAction<boolean>>;
   shortcutsItemRef: React.RefObject<HTMLLIElement | null>;
   isObservationFocused: boolean;
   setShortcutsPanelOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -84,6 +86,8 @@ function SortableNavItem({
   setTodoExpanded,
   opManagerExpanded,
   setOpManagerExpanded,
+  ctoRosterSubExpanded,
+  setCtoRosterSubExpanded,
   shortcutsItemRef,
   isObservationFocused,
   setShortcutsPanelOpen,
@@ -292,10 +296,30 @@ function SortableNavItem({
             <ClipboardList className="h-3.5 w-3.5 shrink-0 text-purple-500" />
             CTO Weekly Tasking
           </button>
-          <button onClick={() => setLocation("/cto-roster")} className={subItemClass(location.startsWith("/cto-roster"))}>
+          <button
+            onClick={() => setCtoRosterSubExpanded((v) => !v)}
+            className={subItemClass(location.startsWith("/cto-roster"))}
+          >
             <Users className="h-3.5 w-3.5 shrink-0 text-purple-500" />
-            CTO Roster
+            <span className="flex-1">CTO Roster</span>
+            {ctoRosterSubExpanded ? <ChevronDown className="h-3 w-3 text-sidebar-foreground/40" /> : <ChevronRight className="h-3 w-3 text-sidebar-foreground/40" />}
           </button>
+          {ctoRosterSubExpanded && (
+            <div className="ml-4 border-l border-sidebar-border/40 pl-3 flex flex-col gap-0.5 mb-0.5">
+              <button onClick={() => setLocation("/cto-roster")} className={subItemClass(location === "/cto-roster")}>
+                <Users className="h-3.5 w-3.5 shrink-0" />
+                Shift Grid
+              </button>
+              <button onClick={() => setLocation("/cto-roster/my-shifts")} className={subItemClass(location === "/cto-roster/my-shifts")}>
+                <Users className="h-3.5 w-3.5 shrink-0" />
+                My Shifts
+              </button>
+              <button onClick={() => setLocation("/cto-roster/members")} className={subItemClass(location === "/cto-roster/members")}>
+                <Users className="h-3.5 w-3.5 shrink-0" />
+                Members
+              </button>
+            </div>
+          )}
         </div>
       )}
     </SidebarMenuItem>
@@ -436,6 +460,7 @@ function DashboardLayoutContent({
   const [courtExpanded, setCourtExpanded] = useState(() => location.startsWith("/court"));
   const [todoExpanded, setTodoExpanded] = useState(() => location === "/todo" || location === "/todo/images" || location === "/todo/governance");
   const [opManagerExpanded, setOpManagerExpanded] = useState(() => location.startsWith("/operation-manager") || location.startsWith("/cto-roster"));
+  const [ctoRosterSubExpanded, setCtoRosterSubExpanded] = useState(() => location.startsWith("/cto-roster"));
   const [adminFolderExpanded, setAdminFolderExpanded] = useState(false);
   const [userMgmtFolderExpanded, setUserMgmtFolderExpanded] = useState(false);
 
@@ -637,6 +662,8 @@ function DashboardLayoutContent({
                       setTodoExpanded={setTodoExpanded}
                       opManagerExpanded={opManagerExpanded}
                       setOpManagerExpanded={setOpManagerExpanded}
+                      ctoRosterSubExpanded={ctoRosterSubExpanded}
+                      setCtoRosterSubExpanded={setCtoRosterSubExpanded}
                       shortcutsItemRef={shortcutsItemRef}
                       isObservationFocused={isObservationFocused}
                       setShortcutsPanelOpen={setShortcutsPanelOpen}

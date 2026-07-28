@@ -103,6 +103,25 @@ export async function moveCtoRosterMember(memberId: number, teamId: number, sort
     .where(eq(ctoRosterMembers.id, memberId));
 }
 
+/**
+ * Move a member to a new team, clearing their future (from today) shifts
+ * except for the shift codes the caller chose to keep (e.g. Leave, Court).
+ */
+export async function changeCtoRosterMemberTeam(memberId: number, newTeamId: number, keepShiftCodes: string[]): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(ctoRosterMembers).set({ teamId: newTeamId }).where(eq(ctoRosterMembers.id, memberId));
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const futureShifts = await db.select().from(ctoRosterShifts)
+    .where(and(eq(ctoRosterShifts.memberId, memberId), gte(ctoRosterShifts.shiftDate, todayStr)));
+  for (const s of futureShifts) {
+    if (!keepShiftCodes.includes(s.shiftCode)) {
+      await db.delete(ctoRosterShifts).where(and(eq(ctoRosterShifts.memberId, memberId), eq(ctoRosterShifts.shiftDate, s.shiftDate)));
+    }
+  }
+}
+
 export async function reorderCtoRosterMembers(rows: { id: number; teamId: number; sortOrder: number }[]): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");

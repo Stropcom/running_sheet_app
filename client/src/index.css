@@ -155,6 +155,50 @@
   --uncertified-color: oklch(0.48 0.02 250);
 }
 
+/* ── CTO Roster: shift code colour palette ────────────────────────────────── */
+/* Ported from roster_app — each shift code gets a maximally distinct,
+   accessible background + foreground. Same across light/dark themes. */
+:root {
+  --shift-d:    oklch(0.82 0.16 142);   /* vivid green     — Day Shift */
+  --shift-d-fg: oklch(0.10 0.12 142);
+  --shift-a:    oklch(0.78 0.14 230);   /* strong blue     — Afternoon Shift */
+  --shift-a-fg: oklch(0.08 0.10 230);
+  --shift-r:    oklch(0.82 0.12 350);   /* soft pink       — Rest Day */
+  --shift-r-fg: oklch(0.12 0.10 350);
+  --shift-o:    oklch(0.80 0.18 35);    /* vivid orange    — On Call */
+  --shift-o-fg: oklch(0.10 0.12 35);
+  --shift-l:    oklch(0.76 0.16 320);   /* hot pink/magenta — Leave */
+  --shift-l-fg: oklch(0.10 0.12 320);
+  --shift-c:    oklch(0.78 0.14 180);   /* cyan/teal       — Court */
+  --shift-c-fg: oklch(0.10 0.10 180);
+  --shift-tt:   oklch(0.88 0.06 90);    /* warm beige      — Training */
+  --shift-tt-fg:oklch(0.12 0.08 90);
+  --shift-doc:  oklch(0.82 0.12 100);   /* lime green      — Dayshift On-Call */
+  --shift-doc-fg:oklch(0.10 0.10 100);
+  --shift-adoc: oklch(0.76 0.14 280);   /* violet/purple   — Admin On-Call */
+  --shift-adoc-fg:oklch(0.10 0.10 280);
+  --shift-ad:   oklch(0.84 0.10 55);    /* golden amber    — Admin */
+  --shift-ad-fg:oklch(0.12 0.10 55);
+  --shift-aoc:  oklch(0.80 0.14 200);   /* deep sky blue   — Afternoon On-Call */
+  --shift-aoc-fg:oklch(0.10 0.10 200);
+  --shift-dep:  oklch(0.28 0.10 270);   /* dark navy       — Deployment */
+  --shift-dep-fg:oklch(0.97 0.02 270);
+}
+@layer utilities {
+  .shift-d    { background: var(--shift-d);    color: var(--shift-d-fg); }
+  .shift-a    { background: var(--shift-a);    color: var(--shift-a-fg); }
+  .shift-r    { background: var(--shift-r);    color: var(--shift-r-fg); }
+  .shift-o    { background: var(--shift-o);    color: var(--shift-o-fg); }
+  .shift-l    { background: var(--shift-l);    color: var(--shift-l-fg); }
+  .shift-c    { background: var(--shift-c);    color: var(--shift-c-fg); }
+  .shift-tt   { background: var(--shift-tt);   color: var(--shift-tt-fg); }
+  .shift-doc  { background: var(--shift-doc);  color: var(--shift-doc-fg); }
+  .shift-adoc { background: var(--shift-adoc); color: var(--shift-adoc-fg); }
+  .shift-ad   { background: var(--shift-ad);   color: var(--shift-ad-fg); }
+  .shift-aoc  { background: var(--shift-aoc);  color: var(--shift-aoc-fg); }
+  .shift-dep  { background: var(--shift-dep);  color: var(--shift-dep-fg); }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

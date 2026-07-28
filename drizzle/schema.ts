@@ -9,6 +9,8 @@ import {
   bigint,
   double,
   uniqueIndex,
+  date,
+  index,
 } from "drizzle-orm/mysql-core";
 
 // ─── Users ───────────────────────────────────────────────────────────────────
@@ -780,3 +782,253 @@ export const pushSubscriptions = mysqlTable("push_subscriptions", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 export type PushSubscription = typeof pushSubscriptions.$inferSelect;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CTO Roster — ported from the standalone roster_app (same Manus platform
+// template as RunLog itself). Every table is prefixed cto_roster_ to read as
+// one feature group and avoid collisions with RunLog's own tables (e.g. its
+// own auditLogs). The source app's own `users` table (a bare Manus-OAuth
+// scaffold, no password) was dropped entirely — every roster member is
+// already a real RunLog user, they just never logged into roster_app itself
+// — so ctoRosterMembers links to RunLog's real users by CIN (RunLog's
+// human-facing identity convention — see CLAUDE.md) instead of duplicating a
+// name. Everything else ports close to as-is; these are plain per-roster
+// domain tables with no platform-specific plumbing.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ─── CTO Roster: Teams & Members ─────────────────────────────────────────────
+export const ctoRosterTeams = mysqlTable("cto_roster_teams", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 64 }).notNull().unique(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+});
+export type CtoRosterTeam = typeof ctoRosterTeams.$inferSelect;
+export type InsertCtoRosterTeam = typeof ctoRosterTeams.$inferInsert;
+
+export const ctoRosterMembers = mysqlTable("cto_roster_members", {
+  id: int("id").autoincrement().primaryKey(),
+  // FK to users.cin, not users.id — matches how the rest of RunLog stamps
+  // CIN (not a raw user id) on operational records, so roster history still
+  // reads correctly even if a user's own name/profile changes later.
+  cin: varchar("cin", { length: 64 }).notNull(),
+  teamId: int("teamId").notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => [
+  index("cto_roster_members_teamId_idx").on(t.teamId),
+  uniqueIndex("cto_roster_members_cin_idx").on(t.cin),
+]);
+export type CtoRosterMember = typeof ctoRosterMembers.$inferSelect;
+export type InsertCtoRosterMember = typeof ctoRosterMembers.$inferInsert;
+
+// ─── CTO Roster: Shifts ───────────────────────────────────────────────────────
+// Valid shift codes: d, a, r, o, l, c, tt, dep, doc, adoc, ad, aoc
+export const CTO_ROSTER_SHIFT_CODES = ["d", "a", "r", "o", "l", "c", "tt", "dep", "doc", "adoc", "ad", "aoc"] as const;
+export type CtoRosterShiftCode = typeof CTO_ROSTER_SHIFT_CODES[number];
+
+export const ctoRosterShifts = mysqlTable("cto_roster_shifts", {
+  id: int("id").autoincrement().primaryKey(),
+  memberId: int("memberId").notNull(),
+  shiftDate: date("shiftDate", { mode: "string" }).notNull(),
+  shiftCode: varchar("shiftCode", { length: 8 }).notNull(),
+  /** Optional custom start time override, e.g. "07:00" */
+  shiftTime: varchar("shiftTime", { length: 8 }),
+  comment: text("comment"),
+  isActing: boolean("isActing").default(false).notNull(),
+  updatedBy: int("updatedBy"), // FK → users.id
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => [
+  uniqueIndex("cto_roster_shifts_member_date_idx").on(t.memberId, t.shiftDate),
+  index("cto_roster_shifts_date_idx").on(t.shiftDate),
+]);
+export type CtoRosterShift = typeof ctoRosterShifts.$inferSelect;
+export type InsertCtoRosterShift = typeof ctoRosterShifts.$inferInsert;
+
+// ─── CTO Roster: Drafts (what-if planning, merges back into live roster) ────
+export const ctoRosterDrafts = mysqlTable("cto_roster_drafts", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 128 }).notNull(),
+  startDate: date("startDate", { mode: "string" }).notNull(),
+  endDate: date("endDate", { mode: "string" }).notNull(),
+  createdBy: int("createdBy"), // FK → users.id
+  createdByName: varchar("createdByName", { length: 128 }),
+  /** Snapshot of main-roster shift values at seed time (JSON) — used for conflict detection at merge */
+  seedSnapshot: text("seedSnapshot"),
+  /**
+   * 'seeded'     — copied from live roster; Leave/Court locked; can be merged back
+   * 'standalone' — blank slate; fully editable teams/members; cannot be merged; can be saved as a named roster
+   */
+  draftType: mysqlEnum("draftType", ["seeded", "standalone"]).default("seeded").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  /** Auto-expires 14 days after creation */
+  expiresAt: timestamp("expiresAt").notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type CtoRosterDraft = typeof ctoRosterDrafts.$inferSelect;
+export type InsertCtoRosterDraft = typeof ctoRosterDrafts.$inferInsert;
+
+/** Teams owned by a standalone draft (not linked to live teams) */
+export const ctoRosterDraftTeams = mysqlTable("cto_roster_draft_teams", {
+  id: int("id").autoincrement().primaryKey(),
+  draftId: int("draftId").notNull(),
+  name: varchar("name", { length: 64 }).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+}, (t) => [
+  index("cto_roster_draft_teams_draftId_idx").on(t.draftId),
+]);
+export type CtoRosterDraftTeam = typeof ctoRosterDraftTeams.$inferSelect;
+export type InsertCtoRosterDraftTeam = typeof ctoRosterDraftTeams.$inferInsert;
+
+/**
+ * Members owned by a standalone draft (not linked to live members). Kept as
+ * a free-text name, unlike ctoRosterMembers — a blank-slate "what if" draft
+ * can plan around a hypothetical position that isn't a real CIN yet.
+ */
+export const ctoRosterDraftMembers = mysqlTable("cto_roster_draft_members", {
+  id: int("id").autoincrement().primaryKey(),
+  draftId: int("draftId").notNull(),
+  /** References cto_roster_draft_teams.id for standalone drafts */
+  teamId: int("teamId").notNull(),
+  name: varchar("name", { length: 128 }).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+}, (t) => [
+  index("cto_roster_draft_members_draftId_idx").on(t.draftId),
+  index("cto_roster_draft_members_teamId_idx").on(t.teamId),
+]);
+export type CtoRosterDraftMember = typeof ctoRosterDraftMembers.$inferSelect;
+export type InsertCtoRosterDraftMember = typeof ctoRosterDraftMembers.$inferInsert;
+
+export const ctoRosterDraftShifts = mysqlTable("cto_roster_draft_shifts", {
+  id: int("id").autoincrement().primaryKey(),
+  draftId: int("draftId").notNull(),
+  memberId: int("memberId").notNull(),
+  shiftDate: date("shiftDate", { mode: "string" }).notNull(),
+  shiftCode: varchar("shiftCode", { length: 8 }).notNull(),
+  shiftTime: varchar("shiftTime", { length: 8 }),
+  comment: text("comment"),
+  isActing: boolean("isActing").default(false).notNull(),
+  updatedBy: int("updatedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => [
+  uniqueIndex("cto_roster_draft_shifts_draft_member_date_idx").on(t.draftId, t.memberId, t.shiftDate),
+  index("cto_roster_draft_shifts_draftId_idx").on(t.draftId),
+  index("cto_roster_draft_shifts_date_idx").on(t.shiftDate),
+]);
+export type CtoRosterDraftShift = typeof ctoRosterDraftShifts.$inferSelect;
+export type InsertCtoRosterDraftShift = typeof ctoRosterDraftShifts.$inferInsert;
+
+// ─── CTO Roster: Saved Rosters (named point-in-time archive/export) ─────────
+export const ctoRosterSavedRosters = mysqlTable("cto_roster_saved_rosters", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 128 }).notNull(),
+  startDate: date("startDate", { mode: "string" }).notNull(),
+  endDate: date("endDate", { mode: "string" }).notNull(),
+  createdBy: int("createdBy"),
+  createdByName: varchar("createdByName", { length: 128 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type CtoRosterSavedRoster = typeof ctoRosterSavedRosters.$inferSelect;
+export type InsertCtoRosterSavedRoster = typeof ctoRosterSavedRosters.$inferInsert;
+
+export const ctoRosterSavedRosterTeams = mysqlTable("cto_roster_saved_roster_teams", {
+  id: int("id").autoincrement().primaryKey(),
+  savedRosterId: int("savedRosterId").notNull(),
+  name: varchar("name", { length: 64 }).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+}, (t) => [
+  index("cto_roster_saved_roster_teams_rosterId_idx").on(t.savedRosterId),
+]);
+export type CtoRosterSavedRosterTeam = typeof ctoRosterSavedRosterTeams.$inferSelect;
+export type InsertCtoRosterSavedRosterTeam = typeof ctoRosterSavedRosterTeams.$inferInsert;
+
+/** Frozen snapshot of a member's display name at save time — a saved roster is a point-in-time archive. */
+export const ctoRosterSavedRosterMembers = mysqlTable("cto_roster_saved_roster_members", {
+  id: int("id").autoincrement().primaryKey(),
+  savedRosterId: int("savedRosterId").notNull(),
+  teamId: int("teamId").notNull(),
+  name: varchar("name", { length: 128 }).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+}, (t) => [
+  index("cto_roster_saved_roster_members_rosterId_idx").on(t.savedRosterId),
+  index("cto_roster_saved_roster_members_teamId_idx").on(t.teamId),
+]);
+export type CtoRosterSavedRosterMember = typeof ctoRosterSavedRosterMembers.$inferSelect;
+export type InsertCtoRosterSavedRosterMember = typeof ctoRosterSavedRosterMembers.$inferInsert;
+
+export const ctoRosterSavedRosterShifts = mysqlTable("cto_roster_saved_roster_shifts", {
+  id: int("id").autoincrement().primaryKey(),
+  savedRosterId: int("savedRosterId").notNull(),
+  memberId: int("memberId").notNull(),
+  shiftDate: date("shiftDate", { mode: "string" }).notNull(),
+  shiftCode: varchar("shiftCode", { length: 8 }).notNull(),
+  shiftTime: varchar("shiftTime", { length: 8 }),
+  comment: text("comment"),
+  isActing: boolean("isActing").default(false).notNull(),
+  updatedBy: int("updatedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => [
+  uniqueIndex("cto_roster_saved_roster_shifts_roster_member_date_idx").on(t.savedRosterId, t.memberId, t.shiftDate),
+  index("cto_roster_saved_roster_shifts_rosterId_idx").on(t.savedRosterId),
+  index("cto_roster_saved_roster_shifts_date_idx").on(t.shiftDate),
+]);
+export type CtoRosterSavedRosterShift = typeof ctoRosterSavedRosterShifts.$inferSelect;
+export type InsertCtoRosterSavedRosterShift = typeof ctoRosterSavedRosterShifts.$inferInsert;
+
+// ─── CTO Roster: Audit Log ────────────────────────────────────────────────────
+// Kept separate from RunLog's own auditLogs table — roster audit rows carry
+// shift-specific oldValue/newValue JSON diffs that don't fit that table's shape.
+export const ctoRosterAuditLog = mysqlTable("cto_roster_audit_log", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId"),
+  userName: varchar("userName", { length: 128 }),
+  /** upsert_shift | delete_shift | bulk_update | bulk_copy | add_member | delete_member | change_team | reorder | draft_merge | save_as_roster */
+  action: varchar("action", { length: 64 }).notNull(),
+  memberId: int("memberId"),
+  memberName: varchar("memberName", { length: 128 }),
+  shiftDate: varchar("shiftDate", { length: 16 }),
+  oldValue: text("oldValue"),
+  newValue: text("newValue"),
+  detail: text("detail"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (t) => [
+  index("cto_roster_audit_log_createdAt_idx").on(t.createdAt),
+  index("cto_roster_audit_log_userId_idx").on(t.userId),
+]);
+export type CtoRosterAuditLog = typeof ctoRosterAuditLog.$inferSelect;
+export type InsertCtoRosterAuditLog = typeof ctoRosterAuditLog.$inferInsert;
+
+// ─── CTO Roster: Outlook Settings (coverage minimums) ───────────────────────
+export const ctoRosterOutlookSettings = mysqlTable("cto_roster_outlook_settings", {
+  id: int("id").autoincrement().primaryKey(),
+  /** Minimum on-duty headcount per team (JSON: { "Team 1": 5, "Team 2": 5, "PTT": 2, "Capability": 1 }) */
+  teamMinimums: text("teamMinimums").notNull(),
+  onCallMin: int("onCallMin").default(5).notNull(),
+  /** Combined minimum for BLENDED state (Team 1 + Team 2 combined) */
+  combinedMin: int("combinedMin").default(5).notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type CtoRosterOutlookSettings = typeof ctoRosterOutlookSettings.$inferSelect;
+export type InsertCtoRosterOutlookSettings = typeof ctoRosterOutlookSettings.$inferInsert;
+
+// ─── CTO Roster: EBA Rules (EA compliance engine config) ────────────────────
+export const ctoRosterEbaRules = mysqlTable("cto_roster_eba_rules", {
+  id: int("id").autoincrement().primaryKey(),
+  /** Short machine-readable key, e.g. "max_continuous_hours" */
+  ruleKey: varchar("ruleKey", { length: 64 }).notNull().unique(),
+  title: varchar("title", { length: 256 }).notNull(),
+  description: text("description"),
+  /** EA section reference, e.g. "s.33(11)" */
+  eaReference: varchar("eaReference", { length: 64 }),
+  thresholdValue: int("thresholdValue"),
+  thresholdValue2: int("thresholdValue2"),
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type CtoRosterEbaRule = typeof ctoRosterEbaRules.$inferSelect;
+export type InsertCtoRosterEbaRule = typeof ctoRosterEbaRules.$inferInsert;

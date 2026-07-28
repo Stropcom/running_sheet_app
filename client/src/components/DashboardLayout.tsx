@@ -63,6 +63,8 @@ type SortableNavItemProps = {
   govCount: number;
   todoExpanded: boolean;
   setTodoExpanded: React.Dispatch<React.SetStateAction<boolean>>;
+  opManagerExpanded: boolean;
+  setOpManagerExpanded: React.Dispatch<React.SetStateAction<boolean>>;
   shortcutsItemRef: React.RefObject<HTMLLIElement | null>;
   isObservationFocused: boolean;
   setShortcutsPanelOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -80,6 +82,8 @@ function SortableNavItem({
   govCount,
   todoExpanded,
   setTodoExpanded,
+  opManagerExpanded,
+  setOpManagerExpanded,
   shortcutsItemRef,
   isObservationFocused,
   setShortcutsPanelOpen,
@@ -267,20 +271,36 @@ function SortableNavItem({
     </SidebarMenuItem>
   );
 
-  if (id === "operationManager") return (
+  if (id === "operationManager") {
+    const opManagerActive = location.startsWith("/operation-manager") || location.startsWith("/cto-roster");
+    return (
     <SidebarMenuItem {...itemProps}>
       <SidebarMenuButton
-        isActive={location === "/operation-manager" || location.startsWith("/operation-manager")}
-        onClick={() => setLocation("/operation-manager")}
-        tooltip="Operation Manager"
+        isActive={opManagerActive}
+        onClick={() => setOpManagerExpanded((v) => !v)}
+        tooltip="Op Manager"
         className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-purple-500/50 shadow-sm"
       >
         <ClipboardList className="h-4 w-4 text-purple-500" />
-        <span className={`flex-1 ${location === "/operation-manager" || location.startsWith("/operation-manager") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>Op Manager</span>
+        <span className={`flex-1 ${opManagerActive ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>Op Manager</span>
+        {!isCollapsed && (opManagerExpanded ? <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" /> : <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />)}
         {gripHandle}
       </SidebarMenuButton>
+      {opManagerExpanded && !isCollapsed && (
+        <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
+          <button onClick={() => setLocation("/operation-manager")} className={subItemClass(location.startsWith("/operation-manager"))}>
+            <ClipboardList className="h-3.5 w-3.5 shrink-0 text-purple-500" />
+            CTO Weekly Tasking
+          </button>
+          <button onClick={() => setLocation("/cto-roster")} className={subItemClass(location.startsWith("/cto-roster"))}>
+            <Users className="h-3.5 w-3.5 shrink-0 text-purple-500" />
+            CTO Roster
+          </button>
+        </div>
+      )}
     </SidebarMenuItem>
-  );
+    );
+  }
 
   return null;
 }
@@ -415,6 +435,7 @@ function DashboardLayoutContent({
 
   const [courtExpanded, setCourtExpanded] = useState(() => location.startsWith("/court"));
   const [todoExpanded, setTodoExpanded] = useState(() => location === "/todo" || location === "/todo/images" || location === "/todo/governance");
+  const [opManagerExpanded, setOpManagerExpanded] = useState(() => location.startsWith("/operation-manager") || location.startsWith("/cto-roster"));
   const [adminFolderExpanded, setAdminFolderExpanded] = useState(false);
   const [userMgmtFolderExpanded, setUserMgmtFolderExpanded] = useState(false);
 
@@ -614,6 +635,8 @@ function DashboardLayoutContent({
                       govCount={govCount}
                       todoExpanded={todoExpanded}
                       setTodoExpanded={setTodoExpanded}
+                      opManagerExpanded={opManagerExpanded}
+                      setOpManagerExpanded={setOpManagerExpanded}
                       shortcutsItemRef={shortcutsItemRef}
                       isObservationFocused={isObservationFocused}
                       setShortcutsPanelOpen={setShortcutsPanelOpen}

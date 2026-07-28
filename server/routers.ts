@@ -7,6 +7,20 @@ import { COOKIE_NAME, SESSION_EXPIRY_MS } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { processAttachmentUpload, processManualAttachmentUpload, AttachmentUploadError } from "./attachmentUpload";
 import { systemRouter } from "./_core/systemRouter";
+import {
+  getAllCtoRosterTeams,
+  getAllCtoRosterMembers,
+  getCtoRosterShiftsForDateRange,
+  getCtoRosterShiftsForMember,
+  upsertCtoRosterShift,
+  bulkUpdateCtoRosterShifts,
+  bulkCopyCtoRosterShifts,
+  addCtoRosterMember,
+  deleteCtoRosterMember,
+  moveCtoRosterMember,
+  reorderCtoRosterMembers,
+  writeCtoRosterAudit,
+} from "./ctoRoster";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { sdk } from "./_core/sdk";
 import {
@@ -3270,6 +3284,151 @@ export const appRouter = router({
         await removePushSubscription(input.endpoint);
         return { ok: true };
       }),
+  }),
+
+  // ─── CTO Roster ─────────────────────────────────────────────────────────────
+  // Ported from the standalone roster_app. Editing stays admin-only, matching
+  // that app's own access model (unlike opManager's tasking board above,
+  // which any full-access user can edit) — see the merge plan for why.
+  ctoRoster: router({
+    teams: router({
+      list: protectedProcedure.query(async () => {
+        return getAllCtoRosterTeams();
+      }),
+    }),
+
+    members: router({
+      list: protectedProcedure.query(async () => {
+        return getAllCtoRosterMembers();
+      }),
+
+      /** Add an existing RunLog user (by CIN) to the roster — admin only */
+      add: adminProcedure
+        .input(z.object({ cin: z.string().min(1), teamId: z.number() }))
+        .mutation(async ({ input }) => {
+          const memberId = await addCtoRosterMember(input.cin, input.teamId);
+          return { success: true, memberId };
+        }),
+
+      /** Delete a member and optionally their shifts — admin only */
+      delete: adminProcedure
+        .input(z.object({ memberId: z.number(), deleteShifts: z.boolean().default(true) }))
+        .mutation(async ({ input }) => {
+          await deleteCtoRosterMember(input.memberId, input.deleteShifts);
+          return { success: true };
+        }),
+
+      /** Move a member to a different team — admin only */
+      move: adminProcedure
+        .input(z.object({ memberId: z.number(), teamId: z.number(), sortOrder: z.number().optional() }))
+        .mutation(async ({ input }) => {
+          await moveCtoRosterMember(input.memberId, input.teamId, input.sortOrder);
+          return { success: true };
+        }),
+
+      /** Reorder members within or across teams — admin only */
+      reorder: adminProcedure
+        .input(z.array(z.object({ id: z.number(), teamId: z.number(), sortOrder: z.number() })))
+        .mutation(async ({ input }) => {
+          await reorderCtoRosterMembers(input);
+          return { success: true };
+        }),
+    }),
+
+    roster: router({
+      /** All shifts for a date range — the admin grid view */
+      getRange: protectedProcedure
+        .input(z.object({ startDate: z.string(), endDate: z.string() }))
+        .query(async ({ input }) => {
+          return getCtoRosterShiftsForDateRange(input.startDate, input.endDate);
+        }),
+
+      /** Shifts for the logged-in officer's own roster entry (by CIN) */
+      myShifts: protectedProcedure
+        .input(z.object({ startDate: z.string().optional(), endDate: z.string().optional() }))
+        .query(async ({ ctx, input }) => {
+          const members = await getAllCtoRosterMembers();
+          const me = members.find((m) => m.cin === ctx.user.cin);
+          if (!me) return [];
+          return getCtoRosterShiftsForMember(me.id, input.startDate, input.endDate);
+        }),
+
+      /** Update a single shift cell — admin only */
+      updateShift: adminProcedure
+        .input(z.object({
+          memberId: z.number(),
+          shiftDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date format"),
+          shiftCode: z.enum(["d", "a", "r", "o", "l", "c", "tt", "dep", "doc", "adoc", "ad", "aoc", ""]),
+          comment: z.string().nullable().optional(),
+          isActing: z.boolean().optional(),
+          memberName: z.string().optional(),
+          shiftTime: z.string().nullable().optional(),
+        }))
+        .mutation(async ({ ctx, input }) => {
+          const existing = await getCtoRosterShiftsForMember(input.memberId, input.shiftDate, input.shiftDate);
+          const oldShift = existing.find((s) => s.shiftDate === input.shiftDate);
+          await upsertCtoRosterShift(input.memberId, input.shiftDate, input.shiftCode, ctx.user.id, input.comment, input.isActing, input.shiftTime);
+          writeCtoRosterAudit({
+            userId: ctx.user.id,
+            userName: ctx.user.name,
+            action: "upsert_shift",
+            memberId: input.memberId,
+            memberName: input.memberName ?? null,
+            shiftDate: input.shiftDate,
+            oldValue: oldShift ? JSON.stringify({ shiftCode: oldShift.shiftCode, shiftTime: oldShift.shiftTime, isActing: oldShift.isActing, comment: oldShift.comment }) : null,
+            newValue: JSON.stringify({ shiftCode: input.shiftCode, shiftTime: input.shiftTime ?? null, isActing: input.isActing ?? false, comment: input.comment ?? null }),
+          });
+          return { success: true };
+        }),
+
+      /** Bulk update shifts for a member across multiple dates — admin only */
+      bulkUpdate: adminProcedure
+        .input(z.object({
+          memberId: z.number(),
+          memberName: z.string().optional(),
+          dates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
+          shiftCode: z.enum(["d", "a", "r", "o", "l", "c", "tt", "dep", "doc", "adoc", "ad", "aoc", ""]),
+          isActing: z.boolean().optional(),
+          shiftTime: z.string().nullable().optional(),
+        }))
+        .mutation(async ({ ctx, input }) => {
+          await bulkUpdateCtoRosterShifts(
+            input.dates.map((d) => ({ memberId: input.memberId, shiftDate: d, shiftCode: input.shiftCode, updatedBy: ctx.user.id, isActing: input.isActing, shiftTime: input.shiftTime }))
+          );
+          writeCtoRosterAudit({
+            userId: ctx.user.id,
+            userName: ctx.user.name,
+            action: "bulk_update",
+            memberId: input.memberId,
+            memberName: input.memberName ?? null,
+            detail: `${input.dates.length} shifts set to ${input.shiftCode || "(clear)"}${input.isActing ? " [acting]" : ""}`,
+          });
+          return { success: true, count: input.dates.length };
+        }),
+
+      /** Copy shifts from one member to multiple targets for a date range — admin only */
+      bulkCopy: adminProcedure
+        .input(z.object({
+          sourceMemberId: z.number(),
+          sourceMemberName: z.string().optional(),
+          targetMemberIds: z.array(z.number()).min(1),
+          targetMemberNames: z.array(z.string()).optional(),
+          startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        }))
+        .mutation(async ({ ctx, input }) => {
+          const count = await bulkCopyCtoRosterShifts(input.sourceMemberId, input.targetMemberIds, input.startDate, input.endDate, ctx.user.id);
+          writeCtoRosterAudit({
+            userId: ctx.user.id,
+            userName: ctx.user.name,
+            action: "bulk_copy",
+            memberId: input.sourceMemberId,
+            memberName: input.sourceMemberName ?? null,
+            detail: `Copied ${count} shifts to [${(input.targetMemberNames ?? []).join(", ")}] from ${input.startDate} to ${input.endDate}`,
+          });
+          return { success: true, count };
+        }),
+    }),
   }),
 
   // ─── Travelled Via Auto-fill ────────────────────────────────────────────────

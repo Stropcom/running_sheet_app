@@ -2924,7 +2924,7 @@ export default function IntelligenceMapping() {
                 border keeps the pill defined against light terrain. */}
             <button
               onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } setLocation("/"); }}
-              className="flex flex-col items-center justify-center gap-1 px-5 py-2.5 rounded-2xl shadow-lg border transition-all min-w-[80px] text-white border-slate-700 bg-slate-500 hover:bg-slate-400 active:scale-95"
+              className="flex flex-col items-center justify-center gap-1 px-5 py-2.5 rounded-2xl shadow-lg border transition-all w-20 text-white border-slate-700 bg-slate-500 hover:bg-slate-400 active:scale-95"
               title="Home"
             >
               <Home className="h-5 w-5 flex-shrink-0" />
@@ -2973,14 +2973,14 @@ export default function IntelligenceMapping() {
               );
             })()}
 
-            {/* Intel Profiles pill */}
+            {/* Intel pill */}
             <button
               onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } setLocation("/intelligence"); }}
-              className="flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all min-w-[80px] px-5 py-2.5 text-white border-violet-700 bg-violet-500 hover:bg-violet-400 active:scale-95"
+              className="flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all w-20 px-5 py-2.5 text-white border-violet-700 bg-violet-500 hover:bg-violet-400 active:scale-95"
               title="Intel Profiles"
             >
               <FolderSearch className="h-5 w-5 flex-shrink-0" />
-              <span className="text-[11px] font-semibold leading-none">Intel Profiles</span>
+              <span className="text-[11px] font-semibold leading-none">Intel</span>
             </button>
           </div>
         </div>

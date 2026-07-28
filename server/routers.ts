@@ -62,6 +62,11 @@ import {
   renameCtoRosterSavedRosterMember,
   deleteCtoRosterSavedRosterMember,
   moveCtoRosterSavedRosterMember,
+  getAllCtoRosterEbaRules,
+  updateCtoRosterEbaRule,
+  runCtoRosterEbaCheck,
+  getCtoRosterOutlookSettings,
+  updateCtoRosterOutlookSettings,
 } from "./ctoRoster";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { sdk } from "./_core/sdk";
@@ -4919,6 +4924,79 @@ export const appRouter = router({
         .input(z.object({ memberId: z.number(), newTeamId: z.number() }))
         .mutation(async ({ input }) => {
           await moveCtoRosterSavedRosterMember(input.memberId, input.newTeamId);
+          return { success: true };
+        }),
+    }),
+
+    // EA compliance rule engine — pure, deterministic (see ctoRosterEbaEngine.ts),
+    // no runtime AI/LLM involvement, per the Golden Rule in CLAUDE.md.
+    eba: router({
+      listRules: adminProcedure.query(async () => getAllCtoRosterEbaRules()),
+
+      updateRule: adminProcedure
+        .input(
+          z.object({
+            id: z.number(),
+            isActive: z.boolean().optional(),
+            thresholdValue: z.number().nullable().optional(),
+            thresholdValue2: z.number().nullable().optional(),
+            description: z.string().optional(),
+          })
+        )
+        .mutation(async ({ input }) => {
+          await updateCtoRosterEbaRule(input.id, input);
+          return { success: true };
+        }),
+
+      runCheck: adminProcedure
+        .input(
+          z.object({
+            scope: z.enum(["main", "draft", "custom", "saved"]),
+            draftId: z.number().optional(),
+            savedRosterId: z.number().optional(),
+            startDate: z.string().optional(),
+            endDate: z.string().optional(),
+          })
+        )
+        .mutation(async ({ input }) => {
+          if (input.scope === "draft" && !input.draftId)
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "draftId required for draft scope",
+            });
+          if (input.scope === "saved" && !input.savedRosterId)
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "savedRosterId required for saved scope",
+            });
+          return runCtoRosterEbaCheck(
+            input.scope,
+            input.draftId,
+            input.savedRosterId,
+            input.startDate,
+            input.endDate
+          );
+        }),
+    }),
+
+    // Team coverage minimums shown on the roster "Outlook" projection view.
+    outlookSettings: router({
+      get: protectedProcedure.query(async () => getCtoRosterOutlookSettings()),
+
+      update: adminProcedure
+        .input(
+          z.object({
+            teamMinimums: z.record(z.string(), z.number().min(0).max(99)),
+            onCallMin: z.number().min(0).max(99),
+            combinedMin: z.number().min(0).max(99),
+          })
+        )
+        .mutation(async ({ input }) => {
+          await updateCtoRosterOutlookSettings(
+            input.teamMinimums,
+            input.onCallMin,
+            input.combinedMin
+          );
           return { success: true };
         }),
     }),

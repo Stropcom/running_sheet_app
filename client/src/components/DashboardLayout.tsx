@@ -80,6 +80,7 @@ import {
   Image,
   Link2,
   FileEdit,
+  Binoculars,
 } from "lucide-react";
 import React, {
   CSSProperties,
@@ -539,6 +540,22 @@ function SortableNavItem({
                 >
                   <BookOpen className="h-3.5 w-3.5 shrink-0" />
                   Saved Rosters
+                </button>
+                <button
+                  onClick={() => setLocation("/cto-roster/outlook")}
+                  className={subItemClass(location === "/cto-roster/outlook")}
+                >
+                  <Binoculars className="h-3.5 w-3.5 shrink-0" />
+                  Outlook
+                </button>
+                <button
+                  onClick={() => setLocation("/cto-roster/ea-compliance")}
+                  className={subItemClass(
+                    location === "/cto-roster/ea-compliance"
+                  )}
+                >
+                  <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+                  EA Compliance
                 </button>
               </div>
             )}

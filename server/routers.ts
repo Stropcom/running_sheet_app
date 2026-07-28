@@ -148,7 +148,6 @@ import {
   getEntityLinkCounts,
   getAttachmentsForEntity,
   getLinkedOperationsForEntity,
-  getAllManualUploads,
   createPersonDetection,
   findSimilarFaces,
   confirmFaceMatch as confirmFaceMatchDb,
@@ -942,10 +941,6 @@ export const appRouter = router({
       .query(async ({ input }) => {
         return getAttachmentsByOperationId(input.operationId);
       }),
-
-    listUploaded: protectedProcedure.query(async () => {
-      return getAllManualUploads();
-    }),
 
     listBySheet: protectedProcedure
       .input(z.object({ sheetId: z.number() }))

@@ -797,38 +797,6 @@ export async function getAttachmentsByOperationId(operationId: number) {
   return attachLinkedCounts(db, await attachRowMemberCins(db, rows));
 }
 
-// Every manually-uploaded photo across all operations — powers the top-level
-// "Uploaded" view/filter in the Images folder, sub-filterable by upload date
-// client-side off createdAt.
-export async function getAllManualUploads() {
-  const db = await getDb();
-  if (!db) return [];
-  const rows = await db
-    .select({
-      id: rowAttachments.id,
-      rowId: rowAttachments.rowId,
-      isManualUpload: rowAttachments.isManualUpload,
-      url: rowAttachments.url,
-      mimeType: rowAttachments.mimeType,
-      caption: rowAttachments.caption,
-      uploadedByCIN: rowAttachments.uploadedByCIN,
-      createdAt: rowAttachments.createdAt,
-      operationId: rowAttachments.operationId,
-      operationName: operations.name,
-      sheetId: sheetRows.sheetId,
-      sheetTitle: runningSheets.title,
-      rowTime: sheetRows.time,
-      rowDate: sheetRows.rowDate,
-    })
-    .from(rowAttachments)
-    .leftJoin(operations, eq(rowAttachments.operationId, operations.id))
-    .leftJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
-    .leftJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
-    .where(and(eq(rowAttachments.isManualUpload, true), isNull(rowAttachments.deletedAt)))
-    .orderBy(desc(rowAttachments.createdAt));
-  return attachLinkedCounts(db, await attachRowMemberCins(db, rows));
-}
-
 // All attachments on a single running sheet, joined back to their row for a
 // time label.
 export async function getAttachmentsBySheetId(sheetId: number) {

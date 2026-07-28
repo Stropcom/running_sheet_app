@@ -11,7 +11,6 @@ import {
   List,
   LayoutGrid,
   Upload,
-  Clock,
 } from "lucide-react";
 import { useLocation, useParams } from "wouter";
 import { useMemo, useState } from "react";
@@ -65,7 +64,6 @@ function OperationFolderList({
   isAuthenticated: boolean;
   onSelect: (id: number) => void;
 }) {
-  const [topTab, setTopTab] = useState<"operations" | "uploaded">("operations");
   const [uploadOpen, setUploadOpen] = useState(false);
   const { data: operations, isLoading } = trpc.operation.list.useQuery(
     undefined,
@@ -92,34 +90,7 @@ function OperationFolderList({
         </Button>
       </div>
 
-      <div className="flex items-center gap-1 mb-6 p-1 rounded-xl border border-border bg-muted/30 w-fit">
-        <button
-          onClick={() => setTopTab("operations")}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-            topTab === "operations"
-              ? "bg-card text-foreground shadow-sm border border-border"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <FolderOpen className="w-3.5 h-3.5" />
-          By Operation
-        </button>
-        <button
-          onClick={() => setTopTab("uploaded")}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-            topTab === "uploaded"
-              ? "bg-card text-foreground shadow-sm border border-border"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <Clock className="w-3.5 h-3.5" />
-          Uploaded
-        </button>
-      </div>
-
-      {topTab === "uploaded" ? (
-        <UploadedGallery />
-      ) : isLoading ? (
+      {isLoading ? (
         <div className="flex flex-col gap-3">
           {[1, 2, 3].map(i => (
             <Skeleton key={i} className="h-16 rounded-xl" />
@@ -152,132 +123,6 @@ function OperationFolderList({
       )}
 
       <UploadImageDialog open={uploadOpen} onOpenChange={setUploadOpen} />
-    </div>
-  );
-}
-
-// Flat, cross-operation list of every manually-uploaded photo, sub-grouped
-// by operation (every upload requires one, see UploadImageDialog) rather
-// than upload date — the date is still shown per-photo in the bottom
-// banner, but which operation a photo belongs to is the more useful way to
-// scan a backlog since that's what these photos are ultimately filed under.
-function UploadedGallery() {
-  const utils = trpc.useUtils();
-  const [lightbox, setLightbox] = useState<string | null>(null);
-  const [linking, setLinking] = useState<{ id: number; url: string; operationId?: number } | null>(null);
-  const { data: attachments, isLoading } = trpc.attachment.listUploaded.useQuery();
-
-  const deleteAttachment = trpc.attachment.delete.useMutation({
-    onSuccess: () => {
-      utils.attachment.listUploaded.invalidate();
-      utils.attachment.listByOperation.invalidate();
-      toast.success("Photo deleted");
-    },
-    onError: e => toast.error(e.message),
-  });
-
-  const groupedByOperation = useMemo(() => {
-    if (!attachments) return [];
-    const byOperation = new Map<number | string, { label: string; photos: any[] }>();
-    for (const a of attachments as any[]) {
-      const key = a.operationId ?? "unknown";
-      const label = a.operationName ?? "Unknown Operation";
-      let group = byOperation.get(key);
-      if (!group) {
-        group = { label, photos: [] };
-        byOperation.set(key, group);
-      }
-      group.photos.push(a);
-    }
-    return Array.from(byOperation.values()).sort((a, b) => a.label.localeCompare(b.label));
-  }, [attachments]);
-
-  if (isLoading) {
-    return (
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-        {[1, 2, 3, 4].map(i => (
-          <Skeleton key={i} className="aspect-square rounded-xl" />
-        ))}
-      </div>
-    );
-  }
-
-  if (!attachments || attachments.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 text-center">
-        <div className="p-4 rounded-2xl bg-muted/40 mb-4">
-          <Upload className="w-8 h-8 text-muted-foreground" />
-        </div>
-        <p className="text-foreground font-medium mb-1">No manually uploaded photos yet</p>
-        <p className="text-muted-foreground text-sm">
-          Use the Upload button to add a photo independent of a running sheet row.
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-6">
-      {groupedByOperation.map(group => (
-        <div key={group.label}>
-          <div className="mb-2 px-3 py-1.5 rounded-lg bg-pink-500/10 border border-pink-500/20 text-xs font-semibold text-pink-500 truncate w-fit">
-            {group.label}
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-            {group.photos.map((a: any) => (
-              <div key={a.id} className="group relative rounded-xl overflow-hidden border border-border bg-card flex flex-col">
-                <div className="relative">
-                  <img
-                    src={a.url}
-                    alt="Uploaded photograph"
-                    className="w-full aspect-square object-cover cursor-zoom-in"
-                    onClick={() => setLightbox(a.url)}
-                  />
-                  <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1">
-                    <p className="text-[10px] text-white truncate">{formatAttachmentBanner(a)}</p>
-                  </div>
-                  <AttachmentLinkBadge
-                    linkedCount={a.linkedCount}
-                    linkedCategories={a.linkedCategories}
-                    onClick={() => setLinking({ id: a.id, url: a.url, operationId: a.operationId ?? undefined })}
-                    positionClassName="absolute top-1.5 left-1.5"
-                  />
-                  <DeletePhotoButton
-                    pending={deleteAttachment.isPending}
-                    onConfirm={() => deleteAttachment.mutate({ id: a.id })}
-                  />
-                </div>
-                <LinkedEntityPills entities={a.linkedEntities} />
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-
-      {lightbox && (
-        <div
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6"
-          onClick={() => setLightbox(null)}
-        >
-          <button
-            onClick={() => setLightbox(null)}
-            className="absolute top-4 right-4 h-9 w-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white"
-          >
-            <X className="h-5 w-5" />
-          </button>
-          <img src={lightbox} alt="Uploaded photograph" className="max-w-full max-h-full rounded shadow-2xl" />
-        </div>
-      )}
-
-      {linking !== null && (
-        <LinkAttachmentDialog
-          attachmentId={linking.id}
-          photoUrl={linking.url}
-          open={linking !== null}
-          onOpenChange={open => { if (!open) setLinking(null); }}
-          currentOperationId={linking.operationId}
-        />
-      )}
     </div>
   );
 }
@@ -576,7 +421,6 @@ function SheetGallery({
                 </div>
                 <AttachmentLinkBadge
                   linkedCount={a.linkedCount}
-                  linkedCategories={a.linkedCategories}
                   onClick={() => setLinking({ id: a.id, url: a.url })}
                   positionClassName="absolute top-1.5 left-1.5"
                 />
@@ -585,7 +429,7 @@ function SheetGallery({
                   onConfirm={() => deleteAttachment.mutate({ id: a.id })}
                 />
               </div>
-              <LinkedEntityPills entities={a.linkedEntities} />
+              <LinkedEntityPills entities={a.linkedEntities} onClick={() => setLinking({ id: a.id, url: a.url })} />
             </div>
           ))}
         </div>

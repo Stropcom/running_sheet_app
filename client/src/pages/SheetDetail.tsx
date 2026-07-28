@@ -1267,7 +1267,6 @@ function ObservationAttachments({
           />
           <AttachmentLinkBadge
             linkedCount={a.linkedCount ?? 0}
-            linkedCategories={a.linkedCategories}
             onClick={() => setLinking({ id: a.id, url: a.url })}
             positionClassName="absolute -top-1.5 -left-1.5"
             iconSize="h-3.5 w-3.5 sm:h-4 sm:w-4"
@@ -1282,7 +1281,7 @@ function ObservationAttachments({
               glyphSize="h-2 w-2 sm:h-2.5 sm:w-2.5"
             />
           )}
-          <LinkedEntityPills entities={a.linkedEntities} />
+          <LinkedEntityPills entities={a.linkedEntities} onClick={() => setLinking({ id: a.id, url: a.url })} />
         </div>
       ))}
       {preview && uploading && (

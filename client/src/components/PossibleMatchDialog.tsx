@@ -49,7 +49,6 @@ export function PossibleMatchDialog({
     utils.attachment.entityLinkCounts.invalidate();
     utils.attachment.listBySheet.invalidate();
     utils.attachment.listByOperation.invalidate();
-    utils.attachment.listUploaded.invalidate();
   };
 
   const confirmMatch = trpc.attachment.confirmFaceMatch.useMutation({

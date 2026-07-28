@@ -23,19 +23,32 @@ function displayLabel(category: string, label: string): string {
  * Renders one full-width pill per entity a photo is linked to (target name,
  * vehicle rego, location, Unidentified Person placeholder, ...) so a
  * thumbnail shows *who/what* it's linked to at a glance, not just that it
- * is linked (see AttachmentLinkBadge for the latter). Every pill is the
- * same width regardless of its content, stacked one per line, rather than
- * each shrinking to fit its own text. Renders nothing for an unlinked
- * photo — the amber "not linked" badge already covers that.
+ * is linked. Every pill is the same width regardless of its content,
+ * stacked one per line, rather than each shrinking to fit its own text.
+ * Renders nothing for an unlinked photo — the amber "not linked"
+ * AttachmentLinkBadge covers that case instead.
+ *
+ * When onClick is given, the whole pill area opens the Link photo to entity
+ * panel — this is now the only way to reach it for an already-linked photo,
+ * since AttachmentLinkBadge no longer renders its own icon once a photo has
+ * links (see AttachmentLinkBadge.tsx).
  */
 export function LinkedEntityPills({
   entities,
+  onClick,
 }: {
   entities?: Array<{ category: string; label: string }>;
+  onClick?: () => void;
 }) {
   if (!entities || entities.length === 0) return null;
   return (
-    <div className="flex flex-col gap-1 px-1.5 py-1 bg-muted/40">
+    <div
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      title={onClick ? "View or edit links" : undefined}
+      className={`flex flex-col gap-1 px-1.5 py-1 bg-muted/40 ${onClick ? "cursor-pointer hover:bg-muted/70 transition-colors" : ""}`}
+    >
       {entities.map((e, idx) => {
         const Icon = CATEGORY_ICON[e.category] ?? HelpCircle;
         const label = displayLabel(e.category, e.label);

@@ -71,7 +71,6 @@ export function FaceSelectPicker(props: FaceSelectPickerProps) {
     utils.attachment.entityLinkCounts.invalidate();
     utils.attachment.listBySheet.invalidate();
     utils.attachment.listByOperation.invalidate();
-    utils.attachment.listUploaded.invalidate();
   };
 
   const finishWithMatches = (matches: PendingMatch[]) => {

@@ -55,8 +55,10 @@ function findEntityForLink(link: { category: string; targetId?: number | null; e
 }
 
 // Shown under each "currently linked" pill so an officer can see at a glance
-// which other photos are already tied to that same entity — most useful for
-// Unidentified Person entries, which otherwise have no profile page to check.
+// which other photos are already tied to that same entity. Only rendered for
+// Unidentified Person links (see call site) — those otherwise have no
+// profile page to check; known entities (targets/associates/etc.) already
+// have one, so the thumbnail strip there would just be noise.
 function OtherLinkedPhotos({
   category,
   targetId,
@@ -239,12 +241,14 @@ export function LinkAttachmentDialog({
                         {linkedOps.join(", ")}
                       </p>
                     )}
-                    <OtherLinkedPhotos
-                      category={link.category as Category}
-                      targetId={link.targetId}
-                      entityLabel={link.entityLabel}
-                      excludeAttachmentId={attachmentId}
-                    />
+                    {link.category === "unidentified_person" && (
+                      <OtherLinkedPhotos
+                        category={link.category as Category}
+                        targetId={link.targetId}
+                        entityLabel={link.entityLabel}
+                        excludeAttachmentId={attachmentId}
+                      />
+                    )}
                   </div>
                 );
               })}
@@ -333,9 +337,9 @@ export function LinkAttachmentDialog({
                 <>
                   {inCurrentOp.length > 0 && (
                     <>
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground px-3 pt-1">
+                      <span className="inline-flex items-center w-fit mx-3 mt-1 mb-0.5 px-2 py-0.5 rounded-full border border-blue-700/50 bg-blue-700/10 text-[10px] font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-400">
                         In this operation
-                      </p>
+                      </span>
                       {inCurrentOp.map((e, idx) => (
                         <EntityCandidateRow
                           key={`cur-${e.shortForm}-${idx}`}
@@ -350,9 +354,9 @@ export function LinkAttachmentDialog({
                           }}
                         />
                       ))}
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground px-3 pt-2">
+                      <span className="inline-flex items-center w-fit mx-3 mt-2 mb-0.5 px-2 py-0.5 rounded-full border border-slate-500/50 bg-slate-500/10 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">
                         Other operations
-                      </p>
+                      </span>
                     </>
                   )}
                   {otherEntities.map((e, idx) => (

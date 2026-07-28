@@ -142,12 +142,23 @@ function SheetFolderList({
   onBack: () => void;
   onSelect: (sheetId: number) => void;
 }) {
+  const utils = trpc.useUtils();
   const [viewMode, setViewMode] = useState<"sheets" | "combined">("sheets");
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [linking, setLinking] = useState<{ id: number; url: string } | null>(null);
   const { data: operation } = trpc.operation.get.useQuery({ id: operationId });
   const { data: attachments, isLoading } =
     trpc.attachment.listByOperation.useQuery({ operationId });
+
+  const deleteAttachment = trpc.attachment.delete.useMutation({
+    onSuccess: () => {
+      utils.attachment.listByOperation.invalidate({ operationId });
+      utils.attachment.listBySheet.invalidate();
+      toast.success("Photo deleted");
+    },
+    onError: e => toast.error(e.message),
+  });
 
   // Manually-uploaded photos with no row (sheetId null via the left join)
   // have no running sheet to group under here — they live in the top-level
@@ -305,8 +316,17 @@ function SheetFolderList({
                       <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1">
                         <p className="text-[10px] text-white truncate">{formatAttachmentBanner(a)}</p>
                       </div>
+                      <AttachmentLinkBadge
+                        linkedCount={a.linkedCount}
+                        onClick={() => setLinking({ id: a.id, url: a.url })}
+                        positionClassName="absolute top-1.5 left-1.5"
+                      />
+                      <DeletePhotoButton
+                        pending={deleteAttachment.isPending}
+                        onConfirm={() => deleteAttachment.mutate({ id: a.id })}
+                      />
                     </div>
-                    <LinkedEntityPills entities={a.linkedEntities} />
+                    <LinkedEntityPills entities={a.linkedEntities} onClick={() => setLinking({ id: a.id, url: a.url })} />
                   </div>
                 ))}
               </div>
@@ -332,6 +352,16 @@ function SheetFolderList({
             className="max-w-full max-h-full rounded shadow-2xl"
           />
         </div>
+      )}
+
+      {linking !== null && (
+        <LinkAttachmentDialog
+          attachmentId={linking.id}
+          photoUrl={linking.url}
+          open={linking !== null}
+          onOpenChange={open => { if (!open) setLinking(null); }}
+          currentOperationId={operationId}
+        />
       )}
 
       <UploadImageDialog open={uploadOpen} onOpenChange={setUploadOpen} defaultOperationId={operationId} />

@@ -2917,12 +2917,12 @@ export default function IntelligenceMapping() {
               document.addEventListener("touchend", onEnd);
             }}
           >
-            {/* Home pill (all devices) — near-opaque tint (85%/95% on hover) so
-                it stays legible over busy satellite imagery without being a
-                flat solid block. */}
+            {/* Home pill (all devices) — solid filled chip (not translucent) so
+                it stays legible over busy satellite imagery, matching the
+                other opaque on-map markers (e.g. the pink custom marker pin). */}
             <button
               onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } setLocation("/"); }}
-              className="flex flex-col items-center justify-center gap-1 px-5 py-2.5 rounded-2xl shadow-lg border transition-all min-w-[80px] text-white border-slate-900/40 bg-slate-700/85 hover:bg-slate-700/95 active:scale-95"
+              className="flex flex-col items-center justify-center gap-1 px-5 py-2.5 rounded-2xl shadow-lg border transition-all min-w-[80px] text-white border-slate-900/40 bg-slate-700 hover:bg-slate-600 active:scale-95"
               title="Home"
             >
               <Home className="h-5 w-5 flex-shrink-0" />
@@ -2940,7 +2940,7 @@ export default function IntelligenceMapping() {
                   onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } if (activeSheet) setLocation(`/sheet/${rsSelectedSheetId}`); }}
                   className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all min-w-[80px] px-5 py-2.5 ${
                     activeSheet
-                      ? "text-white border-blue-900/40 bg-blue-700/85 hover:bg-blue-700/95 active:scale-95 cursor-pointer"
+                      ? "text-white border-blue-900/40 bg-blue-700 hover:bg-blue-600 active:scale-95 cursor-pointer"
                       : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"
                   }`}
                   title={activeSheet ? "Open active running sheet" : "No running sheet selected"}
@@ -2960,7 +2960,7 @@ export default function IntelligenceMapping() {
                   onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } if (hasSheet) setMapQeOpen(true); }}
                   className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all min-w-[80px] px-5 py-2.5 ${
                     hasSheet
-                      ? "text-white border-emerald-900/40 bg-emerald-700/85 hover:bg-emerald-700/95 active:scale-95 cursor-pointer"
+                      ? "text-white border-emerald-900/40 bg-emerald-700 hover:bg-emerald-600 active:scale-95 cursor-pointer"
                       : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"
                   }`}
                   title={hasSheet ? "RS Quick Entry" : "Select a running sheet first"}
@@ -2974,7 +2974,7 @@ export default function IntelligenceMapping() {
             {/* Intel Profiles pill */}
             <button
               onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } setLocation("/intelligence"); }}
-              className="flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all min-w-[80px] px-5 py-2.5 text-white border-violet-900/40 bg-violet-700/85 hover:bg-violet-700/95 active:scale-95"
+              className="flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all min-w-[80px] px-5 py-2.5 text-white border-violet-900/40 bg-violet-700 hover:bg-violet-600 active:scale-95"
               title="Intel Profiles"
             >
               <FolderSearch className="h-5 w-5 flex-shrink-0" />

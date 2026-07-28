@@ -1937,6 +1937,11 @@ export function extractEntitiesFromText(text: string): Array<{
     // Broader vehicle make/model keywords
     const VEHICLE_MAKES = /\b(toyota|ford|holden|honda|mazda|nissan|mitsubishi|subaru|hyundai|kia|volkswagen|vw|bmw|mercedes|audi|lexus|volvo|jeep|dodge|chevrolet|chevy|ram|gmc|chrysler|fiat|alfa|peugeot|renault|citroen|skoda|seat|suzuki|isuzu|daihatsu|ssangyong|great wall|gwm|haval|mg|byd|tesla|rivian|land rover|range rover|defender|discovery|jaguar|porsche|ferrari|lamborghini|maserati|bentley|rolls royce|aston martin|mclaren|lotus|mini|smart|dacia|lancia|opel|vauxhall|saab|pontiac|buick|cadillac|lincoln|infiniti|acura|genesis|lucid|polestar|scout|rivian)\b/i;
     const VEHICLE_BODY = /\b(vehicle|car|truck|van|ute|sedan|hatchback|suv|wagon|coupe|convertible|roadster|pickup|4wd|4x4|cab|dual cab|single cab|tray|flatbed|panel van|people mover|minivan|bus|minibus|motorcycle|motorbike|bike|scooter|quad|atv|boat|trailer|caravan|motorhome|rv|bearing|registration|rego|reg|plate|plated)\b/i;
+    // A shortForm that looks like an all-caps person name (letters/spaces/
+    // hyphens/apostrophes only, no digits) should never be classified as a
+    // vehicle just because "vehicle" or a make appears somewhere in the same
+    // clause — see the guard on the VEHICLE_BODY/MAKES branch below.
+    const shortFormLooksLikeName = /^[A-Z][A-Z\s'-]{1,40}$/.test(shortForm) && !/\d/.test(shortForm);
 
     // ── Confidence scoring ────────────────────────────────────────────────────
     let confidence: "high" | "medium" | "low" = "low";
@@ -1950,8 +1955,13 @@ export function extractEntitiesFromText(text: string): Array<{
     }
     // Vehicle: the clause immediately before the bracket mentions vehicle
     // keywords OR shortForm matches rego/make. BUT only when the full
-    // description does NOT look like an address.
-    else if (VEHICLE_BODY.test(lowerLastClause) || VEHICLE_MAKES.test(lowerLastClause) || VEHICLE_MAKES.test(lowerShort)) {
+    // description does NOT look like an address, AND the shortForm itself
+    // doesn't look like an all-caps person name (e.g. "Exited the vehicle
+    // and met with Keanu REEVES (REEVES)" — no comma separates "vehicle"
+    // from the name that follows it in the same clause, so without this
+    // guard the leftover word "vehicle" wrongly classifies REEVES as a
+    // vehicle. Same exclusion the WA_REGO branch below already applies.
+    else if (!shortFormLooksLikeName && (VEHICLE_BODY.test(lowerLastClause) || VEHICLE_MAKES.test(lowerLastClause) || VEHICLE_MAKES.test(lowerShort))) {
       type = "vehicle";
       if (VEHICLE_BODY.test(lowerLastClause) && (VEHICLE_MAKES.test(lowerLastClause) || VEHICLE_MAKES.test(lowerShort))) confidence = "high";
       else confidence = "medium";

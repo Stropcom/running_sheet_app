@@ -384,10 +384,22 @@ export function UploadImageDialog({
               <button
                 key={t.key}
                 onClick={() => {
-                  setEntityTab((prev) => (prev === t.key ? null : t.key));
+                  const nextTab = entityTab === t.key ? null : t.key;
+                  setEntityTab(nextTab);
                   setSelectedEntity(null);
                   setEntitySearch("");
-                  setOperationId(defaultOperationId ?? null);
+                  // Unidentified Person (and clearing the tab) never restrict
+                  // which Operation is valid — restrictedOps is only queried
+                  // for known-entity categories (see knownEntitySelected) —
+                  // so don't discard an already-picked Operation for those.
+                  // Resetting unconditionally here used to silently null out
+                  // operationId, disabling Upload, while the Select kept
+                  // showing the old Operation's name (a Radix Select quirk:
+                  // once its controlled `value` goes back to undefined it
+                  // falls back to its own stale cached selection).
+                  if (nextTab && nextTab !== "unidentified_person") {
+                    setOperationId(defaultOperationId ?? null);
+                  }
                 }}
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                   entityTab === t.key ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/50"

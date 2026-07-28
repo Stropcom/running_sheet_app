@@ -2917,13 +2917,12 @@ export default function IntelligenceMapping() {
               document.addEventListener("touchend", onEnd);
             }}
           >
-            {/* Home pill (all devices) — same translucent-tint treatment as the
-                Active RS/Map quick-links in DashboardLayout.tsx (desktop header),
-                but with a stronger tint than that header version so the pills
-                stay legible over the map imagery: bg-{colour}-700/25, hover /35. */}
+            {/* Home pill (all devices) — solid filled chip (not translucent) so
+                it stays legible over busy satellite imagery, matching the
+                other opaque on-map markers (e.g. the pink custom marker pin). */}
             <button
               onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } setLocation("/"); }}
-              className="flex flex-col items-center justify-center gap-1 px-5 py-2.5 rounded-2xl shadow-lg border transition-all min-w-[80px] text-slate-700 border-slate-700/60 bg-slate-700/25 hover:bg-slate-700/35 active:scale-95"
+              className="flex flex-col items-center justify-center gap-1 px-5 py-2.5 rounded-2xl shadow-lg border transition-all min-w-[80px] text-white border-slate-900/40 bg-slate-700 hover:bg-slate-600 active:scale-95"
               title="Home"
             >
               <Home className="h-5 w-5 flex-shrink-0" />
@@ -2941,7 +2940,7 @@ export default function IntelligenceMapping() {
                   onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } if (activeSheet) setLocation(`/sheet/${rsSelectedSheetId}`); }}
                   className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all min-w-[80px] px-5 py-2.5 ${
                     activeSheet
-                      ? "text-blue-700 border-blue-700/60 bg-blue-700/25 hover:bg-blue-700/35 active:scale-95 cursor-pointer"
+                      ? "text-white border-blue-900/40 bg-blue-700 hover:bg-blue-600 active:scale-95 cursor-pointer"
                       : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"
                   }`}
                   title={activeSheet ? "Open active running sheet" : "No running sheet selected"}
@@ -2961,7 +2960,7 @@ export default function IntelligenceMapping() {
                   onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } if (hasSheet) setMapQeOpen(true); }}
                   className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all min-w-[80px] px-5 py-2.5 ${
                     hasSheet
-                      ? "text-emerald-700 border-emerald-700/60 bg-emerald-700/25 hover:bg-emerald-700/35 active:scale-95 cursor-pointer"
+                      ? "text-white border-emerald-900/40 bg-emerald-700 hover:bg-emerald-600 active:scale-95 cursor-pointer"
                       : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"
                   }`}
                   title={hasSheet ? "RS Quick Entry" : "Select a running sheet first"}
@@ -2975,7 +2974,7 @@ export default function IntelligenceMapping() {
             {/* Intel Profiles pill */}
             <button
               onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } setLocation("/intelligence"); }}
-              className="flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all min-w-[80px] px-5 py-2.5 text-violet-700 border-violet-700/60 bg-violet-700/25 hover:bg-violet-700/35 active:scale-95"
+              className="flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all min-w-[80px] px-5 py-2.5 text-white border-violet-900/40 bg-violet-700 hover:bg-violet-600 active:scale-95"
               title="Intel Profiles"
             >
               <FolderSearch className="h-5 w-5 flex-shrink-0" />

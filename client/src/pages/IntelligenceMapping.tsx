@@ -7,6 +7,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { MapView } from "@/components/Map";
 import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
 import { TargetProfileContent } from "@/components/TargetProfileContent";
+import { OperationProfileContent } from "@/components/OperationProfileContent";
 import { DocumentZoomViewer } from "@/components/DocumentZoomViewer";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -726,8 +727,11 @@ export default function IntelligenceMapping() {
 
   // RS Actions pane state — persisted in localStorage
   const [rsActionsPaneOpen, setRsActionsPaneOpen] = useState(false);
-  // Target profile sub-view shown inline within the right pane (null = normal pane content)
+  // Target/Operation profile sub-views shown inline within the right pane
+  // (null = normal pane content). Mutually exclusive — opening one clears
+  // the other, since both occupy the same pane body.
   const [paneTargetProfileId, setPaneTargetProfileId] = useState<number | null>(null);
+  const [paneOperationProfileId, setPaneOperationProfileId] = useState<number | null>(null);
   // Pane width — resizable by dragging its left edge, remembered separately for the
   // normal pane content vs. the Target Profile sub-view (which wants more room)
   const [panelWidthNormal, setPanelWidthNormal] = useState<number>(() => {
@@ -738,7 +742,7 @@ export default function IntelligenceMapping() {
   });
   const paneResizeDraggingRef = useRef(false);
   const PANE_MIN_WIDTH = 288;
-  const activePaneWidth = paneTargetProfileId !== null ? panelWidthProfile : panelWidthNormal;
+  const activePaneWidth = paneTargetProfileId !== null || paneOperationProfileId !== null ? panelWidthProfile : panelWidthNormal;
 
   // Draggable side-tab vertical position (percentage from top, 0-100)
   const [leftTabTop, setLeftTabTop] = useState<number>(() => {
@@ -2672,14 +2676,22 @@ export default function IntelligenceMapping() {
             </button>
           </div>
 
-          {/* Floating address search bar — top-left, next to Map/Satellite toggle */}
+          {/* Floating address search bar — top-left, next to Map/Satellite toggle.
+              The toggle is Google's own native mapTypeControl (see Map.tsx,
+              pinned TOP_RIGHT by the Maps SDK itself, not something this app
+              positions) — it doesn't shrink or coordinate with anything on
+              our side, so on a narrow screen a fixed 260px search bar starting
+              at left:10px reaches far enough right to physically collide with
+              it. Capping maxWidth to leave the toggle's own ~150px reserved
+              clearance keeps them apart at any viewport width without
+              touching Map.tsx or a resize listener. */}
           <div
             className="absolute z-20 pointer-events-auto"
             style={{ top: "10px", left: "10px" }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="relative">
-              <div className="flex items-center bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden" style={{ height: "40px", minWidth: "200px", maxWidth: "260px" }}>
+              <div className="flex items-center bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden" style={{ height: "40px", minWidth: "160px", maxWidth: "min(260px, calc(100vw - 180px))" }}>
                 <Search className="w-4 h-4 text-gray-400 ml-3 shrink-0" />
                 <input
                   type="text"
@@ -2905,14 +2917,17 @@ export default function IntelligenceMapping() {
               document.addEventListener("touchend", onEnd);
             }}
           >
-            {/* Home pill (all devices) */}
+            {/* Home pill (all devices) — same translucent-tint treatment as the
+                Active RS/Map quick-links in DashboardLayout.tsx (desktop header):
+                text-{colour}-700 + border-{colour}-700/50 + bg-{colour}-700/10,
+                hover bumps the tint to /20. */}
             <button
               onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } setLocation("/"); }}
-              className="flex flex-col items-center justify-center gap-1 px-5 py-2.5 rounded-2xl shadow-lg border bg-slate-600 border-slate-500 hover:bg-slate-500 active:scale-95 transition-all min-w-[80px]"
+              className="flex flex-col items-center justify-center gap-1 px-5 py-2.5 rounded-2xl shadow-lg border transition-all min-w-[80px] text-slate-700 border-slate-700/50 bg-slate-700/10 hover:bg-slate-700/20 active:scale-95"
               title="Home"
             >
-              <Home className="h-5 w-5 flex-shrink-0 text-white" />
-              <span className="text-[11px] font-semibold leading-none text-white">Home</span>
+              <Home className="h-5 w-5 flex-shrink-0" />
+              <span className="text-[11px] font-semibold leading-none">Home</span>
             </button>
 
             {/* Active RS pill */}
@@ -2926,13 +2941,13 @@ export default function IntelligenceMapping() {
                   onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } if (activeSheet) setLocation(`/sheet/${rsSelectedSheetId}`); }}
                   className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all min-w-[80px] px-5 py-2.5 ${
                     activeSheet
-                      ? "bg-blue-700 border-blue-600 hover:bg-blue-600 active:scale-95 cursor-pointer"
-                      : "bg-blue-900/50 border-blue-800/50 cursor-default opacity-50"
+                      ? "text-blue-700 border-blue-700/50 bg-blue-700/10 hover:bg-blue-700/20 active:scale-95 cursor-pointer"
+                      : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"
                   }`}
                   title={activeSheet ? "Open active running sheet" : "No running sheet selected"}
                 >
-                  <ClipboardList className={`h-5 w-5 flex-shrink-0 ${activeSheet ? "text-white" : "text-white/40"}`} />
-                  <span className={`text-[11px] font-semibold leading-none ${activeSheet ? "text-white" : "text-white/40"}`}>Active RS</span>
+                  <ClipboardList className="h-5 w-5 flex-shrink-0" />
+                  <span className="text-[11px] font-semibold leading-none">Active RS</span>
                 </button>
               );
             })()}
@@ -2946,13 +2961,13 @@ export default function IntelligenceMapping() {
                   onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } if (hasSheet) setMapQeOpen(true); }}
                   className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all min-w-[80px] px-5 py-2.5 ${
                     hasSheet
-                      ? "bg-emerald-700 border-emerald-600 hover:bg-emerald-600 active:scale-95 cursor-pointer"
-                      : "bg-emerald-900/50 border-emerald-800/50 cursor-default opacity-50"
+                      ? "text-emerald-700 border-emerald-700/50 bg-emerald-700/10 hover:bg-emerald-700/20 active:scale-95 cursor-pointer"
+                      : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"
                   }`}
                   title={hasSheet ? "RS Quick Entry" : "Select a running sheet first"}
                 >
-                  <FileText className={`h-5 w-5 flex-shrink-0 ${hasSheet ? "text-white" : "text-white/40"}`} />
-                  <span className={`text-[11px] font-semibold leading-none ${hasSheet ? "text-white" : "text-white/40"}`}>RS Entry</span>
+                  <FileText className="h-5 w-5 flex-shrink-0" />
+                  <span className="text-[11px] font-semibold leading-none">RS Entry</span>
                 </button>
               );
             })()}
@@ -2960,29 +2975,42 @@ export default function IntelligenceMapping() {
             {/* Intel Profiles pill */}
             <button
               onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } setLocation("/intelligence"); }}
-              className="flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border bg-violet-700 border-violet-600 hover:bg-violet-600 active:scale-95 transition-all min-w-[80px] px-5 py-2.5"
+              className="flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all min-w-[80px] px-5 py-2.5 text-violet-700 border-violet-700/50 bg-violet-700/10 hover:bg-violet-700/20 active:scale-95"
               title="Intel Profiles"
             >
-              <FolderSearch className="h-5 w-5 flex-shrink-0 text-white" />
-              <span className="text-[11px] font-semibold leading-none text-white">Intel Profiles</span>
+              <FolderSearch className="h-5 w-5 flex-shrink-0" />
+              <span className="text-[11px] font-semibold leading-none">Intel Profiles</span>
             </button>
           </div>
         </div>
 
       </div>
 
-      {/* ── RS Actions Right Pane ── */}
+      {/* ── RS Actions Right Pane ──
+           z-30 + full viewport width on mobile: the map's floating overlays
+           (search bar, locate buttons, bottom pill bar) are absolutely
+           positioned within Map Area and don't shrink/clip with it, so on a
+           narrow screen a partial-width pane still leaves them spilling over
+           its content underneath. The left pane never showed this because it
+           opens flush against the same top-left corner those specific
+           overlays already anchor to, so it happens to cover them outright;
+           the right pane has no such natural overlap, so it needs to be
+           explicit here — full width (nothing beside it to spill into) and a
+           z-index above the overlays' z-20 (nothing paints over it either),
+           giving it the same "full vision" the left pane already has. */}
       <div
         className={`relative flex flex-col border-l-2 border-border bg-card shadow-2xl flex-shrink-0 ${
+          rsActionsPaneOpen ? "z-30" : ""
+        } ${
           paneResizeDraggingRef.current ? "" : "transition-all duration-200"
         } ${rsActionsPaneOpen ? "rounded-l-2xl" : "overflow-hidden"}`}
         style={{
-          width: rsActionsPaneOpen ? `${activePaneWidth}px` : 0,
-          minWidth: rsActionsPaneOpen ? `${PANE_MIN_WIDTH}px` : 0,
+          width: rsActionsPaneOpen ? (isMobile ? "100vw" : `${activePaneWidth}px`) : 0,
+          minWidth: rsActionsPaneOpen ? (isMobile ? "100vw" : `${PANE_MIN_WIDTH}px`) : 0,
         }}
       >
-        {/* Resize handle — drag left edge to widen/narrow the pane (mouse or touch) */}
-        {rsActionsPaneOpen && (
+        {/* Resize handle — drag left edge to widen/narrow the pane (mouse or touch). Not on mobile: the pane is full-width there, nothing to resize against. */}
+        {rsActionsPaneOpen && !isMobile && (
           <div
             className="absolute -left-1.5 top-0 bottom-0 w-3 z-10 flex items-center justify-center cursor-col-resize touch-none select-none group"
             title="Drag to resize"
@@ -2995,7 +3023,7 @@ export default function IntelligenceMapping() {
                 const delta = startX - me.clientX;
                 const maxW = Math.max(PANE_MIN_WIDTH, Math.min(720, window.innerWidth - 320));
                 const next = Math.min(maxW, Math.max(PANE_MIN_WIDTH, startWidth + delta));
-                if (paneTargetProfileId !== null) setPanelWidthProfile(next); else setPanelWidthNormal(next);
+                if (paneTargetProfileId !== null || paneOperationProfileId !== null) setPanelWidthProfile(next); else setPanelWidthNormal(next);
               };
               const onUp = () => {
                 paneResizeDraggingRef.current = false;
@@ -3014,7 +3042,7 @@ export default function IntelligenceMapping() {
                 const delta = startX - te.touches[0].clientX;
                 const maxW = Math.max(PANE_MIN_WIDTH, Math.min(720, window.innerWidth - 320));
                 const next = Math.min(maxW, Math.max(PANE_MIN_WIDTH, startWidth + delta));
-                if (paneTargetProfileId !== null) setPanelWidthProfile(next); else setPanelWidthNormal(next);
+                if (paneTargetProfileId !== null || paneOperationProfileId !== null) setPanelWidthProfile(next); else setPanelWidthNormal(next);
               };
               const onEnd = () => {
                 paneResizeDraggingRef.current = false;
@@ -3040,13 +3068,22 @@ export default function IntelligenceMapping() {
               <User className="h-4 w-4 text-violet-500 flex-shrink-0" />
               <span className="font-bold text-sm tracking-tight truncate">Target Profile</span>
             </button>
+          ) : paneOperationProfileId !== null ? (
+            <button
+              onClick={() => setPaneOperationProfileId(null)}
+              className="flex items-center gap-2 min-w-0 flex-1 text-left hover:opacity-75 transition-opacity"
+            >
+              <ChevronLeft className="h-4 w-4 text-blue-500 flex-shrink-0" />
+              <FolderOpen className="h-4 w-4 text-blue-500 flex-shrink-0" />
+              <span className="font-bold text-sm tracking-tight truncate">Operation Profile</span>
+            </button>
           ) : (
             <div className="flex items-center gap-2">
               <Settings2 className="h-4 w-4 text-primary" />
               <span className="font-bold text-sm tracking-tight">Map Settings</span>
             </div>
           )}
-          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl flex-shrink-0" onClick={() => { setRsActionsPaneOpen(false); setPaneTargetProfileId(null); }}>
+          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl flex-shrink-0" onClick={() => { setRsActionsPaneOpen(false); setPaneTargetProfileId(null); setPaneOperationProfileId(null); }}>
             <X className="h-4 w-4" />
           </Button>
         </div>
@@ -3056,6 +3093,12 @@ export default function IntelligenceMapping() {
           <div className="flex-1 overflow-hidden">
             <DocumentZoomViewer contentWidth={768} className="w-full h-full">
               <TargetProfileContent targetId={paneTargetProfileId} />
+            </DocumentZoomViewer>
+          </div>
+        ) : paneOperationProfileId !== null ? (
+          <div className="flex-1 overflow-hidden">
+            <DocumentZoomViewer contentWidth={768} className="w-full h-full">
+              <OperationProfileContent operationId={paneOperationProfileId} />
             </DocumentZoomViewer>
           </div>
         ) : (
@@ -3220,20 +3263,37 @@ export default function IntelligenceMapping() {
             {/* RS Quick Entry moved to bottom tab bar — use the indigo RS Entry pill instead */}
           </div>{/* end RS Selection */}
 
-          {/* ── TARGET PROFILE (linked to the selected RS's target) ── */}
-          {rsSelectedSheetId !== null && rsTargetData && (
-            <div className="px-3 py-3 border-b border-border space-y-2">
-              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">Target Profile</span>
-              <button
-                onClick={() => setPaneTargetProfileId(rsTargetData.id)}
-                className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-violet-500/40 bg-violet-500/10 hover:bg-violet-500/20 active:scale-[0.98] transition-all min-w-0"
-              >
-                <User className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />
-                <span className="text-xs font-semibold text-violet-500 truncate flex-1 text-left">{rsTargetData.tgt ?? rsTargetData.name}</span>
-                <ExternalLink className="h-3 w-3 text-violet-500/60 flex-shrink-0" />
-              </button>
-            </div>
-          )}{/* end Target Profile */}
+          {/* ── PROFILES (Operation behind the selected RS, then its Target) ── */}
+          {rsSelectedSheetId !== null && (() => {
+            const sheet = rsSheetsData ? (rsSheetsData as any[]).find((s: any) => s.id === rsSelectedSheetId) : null;
+            const opId = sheet?.operationId ?? null;
+            if (!opId && !rsTargetData) return null;
+            return (
+              <div className="px-3 py-3 border-b border-border space-y-2">
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">Profiles</span>
+                {opId && (
+                  <button
+                    onClick={() => { setPaneOperationProfileId(opId); setPaneTargetProfileId(null); }}
+                    className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-blue-500/40 bg-blue-500/10 hover:bg-blue-500/20 active:scale-[0.98] transition-all min-w-0"
+                  >
+                    <FolderOpen className="h-3.5 w-3.5 text-blue-500 flex-shrink-0" />
+                    <span className="text-xs font-semibold text-blue-500 truncate flex-1 text-left">{(operations as any[] | undefined)?.find((o: any) => o.id === opId)?.name ?? "Operation profile"}</span>
+                    <ExternalLink className="h-3 w-3 text-blue-500/60 flex-shrink-0" />
+                  </button>
+                )}
+                {rsTargetData && (
+                  <button
+                    onClick={() => { setPaneTargetProfileId(rsTargetData.id); setPaneOperationProfileId(null); }}
+                    className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-violet-500/40 bg-violet-500/10 hover:bg-violet-500/20 active:scale-[0.98] transition-all min-w-0"
+                  >
+                    <User className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />
+                    <span className="text-xs font-semibold text-violet-500 truncate flex-1 text-left">{rsTargetData.tgt ?? rsTargetData.name}</span>
+                    <ExternalLink className="h-3 w-3 text-violet-500/60 flex-shrink-0" />
+                  </button>
+                )}
+              </div>
+            );
+          })()}{/* end Profiles */}
 
           {/* ── IMAGES (linked to the selected RS's operation) ── */}
           <div className="px-3 py-3 border-b border-border space-y-2">

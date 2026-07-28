@@ -1,4 +1,15 @@
-import { and, eq, gte, lte, lt, inArray, desc, asc, max } from "drizzle-orm";
+import {
+  and,
+  eq,
+  gte,
+  lte,
+  lt,
+  inArray,
+  desc,
+  asc,
+  max,
+  count,
+} from "drizzle-orm";
 import { getDb, getAllUsers as getAllRunLogUsers, getUserByCin } from "./db";
 import {
   ctoRosterTeams,
@@ -23,6 +34,7 @@ import {
   ctoRosterEbaRules,
   ctoRosterOutlookSettings,
   CtoRosterEbaRule,
+  CtoRosterAuditLog,
 } from "../drizzle/schema";
 import { runEbaChecks, type ShiftRecord } from "./ctoRosterEbaEngine";
 import { computeShiftInterval } from "../shared/ctoRosterShiftDuration";
@@ -1686,4 +1698,31 @@ export async function updateCtoRosterOutlookSettings(
       .set({ teamMinimums: teamMinimumsJson, onCallMin, combinedMin })
       .where(eq(ctoRosterOutlookSettings.id, rows[0].id));
   }
+}
+
+// ── Audit Log ────────────────────────────────────────────────────────────────
+
+export async function getCtoRosterAuditLog(
+  limit: number,
+  offset: number,
+  userId?: number,
+  action?: string
+): Promise<{ entries: CtoRosterAuditLog[]; total: number }> {
+  const db = await getDb();
+  if (!db) return { entries: [], total: 0 };
+  const conditions = [];
+  if (userId) conditions.push(eq(ctoRosterAuditLog.userId, userId));
+  if (action) conditions.push(eq(ctoRosterAuditLog.action, action));
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  const [entries, [{ total }]] = await Promise.all([
+    db
+      .select()
+      .from(ctoRosterAuditLog)
+      .where(where)
+      .orderBy(desc(ctoRosterAuditLog.createdAt))
+      .limit(limit)
+      .offset(offset),
+    db.select({ total: count() }).from(ctoRosterAuditLog).where(where),
+  ]);
+  return { entries, total: Number(total) };
 }

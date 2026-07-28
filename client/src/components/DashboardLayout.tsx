@@ -557,6 +557,13 @@ function SortableNavItem({
                   <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
                   EA Compliance
                 </button>
+                <button
+                  onClick={() => setLocation("/cto-roster/audit")}
+                  className={subItemClass(location === "/cto-roster/audit")}
+                >
+                  <ScrollText className="h-3.5 w-3.5 shrink-0" />
+                  Audit Log
+                </button>
               </div>
             )}
           </div>

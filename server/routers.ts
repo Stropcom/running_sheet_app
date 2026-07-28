@@ -67,6 +67,7 @@ import {
   runCtoRosterEbaCheck,
   getCtoRosterOutlookSettings,
   updateCtoRosterOutlookSettings,
+  getCtoRosterAuditLog,
 } from "./ctoRoster";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { sdk } from "./_core/sdk";
@@ -4998,6 +4999,26 @@ export const appRouter = router({
             input.combinedMin
           );
           return { success: true };
+        }),
+    }),
+
+    audit: router({
+      list: adminProcedure
+        .input(
+          z.object({
+            limit: z.number().min(1).max(500).default(100),
+            offset: z.number().min(0).default(0),
+            userId: z.number().optional(),
+            action: z.string().optional(),
+          })
+        )
+        .query(async ({ input }) => {
+          return getCtoRosterAuditLog(
+            input.limit,
+            input.offset,
+            input.userId,
+            input.action
+          );
         }),
     }),
   }),

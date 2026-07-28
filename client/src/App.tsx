@@ -51,6 +51,7 @@ import CtoRosterSavedRostersListPage from "@/pages/CtoRoster/SavedRostersListPag
 import CtoRosterSavedRosterPage from "@/pages/CtoRoster/SavedRosterPage";
 import CtoRosterEACompliancePage from "@/pages/CtoRoster/EACompliancePage";
 import CtoRosterOutlookPage from "@/pages/CtoRoster/OutlookPage";
+import CtoRosterAuditLogPage from "@/pages/CtoRoster/AuditLogPage";
 import { DraftModeBanner } from "@/components/DraftModeBanner";
 import { SectionColorProvider } from "@/contexts/SectionColorContext";
 import { useEffect } from "react";
@@ -162,6 +163,7 @@ function Router() {
         component={CtoRosterEACompliancePage}
       />
       <Route path="/cto-roster/outlook" component={CtoRosterOutlookPage} />
+      <Route path="/cto-roster/audit" component={CtoRosterAuditLogPage} />
       <Route path="/operation-management" component={OperationManagementPage} />
       <Route path="/calendar" component={CalendarPage} />
       <Route path="/court/statements" component={StatementsPage} />

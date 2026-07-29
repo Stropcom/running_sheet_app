@@ -172,6 +172,30 @@ function SortableNavItem({
 
   const itemProps = { ref: setNodeRef, style, ...attributes };
 
+  // Expanding Op Manager / CTO Roster pushes the rest of the sidebar list
+  // down without generating a scroll event, so the newly revealed sub-items
+  // can end up below the fold with no indication anything changed. Scroll
+  // just enough to bring them into view — block: "nearest" is a no-op if
+  // they're already visible, and this only fires on expand, not collapse.
+  const opManagerContentRef = useRef<HTMLDivElement>(null);
+  const ctoRosterContentRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (opManagerExpanded) {
+      opManagerContentRef.current?.scrollIntoView({
+        block: "nearest",
+        behavior: "smooth",
+      });
+    }
+  }, [opManagerExpanded]);
+  useEffect(() => {
+    if (ctoRosterSubExpanded) {
+      ctoRosterContentRef.current?.scrollIntoView({
+        block: "nearest",
+        behavior: "smooth",
+      });
+    }
+  }, [ctoRosterSubExpanded]);
+
   if (id === "operations")
     return (
       <SidebarMenuItem {...itemProps}>
@@ -486,7 +510,10 @@ function SortableNavItem({
           {gripHandle}
         </SidebarMenuButton>
         {opManagerExpanded && !isCollapsed && (
-          <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
+          <div
+            ref={opManagerContentRef}
+            className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5"
+          >
             <button
               onClick={() => setLocation("/operation-manager")}
               className={subItemClass(
@@ -509,7 +536,10 @@ function SortableNavItem({
               )}
             </button>
             {ctoRosterSubExpanded && (
-              <div className="ml-4 border-l border-sidebar-border/40 pl-3 flex flex-col gap-0.5 mb-0.5">
+              <div
+                ref={ctoRosterContentRef}
+                className="ml-4 border-l border-sidebar-border/40 pl-3 flex flex-col gap-0.5 mb-0.5"
+              >
                 <button
                   onClick={() => setLocation("/cto-roster")}
                   className={subItemClass(location === "/cto-roster")}

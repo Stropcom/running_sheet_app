@@ -2,7 +2,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import {
   DndContext,
-  closestCenter,
+  pointerWithin,
   PointerSensor,
   TouchSensor,
   useSensor,
@@ -898,8 +898,12 @@ function DashboardLayoutContent({
   }, [sidebarOrderData]);
 
   const sensors = useSensors(
+    // Mouse drags activate on movement past a small threshold — a delay-based
+    // constraint here (meant for disambiguating touch-scroll from touch-drag)
+    // made normal fast mouse drags get cancelled before they ever started,
+    // since moving past the tolerance within the delay window aborts activation.
     useSensor(PointerSensor, {
-      activationConstraint: { delay: 300, tolerance: 8 },
+      activationConstraint: { distance: 8 },
     }),
     useSensor(TouchSensor, {
       activationConstraint: { delay: 300, tolerance: 8 },
@@ -1034,7 +1038,7 @@ function DashboardLayoutContent({
               {/* ── Draggable main nav items ── */}
               <DndContext
                 sensors={sensors}
-                collisionDetection={closestCenter}
+                collisionDetection={pointerWithin}
                 onDragEnd={handleDragEnd}
               >
                 <SortableContext

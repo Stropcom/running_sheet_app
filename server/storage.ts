@@ -104,6 +104,23 @@ export async function storageGet(relKey: string): Promise<{ key: string; url: st
   return { key, url: `/manus-storage/${key}` };
 }
 
+/** Reads a previously-stored object's raw bytes back into memory — used by
+ * server-side processing (e.g. face detection) that needs the actual pixel
+ * data, not just a servable URL. */
+export async function storageGetBytes(relKey: string): Promise<Buffer> {
+  const key = normalizeKey(relKey);
+
+  if (!isForgeConfigured()) {
+    const filePath = path.join(LOCAL_UPLOAD_DIR, key);
+    return fs.readFile(filePath);
+  }
+
+  const signedUrl = await storageGetSignedUrl(key);
+  const resp = await fetch(signedUrl);
+  if (!resp.ok) throw new Error(`Storage fetch failed (${resp.status})`);
+  return Buffer.from(await resp.arrayBuffer());
+}
+
 export async function storageGetSignedUrl(relKey: string): Promise<string> {
   const { forgeUrl, forgeKey } = getForgeConfig();
   const key = normalizeKey(relKey);

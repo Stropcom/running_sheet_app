@@ -2,6 +2,7 @@ import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, like, lt, or, sql }
 import { drizzle } from "drizzle-orm/mysql2";
 import { createPool as createPromisePool } from "mysql2/promise";
 import { vaultEncrypt, vaultDecrypt } from "./wipcVault";
+import { cosineSimilarity } from "./faceRecognition";
 import {
   auditLogs,
   certifications,
@@ -18,6 +19,9 @@ import {
   InsertRowAttachment,
   attachmentEntityLinks,
   InsertAttachmentEntityLink,
+  personDetections,
+  InsertPersonDetection,
+  faceMatchDismissals,
   runningSheets,
   sheetRows,
   shortcuts,
@@ -139,6 +143,13 @@ export async function getUserById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getUserByCin(cin: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.cin, cin)).limit(1);
   return result[0];
 }
 
@@ -675,35 +686,46 @@ export async function createRowAttachment(data: InsertRowAttachment) {
 // to that attachment, so the badge can show which kind of thing a photo is
 // linked to at a glance (a category-specific icon when there's exactly one,
 // a generic "linked" icon when it spans more than one) without a second
-// round-trip per thumbnail.
+// round-trip per thumbnail. linkedEntities carries the actual label per link
+// (target name, vehicle rego, Unidentified Person placeholder, etc.) so
+// thumbnails can show *who/what* a photo is linked to, not just that it is.
 async function attachLinkedCounts<T extends { id: number }>(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
   rows: T[]
-): Promise<(T & { linkedCount: number; linkedCategories: string[] })[]> {
+): Promise<(T & { linkedCount: number; linkedCategories: string[]; linkedEntities: Array<{ category: string; label: string }> })[]> {
   if (rows.length === 0) return [];
   const attachmentIds = rows.map((r) => r.id);
-  const [linkCounts, linkCategoryRows] = await Promise.all([
+  const [linkCounts, linkRows] = await Promise.all([
     db
       .select({ attachmentId: attachmentEntityLinks.attachmentId, count: sql<number>`count(*)`.as("count") })
       .from(attachmentEntityLinks)
       .where(inArray(attachmentEntityLinks.attachmentId, attachmentIds))
       .groupBy(attachmentEntityLinks.attachmentId),
     db
-      .selectDistinct({ attachmentId: attachmentEntityLinks.attachmentId, category: attachmentEntityLinks.category })
+      .select({
+        attachmentId: attachmentEntityLinks.attachmentId,
+        category: attachmentEntityLinks.category,
+        entityLabel: attachmentEntityLinks.entityLabel,
+      })
       .from(attachmentEntityLinks)
       .where(inArray(attachmentEntityLinks.attachmentId, attachmentIds)),
   ]);
   const countMap = new Map(linkCounts.map((l) => [l.attachmentId, Number(l.count)]));
   const categoryMap = new Map<number, string[]>();
-  for (const l of linkCategoryRows) {
-    const arr = categoryMap.get(l.attachmentId) ?? [];
-    arr.push(l.category);
-    categoryMap.set(l.attachmentId, arr);
+  const entityMap = new Map<number, Array<{ category: string; label: string }>>();
+  for (const l of linkRows) {
+    const cats = categoryMap.get(l.attachmentId) ?? [];
+    if (!cats.includes(l.category)) cats.push(l.category);
+    categoryMap.set(l.attachmentId, cats);
+    const ents = entityMap.get(l.attachmentId) ?? [];
+    ents.push({ category: l.category, label: l.entityLabel });
+    entityMap.set(l.attachmentId, ents);
   }
   return rows.map((r) => ({
     ...r,
     linkedCount: countMap.get(r.id) ?? 0,
     linkedCategories: categoryMap.get(r.id) ?? [],
+    linkedEntities: entityMap.get(r.id) ?? [],
   }));
 }
 
@@ -726,16 +748,19 @@ export async function getAttachmentById(id: number) {
 // Batches in the CINs of members on each attachment's row (excluding the
 // __SPACE__ spacer entry) — used for the "date/time · CIN" caption shown
 // under photos, which reflects the observation row, not the upload.
-async function attachRowMemberCins<T extends { rowId: number }>(
+async function attachRowMemberCins<T extends { rowId: number | null }>(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
   rows: T[]
 ): Promise<(T & { memberCINs: string[] })[]> {
   if (rows.length === 0) return [];
-  const rowIds = Array.from(new Set(rows.map((r) => r.rowId)));
-  const members = await db
-    .select({ rowId: rowMembers.rowId, memberName: rowMembers.memberName })
-    .from(rowMembers)
-    .where(inArray(rowMembers.rowId, rowIds));
+  // Manually-uploaded photos may have no row at all — nothing to look up for those.
+  const rowIds = Array.from(new Set(rows.map((r) => r.rowId).filter((id): id is number => id != null)));
+  const members = rowIds.length > 0
+    ? await db
+        .select({ rowId: rowMembers.rowId, memberName: rowMembers.memberName })
+        .from(rowMembers)
+        .where(inArray(rowMembers.rowId, rowIds))
+    : [];
   const byRow = new Map<number, string[]>();
   for (const m of members) {
     if (m.memberName === "__SPACE__") continue;
@@ -743,7 +768,7 @@ async function attachRowMemberCins<T extends { rowId: number }>(
     arr.push(m.memberName);
     byRow.set(m.rowId, arr);
   }
-  return rows.map((r) => ({ ...r, memberCINs: byRow.get(r.rowId) ?? [] }));
+  return rows.map((r) => ({ ...r, memberCINs: r.rowId != null ? (byRow.get(r.rowId) ?? []) : [] }));
 }
 
 // All attachments across every running sheet in an operation, joined back to
@@ -751,10 +776,16 @@ async function attachRowMemberCins<T extends { rowId: number }>(
 export async function getAttachmentsByOperationId(operationId: number) {
   const db = await getDb();
   if (!db) return [];
+  // Left-joined: manually-uploaded photos (rowId null) belong to the
+  // operation directly via rowAttachments.operationId and have no sheet/row
+  // to join through. isNull(runningSheets.deletedAt) still excludes photos
+  // whose sheet was soft-deleted, since the join only NULLs out for photos
+  // that never had a sheet in the first place.
   const rows = await db
     .select({
       id: rowAttachments.id,
       rowId: rowAttachments.rowId,
+      isManualUpload: rowAttachments.isManualUpload,
       url: rowAttachments.url,
       mimeType: rowAttachments.mimeType,
       caption: rowAttachments.caption,
@@ -766,9 +797,9 @@ export async function getAttachmentsByOperationId(operationId: number) {
       rowDate: sheetRows.rowDate,
     })
     .from(rowAttachments)
-    .innerJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
-    .innerJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
-    .where(and(eq(runningSheets.operationId, operationId), isNull(runningSheets.deletedAt), isNull(rowAttachments.deletedAt)))
+    .leftJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
+    .leftJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
+    .where(and(eq(rowAttachments.operationId, operationId), isNull(runningSheets.deletedAt), isNull(rowAttachments.deletedAt)))
     .orderBy(desc(rowAttachments.createdAt));
   return attachLinkedCounts(db, await attachRowMemberCins(db, rows));
 }
@@ -782,6 +813,7 @@ export async function getAttachmentsBySheetId(sheetId: number) {
     .select({
       id: rowAttachments.id,
       rowId: rowAttachments.rowId,
+      isManualUpload: rowAttachments.isManualUpload,
       url: rowAttachments.url,
       mimeType: rowAttachments.mimeType,
       caption: rowAttachments.caption,
@@ -829,21 +861,23 @@ export function normalizeEntityLabel(label: string): string {
 
 export async function linkAttachmentToEntity(data: {
   attachmentId: number;
-  category: "target" | "vehicle" | "associate" | "location";
+  category: "target" | "vehicle" | "associate" | "location" | "unidentified_person";
   targetId?: number;
   entityLabel: string;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const entityKey = data.category === "target" ? null : normalizeEntityLabel(data.entityLabel);
+  const findExisting = () =>
+    db.select({ id: attachmentEntityLinks.id }).from(attachmentEntityLinks).where(and(
+      eq(attachmentEntityLinks.attachmentId, data.attachmentId),
+      eq(attachmentEntityLinks.category, data.category),
+      data.category === "target"
+        ? eq(attachmentEntityLinks.targetId, data.targetId ?? -1)
+        : eq(attachmentEntityLinks.entityKey, entityKey ?? ""),
+    )).limit(1);
   // Avoid duplicate links to the same entity
-  const existing = await db.select({ id: attachmentEntityLinks.id }).from(attachmentEntityLinks).where(and(
-    eq(attachmentEntityLinks.attachmentId, data.attachmentId),
-    eq(attachmentEntityLinks.category, data.category),
-    data.category === "target"
-      ? eq(attachmentEntityLinks.targetId, data.targetId ?? -1)
-      : eq(attachmentEntityLinks.entityKey, entityKey ?? ""),
-  )).limit(1);
+  const existing = await findExisting();
   if (existing.length > 0) return existing[0].id;
   const insertData: InsertAttachmentEntityLink = {
     attachmentId: data.attachmentId,
@@ -852,8 +886,21 @@ export async function linkAttachmentToEntity(data: {
     entityKey,
     entityLabel: data.entityLabel,
   };
-  const [result] = await db.insert(attachmentEntityLinks).values(insertData);
-  return result.insertId as number;
+  try {
+    const [result] = await db.insert(attachmentEntityLinks).values(insertData);
+    return result.insertId as number;
+  } catch (err) {
+    // The check above is a plain SELECT-then-INSERT, so two requests for the
+    // same face landing close together (e.g. a fast double-tap on the
+    // face-select Confirm button) can both pass it before either commits.
+    // The unique index on (attachmentId, category, entityKey) is the real
+    // guard — on conflict, the other request won the race, so reuse its row.
+    if (err && typeof err === "object" && "code" in err && err.code === "ER_DUP_ENTRY" && entityKey !== null) {
+      const raceWinner = await findExisting();
+      if (raceWinner.length > 0) return raceWinner[0].id;
+    }
+    throw err;
+  }
 }
 
 export async function unlinkAttachmentFromEntity(linkId: number) {
@@ -866,6 +913,201 @@ export async function getEntityLinksByAttachmentId(attachmentId: number) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(attachmentEntityLinks).where(eq(attachmentEntityLinks.attachmentId, attachmentId));
+}
+
+// ─── Person Detections (face recognition) ──────────────────────────────────
+
+export async function createPersonDetection(data: {
+  attachmentId: number;
+  entityLinkId: number;
+  bbox: [number, number, number, number];
+  landmarks: [number, number][];
+  embedding: number[];
+  detectionConfidence: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const insertData: InsertPersonDetection = {
+    attachmentId: data.attachmentId,
+    entityLinkId: data.entityLinkId,
+    bboxX0: data.bbox[0],
+    bboxY0: data.bbox[1],
+    bboxX1: data.bbox[2],
+    bboxY1: data.bbox[3],
+    landmarks: JSON.stringify(data.landmarks),
+    embedding: JSON.stringify(data.embedding),
+    detectionConfidence: data.detectionConfidence,
+  };
+  try {
+    const [result] = await db.insert(personDetections).values(insertData);
+    return result.insertId as number;
+  } catch (err) {
+    // entityLinkId is unique (one detection per link, see schema comment) —
+    // a racing duplicate confirm request (see linkAttachmentToEntity) can
+    // reach here with the same linkId the other request already saved a
+    // detection for. Treat that as already-done rather than erroring.
+    if (err && typeof err === "object" && "code" in err && err.code === "ER_DUP_ENTRY") {
+      const [existing] = await db.select({ id: personDetections.id }).from(personDetections)
+        .where(eq(personDetections.entityLinkId, data.entityLinkId)).limit(1);
+      if (existing) return existing.id;
+    }
+    throw err;
+  }
+}
+
+export interface FaceMatchCandidate {
+  entityLinkId: number;
+  category: string;
+  targetId: number | null;
+  entityLabel: string;
+  similarity: number;
+  attachmentId: number;
+  photoUrl: string;
+}
+
+// Threshold picked from empirical testing against one real multi-face photo
+// (same face re-encoded ~0.99, mirrored ~0.89, different people ~0.1-0.3) —
+// deliberately generous since a missed real match is worse than an extra
+// candidate the officer just rejects. Lowered from an initial 0.35 after
+// real operational photos showed the on-device MobileFace embedding's
+// discriminative margin is narrow under real lighting/angle/pose variation
+// (different people ranged roughly -0.06 to 0.31, one confirmed same-person
+// cross-photo pair scored 0.45) — 0.35 was missing true matches that sat
+// just under it. Still just a starting point for further calibration:
+// matches are always human-confirmed, never applied automatically, so a
+// loose threshold only means more suggestions to review, not bad data.
+export const FACE_MATCH_THRESHOLD = 0.25;
+const FACE_MATCH_MAX_RESULTS = 5;
+
+// Compares a newly-confirmed face's embedding against every other confirmed
+// face on file (other Unidentified Person entries and identified
+// Targets/Associates alike) and returns the closest candidates above
+// threshold, excluding whatever this face's own link is and anything the
+// officer has already dismissed as "not a match" against it. Never called
+// automatically outside a face-confirm flow, and never applied without a
+// human explicitly accepting a specific candidate (see confirmFaceMatch).
+export async function findSimilarFaces(
+  embedding: number[],
+  excludeEntityLinkId: number
+): Promise<FaceMatchCandidate[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const dismissals = await db
+    .select()
+    .from(faceMatchDismissals)
+    .where(
+      or(
+        eq(faceMatchDismissals.entityLinkIdA, excludeEntityLinkId),
+        eq(faceMatchDismissals.entityLinkIdB, excludeEntityLinkId)
+      )
+    );
+  const dismissedPartners = new Set<number>();
+  for (const d of dismissals) {
+    dismissedPartners.add(d.entityLinkIdA === excludeEntityLinkId ? d.entityLinkIdB : d.entityLinkIdA);
+  }
+
+  const rows = await db
+    .select({
+      entityLinkId: personDetections.entityLinkId,
+      embedding: personDetections.embedding,
+      attachmentId: personDetections.attachmentId,
+      category: attachmentEntityLinks.category,
+      targetId: attachmentEntityLinks.targetId,
+      entityLabel: attachmentEntityLinks.entityLabel,
+      photoUrl: rowAttachments.url,
+    })
+    .from(personDetections)
+    .innerJoin(attachmentEntityLinks, eq(personDetections.entityLinkId, attachmentEntityLinks.id))
+    .innerJoin(rowAttachments, eq(personDetections.attachmentId, rowAttachments.id))
+    .where(isNull(rowAttachments.deletedAt));
+
+  const candidates: FaceMatchCandidate[] = [];
+  for (const r of rows) {
+    if (r.entityLinkId === excludeEntityLinkId) continue;
+    if (dismissedPartners.has(r.entityLinkId)) continue;
+    const otherEmbedding: number[] = JSON.parse(r.embedding);
+    const similarity = cosineSimilarity(embedding, otherEmbedding);
+    if (similarity >= FACE_MATCH_THRESHOLD) {
+      candidates.push({
+        entityLinkId: r.entityLinkId,
+        category: r.category,
+        targetId: r.targetId,
+        entityLabel: r.entityLabel,
+        similarity,
+        attachmentId: r.attachmentId,
+        photoUrl: r.photoUrl,
+      });
+    }
+  }
+  candidates.sort((a, b) => b.similarity - a.similarity);
+  return candidates.slice(0, FACE_MATCH_MAX_RESULTS);
+}
+
+// Officer confirmed "yes, this is the same person" — merges the two links'
+// identities. Whichever side carries the stronger identification wins (a
+// real Target/Associate outranks an anonymous Unidentified Person
+// placeholder), and every link sharing the *weaker* side's identity is
+// upgraded to the stronger one — never the other way around. This used to
+// unconditionally make the newly-confirmed link adopt the matched link's
+// identity on the assumption the new side was "almost always a fresh
+// Unidentified Person entry" — which broke exactly when an officer
+// positively IDs someone as a Target/Associate and the match happens to be
+// an existing Unidentified Person: the fresh Target link got silently
+// overwritten back to "unidentified". A confirmed positive ID must never be
+// downgraded by a merge, regardless of which side of the match it's on.
+const FACE_IDENTITY_PRIORITY: Record<string, number> = {
+  unidentified_person: 0,
+  associate: 1,
+  target: 2,
+};
+
+export async function confirmFaceMatch(newLinkId: number, matchedLinkId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [newLink] = await db
+    .select()
+    .from(attachmentEntityLinks)
+    .where(eq(attachmentEntityLinks.id, newLinkId))
+    .limit(1);
+  const [matched] = await db
+    .select()
+    .from(attachmentEntityLinks)
+    .where(eq(attachmentEntityLinks.id, matchedLinkId))
+    .limit(1);
+  if (!newLink) throw new Error("New entity link not found");
+  if (!matched) throw new Error("Matched entity link not found");
+
+  const newPriority = FACE_IDENTITY_PRIORITY[newLink.category] ?? 0;
+  const matchedPriority = FACE_IDENTITY_PRIORITY[matched.category] ?? 0;
+  // Ties (including the common Unidentified-Person-joins-an-existing-
+  // Unidentified-Person-pool case) favor the matched/existing side, so a
+  // single freshly-confirmed face doesn't rename an already-established pool.
+  const [winner, loser] = newPriority > matchedPriority ? [newLink, matched] : [matched, newLink];
+
+  const loserGroupWhere =
+    loser.category === "target"
+      ? and(eq(attachmentEntityLinks.category, "target"), eq(attachmentEntityLinks.targetId, loser.targetId ?? -1))
+      : and(eq(attachmentEntityLinks.category, loser.category), eq(attachmentEntityLinks.entityKey, loser.entityKey ?? ""));
+
+  await db
+    .update(attachmentEntityLinks)
+    .set({
+      category: winner.category,
+      targetId: winner.targetId,
+      entityKey: winner.entityKey,
+      entityLabel: winner.entityLabel,
+    })
+    .where(loserGroupWhere);
+}
+
+// Officer confirmed "no, not the same person" — stored unordered (smaller id
+// first) so findSimilarFaces only needs one OR lookup to check both directions.
+export async function createFaceMatchDismissal(entityLinkIdA: number, entityLinkIdB: number, cin?: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [a, b] = entityLinkIdA < entityLinkIdB ? [entityLinkIdA, entityLinkIdB] : [entityLinkIdB, entityLinkIdA];
+  await db.insert(faceMatchDismissals).values({ entityLinkIdA: a, entityLinkIdB: b, dismissedByCIN: cin });
 }
 
 // One row per distinct linked entity with its photo count — used to show a
@@ -888,7 +1130,7 @@ export async function getEntityLinkCounts() {
 
 // All photos linked to one entity, joined back to row/sheet for display.
 export async function getAttachmentsForEntity(params: {
-  category: "target" | "vehicle" | "associate" | "location";
+  category: "target" | "vehicle" | "associate" | "location" | "unidentified_person";
   targetId?: number;
   entityLabel?: string;
 }) {
@@ -907,6 +1149,7 @@ export async function getAttachmentsForEntity(params: {
     .select({
       id: rowAttachments.id,
       rowId: rowAttachments.rowId,
+      isManualUpload: rowAttachments.isManualUpload,
       url: rowAttachments.url,
       mimeType: rowAttachments.mimeType,
       uploadedByCIN: rowAttachments.uploadedByCIN,
@@ -917,8 +1160,8 @@ export async function getAttachmentsForEntity(params: {
       rowDate: sheetRows.rowDate,
     })
     .from(rowAttachments)
-    .innerJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
-    .innerJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
+    .leftJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
+    .leftJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
     .where(and(inArray(rowAttachments.id, attachmentIds), isNull(rowAttachments.deletedAt)))
     .orderBy(desc(rowAttachments.createdAt));
   const withCins = await attachRowMemberCins(db, rows);
@@ -928,7 +1171,7 @@ export async function getAttachmentsForEntity(params: {
 export interface OperationEntityPhoto {
   id: number;
   url: string;
-  rowId: number;
+  rowId: number | null;
   rowTime: string | null;
   rowDate: string | null;
   memberCINs: string[];
@@ -967,7 +1210,7 @@ async function getAttachmentsForOperationEntities(
       rowDate: sheetRows.rowDate,
     })
     .from(rowAttachments)
-    .innerJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
+    .leftJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
     .where(and(inArray(rowAttachments.id, attachmentIds), isNull(rowAttachments.deletedAt)));
   const withCins = await attachRowMemberCins(db, rows);
   const byAttachmentId = new Map(withCins.map((r) => [r.id, r]));
@@ -1701,6 +1944,11 @@ export function extractEntitiesFromText(text: string): Array<{
     // Broader vehicle make/model keywords
     const VEHICLE_MAKES = /\b(toyota|ford|holden|honda|mazda|nissan|mitsubishi|subaru|hyundai|kia|volkswagen|vw|bmw|mercedes|audi|lexus|volvo|jeep|dodge|chevrolet|chevy|ram|gmc|chrysler|fiat|alfa|peugeot|renault|citroen|skoda|seat|suzuki|isuzu|daihatsu|ssangyong|great wall|gwm|haval|mg|byd|tesla|rivian|land rover|range rover|defender|discovery|jaguar|porsche|ferrari|lamborghini|maserati|bentley|rolls royce|aston martin|mclaren|lotus|mini|smart|dacia|lancia|opel|vauxhall|saab|pontiac|buick|cadillac|lincoln|infiniti|acura|genesis|lucid|polestar|scout|rivian)\b/i;
     const VEHICLE_BODY = /\b(vehicle|car|truck|van|ute|sedan|hatchback|suv|wagon|coupe|convertible|roadster|pickup|4wd|4x4|cab|dual cab|single cab|tray|flatbed|panel van|people mover|minivan|bus|minibus|motorcycle|motorbike|bike|scooter|quad|atv|boat|trailer|caravan|motorhome|rv|bearing|registration|rego|reg|plate|plated)\b/i;
+    // A shortForm that looks like an all-caps person name (letters/spaces/
+    // hyphens/apostrophes only, no digits) should never be classified as a
+    // vehicle just because "vehicle" or a make appears somewhere in the same
+    // clause — see the guard on the VEHICLE_BODY/MAKES branch below.
+    const shortFormLooksLikeName = /^[A-Z][A-Z\s'-]{1,40}$/.test(shortForm) && !/\d/.test(shortForm);
 
     // ── Confidence scoring ────────────────────────────────────────────────────
     let confidence: "high" | "medium" | "low" = "low";
@@ -1714,8 +1962,13 @@ export function extractEntitiesFromText(text: string): Array<{
     }
     // Vehicle: the clause immediately before the bracket mentions vehicle
     // keywords OR shortForm matches rego/make. BUT only when the full
-    // description does NOT look like an address.
-    else if (VEHICLE_BODY.test(lowerLastClause) || VEHICLE_MAKES.test(lowerLastClause) || VEHICLE_MAKES.test(lowerShort)) {
+    // description does NOT look like an address, AND the shortForm itself
+    // doesn't look like an all-caps person name (e.g. "Exited the vehicle
+    // and met with Keanu REEVES (REEVES)" — no comma separates "vehicle"
+    // from the name that follows it in the same clause, so without this
+    // guard the leftover word "vehicle" wrongly classifies REEVES as a
+    // vehicle. Same exclusion the WA_REGO branch below already applies.
+    else if (!shortFormLooksLikeName && (VEHICLE_BODY.test(lowerLastClause) || VEHICLE_MAKES.test(lowerLastClause) || VEHICLE_MAKES.test(lowerShort))) {
       type = "vehicle";
       if (VEHICLE_BODY.test(lowerLastClause) && (VEHICLE_MAKES.test(lowerLastClause) || VEHICLE_MAKES.test(lowerShort))) confidence = "high";
       else confidence = "medium";
@@ -4115,6 +4368,33 @@ export async function getIntelOperationProfile(operationId: number): Promise<Int
   };
 }
 
+/**
+ * Operations a vehicle/associate/location entity has appeared in, for the
+ * manual-upload "link to operation" dropdown — reuses the same
+ * getAllIntelligenceEntities() + opMap pattern as getIntelVehicleProfile.
+ */
+export async function getLinkedOperationsForEntity(
+  category: "vehicle" | "associate" | "location",
+  entityLabel: string
+): Promise<Array<{ id: number; name: string }>> {
+  const allEntities = await getAllIntelligenceEntities();
+  const labelLower = entityLabel.toLowerCase();
+
+  const entity = allEntities.find(e => {
+    if (e.shortForm.toLowerCase() !== labelLower) return false;
+    if (category === "vehicle") return e.type === "vehicle";
+    if (category === "associate") return (e.type === "person" || e.type === "business") && !e.isTarget;
+    return (e.type === "address" || e.type === "business") && !e.isTarget;
+  });
+  if (!entity) return [];
+
+  const opMap = new Map<number, { id: number; name: string }>();
+  for (const occ of entity.occurrences) {
+    if (!opMap.has(occ.operationId)) opMap.set(occ.operationId, { id: occ.operationId, name: occ.operationName });
+  }
+  return Array.from(opMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export async function getIntelAssociateProfile(label: string): Promise<IntelAssociateProfile | null> {
   const allEntities = await getAllIntelligenceEntities();
   const db = await getDb();
@@ -5800,4 +6080,138 @@ export async function getPushSubscriptionsByUserId(userId: number) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(pushSubscriptions).where(eq(pushSubscriptions.userId, userId));
+}
+
+// ─── Witness List ───────────────────────────────────────────────────────────
+
+export interface WitnessListSheetData {
+  sheetTitle: string;
+  sheetDate: number;
+  primary: string[];
+  secondary: string[];
+}
+
+export interface WitnessListData {
+  operationName: string;
+  overallPrimary: string[];
+  overallSecondary: string[];
+  sheets: WitnessListSheetData[];
+  producedAt: number;
+  certifierCin: string;
+}
+
+// Primary witnesses: CINs that appear on at least one non-excluded row.
+// Secondary witnesses: CINs that ONLY appear on excluded rows (travelled via,
+// surveillance commenced/ceased). Shared by the .docx generator (witnessList.generate)
+// and the PDF export (witnessList.getData) so both read the exact same classification.
+export async function computeWitnessListData(
+  sheetIds: number[],
+  operationName: string,
+  certifierCin: string
+): Promise<WitnessListData> {
+  const sheets = await Promise.all(sheetIds.map((id) => getRunningSheetById(id)));
+  const validSheets = sheets.filter(Boolean) as NonNullable<Awaited<ReturnType<typeof getRunningSheetById>>>[];
+
+  // Sort sheets by date (YYYYMMDD prefix or createdAt)
+  const getSheetDate = (sheet: NonNullable<Awaited<ReturnType<typeof getRunningSheetById>>>) => {
+    const m = sheet.title.match(/^(\d{4})(\d{2})(\d{2})/);
+    if (m) return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    const d = new Date(sheet.createdAt instanceof Date ? sheet.createdAt.getTime() : sheet.createdAt);
+    return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  };
+  validSheets.sort((a, b) => getSheetDate(a) - getSheetDate(b));
+
+  // Helper to classify rows for a sheet
+  const classifyRows = async (sheet: NonNullable<Awaited<ReturnType<typeof getRunningSheetById>>>) => {
+    const rows = await getRowsBySheetId(sheet.id);
+    const sortedRows = [...rows];
+    const excludedRowIds = new Set<number>();
+
+    for (let i = 0; i < sortedRows.length; i++) {
+      const row = sortedRows[i];
+      const obs = (row.observation ?? "").trim();
+      // Surveillance commenced/ceased
+      if (/^surveillance commenced/i.test(obs) || /^surveillance ceased/i.test(obs)) {
+        excludedRowIds.add(row.id);
+        continue;
+      }
+      // Travelled via — ends in "whereat" (optionally followed by : or ;)
+      //                AND previous row contains "continued via" (followed by : or ;)
+      if (/whereat[;:]?\s*$/i.test(obs) && i > 0) {
+        const prevObs = (sortedRows[i - 1].observation ?? "").toLowerCase();
+        if (/continued via[;:]/.test(prevObs)) {
+          excludedRowIds.add(row.id);
+        }
+      }
+    }
+
+    const rowIds = rows.map((r) => r.id);
+    const members = rowIds.length > 0 ? await getMembersByRowIds(rowIds) : [];
+    return { excludedRowIds, members };
+  };
+
+  const sheetWitnessList: WitnessListSheetData[] = [];
+
+  // Overall sets (across all sheets)
+  const overallPrimarySet = new Set<string>();
+  const overallSecondarySet = new Set<string>();
+
+  for (const sheet of validSheets) {
+    const sheetDate = getSheetDate(sheet);
+    let roster: { cin: string }[] = [];
+    try { roster = sheet.sheetCins ? JSON.parse(sheet.sheetCins) : []; } catch { roster = []; }
+
+    const { excludedRowIds, members } = await classifyRows(sheet);
+
+    // For each CIN in roster, determine primary vs secondary
+    const primarySet = new Set<string>();
+    const secondarySet = new Set<string>();
+
+    for (const entry of roster) {
+      const cinUpper = entry.cin.toUpperCase();
+      const cinRowIds = members
+        .filter((m) => m.memberName.toUpperCase() === cinUpper)
+        .map((m) => m.rowId);
+
+      if (cinRowIds.length === 0) {
+        // On roster but no rows — treat as secondary (on duty, no observations)
+        secondarySet.add(cinUpper);
+        continue;
+      }
+
+      const hasQualifyingRow = cinRowIds.some((id) => !excludedRowIds.has(id));
+      if (hasQualifyingRow) {
+        primarySet.add(cinUpper);
+      } else {
+        secondarySet.add(cinUpper);
+      }
+    }
+
+    // A CIN that is primary on ANY sheet is overall primary
+    Array.from(primarySet).forEach((cin) => {
+      overallPrimarySet.add(cin);
+      overallSecondarySet.delete(cin); // remove from secondary if they were added there
+    });
+    Array.from(secondarySet).forEach((cin) => {
+      if (!overallPrimarySet.has(cin)) {
+        overallSecondarySet.add(cin);
+      }
+    });
+
+    sheetWitnessList.push({
+      sheetTitle: sheet.title,
+      sheetDate,
+      primary: Array.from(primarySet).sort(),
+      secondary: Array.from(secondarySet).sort(),
+    });
+  }
+
+  return {
+    operationName,
+    overallPrimary: Array.from(overallPrimarySet).sort(),
+    overallSecondary: Array.from(overallSecondarySet).sort(),
+    sheets: sheetWitnessList,
+    producedAt: Date.now(),
+    certifierCin,
+  };
 }

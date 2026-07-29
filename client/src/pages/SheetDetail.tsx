@@ -18,6 +18,8 @@ import { useIsMobile } from "@/hooks/useMobile";
 import CinInput from "@/components/CinInput";
 import { LinkAttachmentDialog } from "@/components/LinkAttachmentDialog";
 import { AttachmentLinkBadge } from "@/components/AttachmentLinkBadge";
+import { LinkedEntityPills } from "@/components/LinkedEntityPills";
+import { DeletePhotoButton } from "@/components/DeletePhotoButton";
 import { EntityDuplicateDialog, type DedupType } from "@/components/EntityDuplicateDialog";
 import {
   Dialog,
@@ -64,6 +66,7 @@ import {
 import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useObservationFocus } from "@/contexts/ObservationFocusContext";
 import { convertGoogleAddresses, extractShortAddress } from "@/lib/addressFormat";
+import { compressAttachmentImage } from "@/lib/imageCompress";
 import {
   DndContext,
   closestCenter,
@@ -124,7 +127,7 @@ type Certification = {
 };
 type RowAttachment = {
   id: number;
-  rowId: number;
+  rowId: number | null;
   url: string;
   mimeType: string;
   caption: string | null;
@@ -132,6 +135,7 @@ type RowAttachment = {
   createdAt: Date;
   linkedCount?: number;
   linkedCategories?: string[];
+  linkedEntities?: Array<{ category: string; label: string }>;
 };
 
 type SheetRow = {
@@ -172,10 +176,16 @@ type ExportRow = {
 };
 
 // Renders attached photos as inline <img> tags at ~1/3 cell width, matching
-// the live table's proportions (see ObservationAttachments).
+// the live table's proportions (see ObservationAttachments). align-items
+// must be set explicitly — flex's default "stretch" forces every image in a
+// row to the height of its tallest sibling, distorting a landscape photo's
+// proportions the moment it sits next to a portrait one. ObservationAttachments
+// avoids this with its own "items-end" on the equivalent live container;
+// matching that here so a photo prints/exports at its natural aspect ratio,
+// same as it already appears on the running sheet itself.
 function attachmentImagesHtml(attachments: { url: string }[]): string {
   if (attachments.length === 0) return "";
-  return `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">` +
+  return `<div style="margin-top:6px;display:flex;flex-wrap:wrap;align-items:flex-end;gap:6px">` +
     attachments.map((a) => `<img src="${a.url}" style="width:33%;max-width:160px;border:1px solid #ccc;border-radius:4px" />`).join("") +
     `</div>`;
 }
@@ -235,10 +245,9 @@ function exportToPDF(
   sheetCreatedAt: Date,
   targetFullName?: string | null,
 ) {
-  const certColor = "#22c55e";
   const lockedBg = "#ffffff"; // White in PDF — dark green is screen-only via CSS class
-  const cb = "border-right:1px solid #334155";
-  const bb = "border-bottom:1px solid #1e293b";
+  const cb = "border-right:1px solid #e2e9f6";
+  const bb = "border-bottom:1px solid #eef2fb";
 
   // Parse TEAM roster — sort: TL first, then numerically
   let cinRoster: CinEntry[] = [];
@@ -391,7 +400,7 @@ function exportToPDF(
   }
 
   const dateDividerRow = (label: string) =>
-    `<tr><td colspan="3" style="padding:4px 8px;background:#1e3a5f;color:#93c5fd;font-size:10px;font-weight:700;letter-spacing:0.08em;text-align:center;border-top:2px solid #334155;border-bottom:2px solid #334155">${label}</td></tr>`;
+    `<tr class="date-divider-row"><td colspan="3"><span class="date-divider-pill">${label}</span></td></tr>`;
 
   const tableRows = (() => {
     let prevDay = -1;
@@ -446,8 +455,8 @@ function exportToPDF(
         }
         const certifierCIN = cert ? ('certifiedByCIN' in cert ? (cert as any).certifiedByCIN || cert.certifiedByName : cert.certifiedByName) : null;
         const cinCertCell = cert
-          ? `<span style='color:${certColor};white-space:nowrap'>&#10003; ${certifierCIN} <span style='color:#555;font-size:10px'>${format(new Date(cert.certifiedAt), "dd/MM/yy h:mmaaa")}</span></span>`
-          : `<span style='color:#ef4444;font-weight:700'>${m.memberName} Pending</span>`;
+          ? `<span class="pill pill-certified">&#10003; ${certifierCIN}</span>`
+          : `<span class="pill pill-pending">${m.memberName}</span>`;
         return `<tr style="background:${rowBg}">
           ${timeTd}${obsTd}
           <td style="padding:${pt} 6px ${pb} 6px;${memberBb};font-size:11px">${cinCertCell}</td>
@@ -467,31 +476,45 @@ function exportToPDF(
     @page{
       margin:20mm 15mm;
       @top-center{content:'PROTECTED';font-family:'Roboto',sans-serif;font-size:12px;font-weight:700;color:#dc2626;letter-spacing:0.08em}
-      @bottom-center{content:'PROTECTED';font-family:'Roboto',sans-serif;font-size:12px;font-weight:700;color:#dc2626;letter-spacing:0.08em}
+      @bottom-center{content:"Page " counter(page) " of " counter(pages);font-family:'Roboto',sans-serif;font-size:11px;font-weight:700;color:#1e3a8a;letter-spacing:0.04em}
     }
     /* Force background colours to print — Chrome strips backgrounds by default */
     *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;color-adjust:exact !important}
     body{font-family:'Roboto',sans-serif;background:#fff;color:#000;margin:0;padding:0;font-size:11px}
     .page-title{font-size:20px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;text-align:center;margin-bottom:1.2em}
     .page-title-sm{font-size:15px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;text-align:center;margin-bottom:0.5em;margin-top:4px}
+    /* Blue card — wraps the meta info block (page-1 header and the repeating page header).
+       Square corners, deliberately: a single border on a <div> like this is always drawn as
+       one unbroken rectangle by the browser, with no edge cases. */
+    .rs-card{border:1.5px solid #1e3a8a}
     /* Meta info table — light blue label cells */
-    .meta-table{width:100%;border-collapse:collapse;border:2px solid #334155;table-layout:auto}
-    .meta-label{padding:5px 8px;font-weight:700;font-size:11px;white-space:nowrap;background:#dbeafe;border:1px solid #94a3b8;text-transform:uppercase;width:1%;color:#000}
-    .meta-value{padding:5px 8px;font-size:11px;border:1px solid #94a3b8;color:#000;background:#fff}
-    /* Log table */
-    table.log-table{width:100%;border-collapse:collapse;table-layout:auto;border:2px solid #334155}
+    .meta-table{width:100%;border-collapse:collapse;table-layout:auto}
+    .meta-table tr:not(:last-child) td{border-bottom:1px solid #c7d5ee}
+    .meta-label{padding:5px 8px;font-weight:700;font-size:11px;white-space:nowrap;background:#dbeafe;border-right:1px solid #93c5fd;text-transform:uppercase;width:1%;color:#1e3a8a}
+    .meta-value{padding:5px 8px;font-size:11px;color:#000;background:#fff}
+    /* Log table — the outer border is a single declaration on the <table> element itself
+       (border-collapse:collapse), not assembled from separate per-cell rules. That's what
+       guarantees it always renders as one continuous, unbroken, uniform-width rectangle
+       regardless of rowspan, spacer rows, or which row happens to be last. */
+    table.log-table{width:100%;border:1.5px solid #1e3a8a;border-collapse:collapse;table-layout:auto}
     col.c-time{width:80px}
     col.c-obs{width:auto}
-    col.c-cert{width:1%;white-space:nowrap}
-    /* Column header row — light blue to match meta labels */
-    .log-table th{background:#dbeafe;color:#000;font-weight:700;padding:6px;text-align:left;
-       border-bottom:2px solid #334155;border-right:1px solid #94a3b8}
+    col.c-cert{width:1%}
+    .log-table th{background:#dbeafe;color:#1e3a8a;font-weight:700;padding:6px;text-align:left;
+       border-bottom:2px solid #1e3a8a;border-right:1px solid #c7d5ee}
     .log-table th:last-child,.log-table td:last-child{border-right:none}
-    .log-table td{vertical-align:top;word-break:break-word;overflow:hidden;color:#000;border-right:1px solid #94a3b8}
-    .log-table td:last-child{white-space:nowrap;word-break:normal;border-right:none}
-    /* thead wrapper cell — no border/padding/bg so it's invisible as a table cell */
+    .log-table td{vertical-align:top;word-break:break-word;overflow:hidden;color:#000;border-right:1px solid #e2e9f6;border-bottom:1px solid #eef2fb}
+    .log-table td:last-child{white-space:nowrap;word-break:normal;width:1%}
+    /* thead wrapper cell — no border/padding/bg so the meta card floats free of the log table's own border */
     .thead-meta-cell{padding:0 !important;border:none !important;background:transparent !important}
-    .thead-meta-inner{padding-bottom:8px}
+    .thead-meta-inner{padding-bottom:10px}
+    /* Certification pills */
+    .pill{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:9999px;font-size:10px;font-weight:700;white-space:nowrap}
+    .pill-certified{background:#d1fae5;color:#059669;border:1px solid #6ee7b7}
+    .pill-pending{background:#fee2e2;color:#dc2626;border:1px solid #fca5a5}
+    /* Date divider — centered pill instead of a full-width bar */
+    .date-divider-row td{background:#f1f6ff;text-align:center;padding:6px 0}
+    .date-divider-pill{display:inline-block;padding:3px 14px;border-radius:9999px;background:#1e3a8a;color:#fff;font-size:10px;font-weight:700;letter-spacing:0.06em}
     /* Screen: show first-page-header (with imagery); hide print-only blocks */
     .first-page-header{text-align:left;margin-bottom:10px}
     .print-only{display:none !important}
@@ -552,10 +575,12 @@ function exportToPDF(
   <!-- SCREEN VIEW: full header with imagery — hidden during print -->
   <div class="first-page-header" id="first-page-header">
     <div class="page-title">WC SURVEILLANCE RUNNING SHEET</div>
-    <table class="meta-table"><tbody>
-      ${metaRowsHtml}
-      <tr><td class="meta-label">IMAGERY:</td><td class="meta-value">${imageryRowHtml}</td></tr>
-    </tbody></table>
+    <div class="rs-card">
+      <table class="meta-table"><tbody>
+        ${metaRowsHtml}
+        <tr><td class="meta-label">IMAGERY:</td><td class="meta-value">${imageryRowHtml}</td></tr>
+      </tbody></table>
+    </div>
   </div>
   <table class="log-table">
     <colgroup>
@@ -571,10 +596,12 @@ function exportToPDF(
         <td colspan="3" class="thead-meta-cell">
           <div class="thead-meta-inner">
             <div class="page-title-sm">WC SURVEILLANCE RUNNING SHEET</div>
-            <table class="meta-table"><tbody>
-              ${metaRowsHtml}
-              <tr><td class="meta-label">IMAGERY:</td><td class="meta-value">${imageryRowHtml}</td></tr>
-            </tbody></table>
+            <div class="rs-card">
+              <table class="meta-table"><tbody>
+                ${metaRowsHtml}
+                <tr><td class="meta-label">IMAGERY:</td><td class="meta-value">${imageryRowHtml}</td></tr>
+              </tbody></table>
+            </div>
           </div>
         </td>
       </tr>
@@ -1175,92 +1202,26 @@ function MemberCell({
 // phrase (e.g. "PHOTOGRAPH/S TAKEN" from the PT shortcut). Photos render
 // directly in the cell at ~1/3 width — same proportion used in the PDF export.
 
-// Attachment photos are for display only, not evidentiary originals, so every
-// upload is downscaled/re-encoded client-side to a consistent small JPEG —
-// this also sidesteps the iOS HEIC→JPEG-on-share size blowup (see the 25MB
-// cap below) since everything gets normalized regardless of source format.
-const ATTACHMENT_MAX_DIMENSION = 1920;
-const ATTACHMENT_JPEG_QUALITY = 0.82;
-
-function drawToJpegBlob(
-  source: CanvasImageSource,
-  srcWidth: number,
-  srcHeight: number
-): Promise<Blob | null> {
-  let width = srcWidth;
-  let height = srcHeight;
-  if (width > ATTACHMENT_MAX_DIMENSION || height > ATTACHMENT_MAX_DIMENSION) {
-    const scale = ATTACHMENT_MAX_DIMENSION / Math.max(width, height);
-    width = Math.round(width * scale);
-    height = Math.round(height * scale);
-  }
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return Promise.resolve(null);
-  ctx.drawImage(source, 0, 0, width, height);
-  return new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", ATTACHMENT_JPEG_QUALITY));
-}
-
-async function compressAttachmentImage(
-  file: File
-): Promise<{ blob: Blob; mimeType: string; fileName: string } | null> {
-  const fileName = file.name.replace(/\.[^.]+$/, "") + ".jpg";
-
-  // Primary path — fast, works for the vast majority of photos.
-  try {
-    const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
-    const blob = await drawToJpegBlob(bitmap, bitmap.width, bitmap.height);
-    bitmap.close();
-    if (blob) return { blob, mimeType: "image/jpeg", fileName };
-  } catch {
-    // fall through to the <img>-based fallback below
-  }
-
-  // Fallback — Portrait-mode HEIC photos (embedded depth map, a multi-image
-  // container) are known to fail createImageBitmap on iOS Safari even though
-  // the browser can still render them fine via a plain <img>. Without this,
-  // compression silently gives up and the full-size original (often several
-  // MB) gets base64-JSON-uploaded as-is, which is much more likely to fail
-  // outright on a weak mobile connection.
-  try {
-    const objectUrl = URL.createObjectURL(file);
-    try {
-      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-        const el = new Image();
-        el.onload = () => resolve(el);
-        el.onerror = () => reject(new Error("image element failed to load"));
-        el.src = objectUrl;
-      });
-      const blob = await drawToJpegBlob(img, img.naturalWidth, img.naturalHeight);
-      if (blob) return { blob, mimeType: "image/jpeg", fileName };
-    } finally {
-      URL.revokeObjectURL(objectUrl);
-    }
-  } catch {
-    // fall through
-  }
-
-  return null; // both paths failed — fall back to uploading the original file untouched
-}
-
 function ObservationAttachments({
   row,
   canEdit,
   onUpload,
   onDelete,
   uploading,
+  deletePending,
+  operationId,
 }: {
   row: SheetRow;
   canEdit: boolean;
   onUpload: (rowId: number, blob: Blob, mimeType: string, fileName: string) => void;
   onDelete: (id: number) => void;
   uploading: boolean;
+  deletePending?: boolean;
+  operationId?: number;
 }) {
   const [preview, setPreview] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<string | null>(null);
-  const [linkingId, setLinkingId] = useState<number | null>(null);
+  const [linking, setLinking] = useState<{ id: number; url: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   if (!IMAGERY_PHRASE_PATTERN.test(row.observation ?? "")) return null;
@@ -1306,21 +1267,21 @@ function ObservationAttachments({
           />
           <AttachmentLinkBadge
             linkedCount={a.linkedCount ?? 0}
-            linkedCategories={a.linkedCategories}
-            onClick={() => setLinkingId(a.id)}
+            onClick={() => setLinking({ id: a.id, url: a.url })}
             positionClassName="absolute -top-1.5 -left-1.5"
             iconSize="h-3.5 w-3.5 sm:h-4 sm:w-4"
             glyphSize="h-2 w-2 sm:h-2.5 sm:w-2.5"
           />
           {canEdit && (
-            <button
-              onClick={() => onDelete(a.id)}
-              title="Delete photo"
-              className="absolute -top-1.5 -right-1.5 h-4 w-4 sm:h-5 sm:w-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center hover:opacity-90 transition-opacity"
-            >
-              <X className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
-            </button>
+            <DeletePhotoButton
+              pending={deletePending}
+              onConfirm={() => onDelete(a.id)}
+              positionClassName="absolute -top-1.5 -right-1.5"
+              iconSize="h-3.5 w-3.5 sm:h-4 sm:w-4"
+              glyphSize="h-2 w-2 sm:h-2.5 sm:w-2.5"
+            />
           )}
+          <LinkedEntityPills entities={a.linkedEntities} onClick={() => setLinking({ id: a.id, url: a.url })} />
         </div>
       ))}
       {preview && uploading && (
@@ -1351,11 +1312,13 @@ function ObservationAttachments({
         </div>
       )}
 
-      {linkingId !== null && (
+      {linking !== null && (
         <LinkAttachmentDialog
-          attachmentId={linkingId}
-          open={linkingId !== null}
-          onOpenChange={(open) => { if (!open) setLinkingId(null); }}
+          attachmentId={linking.id}
+          photoUrl={linking.url}
+          open={linking !== null}
+          onOpenChange={(open) => { if (!open) setLinking(null); }}
+          currentOperationId={operationId}
         />
       )}
     </div>
@@ -3623,6 +3586,8 @@ export default function SheetDetail() {
                           onUpload={(rowId, blob, mimeType, fileName) => uploadAttachment.mutate({ rowId, blob, mimeType, fileName })}
                           onDelete={(id) => deleteAttachment.mutate({ id })}
                           uploading={uploadAttachment.isPending}
+                          deletePending={deleteAttachment.isPending}
+                          operationId={sheet?.operationId}
                         />
                       </td>
 

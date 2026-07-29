@@ -41,6 +41,17 @@ import ReportsPage from "@/pages/ReportsPage";
 import TileHomeScreen from "@/pages/TileHomeScreen";
 import ImagesPage from "@/pages/ImagesPage";
 import OperationManagerPage from "@/pages/OperationManagerPage";
+import CtoRosterPage from "@/pages/CtoRoster/RosterPage";
+import CtoRosterMyShiftsPage from "@/pages/CtoRoster/MyShiftsPage";
+import CtoRosterMemberManagementPage from "@/pages/CtoRoster/MemberManagementPage";
+import CtoRosterDraftsListPage from "@/pages/CtoRoster/DraftsListPage";
+import CtoRosterDraftRosterPage from "@/pages/CtoRoster/DraftRosterPage";
+import CtoRosterDraftMergePage from "@/pages/CtoRoster/DraftMergePage";
+import CtoRosterSavedRostersListPage from "@/pages/CtoRoster/SavedRostersListPage";
+import CtoRosterSavedRosterPage from "@/pages/CtoRoster/SavedRosterPage";
+import CtoRosterEACompliancePage from "@/pages/CtoRoster/EACompliancePage";
+import CtoRosterOutlookPage from "@/pages/CtoRoster/OutlookPage";
+import CtoRosterAuditLogPage from "@/pages/CtoRoster/AuditLogPage";
 import { DraftModeBanner } from "@/components/DraftModeBanner";
 import { SectionColorProvider } from "@/contexts/SectionColorContext";
 import { useEffect } from "react";
@@ -56,11 +67,20 @@ function WallpaperApplier() {
 
   useEffect(() => {
     if (!user) return;
-    const u = user as { wallpaperUrl?: string | null; wallpaperOpacity?: number | null };
+    const u = user as {
+      wallpaperUrl?: string | null;
+      wallpaperOpacity?: number | null;
+    };
     if (u.wallpaperUrl) {
-      document.documentElement.style.setProperty("--wallpaper-url", `url(${u.wallpaperUrl})`);
+      document.documentElement.style.setProperty(
+        "--wallpaper-url",
+        `url(${u.wallpaperUrl})`
+      );
       const opacity = u.wallpaperOpacity ?? 40;
-      document.documentElement.style.setProperty("--wallpaper-opacity", String((100 - opacity) / 100));
+      document.documentElement.style.setProperty(
+        "--wallpaper-opacity",
+        String((100 - opacity) / 100)
+      );
     } else {
       document.documentElement.style.removeProperty("--wallpaper-url");
       document.documentElement.style.removeProperty("--wallpaper-opacity");
@@ -86,11 +106,26 @@ function Router() {
       <Route path="/intelligence" component={IntelligencePage} />
       <Route path="/intelligence/entities" component={IntelligencePage} />
       <Route path="/intelligence/association-map" component={AssociationMap} />
-      <Route path="/intelligence/target/:id" component={IntelligenceTargetProfile} />
-      <Route path="/intelligence/operation/:id" component={IntelligenceOperationProfile} />
-      <Route path="/intelligence/associate/:label" component={IntelligenceAssociateProfile} />
-      <Route path="/intelligence/vehicle/:label" component={IntelligenceVehicleProfile} />
-      <Route path="/intelligence/location/:label" component={IntelligenceLocationProfile} />
+      <Route
+        path="/intelligence/target/:id"
+        component={IntelligenceTargetProfile}
+      />
+      <Route
+        path="/intelligence/operation/:id"
+        component={IntelligenceOperationProfile}
+      />
+      <Route
+        path="/intelligence/associate/:label"
+        component={IntelligenceAssociateProfile}
+      />
+      <Route
+        path="/intelligence/vehicle/:label"
+        component={IntelligenceVehicleProfile}
+      />
+      <Route
+        path="/intelligence/location/:label"
+        component={IntelligenceLocationProfile}
+      />
       <Route path="/intelligence/mapping" component={IntelligenceMapping} />
       <Route path="/intelligence/rs-mapping" component={RSMapping} />
       <Route path="/governance" component={GovernanceListPage} />
@@ -100,6 +135,35 @@ function Router() {
       <Route path="/images/:operationId" component={ImagesPage} />
       <Route path="/images/:operationId/:sheetId" component={ImagesPage} />
       <Route path="/operation-manager" component={OperationManagerPage} />
+      <Route path="/cto-roster" component={CtoRosterPage} />
+      <Route path="/cto-roster/my-shifts" component={CtoRosterMyShiftsPage} />
+      <Route
+        path="/cto-roster/members"
+        component={CtoRosterMemberManagementPage}
+      />
+      <Route path="/cto-roster/drafts" component={CtoRosterDraftsListPage} />
+      <Route
+        path="/cto-roster/draft/:draftId/merge"
+        component={CtoRosterDraftMergePage}
+      />
+      <Route
+        path="/cto-roster/draft/:draftId"
+        component={CtoRosterDraftRosterPage}
+      />
+      <Route
+        path="/cto-roster/saved-rosters"
+        component={CtoRosterSavedRostersListPage}
+      />
+      <Route
+        path="/cto-roster/saved-roster/:id"
+        component={CtoRosterSavedRosterPage}
+      />
+      <Route
+        path="/cto-roster/ea-compliance"
+        component={CtoRosterEACompliancePage}
+      />
+      <Route path="/cto-roster/outlook" component={CtoRosterOutlookPage} />
+      <Route path="/cto-roster/audit" component={CtoRosterAuditLogPage} />
       <Route path="/operation-management" component={OperationManagementPage} />
       <Route path="/calendar" component={CalendarPage} />
       <Route path="/court/statements" component={StatementsPage} />

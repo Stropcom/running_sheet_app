@@ -2,7 +2,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import {
   DndContext,
-  closestCenter,
+  pointerWithin,
   PointerSensor,
   TouchSensor,
   useSensor,
@@ -42,14 +42,67 @@ import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useTheme } from "@/contexts/ThemeContext";
 import {
-  FileText, ScrollText, Users, PanelLeft, LogOut, ShieldCheck, Crown, Eye, UserCircle, User, Sun, Moon, ClipboardList, Zap, FolderSearch, ClipboardCheck, BookOpen, Scale, FolderOpen, ChevronDown, ChevronRight, CalendarDays, Shield, ClipboardCheck as GovIcon, Map, ArrowRightLeft, HelpCircle, Trash2, WifiOff, Settings, UserCog, BarChart3, GripVertical, LayoutGrid, List, Image, Link2 } from "lucide-react";
-import React, { CSSProperties, useEffect, useRef, useState, useCallback } from "react";
+  FileText,
+  ScrollText,
+  Users,
+  PanelLeft,
+  LogOut,
+  ShieldCheck,
+  Crown,
+  Eye,
+  UserCircle,
+  User,
+  Sun,
+  Moon,
+  ClipboardList,
+  Zap,
+  FolderSearch,
+  ClipboardCheck,
+  BookOpen,
+  Scale,
+  FolderOpen,
+  ChevronDown,
+  ChevronRight,
+  CalendarDays,
+  Shield,
+  ClipboardCheck as GovIcon,
+  Map,
+  ArrowRightLeft,
+  HelpCircle,
+  Trash2,
+  WifiOff,
+  Settings,
+  UserCog,
+  BarChart3,
+  GripVertical,
+  LayoutGrid,
+  List,
+  Image,
+  Link2,
+  FileEdit,
+  Binoculars,
+} from "lucide-react";
+import React, {
+  CSSProperties,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
 import { useObservationFocus } from "@/contexts/ObservationFocusContext";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { Button } from "./ui/button";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useSectionColor } from "@/contexts/SectionColorContext";
+
+// Every page mounts its own <DashboardLayout>, so navigating between pages
+// unmounts and remounts this whole component — including the sidebar's
+// scrollable nav list, which would otherwise reset to the top on every click.
+// This module-level value survives that remount so the sidebar stays scrolled
+// to wherever the user left it (e.g. deep in an expanded Op Manager folder).
+let lastSidebarScrollTop = 0;
 
 // ─── SortableNavItem ─────────────────────────────────────────────────────────
 type SortableNavItemProps = {
@@ -63,11 +116,39 @@ type SortableNavItemProps = {
   govCount: number;
   todoExpanded: boolean;
   setTodoExpanded: React.Dispatch<React.SetStateAction<boolean>>;
+  opManagerExpanded: boolean;
+  setOpManagerExpanded: React.Dispatch<React.SetStateAction<boolean>>;
+  ctoRosterSubExpanded: boolean;
+  setCtoRosterSubExpanded: React.Dispatch<React.SetStateAction<boolean>>;
   shortcutsItemRef: React.RefObject<HTMLLIElement | null>;
   isObservationFocused: boolean;
   setShortcutsPanelOpen: React.Dispatch<React.SetStateAction<boolean>>;
   subItemClass: (active: boolean) => string;
+  sidebarScrollRef: React.RefObject<HTMLDivElement | null>;
 };
+
+// Expanding Op Manager / CTO Roster reveals sub-items below the clicked
+// button without generating a scroll event, so on a short sidebar viewport
+// the new items can land almost entirely below the fold. Scrolling to bring
+// the whole newly-revealed block into view doesn't help when that block is
+// taller than the viewport — it just aligns to its top and still hides most
+// of it. Instead, scroll the clicked button itself up near the top of the
+// container, which maximizes the space left below it for the reveal.
+function scrollToggleNearTop(
+  container: HTMLElement | null,
+  btn: HTMLElement | null,
+  behavior: ScrollBehavior = "smooth"
+) {
+  if (!container || !btn) return;
+  const containerRect = container.getBoundingClientRect();
+  const btnRect = btn.getBoundingClientRect();
+  const offsetWithinContainer =
+    btnRect.top - containerRect.top + container.scrollTop;
+  container.scrollTo({
+    top: Math.max(0, offsetWithinContainer - 12),
+    behavior,
+  });
+}
 
 function SortableNavItem({
   id,
@@ -80,12 +161,24 @@ function SortableNavItem({
   govCount,
   todoExpanded,
   setTodoExpanded,
+  opManagerExpanded,
+  setOpManagerExpanded,
+  ctoRosterSubExpanded,
+  setCtoRosterSubExpanded,
   shortcutsItemRef,
   isObservationFocused,
   setShortcutsPanelOpen,
   subItemClass,
+  sidebarScrollRef,
 }: SortableNavItemProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -104,183 +197,428 @@ function SortableNavItem({
 
   const itemProps = { ref: setNodeRef, style, ...attributes };
 
-  if (id === "operations") return (
-    <SidebarMenuItem {...itemProps}>
-      <SidebarMenuButton
-        isActive={location === "/" || location.startsWith("/operation/") || location.startsWith("/sheet/")}
-        onClick={() => setLocation("/")}
-        tooltip="Operations"
-        className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-blue-700/50 shadow-sm"
-      >
-        <FileText className="h-4 w-4 text-blue-700" />
-        <span className="flex-1 flex flex-col gap-0">
-          <span className={location === "/" || location.startsWith("/operation/") || location.startsWith("/sheet/") ? "text-sidebar-foreground font-medium text-sm leading-tight" : "text-sidebar-foreground/80 text-sm leading-tight"}>Operations</span>
-          <span className="text-[10px] text-sidebar-foreground/40 font-normal leading-tight">Running Sheets</span>
-        </span>
-        {gripHandle}
-      </SidebarMenuButton>
-    </SidebarMenuItem>
-  );
+  if (id === "operations")
+    return (
+      <SidebarMenuItem {...itemProps}>
+        <SidebarMenuButton
+          isActive={
+            location === "/" ||
+            location.startsWith("/operation/") ||
+            location.startsWith("/sheet/")
+          }
+          onClick={() => setLocation("/")}
+          tooltip="Operations"
+          className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-blue-700/50 shadow-sm"
+        >
+          <FileText className="h-4 w-4 text-blue-700" />
+          <span className="flex-1 flex flex-col gap-0">
+            <span
+              className={
+                location === "/" ||
+                location.startsWith("/operation/") ||
+                location.startsWith("/sheet/")
+                  ? "text-sidebar-foreground font-medium text-sm leading-tight"
+                  : "text-sidebar-foreground/80 text-sm leading-tight"
+              }
+            >
+              Operations
+            </span>
+            <span className="text-[10px] text-sidebar-foreground/40 font-normal leading-tight">
+              Running Sheets
+            </span>
+          </span>
+          {gripHandle}
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    );
 
-  if (id === "governance") return (
-    <SidebarMenuItem {...itemProps}>
-      <SidebarMenuButton
-        isActive={location === "/governance" || location.startsWith("/governance")}
-        onClick={() => setLocation("/governance")}
-        tooltip="Governance"
-        className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-purple-400/50 shadow-sm"
-      >
-        <ClipboardCheck className="h-4 w-4 text-purple-400" />
-        <span className={`flex-1 ${location === "/governance" || location.startsWith("/governance") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>Governance</span>
-        {gripHandle}
-      </SidebarMenuButton>
-    </SidebarMenuItem>
-  );
+  if (id === "governance")
+    return (
+      <SidebarMenuItem {...itemProps}>
+        <SidebarMenuButton
+          isActive={
+            location === "/governance" || location.startsWith("/governance")
+          }
+          onClick={() => setLocation("/governance")}
+          tooltip="Governance"
+          className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-purple-400/50 shadow-sm"
+        >
+          <ClipboardCheck className="h-4 w-4 text-purple-400" />
+          <span
+            className={`flex-1 ${location === "/governance" || location.startsWith("/governance") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}
+          >
+            Governance
+          </span>
+          {gripHandle}
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    );
 
-  if (id === "todo") return (
-    <SidebarMenuItem {...itemProps}>
-      <SidebarMenuButton
-        isActive={location === "/todo" || location === "/todo/images" || location === "/todo/governance"}
-        onClick={() => setTodoExpanded((v) => !v)}
-        tooltip="To-Do"
-        className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-red-400/50 shadow-sm"
-      >
-        <ClipboardList className={`h-4 w-4 ${todoCount > 0 ? "text-red-500" : "text-red-400"}`} />
-        <span className={`flex-1 ${todoCount > 0 ? "text-red-500 font-medium" : location === "/todo" || location === "/todo/images" || location === "/todo/governance" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>To-Do</span>
-        {todoCount > 0 && !isCollapsed && (
-          <span className="inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-[10px] font-bold bg-red-500/20 border border-red-500/40 text-red-500">{todoCount}</span>
+  if (id === "todo")
+    return (
+      <SidebarMenuItem {...itemProps}>
+        <SidebarMenuButton
+          isActive={
+            location === "/todo" ||
+            location === "/todo/images" ||
+            location === "/todo/governance"
+          }
+          onClick={() => setTodoExpanded(v => !v)}
+          tooltip="To-Do"
+          className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-red-400/50 shadow-sm"
+        >
+          <ClipboardList
+            className={`h-4 w-4 ${todoCount > 0 ? "text-red-500" : "text-red-400"}`}
+          />
+          <span
+            className={`flex-1 ${todoCount > 0 ? "text-red-500 font-medium" : location === "/todo" || location === "/todo/images" || location === "/todo/governance" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}
+          >
+            To-Do
+          </span>
+          {todoCount > 0 && !isCollapsed && (
+            <span className="inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-[10px] font-bold bg-red-500/20 border border-red-500/40 text-red-500">
+              {todoCount}
+            </span>
+          )}
+          {!isCollapsed &&
+            (todoExpanded ? (
+              <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />
+            ) : (
+              <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />
+            ))}
+          {gripHandle}
+        </SidebarMenuButton>
+        {todoExpanded && !isCollapsed && (
+          <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
+            <button
+              onClick={() => setLocation("/todo")}
+              className={subItemClass(location === "/todo")}
+            >
+              <Shield
+                className={`h-3.5 w-3.5 shrink-0 ${certifyCount > 0 ? "text-red-400" : "text-emerald-400"}`}
+              />
+              <span className="flex-1">Certify</span>
+              {certifyCount > 0 && (
+                <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[9px] font-bold bg-red-500/20 border border-red-500/40 text-red-400">
+                  {certifyCount}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setLocation("/todo/images")}
+              className={subItemClass(location === "/todo/images")}
+            >
+              <Link2
+                className={`h-3.5 w-3.5 shrink-0 ${unlinkedImagesCount > 0 ? "text-amber-400" : "text-emerald-400"}`}
+              />
+              <span className="flex-1">Link Images</span>
+              {unlinkedImagesCount > 0 && (
+                <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[9px] font-bold bg-amber-500/20 border border-amber-500/40 text-amber-400">
+                  {unlinkedImagesCount}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setLocation("/todo/governance")}
+              className={subItemClass(location === "/todo/governance")}
+            >
+              <GovIcon
+                className={`h-3.5 w-3.5 shrink-0 ${govCount > 0 ? "text-blue-400" : "text-emerald-400"}`}
+              />
+              <span className="flex-1">RS Governance</span>
+              {govCount > 0 && (
+                <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[9px] font-bold bg-blue-500/20 border border-blue-500/40 text-blue-400">
+                  {govCount}
+                </span>
+              )}
+            </button>
+          </div>
         )}
-        {!isCollapsed && (todoExpanded ? <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" /> : <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />)}
-        {gripHandle}
-      </SidebarMenuButton>
-      {todoExpanded && !isCollapsed && (
-        <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
-          <button onClick={() => setLocation("/todo")} className={subItemClass(location === "/todo")}>
-            <Shield className={`h-3.5 w-3.5 shrink-0 ${certifyCount > 0 ? "text-red-400" : "text-emerald-400"}`} />
-            <span className="flex-1">Certify</span>
-            {certifyCount > 0 && <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[9px] font-bold bg-red-500/20 border border-red-500/40 text-red-400">{certifyCount}</span>}
-          </button>
-          <button onClick={() => setLocation("/todo/images")} className={subItemClass(location === "/todo/images")}>
-            <Link2 className={`h-3.5 w-3.5 shrink-0 ${unlinkedImagesCount > 0 ? "text-amber-400" : "text-emerald-400"}`} />
-            <span className="flex-1">Link Images</span>
-            {unlinkedImagesCount > 0 && <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[9px] font-bold bg-amber-500/20 border border-amber-500/40 text-amber-400">{unlinkedImagesCount}</span>}
-          </button>
-          <button onClick={() => setLocation("/todo/governance")} className={subItemClass(location === "/todo/governance")}>
-            <GovIcon className={`h-3.5 w-3.5 shrink-0 ${govCount > 0 ? "text-blue-400" : "text-emerald-400"}`} />
-            <span className="flex-1">RS Governance</span>
-            {govCount > 0 && <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[9px] font-bold bg-blue-500/20 border border-blue-500/40 text-blue-400">{govCount}</span>}
-          </button>
-        </div>
-      )}
-    </SidebarMenuItem>
-  );
+      </SidebarMenuItem>
+    );
 
-  if (id === "mapping") return (
-    <SidebarMenuItem {...itemProps}>
-      <SidebarMenuButton
-        isActive={location === "/intelligence/mapping"}
-        onClick={() => setLocation("/intelligence/mapping")}
-        tooltip="Mapping"
-        className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-teal-400/50 shadow-sm"
-      >
-        <Map className="h-4 w-4 text-teal-400" />
-        <span className={`flex-1 ${location === "/intelligence/mapping" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>Mapping</span>
-        {gripHandle}
-      </SidebarMenuButton>
-    </SidebarMenuItem>
-  );
+  if (id === "mapping")
+    return (
+      <SidebarMenuItem {...itemProps}>
+        <SidebarMenuButton
+          isActive={location === "/intelligence/mapping"}
+          onClick={() => setLocation("/intelligence/mapping")}
+          tooltip="Mapping"
+          className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-teal-400/50 shadow-sm"
+        >
+          <Map className="h-4 w-4 text-teal-400" />
+          <span
+            className={`flex-1 ${location === "/intelligence/mapping" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}
+          >
+            Mapping
+          </span>
+          {gripHandle}
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    );
 
-  if (id === "images") return (
-    <SidebarMenuItem {...itemProps}>
-      <SidebarMenuButton
-        isActive={location === "/images" || location.startsWith("/images")}
-        onClick={() => setLocation("/images")}
-        tooltip="Images"
-        className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-pink-400/50 shadow-sm"
-      >
-        <Image className="h-4 w-4 text-pink-400" />
-        <span className={`flex-1 ${location === "/images" || location.startsWith("/images") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>Images</span>
-        {gripHandle}
-      </SidebarMenuButton>
-    </SidebarMenuItem>
-  );
+  if (id === "images")
+    return (
+      <SidebarMenuItem {...itemProps}>
+        <SidebarMenuButton
+          isActive={location === "/images" || location.startsWith("/images")}
+          onClick={() => setLocation("/images")}
+          tooltip="Images"
+          className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-pink-400/50 shadow-sm"
+        >
+          <Image className="h-4 w-4 text-pink-400" />
+          <span
+            className={`flex-1 ${location === "/images" || location.startsWith("/images") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}
+          >
+            Images
+          </span>
+          {gripHandle}
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    );
 
-  if (id === "calendar") return (
-    <SidebarMenuItem {...itemProps}>
-      <SidebarMenuButton
-        isActive={location === "/calendar" || location.startsWith("/calendar")}
-        onClick={() => setLocation("/calendar")}
-        tooltip="Calendar"
-        className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-orange-400/50 shadow-sm"
-      >
-        <CalendarDays className="h-4 w-4 text-orange-400" />
-        <span className={`flex-1 ${location === "/calendar" || location.startsWith("/calendar") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>Calendar</span>
-        {gripHandle}
-      </SidebarMenuButton>
-    </SidebarMenuItem>
-  );
+  if (id === "calendar")
+    return (
+      <SidebarMenuItem {...itemProps}>
+        <SidebarMenuButton
+          isActive={
+            location === "/calendar" || location.startsWith("/calendar")
+          }
+          onClick={() => setLocation("/calendar")}
+          tooltip="Calendar"
+          className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-orange-400/50 shadow-sm"
+        >
+          <CalendarDays className="h-4 w-4 text-orange-400" />
+          <span
+            className={`flex-1 ${location === "/calendar" || location.startsWith("/calendar") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}
+          >
+            Calendar
+          </span>
+          {gripHandle}
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    );
 
-  if (id === "shortcuts") return (
-    <SidebarMenuItem {...itemProps} ref={(el) => { (itemProps as any).ref(el); (shortcutsItemRef as React.MutableRefObject<HTMLLIElement | null>).current = el; }}>
-      <SidebarMenuButton
-        isActive={location === "/shortcuts" || location.startsWith("/shortcuts")}
-        onClick={() => setLocation("/shortcuts")}
-        tooltip="Shortcuts"
-        className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-yellow-400/50 shadow-sm"
-        onMouseEnter={() => { if (isObservationFocused) setShortcutsPanelOpen(true); }}
+  if (id === "shortcuts")
+    return (
+      <SidebarMenuItem
+        {...itemProps}
+        ref={el => {
+          (itemProps as any).ref(el);
+          (
+            shortcutsItemRef as React.MutableRefObject<HTMLLIElement | null>
+          ).current = el;
+        }}
       >
-        <Zap className="h-4 w-4 text-yellow-400" />
-        <span className={`flex-1 ${location === "/shortcuts" || location.startsWith("/shortcuts") ? "text-sidebar-foreground font-medium" : isObservationFocused ? "text-cyan-300 font-medium" : "text-sidebar-foreground/80"}`}>Shortcuts</span>
-        {isObservationFocused && !isCollapsed && <span className="ml-1 text-[9px] font-bold text-cyan-500 uppercase tracking-wide">hover</span>}
-        {gripHandle}
-      </SidebarMenuButton>
-    </SidebarMenuItem>
-  );
+        <SidebarMenuButton
+          isActive={
+            location === "/shortcuts" || location.startsWith("/shortcuts")
+          }
+          onClick={() => setLocation("/shortcuts")}
+          tooltip="Shortcuts"
+          className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-yellow-400/50 shadow-sm"
+          onMouseEnter={() => {
+            if (isObservationFocused) setShortcutsPanelOpen(true);
+          }}
+        >
+          <Zap className="h-4 w-4 text-yellow-400" />
+          <span
+            className={`flex-1 ${location === "/shortcuts" || location.startsWith("/shortcuts") ? "text-sidebar-foreground font-medium" : isObservationFocused ? "text-cyan-300 font-medium" : "text-sidebar-foreground/80"}`}
+          >
+            Shortcuts
+          </span>
+          {isObservationFocused && !isCollapsed && (
+            <span className="ml-1 text-[9px] font-bold text-cyan-500 uppercase tracking-wide">
+              hover
+            </span>
+          )}
+          {gripHandle}
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    );
 
-  if (id === "intelligence") return (
-    <SidebarMenuItem {...itemProps}>
-      <SidebarMenuButton
-        isActive={location === "/intelligence" || (location.startsWith("/intelligence") && !location.startsWith("/intelligence/mapping"))}
-        onClick={() => setLocation("/intelligence")}
-        tooltip="Intelligence"
-        className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-violet-400/50 shadow-sm"
-      >
-        <FolderSearch className="h-4 w-4 text-violet-400" />
-        <span className={`flex-1 ${location === "/intelligence" || (location.startsWith("/intelligence") && !location.startsWith("/intelligence/mapping")) ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>Intelligence</span>
-        {gripHandle}
-      </SidebarMenuButton>
-    </SidebarMenuItem>
-  );
+  if (id === "intelligence")
+    return (
+      <SidebarMenuItem {...itemProps}>
+        <SidebarMenuButton
+          isActive={
+            location === "/intelligence" ||
+            (location.startsWith("/intelligence") &&
+              !location.startsWith("/intelligence/mapping"))
+          }
+          onClick={() => setLocation("/intelligence")}
+          tooltip="Intelligence"
+          className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-violet-400/50 shadow-sm"
+        >
+          <FolderSearch className="h-4 w-4 text-violet-400" />
+          <span
+            className={`flex-1 ${location === "/intelligence" || (location.startsWith("/intelligence") && !location.startsWith("/intelligence/mapping")) ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}
+          >
+            Intelligence
+          </span>
+          {gripHandle}
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    );
 
-  if (id === "targetRegistry") return (
-    <SidebarMenuItem {...itemProps}>
-      <SidebarMenuButton
-        isActive={location === "/target-registry" || location.startsWith("/target-registry")}
-        onClick={() => setLocation("/target-registry")}
-        tooltip="Target Registry"
-        className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-rose-400/50 shadow-sm"
-      >
-        <BookOpen className="h-4 w-4 text-rose-400" />
-        <span className={`flex-1 ${location === "/target-registry" || location.startsWith("/target-registry") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>Target Registry</span>
-        {gripHandle}
-      </SidebarMenuButton>
-    </SidebarMenuItem>
-  );
+  if (id === "targetRegistry")
+    return (
+      <SidebarMenuItem {...itemProps}>
+        <SidebarMenuButton
+          isActive={
+            location === "/target-registry" ||
+            location.startsWith("/target-registry")
+          }
+          onClick={() => setLocation("/target-registry")}
+          tooltip="Target Registry"
+          className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-rose-400/50 shadow-sm"
+        >
+          <BookOpen className="h-4 w-4 text-rose-400" />
+          <span
+            className={`flex-1 ${location === "/target-registry" || location.startsWith("/target-registry") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}
+          >
+            Target Registry
+          </span>
+          {gripHandle}
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    );
 
-  if (id === "operationManager") return (
-    <SidebarMenuItem {...itemProps}>
-      <SidebarMenuButton
-        isActive={location === "/operation-manager" || location.startsWith("/operation-manager")}
-        onClick={() => setLocation("/operation-manager")}
-        tooltip="Operation Manager"
-        className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-purple-500/50 shadow-sm"
-      >
-        <ClipboardList className="h-4 w-4 text-purple-500" />
-        <span className={`flex-1 ${location === "/operation-manager" || location.startsWith("/operation-manager") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>Op Manager</span>
-        {gripHandle}
-      </SidebarMenuButton>
-    </SidebarMenuItem>
-  );
+  if (id === "operationManager") {
+    const opManagerActive =
+      location.startsWith("/operation-manager") ||
+      location.startsWith("/cto-roster");
+    return (
+      <SidebarMenuItem {...itemProps}>
+        <SidebarMenuButton
+          data-nav-toggle="op-manager"
+          isActive={opManagerActive}
+          onClick={e => {
+            const willExpand = !opManagerExpanded;
+            setOpManagerExpanded(v => !v);
+            if (willExpand)
+              scrollToggleNearTop(sidebarScrollRef.current, e.currentTarget);
+          }}
+          tooltip="Op Manager"
+          className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-purple-500/50 shadow-sm"
+        >
+          <ClipboardList className="h-4 w-4 text-purple-500" />
+          <span
+            className={`flex-1 ${opManagerActive ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}
+          >
+            Op Manager
+          </span>
+          {!isCollapsed &&
+            (opManagerExpanded ? (
+              <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />
+            ) : (
+              <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />
+            ))}
+          {gripHandle}
+        </SidebarMenuButton>
+        {opManagerExpanded && !isCollapsed && (
+          <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
+            <button
+              onClick={() => setLocation("/operation-manager")}
+              className={subItemClass(
+                location.startsWith("/operation-manager")
+              )}
+            >
+              <ClipboardList className="h-3.5 w-3.5 shrink-0 text-purple-500" />
+              CTO Weekly Tasking
+            </button>
+            <button
+              data-nav-toggle="cto-roster"
+              onClick={e => {
+                const willExpand = !ctoRosterSubExpanded;
+                setCtoRosterSubExpanded(v => !v);
+                if (willExpand)
+                  scrollToggleNearTop(
+                    sidebarScrollRef.current,
+                    e.currentTarget
+                  );
+              }}
+              className={subItemClass(location.startsWith("/cto-roster"))}
+            >
+              <Users className="h-3.5 w-3.5 shrink-0 text-purple-500" />
+              <span className="flex-1">CTO Roster</span>
+              {ctoRosterSubExpanded ? (
+                <ChevronDown className="h-3 w-3 text-sidebar-foreground/40" />
+              ) : (
+                <ChevronRight className="h-3 w-3 text-sidebar-foreground/40" />
+              )}
+            </button>
+            {ctoRosterSubExpanded && (
+              <div className="ml-4 border-l border-sidebar-border/40 pl-3 flex flex-col gap-0.5 mb-0.5">
+                <button
+                  onClick={() => setLocation("/cto-roster")}
+                  className={subItemClass(location === "/cto-roster")}
+                >
+                  <Users className="h-3.5 w-3.5 shrink-0" />
+                  Shift Grid
+                </button>
+                <button
+                  onClick={() => setLocation("/cto-roster/my-shifts")}
+                  className={subItemClass(location === "/cto-roster/my-shifts")}
+                >
+                  <Users className="h-3.5 w-3.5 shrink-0" />
+                  My Shifts
+                </button>
+                <button
+                  onClick={() => setLocation("/cto-roster/members")}
+                  className={subItemClass(location === "/cto-roster/members")}
+                >
+                  <Users className="h-3.5 w-3.5 shrink-0" />
+                  Members
+                </button>
+                <button
+                  onClick={() => setLocation("/cto-roster/drafts")}
+                  className={subItemClass(
+                    location.startsWith("/cto-roster/draft")
+                  )}
+                >
+                  <FileEdit className="h-3.5 w-3.5 shrink-0" />
+                  Drafts
+                </button>
+                <button
+                  onClick={() => setLocation("/cto-roster/saved-rosters")}
+                  className={subItemClass(
+                    location.startsWith("/cto-roster/saved-roster")
+                  )}
+                >
+                  <BookOpen className="h-3.5 w-3.5 shrink-0" />
+                  Saved Rosters
+                </button>
+                <button
+                  onClick={() => setLocation("/cto-roster/outlook")}
+                  className={subItemClass(location === "/cto-roster/outlook")}
+                >
+                  <Binoculars className="h-3.5 w-3.5 shrink-0" />
+                  Outlook
+                </button>
+                <button
+                  onClick={() => setLocation("/cto-roster/ea-compliance")}
+                  className={subItemClass(
+                    location === "/cto-roster/ea-compliance"
+                  )}
+                >
+                  <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+                  EA Compliance
+                </button>
+                <button
+                  onClick={() => setLocation("/cto-roster/audit")}
+                  className={subItemClass(location === "/cto-roster/audit")}
+                >
+                  <ScrollText className="h-3.5 w-3.5 shrink-0" />
+                  Audit Log
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </SidebarMenuItem>
+    );
+  }
 
   return null;
 }
@@ -302,12 +640,31 @@ const MIN_WIDTH = 200;
 const MAX_WIDTH = 400;
 
 const ROLE_CONFIG = {
-  admin: { label: "Full Access + User Management", icon: Crown, color: "text-blue-400", badge: "border-blue-400/30 bg-blue-400/10 text-blue-400" },
-  member: { label: "Full Access", icon: ShieldCheck, color: "text-emerald-400", badge: "border-emerald-400/30 bg-emerald-400/10 text-emerald-400" },
-  observer: { label: "Observer", icon: Eye, color: "text-muted-foreground", badge: "border-border bg-muted/50 text-muted-foreground" },
+  admin: {
+    label: "Full Access + User Management",
+    icon: Crown,
+    color: "text-blue-400",
+    badge: "border-blue-400/30 bg-blue-400/10 text-blue-400",
+  },
+  member: {
+    label: "Full Access",
+    icon: ShieldCheck,
+    color: "text-emerald-400",
+    badge: "border-emerald-400/30 bg-emerald-400/10 text-emerald-400",
+  },
+  observer: {
+    label: "Observer",
+    icon: Eye,
+    color: "text-muted-foreground",
+    badge: "border-border bg-muted/50 text-muted-foreground",
+  },
 };
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
     return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
@@ -340,12 +697,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <ShieldCheck className="w-10 h-10 text-primary" />
           </div>
           <div>
-            <h1 className="text-xl font-semibold tracking-tight">Sign in to continue</h1>
+            <h1 className="text-xl font-semibold tracking-tight">
+              Sign in to continue
+            </h1>
             <p className="text-sm text-muted-foreground mt-2">
               Access requires authentication.
             </p>
           </div>
-          <Button onClick={() => { window.location.href = "/login"; }} size="lg" className="w-full">
+          <Button
+            onClick={() => {
+              window.location.href = "/login";
+            }}
+            size="lg"
+            className="w-full"
+          >
             Sign in
           </Button>
         </div>
@@ -354,7 +719,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <SidebarProvider style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
+    <SidebarProvider
+      style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
+    >
       <DashboardLayoutContent setSidebarWidth={setSidebarWidth}>
         {children}
       </DashboardLayoutContent>
@@ -376,22 +743,60 @@ function DashboardLayoutContent({
   const isCollapsed = state === "collapsed";
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
+  const sidebarScrollRef = useRef<HTMLDivElement>(null);
+
+  // Restore the sidebar's scroll position immediately on mount (before paint)
+  // so re-opening a nav item deep in the list doesn't visibly jump to the top.
+  // For pages under Op Manager / CTO Roster specifically, don't just trust
+  // the carried-over scrollTop from the previous page (a `let` surviving the
+  // full remount every navigation causes) — re-pin the deepest expanded
+  // toggle near the top of the list every time, deterministically, so all of
+  // its children get the maximum space and stay visible on every page under
+  // it until it's collapsed, not just on the page where it was expanded.
+  useLayoutEffect(() => {
+    const container = sidebarScrollRef.current;
+    if (!container) return;
+    const toggleSelector = location.startsWith("/cto-roster")
+      ? '[data-nav-toggle="cto-roster"]'
+      : location.startsWith("/operation-manager")
+        ? '[data-nav-toggle="op-manager"]'
+        : null;
+    const toggleBtn = toggleSelector
+      ? container.querySelector<HTMLElement>(toggleSelector)
+      : null;
+    if (toggleBtn) {
+      scrollToggleNearTop(container, toggleBtn, "instant");
+    } else {
+      container.scrollTop = lastSidebarScrollTop;
+    }
+  }, []);
+
   const isMobile = useIsMobile();
 
-  const { data: outstanding } = trpc.sheet.outstandingForMe.useQuery(undefined, {
-    staleTime: 30_000,
-    refetchOnWindowFocus: true,
-  });
-  const { data: governanceTodo } = trpc.sheet.governanceTodo.useQuery(undefined, {
-    staleTime: 30_000,
-    refetchOnWindowFocus: true,
-  });
-  const { data: unlinkedImagesTodo } = trpc.sheet.unlinkedImagesTodo.useQuery(undefined, {
-    staleTime: 30_000,
-    refetchOnWindowFocus: true,
-  });
+  const { data: outstanding } = trpc.sheet.outstandingForMe.useQuery(
+    undefined,
+    {
+      staleTime: 30_000,
+      refetchOnWindowFocus: true,
+    }
+  );
+  const { data: governanceTodo } = trpc.sheet.governanceTodo.useQuery(
+    undefined,
+    {
+      staleTime: 30_000,
+      refetchOnWindowFocus: true,
+    }
+  );
+  const { data: unlinkedImagesTodo } = trpc.sheet.unlinkedImagesTodo.useQuery(
+    undefined,
+    {
+      staleTime: 30_000,
+      refetchOnWindowFocus: true,
+    }
+  );
   const certifyCount = outstanding?.length ?? 0;
-  const govCount = governanceTodo?.filter(g => g.outstanding.length > 0).length ?? 0;
+  const govCount =
+    governanceTodo?.filter(g => g.outstanding.length > 0).length ?? 0;
   const unlinkedImagesCount = unlinkedImagesTodo?.length ?? 0;
   const todoCount = certifyCount + govCount + unlinkedImagesCount;
 
@@ -413,8 +818,23 @@ function DashboardLayoutContent({
     }
   }, [isObservationFocused, shortcutsPanelHovered]);
 
-  const [courtExpanded, setCourtExpanded] = useState(() => location.startsWith("/court"));
-  const [todoExpanded, setTodoExpanded] = useState(() => location === "/todo" || location === "/todo/images" || location === "/todo/governance");
+  const [courtExpanded, setCourtExpanded] = useState(() =>
+    location.startsWith("/court")
+  );
+  const [todoExpanded, setTodoExpanded] = useState(
+    () =>
+      location === "/todo" ||
+      location === "/todo/images" ||
+      location === "/todo/governance"
+  );
+  const [opManagerExpanded, setOpManagerExpanded] = useState(
+    () =>
+      location.startsWith("/operation-manager") ||
+      location.startsWith("/cto-roster")
+  );
+  const [ctoRosterSubExpanded, setCtoRosterSubExpanded] = useState(() =>
+    location.startsWith("/cto-roster")
+  );
   const [adminFolderExpanded, setAdminFolderExpanded] = useState(false);
   const [userMgmtFolderExpanded, setUserMgmtFolderExpanded] = useState(false);
 
@@ -424,7 +844,9 @@ function DashboardLayoutContent({
     try {
       const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
       if (s) return JSON.parse(s).rsSelectedSheetId ?? null;
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     return null;
   }, []);
   const [activeRsId, setActiveRsId] = useState<number | null>(readActiveRsId);
@@ -445,11 +867,16 @@ function DashboardLayoutContent({
   }, [readActiveRsId]);
 
   // Re-read when navigating back to any page (location change)
-  useEffect(() => { setActiveRsId(readActiveRsId()); }, [location, readActiveRsId]);
+  useEffect(() => {
+    setActiveRsId(readActiveRsId());
+  }, [location, readActiveRsId]);
 
   // ── Home screen mode toggle ──────────────────────────────────────────────
   const [homeMode, setHomeMode] = useState<"folder" | "tile">("folder");
-  const { data: homePrefsData } = trpc.sidebar.getHomePrefs.useQuery(undefined, { staleTime: Infinity });
+  const { data: homePrefsData } = trpc.sidebar.getHomePrefs.useQuery(
+    undefined,
+    { staleTime: Infinity }
+  );
   const dashboardUtils = trpc.useUtils();
   const setHomePrefsMutation = trpc.sidebar.setHomePrefs.useMutation({
     onSuccess: () => dashboardUtils.sidebar.getHomePrefs.invalidate(),
@@ -474,10 +901,21 @@ function DashboardLayoutContent({
 
   // ── Sidebar drag-to-reorder ──────────────────────────────────────────────
   const DEFAULT_NAV_ORDER = [
-    "operations", "governance", "todo", "mapping", "images", "calendar", "shortcuts", "intelligence", "targetRegistry", "operationManager",
+    "operations",
+    "governance",
+    "todo",
+    "mapping",
+    "images",
+    "calendar",
+    "shortcuts",
+    "intelligence",
+    "targetRegistry",
+    "operationManager",
   ];
   const [navOrder, setNavOrder] = useState<string[]>(DEFAULT_NAV_ORDER);
-  const { data: sidebarOrderData } = trpc.sidebar.getOrder.useQuery(undefined, { staleTime: Infinity });
+  const { data: sidebarOrderData } = trpc.sidebar.getOrder.useQuery(undefined, {
+    staleTime: Infinity,
+  });
   const setSidebarOrderMutation = trpc.sidebar.setOrder.useMutation({
     onSuccess: () => dashboardUtils.sidebar.getOrder.invalidate(),
   });
@@ -487,7 +925,7 @@ function DashboardLayoutContent({
       // Merge: keep saved order but append any new keys not yet in the saved list
       const saved = sidebarOrderData.order;
       const allKeys = DEFAULT_NAV_ORDER;
-      const merged = [...saved.filter((k) => allKeys.includes(k))];
+      const merged = [...saved.filter(k => allKeys.includes(k))];
       for (const k of allKeys) {
         if (!merged.includes(k)) merged.push(k);
       }
@@ -496,8 +934,16 @@ function DashboardLayoutContent({
   }, [sidebarOrderData]);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { delay: 300, tolerance: 8 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 300, tolerance: 8 } }),
+    // Mouse drags activate on movement past a small threshold — a delay-based
+    // constraint here (meant for disambiguating touch-scroll from touch-drag)
+    // made normal fast mouse drags get cancelled before they ever started,
+    // since moving past the tolerance within the delay window aborts activation.
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 300, tolerance: 8 },
+    })
   );
 
   function handleDragEnd(event: DragEndEvent) {
@@ -513,7 +959,15 @@ function DashboardLayoutContent({
 
   // Expand admin folder if current route is inside it
   useEffect(() => {
-    const adminPaths = ["/court", "/audit", "/draft", "/operation-management", "/recycle-bin", "/help", "/reports"];
+    const adminPaths = [
+      "/court",
+      "/audit",
+      "/draft",
+      "/operation-management",
+      "/recycle-bin",
+      "/help",
+      "/reports",
+    ];
     if (adminPaths.some(p => location === p || location.startsWith(p))) {
       setAdminFolderExpanded(true);
     }
@@ -531,7 +985,8 @@ function DashboardLayoutContent({
       if (!isResizing) return;
       const sidebarLeft = sidebarRef.current?.getBoundingClientRect().left ?? 0;
       const newWidth = e.clientX - sidebarLeft;
-      if (newWidth >= MIN_WIDTH && newWidth <= MAX_WIDTH) setSidebarWidth(newWidth);
+      if (newWidth >= MIN_WIDTH && newWidth <= MAX_WIDTH)
+        setSidebarWidth(newWidth);
     };
     const handleMouseUp = () => setIsResizing(false);
     if (isResizing) {
@@ -557,8 +1012,12 @@ function DashboardLayoutContent({
 
   return (
     <>
-      <div className="relative" ref={sidebarRef}>
-        <Sidebar collapsible="icon" className="border-r border-sidebar-border rounded-r-2xl shadow-2xl overflow-hidden" disableTransition={isResizing}>
+      <div className="relative print:hidden" ref={sidebarRef}>
+        <Sidebar
+          collapsible="icon"
+          className="border-r border-sidebar-border rounded-r-2xl shadow-2xl overflow-hidden"
+          disableTransition={isResizing}
+        >
           {/* Header */}
           <SidebarHeader className="h-16 justify-center border-b border-sidebar-border">
             <div className="flex items-center gap-3 px-2 w-full">
@@ -581,8 +1040,16 @@ function DashboardLayoutContent({
                 <button
                   onClick={toggleHomeMode}
                   className="h-8 w-8 flex items-center justify-center hover:bg-sidebar-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0 ml-auto"
-                  title={homeMode === "folder" ? "Switch to Dashboard" : "Switch to Folders"}
-                  aria-label={homeMode === "folder" ? "Switch to Dashboard" : "Switch to Folders"}
+                  title={
+                    homeMode === "folder"
+                      ? "Switch to Dashboard"
+                      : "Switch to Folders"
+                  }
+                  aria-label={
+                    homeMode === "folder"
+                      ? "Switch to Dashboard"
+                      : "Switch to Folders"
+                  }
                 >
                   {homeMode === "folder" ? (
                     <LayoutGrid className="h-4 w-4 text-sidebar-foreground/60" />
@@ -595,13 +1062,25 @@ function DashboardLayoutContent({
           </SidebarHeader>
 
           {/* Navigation */}
-          <SidebarContent className="gap-0 pt-2 pb-2">
+          <SidebarContent
+            className="gap-0 pt-2 pb-2"
+            ref={sidebarScrollRef}
+            onScroll={e => {
+              lastSidebarScrollTop = e.currentTarget.scrollTop;
+            }}
+          >
             <SidebarMenu className="px-2 gap-1.5">
-
               {/* ── Draggable main nav items ── */}
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                <SortableContext items={navOrder} strategy={verticalListSortingStrategy}>
-                  {navOrder.map((key) => (
+              <DndContext
+                sensors={sensors}
+                collisionDetection={pointerWithin}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext
+                  items={navOrder}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {navOrder.map(key => (
                     <SortableNavItem
                       key={key}
                       id={key}
@@ -614,10 +1093,15 @@ function DashboardLayoutContent({
                       govCount={govCount}
                       todoExpanded={todoExpanded}
                       setTodoExpanded={setTodoExpanded}
+                      opManagerExpanded={opManagerExpanded}
+                      setOpManagerExpanded={setOpManagerExpanded}
+                      ctoRosterSubExpanded={ctoRosterSubExpanded}
+                      setCtoRosterSubExpanded={setCtoRosterSubExpanded}
                       shortcutsItemRef={shortcutsItemRef}
                       isObservationFocused={isObservationFocused}
                       setShortcutsPanelOpen={setShortcutsPanelOpen}
                       subItemClass={subItemClass}
+                      sidebarScrollRef={sidebarScrollRef}
                     />
                   ))}
                 </SortableContext>
@@ -626,95 +1110,155 @@ function DashboardLayoutContent({
               {/* ── Administration (expandable, all users) ── */}
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  isActive={adminFolderExpanded && !isCollapsed ? false : (
-                    location.startsWith("/court") || location === "/audit" || location === "/draft" ||
-                    location === "/operation-management" || location === "/recycle-bin" || location === "/help" || location === "/reports"
-                  )}
-                  onClick={() => setAdminFolderExpanded((v) => !v)}
+                  isActive={
+                    adminFolderExpanded && !isCollapsed
+                      ? false
+                      : location.startsWith("/court") ||
+                        location === "/audit" ||
+                        location === "/draft" ||
+                        location === "/operation-management" ||
+                        location === "/recycle-bin" ||
+                        location === "/help" ||
+                        location === "/reports"
+                  }
+                  onClick={() => setAdminFolderExpanded(v => !v)}
                   tooltip="Administration"
                   className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-slate-400/50 shadow-sm"
                 >
                   <Settings className="h-4 w-4 text-slate-400" />
-                  <span className={`flex-1 ${
-                    location.startsWith("/court") || location === "/audit" || location === "/draft" ||
-                    location === "/operation-management" || location === "/recycle-bin" || location === "/help" || location === "/reports"
-                      ? "text-sidebar-foreground font-medium"
-                      : "text-sidebar-foreground/80"
-                  }`}>
+                  <span
+                    className={`flex-1 ${
+                      location.startsWith("/court") ||
+                      location === "/audit" ||
+                      location === "/draft" ||
+                      location === "/operation-management" ||
+                      location === "/recycle-bin" ||
+                      location === "/help" ||
+                      location === "/reports"
+                        ? "text-sidebar-foreground font-medium"
+                        : "text-sidebar-foreground/80"
+                    }`}
+                  >
                     Administration
                   </span>
-                  {!isCollapsed && (adminFolderExpanded ? <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" /> : <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />)}
+                  {!isCollapsed &&
+                    (adminFolderExpanded ? (
+                      <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />
+                    ) : (
+                      <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />
+                    ))}
                 </SidebarMenuButton>
 
                 {adminFolderExpanded && !isCollapsed && (
                   <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
-
                     {/* Reports */}
-                    <button onClick={() => setLocation("/reports")} className={subItemClass(location === "/reports")}>
+                    <button
+                      onClick={() => setLocation("/reports")}
+                      className={subItemClass(location === "/reports")}
+                    >
                       <BarChart3 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
                       Reports
                     </button>
 
                     {/* Court (expandable sub-folder) */}
                     <button
-                      onClick={() => setCourtExpanded((v) => !v)}
+                      onClick={() => setCourtExpanded(v => !v)}
                       className={subItemClass(location.startsWith("/court"))}
                     >
                       <Scale className="h-3.5 w-3.5 shrink-0 text-foreground" />
                       <span className="flex-1">Court</span>
-                      {courtExpanded ? <ChevronDown className="h-3 w-3 text-sidebar-foreground/40" /> : <ChevronRight className="h-3 w-3 text-sidebar-foreground/40" />}
+                      {courtExpanded ? (
+                        <ChevronDown className="h-3 w-3 text-sidebar-foreground/40" />
+                      ) : (
+                        <ChevronRight className="h-3 w-3 text-sidebar-foreground/40" />
+                      )}
                     </button>
                     {courtExpanded && (
                       <div className="ml-4 border-l border-sidebar-border/40 pl-3 flex flex-col gap-0.5 mb-0.5">
-                        <button onClick={() => setLocation("/court/statements")} className={subItemClass(location === "/court/statements")}>
+                        <button
+                          onClick={() => setLocation("/court/statements")}
+                          className={subItemClass(
+                            location === "/court/statements"
+                          )}
+                        >
                           <FolderOpen className="h-3.5 w-3.5 shrink-0" />
                           Statements
                         </button>
-                        <button onClick={() => setLocation("/court/witness-list")} className={subItemClass(location === "/court/witness-list")}>
+                        <button
+                          onClick={() => setLocation("/court/witness-list")}
+                          className={subItemClass(
+                            location === "/court/witness-list"
+                          )}
+                        >
                           <FolderOpen className="h-3.5 w-3.5 shrink-0" />
                           Witness List
                         </button>
-                        <button onClick={() => setLocation("/court/wipc")} className={subItemClass(location === "/court/wipc")}>
+                        <button
+                          onClick={() => setLocation("/court/wipc")}
+                          className={subItemClass(location === "/court/wipc")}
+                        >
                           <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-amber-400" />
                           <span className="flex-1">WIPC</span>
-                          <span className="inline-flex items-center gap-0.5 px-1 py-0 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 leading-4">🔒</span>
+                          <span className="inline-flex items-center gap-0.5 px-1 py-0 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 leading-4">
+                            🔒
+                          </span>
                         </button>
                       </div>
                     )}
 
                     {/* Audit Log */}
-                    <button onClick={() => setLocation("/audit")} className={subItemClass(location === "/audit")}>
+                    <button
+                      onClick={() => setLocation("/audit")}
+                      className={subItemClass(location === "/audit")}
+                    >
                       <ScrollText className="h-3.5 w-3.5 shrink-0 text-foreground" />
                       Audit Log
                     </button>
 
                     {/* Draft Mode */}
-                    <button onClick={() => setLocation("/draft")} className={subItemClass(location === "/draft")}>
-                      <WifiOff className={`h-3.5 w-3.5 shrink-0 ${draftCounts.total > 0 ? "text-blue-400" : "text-foreground"}`} />
+                    <button
+                      onClick={() => setLocation("/draft")}
+                      className={subItemClass(location === "/draft")}
+                    >
+                      <WifiOff
+                        className={`h-3.5 w-3.5 shrink-0 ${draftCounts.total > 0 ? "text-blue-400" : "text-foreground"}`}
+                      />
                       <span className="flex-1">Draft Mode</span>
                       {draftCounts.total > 0 && (
-                        <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[9px] font-bold bg-blue-500/20 border border-blue-500/40 text-blue-400">{draftCounts.total}</span>
+                        <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[9px] font-bold bg-blue-500/20 border border-blue-500/40 text-blue-400">
+                          {draftCounts.total}
+                        </span>
                       )}
                     </button>
 
                     {/* Archive (was Operation Management) */}
-                    <button onClick={() => setLocation("/operation-management")} className={subItemClass(location === "/operation-management")}>
+                    <button
+                      onClick={() => setLocation("/operation-management")}
+                      className={subItemClass(
+                        location === "/operation-management"
+                      )}
+                    >
                       <ArrowRightLeft className="h-3.5 w-3.5 shrink-0 text-foreground" />
                       Archive
                     </button>
 
                     {/* Recycle Bin */}
-                    <button onClick={() => setLocation("/recycle-bin")} className={subItemClass(location === "/recycle-bin")}>
+                    <button
+                      onClick={() => setLocation("/recycle-bin")}
+                      className={subItemClass(location === "/recycle-bin")}
+                    >
                       <Trash2 className="h-3.5 w-3.5 shrink-0 text-foreground" />
                       Recycle Bin
                     </button>
 
                     {/* Help */}
-                    <button onClick={() => setLocation("/help")} className={subItemClass(location === "/help")}>
+                    <button
+                      onClick={() => setLocation("/help")}
+                      className={subItemClass(location === "/help")}
+                    >
                       <HelpCircle className="h-3.5 w-3.5 shrink-0 text-foreground" />
                       Help
                     </button>
-
                   </div>
                 )}
               </SidebarMenuItem>
@@ -723,27 +1267,40 @@ function DashboardLayoutContent({
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={false}
-                  onClick={() => setUserMgmtFolderExpanded((v) => !v)}
+                  onClick={() => setUserMgmtFolderExpanded(v => !v)}
                   tooltip="User Management"
                   className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-blue-400/50 shadow-sm"
                 >
                   <UserCog className="h-4 w-4 text-blue-400" />
-                  <span className={`flex-1 ${location === "/profile" || location === "/admin" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}>
+                  <span
+                    className={`flex-1 ${location === "/profile" || location === "/admin" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}
+                  >
                     User Management
                   </span>
-                  {!isCollapsed && (userMgmtFolderExpanded ? <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" /> : <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />)}
+                  {!isCollapsed &&
+                    (userMgmtFolderExpanded ? (
+                      <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />
+                    ) : (
+                      <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />
+                    ))}
                 </SidebarMenuButton>
 
                 {userMgmtFolderExpanded && !isCollapsed && (
                   <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
                     {/* My Profile */}
-                    <button onClick={() => setLocation("/profile")} className={subItemClass(location === "/profile")}>
+                    <button
+                      onClick={() => setLocation("/profile")}
+                      className={subItemClass(location === "/profile")}
+                    >
                       <User className="h-3.5 w-3.5 shrink-0 text-foreground" />
                       My Profile
                     </button>
                     {/* Access Management — admin only */}
                     {user?.role === "admin" && (
-                      <button onClick={() => setLocation("/admin")} className={subItemClass(location === "/admin")}>
+                      <button
+                        onClick={() => setLocation("/admin")}
+                        className={subItemClass(location === "/admin")}
+                      >
                         <Users className="h-3.5 w-3.5 shrink-0 text-foreground" />
                         Access Management
                       </button>
@@ -751,7 +1308,6 @@ function DashboardLayoutContent({
                   </div>
                 )}
               </SidebarMenuItem>
-
             </SidebarMenu>
           </SidebarContent>
 
@@ -772,12 +1328,22 @@ function DashboardLayoutContent({
                       </p>
                       <div className="flex items-center gap-1 mt-1.5">
                         {(() => {
-                          const roleConf = ROLE_CONFIG[(user?.role as keyof typeof ROLE_CONFIG) ?? "observer"];
+                          const roleConf =
+                            ROLE_CONFIG[
+                              (user?.role as keyof typeof ROLE_CONFIG) ??
+                                "observer"
+                            ];
                           const RoleIcon = roleConf?.icon ?? Eye;
-                          return <>
-                            <RoleIcon className={`w-3 h-3 ${roleConf?.color}`} />
-                            <span className={`text-xs ${roleConf?.color}`}>{roleConf?.label}</span>
-                          </>;
+                          return (
+                            <>
+                              <RoleIcon
+                                className={`w-3 h-3 ${roleConf?.color}`}
+                              />
+                              <span className={`text-xs ${roleConf?.color}`}>
+                                {roleConf?.label}
+                              </span>
+                            </>
+                          );
                         })()}
                       </div>
                     </div>
@@ -787,13 +1353,27 @@ function DashboardLayoutContent({
               <DropdownMenuContent align="end" className="w-52">
                 <div className="px-2 py-1.5">
                   <p className="text-sm font-medium">{user?.name}</p>
-                  <p className="text-xs text-muted-foreground font-mono">{(user as any)?.cin ? `CIN: ${(user as any).cin}` : (user as any)?.username ?? ""}</p>
-                  {(user as any)?.unit && <p className="text-xs text-muted-foreground">{(user as any).unit}</p>}
+                  <p className="text-xs text-muted-foreground font-mono">
+                    {(user as any)?.cin
+                      ? `CIN: ${(user as any).cin}`
+                      : ((user as any)?.username ?? "")}
+                  </p>
+                  {(user as any)?.unit && (
+                    <p className="text-xs text-muted-foreground">
+                      {(user as any).unit}
+                    </p>
+                  )}
                   {(() => {
-                    const roleConf = ROLE_CONFIG[(user?.role as keyof typeof ROLE_CONFIG) ?? "observer"];
+                    const roleConf =
+                      ROLE_CONFIG[
+                        (user?.role as keyof typeof ROLE_CONFIG) ?? "observer"
+                      ];
                     const RoleIcon = roleConf?.icon ?? Eye;
                     return (
-                      <Badge variant="outline" className={`mt-1.5 text-xs gap-1 ${roleConf?.badge}`}>
+                      <Badge
+                        variant="outline"
+                        className={`mt-1.5 text-xs gap-1 ${roleConf?.badge}`}
+                      >
                         <RoleIcon className="w-3 h-3" />
                         {roleConf?.label}
                       </Badge>
@@ -801,21 +1381,36 @@ function DashboardLayoutContent({
                   })()}
                 </div>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setLocation("/profile")} className="cursor-pointer">
+                <DropdownMenuItem
+                  onClick={() => setLocation("/profile")}
+                  className="cursor-pointer"
+                >
                   <UserCircle className="mr-2 h-4 w-4" />
                   My Profile
                 </DropdownMenuItem>
                 {toggleTheme && (
-                  <DropdownMenuItem onClick={toggleTheme} className="cursor-pointer">
+                  <DropdownMenuItem
+                    onClick={toggleTheme}
+                    className="cursor-pointer"
+                  >
                     {theme === "dark" ? (
-                      <><Sun className="mr-2 h-4 w-4" />Switch to Light Mode</>
+                      <>
+                        <Sun className="mr-2 h-4 w-4" />
+                        Switch to Light Mode
+                      </>
                     ) : (
-                      <><Moon className="mr-2 h-4 w-4" />Switch to Dark Mode</>
+                      <>
+                        <Moon className="mr-2 h-4 w-4" />
+                        Switch to Dark Mode
+                      </>
                     )}
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={logout} className="cursor-pointer text-destructive focus:text-destructive">
+                <DropdownMenuItem
+                  onClick={logout}
+                  className="cursor-pointer text-destructive focus:text-destructive"
+                >
                   <LogOut className="mr-2 h-4 w-4" />
                   Sign out
                 </DropdownMenuItem>
@@ -848,7 +1443,9 @@ function DashboardLayoutContent({
             <div className="flex items-center gap-2">
               {/* Active RS quick-link (mobile) */}
               <button
-                onClick={() => { if (activeRsId) setLocation(`/sheet/${activeRsId}`); }}
+                onClick={() => {
+                  if (activeRsId) setLocation(`/sheet/${activeRsId}`);
+                }}
                 className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg transition-all ${
                   activeRsId
                     ? "text-emerald-500 hover:bg-emerald-500/10 cursor-pointer"
@@ -877,7 +1474,9 @@ function DashboardLayoutContent({
                 Operations sidebar item's blue theme; fades out when there's
                 no active RS, same as before. */}
             <button
-              onClick={() => { if (activeRsId) setLocation(`/sheet/${activeRsId}`); }}
+              onClick={() => {
+                if (activeRsId) setLocation(`/sheet/${activeRsId}`);
+              }}
               className={`flex items-center justify-center gap-2 min-w-[130px] px-3 py-2 rounded-xl border text-sm font-semibold shadow-sm transition-all ${
                 activeRsId
                   ? "text-blue-700 border-blue-700/50 bg-blue-700/10 hover:bg-blue-700/20 cursor-pointer"
@@ -913,13 +1512,15 @@ function DashboardLayoutContent({
             setShortcutsPanelHovered(false);
             if (!isObservationFocused) setShortcutsPanelOpen(false);
           }}
-          onMouseDown={(e) => e.preventDefault()}
+          onMouseDown={e => e.preventDefault()}
         >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-sidebar-border bg-sidebar-accent/30">
             <div className="flex items-center gap-2">
               <Zap className="h-4 w-4 text-cyan-400" />
-              <span className="text-sm font-semibold text-sidebar-foreground">Shortcuts Reference</span>
+              <span className="text-sm font-semibold text-sidebar-foreground">
+                Shortcuts Reference
+              </span>
             </div>
             <button
               className="h-6 w-6 flex items-center justify-center rounded hover:bg-sidebar-accent text-sidebar-foreground/50 hover:text-sidebar-foreground transition-colors"
@@ -929,18 +1530,28 @@ function DashboardLayoutContent({
             </button>
           </div>
           {/* Body */}
-          <div className="overflow-y-auto p-3 flex flex-col gap-1" style={{ maxHeight: "calc(60vh - 48px)" }}>
+          <div
+            className="overflow-y-auto p-3 flex flex-col gap-1"
+            style={{ maxHeight: "calc(60vh - 48px)" }}
+          >
             {shortcutsList && shortcutsList.length > 0 ? (
               shortcutsList.map((sc: any) => (
-                <div key={sc.id} className="flex items-start gap-2 px-2 py-1.5 rounded-lg hover:bg-sidebar-accent/40 transition-colors">
+                <div
+                  key={sc.id}
+                  className="flex items-start gap-2 px-2 py-1.5 rounded-lg hover:bg-sidebar-accent/40 transition-colors"
+                >
                   <span className="shrink-0 font-mono text-xs font-bold text-cyan-400 bg-cyan-400/10 border border-cyan-400/20 rounded px-1.5 py-0.5 leading-none mt-0.5">
                     {sc.trigger}
                   </span>
-                  <span className="text-xs text-sidebar-foreground/80 leading-relaxed">{sc.expansion}</span>
+                  <span className="text-xs text-sidebar-foreground/80 leading-relaxed">
+                    {sc.expansion}
+                  </span>
                 </div>
               ))
             ) : (
-              <p className="text-xs text-sidebar-foreground/50 text-center py-4">No shortcuts yet</p>
+              <p className="text-xs text-sidebar-foreground/50 text-center py-4">
+                No shortcuts yet
+              </p>
             )}
           </div>
         </div>

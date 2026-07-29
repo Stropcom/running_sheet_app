@@ -1,81 +1,38 @@
-import { Target, Car, User, MapPin, Link2, Link2Off } from "lucide-react";
-
-const CATEGORY_ICON: Record<string, typeof Target> = {
-  target: Target,
-  vehicle: Car,
-  associate: User,
-  location: MapPin,
-};
-
-const CATEGORY_LABEL: Record<string, string> = {
-  target: "a target",
-  vehicle: "a vehicle",
-  associate: "a person",
-  location: "a location",
-};
+import { Link2Off } from "lucide-react";
 
 /**
- * Shown on a photo thumbnail indicating whether/what it's linked to. Click
- * (anywhere in the row) opens LinkAttachmentDialog, which shows the current
- * links (with unlink) and lets you add more.
- *
- * Not linked: a single amber "unlinked" icon, same as before.
- * Linked: one small green icon per distinct entity *category* linked (target/
- * vehicle/person/location) laid out across the top of the image — e.g. linked
- * to a target and a person shows two icons, not one generic "linked" icon.
- * Multiple links within the same category (e.g. two people) still collapse
- * to one icon for that category, so this can't grow past 4 icons.
+ * Shown on a photo thumbnail only when it has NO links yet — an amber
+ * "unlinked" icon, click to open LinkAttachmentDialog. Once a photo is
+ * linked to at least one entity, this renders nothing: LinkedEntityPills
+ * (the pill row under the thumbnail showing which entity/entities it's
+ * linked to) is now the click target for viewing/editing links instead —
+ * no separate green icon on top of the image for that case anymore.
  */
 export function AttachmentLinkBadge({
   linkedCount,
-  linkedCategories,
   onClick,
   positionClassName = "absolute top-1.5 left-1.5",
   iconSize = "h-4 w-4 sm:h-5 sm:w-5",
   glyphSize = "h-2.5 w-2.5 sm:h-3 sm:w-3",
 }: {
   linkedCount: number;
-  linkedCategories?: string[];
   onClick: () => void;
   /** Positioning only (e.g. "absolute top-1.5 left-1.5") — sizing is separate. */
   positionClassName?: string;
-  /** Size of each icon circle, responsive-capable (e.g. "h-4 w-4 sm:h-5 sm:w-5"). */
+  /** Size of the icon circle, responsive-capable (e.g. "h-4 w-4 sm:h-5 sm:w-5"). */
   iconSize?: string;
-  /** Size of the glyph inside each circle. */
+  /** Size of the glyph inside the circle. */
   glyphSize?: string;
 }) {
-  const categories = Array.from(new Set(linkedCategories ?? []));
-  const isLinked = linkedCount > 0;
-
-  if (!isLinked) {
-    return (
-      <button
-        onClick={onClick}
-        title="Not linked to an entity — click to link"
-        className={`${positionClassName} ${iconSize} rounded-full flex items-center justify-center transition-colors bg-amber-500/90 text-white hover:bg-amber-400`}
-      >
-        <Link2Off className={glyphSize} />
-      </button>
-    );
-  }
+  if (linkedCount > 0) return null;
 
   return (
     <button
       onClick={onClick}
-      title={`Linked to ${categories.map((c) => CATEGORY_LABEL[c] ?? "an entity").join(", ")} — click to view or link another`}
-      className={`${positionClassName} flex items-center gap-1`}
+      title="Not linked to an entity — click to link"
+      className={`${positionClassName} ${iconSize} rounded-full flex items-center justify-center transition-colors bg-amber-500/90 text-white hover:bg-amber-400`}
     >
-      {categories.map((cat) => {
-        const Icon = CATEGORY_ICON[cat] ?? Link2;
-        return (
-          <span
-            key={cat}
-            className={`${iconSize} rounded-full flex items-center justify-center bg-emerald-600/90 text-white transition-colors hover:bg-emerald-500`}
-          >
-            <Icon className={glyphSize} />
-          </span>
-        );
-      })}
+      <Link2Off className={glyphSize} />
     </button>
   );
 }

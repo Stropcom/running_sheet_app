@@ -50,12 +50,12 @@
   --popover-foreground: oklch(0.93 0.01 250);
 
   --primary: oklch(0.72 0.14 220);
-  --primary-foreground: oklch(0.10 0.01 250);
+  --primary-foreground: oklch(0.1 0.01 250);
 
-  --secondary: oklch(0.20 0.015 250);
+  --secondary: oklch(0.2 0.015 250);
   --secondary-foreground: oklch(0.85 0.01 250);
 
-  --muted: oklch(0.20 0.012 250);
+  --muted: oklch(0.2 0.012 250);
   --muted-foreground: oklch(0.58 0.015 250);
 
   --accent: oklch(0.22 0.018 250);
@@ -69,18 +69,18 @@
   --ring: oklch(0.72 0.14 220);
 
   /* Sidebar */
-  --sidebar: oklch(0.10 0.01 250);
+  --sidebar: oklch(0.1 0.01 250);
   --sidebar-foreground: oklch(0.85 0.01 250);
   --sidebar-primary: oklch(0.72 0.14 220);
-  --sidebar-primary-foreground: oklch(0.10 0.01 250);
+  --sidebar-primary-foreground: oklch(0.1 0.01 250);
   --sidebar-accent: oklch(0.18 0.015 250);
   --sidebar-accent-foreground: oklch(0.93 0.01 250);
-  --sidebar-border: oklch(0.20 0.012 250);
+  --sidebar-border: oklch(0.2 0.012 250);
   --sidebar-ring: oklch(0.72 0.14 220);
 
   /* Custom tokens */
   --locked-bg: oklch(0.14 0.018 160);
-  --locked-border: oklch(0.30 0.08 160);
+  --locked-border: oklch(0.3 0.08 160);
   --certified-color: oklch(0.72 0.18 160);
   --uncertified-color: oklch(0.58 0.015 250);
 }
@@ -94,10 +94,10 @@
   --popover: oklch(0.16 0.012 250);
   --popover-foreground: oklch(0.93 0.01 250);
   --primary: oklch(0.72 0.14 220);
-  --primary-foreground: oklch(0.10 0.01 250);
-  --secondary: oklch(0.20 0.015 250);
+  --primary-foreground: oklch(0.1 0.01 250);
+  --secondary: oklch(0.2 0.015 250);
   --secondary-foreground: oklch(0.85 0.01 250);
-  --muted: oklch(0.20 0.012 250);
+  --muted: oklch(0.2 0.012 250);
   --muted-foreground: oklch(0.58 0.015 250);
   --accent: oklch(0.22 0.018 250);
   --accent-foreground: oklch(0.93 0.01 250);
@@ -106,16 +106,16 @@
   --border: oklch(0.24 0.015 250);
   --input: oklch(0.22 0.015 250);
   --ring: oklch(0.72 0.14 220);
-  --sidebar: oklch(0.10 0.01 250);
+  --sidebar: oklch(0.1 0.01 250);
   --sidebar-foreground: oklch(0.85 0.01 250);
   --sidebar-primary: oklch(0.72 0.14 220);
-  --sidebar-primary-foreground: oklch(0.10 0.01 250);
+  --sidebar-primary-foreground: oklch(0.1 0.01 250);
   --sidebar-accent: oklch(0.18 0.015 250);
   --sidebar-accent-foreground: oklch(0.93 0.01 250);
-  --sidebar-border: oklch(0.20 0.012 250);
+  --sidebar-border: oklch(0.2 0.012 250);
   --sidebar-ring: oklch(0.72 0.14 220);
   --locked-bg: oklch(0.14 0.018 160);
-  --locked-border: oklch(0.30 0.08 160);
+  --locked-border: oklch(0.3 0.08 160);
   --certified-color: oklch(0.72 0.18 160);
   --uncertified-color: oklch(0.58 0.015 250);
 }
@@ -124,14 +124,14 @@
 :root:not(.dark) {
   --background: oklch(0.98 0.005 250);
   --foreground: oklch(0.15 0.015 250);
-  --card: oklch(1.0 0 0);
+  --card: oklch(1 0 0);
   --card-foreground: oklch(0.15 0.015 250);
-  --popover: oklch(1.0 0 0);
+  --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.15 0.015 250);
-  --primary: oklch(0.50 0.16 220);
+  --primary: oklch(0.5 0.16 220);
   --primary-foreground: oklch(0.98 0 0);
   --secondary: oklch(0.93 0.008 250);
-  --secondary-foreground: oklch(0.20 0.015 250);
+  --secondary-foreground: oklch(0.2 0.015 250);
   --muted: oklch(0.94 0.006 250);
   --muted-foreground: oklch(0.48 0.02 250);
   --accent: oklch(0.92 0.01 250);
@@ -140,19 +140,130 @@
   --destructive-foreground: oklch(0.98 0 0);
   --border: oklch(0.88 0.01 250);
   --input: oklch(0.92 0.008 250);
-  --ring: oklch(0.50 0.16 220);
+  --ring: oklch(0.5 0.16 220);
   --sidebar: oklch(0.95 0.008 250);
-  --sidebar-foreground: oklch(0.20 0.015 250);
-  --sidebar-primary: oklch(0.50 0.16 220);
+  --sidebar-foreground: oklch(0.2 0.015 250);
+  --sidebar-primary: oklch(0.5 0.16 220);
   --sidebar-primary-foreground: oklch(0.98 0 0);
-  --sidebar-accent: oklch(0.90 0.01 250);
+  --sidebar-accent: oklch(0.9 0.01 250);
   --sidebar-accent-foreground: oklch(0.15 0.015 250);
   --sidebar-border: oklch(0.86 0.01 250);
-  --sidebar-ring: oklch(0.50 0.16 220);
+  --sidebar-ring: oklch(0.5 0.16 220);
   --locked-bg: oklch(0.92 0.025 160);
   --locked-border: oklch(0.55 0.12 160);
   --certified-color: oklch(0.42 0.16 160);
   --uncertified-color: oklch(0.48 0.02 250);
+}
+
+/* ── CTO Roster: shift code colour palette ────────────────────────────────── */
+/* Ported from roster_app — each shift code gets a maximally distinct,
+   accessible background + foreground. Same across light/dark themes. */
+:root {
+  --shift-d: oklch(0.82 0.16 142); /* vivid green     — Day Shift */
+  --shift-d-fg: oklch(0.1 0.12 142);
+  --shift-a: oklch(0.78 0.14 230); /* strong blue     — Afternoon Shift */
+  --shift-a-fg: oklch(0.08 0.1 230);
+  --shift-r: oklch(0.82 0.12 350); /* soft pink       — Rest Day */
+  --shift-r-fg: oklch(0.12 0.1 350);
+  --shift-o: oklch(0.8 0.18 35); /* vivid orange    — On Call */
+  --shift-o-fg: oklch(0.1 0.12 35);
+  --shift-l: oklch(0.76 0.16 320); /* hot pink/magenta — Leave */
+  --shift-l-fg: oklch(0.1 0.12 320);
+  --shift-c: oklch(0.78 0.14 180); /* cyan/teal       — Court */
+  --shift-c-fg: oklch(0.1 0.1 180);
+  --shift-tt: oklch(0.88 0.06 90); /* warm beige      — Training */
+  --shift-tt-fg: oklch(0.12 0.08 90);
+  --shift-doc: oklch(0.82 0.12 100); /* lime green      — Dayshift On-Call */
+  --shift-doc-fg: oklch(0.1 0.1 100);
+  --shift-adoc: oklch(0.76 0.14 280); /* violet/purple   — Admin On-Call */
+  --shift-adoc-fg: oklch(0.1 0.1 280);
+  --shift-ad: oklch(0.84 0.1 55); /* golden amber    — Admin */
+  --shift-ad-fg: oklch(0.12 0.1 55);
+  --shift-aoc: oklch(0.8 0.14 200); /* deep sky blue   — Afternoon On-Call */
+  --shift-aoc-fg: oklch(0.1 0.1 200);
+  --shift-dep: oklch(0.28 0.1 270); /* dark navy       — Deployment */
+  --shift-dep-fg: oklch(0.97 0.02 270);
+}
+@layer utilities {
+  .shift-d {
+    background: var(--shift-d);
+    color: var(--shift-d-fg);
+  }
+  .shift-a {
+    background: var(--shift-a);
+    color: var(--shift-a-fg);
+  }
+  .shift-r {
+    background: var(--shift-r);
+    color: var(--shift-r-fg);
+  }
+  .shift-o {
+    background: var(--shift-o);
+    color: var(--shift-o-fg);
+  }
+  .shift-l {
+    background: var(--shift-l);
+    color: var(--shift-l-fg);
+  }
+  .shift-c {
+    background: var(--shift-c);
+    color: var(--shift-c-fg);
+  }
+  .shift-tt {
+    background: var(--shift-tt);
+    color: var(--shift-tt-fg);
+  }
+  .shift-doc {
+    background: var(--shift-doc);
+    color: var(--shift-doc-fg);
+  }
+  .shift-adoc {
+    background: var(--shift-adoc);
+    color: var(--shift-adoc-fg);
+  }
+  .shift-ad {
+    background: var(--shift-ad);
+    color: var(--shift-ad-fg);
+  }
+  .shift-aoc {
+    background: var(--shift-aoc);
+    color: var(--shift-aoc-fg);
+  }
+  .shift-dep {
+    background: var(--shift-dep);
+    color: var(--shift-dep-fg);
+  }
+}
+
+/* ── CTO Roster: print / PDF export ──────────────────────────────────────── */
+/* Hidden on screen, shown only during print — see PrintRosterView.tsx, which
+   portals a flat print-only table directly onto document.body. Scoped under
+   body.cto-roster-printing (toggled by PrintRosterView while it's mounted) so
+   this doesn't affect the several other pages that print in place via their
+   own .no-print rules (OperationManagerPage, WitnessListPage, Intelligence
+   profile pages, etc). */
+.print-only {
+  display: none;
+}
+
+@media print {
+  body.cto-roster-printing #root {
+    display: none !important;
+  }
+
+  body.cto-roster-printing .print-only {
+    display: block !important;
+    width: 100% !important;
+    background: white !important;
+    color: black !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  body.cto-roster-printing * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
 }
 
 @layer base {
@@ -213,9 +324,10 @@
 
 /* Smooth transitions */
 tr {
-  transition: background-color 0.25s cubic-bezier(0.23, 1, 0.32, 1),
-              opacity 0.25s cubic-bezier(0.23, 1, 0.32, 1),
-              border-color 0.25s cubic-bezier(0.23, 1, 0.32, 1);
+  transition:
+    background-color 0.25s cubic-bezier(0.23, 1, 0.32, 1),
+    opacity 0.25s cubic-bezier(0.23, 1, 0.32, 1),
+    border-color 0.25s cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 /* Button press feedback */
@@ -260,7 +372,7 @@ button:active:not(:disabled) {
 
 .running-sheet-table td {
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid oklch(0.20 0.012 250);
+  border-bottom: 1px solid oklch(0.2 0.012 250);
   vertical-align: top;
 }
 
@@ -288,12 +400,24 @@ button:active:not(:disabled) {
   .stagger-item {
     animation: fadeInUp 0.3s cubic-bezier(0.23, 1, 0.32, 1) both;
   }
-  .stagger-item:nth-child(1) { animation-delay: 0ms; }
-  .stagger-item:nth-child(2) { animation-delay: 40ms; }
-  .stagger-item:nth-child(3) { animation-delay: 80ms; }
-  .stagger-item:nth-child(4) { animation-delay: 120ms; }
-  .stagger-item:nth-child(5) { animation-delay: 160ms; }
-  .stagger-item:nth-child(n+6) { animation-delay: 200ms; }
+  .stagger-item:nth-child(1) {
+    animation-delay: 0ms;
+  }
+  .stagger-item:nth-child(2) {
+    animation-delay: 40ms;
+  }
+  .stagger-item:nth-child(3) {
+    animation-delay: 80ms;
+  }
+  .stagger-item:nth-child(4) {
+    animation-delay: 120ms;
+  }
+  .stagger-item:nth-child(5) {
+    animation-delay: 160ms;
+  }
+  .stagger-item:nth-child(n + 6) {
+    animation-delay: 200ms;
+  }
 }
 
 /* Hide scrollbar for time wheel picker */

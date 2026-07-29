@@ -1,23 +1,59 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getMarkerDataUrl, getMarkerSvg, MARKER_COLOURS, MARKER_COLOUR_LABELS, MARKER_ICON_GROUPS, MARKER_ICON_LABELS, type MarkerColour, type MarkerIcon } from "@/lib/markerSvgs";
-import { convertGoogleAddresses, buildPoiAddress, formatIntelAddress, extractShortVehicle, ensureBracketCode } from "@/lib/addressFormat";
+import {
+  getMarkerDataUrl,
+  getMarkerSvg,
+  MARKER_COLOURS,
+  MARKER_COLOUR_LABELS,
+  MARKER_ICON_GROUPS,
+  MARKER_ICON_LABELS,
+  type MarkerColour,
+  type MarkerIcon,
+} from "@/lib/markerSvgs";
+import {
+  convertGoogleAddresses,
+  buildPoiAddress,
+  formatIntelAddress,
+  extractShortVehicle,
+  ensureBracketCode,
+} from "@/lib/addressFormat";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { MapView } from "@/components/Map";
 import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
 import { TargetProfileContent } from "@/components/TargetProfileContent";
+import { OperationProfileContent } from "@/components/OperationProfileContent";
 import { DocumentZoomViewer } from "@/components/DocumentZoomViewer";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { Spinner } from "@/components/ui/spinner";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 import {
   ChevronDown,
@@ -66,6 +102,9 @@ import {
   Clock,
   Image as ImageIcon,
   Undo2,
+  Link2,
+  Binoculars,
+  FileEdit,
 } from "lucide-react";
 
 // Phone/tablet (touch, no physical keyboard) vs laptop/desktop (mouse +
@@ -100,7 +139,13 @@ function _addDaysToYmd(ymd: string, days: number) {
 
 function _formatPerthDateLabel(ymd: string) {
   return new Date(`${ymd}${_PERTH_OFFSET_SUFFIX}`)
-    .toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: _PERTH_TIME_ZONE })
+    .toLocaleDateString("en-AU", {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      timeZone: _PERTH_TIME_ZONE,
+    })
     .toUpperCase();
 }
 
@@ -111,9 +156,9 @@ function _getTodayPerthYmd() {
     month: "2-digit",
     day: "2-digit",
   }).formatToParts(new Date());
-  const year = parts.find((p) => p.type === "year")?.value ?? "1970";
-  const month = parts.find((p) => p.type === "month")?.value ?? "01";
-  const day = parts.find((p) => p.type === "day")?.value ?? "01";
+  const year = parts.find(p => p.type === "year")?.value ?? "1970";
+  const month = parts.find(p => p.type === "month")?.value ?? "01";
+  const day = parts.find(p => p.type === "day")?.value ?? "01";
   return `${year}-${month}-${day}`;
 }
 
@@ -161,23 +206,26 @@ interface QuickLink {
 }
 
 // Icon component + colour for each quick-link option
-const ICON_MAP: Record<string, { Icon: React.ComponentType<{ className?: string }>; colour: string }> = {
+const ICON_MAP: Record<
+  string,
+  { Icon: React.ComponentType<{ className?: string }>; colour: string }
+> = {
   ClipboardCheck: { Icon: ClipboardCheck, colour: "text-purple-400" },
-  CalendarDays:   { Icon: CalendarDays,   colour: "text-cyan-400" },
-  Zap:            { Icon: Zap,            colour: "text-yellow-400" },
-  FolderSearch:   { Icon: FolderSearch,   colour: "text-violet-400" },
-  BookOpen:       { Icon: BookOpen,       colour: "text-rose-400" },
-  ScrollText:     { Icon: ScrollText,     colour: "text-slate-400" },
-  FileText:       { Icon: FileText,       colour: "text-orange-400" },
-  Trash2:         { Icon: Trash2,         colour: "text-red-400" },
-  HelpCircle:     { Icon: HelpCircle,     colour: "text-sky-400" },
-  User:           { Icon: User,           colour: "text-lime-400" },
-  FolderOpen:     { Icon: FolderOpen,     colour: "text-teal-400" },
-  Scale:          { Icon: Scale,          colour: "text-amber-400" },
-  ClipboardList:  { Icon: ClipboardList,  colour: "text-amber-400" },
+  CalendarDays: { Icon: CalendarDays, colour: "text-cyan-400" },
+  Zap: { Icon: Zap, colour: "text-yellow-400" },
+  FolderSearch: { Icon: FolderSearch, colour: "text-violet-400" },
+  BookOpen: { Icon: BookOpen, colour: "text-rose-400" },
+  ScrollText: { Icon: ScrollText, colour: "text-slate-400" },
+  FileText: { Icon: FileText, colour: "text-orange-400" },
+  Trash2: { Icon: Trash2, colour: "text-red-400" },
+  HelpCircle: { Icon: HelpCircle, colour: "text-sky-400" },
+  User: { Icon: User, colour: "text-lime-400" },
+  FolderOpen: { Icon: FolderOpen, colour: "text-teal-400" },
+  Scale: { Icon: Scale, colour: "text-amber-400" },
+  ClipboardList: { Icon: ClipboardList, colour: "text-amber-400" },
   ArrowRightLeft: { Icon: ArrowRightLeft, colour: "text-teal-400" },
-  Network:        { Icon: Network,        colour: "text-emerald-400" },
-  WifiOff:        { Icon: WifiOff,        colour: "text-orange-400" },
+  Network: { Icon: Network, colour: "text-emerald-400" },
+  WifiOff: { Icon: WifiOff, colour: "text-orange-400" },
 };
 
 const ALL_QUICK_LINK_OPTIONS: QuickLink[] = [
@@ -191,7 +239,11 @@ const ALL_QUICK_LINK_OPTIONS: QuickLink[] = [
   { label: "Recycle Bin", path: "/recycle-bin", icon: "Trash2" },
   { label: "Help", path: "/help", icon: "HelpCircle" },
   { label: "My Profile", path: "/profile", icon: "User" },
-  { label: "Operation Mgmt", path: "/operation-management", icon: "ArrowRightLeft" },
+  {
+    label: "Operation Mgmt",
+    path: "/operation-management",
+    icon: "ArrowRightLeft",
+  },
   { label: "Court", path: "/court/statements", icon: "Scale" },
   { label: "To-Do", path: "/todo", icon: "ClipboardList" },
 ];
@@ -203,17 +255,75 @@ const DEFAULT_QUICK_LINKS: QuickLink[] = [
 ];
 
 // Key → nav item mapping (mirrors DashboardLayout SortableNavItem)
-const NAV_KEY_MAP: Record<string, { path: string; Icon: React.ComponentType<{ className?: string }>; label: string; iconColor: string }> = {
-  operations:       { path: "/",                    Icon: FileText,      label: "Operations",     iconColor: "text-cyan-500" },
-  governance:       { path: "/governance",           Icon: ClipboardCheck, label: "Governance",     iconColor: "text-purple-500" },
-  todo:             { path: "/todo",                 Icon: ClipboardList,  label: "To-Do",          iconColor: "text-rose-500" },
-  mapping:          { path: "/intelligence/mapping", Icon: MapIcon,        label: "Mapping",        iconColor: "text-teal-500" },
-  images:           { path: "/images",               Icon: ImageIcon,      label: "Images",         iconColor: "text-pink-400" },
-  calendar:         { path: "/calendar",             Icon: CalendarDays,   label: "Calendar",       iconColor: "text-orange-500" },
-  shortcuts:        { path: "/shortcuts",            Icon: Zap,            label: "Shortcuts",      iconColor: "text-yellow-500" },
-  intelligence:     { path: "/intelligence",         Icon: FolderSearch,   label: "Intelligence",   iconColor: "text-violet-500" },
-  targetRegistry:   { path: "/target-registry",      Icon: BookOpen,       label: "Target Registry",iconColor: "text-rose-400" },
-  operationManager: { path: "/operation-manager",    Icon: ClipboardList,  label: "Op Manager",     iconColor: "text-purple-500" },
+const NAV_KEY_MAP: Record<
+  string,
+  {
+    path: string;
+    Icon: React.ComponentType<{ className?: string }>;
+    label: string;
+    iconColor: string;
+  }
+> = {
+  operations: {
+    path: "/",
+    Icon: FileText,
+    label: "Operations",
+    iconColor: "text-cyan-500",
+  },
+  governance: {
+    path: "/governance",
+    Icon: ClipboardCheck,
+    label: "Governance",
+    iconColor: "text-purple-500",
+  },
+  todo: {
+    path: "/todo",
+    Icon: ClipboardList,
+    label: "To-Do",
+    iconColor: "text-rose-500",
+  },
+  mapping: {
+    path: "/intelligence/mapping",
+    Icon: MapIcon,
+    label: "Mapping",
+    iconColor: "text-teal-500",
+  },
+  images: {
+    path: "/images",
+    Icon: ImageIcon,
+    label: "Images",
+    iconColor: "text-pink-400",
+  },
+  calendar: {
+    path: "/calendar",
+    Icon: CalendarDays,
+    label: "Calendar",
+    iconColor: "text-orange-500",
+  },
+  shortcuts: {
+    path: "/shortcuts",
+    Icon: Zap,
+    label: "Shortcuts",
+    iconColor: "text-yellow-500",
+  },
+  intelligence: {
+    path: "/intelligence",
+    Icon: FolderSearch,
+    label: "Intelligence",
+    iconColor: "text-violet-500",
+  },
+  targetRegistry: {
+    path: "/target-registry",
+    Icon: BookOpen,
+    label: "Target Registry",
+    iconColor: "text-rose-400",
+  },
+  operationManager: {
+    path: "/operation-manager",
+    Icon: ClipboardList,
+    label: "Op Manager",
+    iconColor: "text-purple-500",
+  },
 };
 
 const LS_QUICK_LINKS_KEY = "runlog_map_quick_links";
@@ -223,8 +333,8 @@ const LS_MAP_SETTINGS_KEY = "runlog_map_settings";
 const TEAM_COLOURS: Record<string, string> = {
   TEAM1: "#ec4899", // pink
   TEAM2: "#1976d2", // blue
-  PTT:   "#f9a825", // yellow
-  null:  "#6b7280", // grey for unassigned
+  PTT: "#f9a825", // yellow
+  null: "#6b7280", // grey for unassigned
 };
 
 function getTeamColour(team: string | null): string {
@@ -236,23 +346,90 @@ const DARK_MAP_STYLES: google.maps.MapTypeStyle[] = [
   { elementType: "labels.icon", stylers: [{ visibility: "off" }] },
   { elementType: "labels.text.fill", stylers: [{ color: "#757575" }] },
   { elementType: "labels.text.stroke", stylers: [{ color: "#212121" }] },
-  { featureType: "administrative", elementType: "geometry", stylers: [{ color: "#757575" }] },
-  { featureType: "administrative.country", elementType: "labels.text.fill", stylers: [{ color: "#9e9e9e" }] },
-  { featureType: "administrative.land_parcel", stylers: [{ visibility: "off" }] },
-  { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "#bdbdbd" }] },
-  { featureType: "poi", elementType: "labels.text.fill", stylers: [{ color: "#757575" }] },
-  { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#181818" }] },
-  { featureType: "poi.park", elementType: "labels.text.fill", stylers: [{ color: "#616161" }] },
-  { featureType: "poi.park", elementType: "labels.text.stroke", stylers: [{ color: "#1b1b1b" }] },
-  { featureType: "road", elementType: "geometry.fill", stylers: [{ color: "#2c2c2c" }] },
-  { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#8a8a8a" }] },
-  { featureType: "road.arterial", elementType: "geometry", stylers: [{ color: "#373737" }] },
-  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#3c3c3c" }] },
-  { featureType: "road.highway.controlled_access", elementType: "geometry", stylers: [{ color: "#4e4e4e" }] },
-  { featureType: "road.local", elementType: "labels.text.fill", stylers: [{ color: "#616161" }] },
-  { featureType: "transit", elementType: "labels.text.fill", stylers: [{ color: "#757575" }] },
-  { featureType: "water", elementType: "geometry", stylers: [{ color: "#000000" }] },
-  { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#3d3d3d" }] },
+  {
+    featureType: "administrative",
+    elementType: "geometry",
+    stylers: [{ color: "#757575" }],
+  },
+  {
+    featureType: "administrative.country",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#9e9e9e" }],
+  },
+  {
+    featureType: "administrative.land_parcel",
+    stylers: [{ visibility: "off" }],
+  },
+  {
+    featureType: "administrative.locality",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#bdbdbd" }],
+  },
+  {
+    featureType: "poi",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#757575" }],
+  },
+  {
+    featureType: "poi.park",
+    elementType: "geometry",
+    stylers: [{ color: "#181818" }],
+  },
+  {
+    featureType: "poi.park",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#616161" }],
+  },
+  {
+    featureType: "poi.park",
+    elementType: "labels.text.stroke",
+    stylers: [{ color: "#1b1b1b" }],
+  },
+  {
+    featureType: "road",
+    elementType: "geometry.fill",
+    stylers: [{ color: "#2c2c2c" }],
+  },
+  {
+    featureType: "road",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#8a8a8a" }],
+  },
+  {
+    featureType: "road.arterial",
+    elementType: "geometry",
+    stylers: [{ color: "#373737" }],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "geometry",
+    stylers: [{ color: "#3c3c3c" }],
+  },
+  {
+    featureType: "road.highway.controlled_access",
+    elementType: "geometry",
+    stylers: [{ color: "#4e4e4e" }],
+  },
+  {
+    featureType: "road.local",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#616161" }],
+  },
+  {
+    featureType: "transit",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#757575" }],
+  },
+  {
+    featureType: "water",
+    elementType: "geometry",
+    stylers: [{ color: "#000000" }],
+  },
+  {
+    featureType: "water",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#3d3d3d" }],
+  },
 ];
 
 function buildInfoWindowContent(loc: IntelMapLocation): string {
@@ -274,7 +451,9 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
       if (parsed.colour) intelColour = parsed.colour;
       if (typeof parsed.rotation === "number") intelRotation = parsed.rotation;
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 
   const lines: string[] = [];
 
@@ -289,39 +468,67 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
   // Linked target details (for target_address)
   if (isTarget && loc.linkedTargets.length > 0) {
     for (const t of loc.linkedTargets) {
-      lines.push(`<div style="margin-top:6px;padding:6px 8px;background:#fef2f2;border-left:3px solid #dc2626;border-radius:0 4px 4px 0;">`);
-      lines.push(`<div style="font-size:12px;font-weight:700;color:#111;margin-bottom:2px;">${t.name}</div>`);
-      if (t.tgt) lines.push(`<div style="font-size:11px;color:#444;margin-bottom:1px;">TGT: ${t.tgt}</div>`);
-      if (t.hbf) lines.push(`<div style="font-size:11px;color:#555;margin-bottom:1px;">HBF: ${t.hbf}</div>`);
-      if (t.v1f) lines.push(`<div style="font-size:11px;color:#555;margin-bottom:1px;">V1F: ${t.v1f}</div>`);
-      if (t.v2f) lines.push(`<div style="font-size:11px;color:#555;margin-bottom:1px;">V2F: ${t.v2f}</div>`);
-      if (t.operationName) lines.push(`<div style="font-size:10px;color:#888;margin-top:2px;">Op: ${t.operationName}</div>`);
+      lines.push(
+        `<div style="margin-top:6px;padding:6px 8px;background:#fef2f2;border-left:3px solid #dc2626;border-radius:0 4px 4px 0;">`
+      );
+      lines.push(
+        `<div style="font-size:12px;font-weight:700;color:#111;margin-bottom:2px;">${t.name}</div>`
+      );
+      if (t.tgt)
+        lines.push(
+          `<div style="font-size:11px;color:#444;margin-bottom:1px;">TGT: ${t.tgt}</div>`
+        );
+      if (t.hbf)
+        lines.push(
+          `<div style="font-size:11px;color:#555;margin-bottom:1px;">HBF: ${t.hbf}</div>`
+        );
+      if (t.v1f)
+        lines.push(
+          `<div style="font-size:11px;color:#555;margin-bottom:1px;">V1F: ${t.v1f}</div>`
+        );
+      if (t.v2f)
+        lines.push(
+          `<div style="font-size:11px;color:#555;margin-bottom:1px;">V2F: ${t.v2f}</div>`
+        );
+      if (t.operationName)
+        lines.push(
+          `<div style="font-size:10px;color:#888;margin-top:2px;">Op: ${t.operationName}</div>`
+        );
       lines.push(`</div>`);
     }
   }
 
   // Linked targets (for observation)
   if (!isTarget && loc.linkedTargets.length > 0) {
-    lines.push(`<div style="margin-top:6px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Linked Targets</span>`);
+    lines.push(
+      `<div style="margin-top:6px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Linked Targets</span>`
+    );
     for (const t of loc.linkedTargets) {
-      lines.push(`<div style="font-size:12px;color:#111;padding:1px 0;">${t.name}</div>`);
+      lines.push(
+        `<div style="font-size:12px;color:#111;padding:1px 0;">${t.name}</div>`
+      );
     }
     lines.push(`</div>`);
   }
 
   // Associated persons
   if (loc.assocPersons.length > 0) {
-    lines.push(`<div style="margin-top:6px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Persons</span><p style="font-size:12px;color:#111;margin:2px 0 0">${loc.assocPersons.join(", ")}</p></div>`);
+    lines.push(
+      `<div style="margin-top:6px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Persons</span><p style="font-size:12px;color:#111;margin:2px 0 0">${loc.assocPersons.join(", ")}</p></div>`
+    );
   }
 
   // Associated vehicles
   if (loc.assocVehicles.length > 0) {
-    lines.push(`<div style="margin-top:4px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Vehicles</span><p style="font-size:12px;color:#111;margin:2px 0 0">${loc.assocVehicles.join(", ")}</p></div>`);
+    lines.push(
+      `<div style="margin-top:4px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Vehicles</span><p style="font-size:12px;color:#111;margin:2px 0 0">${loc.assocVehicles.join(", ")}</p></div>`
+    );
   }
 
   // ── Action buttons (observed location only — same layout as custom marker popup) ──
   if (!isTarget) {
-    const btnBase = "font-size:12px;font-weight:600;padding:7px 0;border-radius:6px;cursor:pointer;text-align:center;text-decoration:none;display:block;width:100%;box-sizing:border-box;";
+    const btnBase =
+      "font-size:12px;font-weight:600;padding:7px 0;border-radius:6px;cursor:pointer;text-align:center;text-decoration:none;display:block;width:100%;box-sizing:border-box;";
     const sections: string[] = [];
 
     // Rotation slider (at top, above buttons)
@@ -345,10 +552,14 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
     `);
 
     // Row 0: RS Quick Entry — full width, indigo
-    sections.push(`<div style="margin-top:5px;"><button onclick="window.__intelRsQuickEntry('${safeLabel}')" style="${btnBase}background:#6366f1;color:#fff;border:none;font-size:13px;padding:9px 0;">RS Quick Entry</button></div>`);
+    sections.push(
+      `<div style="margin-top:5px;"><button onclick="window.__intelRsQuickEntry('${safeLabel}')" style="${btnBase}background:#6366f1;color:#fff;border:none;font-size:13px;padding:9px 0;">RS Quick Entry</button></div>`
+    );
 
     // Row 1: View Observation Profile — full width, purple
-    sections.push(`<div style="margin-top:5px;"><a href="/intelligence/location/${encodedLabel}" style="${btnBase}background:#7c3aed;color:#fff;font-size:13px;padding:9px 0;">View Observation Profile</a></div>`);
+    sections.push(
+      `<div style="margin-top:5px;"><a href="/intelligence/location/${encodedLabel}" style="${btnBase}background:#7c3aed;color:#fff;font-size:13px;padding:9px 0;">View Observation Profile</a></div>`
+    );
 
     // Row 2: Waze | Street View
     if (loc.lat != null && loc.lng != null) {
@@ -358,18 +569,23 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
         `<a href="https://waze.com/ul?ll=${lat},${lng}&navigate=yes" target="_blank" style="${btnBase}background:#00bcd4;color:#fff;">Waze</a>`,
         `<a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}" target="_blank" style="${btnBase}background:#4285f4;color:#fff;">Street View</a>`,
       ];
-      sections.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;">${navBtns.join("")}</div>`);
+      sections.push(
+        `<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;">${navBtns.join("")}</div>`
+      );
     }
 
     // Row 3: Edit | Move
     const editBtn = `<button onclick="window.__intelOpenEditDialog('${safeLabel}')" style="${btnBase}background:#16a34a;color:#fff;border:none;">Edit</button>`;
     const moveBtn = `<button onclick="window.__intelStartMove('${safeLabel}')" style="${btnBase}background:#0369a1;color:#fff;border:none;">Move…</button>`;
-    sections.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;">${editBtn}${moveBtn}</div>`);
+    sections.push(
+      `<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;">${editBtn}${moveBtn}</div>`
+    );
 
     lines.push(sections.join(""));
   } else {
     // Target address: full button set matching observation popup
-    const btnBase = "font-size:12px;font-weight:600;padding:7px 0;border-radius:6px;cursor:pointer;text-align:center;text-decoration:none;display:block;width:100%;box-sizing:border-box;";
+    const btnBase =
+      "font-size:12px;font-weight:600;padding:7px 0;border-radius:6px;cursor:pointer;text-align:center;text-decoration:none;display:block;width:100%;box-sizing:border-box;";
     const safeLabel = loc.label.replace(/'/g, "\\'");
     const sections: string[] = [];
 
@@ -393,12 +609,16 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
     `);
 
     // Row 0: RS Quick Entry — full width, indigo
-    sections.push(`<div style="margin-top:5px;"><button onclick="window.__intelRsQuickEntry('${safeLabel}')" style="${btnBase}background:#6366f1;color:#fff;border:none;font-size:13px;padding:9px 0;">RS Quick Entry</button></div>`);
+    sections.push(
+      `<div style="margin-top:5px;"><button onclick="window.__intelRsQuickEntry('${safeLabel}')" style="${btnBase}background:#6366f1;color:#fff;border:none;font-size:13px;padding:9px 0;">RS Quick Entry</button></div>`
+    );
 
     // Row 1: Edit Target buttons (one per linked target) — teal
     if (loc.linkedTargets.length > 0) {
       for (const t of loc.linkedTargets) {
-        sections.push(`<div style="margin-top:5px;"><button onclick="window.__editTargetFromMap(${t.targetId})" style="${btnBase}background:#0f766e;color:#fff;border:none;font-size:13px;padding:9px 0;">Edit ${t.name}</button></div>`);
+        sections.push(
+          `<div style="margin-top:5px;"><button onclick="window.__editTargetFromMap(${t.targetId})" style="${btnBase}background:#0f766e;color:#fff;border:none;font-size:13px;padding:9px 0;">Edit ${t.name}</button></div>`
+        );
       }
     }
 
@@ -410,13 +630,17 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
         `<a href="https://waze.com/ul?ll=${lat},${lng}&navigate=yes" target="_blank" style="${btnBase}background:#00bcd4;color:#fff;">Waze</a>`,
         `<a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}" target="_blank" style="${btnBase}background:#4285f4;color:#fff;">Street View</a>`,
       ];
-      sections.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;">${navBtns.join("")}</div>`);
+      sections.push(
+        `<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;">${navBtns.join("")}</div>`
+      );
     }
 
     // Row 3: Edit (appearance) | Move
     const editBtn = `<button onclick="window.__intelOpenEditDialog('${safeLabel}')" style="${btnBase}background:#16a34a;color:#fff;border:none;">Edit</button>`;
     const moveBtn = `<button onclick="window.__intelStartMove('${safeLabel}')" style="${btnBase}background:#0369a1;color:#fff;border:none;">Move…</button>`;
-    sections.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;">${editBtn}${moveBtn}</div>`);
+    sections.push(
+      `<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;">${editBtn}${moveBtn}</div>`
+    );
 
     lines.push(sections.join(""));
   }
@@ -433,16 +657,23 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
       let secColour: string = "purple";
       let secRotation: number = 0;
       try {
-        const stored = localStorage.getItem(`runlog_intel_appearance_${sec.label}`);
+        const stored = localStorage.getItem(
+          `runlog_intel_appearance_${sec.label}`
+        );
         if (stored) {
           const parsed = JSON.parse(stored);
           if (parsed.icon) secIcon = parsed.icon;
           if (parsed.colour) secColour = parsed.colour;
-          if (typeof parsed.rotation === "number") secRotation = parsed.rotation;
+          if (typeof parsed.rotation === "number")
+            secRotation = parsed.rotation;
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
 
-      lines.push(`<div style="margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;">`);
+      lines.push(
+        `<div style="margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;">`
+      );
       lines.push(`
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
           <span style="background:#7c3aed;color:#fff;border-radius:4px;font-size:9px;font-weight:700;padding:2px 6px;letter-spacing:0.07em;white-space:nowrap;">OBSERVED LOCATION</span>
@@ -450,21 +681,30 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
         <strong style="font-size:12px;color:#111;line-height:1.35;display:block;margin-bottom:2px;">${secLabel}</strong>
       `);
       if (sec.linkedTargets.length > 0) {
-        lines.push(`<div style="margin-top:4px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Linked Targets</span>`);
+        lines.push(
+          `<div style="margin-top:4px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Linked Targets</span>`
+        );
         for (const t of sec.linkedTargets) {
-          lines.push(`<div style="font-size:12px;color:#111;padding:1px 0;">${t.name}</div>`);
+          lines.push(
+            `<div style="font-size:12px;color:#111;padding:1px 0;">${t.name}</div>`
+          );
         }
         lines.push(`</div>`);
       }
       if (sec.assocPersons.length > 0) {
-        lines.push(`<div style="margin-top:4px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Persons</span><p style="font-size:12px;color:#111;margin:2px 0 0">${sec.assocPersons.join(", ")}</p></div>`);
+        lines.push(
+          `<div style="margin-top:4px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Persons</span><p style="font-size:12px;color:#111;margin:2px 0 0">${sec.assocPersons.join(", ")}</p></div>`
+        );
       }
       if (sec.assocVehicles.length > 0) {
-        lines.push(`<div style="margin-top:4px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Vehicles</span><p style="font-size:12px;color:#111;margin:2px 0 0">${sec.assocVehicles.join(", ")}</p></div>`);
+        lines.push(
+          `<div style="margin-top:4px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Vehicles</span><p style="font-size:12px;color:#111;margin:2px 0 0">${sec.assocVehicles.join(", ")}</p></div>`
+        );
       }
 
       // Action buttons for secondary observation (same as standalone observation)
-      const secBtnBase = "font-size:12px;font-weight:600;padding:7px 0;border-radius:6px;cursor:pointer;text-align:center;text-decoration:none;display:block;width:100%;box-sizing:border-box;";
+      const secBtnBase =
+        "font-size:12px;font-weight:600;padding:7px 0;border-radius:6px;cursor:pointer;text-align:center;text-decoration:none;display:block;width:100%;box-sizing:border-box;";
       // Rotation slider
       lines.push(`
         <div style="margin-top:8px;padding-top:6px;border-top:1px dashed #e5e7eb;">
@@ -483,14 +723,22 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
           </div>
         </div>
       `);
-      lines.push(`<div style="margin-top:5px;"><button onclick="window.__intelRsQuickEntry('${secSafeLabel}')" style="${secBtnBase}background:#6366f1;color:#fff;border:none;font-size:13px;padding:9px 0;">RS Quick Entry</button></div>`);
-      lines.push(`<div style="margin-top:5px;"><a href="/intelligence/location/${secEncodedLabel}" style="${secBtnBase}background:#7c3aed;color:#fff;font-size:13px;padding:9px 0;">View Observation Profile</a></div>`);
+      lines.push(
+        `<div style="margin-top:5px;"><button onclick="window.__intelRsQuickEntry('${secSafeLabel}')" style="${secBtnBase}background:#6366f1;color:#fff;border:none;font-size:13px;padding:9px 0;">RS Quick Entry</button></div>`
+      );
+      lines.push(
+        `<div style="margin-top:5px;"><a href="/intelligence/location/${secEncodedLabel}" style="${secBtnBase}background:#7c3aed;color:#fff;font-size:13px;padding:9px 0;">View Observation Profile</a></div>`
+      );
       if (sec.lat != null && sec.lng != null) {
         const sLat = sec.lat;
         const sLng = sec.lng;
-        lines.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;"><a href="https://waze.com/ul?ll=${sLat},${sLng}&navigate=yes" target="_blank" style="${secBtnBase}background:#00bcd4;color:#fff;">Waze</a><a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${sLat},${sLng}" target="_blank" style="${secBtnBase}background:#4285f4;color:#fff;">Street View</a></div>`);
+        lines.push(
+          `<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;"><a href="https://waze.com/ul?ll=${sLat},${sLng}&navigate=yes" target="_blank" style="${secBtnBase}background:#00bcd4;color:#fff;">Waze</a><a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${sLat},${sLng}" target="_blank" style="${secBtnBase}background:#4285f4;color:#fff;">Street View</a></div>`
+        );
       }
-      lines.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;"><button onclick="window.__intelOpenEditDialog('${secSafeLabel}')" style="${secBtnBase}background:#16a34a;color:#fff;border:none;">Edit</button><button onclick="window.__intelStartMove('${secSafeLabel}')" style="${secBtnBase}background:#0369a1;color:#fff;border:none;">Move…</button></div>`);
+      lines.push(
+        `<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;"><button onclick="window.__intelOpenEditDialog('${secSafeLabel}')" style="${secBtnBase}background:#16a34a;color:#fff;border:none;">Edit</button><button onclick="window.__intelStartMove('${secSafeLabel}')" style="${secBtnBase}background:#0369a1;color:#fff;border:none;">Move…</button></div>`
+      );
       lines.push(`</div>`);
     }
   }
@@ -499,25 +747,67 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
 }
 
 // ── Haversine distance helper (metres) ───────────────────────────────────────
-function haversineMetres(lat1: number, lng1: number, lat2: number, lng2: number): number {
+function haversineMetres(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number
+): number {
   const R = 6371000;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLng = (lng2 - lng1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 // ── Map Sidebar Nav Component ─────────────────────────────────────────────────
-function MapSidebarNav({ user, onNavigate, navOrder }: { user: any; onNavigate: (path: string) => void; navOrder: string[] }) {
+// Mirrors DashboardLayout's main sidebar: same expandable folders (To-Do,
+// Op Manager → CTO Roster) and the same interaction pattern, so navigating
+// from the map feels identical to every other page.
+function MapSidebarNav({
+  user,
+  onNavigate,
+  navOrder,
+}: {
+  user: any;
+  onNavigate: (path: string) => void;
+  navOrder: string[];
+}) {
   const curPath = window.location.pathname;
   const [adminExpanded, setAdminExpanded] = useState(false);
   const [userMgmtExpanded, setUserMgmtExpanded] = useState(false);
   const [courtExpanded, setCourtExpanded] = useState(false);
+  const [todoExpanded, setTodoExpanded] = useState(
+    () =>
+      curPath === "/todo" ||
+      curPath === "/todo/images" ||
+      curPath === "/todo/governance"
+  );
+  const [opManagerExpanded, setOpManagerExpanded] = useState(
+    () =>
+      curPath.startsWith("/operation-manager") ||
+      curPath.startsWith("/cto-roster")
+  );
+  const [ctoRosterSubExpanded, setCtoRosterSubExpanded] = useState(() =>
+    curPath.startsWith("/cto-roster")
+  );
 
-  const navBtn = (path: string, Icon: React.ComponentType<{ className?: string }>, label: string, iconColor?: string) => {
-    const isActive = path === "/"
-      ? curPath === "/" || curPath.startsWith("/operation/") || curPath.startsWith("/sheet/")
-      : curPath === path || curPath.startsWith(path);
+  const navBtn = (
+    path: string,
+    Icon: React.ComponentType<{ className?: string }>,
+    label: string,
+    iconColor?: string
+  ) => {
+    const isActive =
+      path === "/"
+        ? curPath === "/" ||
+          curPath.startsWith("/operation/") ||
+          curPath.startsWith("/sheet/")
+        : curPath === path || curPath.startsWith(path);
     return (
       <button
         key={path}
@@ -528,20 +818,29 @@ function MapSidebarNav({ user, onNavigate, navOrder }: { user: any; onNavigate: 
             : "bg-card border-border/60 text-foreground/80 hover:bg-accent/60 hover:border-border"
         }`}
       >
-        <Icon className={`h-5 w-5 flex-shrink-0 ${iconColor ?? "text-foreground/60"}`} />
+        <Icon
+          className={`h-5 w-5 flex-shrink-0 ${iconColor ?? "text-foreground/60"}`}
+        />
         <span className="truncate">{label}</span>
       </button>
     );
   };
 
-  const subBtn = (path: string, Icon: React.ComponentType<{ className?: string }>, label: string, extra?: React.ReactNode) => {
+  const subBtn = (
+    path: string,
+    Icon: React.ComponentType<{ className?: string }>,
+    label: string,
+    extra?: React.ReactNode
+  ) => {
     const isActive = curPath === path || curPath.startsWith(path);
     return (
       <button
         key={path}
         onClick={() => onNavigate(path)}
         className={`flex items-center gap-2 w-full px-3 py-2 text-sm transition-colors hover:bg-accent/60 rounded-md ${
-          isActive ? "bg-accent text-foreground font-medium" : "text-foreground/70"
+          isActive
+            ? "bg-accent text-foreground font-medium"
+            : "text-foreground/70"
         }`}
       >
         <Icon className="h-3.5 w-3.5 flex-shrink-0" />
@@ -551,9 +850,110 @@ function MapSidebarNav({ user, onNavigate, navOrder }: { user: any; onNavigate: 
     );
   };
 
+  // ── To-Do folder (mirrors DashboardLayout's To-Do folder) ──────────────────
+  const renderTodoFolder = () => {
+    const isActive =
+      curPath === "/todo" ||
+      curPath === "/todo/images" ||
+      curPath === "/todo/governance";
+    return (
+      <div key="todo">
+        <button
+          onClick={() => setTodoExpanded(v => !v)}
+          className={`flex items-center gap-3 w-full px-3 h-14 rounded-xl border text-sm font-medium transition-all shadow-sm ${
+            isActive || todoExpanded
+              ? "bg-accent border-primary/40 text-foreground"
+              : "bg-card border-border/60 text-foreground/80 hover:bg-accent/60"
+          }`}
+        >
+          <ClipboardList className="h-5 w-5 flex-shrink-0 text-red-400" />
+          <span className="flex-1 truncate">To-Do</span>
+          {todoExpanded ? (
+            <ChevronDown className="h-3.5 w-3.5 text-foreground/40" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5 text-foreground/40" />
+          )}
+        </button>
+        {todoExpanded && (
+          <div className="ml-4 border-l border-border/50 pl-2 flex flex-col gap-0.5 mb-1 mt-0.5">
+            {subBtn("/todo", Shield, "Certify")}
+            {subBtn("/todo/images", Link2, "Link Images")}
+            {subBtn("/todo/governance", ClipboardCheck, "RS Governance")}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ── Op Manager folder (mirrors DashboardLayout's Op Manager → CTO Roster) ──
+  const renderOpManagerFolder = () => {
+    const isActive =
+      curPath.startsWith("/operation-manager") ||
+      curPath.startsWith("/cto-roster");
+    return (
+      <div key="operationManager">
+        <button
+          onClick={() => setOpManagerExpanded(v => !v)}
+          className={`flex items-center gap-3 w-full px-3 h-14 rounded-xl border text-sm font-medium transition-all shadow-sm ${
+            isActive || opManagerExpanded
+              ? "bg-accent border-primary/40 text-foreground"
+              : "bg-card border-border/60 text-foreground/80 hover:bg-accent/60"
+          }`}
+        >
+          <ClipboardList className="h-5 w-5 flex-shrink-0 text-purple-500" />
+          <span className="flex-1 truncate">Op Manager</span>
+          {opManagerExpanded ? (
+            <ChevronDown className="h-3.5 w-3.5 text-foreground/40" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5 text-foreground/40" />
+          )}
+        </button>
+        {opManagerExpanded && (
+          <div className="ml-4 mt-0.5 mb-0.5 border-l border-border/50 pl-2 flex flex-col gap-0.5">
+            {subBtn("/operation-manager", ClipboardList, "CTO Weekly Tasking")}
+            <button
+              onClick={() => setCtoRosterSubExpanded(v => !v)}
+              className={`flex items-center gap-2 w-full px-3 py-2 text-sm transition-colors hover:bg-accent/60 rounded-md ${
+                curPath.startsWith("/cto-roster")
+                  ? "bg-accent text-foreground font-medium"
+                  : "text-foreground/70"
+              }`}
+            >
+              <Users className="h-3.5 w-3.5 flex-shrink-0" />
+              <span className="flex-1 truncate">CTO Roster</span>
+              {ctoRosterSubExpanded ? (
+                <ChevronDown className="h-3 w-3 text-foreground/40" />
+              ) : (
+                <ChevronRight className="h-3 w-3 text-foreground/40" />
+              )}
+            </button>
+            {ctoRosterSubExpanded && (
+              <div className="ml-4 border-l border-border/40 pl-2 flex flex-col gap-0.5 mb-0.5">
+                {subBtn("/cto-roster", Users, "Shift Grid")}
+                {subBtn("/cto-roster/my-shifts", Users, "My Shifts")}
+                {subBtn("/cto-roster/members", Users, "Members")}
+                {subBtn("/cto-roster/drafts", FileEdit, "Drafts")}
+                {subBtn("/cto-roster/saved-rosters", BookOpen, "Saved Rosters")}
+                {subBtn("/cto-roster/outlook", Binoculars, "Outlook")}
+                {subBtn(
+                  "/cto-roster/ea-compliance",
+                  ShieldCheck,
+                  "EA Compliance"
+                )}
+                {subBtn("/cto-roster/audit", ScrollText, "Audit Log")}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="flex-1 overflow-y-auto py-2 px-2 flex flex-col gap-1.5">
       {navOrder.map(key => {
+        if (key === "todo") return renderTodoFolder();
+        if (key === "operationManager") return renderOpManagerFolder();
         const item = NAV_KEY_MAP[key];
         if (!item) return null;
         return navBtn(item.path, item.Icon, item.label, item.iconColor);
@@ -563,12 +963,18 @@ function MapSidebarNav({ user, onNavigate, navOrder }: { user: any; onNavigate: 
       <button
         onClick={() => setAdminExpanded(v => !v)}
         className={`flex items-center gap-3 w-full px-3 h-14 rounded-xl border text-sm font-medium transition-all shadow-sm ${
-          adminExpanded ? "bg-accent border-primary/40 text-foreground" : "bg-card border-border/60 text-foreground/80 hover:bg-accent/60"
+          adminExpanded
+            ? "bg-accent border-primary/40 text-foreground"
+            : "bg-card border-border/60 text-foreground/80 hover:bg-accent/60"
         }`}
       >
         <Settings className="h-5 w-5 flex-shrink-0 text-slate-500" />
         <span className="flex-1 truncate">Administration</span>
-        {adminExpanded ? <ChevronDown className="h-3.5 w-3.5 text-foreground/40" /> : <ChevronRight className="h-3.5 w-3.5 text-foreground/40" />}
+        {adminExpanded ? (
+          <ChevronDown className="h-3.5 w-3.5 text-foreground/40" />
+        ) : (
+          <ChevronRight className="h-3.5 w-3.5 text-foreground/40" />
+        )}
       </button>
       {adminExpanded && (
         <div className="ml-4 border-l border-border/50 pl-2 flex flex-col gap-0.5 mb-1">
@@ -576,18 +982,31 @@ function MapSidebarNav({ user, onNavigate, navOrder }: { user: any; onNavigate: 
           <button
             onClick={() => setCourtExpanded(v => !v)}
             className={`flex items-center gap-2 w-full px-3 py-2 text-sm transition-colors hover:bg-accent/60 rounded-md ${
-              curPath.startsWith("/court") ? "bg-accent text-foreground font-medium" : "text-foreground/70"
+              curPath.startsWith("/court")
+                ? "bg-accent text-foreground font-medium"
+                : "text-foreground/70"
             }`}
           >
             <Scale className="h-3.5 w-3.5 flex-shrink-0" />
             <span className="flex-1">Court</span>
-            {courtExpanded ? <ChevronDown className="h-3 w-3 text-foreground/40" /> : <ChevronRight className="h-3 w-3 text-foreground/40" />}
+            {courtExpanded ? (
+              <ChevronDown className="h-3 w-3 text-foreground/40" />
+            ) : (
+              <ChevronRight className="h-3 w-3 text-foreground/40" />
+            )}
           </button>
           {courtExpanded && (
             <div className="ml-4 border-l border-border/40 pl-2 flex flex-col gap-0.5 mb-0.5">
               {subBtn("/court/statements", FolderOpen, "Statements")}
               {subBtn("/court/witness-list", FolderOpen, "Witness List")}
-              {subBtn("/court/wipc", ShieldCheck, "WIPC", <span className="text-[9px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1 rounded leading-4">🔒</span>)}
+              {subBtn(
+                "/court/wipc",
+                ShieldCheck,
+                "WIPC",
+                <span className="text-[9px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1 rounded leading-4">
+                  🔒
+                </span>
+              )}
             </div>
           )}
           {subBtn("/audit", ScrollText, "Audit Log")}
@@ -602,17 +1021,24 @@ function MapSidebarNav({ user, onNavigate, navOrder }: { user: any; onNavigate: 
       <button
         onClick={() => setUserMgmtExpanded(v => !v)}
         className={`flex items-center gap-3 w-full px-3 h-14 rounded-xl border text-sm font-medium transition-all shadow-sm ${
-          userMgmtExpanded ? "bg-accent border-primary/40 text-foreground" : "bg-card border-border/60 text-foreground/80 hover:bg-accent/60"
+          userMgmtExpanded
+            ? "bg-accent border-primary/40 text-foreground"
+            : "bg-card border-border/60 text-foreground/80 hover:bg-accent/60"
         }`}
       >
         <UserCog className="h-5 w-5 flex-shrink-0 text-blue-500" />
         <span className="flex-1 truncate">User Management</span>
-        {userMgmtExpanded ? <ChevronDown className="h-3.5 w-3.5 text-foreground/40" /> : <ChevronRight className="h-3.5 w-3.5 text-foreground/40" />}
+        {userMgmtExpanded ? (
+          <ChevronDown className="h-3.5 w-3.5 text-foreground/40" />
+        ) : (
+          <ChevronRight className="h-3.5 w-3.5 text-foreground/40" />
+        )}
       </button>
       {userMgmtExpanded && (
         <div className="ml-4 border-l border-border/50 pl-2 flex flex-col gap-0.5 mb-1">
           {subBtn("/profile", User, "My Profile")}
-          {user?.role === "admin" && subBtn("/admin", Users, "Access Management")}
+          {user?.role === "admin" &&
+            subBtn("/admin", Users, "Access Management")}
         </div>
       )}
     </div>
@@ -626,32 +1052,85 @@ export default function IntelligenceMapping() {
 
   // Filter state — persisted in localStorage
   const [selectedOpIds, setSelectedOpIds] = useState<number[]>(() => {
-    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return JSON.parse(s).selectedOpIds ?? []; } catch { /* ignore */ } return [];
+    try {
+      const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+      if (s) return JSON.parse(s).selectedOpIds ?? [];
+    } catch {
+      /* ignore */
+    }
+    return [];
   });
   // Track whether the user has explicitly interacted with the ops selector.
   // When true and selectedOpIds is empty, we show NO markers (user cleared).
   // When false and selectedOpIds is empty, fall back to rsSelectedOpId context.
   const [opsExplicitlySet, setOpsExplicitlySet] = useState<boolean>(() => {
-    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) { const p = JSON.parse(s); return p.opsExplicitlySet ?? false; } } catch { /* ignore */ } return false;
+    try {
+      const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+      if (s) {
+        const p = JSON.parse(s);
+        return p.opsExplicitlySet ?? false;
+      }
+    } catch {
+      /* ignore */
+    }
+    return false;
   });
   const [selectedTargetIds, setSelectedTargetIds] = useState<number[]>(() => {
-    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return JSON.parse(s).selectedTargetIds ?? []; } catch { /* ignore */ } return [];
+    try {
+      const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+      if (s) return JSON.parse(s).selectedTargetIds ?? [];
+    } catch {
+      /* ignore */
+    }
+    return [];
   });
   const [opExpanded, setOpExpanded] = useState<Set<number>>(() => {
-    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return new Set<number>(JSON.parse(s).opExpanded ?? []); } catch { /* ignore */ } return new Set();
+    try {
+      const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+      if (s) return new Set<number>(JSON.parse(s).opExpanded ?? []);
+    } catch {
+      /* ignore */
+    }
+    return new Set();
   });
   // Map position memory — persisted in localStorage
-  const [mapInitialCenter, setMapInitialCenter] = useState<google.maps.LatLngLiteral>(() => {
-    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) { const p = JSON.parse(s).mapCenter; if (p && typeof p.lat === 'number' && typeof p.lng === 'number') return p; } } catch { /* ignore */ }
-    return { lat: -31.9505, lng: 115.8605 };
-  });
+  const [mapInitialCenter, setMapInitialCenter] =
+    useState<google.maps.LatLngLiteral>(() => {
+      try {
+        const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+        if (s) {
+          const p = JSON.parse(s).mapCenter;
+          if (p && typeof p.lat === "number" && typeof p.lng === "number")
+            return p;
+        }
+      } catch {
+        /* ignore */
+      }
+      return { lat: -31.9505, lng: 115.8605 };
+    });
   const [mapInitialZoom, setMapInitialZoom] = useState<number>(() => {
-    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) { const z = JSON.parse(s).mapZoom; if (typeof z === 'number') return z; } } catch { /* ignore */ }
+    try {
+      const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+      if (s) {
+        const z = JSON.parse(s).mapZoom;
+        if (typeof z === "number") return z;
+      }
+    } catch {
+      /* ignore */
+    }
     return 11;
   });
   // Persist the user's chosen map type (roadmap / satellite)
   const [mapInitialTypeId, setMapInitialTypeId] = useState<string>(() => {
-    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) { const t = JSON.parse(s).mapTypeId; if (typeof t === 'string') return t; } } catch { /* ignore */ }
+    try {
+      const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+      if (s) {
+        const t = JSON.parse(s).mapTypeId;
+        if (typeof t === "string") return t;
+      }
+    } catch {
+      /* ignore */
+    }
     return "roadmap";
   });
 
@@ -660,7 +1139,13 @@ export default function IntelligenceMapping() {
   const isDesktop = typeof window !== "undefined" && window.innerWidth >= 1024;
   const [sidebarOpen, setSidebarOpen] = useState(() => isDesktop);
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
-    try { const s = localStorage.getItem("runlog_map_sidebar_width"); if (s) return Math.max(200, Math.min(480, parseInt(s))); } catch { /* ignore */ } return 256;
+    try {
+      const s = localStorage.getItem("runlog_map_sidebar_width");
+      if (s) return Math.max(200, Math.min(480, parseInt(s)));
+    } catch {
+      /* ignore */
+    }
+    return 256;
   });
   const sidebarResizingRef = useRef(false);
   const sidebarResizeStartXRef = useRef(0);
@@ -674,7 +1159,11 @@ export default function IntelligenceMapping() {
     const existing = sessionStorage.getItem(ssKey);
     if (existing) return existing;
     const newId = `tab_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
-    try { sessionStorage.setItem(ssKey, newId); } catch { /* ignore */ }
+    try {
+      sessionStorage.setItem(ssKey, newId);
+    } catch {
+      /* ignore */
+    }
     return newId;
   });
   // Keep a ref so GPS callbacks always use the latest value
@@ -685,84 +1174,179 @@ export default function IntelligenceMapping() {
   // before the server query resolves. The server query will confirm/correct it on mount.
   const [sharingEnabled, setSharingEnabled] = useState<boolean>(() => {
     try {
-      const key = `runlog_sharing_u${typeof window !== 'undefined' ? (localStorage.getItem('runlog_last_user_id') ?? 'anon') : 'anon'}`;
+      const key = `runlog_sharing_u${typeof window !== "undefined" ? (localStorage.getItem("runlog_last_user_id") ?? "anon") : "anon"}`;
       const v = localStorage.getItem(key);
-      return v === 'true';
-    } catch { return false; }
+      return v === "true";
+    } catch {
+      return false;
+    }
   });
   // Per-user visibility: Set of userIds that are hidden
   const [hiddenUsers, setHiddenUsers] = useState<Set<number>>(new Set());
   // Per-team visibility: Set of team keys that are hidden — persisted
   const [hiddenTeams, setHiddenTeams] = useState<Set<string>>(() => {
-    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return new Set<string>(JSON.parse(s).hiddenTeams ?? []); } catch { /* ignore */ } return new Set();
+    try {
+      const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+      if (s) return new Set<string>(JSON.parse(s).hiddenTeams ?? []);
+    } catch {
+      /* ignore */
+    }
+    return new Set();
   });
   // Per-team collapsed (members hidden): Set of team keys — persisted
   const [collapsedTeams, setCollapsedTeams] = useState<Set<string>>(() => {
-    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return new Set<string>(JSON.parse(s).collapsedTeams ?? []); } catch { /* ignore */ } return new Set();
+    try {
+      const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+      if (s) return new Set<string>(JSON.parse(s).collapsedTeams ?? []);
+    } catch {
+      /* ignore */
+    }
+    return new Set();
   });
   // RS Quick Entry inline panel open/closed — persisted
   const [rsQeExpanded, setRsQeExpanded] = useState<boolean>(() => {
-    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return JSON.parse(s).rsQeExpanded ?? false; } catch { /* ignore */ } return false;
+    try {
+      const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+      if (s) return JSON.parse(s).rsQeExpanded ?? false;
+    } catch {
+      /* ignore */
+    }
+    return false;
   });
   const [mapDarkMode, setMapDarkMode] = useState<boolean>(() => {
-    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return JSON.parse(s).mapDarkMode ?? false; } catch { /* ignore */ } return false;
+    try {
+      const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+      if (s) return JSON.parse(s).mapDarkMode ?? false;
+    } catch {
+      /* ignore */
+    }
+    return false;
   });
   // Operations dropdown open state
   const [opsDropdownOpen, setOpsDropdownOpen] = useState(false);
   // GPS error
   const [gpsError, setGpsError] = useState<string | null>(null);
   // Whether device supports geolocation
-  const isMobile = typeof navigator !== "undefined" && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+  const isMobile =
+    typeof navigator !== "undefined" &&
+    /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
   // Quick-link state
   const [quickLinks, setQuickLinks] = useState<QuickLink[]>(() => {
     try {
       const saved = localStorage.getItem(LS_QUICK_LINKS_KEY);
       if (saved) return JSON.parse(saved) as QuickLink[];
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     return DEFAULT_QUICK_LINKS;
   });
   const [editingQuickLinks, setEditingQuickLinks] = useState(false);
 
   // RS Actions pane state — persisted in localStorage
   const [rsActionsPaneOpen, setRsActionsPaneOpen] = useState(false);
-  // Target profile sub-view shown inline within the right pane (null = normal pane content)
-  const [paneTargetProfileId, setPaneTargetProfileId] = useState<number | null>(null);
+  // Target/Operation profile sub-views shown inline within the right pane
+  // (null = normal pane content). Mutually exclusive — opening one clears
+  // the other, since both occupy the same pane body.
+  const [paneTargetProfileId, setPaneTargetProfileId] = useState<number | null>(
+    null
+  );
+  const [paneOperationProfileId, setPaneOperationProfileId] = useState<
+    number | null
+  >(null);
   // Pane width — resizable by dragging its left edge, remembered separately for the
   // normal pane content vs. the Target Profile sub-view (which wants more room)
   const [panelWidthNormal, setPanelWidthNormal] = useState<number>(() => {
-    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) { const v = JSON.parse(s).panelWidthNormal; if (typeof v === "number") return v; } } catch { /* ignore */ } return 320;
+    try {
+      const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+      if (s) {
+        const v = JSON.parse(s).panelWidthNormal;
+        if (typeof v === "number") return v;
+      }
+    } catch {
+      /* ignore */
+    }
+    return 320;
   });
   const [panelWidthProfile, setPanelWidthProfile] = useState<number>(() => {
-    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) { const v = JSON.parse(s).panelWidthProfile; if (typeof v === "number") return v; } } catch { /* ignore */ } return 480;
+    try {
+      const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+      if (s) {
+        const v = JSON.parse(s).panelWidthProfile;
+        if (typeof v === "number") return v;
+      }
+    } catch {
+      /* ignore */
+    }
+    return 480;
   });
   const paneResizeDraggingRef = useRef(false);
   const PANE_MIN_WIDTH = 288;
-  const activePaneWidth = paneTargetProfileId !== null ? panelWidthProfile : panelWidthNormal;
+  const activePaneWidth =
+    paneTargetProfileId !== null || paneOperationProfileId !== null
+      ? panelWidthProfile
+      : panelWidthNormal;
 
   // Draggable side-tab vertical position (percentage from top, 0-100)
   const [leftTabTop, setLeftTabTop] = useState<number>(() => {
-    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return JSON.parse(s).leftTabTop ?? 50; } catch { /* ignore */ } return 50;
+    try {
+      const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+      if (s) return JSON.parse(s).leftTabTop ?? 50;
+    } catch {
+      /* ignore */
+    }
+    return 50;
   });
   const [rightTabTop, setRightTabTop] = useState<number>(() => {
-    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return JSON.parse(s).rightTabTop ?? 50; } catch { /* ignore */ } return 50;
+    try {
+      const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+      if (s) return JSON.parse(s).rightTabTop ?? 50;
+    } catch {
+      /* ignore */
+    }
+    return 50;
   });
   const leftTabDraggingRef = useRef(false);
   const rightTabDraggingRef = useRef(false);
 
   // Draggable pill bar vertical position (percentage from top, 5-95)
   const [pillBarTop, setPillBarTop] = useState<number>(() => {
-    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) { const v = JSON.parse(s).pillBarTop; if (typeof v === 'number') return v; } } catch { /* ignore */ } return 90;
+    try {
+      const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+      if (s) {
+        const v = JSON.parse(s).pillBarTop;
+        if (typeof v === "number") return v;
+      }
+    } catch {
+      /* ignore */
+    }
+    return 90;
   });
   const pillBarDraggingRef = useRef(false);
-  const pillBarLongPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pillBarLongPressRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
   const pillBarIsDraggingRef = useRef(false);
   const [rsSelectedOpId, setRsSelectedOpId] = useState<number | null>(() => {
-    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return JSON.parse(s).rsSelectedOpId ?? null; } catch { /* ignore */ } return null;
+    try {
+      const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+      if (s) return JSON.parse(s).rsSelectedOpId ?? null;
+    } catch {
+      /* ignore */
+    }
+    return null;
   });
-  const [rsSelectedSheetId, setRsSelectedSheetId] = useState<number | null>(() => {
-    try { const s = localStorage.getItem(LS_MAP_SETTINGS_KEY); if (s) return JSON.parse(s).rsSelectedSheetId ?? null; } catch { /* ignore */ } return null;
-  });
+  const [rsSelectedSheetId, setRsSelectedSheetId] = useState<number | null>(
+    () => {
+      try {
+        const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+        if (s) return JSON.parse(s).rsSelectedSheetId ?? null;
+      } catch {
+        /* ignore */
+      }
+      return null;
+    }
+  );
   // Quick-insert chips mined from this sheet's own observations so far
   // (surname / short address / vehicle rego) — same query SheetDetail uses,
   // so both surfaces show the same shared, server-computed chip set.
@@ -771,7 +1355,10 @@ export default function IntelligenceMapping() {
     { enabled: !!rsSelectedSheetId }
   );
   const [rsAddingRow, setRsAddingRow] = useState(false);
-  const [rsLastEntry, setRsLastEntry] = useState<{ label: string; time: string } | null>(null);
+  const [rsLastEntry, setRsLastEntry] = useState<{
+    label: string;
+    time: string;
+  } | null>(null);
   const isTouchDevice = useIsTouchDevice();
 
   // Inline observation field state
@@ -781,7 +1368,9 @@ export default function IntelligenceMapping() {
   const rsInlineCinsRef = useRef<Set<string>>(new Set()); // ref so mutation callback always sees latest
   const [rsCountdown, setRsCountdown] = useState<number>(30); // countdown seconds
   const rsInlineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const rsCountdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const rsCountdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
+    null
+  );
   const rsInlineInputRef = useRef<HTMLTextAreaElement | null>(null);
   // RSQE is built for tapping shortcut chips, not typing — the observation
   // textarea starts read-only (so focusing it, including the auto-focus on
@@ -802,27 +1391,62 @@ export default function IntelligenceMapping() {
   // ── Custom Marker Placement State ────────────────────────────────────────────
   const [placingMarker, setPlacingMarker] = useState(false); // placement mode active
   const [dismissedNoLocs, setDismissedNoLocs] = useState(false); // user dismissed the empty-state overlay
-  const [pendingLatLng, setPendingLatLng] = useState<{ lat: number; lng: number } | null>(null);
+  const [pendingLatLng, setPendingLatLng] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
   // POI tap: shown when user taps a Google Maps business/POI pin
-  const [poiTap, setPoiTap] = useState<{ lat: number; lng: number; name: string; address: string } | null>(null);
+  const [poiTap, setPoiTap] = useState<{
+    lat: number;
+    lng: number;
+    name: string;
+    address: string;
+  } | null>(null);
   // Action chooser: shown on tap-and-hold / right-click before user picks RS Quick Entry or Marker/Intel
   // intelLoc is set when the tap is on an intelligence-derived marker (target address / observation)
-  const [actionChooser, setActionChooser] = useState<{ lat: number; lng: number; address: string; intelLoc?: IntelMapLocation } | null>(null);
+  const [actionChooser, setActionChooser] = useState<{
+    lat: number;
+    lng: number;
+    address: string;
+    intelLoc?: IntelMapLocation;
+  } | null>(null);
   // RS Quick Entry from map: shown when user picks "RS Quick Entry" from the action chooser
   const [mapQeOpen, setMapQeOpen] = useState(false);
-  const [mapQeTimeOverride, setMapQeTimeOverride] = useState<string | null>(null); // "HH:MM AM/PM" or null for current time
+  const [mapQeTimeOverride, setMapQeTimeOverride] = useState<string | null>(
+    null
+  ); // "HH:MM AM/PM" or null for current time
   const [mapQeHour, setMapQeHour] = useState("12");
   const [mapQeMinute, setMapQeMinute] = useState("00");
   const [mapQePeriod, setMapQePeriod] = useState("AM");
-  const [mapQeRowDate, setMapQeRowDate] = useState<string>(() => _getTodayPerthYmd()); // explicit calendar date for the QE row
+  const [mapQeRowDate, setMapQeRowDate] = useState<string>(() =>
+    _getTodayPerthYmd()
+  ); // explicit calendar date for the QE row
   const [showMapQeDateStepper, setShowMapQeDateStepper] = useState(false); // toggled by Date button
   const [mapQeSelectOpen, setMapQeSelectOpen] = useState(false);
   const [mapQeAddress, setMapQeAddress] = useState(""); // pre-filled address for the observation
   // Quick Entry shortcut chip order — persisted to localStorage so user can reorder them
   const QE_CANONICAL_ORDER = [
-    "SC", "HBF",
-    ...(Array.from({ length: 8 }, (_, i) => [`V${i + 1}F`, `V${i + 1}`]) as string[][]).flat(),
-    "TGT", "DSO", "DR", "FP", "US", "DE", "AR", "CV", "OOS", "COOS", "PU", "PT", "RACK",
+    "SC",
+    "HBF",
+    ...(
+      Array.from({ length: 8 }, (_, i) => [
+        `V${i + 1}F`,
+        `V${i + 1}`,
+      ]) as string[][]
+    ).flat(),
+    "TGT",
+    "DSO",
+    "DR",
+    "FP",
+    "US",
+    "DE",
+    "AR",
+    "CV",
+    "OOS",
+    "COOS",
+    "PU",
+    "PT",
+    "RACK",
     "DEP",
     ...(Array.from({ length: 10 }, (_, i) => `#${i + 1}`) as string[]),
   ];
@@ -833,16 +1457,24 @@ export default function IntelligenceMapping() {
   // Also listen to storage events so the QE updates live when chips are reordered on the main RS
   useEffect(() => {
     const syncOrder = () => {
-      if (!rsSelectedSheetId) { setQeChipOrder(QE_CANONICAL_ORDER); return; }
+      if (!rsSelectedSheetId) {
+        setQeChipOrder(QE_CANONICAL_ORDER);
+        return;
+      }
       try {
-        const s = localStorage.getItem(`runsheet_field_order_${rsSelectedSheetId}`);
-        if (s) { setQeChipOrder(JSON.parse(s)); return; }
+        const s = localStorage.getItem(
+          `runsheet_field_order_${rsSelectedSheetId}`
+        );
+        if (s) {
+          setQeChipOrder(JSON.parse(s));
+          return;
+        }
       } catch {}
       setQeChipOrder(QE_CANONICAL_ORDER);
     };
     syncOrder();
-    window.addEventListener('storage', syncOrder);
-    return () => window.removeEventListener('storage', syncOrder);
+    window.addEventListener("storage", syncOrder);
+    return () => window.removeEventListener("storage", syncOrder);
   }, [rsSelectedSheetId]);
   const [cmLabel, setCmLabel] = useState("");
   const [cmAddress, setCmAddress] = useState("");
@@ -872,11 +1504,17 @@ export default function IntelligenceMapping() {
   const [etSaving, setEtSaving] = useState(false);
   // Address search bar state
   const [addrSearch, setAddrSearch] = useState("");
-  const [addrSuggestions, setAddrSuggestions] = useState<google.maps.places.AutocompletePrediction[]>([]);
+  const [addrSuggestions, setAddrSuggestions] = useState<
+    google.maps.places.AutocompletePrediction[]
+  >([]);
   const [addrSearchOpen, setAddrSearchOpen] = useState(false);
-  const autocompleteServiceRef = useRef<google.maps.places.AutocompleteService | null>(null);
-  const addrSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const addrSearchPinRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
+  const autocompleteServiceRef =
+    useRef<google.maps.places.AutocompleteService | null>(null);
+  const addrSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  const addrSearchPinRef =
+    useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
 
   // Follow-me mode: keeps own tag centred on map
   const [followMode, setFollowMode] = useState(false);
@@ -887,7 +1525,9 @@ export default function IntelligenceMapping() {
   // ref for long-press on mobile
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // custom marker map objects
-  const customMarkersRef = useRef<Map<number, google.maps.marker.AdvancedMarkerElement>>(new Map());
+  const customMarkersRef = useRef<
+    Map<number, google.maps.marker.AdvancedMarkerElement>
+  >(new Map());
   // Merged intel data: custom marker ID → array of intel locations merged into this marker
   // Multiple intel pins (e.g. target_address + observation) can merge into the same house marker.
   // The array is always sorted with target_address entries first (red takes priority).
@@ -895,25 +1535,50 @@ export default function IntelligenceMapping() {
   // Latest custom markers data ref — kept in sync so placeMarker can access it without stale closure
   const customMarkersDataRef = useRef<any[]>([]);
   // All geocoded intel locations (label → {loc, position, secondaryLocs?}) for manual merge lookup
-  const geocodedIntelRef = useRef<Map<string, { loc: IntelMapLocation; position: google.maps.LatLngLiteral; secondaryLocs?: IntelMapLocation[] }>>(new Map());
+  const geocodedIntelRef = useRef<
+    Map<
+      string,
+      {
+        loc: IntelMapLocation;
+        position: google.maps.LatLngLiteral;
+        secondaryLocs?: IntelMapLocation[];
+      }
+    >
+  >(new Map());
   // Manual merge picker state: which custom marker is being merged, and nearby intel candidates
   const [manualMergePicker, setManualMergePicker] = useState<{
     cmId: number;
-    candidates: Array<{ loc: IntelMapLocation; position: google.maps.LatLngLiteral; distanceM: number }>;
+    candidates: Array<{
+      loc: IntelMapLocation;
+      position: google.maps.LatLngLiteral;
+      distanceM: number;
+    }>;
   } | null>(null);
 
   // Move marker state: which marker is being dragged to a new position
   const [movingMarkerId, setMovingMarkerId] = useState<number | null>(null);
-  const [pendingMoveAddress, setPendingMoveAddress] = useState<{ lat: number; lng: number; address: string } | null>(null);
+  const [pendingMoveAddress, setPendingMoveAddress] = useState<{
+    lat: number;
+    lng: number;
+    address: string;
+  } | null>(null);
 
   // Intel pin move state (separate from custom marker move — intel pins are not persisted to DB)
   const [movingIntelLabel, setMovingIntelLabel] = useState<string | null>(null);
-  const [pendingIntelMoveAddress, setPendingIntelMoveAddress] = useState<{ lat: number; lng: number; address: string } | null>(null);
+  const [pendingIntelMoveAddress, setPendingIntelMoveAddress] = useState<{
+    lat: number;
+    lng: number;
+    address: string;
+  } | null>(null);
 
   // Intel pin edit dialog state (appearance only — persisted to localStorage)
-  const [editingIntelLabel, setEditingIntelLabel] = useState<string | null>(null);
-  const [intelEditIcon, setIntelEditIcon] = useState<MarkerIcon>("house_filled");
-  const [intelEditColour, setIntelEditColour] = useState<MarkerColour>("purple");
+  const [editingIntelLabel, setEditingIntelLabel] = useState<string | null>(
+    null
+  );
+  const [intelEditIcon, setIntelEditIcon] =
+    useState<MarkerIcon>("house_filled");
+  const [intelEditColour, setIntelEditColour] =
+    useState<MarkerColour>("purple");
   const [intelEditRotation, setIntelEditRotation] = useState<number>(0);
 
   // Map state
@@ -921,7 +1586,9 @@ export default function IntelligenceMapping() {
   const mapRef = useRef<google.maps.Map | null>(null);
   const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
   // Key: "userId_deviceId" for per-device pins
-  const liveMarkersRef = useRef<Map<string, google.maps.marker.AdvancedMarkerElement>>(new Map());
+  const liveMarkersRef = useRef<
+    Map<string, google.maps.marker.AdvancedMarkerElement>
+  >(new Map());
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
   const geocoderRef = useRef<google.maps.Geocoder | null>(null);
   const geocodeQueueRef = useRef<IntelMapLocation[]>([]);
@@ -933,25 +1600,46 @@ export default function IntelligenceMapping() {
   // Persist map settings to localStorage whenever they change
   useEffect(() => {
     try {
-      localStorage.setItem(LS_MAP_SETTINGS_KEY, JSON.stringify({
-        selectedOpIds,
-        opsExplicitlySet,
-        selectedTargetIds,
-        opExpanded: Array.from(opExpanded),
-        rsSelectedOpId,
-        rsSelectedSheetId,
-        hiddenTeams: Array.from(hiddenTeams),
-        collapsedTeams: Array.from(collapsedTeams),
-        rsQeExpanded,
-        mapDarkMode,
-        leftTabTop,
-        rightTabTop,
-        pillBarTop,
-        panelWidthNormal,
-        panelWidthProfile,
-      }));
-    } catch { /* ignore */ }
-  }, [selectedOpIds, opsExplicitlySet, selectedTargetIds, opExpanded, rsSelectedOpId, rsSelectedSheetId, hiddenTeams, collapsedTeams, rsQeExpanded, mapDarkMode, leftTabTop, rightTabTop, pillBarTop, panelWidthNormal, panelWidthProfile]);
+      localStorage.setItem(
+        LS_MAP_SETTINGS_KEY,
+        JSON.stringify({
+          selectedOpIds,
+          opsExplicitlySet,
+          selectedTargetIds,
+          opExpanded: Array.from(opExpanded),
+          rsSelectedOpId,
+          rsSelectedSheetId,
+          hiddenTeams: Array.from(hiddenTeams),
+          collapsedTeams: Array.from(collapsedTeams),
+          rsQeExpanded,
+          mapDarkMode,
+          leftTabTop,
+          rightTabTop,
+          pillBarTop,
+          panelWidthNormal,
+          panelWidthProfile,
+        })
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [
+    selectedOpIds,
+    opsExplicitlySet,
+    selectedTargetIds,
+    opExpanded,
+    rsSelectedOpId,
+    rsSelectedSheetId,
+    hiddenTeams,
+    collapsedTeams,
+    rsQeExpanded,
+    mapDarkMode,
+    leftTabTop,
+    rightTabTop,
+    pillBarTop,
+    panelWidthNormal,
+    panelWidthProfile,
+  ]);
 
   // Save map center/zoom to localStorage whenever the map stops moving (idle event)
   useEffect(() => {
@@ -966,10 +1654,17 @@ export default function IntelligenceMapping() {
       try {
         const existing = localStorage.getItem(LS_MAP_SETTINGS_KEY);
         const parsed = existing ? JSON.parse(existing) : {};
-        localStorage.setItem(LS_MAP_SETTINGS_KEY, JSON.stringify({ ...parsed, mapCenter: { lat, lng }, mapZoom: zoom }));
-      } catch { /* ignore */ }
+        localStorage.setItem(
+          LS_MAP_SETTINGS_KEY,
+          JSON.stringify({ ...parsed, mapCenter: { lat, lng }, mapZoom: zoom })
+        );
+      } catch {
+        /* ignore */
+      }
     });
-    return () => { google.maps.event.removeListener(listener); };
+    return () => {
+      google.maps.event.removeListener(listener);
+    };
   }, [mapReady]);
 
   // Apply dark/light map style whenever mapDarkMode or mapReady changes
@@ -979,19 +1674,29 @@ export default function IntelligenceMapping() {
   useEffect(() => {
     try {
       if (user?.id) {
-        localStorage.setItem('runlog_last_user_id', String(user.id));
+        localStorage.setItem("runlog_last_user_id", String(user.id));
         const key = `runlog_sharing_u${user.id}`;
         localStorage.setItem(key, String(sharingEnabled));
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }, [sharingEnabled, user?.id]);
 
   // Data
-  const { data: operations, isLoading: opsLoading } = trpc.operation.list.useQuery();
-  const { data: locations, isLoading: locsLoading, refetch: refetchLocations } = trpc.intelligence.mappingLocations.useQuery({
-    operationIds: selectedOpIds.length > 0 ? selectedOpIds : undefined,
-    targetIds: selectedTargetIds.length > 0 ? selectedTargetIds : undefined,
-  }, { refetchInterval: 30_000 });
+  const { data: operations, isLoading: opsLoading } =
+    trpc.operation.list.useQuery();
+  const {
+    data: locations,
+    isLoading: locsLoading,
+    refetch: refetchLocations,
+  } = trpc.intelligence.mappingLocations.useQuery(
+    {
+      operationIds: selectedOpIds.length > 0 ? selectedOpIds : undefined,
+      targetIds: selectedTargetIds.length > 0 ? selectedTargetIds : undefined,
+    },
+    { refetchInterval: 30_000 }
+  );
 
   // Live user locations — poll every 1 second
   const { data: liveUsers } = trpc.intelligence.userLocations.useQuery(
@@ -1004,8 +1709,12 @@ export default function IntelligenceMapping() {
   const clearLocationMut = trpc.intelligence.clearUserLocation.useMutation();
   const updateLocationMutRef = useRef(updateLocationMut);
   const clearLocationMutRef = useRef(clearLocationMut);
-  useEffect(() => { updateLocationMutRef.current = updateLocationMut; });
-  useEffect(() => { clearLocationMutRef.current = clearLocationMut; });
+  useEffect(() => {
+    updateLocationMutRef.current = updateLocationMut;
+  });
+  useEffect(() => {
+    clearLocationMutRef.current = clearLocationMut;
+  });
 
   // Custom map markers — poll every 5 seconds
   // Filter by selected operations so markers are scoped to the active operation.
@@ -1018,18 +1727,25 @@ export default function IntelligenceMapping() {
     if (opsExplicitlySet) return [];
     return [];
   }, [selectedOpIds, opsExplicitlySet]);
-  const { data: customMarkers, refetch: refetchCustomMarkers } = trpc.customMarker.list.useQuery(
-    { operationIds: effectiveOpIdsForMarkers },
-    { refetchInterval: 5000, enabled: true }
-  );
+  const { data: customMarkers, refetch: refetchCustomMarkers } =
+    trpc.customMarker.list.useQuery(
+      { operationIds: effectiveOpIdsForMarkers },
+      { refetchInterval: 5000, enabled: true }
+    );
   const createCustomMarkerMut = trpc.customMarker.create.useMutation({
-    onSuccess: () => { void refetchCustomMarkers(); },
+    onSuccess: () => {
+      void refetchCustomMarkers();
+    },
   });
   const deleteCustomMarkerMut = trpc.customMarker.delete.useMutation({
-    onSuccess: () => { void refetchCustomMarkers(); },
+    onSuccess: () => {
+      void refetchCustomMarkers();
+    },
   });
   const updateCustomMarkerMut = trpc.customMarker.update.useMutation({
-    onSuccess: () => { void refetchCustomMarkers(); },
+    onSuccess: () => {
+      void refetchCustomMarkers();
+    },
   });
   const utils = trpc.useUtils();
   const updateTargetMut = trpc.target.registry.update.useMutation({
@@ -1037,24 +1753,32 @@ export default function IntelligenceMapping() {
       void utils.target.registry.list.invalidate();
       void utils.intelligence.mappingLocations.invalidate();
       // Invalidate getById so any open RS sheet refreshes chips immediately
-      if (editingTargetId) void utils.target.getById.invalidate({ id: editingTargetId });
+      if (editingTargetId)
+        void utils.target.getById.invalidate({ id: editingTargetId });
       void utils.target.listAll.invalidate();
       setEditingTargetId(null);
       setEtSaving(false);
       toast.success("Target saved");
     },
-    onError: (e) => { setEtSaving(false); toast.error(e.message); },
+    onError: e => {
+      setEtSaving(false);
+      toast.error(e.message);
+    },
   });
 
   // Intelligence entities for associate/vehicle dropdowns
   const { data: intelEntities } = trpc.intelligence.getEntities.useQuery();
   const assocPersonOptions = useMemo(() => {
     if (!intelEntities) return [];
-    return (intelEntities as any[]).filter((e: any) => e.type === "person").map((e: any) => e.label as string);
+    return (intelEntities as any[])
+      .filter((e: any) => e.type === "person")
+      .map((e: any) => e.label as string);
   }, [intelEntities]);
   const vehicleOptions = useMemo(() => {
     if (!intelEntities) return [];
-    return (intelEntities as any[]).filter((e: any) => e.type === "vehicle").map((e: any) => e.label as string);
+    return (intelEntities as any[])
+      .filter((e: any) => e.type === "vehicle")
+      .map((e: any) => e.label as string);
   }, [intelEntities]);
 
   // Restore sharing state on mount (per-device)
@@ -1071,7 +1795,7 @@ export default function IntelligenceMapping() {
       gpsStartedFromCacheRef.current = true;
       startWatching();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // mount-only
 
   // Server reconciliation: once myLocationState arrives, reconcile DB with local intent.
@@ -1090,7 +1814,7 @@ export default function IntelligenceMapping() {
       // GPS watcher died somehow — restart it
       startWatching();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myLocationState]);
 
   // showOwnLocation always mirrors sharingEnabled (single toggle)
@@ -1113,7 +1837,9 @@ export default function IntelligenceMapping() {
   const rsAddMember = trpc.member.add.useMutation();
   const rsCreateRow = trpc.row.create.useMutation();
   // General shortcuts for quick entry buttons
-  const { data: generalShortcuts } = trpc.shortcuts.list.useQuery(undefined, { staleTime: 0 });
+  const { data: generalShortcuts } = trpc.shortcuts.list.useQuery(undefined, {
+    staleTime: 0,
+  });
   // Target shortcuts for the selected sheet's target
   const { data: targetShortcuts } = trpc.targetShortcuts.list.useQuery(
     { targetId: rsTargetData?.id! },
@@ -1121,10 +1847,11 @@ export default function IntelligenceMapping() {
   );
 
   // Per-sheet target shortcuts (for RS Quick Entry shortcut expansion)
-  const { data: targetShortcutsForSheet } = trpc.targetShortcuts.listForSheet.useQuery(
-    { sheetId: rsSelectedSheetId! },
-    { enabled: !!rsSelectedSheetId }
-  );
+  const { data: targetShortcutsForSheet } =
+    trpc.targetShortcuts.listForSheet.useQuery(
+      { sheetId: rsSelectedSheetId! },
+      { enabled: !!rsSelectedSheetId }
+    );
   // Assigned target for the selected sheet (for TGT/HBF/HB/V1F/V1/V2F/V2/DEP/ARR shortcuts)
   const { data: assignedTarget } = trpc.target.getById.useQuery(
     { id: rsTargetData?.id ?? 0 },
@@ -1133,47 +1860,70 @@ export default function IntelligenceMapping() {
   // Combined shortcut map for RS Quick Entry textarea
   const mapQeShortcutMap = useMemo(() => {
     const map: Record<string, string> = {};
-    for (const s of (generalShortcuts as any[] ?? [])) map[s.trigger.toLowerCase()] = s.expansion;
+    for (const s of (generalShortcuts as any[]) ?? [])
+      map[s.trigger.toLowerCase()] = s.expansion;
     if (assignedTarget) {
       const t = assignedTarget as any;
-      if (t.tgt) map['tgt'] = t.tgt;
-      if (t.hbf) map['hbf'] = t.hbf;
-      if (t.hb)  map['hb']  = t.hb;
-      if (t.v1f) map['v1f'] = t.v1f;
-      if (t.v1)  map['v1']  = t.v1;
-      if (t.v2f) map['v2f'] = t.v2f;
-      if (t.v2)  map['v2']  = t.v2;
-      if (t.dep) map['dep'] = t.dep;
-      if (t.arr) map['arr'] = t.arr;
+      if (t.tgt) map["tgt"] = t.tgt;
+      if (t.hbf) map["hbf"] = t.hbf;
+      if (t.hb) map["hb"] = t.hb;
+      if (t.v1f) map["v1f"] = t.v1f;
+      if (t.v1) map["v1"] = t.v1;
+      if (t.v2f) map["v2f"] = t.v2f;
+      if (t.v2) map["v2"] = t.v2;
+      if (t.dep) map["dep"] = t.dep;
+      if (t.arr) map["arr"] = t.arr;
       // Extra vehicles (V2F/V2, V3F/V3, …)
       try {
-        const evs: Array<{ full: string; short: string }> = JSON.parse(t.extraVehicles ?? '[]');
+        const evs: Array<{ full: string; short: string }> = JSON.parse(
+          t.extraVehicles ?? "[]"
+        );
         evs.forEach((ev: { full: string; short: string }, i: number) => {
           const num = i + 2;
-          if (ev.full)  map[`v${num}f`] = ev.full;
-          if (ev.short) map[`v${num}`]  = ev.short;
+          if (ev.full) map[`v${num}f`] = ev.full;
+          if (ev.short) map[`v${num}`] = ev.short;
         });
       } catch {}
       // Wild fields (#1, #2, …)
       try {
-        const wfs: Array<{ label: string; value: string }> = JSON.parse(t.wildFields ?? '[]');
+        const wfs: Array<{ label: string; value: string }> = JSON.parse(
+          t.wildFields ?? "[]"
+        );
         wfs.forEach((wf: { label: string; value: string }) => {
           if (wf.value) map[wf.label.toLowerCase()] = wf.value;
         });
       } catch {}
     }
-    for (const s of (targetShortcutsForSheet as any[] ?? [])) map[s.trigger.toLowerCase()] = s.expansion;
+    for (const s of (targetShortcutsForSheet as any[]) ?? [])
+      map[s.trigger.toLowerCase()] = s.expansion;
     return map;
   }, [generalShortcuts, assignedTarget, targetShortcutsForSheet]);
 
   // Sidebar order (mirrors main menu) for left map pane
-  const { data: sidebarOrderData } = trpc.sidebar.getOrder.useQuery(undefined, { staleTime: 30_000 });
-  const DEFAULT_MAP_NAV_ORDER = ["operations", "governance", "todo", "mapping", "images", "calendar", "shortcuts", "intelligence", "targetRegistry", "operationManager"];
+  const { data: sidebarOrderData } = trpc.sidebar.getOrder.useQuery(undefined, {
+    staleTime: 30_000,
+  });
+  const DEFAULT_MAP_NAV_ORDER = [
+    "operations",
+    "governance",
+    "todo",
+    "mapping",
+    "images",
+    "calendar",
+    "shortcuts",
+    "intelligence",
+    "targetRegistry",
+    "operationManager",
+  ];
   const mapNavOrder = useMemo(() => {
     if (!sidebarOrderData?.order?.length) return DEFAULT_MAP_NAV_ORDER;
     const saved = sidebarOrderData.order as string[];
-    const merged = [...saved.filter((k: string) => DEFAULT_MAP_NAV_ORDER.includes(k))];
-    for (const k of DEFAULT_MAP_NAV_ORDER) { if (!merged.includes(k)) merged.push(k); }
+    const merged = [
+      ...saved.filter((k: string) => DEFAULT_MAP_NAV_ORDER.includes(k)),
+    ];
+    for (const k of DEFAULT_MAP_NAV_ORDER) {
+      if (!merged.includes(k)) merged.push(k);
+    }
     return merged;
   }, [sidebarOrderData]);
 
@@ -1193,10 +1943,14 @@ export default function IntelligenceMapping() {
   const toggleOp = (opId: number) => {
     setOpsExplicitlySet(true);
     setSelectedOpIds(prev => {
-      const next = prev.includes(opId) ? prev.filter(id => id !== opId) : [...prev, opId];
+      const next = prev.includes(opId)
+        ? prev.filter(id => id !== opId)
+        : [...prev, opId];
       if (!next.includes(opId)) {
         const opTargets = opTargetMap.get(opId) ?? [];
-        setSelectedTargetIds(tPrev => tPrev.filter(tid => !opTargets.find(t => t.id === tid)));
+        setSelectedTargetIds(tPrev =>
+          tPrev.filter(tid => !opTargets.find(t => t.id === tid))
+        );
         // If all ops are now deselected, clear RS selection too
         if (next.length === 0) {
           setRsSelectedSheetId(null);
@@ -1211,7 +1965,9 @@ export default function IntelligenceMapping() {
 
   const toggleTarget = (targetId: number) => {
     setSelectedTargetIds(prev =>
-      prev.includes(targetId) ? prev.filter(id => id !== targetId) : [...prev, targetId]
+      prev.includes(targetId)
+        ? prev.filter(id => id !== targetId)
+        : [...prev, targetId]
     );
   };
 
@@ -1235,8 +1991,12 @@ export default function IntelligenceMapping() {
   // re-register the watcher.
   const deviceIdRef = useRef(deviceId);
   const selectedOpIdsRef = useRef(selectedOpIds);
-  useEffect(() => { deviceIdRef.current = deviceId; }, [deviceId]);
-  useEffect(() => { selectedOpIdsRef.current = selectedOpIds; }, [selectedOpIds]);
+  useEffect(() => {
+    deviceIdRef.current = deviceId;
+  }, [deviceId]);
+  useEffect(() => {
+    selectedOpIdsRef.current = selectedOpIds;
+  }, [selectedOpIds]);
 
   const startWatching = useCallback(() => {
     if (!navigator.geolocation) {
@@ -1249,7 +2009,7 @@ export default function IntelligenceMapping() {
       watchIdRef.current = null;
     }
     watchIdRef.current = navigator.geolocation.watchPosition(
-      (pos) => {
+      pos => {
         setGpsError(null);
         updateLocationMutRef.current.mutate({
           deviceId: deviceIdRef.current,
@@ -1262,7 +2022,7 @@ export default function IntelligenceMapping() {
           accuracy: pos.coords.accuracy ?? null,
         });
       },
-      (err) => {
+      err => {
         setGpsError(`GPS error: ${err.message}`);
       },
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
@@ -1281,7 +2041,9 @@ export default function IntelligenceMapping() {
     setSharingEnabled(checked);
     if (checked) {
       if (!isMobile) {
-        setGpsError("Location sharing is designed for mobile devices. Your desktop location may be inaccurate.");
+        setGpsError(
+          "Location sharing is designed for mobile devices. Your desktop location may be inaccurate."
+        );
       } else {
         setGpsError(null);
       }
@@ -1330,7 +2092,7 @@ export default function IntelligenceMapping() {
 
   const createPinElement = useCallback((loc: IntelMapLocation) => {
     const isTarget = loc.type === "target_address";
-    const colour = isTarget ? "red" : "purple" as "red" | "purple";
+    const colour = isTarget ? "red" : ("purple" as "red" | "purple");
     const count = loc.linkCount;
 
     const el = document.createElement("div");
@@ -1411,120 +2173,158 @@ export default function IntelligenceMapping() {
     return el;
   }, []);
 
-  const placeMarker = useCallback((loc: IntelMapLocation, position: google.maps.LatLngLiteral) => {
-    if (!mapRef.current) return;
+  const placeMarker = useCallback(
+    (loc: IntelMapLocation, position: google.maps.LatLngLiteral) => {
+      if (!mapRef.current) return;
 
-    // ── Smart merge: only merge/suppress when a HOUSE-type custom marker is within 40m ──
-    // Non-house markers (cars, arrows, cameras, etc.) let the intel pin render normally.
-    const HOUSE_ICONS: string[] = ["house_outline", "house_filled"];
-    const MERGE_RADIUS_M = 40;
-    const nearbyHouseCm = customMarkersDataRef.current.find((cm: any) =>
-      HOUSE_ICONS.includes(cm.markerIcon) &&
-      haversineMetres(position.lat, position.lng, cm.lat, cm.lng) <= MERGE_RADIUS_M
-    );
+      // ── Smart merge: only merge/suppress when a HOUSE-type custom marker is within 40m ──
+      // Non-house markers (cars, arrows, cameras, etc.) let the intel pin render normally.
+      const HOUSE_ICONS: string[] = ["house_outline", "house_filled"];
+      const MERGE_RADIUS_M = 40;
+      const nearbyHouseCm = customMarkersDataRef.current.find(
+        (cm: any) =>
+          HOUSE_ICONS.includes(cm.markerIcon) &&
+          haversineMetres(position.lat, position.lng, cm.lat, cm.lng) <=
+            MERGE_RADIUS_M
+      );
 
-    if (nearbyHouseCm) {
-      // Merge intel data into the house custom marker's popup and suppress the intel pin.
-      // Multiple intel pins can merge into the same house marker (e.g. target_address + observation).
-      // target_address entries always sort first so red takes priority in the popup.
-      const enriched = { ...loc, lat: position.lat, lng: position.lng };
-      const existing = mergedIntelRef.current.get(nearbyHouseCm.id) ?? [];
-      // Avoid duplicates by label
-      if (!existing.find(e => e.label === enriched.label)) {
-        existing.push(enriched);
-        // Sort: target_address first, then observation
-        existing.sort((a, b) => {
-          if (a.type === 'target_address' && b.type !== 'target_address') return -1;
-          if (a.type !== 'target_address' && b.type === 'target_address') return 1;
-          return 0;
-        });
-        mergedIntelRef.current.set(nearbyHouseCm.id, existing);
-      }
-      return; // suppress intel pin — the house marker absorbs it
-    }
-
-    // ── Intel-pin same-position deduplication ────────────────────────────────────
-    // When a target_address pin has already been placed at this location, absorb any
-    // incoming observation pin into it (merge data + update badge) rather than
-    // placing a second overlapping purple pin. The target_address pin always wins.
-    // Because the server now sorts target_address first, the red pin is always placed
-    // before the purple one arrives.
-    const INTEL_DEDUP_RADIUS_M = 20;
-    if (loc.type === 'observation') {
-      const nearbyTargetMarkerIdx = markersRef.current.findIndex((m: any) => {
-        const pos = m.position as google.maps.LatLng | google.maps.LatLngLiteral | null;
-        if (!pos) return false;
-        const mLat = typeof (pos as any).lat === 'function' ? (pos as any).lat() : (pos as any).lat;
-        const mLng = typeof (pos as any).lng === 'function' ? (pos as any).lng() : (pos as any).lng;
-        // Check if this marker is a target_address intel pin (stored in geocodedIntelRef)
-        const entry = geocodedIntelRef.current.get(m.title ?? '');
-        return entry?.loc.type === 'target_address' &&
-          haversineMetres(position.lat, position.lng, mLat, mLng) <= INTEL_DEDUP_RADIUS_M;
-      });
-
-      if (nearbyTargetMarkerIdx !== -1) {
-        const targetMarker = markersRef.current[nearbyTargetMarkerIdx];
-        const targetEntry = geocodedIntelRef.current.get(targetMarker.title ?? '');
-        if (targetEntry) {
-          // Merge observation data into the target_address loc
-          const merged = targetEntry.loc;
-          // Merge assocPersons
-          for (const p of loc.assocPersons) {
-            if (!merged.assocPersons.includes(p)) merged.assocPersons.push(p);
-          }
-          // Merge assocVehicles
-          for (const v of loc.assocVehicles) {
-            if (!merged.assocVehicles.includes(v)) merged.assocVehicles.push(v);
-          }
-          // Merge linkedTargets
-          for (const t of loc.linkedTargets) {
-            if (!merged.linkedTargets.find(lt => lt.targetId === t.targetId)) {
-              merged.linkedTargets.push(t);
-            }
-          }
-          // Store the observation as a secondary merged entry on the target pin
-          if (!targetEntry.secondaryLocs) targetEntry.secondaryLocs = [];
-          (targetEntry as any).secondaryLocs.push({ ...loc, lat: position.lat, lng: position.lng });
-          // Recompute linkCount and update the badge on the existing marker
-          merged.linkCount = merged.linkedTargets.length + merged.assocPersons.length + merged.assocVehicles.length;
-          const newPinEl = createPinElement(merged);
-          targetMarker.content = newPinEl;
-          // Update geocodedIntelRef so the click handler has fresh data
-          geocodedIntelRef.current.set(targetMarker.title ?? '', { loc: merged, position: targetEntry.position, secondaryLocs: (targetEntry as any).secondaryLocs });
+      if (nearbyHouseCm) {
+        // Merge intel data into the house custom marker's popup and suppress the intel pin.
+        // Multiple intel pins can merge into the same house marker (e.g. target_address + observation).
+        // target_address entries always sort first so red takes priority in the popup.
+        const enriched = { ...loc, lat: position.lat, lng: position.lng };
+        const existing = mergedIntelRef.current.get(nearbyHouseCm.id) ?? [];
+        // Avoid duplicates by label
+        if (!existing.find(e => e.label === enriched.label)) {
+          existing.push(enriched);
+          // Sort: target_address first, then observation
+          existing.sort((a, b) => {
+            if (a.type === "target_address" && b.type !== "target_address")
+              return -1;
+            if (a.type !== "target_address" && b.type === "target_address")
+              return 1;
+            return 0;
+          });
+          mergedIntelRef.current.set(nearbyHouseCm.id, existing);
         }
-        return; // suppress the observation pin
+        return; // suppress intel pin — the house marker absorbs it
       }
-    }
-    // ─────────────────────────────────────────────────────────────────────────────
 
-    // Store geocoded position for manual merge lookup (all non-suppressed intel pins)
-    geocodedIntelRef.current.set(loc.label, { loc, position });
-    // ────────────────────────────────────────────────────────────────────────────────
-
-    const pinEl = createPinElement(loc);
-    const marker = new google.maps.marker.AdvancedMarkerElement({
-      map: mapRef.current,
-      position,
-      content: pinEl,
-      title: loc.label,
-    });
-    marker.addListener("click", () => {
-      // Go straight to the intel info popup (no intermediate action chooser)
-      const enriched = { ...loc, lat: position.lat, lng: position.lng };
-      const entry = geocodedIntelRef.current.get(loc.label);
-      const secondaryLocs = (entry as any)?.secondaryLocs ?? [];
-      const fullEnriched = { ...enriched, secondaryLocs };
-      if (!infoWindowRef.current) {
-        infoWindowRef.current = new google.maps.InfoWindow({
-          pixelOffset: new google.maps.Size(0, -40),
+      // ── Intel-pin same-position deduplication ────────────────────────────────────
+      // When a target_address pin has already been placed at this location, absorb any
+      // incoming observation pin into it (merge data + update badge) rather than
+      // placing a second overlapping purple pin. The target_address pin always wins.
+      // Because the server now sorts target_address first, the red pin is always placed
+      // before the purple one arrives.
+      const INTEL_DEDUP_RADIUS_M = 20;
+      if (loc.type === "observation") {
+        const nearbyTargetMarkerIdx = markersRef.current.findIndex((m: any) => {
+          const pos = m.position as
+            | google.maps.LatLng
+            | google.maps.LatLngLiteral
+            | null;
+          if (!pos) return false;
+          const mLat =
+            typeof (pos as any).lat === "function"
+              ? (pos as any).lat()
+              : (pos as any).lat;
+          const mLng =
+            typeof (pos as any).lng === "function"
+              ? (pos as any).lng()
+              : (pos as any).lng;
+          // Check if this marker is a target_address intel pin (stored in geocodedIntelRef)
+          const entry = geocodedIntelRef.current.get(m.title ?? "");
+          return (
+            entry?.loc.type === "target_address" &&
+            haversineMetres(position.lat, position.lng, mLat, mLng) <=
+              INTEL_DEDUP_RADIUS_M
+          );
         });
+
+        if (nearbyTargetMarkerIdx !== -1) {
+          const targetMarker = markersRef.current[nearbyTargetMarkerIdx];
+          const targetEntry = geocodedIntelRef.current.get(
+            targetMarker.title ?? ""
+          );
+          if (targetEntry) {
+            // Merge observation data into the target_address loc
+            const merged = targetEntry.loc;
+            // Merge assocPersons
+            for (const p of loc.assocPersons) {
+              if (!merged.assocPersons.includes(p)) merged.assocPersons.push(p);
+            }
+            // Merge assocVehicles
+            for (const v of loc.assocVehicles) {
+              if (!merged.assocVehicles.includes(v))
+                merged.assocVehicles.push(v);
+            }
+            // Merge linkedTargets
+            for (const t of loc.linkedTargets) {
+              if (
+                !merged.linkedTargets.find(lt => lt.targetId === t.targetId)
+              ) {
+                merged.linkedTargets.push(t);
+              }
+            }
+            // Store the observation as a secondary merged entry on the target pin
+            if (!targetEntry.secondaryLocs) targetEntry.secondaryLocs = [];
+            (targetEntry as any).secondaryLocs.push({
+              ...loc,
+              lat: position.lat,
+              lng: position.lng,
+            });
+            // Recompute linkCount and update the badge on the existing marker
+            merged.linkCount =
+              merged.linkedTargets.length +
+              merged.assocPersons.length +
+              merged.assocVehicles.length;
+            const newPinEl = createPinElement(merged);
+            targetMarker.content = newPinEl;
+            // Update geocodedIntelRef so the click handler has fresh data
+            geocodedIntelRef.current.set(targetMarker.title ?? "", {
+              loc: merged,
+              position: targetEntry.position,
+              secondaryLocs: (targetEntry as any).secondaryLocs,
+            });
+          }
+          return; // suppress the observation pin
+        }
       }
-      infoWindowRef.current.setContent(buildInfoWindowContent(fullEnriched));
-      infoWindowRef.current.setPosition({ lat: position.lat, lng: position.lng });
-      infoWindowRef.current.open(mapRef.current!);
-    });
-    markersRef.current.push(marker);
-  }, [createPinElement, buildInfoWindowContent]);
+      // ─────────────────────────────────────────────────────────────────────────────
+
+      // Store geocoded position for manual merge lookup (all non-suppressed intel pins)
+      geocodedIntelRef.current.set(loc.label, { loc, position });
+      // ────────────────────────────────────────────────────────────────────────────────
+
+      const pinEl = createPinElement(loc);
+      const marker = new google.maps.marker.AdvancedMarkerElement({
+        map: mapRef.current,
+        position,
+        content: pinEl,
+        title: loc.label,
+      });
+      marker.addListener("click", () => {
+        // Go straight to the intel info popup (no intermediate action chooser)
+        const enriched = { ...loc, lat: position.lat, lng: position.lng };
+        const entry = geocodedIntelRef.current.get(loc.label);
+        const secondaryLocs = (entry as any)?.secondaryLocs ?? [];
+        const fullEnriched = { ...enriched, secondaryLocs };
+        if (!infoWindowRef.current) {
+          infoWindowRef.current = new google.maps.InfoWindow({
+            pixelOffset: new google.maps.Size(0, -40),
+          });
+        }
+        infoWindowRef.current.setContent(buildInfoWindowContent(fullEnriched));
+        infoWindowRef.current.setPosition({
+          lat: position.lat,
+          lng: position.lng,
+        });
+        infoWindowRef.current.open(mapRef.current!);
+      });
+      markersRef.current.push(marker);
+    },
+    [createPinElement, buildInfoWindowContent]
+  );
 
   const geocodeNext = useCallback(() => {
     const queue = geocodeQueueRef.current;
@@ -1534,9 +2334,10 @@ export default function IntelligenceMapping() {
     const loc = queue[idx];
     geocodeIndexRef.current = idx + 1;
 
-    const query = loc.label.includes(",") || /\d/.test(loc.label)
-      ? `${loc.label}, Western Australia, Australia`
-      : `${loc.label}, Perth, Western Australia, Australia`;
+    const query =
+      loc.label.includes(",") || /\d/.test(loc.label)
+        ? `${loc.label}, Western Australia, Australia`
+        : `${loc.label}, Perth, Western Australia, Australia`;
 
     geocoderRef.current.geocode({ address: query }, (results, status) => {
       if (status === "OK" && results && results[0]) {
@@ -1553,18 +2354,32 @@ export default function IntelligenceMapping() {
             const entry = allIntel.get(cm.linkedIntelLabel);
             if (entry) {
               const existing = mergedIntelRef.current.get(cm.id) ?? [];
-              const enriched = { ...entry.loc, lat: entry.position.lat, lng: entry.position.lng };
+              const enriched = {
+                ...entry.loc,
+                lat: entry.position.lat,
+                lng: entry.position.lng,
+              };
               if (!existing.find(e => e.label === enriched.label)) {
                 // Remove the intel pin from the map and merge its data into the custom marker
-                const pinIdx = markersRef.current.findIndex((m: any) => m.title === cm.linkedIntelLabel);
+                const pinIdx = markersRef.current.findIndex(
+                  (m: any) => m.title === cm.linkedIntelLabel
+                );
                 if (pinIdx !== -1) {
                   markersRef.current[pinIdx].map = null;
                   markersRef.current.splice(pinIdx, 1);
                 }
                 existing.push(enriched);
                 existing.sort((a, b) => {
-                  if (a.type === 'target_address' && b.type !== 'target_address') return -1;
-                  if (a.type !== 'target_address' && b.type === 'target_address') return 1;
+                  if (
+                    a.type === "target_address" &&
+                    b.type !== "target_address"
+                  )
+                    return -1;
+                  if (
+                    a.type !== "target_address" &&
+                    b.type === "target_address"
+                  )
+                    return 1;
                   return 0;
                 });
                 mergedIntelRef.current.set(cm.id, existing);
@@ -1578,14 +2393,17 @@ export default function IntelligenceMapping() {
     });
   }, [placeMarker]);
 
-  const renderLocations = useCallback((locs: IntelMapLocation[]) => {
-    clearMarkers();
-    geocodedIntelRef.current.clear(); // reset geocoded positions so manual merge sees fresh data
-    if (!locs || locs.length === 0 || !geocoderRef.current) return;
-    geocodeQueueRef.current = locs;
-    geocodeIndexRef.current = 0;
-    geocodeTimerRef.current = setTimeout(geocodeNext, 200);
-  }, [clearMarkers, geocodeNext]);
+  const renderLocations = useCallback(
+    (locs: IntelMapLocation[]) => {
+      clearMarkers();
+      geocodedIntelRef.current.clear(); // reset geocoded positions so manual merge sees fresh data
+      if (!locs || locs.length === 0 || !geocoderRef.current) return;
+      geocodeQueueRef.current = locs;
+      geocodeIndexRef.current = 0;
+      geocodeTimerRef.current = setTimeout(geocodeNext, 200);
+    },
+    [clearMarkers, geocodeNext]
+  );
 
   // Keep customMarkersDataRef in sync so placeMarker can access latest data without stale closure
   // NOTE: Do NOT call renderLocations here — that would create a loop:
@@ -1612,10 +2430,11 @@ export default function IntelligenceMapping() {
 
     const currentUserId = user?.id;
     const currentDeviceId = deviceIdRef.current;
-    const visibleUsers = (liveUsers as LiveUser[]).filter((u) => {
+    const visibleUsers = (liveUsers as LiveUser[]).filter(u => {
       // Only hide THIS device's own pin when sharing is off.
       // Same user on a different device (different deviceId) must always show.
-      const isThisDevice = u.userId === currentUserId && u.deviceId === currentDeviceId;
+      const isThisDevice =
+        u.userId === currentUserId && u.deviceId === currentDeviceId;
       if (isThisDevice && !showOwnLocation) return false;
       // Per-team visibility (manual hide buttons in the team list)
       const teamKey = u.team ?? "null";
@@ -1626,7 +2445,9 @@ export default function IntelligenceMapping() {
     });
 
     // Remove markers for devices no longer visible
-    const visibleKeys = new Set(visibleUsers.map(u => `${u.userId}_${u.deviceId}`));
+    const visibleKeys = new Set(
+      visibleUsers.map(u => `${u.userId}_${u.deviceId}`)
+    );
     Array.from(liveMarkersRef.current.entries()).forEach(([key, marker]) => {
       if (!visibleKeys.has(key)) {
         marker.map = null;
@@ -1636,7 +2457,7 @@ export default function IntelligenceMapping() {
 
     // Track own position and apply follow-mode pan
     const ownEntry = (liveUsers as LiveUser[]).find(
-      (u) => u.userId === currentUserId && u.deviceId === currentDeviceId
+      u => u.userId === currentUserId && u.deviceId === currentDeviceId
     );
     if (ownEntry) {
       ownPositionRef.current = { lat: ownEntry.lat, lng: ownEntry.lng };
@@ -1666,79 +2487,113 @@ export default function IntelligenceMapping() {
           liveMarkersRef.current.set(pinKey, marker);
         }
       } catch (err) {
-        console.error('[LiveMarkers] failed to place pin for', liveUser.name, err);
+        console.error(
+          "[LiveMarkers] failed to place pin for",
+          liveUser.name,
+          err
+        );
       }
     }
-  // mapReady is included so this effect re-runs the moment the map is available,
-  // even if liveUsers data arrived before the map was initialised.
-  }, [liveUsers, showOwnLocation, hiddenUsers, hiddenTeams, user, createUserPinElement, mapReady]);
+    // mapReady is included so this effect re-runs the moment the map is available,
+    // even if liveUsers data arrived before the map was initialised.
+  }, [
+    liveUsers,
+    showOwnLocation,
+    hiddenUsers,
+    hiddenTeams,
+    user,
+    createUserPinElement,
+    mapReady,
+  ]);
 
-  const handleMapReady = useCallback((map: google.maps.Map) => {
-    mapRef.current = map;
-    geocoderRef.current = new google.maps.Geocoder();
-    infoWindowRef.current = new google.maps.InfoWindow({
-      pixelOffset: new google.maps.Size(0, -40),
-    });
-    autocompleteServiceRef.current = new google.maps.places.AutocompleteService();
-    setMapReady(true); // triggers live marker effect to run now that map is available
-    if (locations) {
-      renderLocations(locations);
-    }
-    // Right-click: show action chooser (RS Quick Entry | Add Marker Here | Navigate with Waze)
-    map.addListener("rightclick", (e: google.maps.MapMouseEvent) => {
-      if (!e.latLng) return;
-      const lat = e.latLng.lat();
-      const lng = e.latLng.lng();
-      const geocoder = new google.maps.Geocoder();
-      geocoder.geocode({ location: { lat, lng } }, (results, status) => {
-        const addr = (status === "OK" && results && results[0]) ? results[0].formatted_address : `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-        setActionChooser({ lat, lng, address: convertGoogleAddresses(addr) });
+  const handleMapReady = useCallback(
+    (map: google.maps.Map) => {
+      mapRef.current = map;
+      geocoderRef.current = new google.maps.Geocoder();
+      infoWindowRef.current = new google.maps.InfoWindow({
+        pixelOffset: new google.maps.Size(0, -40),
       });
-    });
-
-    // Persist map type (roadmap / satellite) whenever the user switches
-    map.addListener("maptypeid_changed", () => {
-      const typeId = map.getMapTypeId();
-      if (!typeId) return;
-      setMapInitialTypeId(typeId);
-      try {
-        const existing = localStorage.getItem(LS_MAP_SETTINGS_KEY);
-        const parsed = existing ? JSON.parse(existing) : {};
-        localStorage.setItem(LS_MAP_SETTINGS_KEY, JSON.stringify({ ...parsed, mapTypeId: typeId }));
-      } catch { /* ignore */ }
-    });
-
-    // Tap anywhere on the map (not on a marker/POI) → close the InfoWindow
-    map.addListener("click", (e: google.maps.MapMouseEvent & { placeId?: string }) => {
-      if (!e.placeId) {
-        infoWindowRef.current?.close();
-        return;
+      autocompleteServiceRef.current =
+        new google.maps.places.AutocompleteService();
+      setMapReady(true); // triggers live marker effect to run now that map is available
+      if (locations) {
+        renderLocations(locations);
       }
-      if (!e.latLng) return;
-      // Prevent the default Google info window from opening
-      e.stop?.();
-      const lat = e.latLng.lat();
-      const lng = e.latLng.lng();
-      // Look up the business details via Places API
-      const service = new google.maps.places.PlacesService(map);
-      service.getDetails(
-        { placeId: e.placeId, fields: ["name", "formatted_address"] },
-        (place, status) => {
-          if (status === google.maps.places.PlacesServiceStatus.OK && place) {
-            setPoiTap({
-              lat,
-              lng,
-              name: place.name ?? "",
-              address: place.formatted_address ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
-            });
+      // Right-click: show action chooser (RS Quick Entry | Add Marker Here | Navigate with Waze)
+      map.addListener("rightclick", (e: google.maps.MapMouseEvent) => {
+        if (!e.latLng) return;
+        const lat = e.latLng.lat();
+        const lng = e.latLng.lng();
+        const geocoder = new google.maps.Geocoder();
+        geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+          const addr =
+            status === "OK" && results && results[0]
+              ? results[0].formatted_address
+              : `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+          setActionChooser({ lat, lng, address: convertGoogleAddresses(addr) });
+        });
+      });
+
+      // Persist map type (roadmap / satellite) whenever the user switches
+      map.addListener("maptypeid_changed", () => {
+        const typeId = map.getMapTypeId();
+        if (!typeId) return;
+        setMapInitialTypeId(typeId);
+        try {
+          const existing = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+          const parsed = existing ? JSON.parse(existing) : {};
+          localStorage.setItem(
+            LS_MAP_SETTINGS_KEY,
+            JSON.stringify({ ...parsed, mapTypeId: typeId })
+          );
+        } catch {
+          /* ignore */
+        }
+      });
+
+      // Tap anywhere on the map (not on a marker/POI) → close the InfoWindow
+      map.addListener(
+        "click",
+        (e: google.maps.MapMouseEvent & { placeId?: string }) => {
+          if (!e.placeId) {
+            infoWindowRef.current?.close();
+            return;
           }
+          if (!e.latLng) return;
+          // Prevent the default Google info window from opening
+          e.stop?.();
+          const lat = e.latLng.lat();
+          const lng = e.latLng.lng();
+          // Look up the business details via Places API
+          const service = new google.maps.places.PlacesService(map);
+          service.getDetails(
+            { placeId: e.placeId, fields: ["name", "formatted_address"] },
+            (place, status) => {
+              if (
+                status === google.maps.places.PlacesServiceStatus.OK &&
+                place
+              ) {
+                setPoiTap({
+                  lat,
+                  lng,
+                  name: place.name ?? "",
+                  address:
+                    place.formatted_address ??
+                    `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+                });
+              }
+            }
+          );
         }
       );
-    });
-  }, [locations, renderLocations]);
+    },
+    [locations, renderLocations]
+  );
 
   // ── Custom marker rendering ────────────────────────────────────────────────
-  const customMarkerMapRefs = useRef<Map<number, google.maps.marker.AdvancedMarkerElement>>(new Map());
+  const customMarkerMapRefs = useRef<
+    Map<number, google.maps.marker.AdvancedMarkerElement>
+  >(new Map());
   // Direct img element refs for live rotation without stale content queries
   const customMarkerImgRefs = useRef<Map<number, HTMLImageElement>>(new Map());
 
@@ -1759,7 +2614,10 @@ export default function IntelligenceMapping() {
 
     // Add / update markers
     incoming.forEach((cm: any) => {
-      const dataUrl = getMarkerDataUrl(cm.markerIcon as MarkerIcon, cm.markerColour as MarkerColour);
+      const dataUrl = getMarkerDataUrl(
+        cm.markerIcon as MarkerIcon,
+        cm.markerColour as MarkerColour
+      );
       const rotation = (cm.rotation ?? 0) as number;
       const el = document.createElement("div");
       el.style.cssText = "width:40px;height:40px;cursor:pointer;";
@@ -1785,13 +2643,18 @@ export default function IntelligenceMapping() {
           if (!infoWindowRef.current) return;
           const lat = cm.lat;
           const lng = cm.lng;
-          const iconLabel = MARKER_ICON_LABELS[cm.markerIcon as MarkerIcon] ?? cm.markerIcon;
+          const iconLabel =
+            MARKER_ICON_LABELS[cm.markerIcon as MarkerIcon] ?? cm.markerIcon;
           const currentRotation = cm.rotation ?? 0;
-          const dataUrl = getMarkerDataUrl(cm.markerIcon as MarkerIcon, cm.markerColour as MarkerColour);
+          const dataUrl = getMarkerDataUrl(
+            cm.markerIcon as MarkerIcon,
+            cm.markerColour as MarkerColour
+          );
           // Check if intel locations have been merged into this marker (array, target_address first)
           const mergedIntelList = mergedIntelRef.current.get(cm.id) ?? [];
           // Primary merged intel = first entry (target_address if present, else observation)
-          const mergedIntel = mergedIntelList.length > 0 ? mergedIntelList[0] : null;
+          const mergedIntel =
+            mergedIntelList.length > 0 ? mergedIntelList[0] : null;
 
           const buildPopupHtml = (rotation: number) => {
             const lines: string[] = [];
@@ -1808,27 +2671,44 @@ export default function IntelligenceMapping() {
             `);
 
             // Label
-            if (cm.label) lines.push(`<strong style="font-size:13px;color:#111;line-height:1.35;display:block;margin-bottom:2px;">${cm.label}</strong>`);
+            if (cm.label)
+              lines.push(
+                `<strong style="font-size:13px;color:#111;line-height:1.35;display:block;margin-bottom:2px;">${cm.label}</strong>`
+              );
 
             // Address
-            if (cm.address) lines.push(`<div style="font-size:11px;color:#444;margin-top:2px;">${cm.address}</div>`);
+            if (cm.address)
+              lines.push(
+                `<div style="font-size:11px;color:#444;margin-top:2px;">${cm.address}</div>`
+              );
 
             // Notes
-            if (cm.note) lines.push(`<div style="margin-top:6px;"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Notes</span><p style="font-size:12px;color:#111;margin:2px 0 0;">${cm.note}</p></div>`);
+            if (cm.note)
+              lines.push(
+                `<div style="margin-top:6px;"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Notes</span><p style="font-size:12px;color:#111;margin:2px 0 0;">${cm.note}</p></div>`
+              );
 
             // Persons (from custom marker)
-            if (cm.assocPersons?.length) lines.push(`<div style="margin-top:6px;"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Persons</span><p style="font-size:12px;color:#111;margin:2px 0 0;">${(cm.assocPersons as string[]).join(", ")}</p></div>`);
+            if (cm.assocPersons?.length)
+              lines.push(
+                `<div style="margin-top:6px;"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Persons</span><p style="font-size:12px;color:#111;margin:2px 0 0;">${(cm.assocPersons as string[]).join(", ")}</p></div>`
+              );
 
             // Vehicles (from custom marker)
-            if (cm.assocVehicles?.length) lines.push(`<div style="margin-top:4px;"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Vehicles</span><p style="font-size:12px;color:#111;margin:2px 0 0;">${(cm.assocVehicles as string[]).join(", ")}</p></div>`);
+            if (cm.assocVehicles?.length)
+              lines.push(
+                `<div style="margin-top:4px;"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Vehicles</span><p style="font-size:12px;color:#111;margin:2px 0 0;">${(cm.assocVehicles as string[]).join(", ")}</p></div>`
+              );
 
             // ── Merged intel section: render each merged entry (target_address first) ──
             for (const intel of mergedIntelList) {
               const isTarget = intel.type === "target_address";
               const accentColor = isTarget ? "#dc2626" : "#7c3aed";
-              const typeLabel = isTarget ? "TARGET ADDRESS" : "OBSERVED LOCATION";
+              const typeLabel = isTarget
+                ? "TARGET ADDRESS"
+                : "OBSERVED LOCATION";
               lines.push(`
-                <div style="margin-top:8px;padding:8px;background:${isTarget ? '#fff5f5' : '#f8fafc'};border:1px solid ${isTarget ? '#fca5a5' : '#e2e8f0'};border-radius:6px;">
+                <div style="margin-top:8px;padding:8px;background:${isTarget ? "#fff5f5" : "#f8fafc"};border:1px solid ${isTarget ? "#fca5a5" : "#e2e8f0"};border-radius:6px;">
                   <div style="display:flex;align-items:center;gap:5px;margin-bottom:4px;">
                     <span style="background:${accentColor};color:#fff;border-radius:3px;font-size:9px;font-weight:700;padding:1px 5px;letter-spacing:0.07em;">${typeLabel}</span>
                   </div>
@@ -1837,28 +2717,52 @@ export default function IntelligenceMapping() {
               // Linked target details
               if (isTarget && intel.linkedTargets.length > 0) {
                 for (const t of intel.linkedTargets) {
-                  lines.push(`<div style="padding:4px 6px;background:#fef2f2;border-left:2px solid #dc2626;border-radius:0 3px 3px 0;margin-bottom:3px;">`);
-                  lines.push(`<div style="font-size:11px;font-weight:700;color:#111;">${t.name}</div>`);
-                  if (t.tgt) lines.push(`<div style="font-size:10px;color:#555;">TGT: ${t.tgt}</div>`);
-                  if (t.hbf) lines.push(`<div style="font-size:10px;color:#555;">HBF: ${t.hbf}</div>`);
-                  if (t.v1f) lines.push(`<div style="font-size:10px;color:#555;">V1F: ${t.v1f}</div>`);
-                  if (t.v2f) lines.push(`<div style="font-size:10px;color:#555;">V2F: ${t.v2f}</div>`);
+                  lines.push(
+                    `<div style="padding:4px 6px;background:#fef2f2;border-left:2px solid #dc2626;border-radius:0 3px 3px 0;margin-bottom:3px;">`
+                  );
+                  lines.push(
+                    `<div style="font-size:11px;font-weight:700;color:#111;">${t.name}</div>`
+                  );
+                  if (t.tgt)
+                    lines.push(
+                      `<div style="font-size:10px;color:#555;">TGT: ${t.tgt}</div>`
+                    );
+                  if (t.hbf)
+                    lines.push(
+                      `<div style="font-size:10px;color:#555;">HBF: ${t.hbf}</div>`
+                    );
+                  if (t.v1f)
+                    lines.push(
+                      `<div style="font-size:10px;color:#555;">V1F: ${t.v1f}</div>`
+                    );
+                  if (t.v2f)
+                    lines.push(
+                      `<div style="font-size:10px;color:#555;">V2F: ${t.v2f}</div>`
+                    );
                   lines.push(`</div>`);
                 }
               }
               // Linked targets for observation
               if (!isTarget && intel.linkedTargets.length > 0) {
-                lines.push(`<div style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Linked Targets</div>`);
+                lines.push(
+                  `<div style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Linked Targets</div>`
+                );
                 for (const t of intel.linkedTargets) {
-                  lines.push(`<div style="font-size:11px;color:#111;">${t.name}</div>`);
+                  lines.push(
+                    `<div style="font-size:11px;color:#111;">${t.name}</div>`
+                  );
                 }
               }
               // Intel persons/vehicles
               if (intel.assocPersons.length > 0) {
-                lines.push(`<div style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;margin-top:3px;">Intel Persons</div><div style="font-size:11px;color:#111;">${intel.assocPersons.join(", ")}</div>`);
+                lines.push(
+                  `<div style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;margin-top:3px;">Intel Persons</div><div style="font-size:11px;color:#111;">${intel.assocPersons.join(", ")}</div>`
+                );
               }
               if (intel.assocVehicles.length > 0) {
-                lines.push(`<div style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;margin-top:2px;">Intel Vehicles</div><div style="font-size:11px;color:#111;">${intel.assocVehicles.join(", ")}</div>`);
+                lines.push(
+                  `<div style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;margin-top:2px;">Intel Vehicles</div><div style="font-size:11px;color:#111;">${intel.assocVehicles.join(", ")}</div>`
+                );
               }
               lines.push(`</div>`);
             }
@@ -1884,11 +2788,14 @@ export default function IntelligenceMapping() {
             `);
 
             // ── Action buttons: symmetric grid layout ─────────────────────────────
-            const btnBase = "font-size:12px;font-weight:600;padding:7px 0;border-radius:6px;cursor:pointer;text-align:center;text-decoration:none;display:block;width:100%;box-sizing:border-box;";
+            const btnBase =
+              "font-size:12px;font-weight:600;padding:7px 0;border-radius:6px;cursor:pointer;text-align:center;text-decoration:none;display:block;width:100%;box-sizing:border-box;";
             const sections: string[] = [];
 
             // Row 0: RS Quick Entry — always at top, full width
-            sections.push(`<div style="margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;"><button onclick="window.__cmRsQuickEntry(${cm.id})" style="${btnBase}background:#6366f1;color:#fff;border:none;font-size:13px;padding:9px 0;">RS Quick Entry</button></div>`);
+            sections.push(
+              `<div style="margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;"><button onclick="window.__cmRsQuickEntry(${cm.id})" style="${btnBase}background:#6366f1;color:#fff;border:none;font-size:13px;padding:9px 0;">RS Quick Entry</button></div>`
+            );
 
             // Row 1: Intel actions (full-width) — only in merged mode (excluding RS Quick Entry which moved to top)
             if (mergedIntel) {
@@ -1896,18 +2803,24 @@ export default function IntelligenceMapping() {
               const isTarget = mergedIntel.type === "target_address";
               if (isTarget && mergedIntel.linkedTargets.length > 0) {
                 for (const t of mergedIntel.linkedTargets) {
-                  intelBtns.push(`<button onclick="window.__editTargetFromMap(${t.targetId})" style="${btnBase}background:#0f766e;color:#fff;border:none;font-size:13px;padding:9px 0;">Edit ${t.name}</button>`);
+                  intelBtns.push(
+                    `<button onclick="window.__editTargetFromMap(${t.targetId})" style="${btnBase}background:#0f766e;color:#fff;border:none;font-size:13px;padding:9px 0;">Edit ${t.name}</button>`
+                  );
                 }
               }
               // Also add View Profile for any observation entries
               for (const intel of mergedIntelList) {
-                if (intel.type !== 'target_address') {
+                if (intel.type !== "target_address") {
                   const encodedLabel = encodeURIComponent(intel.label);
-                  intelBtns.push(`<a href="/intelligence/location/${encodedLabel}" style="${btnBase}background:#7c3aed;color:#fff;font-size:13px;padding:9px 0;">View Observation Profile</a>`);
+                  intelBtns.push(
+                    `<a href="/intelligence/location/${encodedLabel}" style="${btnBase}background:#7c3aed;color:#fff;font-size:13px;padding:9px 0;">View Observation Profile</a>`
+                  );
                 }
               }
               if (intelBtns.length > 0) {
-                sections.push(`<div style="display:grid;grid-template-columns:1fr;gap:5px;margin-top:5px;">${intelBtns.join("")}</div>`);
+                sections.push(
+                  `<div style="display:grid;grid-template-columns:1fr;gap:5px;margin-top:5px;">${intelBtns.join("")}</div>`
+                );
               }
             }
 
@@ -1916,21 +2829,27 @@ export default function IntelligenceMapping() {
               `<a href="https://waze.com/ul?ll=${lat},${lng}&navigate=yes" target="_blank" style="${btnBase}background:#00bcd4;color:#fff;">Waze</a>`,
               `<a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}" target="_blank" style="${btnBase}background:#4285f4;color:#fff;">Street View</a>`,
             ];
-            sections.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;">${navBtns.join("")}</div>`);
+            sections.push(
+              `<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;">${navBtns.join("")}</div>`
+            );
 
             // Row 3: Edit | Delete (2 columns)
             const editBtns = [
               `<button onclick="window.__editCustomMarker(${cm.id})" style="${btnBase}background:#16a34a;color:#fff;border:none;">Edit</button>`,
               `<button onclick="window.__deleteCustomMarker(${cm.id})" style="${btnBase}background:#ef4444;color:#fff;border:none;">Delete</button>`,
             ];
-            sections.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;">${editBtns.join("")}</div>`);
+            sections.push(
+              `<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;">${editBtns.join("")}</div>`
+            );
 
             // Row 4: Merge | Move — same size as Edit/Delete, 2 columns
             const mergeBtn = !mergedIntel
               ? `<button onclick="window.__cmOpenMergePicker(${cm.id})" style="${btnBase}background:#78716c;color:#fff;border:none;">Merge…</button>`
               : `<button disabled style="${btnBase}background:#78716c;color:#fff;border:none;opacity:0.4;cursor:default;">Merge…</button>`;
             const moveBtn = `<button onclick="window.__cmStartMove(${cm.id})" style="${btnBase}background:#0369a1;color:#fff;border:none;">Move…</button>`;
-            sections.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;">${mergeBtn}${moveBtn}</div>`);
+            sections.push(
+              `<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;">${mergeBtn}${moveBtn}</div>`
+            );
 
             lines.push(sections.join(""));
 
@@ -1949,24 +2868,34 @@ export default function IntelligenceMapping() {
   useEffect(() => {
     (window as any).__cmRsQuickEntry = (id: number) => {
       infoWindowRef.current?.close();
-      const cm = (customMarkers as any[] | undefined)?.find((m: any) => m.id === id);
+      const cm = (customMarkers as any[] | undefined)?.find(
+        (m: any) => m.id === id
+      );
       if (!cm) return;
       const address = cm.address || cm.label || "";
       setMapQeAddress(convertGoogleAddresses(address));
       setMapQeOpen(true);
     };
-    return () => { delete (window as any).__cmRsQuickEntry; };
+    return () => {
+      delete (window as any).__cmRsQuickEntry;
+    };
   }, [customMarkers, setMapQeAddress, setMapQeOpen]);
 
   // Global manual merge picker handler — opens the merge picker bottom sheet
   useEffect(() => {
     (window as any).__cmOpenMergePicker = (id: number) => {
       infoWindowRef.current?.close();
-      const cm = (customMarkersDataRef.current as any[]).find((m: any) => m.id === id);
+      const cm = (customMarkersDataRef.current as any[]).find(
+        (m: any) => m.id === id
+      );
       if (!cm) return;
       // Find all geocoded intel pins within 150m of this custom marker
       const MANUAL_MERGE_RADIUS_M = 150;
-      const candidates: Array<{ loc: IntelMapLocation; position: google.maps.LatLngLiteral; distanceM: number }> = [];
+      const candidates: Array<{
+        loc: IntelMapLocation;
+        position: google.maps.LatLngLiteral;
+        distanceM: number;
+      }> = [];
       geocodedIntelRef.current.forEach(({ loc, position }) => {
         const d = haversineMetres(cm.lat, cm.lng, position.lat, position.lng);
         if (d <= MANUAL_MERGE_RADIUS_M) {
@@ -1976,7 +2905,9 @@ export default function IntelligenceMapping() {
       candidates.sort((a, b) => a.distanceM - b.distanceM);
       setManualMergePicker({ cmId: id, candidates });
     };
-    return () => { delete (window as any).__cmOpenMergePicker; };
+    return () => {
+      delete (window as any).__cmOpenMergePicker;
+    };
   }, []);
 
   // Global move marker handler — makes the marker draggable and enters move mode
@@ -1988,31 +2919,56 @@ export default function IntelligenceMapping() {
       // Store original position for cancel rollback
       const origPos = marker.position as google.maps.LatLngLiteral | null;
       if (!origPos) return;
-      const origLat = typeof (origPos as any).lat === 'function' ? (origPos as any).lat() : (origPos as any).lat;
-      const origLng = typeof (origPos as any).lng === 'function' ? (origPos as any).lng() : (origPos as any).lng;
+      const origLat =
+        typeof (origPos as any).lat === "function"
+          ? (origPos as any).lat()
+          : (origPos as any).lat;
+      const origLng =
+        typeof (origPos as any).lng === "function"
+          ? (origPos as any).lng()
+          : (origPos as any).lng;
       // Make marker draggable
       (marker as any).gmpDraggable = true;
       setMovingMarkerId(id);
       setPendingMoveAddress(null);
       // Listen for drag end to reverse geocode new position
-      const dragEndListener = marker.addListener('dragend', () => {
+      const dragEndListener = marker.addListener("dragend", () => {
         const newPos = marker.position as google.maps.LatLngLiteral | null;
         if (!newPos || !geocoderRef.current) return;
-        const newLat = typeof (newPos as any).lat === 'function' ? (newPos as any).lat() : (newPos as any).lat;
-        const newLng = typeof (newPos as any).lng === 'function' ? (newPos as any).lng() : (newPos as any).lng;
-        geocoderRef.current.geocode({ location: { lat: newLat, lng: newLng } }, (results, status) => {
-          const rawAddr = (status === 'OK' && results && results[0]) ? results[0].formatted_address : `${newLat.toFixed(6)}, ${newLng.toFixed(6)}`;
-          const addr = convertGoogleAddresses(rawAddr);
-          setPendingMoveAddress({ lat: newLat, lng: newLng, address: addr });
-        });
+        const newLat =
+          typeof (newPos as any).lat === "function"
+            ? (newPos as any).lat()
+            : (newPos as any).lat;
+        const newLng =
+          typeof (newPos as any).lng === "function"
+            ? (newPos as any).lng()
+            : (newPos as any).lng;
+        geocoderRef.current.geocode(
+          { location: { lat: newLat, lng: newLng } },
+          (results, status) => {
+            const rawAddr =
+              status === "OK" && results && results[0]
+                ? results[0].formatted_address
+                : `${newLat.toFixed(6)}, ${newLng.toFixed(6)}`;
+            const addr = convertGoogleAddresses(rawAddr);
+            setPendingMoveAddress({ lat: newLat, lng: newLng, address: addr });
+          }
+        );
         // Remove this one-time listener
         google.maps.event.removeListener(dragEndListener);
       });
       // Store original position on the window object for cancel rollback
       (window as any).__cmMoveOrigPos = { id, lat: origLat, lng: origLng };
     };
-    return () => { delete (window as any).__cmStartMove; };
-  }, [customMarkerMapRefs, geocoderRef, setMovingMarkerId, setPendingMoveAddress]);
+    return () => {
+      delete (window as any).__cmStartMove;
+    };
+  }, [
+    customMarkerMapRefs,
+    geocoderRef,
+    setMovingMarkerId,
+    setPendingMoveAddress,
+  ]);
 
   // Global inline rotation handler for custom marker popup slider
   useEffect(() => {
@@ -2020,8 +2976,12 @@ export default function IntelligenceMapping() {
     (window as any).__cmPopupRotate = (id: number, valueStr: string) => {
       const rotation = Number(valueStr);
       // Update the live preview image and degree label in the popup DOM
-      const previewImg = document.getElementById(`cm-popup-preview-${id}`) as HTMLImageElement | null;
-      const degLabel = document.getElementById(`cm-popup-deg-${id}`) as HTMLElement | null;
+      const previewImg = document.getElementById(
+        `cm-popup-preview-${id}`
+      ) as HTMLImageElement | null;
+      const degLabel = document.getElementById(
+        `cm-popup-deg-${id}`
+      ) as HTMLElement | null;
       if (previewImg) previewImg.style.transform = `rotate(${rotation}deg)`;
       if (degLabel) degLabel.textContent = `${rotation}°`;
       // Also rotate the actual map marker element immediately via direct img ref
@@ -2031,7 +2991,9 @@ export default function IntelligenceMapping() {
       if (!markerImg) {
         const markerEl = customMarkerMapRefs.current.get(id);
         if (markerEl?.content instanceof HTMLElement) {
-          const img = markerEl.content.querySelector('img') as HTMLImageElement | null;
+          const img = markerEl.content.querySelector(
+            "img"
+          ) as HTMLImageElement | null;
           if (img) img.style.transform = `rotate(${rotation}deg)`;
         }
       }
@@ -2058,14 +3020,18 @@ export default function IntelligenceMapping() {
         toast.error("Failed to delete marker");
       }
     };
-    return () => { delete (window as any).__deleteCustomMarker; };
+    return () => {
+      delete (window as any).__deleteCustomMarker;
+    };
   }, [deleteCustomMarkerMut]);
 
   // Global edit handler for target-address markers
   useEffect(() => {
     (window as any).__editTargetFromMap = (targetId: number) => {
       infoWindowRef.current?.close();
-      const t = (allTargets as any[] | undefined)?.find((t: any) => t.id === targetId);
+      const t = (allTargets as any[] | undefined)?.find(
+        (t: any) => t.id === targetId
+      );
       if (!t) return;
       setEtName(t.name ?? "");
       setEtTgt(t.tgt ?? "");
@@ -2079,14 +3045,18 @@ export default function IntelligenceMapping() {
       setEtArr(t.arr ?? "");
       setEditingTargetId(targetId);
     };
-    return () => { delete (window as any).__editTargetFromMap; };
+    return () => {
+      delete (window as any).__editTargetFromMap;
+    };
   }, [allTargets]);
 
   // Global edit handler for custom marker info window
   useEffect(() => {
     (window as any).__editCustomMarker = (id: number) => {
       infoWindowRef.current?.close();
-      const cm = (customMarkers as any[] | undefined)?.find((m: any) => m.id === id);
+      const cm = (customMarkers as any[] | undefined)?.find(
+        (m: any) => m.id === id
+      );
       if (!cm) return;
       // Pre-fill all form fields with existing marker data
       setCmIcon((cm.markerIcon as MarkerIcon) ?? "house_filled");
@@ -2104,7 +3074,9 @@ export default function IntelligenceMapping() {
       // Use the marker's lat/lng as the "pending" position to open the form panel
       setPendingLatLng({ lat: cm.lat, lng: cm.lng });
     };
-    return () => { delete (window as any).__editCustomMarker; };
+    return () => {
+      delete (window as any).__editCustomMarker;
+    };
   }, [customMarkers]);
 
   // ── Intel pin global handlers ─────────────────────────────────────────────────
@@ -2118,7 +3090,9 @@ export default function IntelligenceMapping() {
       setMapQeAddress(ensureBracketCode(label));
       setMapQeOpen(true);
     };
-    return () => { delete (window as any).__intelRsQuickEntry; };
+    return () => {
+      delete (window as any).__intelRsQuickEntry;
+    };
   }, [setMapQeAddress, setMapQeOpen]);
 
   // Open edit dialog for intel pin (icon/colour/rotation only)
@@ -2137,13 +3111,17 @@ export default function IntelligenceMapping() {
           if (parsed.colour) colour = parsed.colour as MarkerColour;
           if (typeof parsed.rotation === "number") rotation = parsed.rotation;
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       setIntelEditIcon(icon);
       setIntelEditColour(colour);
       setIntelEditRotation(rotation);
       setEditingIntelLabel(label);
     };
-    return () => { delete (window as any).__intelOpenEditDialog; };
+    return () => {
+      delete (window as any).__intelOpenEditDialog;
+    };
   }, []);
 
   // Inline rotation handler for intel pin popup slider
@@ -2152,25 +3130,41 @@ export default function IntelligenceMapping() {
       const rotation = Number(valueStr);
       const encodedLabel = encodeURIComponent(label);
       // Update popup preview image and degree label
-      const previewImg = document.getElementById(`intel-popup-preview-${encodedLabel}`) as HTMLImageElement | null;
-      const degLabel = document.getElementById(`intel-popup-deg-${encodedLabel}`) as HTMLElement | null;
+      const previewImg = document.getElementById(
+        `intel-popup-preview-${encodedLabel}`
+      ) as HTMLImageElement | null;
+      const degLabel = document.getElementById(
+        `intel-popup-deg-${encodedLabel}`
+      ) as HTMLElement | null;
       if (previewImg) previewImg.style.transform = `rotate(${rotation}deg)`;
       if (degLabel) degLabel.textContent = `${rotation}°`;
       // Update the actual map marker element
-      const markerEntry = markersRef.current.find((m: any) => m.title === label);
+      const markerEntry = markersRef.current.find(
+        (m: any) => m.title === label
+      );
       if (markerEntry?.content instanceof HTMLElement) {
-        const img = markerEntry.content.querySelector('img') as HTMLImageElement | null;
-        if (img) img.style.transform = `rotate(${rotation}deg) drop-shadow(0 2px 4px rgba(0,0,0,0.4))`;
+        const img = markerEntry.content.querySelector(
+          "img"
+        ) as HTMLImageElement | null;
+        if (img)
+          img.style.transform = `rotate(${rotation}deg) drop-shadow(0 2px 4px rgba(0,0,0,0.4))`;
       }
       // Persist to localStorage immediately
       try {
         const stored = localStorage.getItem(`runlog_intel_appearance_${label}`);
         const parsed = stored ? JSON.parse(stored) : {};
         parsed.rotation = rotation;
-        localStorage.setItem(`runlog_intel_appearance_${label}`, JSON.stringify(parsed));
-      } catch { /* ignore */ }
+        localStorage.setItem(
+          `runlog_intel_appearance_${label}`,
+          JSON.stringify(parsed)
+        );
+      } catch {
+        /* ignore */
+      }
     };
-    return () => { delete (window as any).__intelPopupRotate; };
+    return () => {
+      delete (window as any).__intelPopupRotate;
+    };
   }, []);
 
   // Move intel pin handler
@@ -2181,37 +3175,66 @@ export default function IntelligenceMapping() {
       if (!marker) return;
       const origPos = marker.position as google.maps.LatLngLiteral | null;
       if (!origPos) return;
-      const origLat = typeof (origPos as any).lat === 'function' ? (origPos as any).lat() : (origPos as any).lat;
-      const origLng = typeof (origPos as any).lng === 'function' ? (origPos as any).lng() : (origPos as any).lng;
+      const origLat =
+        typeof (origPos as any).lat === "function"
+          ? (origPos as any).lat()
+          : (origPos as any).lat;
+      const origLng =
+        typeof (origPos as any).lng === "function"
+          ? (origPos as any).lng()
+          : (origPos as any).lng;
       (marker as any).gmpDraggable = true;
       setMovingIntelLabel(label);
       setPendingIntelMoveAddress(null);
-      const dragEndListener = marker.addListener('dragend', () => {
+      const dragEndListener = marker.addListener("dragend", () => {
         const newPos = marker.position as google.maps.LatLngLiteral | null;
         if (!newPos || !geocoderRef.current) return;
-        const newLat = typeof (newPos as any).lat === 'function' ? (newPos as any).lat() : (newPos as any).lat;
-        const newLng = typeof (newPos as any).lng === 'function' ? (newPos as any).lng() : (newPos as any).lng;
-        geocoderRef.current.geocode({ location: { lat: newLat, lng: newLng } }, (results, status) => {
-          const rawAddr = (status === 'OK' && results && results[0]) ? results[0].formatted_address : `${newLat.toFixed(6)}, ${newLng.toFixed(6)}`;
-          const addr = convertGoogleAddresses(rawAddr);
-          setPendingIntelMoveAddress({ lat: newLat, lng: newLng, address: addr });
-        });
+        const newLat =
+          typeof (newPos as any).lat === "function"
+            ? (newPos as any).lat()
+            : (newPos as any).lat;
+        const newLng =
+          typeof (newPos as any).lng === "function"
+            ? (newPos as any).lng()
+            : (newPos as any).lng;
+        geocoderRef.current.geocode(
+          { location: { lat: newLat, lng: newLng } },
+          (results, status) => {
+            const rawAddr =
+              status === "OK" && results && results[0]
+                ? results[0].formatted_address
+                : `${newLat.toFixed(6)}, ${newLng.toFixed(6)}`;
+            const addr = convertGoogleAddresses(rawAddr);
+            setPendingIntelMoveAddress({
+              lat: newLat,
+              lng: newLng,
+              address: addr,
+            });
+          }
+        );
         google.maps.event.removeListener(dragEndListener);
       });
-      (window as any).__intelMoveOrigPos = { label, lat: origLat, lng: origLng };
+      (window as any).__intelMoveOrigPos = {
+        label,
+        lat: origLat,
+        lng: origLng,
+      };
     };
-    return () => { delete (window as any).__intelStartMove; };
+    return () => {
+      delete (window as any).__intelStartMove;
+    };
   }, []);
 
   // ── Stats ────────────────────────────────────────────────────────────────────
-  const targetPins = locations?.filter(l => l.type === "target_address").length ?? 0;
+  const targetPins =
+    locations?.filter(l => l.type === "target_address").length ?? 0;
   const obsPins = locations?.filter(l => l.type === "observation").length ?? 0;
 
   // ── Group live users by team for the settings panel ──────────────────────────
   const liveUsersByTeam = {
     TEAM1: [] as LiveUser[],
     TEAM2: [] as LiveUser[],
-    PTT:   [] as LiveUser[],
+    PTT: [] as LiveUser[],
     unassigned: [] as LiveUser[],
   };
   if (liveUsers) {
@@ -2244,12 +3267,14 @@ export default function IntelligenceMapping() {
   const startInlineCountdown = () => {
     // Countdown/auto-submit removed — no timer
     if (rsInlineTimerRef.current) clearTimeout(rsInlineTimerRef.current);
-    if (rsCountdownIntervalRef.current) clearInterval(rsCountdownIntervalRef.current);
+    if (rsCountdownIntervalRef.current)
+      clearInterval(rsCountdownIntervalRef.current);
   };
 
   const closeInlineField = () => {
     if (rsInlineTimerRef.current) clearTimeout(rsInlineTimerRef.current);
-    if (rsCountdownIntervalRef.current) clearInterval(rsCountdownIntervalRef.current);
+    if (rsCountdownIntervalRef.current)
+      clearInterval(rsCountdownIntervalRef.current);
     setRsInlineLabel(null);
     setRsInlineText("");
     setRsInlineCins(new Set());
@@ -2282,20 +3307,23 @@ export default function IntelligenceMapping() {
     setRsInlineTypingMode(true);
     requestAnimationFrame(() => {
       const el = rsInlineInputRef.current;
-      if (el) { el.blur(); el.focus(); }
+      if (el) {
+        el.blur();
+        el.focus();
+      }
     });
   };
 
   // Snapshot the observation text before a change is applied, so undoInlineText
   // can step back to it. Call with the pre-change value.
   const pushInlineUndo = (prevText: string) => {
-    setRsInlineUndoStack((stack) => [...stack, prevText]);
+    setRsInlineUndoStack(stack => [...stack, prevText]);
   };
 
   // Steps the observation text back one snapshot at a time — repeated taps
   // keep undoing further back, all the way to the empty starting text.
   const undoInlineText = () => {
-    setRsInlineUndoStack((stack) => {
+    setRsInlineUndoStack(stack => {
       if (stack.length === 0) return stack;
       const restored = stack[stack.length - 1];
       setRsInlineText(restored);
@@ -2331,11 +3359,20 @@ export default function IntelligenceMapping() {
       setMapQeHour(String(h12));
       setMapQeMinute(String(min).padStart(2, "0"));
       setMapQePeriod(ampm);
-      setMapQeTimeOverride(`${String(h12).padStart(2,"0")}:${String(min).padStart(2,"0")} ${ampm}`);
+      setMapQeTimeOverride(
+        `${String(h12).padStart(2, "0")}:${String(min).padStart(2, "0")} ${ampm}`
+      );
       // Default date to the RS creation date (Perth) so operators don't accidentally log on the wrong day
-      const selectedSheet = (rsSheetsData as any[] | undefined)?.find((s: any) => s.id === rsSelectedSheetId);
+      const selectedSheet = (rsSheetsData as any[] | undefined)?.find(
+        (s: any) => s.id === rsSelectedSheetId
+      );
       if (selectedSheet?.createdAt) {
-        const sheetDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Perth", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(selectedSheet.createdAt));
+        const sheetDate = new Intl.DateTimeFormat("en-CA", {
+          timeZone: "Australia/Perth",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).format(new Date(selectedSheet.createdAt));
         setMapQeRowDate(sheetDate);
       } else {
         setMapQeRowDate(_getTodayPerthYmd());
@@ -2358,7 +3395,12 @@ export default function IntelligenceMapping() {
     }
   }, [mapQeOpen, rsSelectedSheetId, rsSheetsData]);
 
-  const addQuickRsEntry = (observation: string, cinsToAttach?: Set<string> | null, timeOverride?: string | null, rowDateOverride?: string | null) => {
+  const addQuickRsEntry = (
+    observation: string,
+    cinsToAttach?: Set<string> | null,
+    timeOverride?: string | null,
+    rowDateOverride?: string | null
+  ) => {
     if (!rsSelectedSheetId) return;
     let timeStr: string;
     let totalMins: number;
@@ -2375,7 +3417,8 @@ export default function IntelligenceMapping() {
         timeStr = `${String(h12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${ampm}`;
       } else {
         const now = new Date();
-        const h24 = now.getHours(); const min = now.getMinutes();
+        const h24 = now.getHours();
+        const min = now.getMinutes();
         totalMins = h24 * 60 + min;
         const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
         timeStr = `${String(h12).padStart(2, "0")}:${String(min).padStart(2, "0")} ${h24 < 12 ? "AM" : "PM"}`;
@@ -2392,14 +3435,23 @@ export default function IntelligenceMapping() {
     // Store the CINs in a local variable captured by the mutation callback
     const cins = cinsToAttach ? Array.from(cinsToAttach) : [];
     rsCreateRow.mutate(
-      { sheetId: rsSelectedSheetId, time: timeStr, timeMinutes: totalMins, observation, rowDate: rowDateOverride ?? undefined },
+      {
+        sheetId: rsSelectedSheetId,
+        time: timeStr,
+        timeMinutes: totalMins,
+        observation,
+        rowDate: rowDateOverride ?? undefined,
+      },
       {
         onSuccess: (data, vars) => {
           const now2 = new Date();
           const h24b = now2.getHours();
           const minb = now2.getMinutes();
           const timeStr2 = `${String(h24b % 12 === 0 ? 12 : h24b % 12).padStart(2, "0")}:${String(minb).padStart(2, "0")} ${h24b < 12 ? "AM" : "PM"}`;
-          setRsLastEntry({ label: vars.observation ?? "Entry", time: timeStr2 });
+          setRsLastEntry({
+            label: vars.observation ?? "Entry",
+            time: timeStr2,
+          });
           setRsAddingRow(false);
           // Attach all selected CINs — use the locally captured variable, not the ref
           if (cins.length > 0 && (data as any)?.id) {
@@ -2411,9 +3463,12 @@ export default function IntelligenceMapping() {
           // Refetch intel pins so any new address in this observation appears on the map
           void refetchLocations();
           // Refetch entity chips so a newly-mentioned entity shows up as a chip immediately
-          if (rsSelectedSheetId) void utils.row.entityChips.invalidate({ sheetId: rsSelectedSheetId });
+          if (rsSelectedSheetId)
+            void utils.row.entityChips.invalidate({
+              sheetId: rsSelectedSheetId,
+            });
         },
-        onError: (e) => {
+        onError: e => {
           setRsAddingRow(false);
           toast.error(e.message);
         },
@@ -2422,7 +3477,10 @@ export default function IntelligenceMapping() {
   };
 
   return (
-    <div className="relative flex w-full overflow-hidden" style={{ height: "calc(100vh - 0px)" }}>
+    <div
+      className="relative flex w-full overflow-hidden"
+      style={{ height: "calc(100vh - 0px)" }}
+    >
       {/* ── Side Panel ── */}
       <div
         ref={panelRef}
@@ -2431,7 +3489,11 @@ export default function IntelligenceMapping() {
             ? "lg:rounded-none rounded-r-2xl transition-none"
             : "w-0 min-w-0 overflow-hidden transition-all duration-200"
         }`}
-        style={sidebarOpen ? { width: `${sidebarWidth}px`, minWidth: `${sidebarWidth}px` } : undefined}
+        style={
+          sidebarOpen
+            ? { width: `${sidebarWidth}px`, minWidth: `${sidebarWidth}px` }
+            : undefined
+        }
       >
         {/* Panel Header */}
         <div className="flex items-center justify-between px-4 py-3.5 border-b-2 border-border flex-shrink-0 bg-muted/20">
@@ -2440,7 +3502,12 @@ export default function IntelligenceMapping() {
             <span className="font-bold text-sm tracking-tight">Navigate</span>
           </div>
           {/* Close button: hidden on desktop (always open), visible on mobile/tablet */}
-          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl lg:hidden" onClick={() => setSidebarOpen(false)}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 rounded-xl lg:hidden"
+            onClick={() => setSidebarOpen(false)}
+          >
             <X className="h-4 w-4" />
           </Button>
         </div>
@@ -2448,14 +3515,17 @@ export default function IntelligenceMapping() {
         {/* App Navigation Menu */}
         <MapSidebarNav
           user={user}
-          onNavigate={(path) => { if (!isDesktop) setSidebarOpen(false); setLocation(path); }}
+          onNavigate={path => {
+            if (!isDesktop) setSidebarOpen(false);
+            setLocation(path);
+          }}
           navOrder={mapNavOrder}
         />
 
         {/* Resize handle — desktop only */}
         <div
           className="hidden lg:block absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 transition-colors z-10"
-          onMouseDown={(e) => {
+          onMouseDown={e => {
             e.preventDefault();
             sidebarResizingRef.current = true;
             sidebarResizeStartXRef.current = e.clientX;
@@ -2463,14 +3533,24 @@ export default function IntelligenceMapping() {
             const onMove = (me: MouseEvent) => {
               if (!sidebarResizingRef.current) return;
               const delta = me.clientX - sidebarResizeStartXRef.current;
-              const newW = Math.max(200, Math.min(480, sidebarResizeStartWidthRef.current + delta));
+              const newW = Math.max(
+                200,
+                Math.min(480, sidebarResizeStartWidthRef.current + delta)
+              );
               setSidebarWidth(newW);
             };
             const onUp = () => {
               sidebarResizingRef.current = false;
               document.removeEventListener("mousemove", onMove);
               document.removeEventListener("mouseup", onUp);
-              try { localStorage.setItem("runlog_map_sidebar_width", String(sidebarWidth)); } catch { /* ignore */ }
+              try {
+                localStorage.setItem(
+                  "runlog_map_sidebar_width",
+                  String(sidebarWidth)
+                );
+              } catch {
+                /* ignore */
+              }
             };
             document.addEventListener("mousemove", onMove);
             document.addEventListener("mouseup", onUp);
@@ -2480,11 +3560,17 @@ export default function IntelligenceMapping() {
 
       {/* ── Map Area ── */}
       <div className="flex-1 relative" onClick={handleMapAreaClick}>
-
         {/* Collapsed panel arrow tab — positioned on left edge, vertically centred, above map type controls */}
         {!sidebarOpen && (
           <button
-            onClick={(e) => { if (leftTabDraggingRef.current) { leftTabDraggingRef.current = false; return; } e.stopPropagation(); setSidebarOpen(true); }}
+            onClick={e => {
+              if (leftTabDraggingRef.current) {
+                leftTabDraggingRef.current = false;
+                return;
+              }
+              e.stopPropagation();
+              setSidebarOpen(true);
+            }}
             className="absolute left-0 z-10 flex items-center justify-center bg-card border-2 border-l-0 border-border shadow-lg hover:bg-accent active:scale-95 transition-colors cursor-grab active:cursor-grabbing select-none touch-none"
             style={{
               top: `${leftTabTop}%`,
@@ -2494,16 +3580,21 @@ export default function IntelligenceMapping() {
               borderRadius: "0 12px 12px 0",
             }}
             title="Open Navigation Menu (drag to reposition)"
-            onMouseDown={(e) => {
+            onMouseDown={e => {
               e.stopPropagation();
               const startY = e.clientY;
               const startTop = leftTabTop;
-              const parentH = (e.currentTarget.parentElement?.clientHeight ?? window.innerHeight);
+              const parentH =
+                e.currentTarget.parentElement?.clientHeight ??
+                window.innerHeight;
               let moved = false;
               const onMove = (me: MouseEvent) => {
                 const delta = me.clientY - startY;
                 if (Math.abs(delta) > 3) moved = true;
-                const newPct = Math.max(5, Math.min(95, startTop + (delta / parentH) * 100));
+                const newPct = Math.max(
+                  5,
+                  Math.min(95, startTop + (delta / parentH) * 100)
+                );
                 setLeftTabTop(newPct);
               };
               const onUp = () => {
@@ -2514,17 +3605,22 @@ export default function IntelligenceMapping() {
               document.addEventListener("mousemove", onMove);
               document.addEventListener("mouseup", onUp);
             }}
-            onTouchStart={(e) => {
+            onTouchStart={e => {
               e.stopPropagation();
               const touch = e.touches[0];
               const startY = touch.clientY;
               const startTop = leftTabTop;
-              const parentH = (e.currentTarget.parentElement?.clientHeight ?? window.innerHeight);
+              const parentH =
+                e.currentTarget.parentElement?.clientHeight ??
+                window.innerHeight;
               let moved = false;
               const onMove = (te: TouchEvent) => {
                 const delta = te.touches[0].clientY - startY;
                 if (Math.abs(delta) > 3) moved = true;
-                const newPct = Math.max(5, Math.min(95, startTop + (delta / parentH) * 100));
+                const newPct = Math.max(
+                  5,
+                  Math.min(95, startTop + (delta / parentH) * 100)
+                );
                 setLeftTabTop(newPct);
               };
               const onEnd = () => {
@@ -2545,31 +3641,37 @@ export default function IntelligenceMapping() {
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/60 backdrop-blur-sm pointer-events-none">
             <div className="flex flex-col items-center gap-3">
               <Spinner className="h-8 w-8" />
-              <p className="text-sm text-muted-foreground">Loading intelligence locations…</p>
+              <p className="text-sm text-muted-foreground">
+                Loading intelligence locations…
+              </p>
             </div>
           </div>
         )}
 
         {/* Empty state — only show when there are also no custom markers, and user hasn't dismissed it */}
-        {!locsLoading && !dismissedNoLocs && locations && locations.length === 0 && !(customMarkers && customMarkers.length > 0) && (
-          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 pointer-events-auto">
-            <div className="relative bg-card/90 backdrop-blur-sm border border-border rounded-lg px-4 py-2.5 shadow-md text-center max-w-[260px] flex items-center gap-2.5">
-              <MapPin className="h-4 w-4 text-muted-foreground/50 flex-shrink-0" />
-              <p className="text-[11px] text-muted-foreground leading-tight">
-                {selectedOpIds.length > 0 || selectedTargetIds.length > 0
-                  ? "No locations found for selected filters."
-                  : "Select operations or targets in Map Settings to show locations."}
-              </p>
-              <button
-                onClick={() => setDismissedNoLocs(true)}
-                className="flex-shrink-0 ml-1 text-muted-foreground/60 hover:text-foreground transition-colors"
-                aria-label="Dismiss"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
+        {!locsLoading &&
+          !dismissedNoLocs &&
+          locations &&
+          locations.length === 0 &&
+          !(customMarkers && customMarkers.length > 0) && (
+            <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 pointer-events-auto">
+              <div className="relative bg-card/90 backdrop-blur-sm border border-border rounded-lg px-4 py-2.5 shadow-md text-center max-w-[260px] flex items-center gap-2.5">
+                <MapPin className="h-4 w-4 text-muted-foreground/50 flex-shrink-0" />
+                <p className="text-[11px] text-muted-foreground leading-tight">
+                  {selectedOpIds.length > 0 || selectedTargetIds.length > 0
+                    ? "No locations found for selected filters."
+                    : "Select operations or targets in Map Settings to show locations."}
+                </p>
+                <button
+                  onClick={() => setDismissedNoLocs(true)}
+                  className="flex-shrink-0 ml-1 text-muted-foreground/60 hover:text-foreground transition-colors"
+                  aria-label="Dismiss"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
         {/* Placement mode indicator */}
         {placingMarker && (
@@ -2580,8 +3682,12 @@ export default function IntelligenceMapping() {
 
         <div
           className="w-full h-full"
-          style={mapDarkMode ? { filter: "brightness(0.6) invert(1) hue-rotate(180deg)" } : undefined}
-          onTouchStart={(e) => {
+          style={
+            mapDarkMode
+              ? { filter: "brightness(0.6) invert(1) hue-rotate(180deg)" }
+              : undefined
+          }
+          onTouchStart={e => {
             if (e.touches.length !== 1) return;
             const touch = e.touches[0];
             longPressTimerRef.current = setTimeout(() => {
@@ -2603,17 +3709,29 @@ export default function IntelligenceMapping() {
               const lat = ne.lat() - (y / mapHeight) * (ne.lat() - sw.lat());
               // Reverse geocode, then show action chooser
               const geocoder = new google.maps.Geocoder();
-              geocoder.geocode({ location: { lat, lng } }, (results, status) => {
-                const addr = (status === "OK" && results && results[0]) ? results[0].formatted_address : `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-                setActionChooser({ lat, lng, address: convertGoogleAddresses(addr) });
-              });
+              geocoder.geocode(
+                { location: { lat, lng } },
+                (results, status) => {
+                  const addr =
+                    status === "OK" && results && results[0]
+                      ? results[0].formatted_address
+                      : `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+                  setActionChooser({
+                    lat,
+                    lng,
+                    address: convertGoogleAddresses(addr),
+                  });
+                }
+              );
             }, 600);
           }}
           onTouchEnd={() => {
-            if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+            if (longPressTimerRef.current)
+              clearTimeout(longPressTimerRef.current);
           }}
           onTouchMove={() => {
-            if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+            if (longPressTimerRef.current)
+              clearTimeout(longPressTimerRef.current);
           }}
         >
           <MapView
@@ -2632,10 +3750,12 @@ export default function IntelligenceMapping() {
             {/* Centre on me */}
             <button
               title="Centre on my location"
-              onClick={(e) => {
+              onClick={e => {
                 e.stopPropagation();
                 if (!ownPositionRef.current) {
-                  toast.error("Location not available — enable location sharing first");
+                  toast.error(
+                    "Location not available — enable location sharing first"
+                  );
                   return;
                 }
                 mapRef.current?.panTo(ownPositionRef.current);
@@ -2647,11 +3767,15 @@ export default function IntelligenceMapping() {
             </button>
             {/* Follow me toggle */}
             <button
-              title={followMode ? "Stop following my location" : "Follow my location"}
-              onClick={(e) => {
+              title={
+                followMode ? "Stop following my location" : "Follow my location"
+              }
+              onClick={e => {
                 e.stopPropagation();
                 if (!followMode && !ownPositionRef.current) {
-                  toast.error("Location not available — enable location sharing first");
+                  toast.error(
+                    "Location not available — enable location sharing first"
+                  );
                   return;
                 }
                 const next = !followMode;
@@ -2668,18 +3792,35 @@ export default function IntelligenceMapping() {
               }`}
               style={{ width: "40px", height: "40px" }}
             >
-              <Navigation2 className={`w-5 h-5 ${ followMode ? "text-white" : "text-sky-600" }`} />
+              <Navigation2
+                className={`w-5 h-5 ${followMode ? "text-white" : "text-sky-600"}`}
+              />
             </button>
           </div>
 
-          {/* Floating address search bar — top-left, next to Map/Satellite toggle */}
+          {/* Floating address search bar — top-left, next to Map/Satellite toggle.
+              The toggle is Google's own native mapTypeControl (see Map.tsx,
+              pinned TOP_RIGHT by the Maps SDK itself, not something this app
+              positions) — it doesn't shrink or coordinate with anything on
+              our side, so on a narrow screen a fixed 260px search bar starting
+              at left:10px reaches far enough right to physically collide with
+              it. Capping maxWidth to leave the toggle's own ~150px reserved
+              clearance keeps them apart at any viewport width without
+              touching Map.tsx or a resize listener. */}
           <div
             className="absolute z-20 pointer-events-auto"
             style={{ top: "10px", left: "10px" }}
-            onClick={(e) => e.stopPropagation()}
+            onClick={e => e.stopPropagation()}
           >
             <div className="relative">
-              <div className="flex items-center bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden" style={{ height: "40px", minWidth: "200px", maxWidth: "260px" }}>
+              <div
+                className="flex items-center bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden"
+                style={{
+                  height: "40px",
+                  minWidth: "160px",
+                  maxWidth: "min(260px, calc(100vw - 180px))",
+                }}
+              >
                 <Search className="w-4 h-4 text-gray-400 ml-3 shrink-0" />
                 <input
                   type="text"
@@ -2687,29 +3828,42 @@ export default function IntelligenceMapping() {
                   placeholder="Search address…"
                   className="flex-1 px-2 text-sm outline-none bg-transparent text-gray-800 placeholder-gray-400"
                   style={{ height: "40px" }}
-                  onChange={(e) => {
+                  onChange={e => {
                     const val = e.target.value;
                     setAddrSearch(val);
-                    if (addrSearchDebounceRef.current) clearTimeout(addrSearchDebounceRef.current);
-                    if (!val.trim()) { setAddrSuggestions([]); setAddrSearchOpen(false); return; }
+                    if (addrSearchDebounceRef.current)
+                      clearTimeout(addrSearchDebounceRef.current);
+                    if (!val.trim()) {
+                      setAddrSuggestions([]);
+                      setAddrSearchOpen(false);
+                      return;
+                    }
                     addrSearchDebounceRef.current = setTimeout(() => {
                       if (!autocompleteServiceRef.current) return;
                       const mapCentre = mapRef.current?.getCenter();
-                      const addrRequest: google.maps.places.AutocompletionRequest = {
-                        input: val,
-                        componentRestrictions: { country: "au" },
-                        types: ["address"],
-                      };
+                      const addrRequest: google.maps.places.AutocompletionRequest =
+                        {
+                          input: val,
+                          componentRestrictions: { country: "au" },
+                          types: ["address"],
+                        };
                       if (mapCentre) {
                         addrRequest.locationBias = new google.maps.Circle({
-                          center: { lat: mapCentre.lat(), lng: mapCentre.lng() },
+                          center: {
+                            lat: mapCentre.lat(),
+                            lng: mapCentre.lng(),
+                          },
                           radius: 50000, // 50 km bias around current map centre
                         });
                       }
                       autocompleteServiceRef.current.getPlacePredictions(
                         addrRequest,
                         (predictions, status) => {
-                          if (status === google.maps.places.PlacesServiceStatus.OK && predictions) {
+                          if (
+                            status ===
+                              google.maps.places.PlacesServiceStatus.OK &&
+                            predictions
+                          ) {
                             setAddrSuggestions(predictions);
                             setAddrSearchOpen(true);
                           } else {
@@ -2720,23 +3874,40 @@ export default function IntelligenceMapping() {
                       );
                     }, 300);
                   }}
-                  onFocus={() => { if (addrSuggestions.length > 0) setAddrSearchOpen(true); }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Escape") { setAddrSearch(""); setAddrSuggestions([]); setAddrSearchOpen(false); }
+                  onFocus={() => {
+                    if (addrSuggestions.length > 0) setAddrSearchOpen(true);
+                  }}
+                  onKeyDown={e => {
+                    if (e.key === "Escape") {
+                      setAddrSearch("");
+                      setAddrSuggestions([]);
+                      setAddrSearchOpen(false);
+                    }
                   }}
                 />
                 {addrSearch && (
                   <button
                     className="mr-2 text-gray-400 hover:text-gray-600"
-                    onClick={() => { setAddrSearch(""); setAddrSuggestions([]); setAddrSearchOpen(false); if (addrSearchPinRef.current) { addrSearchPinRef.current.map = null; addrSearchPinRef.current = null; } }}
+                    onClick={() => {
+                      setAddrSearch("");
+                      setAddrSuggestions([]);
+                      setAddrSearchOpen(false);
+                      if (addrSearchPinRef.current) {
+                        addrSearchPinRef.current.map = null;
+                        addrSearchPinRef.current = null;
+                      }
+                    }}
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
                 )}
               </div>
               {addrSearchOpen && addrSuggestions.length > 0 && (
-                <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden" style={{ minWidth: "260px", maxWidth: "320px", zIndex: 30 }}>
-                  {addrSuggestions.map((s) => (
+                <div
+                  className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden"
+                  style={{ minWidth: "260px", maxWidth: "320px", zIndex: 30 }}
+                >
+                  {addrSuggestions.map(s => (
                     <button
                       key={s.place_id}
                       className="w-full text-left px-3 py-2.5 text-sm text-gray-800 hover:bg-gray-50 border-b border-gray-100 last:border-0 flex items-start gap-2"
@@ -2746,28 +3917,40 @@ export default function IntelligenceMapping() {
                         setAddrSearchOpen(false);
                         // Geocode the selected place and pan map
                         if (!geocoderRef.current || !mapRef.current) return;
-                        geocoderRef.current.geocode({ placeId: s.place_id }, (results, status) => {
-                          if (status === "OK" && results && results[0]) {
-                            const loc = results[0].geometry.location;
-                            mapRef.current!.panTo(loc);
-                            mapRef.current!.setZoom(17);
-                            // Drop a temporary search pin
-                            if (addrSearchPinRef.current) { addrSearchPinRef.current.map = null; }
-                            const pinEl = document.createElement("div");
-                            pinEl.innerHTML = `<div style="width:36px;height:36px;background:#4285f4;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.35)"></div>`;
-                            const pin = new google.maps.marker.AdvancedMarkerElement({
-                              map: mapRef.current!,
-                              position: loc,
-                              content: pinEl,
-                              title: s.description,
-                            });
-                            addrSearchPinRef.current = pin;
-                            // Clicking the blue pin shows the action chooser
-                            pin.addListener("gmp-click", () => {
-                              setActionChooser({ lat: loc.lat(), lng: loc.lng(), address: convertGoogleAddresses(s.description) });
-                            });
+                        geocoderRef.current.geocode(
+                          { placeId: s.place_id },
+                          (results, status) => {
+                            if (status === "OK" && results && results[0]) {
+                              const loc = results[0].geometry.location;
+                              mapRef.current!.panTo(loc);
+                              mapRef.current!.setZoom(17);
+                              // Drop a temporary search pin
+                              if (addrSearchPinRef.current) {
+                                addrSearchPinRef.current.map = null;
+                              }
+                              const pinEl = document.createElement("div");
+                              pinEl.innerHTML = `<div style="width:36px;height:36px;background:#4285f4;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.35)"></div>`;
+                              const pin =
+                                new google.maps.marker.AdvancedMarkerElement({
+                                  map: mapRef.current!,
+                                  position: loc,
+                                  content: pinEl,
+                                  title: s.description,
+                                });
+                              addrSearchPinRef.current = pin;
+                              // Clicking the blue pin shows the action chooser
+                              pin.addListener("gmp-click", () => {
+                                setActionChooser({
+                                  lat: loc.lat(),
+                                  lng: loc.lng(),
+                                  address: convertGoogleAddresses(
+                                    s.description
+                                  ),
+                                });
+                              });
+                            }
                           }
-                        });
+                        );
                       }}
                     >
                       <MapPin className="w-3.5 h-3.5 text-gray-400 mt-0.5 shrink-0" />
@@ -2783,7 +3966,14 @@ export default function IntelligenceMapping() {
         {/* RS Actions pane toggle tab — right edge, draggable */}
         {!rsActionsPaneOpen && (
           <button
-            onClick={(e) => { if (rightTabDraggingRef.current) { rightTabDraggingRef.current = false; return; } e.stopPropagation(); setRsActionsPaneOpen(true); }}
+            onClick={e => {
+              if (rightTabDraggingRef.current) {
+                rightTabDraggingRef.current = false;
+                return;
+              }
+              e.stopPropagation();
+              setRsActionsPaneOpen(true);
+            }}
             className="absolute right-0 z-10 flex items-center justify-center bg-card border-2 border-r-0 border-border shadow-lg hover:bg-accent active:scale-95 transition-colors cursor-grab active:cursor-grabbing select-none touch-none"
             style={{
               top: `${rightTabTop}%`,
@@ -2793,16 +3983,21 @@ export default function IntelligenceMapping() {
               borderRadius: "12px 0 0 12px",
             }}
             title="Open Map Settings (drag to reposition)"
-            onMouseDown={(e) => {
+            onMouseDown={e => {
               e.stopPropagation();
               const startY = e.clientY;
               const startTop = rightTabTop;
-              const parentH = (e.currentTarget.parentElement?.clientHeight ?? window.innerHeight);
+              const parentH =
+                e.currentTarget.parentElement?.clientHeight ??
+                window.innerHeight;
               let moved = false;
               const onMove = (me: MouseEvent) => {
                 const delta = me.clientY - startY;
                 if (Math.abs(delta) > 3) moved = true;
-                const newPct = Math.max(5, Math.min(95, startTop + (delta / parentH) * 100));
+                const newPct = Math.max(
+                  5,
+                  Math.min(95, startTop + (delta / parentH) * 100)
+                );
                 setRightTabTop(newPct);
               };
               const onUp = () => {
@@ -2813,17 +4008,22 @@ export default function IntelligenceMapping() {
               document.addEventListener("mousemove", onMove);
               document.addEventListener("mouseup", onUp);
             }}
-            onTouchStart={(e) => {
+            onTouchStart={e => {
               e.stopPropagation();
               const touch = e.touches[0];
               const startY = touch.clientY;
               const startTop = rightTabTop;
-              const parentH = (e.currentTarget.parentElement?.clientHeight ?? window.innerHeight);
+              const parentH =
+                e.currentTarget.parentElement?.clientHeight ??
+                window.innerHeight;
               let moved = false;
               const onMove = (te: TouchEvent) => {
                 const delta = te.touches[0].clientY - startY;
                 if (Math.abs(delta) > 3) moved = true;
-                const newPct = Math.max(5, Math.min(95, startTop + (delta / parentH) * 100));
+                const newPct = Math.max(
+                  5,
+                  Math.min(95, startTop + (delta / parentH) * 100)
+                );
                 setRightTabTop(newPct);
               };
               const onEnd = () => {
@@ -2850,18 +4050,27 @@ export default function IntelligenceMapping() {
             className={`pointer-events-auto flex items-center gap-2 lg:gap-3 px-2 py-1.5 rounded-3xl ${
               pillBarDraggingRef.current ? "cursor-grabbing" : "cursor-grab"
             } select-none touch-none`}
-            onMouseDown={(e) => {
+            onMouseDown={e => {
               // Long-press to drag on desktop
               const startY = e.clientY;
               const startTop = pillBarTop;
-              const parentH = (e.currentTarget.parentElement?.parentElement?.clientHeight ?? window.innerHeight);
+              const parentH =
+                e.currentTarget.parentElement?.parentElement?.clientHeight ??
+                window.innerHeight;
               pillBarIsDraggingRef.current = false;
               pillBarLongPressRef.current = setTimeout(() => {
                 pillBarDraggingRef.current = true;
                 const onMove = (me: MouseEvent) => {
                   const delta = me.clientY - startY;
-                  if (Math.abs(delta) > 3) { pillBarIsDraggingRef.current = true; }
-                  setPillBarTop(Math.max(5, Math.min(95, startTop + (delta / parentH) * 100)));
+                  if (Math.abs(delta) > 3) {
+                    pillBarIsDraggingRef.current = true;
+                  }
+                  setPillBarTop(
+                    Math.max(
+                      5,
+                      Math.min(95, startTop + (delta / parentH) * 100)
+                    )
+                  );
                 };
                 const onUp = () => {
                   pillBarDraggingRef.current = false;
@@ -2872,67 +4081,107 @@ export default function IntelligenceMapping() {
                 document.addEventListener("mouseup", onUp);
               }, 300);
               const onUp = () => {
-                if (pillBarLongPressRef.current) clearTimeout(pillBarLongPressRef.current);
+                if (pillBarLongPressRef.current)
+                  clearTimeout(pillBarLongPressRef.current);
                 document.removeEventListener("mouseup", onUp);
               };
               document.addEventListener("mouseup", onUp);
             }}
-            onTouchStart={(e) => {
+            onTouchStart={e => {
               const touch = e.touches[0];
               const startY = touch.clientY;
               const startTop = pillBarTop;
-              const parentH = (e.currentTarget.parentElement?.parentElement?.clientHeight ?? window.innerHeight);
+              const parentH =
+                e.currentTarget.parentElement?.parentElement?.clientHeight ??
+                window.innerHeight;
               pillBarIsDraggingRef.current = false;
               pillBarLongPressRef.current = setTimeout(() => {
                 pillBarDraggingRef.current = true;
                 const onMove = (te: TouchEvent) => {
                   const delta = te.touches[0].clientY - startY;
-                  if (Math.abs(delta) > 3) { pillBarIsDraggingRef.current = true; }
-                  setPillBarTop(Math.max(5, Math.min(95, startTop + (delta / parentH) * 100)));
+                  if (Math.abs(delta) > 3) {
+                    pillBarIsDraggingRef.current = true;
+                  }
+                  setPillBarTop(
+                    Math.max(
+                      5,
+                      Math.min(95, startTop + (delta / parentH) * 100)
+                    )
+                  );
                 };
                 const onEnd = () => {
                   pillBarDraggingRef.current = false;
                   document.removeEventListener("touchmove", onMove);
                   document.removeEventListener("touchend", onEnd);
                 };
-                document.addEventListener("touchmove", onMove, { passive: true });
+                document.addEventListener("touchmove", onMove, {
+                  passive: true,
+                });
                 document.addEventListener("touchend", onEnd);
               }, 300);
               const onEnd = () => {
-                if (pillBarLongPressRef.current) clearTimeout(pillBarLongPressRef.current);
+                if (pillBarLongPressRef.current)
+                  clearTimeout(pillBarLongPressRef.current);
                 document.removeEventListener("touchend", onEnd);
               };
               document.addEventListener("touchend", onEnd);
             }}
           >
-            {/* Home pill (all devices) */}
+            {/* Home pill (all devices) — solid filled chip (not translucent) so
+                it stays legible over busy satellite imagery, matching the
+                other opaque on-map markers (e.g. the pink custom marker pin).
+                Lighter -500 shade instead of -700 for a softer look, -700
+                border keeps the pill defined against light terrain. */}
             <button
-              onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } setLocation("/"); }}
-              className="flex flex-col items-center justify-center gap-1 px-5 py-2.5 rounded-2xl shadow-lg border bg-slate-600 border-slate-500 hover:bg-slate-500 active:scale-95 transition-all min-w-[80px]"
+              onClick={e => {
+                if (pillBarIsDraggingRef.current) {
+                  e.preventDefault();
+                  return;
+                }
+                setLocation("/");
+              }}
+              className="flex flex-col items-center justify-center gap-1 px-5 py-2.5 rounded-2xl shadow-lg border transition-all w-20 text-white border-slate-700 bg-slate-500 hover:bg-slate-400 active:scale-95"
               title="Home"
             >
-              <Home className="h-5 w-5 flex-shrink-0 text-white" />
-              <span className="text-[11px] font-semibold leading-none text-white">Home</span>
+              <Home className="h-5 w-5 flex-shrink-0" />
+              <span className="text-[11px] font-semibold leading-none">
+                Home
+              </span>
             </button>
 
             {/* Active RS pill */}
             {(() => {
-              const activeSheet = rsSelectedSheetId && rsSheetsData
-                ? (rsSheetsData as any[]).find((s: any) => s.id === rsSelectedSheetId)
-                : null;
+              const activeSheet =
+                rsSelectedSheetId && rsSheetsData
+                  ? (rsSheetsData as any[]).find(
+                      (s: any) => s.id === rsSelectedSheetId
+                    )
+                  : null;
               return (
                 <button
                   disabled={!activeSheet}
-                  onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } if (activeSheet) setLocation(`/sheet/${rsSelectedSheetId}`); }}
+                  onClick={e => {
+                    if (pillBarIsDraggingRef.current) {
+                      e.preventDefault();
+                      return;
+                    }
+                    if (activeSheet) setLocation(`/sheet/${rsSelectedSheetId}`);
+                  }}
                   className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all min-w-[80px] px-5 py-2.5 ${
                     activeSheet
-                      ? "bg-blue-700 border-blue-600 hover:bg-blue-600 active:scale-95 cursor-pointer"
-                      : "bg-blue-900/50 border-blue-800/50 cursor-default opacity-50"
+                      ? "text-white border-blue-700 bg-blue-500 hover:bg-blue-400 active:scale-95 cursor-pointer"
+                      : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"
                   }`}
-                  title={activeSheet ? "Open active running sheet" : "No running sheet selected"}
+                  title={
+                    activeSheet
+                      ? "Open active running sheet"
+                      : "No running sheet selected"
+                  }
                 >
-                  <ClipboardList className={`h-5 w-5 flex-shrink-0 ${activeSheet ? "text-white" : "text-white/40"}`} />
-                  <span className={`text-[11px] font-semibold leading-none ${activeSheet ? "text-white" : "text-white/40"}`}>Active RS</span>
+                  <ClipboardList className="h-5 w-5 flex-shrink-0" />
+                  <span className="text-[11px] font-semibold leading-none">
+                    Active RS
+                  </span>
                 </button>
               );
             })()}
@@ -2943,59 +4192,108 @@ export default function IntelligenceMapping() {
               return (
                 <button
                   disabled={!hasSheet}
-                  onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } if (hasSheet) setMapQeOpen(true); }}
+                  onClick={e => {
+                    if (pillBarIsDraggingRef.current) {
+                      e.preventDefault();
+                      return;
+                    }
+                    if (hasSheet) setMapQeOpen(true);
+                  }}
                   className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all min-w-[80px] px-5 py-2.5 ${
                     hasSheet
-                      ? "bg-emerald-700 border-emerald-600 hover:bg-emerald-600 active:scale-95 cursor-pointer"
-                      : "bg-emerald-900/50 border-emerald-800/50 cursor-default opacity-50"
+                      ? "text-white border-emerald-700 bg-emerald-500 hover:bg-emerald-400 active:scale-95 cursor-pointer"
+                      : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"
                   }`}
-                  title={hasSheet ? "RS Quick Entry" : "Select a running sheet first"}
+                  title={
+                    hasSheet ? "RS Quick Entry" : "Select a running sheet first"
+                  }
                 >
-                  <FileText className={`h-5 w-5 flex-shrink-0 ${hasSheet ? "text-white" : "text-white/40"}`} />
-                  <span className={`text-[11px] font-semibold leading-none ${hasSheet ? "text-white" : "text-white/40"}`}>RS Entry</span>
+                  <FileText className="h-5 w-5 flex-shrink-0" />
+                  <span className="text-[11px] font-semibold leading-none">
+                    RS Entry
+                  </span>
                 </button>
               );
             })()}
 
-            {/* Intel Profiles pill */}
+            {/* Intel pill */}
             <button
-              onClick={(e) => { if (pillBarIsDraggingRef.current) { e.preventDefault(); return; } setLocation("/intelligence"); }}
-              className="flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border bg-violet-700 border-violet-600 hover:bg-violet-600 active:scale-95 transition-all min-w-[80px] px-5 py-2.5"
+              onClick={e => {
+                if (pillBarIsDraggingRef.current) {
+                  e.preventDefault();
+                  return;
+                }
+                setLocation("/intelligence");
+              }}
+              className="flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all w-20 px-5 py-2.5 text-white border-violet-700 bg-violet-500 hover:bg-violet-400 active:scale-95"
               title="Intel Profiles"
             >
-              <FolderSearch className="h-5 w-5 flex-shrink-0 text-white" />
-              <span className="text-[11px] font-semibold leading-none text-white">Intel Profiles</span>
+              <FolderSearch className="h-5 w-5 flex-shrink-0" />
+              <span className="text-[11px] font-semibold leading-none">
+                Intel
+              </span>
             </button>
           </div>
         </div>
-
       </div>
 
-      {/* ── RS Actions Right Pane ── */}
+      {/* ── RS Actions Right Pane ──
+           z-30 + full viewport width on mobile: the map's floating overlays
+           (search bar, locate buttons, bottom pill bar) are absolutely
+           positioned within Map Area and don't shrink/clip with it, so on a
+           narrow screen a partial-width pane still leaves them spilling over
+           its content underneath. The left pane never showed this because it
+           opens flush against the same top-left corner those specific
+           overlays already anchor to, so it happens to cover them outright;
+           the right pane has no such natural overlap, so it needs to be
+           explicit here — full width (nothing beside it to spill into) and a
+           z-index above the overlays' z-20 (nothing paints over it either),
+           giving it the same "full vision" the left pane already has. */}
       <div
         className={`relative flex flex-col border-l-2 border-border bg-card shadow-2xl flex-shrink-0 ${
+          rsActionsPaneOpen ? "z-30" : ""
+        } ${
           paneResizeDraggingRef.current ? "" : "transition-all duration-200"
         } ${rsActionsPaneOpen ? "rounded-l-2xl" : "overflow-hidden"}`}
         style={{
-          width: rsActionsPaneOpen ? `${activePaneWidth}px` : 0,
-          minWidth: rsActionsPaneOpen ? `${PANE_MIN_WIDTH}px` : 0,
+          width: rsActionsPaneOpen
+            ? isMobile
+              ? "100vw"
+              : `${activePaneWidth}px`
+            : 0,
+          minWidth: rsActionsPaneOpen
+            ? isMobile
+              ? "100vw"
+              : `${PANE_MIN_WIDTH}px`
+            : 0,
         }}
       >
-        {/* Resize handle — drag left edge to widen/narrow the pane (mouse or touch) */}
-        {rsActionsPaneOpen && (
+        {/* Resize handle — drag left edge to widen/narrow the pane (mouse or touch). Not on mobile: the pane is full-width there, nothing to resize against. */}
+        {rsActionsPaneOpen && !isMobile && (
           <div
             className="absolute -left-1.5 top-0 bottom-0 w-3 z-10 flex items-center justify-center cursor-col-resize touch-none select-none group"
             title="Drag to resize"
-            onMouseDown={(e) => {
+            onMouseDown={e => {
               e.stopPropagation();
               paneResizeDraggingRef.current = true;
               const startX = e.clientX;
               const startWidth = activePaneWidth;
               const onMove = (me: MouseEvent) => {
                 const delta = startX - me.clientX;
-                const maxW = Math.max(PANE_MIN_WIDTH, Math.min(720, window.innerWidth - 320));
-                const next = Math.min(maxW, Math.max(PANE_MIN_WIDTH, startWidth + delta));
-                if (paneTargetProfileId !== null) setPanelWidthProfile(next); else setPanelWidthNormal(next);
+                const maxW = Math.max(
+                  PANE_MIN_WIDTH,
+                  Math.min(720, window.innerWidth - 320)
+                );
+                const next = Math.min(
+                  maxW,
+                  Math.max(PANE_MIN_WIDTH, startWidth + delta)
+                );
+                if (
+                  paneTargetProfileId !== null ||
+                  paneOperationProfileId !== null
+                )
+                  setPanelWidthProfile(next);
+                else setPanelWidthNormal(next);
               };
               const onUp = () => {
                 paneResizeDraggingRef.current = false;
@@ -3005,16 +4303,27 @@ export default function IntelligenceMapping() {
               document.addEventListener("mousemove", onMove);
               document.addEventListener("mouseup", onUp);
             }}
-            onTouchStart={(e) => {
+            onTouchStart={e => {
               e.stopPropagation();
               paneResizeDraggingRef.current = true;
               const startX = e.touches[0].clientX;
               const startWidth = activePaneWidth;
               const onMove = (te: TouchEvent) => {
                 const delta = startX - te.touches[0].clientX;
-                const maxW = Math.max(PANE_MIN_WIDTH, Math.min(720, window.innerWidth - 320));
-                const next = Math.min(maxW, Math.max(PANE_MIN_WIDTH, startWidth + delta));
-                if (paneTargetProfileId !== null) setPanelWidthProfile(next); else setPanelWidthNormal(next);
+                const maxW = Math.max(
+                  PANE_MIN_WIDTH,
+                  Math.min(720, window.innerWidth - 320)
+                );
+                const next = Math.min(
+                  maxW,
+                  Math.max(PANE_MIN_WIDTH, startWidth + delta)
+                );
+                if (
+                  paneTargetProfileId !== null ||
+                  paneOperationProfileId !== null
+                )
+                  setPanelWidthProfile(next);
+                else setPanelWidthNormal(next);
               };
               const onEnd = () => {
                 paneResizeDraggingRef.current = false;
@@ -3038,15 +4347,39 @@ export default function IntelligenceMapping() {
             >
               <ChevronLeft className="h-4 w-4 text-violet-500 flex-shrink-0" />
               <User className="h-4 w-4 text-violet-500 flex-shrink-0" />
-              <span className="font-bold text-sm tracking-tight truncate">Target Profile</span>
+              <span className="font-bold text-sm tracking-tight truncate">
+                Target Profile
+              </span>
+            </button>
+          ) : paneOperationProfileId !== null ? (
+            <button
+              onClick={() => setPaneOperationProfileId(null)}
+              className="flex items-center gap-2 min-w-0 flex-1 text-left hover:opacity-75 transition-opacity"
+            >
+              <ChevronLeft className="h-4 w-4 text-blue-500 flex-shrink-0" />
+              <FolderOpen className="h-4 w-4 text-blue-500 flex-shrink-0" />
+              <span className="font-bold text-sm tracking-tight truncate">
+                Operation Profile
+              </span>
             </button>
           ) : (
             <div className="flex items-center gap-2">
               <Settings2 className="h-4 w-4 text-primary" />
-              <span className="font-bold text-sm tracking-tight">Map Settings</span>
+              <span className="font-bold text-sm tracking-tight">
+                Map Settings
+              </span>
             </div>
           )}
-          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl flex-shrink-0" onClick={() => { setRsActionsPaneOpen(false); setPaneTargetProfileId(null); }}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 rounded-xl flex-shrink-0"
+            onClick={() => {
+              setRsActionsPaneOpen(false);
+              setPaneTargetProfileId(null);
+              setPaneOperationProfileId(null);
+            }}
+          >
             <X className="h-4 w-4" />
           </Button>
         </div>
@@ -3058,344 +4391,600 @@ export default function IntelligenceMapping() {
               <TargetProfileContent targetId={paneTargetProfileId} />
             </DocumentZoomViewer>
           </div>
+        ) : paneOperationProfileId !== null ? (
+          <div className="flex-1 overflow-hidden">
+            <DocumentZoomViewer contentWidth={768} className="w-full h-full">
+              <OperationProfileContent operationId={paneOperationProfileId} />
+            </DocumentZoomViewer>
+          </div>
         ) : (
-        <div className="flex-1 overflow-y-auto" onClick={() => { if (rsInlineLabel) closeInlineField(); }}>
-
-          {/* ── MAP THEME toggle ── */}
-          <div className="px-3 py-3 border-b border-border">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Map Theme</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={`text-[11px] font-medium transition-colors ${!mapDarkMode ? "text-foreground" : "text-muted-foreground"}`}>Light</span>
-                <Switch
-                  checked={mapDarkMode}
-                  onCheckedChange={setMapDarkMode}
-                  className="scale-90"
-                />
-                <span className={`text-[11px] font-medium transition-colors ${mapDarkMode ? "text-foreground" : "text-muted-foreground"}`}>Dark</span>
+          <div
+            className="flex-1 overflow-y-auto"
+            onClick={() => {
+              if (rsInlineLabel) closeInlineField();
+            }}
+          >
+            {/* ── MAP THEME toggle ── */}
+            <div className="px-3 py-3 border-b border-border">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                    Map Theme
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`text-[11px] font-medium transition-colors ${!mapDarkMode ? "text-foreground" : "text-muted-foreground"}`}
+                  >
+                    Light
+                  </span>
+                  <Switch
+                    checked={mapDarkMode}
+                    onCheckedChange={setMapDarkMode}
+                    className="scale-90"
+                  />
+                  <span
+                    className={`text-[11px] font-medium transition-colors ${mapDarkMode ? "text-foreground" : "text-muted-foreground"}`}
+                  >
+                    Dark
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* ── OPERATIONS section ── */}
-          <div className="px-3 py-3 border-b border-border">
-            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-2">Operations</span>
-            {opsLoading ? (
-              <div className="flex items-center justify-center py-3"><Spinner className="h-4 w-4" /></div>
-            ) : !operations || operations.length === 0 ? (
-              <p className="text-xs text-muted-foreground text-center py-3">No operations found.</p>
-            ) : (
-              <Popover open={opsDropdownOpen} onOpenChange={setOpsDropdownOpen}>
-                <PopoverTrigger asChild>
-                  <button className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border-2 border-border bg-background hover:bg-accent/50 active:scale-[0.98] transition-all text-left">
-                    <span className="text-xs text-foreground truncate flex-1">
-                      {selectedOpIds.length === 0
-                        ? "Select operations…"
-                        : selectedOpIds.length === (operations as any[]).length
-                        ? "All operations"
-                        : (operations as any[]).filter((op: any) => selectedOpIds.includes(op.id)).map((op: any) => op.name).join(", ")}
-                    </span>
-                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent className="w-72 p-2 rounded-xl border-2 border-border shadow-xl" align="end">
-                  <div className="flex items-center justify-between px-1 pb-2 border-b border-border mb-1">
-                    <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Select Operations</span>
-                    <div className="flex gap-2">
-                      <button onClick={selectAllOps} className="text-[10px] text-blue-400 hover:text-blue-300 font-semibold">All</button>
-                      <button onClick={clearAll} className="text-[10px] text-muted-foreground hover:text-foreground font-semibold">Clear</button>
+            {/* ── OPERATIONS section ── */}
+            <div className="px-3 py-3 border-b border-border">
+              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-2">
+                Operations
+              </span>
+              {opsLoading ? (
+                <div className="flex items-center justify-center py-3">
+                  <Spinner className="h-4 w-4" />
+                </div>
+              ) : !operations || operations.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-3">
+                  No operations found.
+                </p>
+              ) : (
+                <Popover
+                  open={opsDropdownOpen}
+                  onOpenChange={setOpsDropdownOpen}
+                >
+                  <PopoverTrigger asChild>
+                    <button className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border-2 border-border bg-background hover:bg-accent/50 active:scale-[0.98] transition-all text-left">
+                      <span className="text-xs text-foreground truncate flex-1">
+                        {selectedOpIds.length === 0
+                          ? "Select operations…"
+                          : selectedOpIds.length ===
+                              (operations as any[]).length
+                            ? "All operations"
+                            : (operations as any[])
+                                .filter((op: any) =>
+                                  selectedOpIds.includes(op.id)
+                                )
+                                .map((op: any) => op.name)
+                                .join(", ")}
+                      </span>
+                      <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    className="w-72 p-2 rounded-xl border-2 border-border shadow-xl"
+                    align="end"
+                  >
+                    <div className="flex items-center justify-between px-1 pb-2 border-b border-border mb-1">
+                      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                        Select Operations
+                      </span>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={selectAllOps}
+                          className="text-[10px] text-blue-400 hover:text-blue-300 font-semibold"
+                        >
+                          All
+                        </button>
+                        <button
+                          onClick={clearAll}
+                          className="text-[10px] text-muted-foreground hover:text-foreground font-semibold"
+                        >
+                          Clear
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex flex-col gap-0.5 max-h-64 overflow-y-auto">
-                    {(operations as any[]).map((op) => {
-                      const opTargets = opTargetMap.get(op.id) ?? [];
-                      const isOpSelected = selectedOpIds.includes(op.id);
-                      const isExpanded = opExpanded.has(op.id);
-                      return (
-                        <div key={op.id}>
-                          <div className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-accent/50 transition-colors">
-                            <Checkbox
-                              id={`rp-op-${op.id}`}
-                              checked={isOpSelected}
-                              onCheckedChange={() => toggleOp(op.id)}
-                              className="h-4 w-4"
-                            />
-                            <label htmlFor={`rp-op-${op.id}`} className="flex-1 text-sm cursor-pointer truncate font-medium">{op.name}</label>
-                            {opTargets.length > 0 && (
-                              <button
-                                onClick={() => setOpExpanded(prev => {
-                                  const next = new Set(prev);
-                                  next.has(op.id) ? next.delete(op.id) : next.add(op.id);
-                                  return next;
-                                })}
-                                className="text-muted-foreground hover:text-foreground p-0.5"
+                    <div className="flex flex-col gap-0.5 max-h-64 overflow-y-auto">
+                      {(operations as any[]).map(op => {
+                        const opTargets = opTargetMap.get(op.id) ?? [];
+                        const isOpSelected = selectedOpIds.includes(op.id);
+                        const isExpanded = opExpanded.has(op.id);
+                        return (
+                          <div key={op.id}>
+                            <div className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-accent/50 transition-colors">
+                              <Checkbox
+                                id={`rp-op-${op.id}`}
+                                checked={isOpSelected}
+                                onCheckedChange={() => toggleOp(op.id)}
+                                className="h-4 w-4"
+                              />
+                              <label
+                                htmlFor={`rp-op-${op.id}`}
+                                className="flex-1 text-sm cursor-pointer truncate font-medium"
                               >
-                                {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                              </button>
+                                {op.name}
+                              </label>
+                              {opTargets.length > 0 && (
+                                <button
+                                  onClick={() =>
+                                    setOpExpanded(prev => {
+                                      const next = new Set(prev);
+                                      next.has(op.id)
+                                        ? next.delete(op.id)
+                                        : next.add(op.id);
+                                      return next;
+                                    })
+                                  }
+                                  className="text-muted-foreground hover:text-foreground p-0.5"
+                                >
+                                  {isExpanded ? (
+                                    <ChevronDown className="h-3.5 w-3.5" />
+                                  ) : (
+                                    <ChevronRight className="h-3.5 w-3.5" />
+                                  )}
+                                </button>
+                              )}
+                            </div>
+                            {isExpanded && opTargets.length > 0 && (
+                              <div className="ml-6 pl-2 border-l border-border/50 flex flex-col gap-0.5 mb-1">
+                                {opTargets.map(t => (
+                                  <div
+                                    key={t.id}
+                                    className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-accent/40 transition-colors"
+                                  >
+                                    <Checkbox
+                                      id={`rp-tgt-${t.id}`}
+                                      checked={selectedTargetIds.includes(t.id)}
+                                      onCheckedChange={() => toggleTarget(t.id)}
+                                      className="h-3.5 w-3.5"
+                                    />
+                                    <label
+                                      htmlFor={`rp-tgt-${t.id}`}
+                                      className="text-xs cursor-pointer truncate text-muted-foreground"
+                                    >
+                                      {t.name}
+                                    </label>
+                                  </div>
+                                ))}
+                              </div>
                             )}
                           </div>
-                          {isExpanded && opTargets.length > 0 && (
-                            <div className="ml-6 pl-2 border-l border-border/50 flex flex-col gap-0.5 mb-1">
-                              {opTargets.map((t) => (
-                                <div key={t.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-accent/40 transition-colors">
-                                  <Checkbox
-                                    id={`rp-tgt-${t.id}`}
-                                    checked={selectedTargetIds.includes(t.id)}
-                                    onCheckedChange={() => toggleTarget(t.id)}
-                                    className="h-3.5 w-3.5"
-                                  />
-                                  <label htmlFor={`rp-tgt-${t.id}`} className="text-xs cursor-pointer truncate text-muted-foreground">{t.name}</label>
+                        );
+                      })}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              )}
+            </div>
+
+            {/* ── RS SELECTION section ── */}
+            <div className="px-3 py-3 border-b border-border space-y-3">
+              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
+                RS Selection
+              </span>
+
+              {/* No ops selected — prompt user */}
+              {selectedOpIds.length === 0 && (
+                <p className="text-[11px] text-muted-foreground leading-snug">
+                  Select an operation above to see available running sheets.
+                </p>
+              )}
+
+              {/* Running sheet selector — driven by top Operations filter */}
+              {selectedOpIds.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <Select
+                    value={
+                      rsSelectedSheetId !== null
+                        ? String(rsSelectedSheetId)
+                        : ""
+                    }
+                    onValueChange={val => {
+                      setRsSelectedSheetId(Number(val));
+                      setRsLastEntry(null);
+                    }}
+                  >
+                    <SelectTrigger className="flex-1 h-9 text-xs rounded-xl border-2">
+                      <SelectValue placeholder="Choose running sheet…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(rsSheetsData ?? [])
+                        .filter((s: any) => !s.closedAt && !s.deletedAt)
+                        .map((s: any) => (
+                          <SelectItem
+                            key={s.id}
+                            value={String(s.id)}
+                            className="text-xs"
+                          >
+                            {s.title || `Sheet #${s.id}`}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  {rsSelectedSheetId !== null && (
+                    <button
+                      onClick={() => {
+                        setRsSelectedSheetId(null);
+                        setRsLastEntry(null);
+                      }}
+                      className="flex-shrink-0 h-9 w-9 flex items-center justify-center rounded-xl border-2 border-border bg-muted/40 hover:bg-destructive/20 hover:border-destructive/40 active:scale-95 transition-all"
+                      title="Clear running sheet selection"
+                    >
+                      <X className="h-3.5 w-3.5 text-muted-foreground" />
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Sheet link — shown below RS dropdown when sheet selected */}
+              {rsSelectedSheetId !== null &&
+                rsSheetsData &&
+                (() => {
+                  const sheet = (rsSheetsData as any[]).find(
+                    (s: any) => s.id === rsSelectedSheetId
+                  );
+                  return sheet ? (
+                    <button
+                      onClick={() => setLocation(`/sheet/${rsSelectedSheetId}`)}
+                      className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-primary/40 bg-primary/10 hover:bg-primary/20 active:scale-[0.98] transition-all min-w-0"
+                    >
+                      <MapIcon className="h-3.5 w-3.5 text-primary flex-shrink-0" />
+                      <span className="text-xs font-semibold text-primary truncate flex-1 text-left">
+                        {sheet.title || `Sheet #${sheet.id}`}
+                      </span>
+                      <ExternalLink className="h-3 w-3 text-primary/60 flex-shrink-0" />
+                    </button>
+                  ) : null;
+                })()}
+
+              {/* RS Quick Entry moved to bottom tab bar — use the indigo RS Entry pill instead */}
+            </div>
+            {/* end RS Selection */}
+
+            {/* ── PROFILES (Operation behind the selected RS, then its Target) ── */}
+            {rsSelectedSheetId !== null &&
+              (() => {
+                const sheet = rsSheetsData
+                  ? (rsSheetsData as any[]).find(
+                      (s: any) => s.id === rsSelectedSheetId
+                    )
+                  : null;
+                const opId = sheet?.operationId ?? null;
+                if (!opId && !rsTargetData) return null;
+                return (
+                  <div className="px-3 py-3 border-b border-border space-y-2">
+                    <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
+                      Profiles
+                    </span>
+                    {opId && (
+                      <button
+                        onClick={() => {
+                          setPaneOperationProfileId(opId);
+                          setPaneTargetProfileId(null);
+                        }}
+                        className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-blue-500/40 bg-blue-500/10 hover:bg-blue-500/20 active:scale-[0.98] transition-all min-w-0"
+                      >
+                        <FolderOpen className="h-3.5 w-3.5 text-blue-500 flex-shrink-0" />
+                        <span className="text-xs font-semibold text-blue-500 truncate flex-1 text-left">
+                          {(operations as any[] | undefined)?.find(
+                            (o: any) => o.id === opId
+                          )?.name ?? "Operation profile"}
+                        </span>
+                        <ExternalLink className="h-3 w-3 text-blue-500/60 flex-shrink-0" />
+                      </button>
+                    )}
+                    {rsTargetData && (
+                      <button
+                        onClick={() => {
+                          setPaneTargetProfileId(rsTargetData.id);
+                          setPaneOperationProfileId(null);
+                        }}
+                        className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-violet-500/40 bg-violet-500/10 hover:bg-violet-500/20 active:scale-[0.98] transition-all min-w-0"
+                      >
+                        <User className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />
+                        <span className="text-xs font-semibold text-violet-500 truncate flex-1 text-left">
+                          {rsTargetData.tgt ?? rsTargetData.name}
+                        </span>
+                        <ExternalLink className="h-3 w-3 text-violet-500/60 flex-shrink-0" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
+            {/* end Profiles */}
+
+            {/* ── IMAGES (linked to the selected RS's operation) ── */}
+            <div className="px-3 py-3 border-b border-border space-y-2">
+              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
+                Images
+              </span>
+              {(() => {
+                const sheet =
+                  rsSelectedSheetId !== null && rsSheetsData
+                    ? (rsSheetsData as any[]).find(
+                        (s: any) => s.id === rsSelectedSheetId
+                      )
+                    : null;
+                const opId = sheet?.operationId ?? null;
+                if (!opId) {
+                  return (
+                    <p className="text-[11px] text-muted-foreground leading-snug">
+                      Select a running sheet above to open its operation's
+                      images.
+                    </p>
+                  );
+                }
+                return (
+                  <button
+                    onClick={() =>
+                      setLocation(`/images/${opId}/${rsSelectedSheetId}`)
+                    }
+                    className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-pink-500/40 bg-pink-500/10 hover:bg-pink-500/20 active:scale-[0.98] transition-all min-w-0"
+                  >
+                    <ImageIcon className="h-3.5 w-3.5 text-pink-500 flex-shrink-0" />
+                    <span className="text-xs font-semibold text-pink-500 truncate flex-1 text-left">
+                      RS images
+                    </span>
+                    <ExternalLink className="h-3 w-3 text-pink-500/60 flex-shrink-0" />
+                  </button>
+                );
+              })()}
+            </div>
+            {/* end Images */}
+
+            {/* ── TEAMS (Live Location) ── */}
+            <div className="px-3 py-3">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Radio className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                    TEAMS
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <span className="text-[11px] font-medium text-muted-foreground">
+                    Show &amp; Share
+                  </span>
+                  <Switch
+                    checked={sharingEnabled}
+                    onCheckedChange={handleSharingToggle}
+                    className="scale-90"
+                  />
+                </div>
+              </div>
+
+              {/* GPS error */}
+              {gpsError && (
+                <div className="flex items-start gap-1.5 mb-3 p-2.5 rounded-xl border-2 border-amber-500/30 bg-amber-500/10">
+                  <AlertTriangle className="h-3 w-3 text-amber-500 mt-0.5 flex-shrink-0" />
+                  <span className="text-[10px] text-amber-400 leading-tight">
+                    {gpsError}
+                  </span>
+                </div>
+              )}
+
+              {/* Team rows — collapsible with memory */}
+              <div className="flex flex-col gap-2">
+                {[
+                  {
+                    key: "TEAM1",
+                    label: "Team 1",
+                    colour: TEAM_COLOURS.TEAM1,
+                    users: liveUsersByTeam.TEAM1,
+                  },
+                  {
+                    key: "TEAM2",
+                    label: "Team 2",
+                    colour: TEAM_COLOURS.TEAM2,
+                    users: liveUsersByTeam.TEAM2,
+                  },
+                  {
+                    key: "PTT",
+                    label: "PTT",
+                    colour: TEAM_COLOURS.PTT,
+                    users: liveUsersByTeam.PTT,
+                  },
+                ].map(({ key, label, colour, users: teamUsers }) => {
+                  const isCollapsed = collapsedTeams.has(key);
+                  return (
+                    <div
+                      key={key}
+                      className="rounded-xl border-2 border-border overflow-hidden"
+                    >
+                      {/* Team header — tap to collapse/expand */}
+                      <div className="flex items-center justify-between px-3 py-2.5 bg-muted/20 hover:bg-muted/40 transition-colors">
+                        <button
+                          onClick={() =>
+                            setCollapsedTeams(prev => {
+                              const next = new Set(prev);
+                              next.has(key) ? next.delete(key) : next.add(key);
+                              return next;
+                            })
+                          }
+                          className="flex items-center gap-2 flex-1 min-w-0"
+                        >
+                          <div
+                            className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                            style={{ background: colour }}
+                          />
+                          <span
+                            className="text-[11px] font-semibold"
+                            style={{ color: colour }}
+                          >
+                            {label}
+                          </span>
+                          {teamUsers.length > 0 && (
+                            <span className="text-[10px] text-muted-foreground">
+                              ({teamUsers.length})
+                            </span>
+                          )}
+                          {isCollapsed ? (
+                            <ChevronRight className="h-3 w-3 text-muted-foreground ml-auto" />
+                          ) : (
+                            <ChevronDown className="h-3 w-3 text-muted-foreground ml-auto" />
+                          )}
+                        </button>
+                        <button
+                          onClick={() => toggleTeamVisibility(key)}
+                          className="ml-2 text-[10px] text-muted-foreground hover:text-foreground flex-shrink-0 px-1.5 py-0.5 rounded-md border border-border/50 bg-background/50"
+                        >
+                          {hiddenTeams.has(key) ? "Show" : "Hide"}
+                        </button>
+                      </div>
+                      {/* Team members — shown when not collapsed */}
+                      {!isCollapsed && (
+                        <div className="px-3 py-2 border-t border-border bg-card">
+                          {teamUsers.length === 0 ? (
+                            <p className="text-[10px] text-muted-foreground/50 italic">
+                              No units online
+                            </p>
+                          ) : (
+                            <div className="flex flex-col gap-0.5">
+                              {teamUsers.map(u => (
+                                <div
+                                  key={u.userId}
+                                  className="flex items-center justify-between px-1 py-1 rounded-lg hover:bg-accent/30"
+                                >
+                                  <span className="text-[11px] text-foreground font-medium truncate">
+                                    {u.name.toUpperCase()}
+                                    {u.userId === user?.id && (
+                                      <span className="ml-1 text-[9px] text-muted-foreground">
+                                        (you)
+                                      </span>
+                                    )}
+                                  </span>
+                                  <button
+                                    onClick={() =>
+                                      toggleUserVisibility(u.userId)
+                                    }
+                                    className="text-[10px] text-muted-foreground hover:text-foreground ml-2 flex-shrink-0"
+                                  >
+                                    {hiddenUsers.has(u.userId)
+                                      ? "Show"
+                                      : "Hide"}
+                                  </button>
                                 </div>
                               ))}
                             </div>
                           )}
                         </div>
-                      );
-                    })}
-                  </div>
-                </PopoverContent>
-              </Popover>
-            )}
-          </div>
-
-          {/* ── RS SELECTION section ── */}
-          <div className="px-3 py-3 border-b border-border space-y-3">
-            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">RS Selection</span>
-
-            {/* No ops selected — prompt user */}
-            {selectedOpIds.length === 0 && (
-              <p className="text-[11px] text-muted-foreground leading-snug">
-                Select an operation above to see available running sheets.
-              </p>
-            )}
-
-            {/* Running sheet selector — driven by top Operations filter */}
-            {selectedOpIds.length > 0 && (
-              <div className="flex items-center gap-2">
-                <Select
-                  value={rsSelectedSheetId !== null ? String(rsSelectedSheetId) : ""}
-                  onValueChange={(val) => {
-                    setRsSelectedSheetId(Number(val));
-                    setRsLastEntry(null);
-                  }}
-                >
-                  <SelectTrigger className="flex-1 h-9 text-xs rounded-xl border-2">
-                    <SelectValue placeholder="Choose running sheet…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(rsSheetsData ?? []).filter((s: any) => !s.closedAt && !s.deletedAt).map((s: any) => (
-                      <SelectItem key={s.id} value={String(s.id)} className="text-xs">{s.title || `Sheet #${s.id}`}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {rsSelectedSheetId !== null && (
-                  <button
-                    onClick={() => { setRsSelectedSheetId(null); setRsLastEntry(null); }}
-                    className="flex-shrink-0 h-9 w-9 flex items-center justify-center rounded-xl border-2 border-border bg-muted/40 hover:bg-destructive/20 hover:border-destructive/40 active:scale-95 transition-all"
-                    title="Clear running sheet selection"
-                  >
-                    <X className="h-3.5 w-3.5 text-muted-foreground" />
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* Sheet link — shown below RS dropdown when sheet selected */}
-            {rsSelectedSheetId !== null && rsSheetsData && (() => {
-              const sheet = (rsSheetsData as any[]).find((s: any) => s.id === rsSelectedSheetId);
-              return sheet ? (
-                <button
-                  onClick={() => setLocation(`/sheet/${rsSelectedSheetId}`)}
-                  className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-primary/40 bg-primary/10 hover:bg-primary/20 active:scale-[0.98] transition-all min-w-0"
-                >
-                  <MapIcon className="h-3.5 w-3.5 text-primary flex-shrink-0" />
-                  <span className="text-xs font-semibold text-primary truncate flex-1 text-left">{sheet.title || `Sheet #${sheet.id}`}</span>
-                  <ExternalLink className="h-3 w-3 text-primary/60 flex-shrink-0" />
-                </button>
-              ) : null;
-            })()}
-
-            {/* RS Quick Entry moved to bottom tab bar — use the indigo RS Entry pill instead */}
-          </div>{/* end RS Selection */}
-
-          {/* ── TARGET PROFILE (linked to the selected RS's target) ── */}
-          {rsSelectedSheetId !== null && rsTargetData && (
-            <div className="px-3 py-3 border-b border-border space-y-2">
-              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">Target Profile</span>
-              <button
-                onClick={() => setPaneTargetProfileId(rsTargetData.id)}
-                className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-violet-500/40 bg-violet-500/10 hover:bg-violet-500/20 active:scale-[0.98] transition-all min-w-0"
-              >
-                <User className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />
-                <span className="text-xs font-semibold text-violet-500 truncate flex-1 text-left">{rsTargetData.tgt ?? rsTargetData.name}</span>
-                <ExternalLink className="h-3 w-3 text-violet-500/60 flex-shrink-0" />
-              </button>
-            </div>
-          )}{/* end Target Profile */}
-
-          {/* ── IMAGES (linked to the selected RS's operation) ── */}
-          <div className="px-3 py-3 border-b border-border space-y-2">
-            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">Images</span>
-            {(() => {
-              const sheet = rsSelectedSheetId !== null && rsSheetsData
-                ? (rsSheetsData as any[]).find((s: any) => s.id === rsSelectedSheetId)
-                : null;
-              const opId = sheet?.operationId ?? null;
-              if (!opId) {
-                return (
-                  <p className="text-[11px] text-muted-foreground leading-snug">
-                    Select a running sheet above to open its operation's images.
-                  </p>
-                );
-              }
-              return (
-                <button
-                  onClick={() => setLocation(`/images/${opId}/${rsSelectedSheetId}`)}
-                  className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-pink-500/40 bg-pink-500/10 hover:bg-pink-500/20 active:scale-[0.98] transition-all min-w-0"
-                >
-                  <ImageIcon className="h-3.5 w-3.5 text-pink-500 flex-shrink-0" />
-                  <span className="text-xs font-semibold text-pink-500 truncate flex-1 text-left">RS images</span>
-                  <ExternalLink className="h-3 w-3 text-pink-500/60 flex-shrink-0" />
-                </button>
-              );
-            })()}
-          </div>{/* end Images */}
-
-          {/* ── TEAMS (Live Location) ── */}
-          <div className="px-3 py-3">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <Radio className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">TEAMS</span>
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <span className="text-[11px] font-medium text-muted-foreground">Show &amp; Share</span>
-                <Switch checked={sharingEnabled} onCheckedChange={handleSharingToggle} className="scale-90" />
-              </div>
-            </div>
-
-            {/* GPS error */}
-            {gpsError && (
-              <div className="flex items-start gap-1.5 mb-3 p-2.5 rounded-xl border-2 border-amber-500/30 bg-amber-500/10">
-                <AlertTriangle className="h-3 w-3 text-amber-500 mt-0.5 flex-shrink-0" />
-                <span className="text-[10px] text-amber-400 leading-tight">{gpsError}</span>
-              </div>
-            )}
-
-            {/* Team rows — collapsible with memory */}
-            <div className="flex flex-col gap-2">
-              {[
-                { key: "TEAM1", label: "Team 1", colour: TEAM_COLOURS.TEAM1, users: liveUsersByTeam.TEAM1 },
-                { key: "TEAM2", label: "Team 2", colour: TEAM_COLOURS.TEAM2, users: liveUsersByTeam.TEAM2 },
-                { key: "PTT",   label: "PTT",    colour: TEAM_COLOURS.PTT,   users: liveUsersByTeam.PTT },
-              ].map(({ key, label, colour, users: teamUsers }) => {
-                const isCollapsed = collapsedTeams.has(key);
-                return (
-                  <div key={key} className="rounded-xl border-2 border-border overflow-hidden">
-                    {/* Team header — tap to collapse/expand */}
-                    <div className="flex items-center justify-between px-3 py-2.5 bg-muted/20 hover:bg-muted/40 transition-colors">
-                      <button
-                        onClick={() => setCollapsedTeams(prev => { const next = new Set(prev); next.has(key) ? next.delete(key) : next.add(key); return next; })}
-                        className="flex items-center gap-2 flex-1 min-w-0"
-                      >
-                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: colour }} />
-                        <span className="text-[11px] font-semibold" style={{ color: colour }}>{label}</span>
-                        {teamUsers.length > 0 && <span className="text-[10px] text-muted-foreground">({teamUsers.length})</span>}
-                        {isCollapsed ? <ChevronRight className="h-3 w-3 text-muted-foreground ml-auto" /> : <ChevronDown className="h-3 w-3 text-muted-foreground ml-auto" />}
-                      </button>
-                      <button onClick={() => toggleTeamVisibility(key)} className="ml-2 text-[10px] text-muted-foreground hover:text-foreground flex-shrink-0 px-1.5 py-0.5 rounded-md border border-border/50 bg-background/50">
-                        {hiddenTeams.has(key) ? "Show" : "Hide"}
-                      </button>
+                      )}
                     </div>
-                    {/* Team members — shown when not collapsed */}
-                    {!isCollapsed && (
-                      <div className="px-3 py-2 border-t border-border bg-card">
-                        {teamUsers.length === 0 ? (
-                          <p className="text-[10px] text-muted-foreground/50 italic">No units online</p>
-                        ) : (
-                          <div className="flex flex-col gap-0.5">
-                            {teamUsers.map((u) => (
-                              <div key={u.userId} className="flex items-center justify-between px-1 py-1 rounded-lg hover:bg-accent/30">
-                                <span className="text-[11px] text-foreground font-medium truncate">
-                                  {u.name.toUpperCase()}
-                                  {u.userId === user?.id && <span className="ml-1 text-[9px] text-muted-foreground">(you)</span>}
-                                </span>
-                                <button onClick={() => toggleUserVisibility(u.userId)} className="text-[10px] text-muted-foreground hover:text-foreground ml-2 flex-shrink-0">
-                                  {hiddenUsers.has(u.userId) ? "Show" : "Hide"}
-                                </button>
-                              </div>
-                            ))}
+                  );
+                })}
+
+                {/* Unassigned users */}
+                {liveUsersByTeam.unassigned.length > 0 &&
+                  (() => {
+                    const isCollapsed = collapsedTeams.has("null");
+                    return (
+                      <div className="rounded-xl border-2 border-border overflow-hidden">
+                        <div className="flex items-center justify-between px-3 py-2.5 bg-muted/20 hover:bg-muted/40 transition-colors">
+                          <button
+                            onClick={() =>
+                              setCollapsedTeams(prev => {
+                                const next = new Set(prev);
+                                next.has("null")
+                                  ? next.delete("null")
+                                  : next.add("null");
+                                return next;
+                              })
+                            }
+                            className="flex items-center gap-2 flex-1 min-w-0"
+                          >
+                            <div className="w-2.5 h-2.5 rounded-full bg-gray-500 flex-shrink-0" />
+                            <span className="text-[11px] font-semibold text-muted-foreground">
+                              Unassigned
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">
+                              ({liveUsersByTeam.unassigned.length})
+                            </span>
+                            {isCollapsed ? (
+                              <ChevronRight className="h-3 w-3 text-muted-foreground ml-auto" />
+                            ) : (
+                              <ChevronDown className="h-3 w-3 text-muted-foreground ml-auto" />
+                            )}
+                          </button>
+                          <button
+                            onClick={() => toggleTeamVisibility("null")}
+                            className="ml-2 text-[10px] text-muted-foreground hover:text-foreground flex-shrink-0 px-1.5 py-0.5 rounded-md border border-border/50 bg-background/50"
+                          >
+                            {hiddenTeams.has("null") ? "Show" : "Hide"}
+                          </button>
+                        </div>
+                        {!isCollapsed && (
+                          <div className="px-3 py-2 border-t border-border bg-card">
+                            <div className="flex flex-col gap-0.5">
+                              {liveUsersByTeam.unassigned.map(u => (
+                                <div
+                                  key={u.userId}
+                                  className="flex items-center justify-between px-1 py-1 rounded-lg hover:bg-accent/30"
+                                >
+                                  <span className="text-[11px] text-foreground font-medium truncate">
+                                    {u.name.toUpperCase()}
+                                    {u.userId === user?.id && (
+                                      <span className="ml-1 text-[9px] text-muted-foreground">
+                                        (you)
+                                      </span>
+                                    )}
+                                  </span>
+                                  <button
+                                    onClick={() =>
+                                      toggleUserVisibility(u.userId)
+                                    }
+                                    className="text-[10px] text-muted-foreground hover:text-foreground ml-2 flex-shrink-0"
+                                  >
+                                    {hiddenUsers.has(u.userId)
+                                      ? "Show"
+                                      : "Hide"}
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         )}
                       </div>
-                    )}
-                  </div>
-                );
-              })}
-
-              {/* Unassigned users */}
-              {liveUsersByTeam.unassigned.length > 0 && (() => {
-                const isCollapsed = collapsedTeams.has("null");
-                return (
-                  <div className="rounded-xl border-2 border-border overflow-hidden">
-                    <div className="flex items-center justify-between px-3 py-2.5 bg-muted/20 hover:bg-muted/40 transition-colors">
-                      <button
-                        onClick={() => setCollapsedTeams(prev => { const next = new Set(prev); next.has("null") ? next.delete("null") : next.add("null"); return next; })}
-                        className="flex items-center gap-2 flex-1 min-w-0"
-                      >
-                        <div className="w-2.5 h-2.5 rounded-full bg-gray-500 flex-shrink-0" />
-                        <span className="text-[11px] font-semibold text-muted-foreground">Unassigned</span>
-                        <span className="text-[10px] text-muted-foreground">({liveUsersByTeam.unassigned.length})</span>
-                        {isCollapsed ? <ChevronRight className="h-3 w-3 text-muted-foreground ml-auto" /> : <ChevronDown className="h-3 w-3 text-muted-foreground ml-auto" />}
-                      </button>
-                      <button onClick={() => toggleTeamVisibility("null")} className="ml-2 text-[10px] text-muted-foreground hover:text-foreground flex-shrink-0 px-1.5 py-0.5 rounded-md border border-border/50 bg-background/50">
-                        {hiddenTeams.has("null") ? "Show" : "Hide"}
-                      </button>
-                    </div>
-                    {!isCollapsed && (
-                      <div className="px-3 py-2 border-t border-border bg-card">
-                        <div className="flex flex-col gap-0.5">
-                          {liveUsersByTeam.unassigned.map((u) => (
-                            <div key={u.userId} className="flex items-center justify-between px-1 py-1 rounded-lg hover:bg-accent/30">
-                              <span className="text-[11px] text-foreground font-medium truncate">
-                                {u.name.toUpperCase()}
-                                {u.userId === user?.id && <span className="ml-1 text-[9px] text-muted-foreground">(you)</span>}
-                              </span>
-                              <button onClick={() => toggleUserVisibility(u.userId)} className="text-[10px] text-muted-foreground hover:text-foreground ml-2 flex-shrink-0">
-                                {hiddenUsers.has(u.userId) ? "Show" : "Hide"}
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
+                    );
+                  })()}
+              </div>
             </div>
-          </div>{/* end TEAMS */}
-
-        </div>
-        )}{/* end Pane Body */}
-      </div>{/* end RS Actions Right Pane */}
+            {/* end TEAMS */}
+          </div>
+        )}
+        {/* end Pane Body */}
+      </div>
+      {/* end RS Actions Right Pane */}
 
       {/* ── Quick-Link Editor Modal ── */}
       {editingQuickLinks && (
         <div
           className="absolute inset-0 z-30 flex items-end justify-center"
-          style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}
+          style={{
+            background: "rgba(0,0,0,0.55)",
+            backdropFilter: "blur(4px)",
+          }}
           onClick={() => setEditingQuickLinks(false)}
         >
           <div
             className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8"
-            onClick={(e) => e.stopPropagation()}
+            onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
               <div>
-                <p className="text-sm font-bold text-foreground">Customise Quick Links</p>
-                <p className="text-xs text-muted-foreground mt-0.5">Choose up to 3 custom shortcut folders (laptop: 3, tablet: 2, mobile: 1)</p>
+                <p className="text-sm font-bold text-foreground">
+                  Customise Quick Links
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Choose up to 3 custom shortcut folders (laptop: 3, tablet: 2,
+                  mobile: 1)
+                </p>
               </div>
               <button
                 onClick={() => setEditingQuickLinks(false)}
@@ -3406,7 +4995,7 @@ export default function IntelligenceMapping() {
             </div>
 
             <div className="grid grid-cols-2 gap-2 max-h-72 overflow-y-auto">
-              {ALL_QUICK_LINK_OPTIONS.map((opt) => {
+              {ALL_QUICK_LINK_OPTIONS.map(opt => {
                 const isSelected = quickLinks.some(q => q.path === opt.path);
                 const iconEntry = ICON_MAP[opt.icon];
                 const IconComp = iconEntry?.Icon ?? FolderSearch;
@@ -3425,7 +5014,10 @@ export default function IntelligenceMapping() {
                           // Replace last slot
                           next = [...prev.slice(0, 2), opt];
                         }
-                        localStorage.setItem(LS_QUICK_LINKS_KEY, JSON.stringify(next));
+                        localStorage.setItem(
+                          LS_QUICK_LINKS_KEY,
+                          JSON.stringify(next)
+                        );
                         return next;
                       });
                     }}
@@ -3435,16 +5027,21 @@ export default function IntelligenceMapping() {
                         : "bg-accent/30 border-border text-muted-foreground hover:bg-accent/60 hover:text-foreground"
                     }`}
                   >
-                    <IconComp className={`h-3.5 w-3.5 flex-shrink-0 ${iconColour}`} />
+                    <IconComp
+                      className={`h-3.5 w-3.5 flex-shrink-0 ${iconColour}`}
+                    />
                     <span className="truncate">{opt.label}</span>
-                    {isSelected && <Check className="h-3.5 w-3.5 ml-auto flex-shrink-0" />}
+                    {isSelected && (
+                      <Check className="h-3.5 w-3.5 ml-auto flex-shrink-0" />
+                    )}
                   </button>
                 );
               })}
             </div>
 
             <p className="text-[11px] text-muted-foreground/60 mt-3 text-center">
-              {quickLinks.length}/2 slots used — Operations and active sheet are always shown
+              {quickLinks.length}/2 slots used — Operations and active sheet are
+              always shown
             </p>
           </div>
         </div>
@@ -3454,20 +5051,32 @@ export default function IntelligenceMapping() {
       {poiTap && !pendingLatLng && !mapQeOpen && !actionChooser && (
         <div
           className="absolute inset-0 z-40 flex items-end justify-center"
-          style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(3px)" }}
+          style={{
+            background: "rgba(0,0,0,0.55)",
+            backdropFilter: "blur(3px)",
+          }}
           onClick={() => setPoiTap(null)}
         >
           <div
             className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8"
-            onClick={(e) => e.stopPropagation()}
+            onClick={e => e.stopPropagation()}
           >
             <div className="flex items-start justify-between mb-4">
               <div className="flex-1 min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-0.5">Business / Place</p>
-                <p className="text-sm font-bold text-foreground leading-snug">{poiTap.name}</p>
-                <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{poiTap.address}</p>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-0.5">
+                  Business / Place
+                </p>
+                <p className="text-sm font-bold text-foreground leading-snug">
+                  {poiTap.name}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5 leading-snug">
+                  {poiTap.address}
+                </p>
               </div>
-              <button onClick={() => setPoiTap(null)} className="ml-3 text-muted-foreground hover:text-foreground flex-shrink-0">
+              <button
+                onClick={() => setPoiTap(null)}
+                className="ml-3 text-muted-foreground hover:text-foreground flex-shrink-0"
+              >
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -3482,26 +5091,43 @@ export default function IntelligenceMapping() {
                 className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-primary/40 bg-primary/5 hover:bg-primary/10 active:scale-95 transition-all px-4 py-5"
               >
                 <ClipboardList className="h-7 w-7 text-primary" />
-                <span className="text-sm font-bold text-foreground">RS Quick Entry</span>
-                <span className="text-[10px] text-muted-foreground text-center leading-tight">Add a running sheet entry for this location</span>
+                <span className="text-sm font-bold text-foreground">
+                  RS Quick Entry
+                </span>
+                <span className="text-[10px] text-muted-foreground text-center leading-tight">
+                  Add a running sheet entry for this location
+                </span>
               </button>
               {/* Add Marker Here */}
               <button
                 onClick={() => {
-                  const rsAddress = buildPoiAddress(poiTap.name, poiTap.address);
+                  const rsAddress = buildPoiAddress(
+                    poiTap.name,
+                    poiTap.address
+                  );
                   setCmLabel(poiTap.name);
                   setCmAddress(rsAddress);
-                  setCmNote(""); setCmPersons([]); setCmVehicles([]); setCmRotation(0);
-                  setCmPersonInput(""); setCmVehicleInput("");
-                  setCmOpId(selectedOpIds.length === 1 ? selectedOpIds[0] : null);
+                  setCmNote("");
+                  setCmPersons([]);
+                  setCmVehicles([]);
+                  setCmRotation(0);
+                  setCmPersonInput("");
+                  setCmVehicleInput("");
+                  setCmOpId(
+                    selectedOpIds.length === 1 ? selectedOpIds[0] : null
+                  );
                   setPendingLatLng({ lat: poiTap.lat, lng: poiTap.lng });
                   setPoiTap(null);
                 }}
                 className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-border bg-muted/30 hover:bg-muted/60 active:scale-95 transition-all px-4 py-5"
               >
                 <MapPin className="h-7 w-7 text-muted-foreground" />
-                <span className="text-sm font-bold text-foreground">Add Marker Here</span>
-                <span className="text-[10px] text-muted-foreground text-center leading-tight">Place a custom marker at this business</span>
+                <span className="text-sm font-bold text-foreground">
+                  Add Marker Here
+                </span>
+                <span className="text-[10px] text-muted-foreground text-center leading-tight">
+                  Place a custom marker at this business
+                </span>
               </button>
             </div>
             {/* Navigate with Waze — full-width below the grid */}
@@ -3513,7 +5139,9 @@ export default function IntelligenceMapping() {
               className="mt-3 flex items-center justify-center gap-2 w-full rounded-xl border-2 border-cyan-500/40 bg-cyan-500/5 hover:bg-cyan-500/10 active:scale-95 transition-all px-4 py-3"
             >
               <Navigation2 className="h-5 w-5 text-cyan-400" />
-              <span className="text-sm font-bold text-foreground">Navigate with Waze</span>
+              <span className="text-sm font-bold text-foreground">
+                Navigate with Waze
+              </span>
             </a>
           </div>
         </div>
@@ -3523,19 +5151,29 @@ export default function IntelligenceMapping() {
       {actionChooser && (
         <div
           className="absolute inset-0 z-40 flex items-end justify-center"
-          style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(3px)" }}
+          style={{
+            background: "rgba(0,0,0,0.55)",
+            backdropFilter: "blur(3px)",
+          }}
           onClick={() => setActionChooser(null)}
         >
           <div
             className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8"
-            onClick={(e) => e.stopPropagation()}
+            onClick={e => e.stopPropagation()}
           >
             <div className="flex items-start justify-between mb-4">
               <div className="flex-1 min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-0.5">Map Location</p>
-                <p className="text-xs text-muted-foreground leading-snug">{actionChooser.address}</p>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-0.5">
+                  Map Location
+                </p>
+                <p className="text-xs text-muted-foreground leading-snug">
+                  {actionChooser.address}
+                </p>
               </div>
-              <button onClick={() => setActionChooser(null)} className="ml-3 text-muted-foreground hover:text-foreground flex-shrink-0">
+              <button
+                onClick={() => setActionChooser(null)}
+                className="ml-3 text-muted-foreground hover:text-foreground flex-shrink-0"
+              >
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -3550,25 +5188,42 @@ export default function IntelligenceMapping() {
                 className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-primary/40 bg-primary/5 hover:bg-primary/10 active:scale-95 transition-all px-4 py-5"
               >
                 <ClipboardList className="h-7 w-7 text-primary" />
-                <span className="text-sm font-bold text-foreground">RS Quick Entry</span>
-                <span className="text-[10px] text-muted-foreground text-center leading-tight">Add a running sheet entry for this location</span>
+                <span className="text-sm font-bold text-foreground">
+                  RS Quick Entry
+                </span>
+                <span className="text-[10px] text-muted-foreground text-center leading-tight">
+                  Add a running sheet entry for this location
+                </span>
               </button>
               {/* Add Marker Here */}
               <button
                 onClick={() => {
                   setCmLabel("");
                   setCmAddress(actionChooser.address);
-                  setCmNote(""); setCmPersons([]); setCmVehicles([]); setCmRotation(0);
-                  setCmPersonInput(""); setCmVehicleInput("");
-                  setCmOpId(selectedOpIds.length === 1 ? selectedOpIds[0] : null);
-                  setPendingLatLng({ lat: actionChooser.lat, lng: actionChooser.lng });
+                  setCmNote("");
+                  setCmPersons([]);
+                  setCmVehicles([]);
+                  setCmRotation(0);
+                  setCmPersonInput("");
+                  setCmVehicleInput("");
+                  setCmOpId(
+                    selectedOpIds.length === 1 ? selectedOpIds[0] : null
+                  );
+                  setPendingLatLng({
+                    lat: actionChooser.lat,
+                    lng: actionChooser.lng,
+                  });
                   setActionChooser(null);
                 }}
                 className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-border bg-muted/30 hover:bg-muted/60 active:scale-95 transition-all px-4 py-5"
               >
                 <MapPin className="h-7 w-7 text-muted-foreground" />
-                <span className="text-sm font-bold text-foreground">Add Marker Here</span>
-                <span className="text-[10px] text-muted-foreground text-center leading-tight">Place a custom marker at this location</span>
+                <span className="text-sm font-bold text-foreground">
+                  Add Marker Here
+                </span>
+                <span className="text-[10px] text-muted-foreground text-center leading-tight">
+                  Place a custom marker at this location
+                </span>
               </button>
             </div>
             {/* Navigate with Waze — full-width below the grid */}
@@ -3580,7 +5235,9 @@ export default function IntelligenceMapping() {
               className="mt-3 flex items-center justify-center gap-2 w-full rounded-xl border-2 border-cyan-500/40 bg-cyan-500/5 hover:bg-cyan-500/10 active:scale-95 transition-all px-4 py-3"
             >
               <Navigation2 className="h-5 w-5 text-cyan-400" />
-              <span className="text-sm font-bold text-foreground">Navigate with Waze</span>
+              <span className="text-sm font-bold text-foreground">
+                Navigate with Waze
+              </span>
             </a>
           </div>
         </div>
@@ -3590,52 +5247,96 @@ export default function IntelligenceMapping() {
       {manualMergePicker && (
         <div
           className="absolute inset-0 z-40 flex items-end justify-center"
-          style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(3px)" }}
+          style={{
+            background: "rgba(0,0,0,0.55)",
+            backdropFilter: "blur(3px)",
+          }}
           onClick={() => setManualMergePicker(null)}
         >
           <div
             className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8 max-h-[80vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
+            onClick={e => e.stopPropagation()}
           >
             <div className="flex items-start justify-between mb-4">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-0.5">Manual Merge</p>
-                <p className="text-sm font-semibold text-foreground">Select an Intel Pin to merge with</p>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-0.5">
+                  Manual Merge
+                </p>
+                <p className="text-sm font-semibold text-foreground">
+                  Select an Intel Pin to merge with
+                </p>
               </div>
-              <button onClick={() => setManualMergePicker(null)} className="ml-3 text-muted-foreground hover:text-foreground flex-shrink-0">
+              <button
+                onClick={() => setManualMergePicker(null)}
+                className="ml-3 text-muted-foreground hover:text-foreground flex-shrink-0"
+              >
                 <X className="h-4 w-4" />
               </button>
             </div>
             {manualMergePicker.candidates.length === 0 ? (
               <div className="text-center py-6">
-                <p className="text-sm text-muted-foreground">No intel pins found within 150m of this marker.</p>
-                <p className="text-xs text-muted-foreground mt-1">Intel pins must be visible on the map (not already merged) to appear here.</p>
+                <p className="text-sm text-muted-foreground">
+                  No intel pins found within 150m of this marker.
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Intel pins must be visible on the map (not already merged) to
+                  appear here.
+                </p>
               </div>
             ) : (
               <div className="flex flex-col gap-2">
-                {manualMergePicker.candidates.map((c) => (
+                {manualMergePicker.candidates.map(c => (
                   <button
                     key={c.loc.label}
                     onClick={() => {
                       // Perform the merge: append intel data to the custom marker's merged list
-                      const enriched = { ...c.loc, lat: c.position.lat, lng: c.position.lng };
-                      const existingList = mergedIntelRef.current.get(manualMergePicker.cmId) ?? [];
+                      const enriched = {
+                        ...c.loc,
+                        lat: c.position.lat,
+                        lng: c.position.lng,
+                      };
+                      const existingList =
+                        mergedIntelRef.current.get(manualMergePicker.cmId) ??
+                        [];
                       if (!existingList.find(e => e.label === enriched.label)) {
                         existingList.push(enriched);
                         existingList.sort((a, b) => {
-                          if (a.type === 'target_address' && b.type !== 'target_address') return -1;
-                          if (a.type !== 'target_address' && b.type === 'target_address') return 1;
+                          if (
+                            a.type === "target_address" &&
+                            b.type !== "target_address"
+                          )
+                            return -1;
+                          if (
+                            a.type !== "target_address" &&
+                            b.type === "target_address"
+                          )
+                            return 1;
                           return 0;
                         });
-                        mergedIntelRef.current.set(manualMergePicker.cmId, existingList);
+                        mergedIntelRef.current.set(
+                          manualMergePicker.cmId,
+                          existingList
+                        );
                       }
                       // Remove the intel pin from the map
-                      const pinIdx = markersRef.current.findIndex((m) => {
-                        const pos = m.position as google.maps.LatLng | google.maps.LatLngLiteral | null;
+                      const pinIdx = markersRef.current.findIndex(m => {
+                        const pos = m.position as
+                          | google.maps.LatLng
+                          | google.maps.LatLngLiteral
+                          | null;
                         if (!pos) return false;
-                        const lat = typeof (pos as any).lat === 'function' ? (pos as any).lat() : (pos as any).lat;
-                        const lng = typeof (pos as any).lng === 'function' ? (pos as any).lng() : (pos as any).lng;
-                        return Math.abs(lat - c.position.lat) < 0.00001 && Math.abs(lng - c.position.lng) < 0.00001;
+                        const lat =
+                          typeof (pos as any).lat === "function"
+                            ? (pos as any).lat()
+                            : (pos as any).lat;
+                        const lng =
+                          typeof (pos as any).lng === "function"
+                            ? (pos as any).lng()
+                            : (pos as any).lng;
+                        return (
+                          Math.abs(lat - c.position.lat) < 0.00001 &&
+                          Math.abs(lng - c.position.lng) < 0.00001
+                        );
                       });
                       if (pinIdx !== -1) {
                         markersRef.current[pinIdx].map = null;
@@ -3644,21 +5345,34 @@ export default function IntelligenceMapping() {
                       // Also remove from geocodedIntelRef so it doesn't show in future merge pickers
                       geocodedIntelRef.current.delete(c.loc.label);
                       // Persist the merge to the database so it survives page reloads
-                      updateCustomMarkerMut.mutate({ id: manualMergePicker.cmId, linkedIntelLabel: c.loc.label });
+                      updateCustomMarkerMut.mutate({
+                        id: manualMergePicker.cmId,
+                        linkedIntelLabel: c.loc.label,
+                      });
                       setManualMergePicker(null);
                     }}
                     className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/30 hover:bg-muted/60 active:scale-[0.98] transition-all px-4 py-3 text-left"
                   >
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-0.5">
-                        {c.loc.type === "target_address" ? "Target Address" : "Observed Location"}
+                        {c.loc.type === "target_address"
+                          ? "Target Address"
+                          : "Observed Location"}
                       </p>
-                      <p className="text-sm font-semibold text-foreground truncate">{formatIntelAddress(c.loc.label)}</p>
+                      <p className="text-sm font-semibold text-foreground truncate">
+                        {formatIntelAddress(c.loc.label)}
+                      </p>
                       {c.loc.linkedTargets?.length > 0 && (
-                        <p className="text-xs text-muted-foreground mt-0.5">{c.loc.linkedTargets.map((t: any) => t.name).join(", ")}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {c.loc.linkedTargets
+                            .map((t: any) => t.name)
+                            .join(", ")}
+                        </p>
                       )}
                     </div>
-                    <span className="text-xs text-muted-foreground flex-shrink-0">{c.distanceM}m away</span>
+                    <span className="text-xs text-muted-foreground flex-shrink-0">
+                      {c.distanceM}m away
+                    </span>
                   </button>
                 ))}
               </div>
@@ -3669,9 +5383,7 @@ export default function IntelligenceMapping() {
 
       {/* ── Move Marker Banner ── */}
       {movingMarkerId !== null && (
-        <div
-          className="absolute top-0 left-0 right-0 z-50 flex justify-center px-3 pt-3 pointer-events-none"
-        >
+        <div className="absolute top-0 left-0 right-0 z-50 flex justify-center px-3 pt-3 pointer-events-none">
           <div
             className="pointer-events-auto w-full max-w-md rounded-2xl shadow-2xl border border-border overflow-hidden"
             style={{ background: "rgba(3,105,161,0.97)" }}
@@ -3679,7 +5391,9 @@ export default function IntelligenceMapping() {
             {pendingMoveAddress === null ? (
               /* Phase 1: dragging */
               <div className="flex items-center justify-between gap-3 px-4 py-3">
-                <p className="text-sm font-semibold text-white">Drag marker to new position</p>
+                <p className="text-sm font-semibold text-white">
+                  Drag marker to new position
+                </p>
                 <button
                   onClick={() => {
                     // Cancel: snap marker back to original position
@@ -3703,19 +5417,28 @@ export default function IntelligenceMapping() {
             ) : (
               /* Phase 2: confirm new address */
               <div className="px-4 py-3">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-white/70 mb-0.5">Move to</p>
-                <p className="text-sm font-semibold text-white mb-3 leading-snug">{pendingMoveAddress.address}</p>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-white/70 mb-0.5">
+                  Move to
+                </p>
+                <p className="text-sm font-semibold text-white mb-3 leading-snug">
+                  {pendingMoveAddress.address}
+                </p>
                 <div className="flex gap-2">
                   <button
                     onClick={() => {
-                      if (movingMarkerId === null || pendingMoveAddress === null) return;
+                      if (
+                        movingMarkerId === null ||
+                        pendingMoveAddress === null
+                      )
+                        return;
                       updateCustomMarkerMut.mutate({
                         id: movingMarkerId,
                         lat: pendingMoveAddress.lat,
                         lng: pendingMoveAddress.lng,
                         address: pendingMoveAddress.address,
                       });
-                      const marker = customMarkerMapRefs.current.get(movingMarkerId);
+                      const marker =
+                        customMarkerMapRefs.current.get(movingMarkerId);
                       if (marker) (marker as any).gmpDraggable = false;
                       setMovingMarkerId(null);
                       setPendingMoveAddress(null);
@@ -3754,9 +5477,7 @@ export default function IntelligenceMapping() {
 
       {/* ── Intel Pin Move Banner ── */}
       {movingIntelLabel !== null && (
-        <div
-          className="absolute top-0 left-0 right-0 z-50 flex justify-center px-3 pt-3 pointer-events-none"
-        >
+        <div className="absolute top-0 left-0 right-0 z-50 flex justify-center px-3 pt-3 pointer-events-none">
           <div
             className="pointer-events-auto w-full max-w-md rounded-2xl shadow-2xl border border-border overflow-hidden"
             style={{ background: "rgba(3,105,161,0.97)" }}
@@ -3764,13 +5485,17 @@ export default function IntelligenceMapping() {
             {pendingIntelMoveAddress === null ? (
               /* Phase 1: dragging */
               <div className="flex items-center justify-between gap-3 px-4 py-3">
-                <p className="text-sm font-semibold text-white">Drag marker to new position</p>
+                <p className="text-sm font-semibold text-white">
+                  Drag marker to new position
+                </p>
                 <button
                   onClick={() => {
                     // Cancel: snap marker back to original position
                     const orig = (window as any).__intelMoveOrigPos;
                     if (orig && orig.label === movingIntelLabel) {
-                      const marker = markersRef.current.find((m: any) => m.title === orig.label);
+                      const marker = markersRef.current.find(
+                        (m: any) => m.title === orig.label
+                      );
                       if (marker) {
                         marker.position = { lat: orig.lat, lng: orig.lng };
                         (marker as any).gmpDraggable = false;
@@ -3788,21 +5513,35 @@ export default function IntelligenceMapping() {
             ) : (
               /* Phase 2: confirm new address */
               <div className="px-4 py-3">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-white/70 mb-0.5">Move to</p>
-                <p className="text-sm font-semibold text-white mb-3 leading-snug">{pendingIntelMoveAddress.address}</p>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-white/70 mb-0.5">
+                  Move to
+                </p>
+                <p className="text-sm font-semibold text-white mb-3 leading-snug">
+                  {pendingIntelMoveAddress.address}
+                </p>
                 <div className="flex gap-2">
                   <button
                     onClick={() => {
-                      if (movingIntelLabel === null || pendingIntelMoveAddress === null) return;
+                      if (
+                        movingIntelLabel === null ||
+                        pendingIntelMoveAddress === null
+                      )
+                        return;
                       // Accept: update geocodedIntelRef so the new position is used next time
-                      const entry = geocodedIntelRef.current.get(movingIntelLabel);
+                      const entry =
+                        geocodedIntelRef.current.get(movingIntelLabel);
                       if (entry) {
                         geocodedIntelRef.current.set(movingIntelLabel, {
                           ...entry,
-                          position: { lat: pendingIntelMoveAddress.lat, lng: pendingIntelMoveAddress.lng },
+                          position: {
+                            lat: pendingIntelMoveAddress.lat,
+                            lng: pendingIntelMoveAddress.lng,
+                          },
                         });
                       }
-                      const marker = markersRef.current.find((m: any) => m.title === movingIntelLabel);
+                      const marker = markersRef.current.find(
+                        (m: any) => m.title === movingIntelLabel
+                      );
                       if (marker) (marker as any).gmpDraggable = false;
                       setMovingIntelLabel(null);
                       setPendingIntelMoveAddress(null);
@@ -3817,7 +5556,9 @@ export default function IntelligenceMapping() {
                     onClick={() => {
                       const orig = (window as any).__intelMoveOrigPos;
                       if (orig && orig.label === movingIntelLabel) {
-                        const marker = markersRef.current.find((m: any) => m.title === orig.label);
+                        const marker = markersRef.current.find(
+                          (m: any) => m.title === orig.label
+                        );
                         if (marker) {
                           marker.position = { lat: orig.lat, lng: orig.lng };
                           (marker as any).gmpDraggable = false;
@@ -3847,31 +5588,44 @@ export default function IntelligenceMapping() {
         >
           <div
             className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8 max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
+            onClick={e => e.stopPropagation()}
           >
             {/* Header */}
             <div className="flex items-center justify-between mb-4">
               <div>
-                <p className="text-sm font-bold text-foreground">Edit Marker Appearance</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5 truncate max-w-[260px]">{editingIntelLabel}</p>
+                <p className="text-sm font-bold text-foreground">
+                  Edit Marker Appearance
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-0.5 truncate max-w-[260px]">
+                  {editingIntelLabel}
+                </p>
               </div>
-              <button onClick={() => setEditingIntelLabel(null)} className="text-muted-foreground hover:text-foreground">
+              <button
+                onClick={() => setEditingIntelLabel(null)}
+                className="text-muted-foreground hover:text-foreground"
+              >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
             {/* Icon picker */}
             <div className="mb-4">
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">Marker Icon</p>
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                Marker Icon
+              </p>
               <div className="space-y-3">
-                {MARKER_ICON_GROUPS.map((group) => (
+                {MARKER_ICON_GROUPS.map(group => (
                   <div key={group.label}>
-                    <p className="text-[10px] text-muted-foreground/70 mb-1.5">{group.label}</p>
+                    <p className="text-[10px] text-muted-foreground/70 mb-1.5">
+                      {group.label}
+                    </p>
                     <div className="flex flex-wrap gap-2">
-                      {group.icons.map((iconKey) => (
+                      {group.icons.map(iconKey => (
                         <button
                           key={iconKey}
-                          onClick={() => setIntelEditIcon(iconKey as MarkerIcon)}
+                          onClick={() =>
+                            setIntelEditIcon(iconKey as MarkerIcon)
+                          }
                           title={MARKER_ICON_LABELS[iconKey as MarkerIcon]}
                           className={`w-10 h-10 rounded-lg border-2 flex items-center justify-center transition-all ${
                             intelEditIcon === iconKey
@@ -3880,7 +5634,10 @@ export default function IntelligenceMapping() {
                           }`}
                         >
                           <img
-                            src={getMarkerDataUrl(iconKey as MarkerIcon, intelEditColour)}
+                            src={getMarkerDataUrl(
+                              iconKey as MarkerIcon,
+                              intelEditColour
+                            )}
                             alt={MARKER_ICON_LABELS[iconKey as MarkerIcon]}
                             className="w-7 h-7 object-contain"
                           />
@@ -3894,15 +5651,19 @@ export default function IntelligenceMapping() {
 
             {/* Colour picker */}
             <div className="mb-4">
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">Colour</p>
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                Colour
+              </p>
               <div className="flex gap-2">
-                {(Object.keys(MARKER_COLOURS) as MarkerColour[]).map((col) => (
+                {(Object.keys(MARKER_COLOURS) as MarkerColour[]).map(col => (
                   <button
                     key={col}
                     onClick={() => setIntelEditColour(col)}
                     title={MARKER_COLOUR_LABELS[col]}
                     className={`w-8 h-8 rounded-full border-2 transition-all ${
-                      intelEditColour === col ? "border-foreground scale-110" : "border-transparent hover:border-foreground/40"
+                      intelEditColour === col
+                        ? "border-foreground scale-110"
+                        : "border-transparent hover:border-foreground/40"
                     }`}
                     style={{ background: MARKER_COLOURS[col] }}
                   />
@@ -3912,7 +5673,9 @@ export default function IntelligenceMapping() {
 
             {/* Rotation */}
             <div className="mb-4">
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">Rotation — {intelEditRotation}°</p>
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                Rotation — {intelEditRotation}°
+              </p>
               <div className="flex items-center gap-3">
                 <div className="shrink-0 w-10 h-10 flex items-center justify-center">
                   <img
@@ -3928,20 +5691,36 @@ export default function IntelligenceMapping() {
                   max={359}
                   step={1}
                   value={intelEditRotation}
-                  onChange={(e) => setIntelEditRotation(Number(e.target.value))}
+                  onChange={e => setIntelEditRotation(Number(e.target.value))}
                   className="flex-1 accent-primary"
                 />
                 <div className="flex gap-1">
-                  {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => (
+                  {[0, 45, 90, 135, 180, 225, 270, 315].map(deg => (
                     <button
                       key={deg}
                       onClick={() => setIntelEditRotation(deg)}
                       title={`${deg}°`}
                       className={`w-6 h-6 text-[9px] rounded border transition-all ${
-                        intelEditRotation === deg ? "bg-primary text-primary-foreground border-primary" : "border-border hover:border-primary/50 text-muted-foreground"
+                        intelEditRotation === deg
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "border-border hover:border-primary/50 text-muted-foreground"
                       }`}
                     >
-                      {deg === 0 ? "N" : deg === 45 ? "NE" : deg === 90 ? "E" : deg === 135 ? "SE" : deg === 180 ? "S" : deg === 225 ? "SW" : deg === 270 ? "W" : "NW"}
+                      {deg === 0
+                        ? "N"
+                        : deg === 45
+                          ? "NE"
+                          : deg === 90
+                            ? "E"
+                            : deg === 135
+                              ? "SE"
+                              : deg === 180
+                                ? "S"
+                                : deg === 225
+                                  ? "SW"
+                                  : deg === 270
+                                    ? "W"
+                                    : "NW"}
                     </button>
                   ))}
                 </div>
@@ -3950,7 +5729,11 @@ export default function IntelligenceMapping() {
 
             {/* Save / Cancel */}
             <div className="flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={() => setEditingIntelLabel(null)}>
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setEditingIntelLabel(null)}
+              >
                 Cancel
               </Button>
               <Button
@@ -3959,18 +5742,30 @@ export default function IntelligenceMapping() {
                   if (!editingIntelLabel) return;
                   // Persist to localStorage
                   try {
-                    localStorage.setItem(`runlog_intel_appearance_${editingIntelLabel}`, JSON.stringify({
-                      icon: intelEditIcon,
-                      colour: intelEditColour,
-                      rotation: intelEditRotation,
-                    }));
-                  } catch { /* ignore */ }
+                    localStorage.setItem(
+                      `runlog_intel_appearance_${editingIntelLabel}`,
+                      JSON.stringify({
+                        icon: intelEditIcon,
+                        colour: intelEditColour,
+                        rotation: intelEditRotation,
+                      })
+                    );
+                  } catch {
+                    /* ignore */
+                  }
                   // Update the actual map marker element immediately
-                  const markerEntry = markersRef.current.find((m: any) => m.title === editingIntelLabel);
+                  const markerEntry = markersRef.current.find(
+                    (m: any) => m.title === editingIntelLabel
+                  );
                   if (markerEntry?.content instanceof HTMLElement) {
-                    const img = markerEntry.content.querySelector('img') as HTMLImageElement | null;
+                    const img = markerEntry.content.querySelector(
+                      "img"
+                    ) as HTMLImageElement | null;
                     if (img) {
-                      img.src = getMarkerDataUrl(intelEditIcon, intelEditColour);
+                      img.src = getMarkerDataUrl(
+                        intelEditIcon,
+                        intelEditColour
+                      );
                       img.style.transform = `rotate(${intelEditRotation}deg)`;
                     }
                   }
@@ -3989,20 +5784,38 @@ export default function IntelligenceMapping() {
       {mapQeOpen && (
         <div
           className="absolute inset-0 z-40 flex items-start justify-center overflow-y-auto p-3 pt-6 md:p-4 md:pt-10"
-          style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(3px)" }}
-          onClick={() => { setMapQeOpen(false); setMapQeAddress(""); closeInlineField(); }}
+          style={{
+            background: "rgba(0,0,0,0.55)",
+            backdropFilter: "blur(3px)",
+          }}
+          onClick={() => {
+            setMapQeOpen(false);
+            setMapQeAddress("");
+            closeInlineField();
+          }}
         >
           <div
             className="no-scrollbar w-full max-w-lg md:max-w-3xl lg:max-w-5xl bg-card border border-border rounded-2xl shadow-2xl p-5 pb-6 md:p-6 lg:p-8 max-h-[90vh] md:max-h-[92vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
+            onClick={e => e.stopPropagation()}
           >
             {/* Header */}
             <div className="flex items-start justify-between mb-4 lg:mb-6">
               <div className="flex-1 min-w-0">
-                <p className="text-sm md:text-base lg:text-lg font-bold text-foreground">RS Quick Entry</p>
-                <p className="text-[11px] md:text-xs lg:text-sm text-muted-foreground mt-0.5 truncate">{mapQeAddress}</p>
+                <p className="text-sm md:text-base lg:text-lg font-bold text-foreground">
+                  RS Quick Entry
+                </p>
+                <p className="text-[11px] md:text-xs lg:text-sm text-muted-foreground mt-0.5 truncate">
+                  {mapQeAddress}
+                </p>
               </div>
-              <button onClick={() => { setMapQeOpen(false); setMapQeAddress(""); closeInlineField(); }} className="ml-3 text-muted-foreground hover:text-foreground flex-shrink-0">
+              <button
+                onClick={() => {
+                  setMapQeOpen(false);
+                  setMapQeAddress("");
+                  closeInlineField();
+                }}
+                className="ml-3 text-muted-foreground hover:text-foreground flex-shrink-0"
+              >
                 <X className="h-4 w-4 md:h-5 md:w-5" />
               </button>
             </div>
@@ -4010,61 +5823,85 @@ export default function IntelligenceMapping() {
             {/* Time picker — slim inline row with Now + Date buttons */}
             <div className="flex items-center gap-1 md:gap-1.5 mb-2 lg:mb-3 flex-wrap">
               <Clock className="h-3 w-3 md:h-3.5 md:w-3.5 text-muted-foreground flex-shrink-0" />
-              <span className="text-[10px] md:text-xs text-muted-foreground font-medium mr-0.5">Time:</span>
+              <span className="text-[10px] md:text-xs text-muted-foreground font-medium mr-0.5">
+                Time:
+              </span>
               {/* Hour */}
               <Select
                 value={mapQeHour}
-                onOpenChange={(o) => setMapQeSelectOpen(o)}
-                onValueChange={(v) => {
+                onOpenChange={o => setMapQeSelectOpen(o)}
+                onValueChange={v => {
                   setMapQeHour(v);
-                  setMapQeTimeOverride(`${String(parseInt(v)).padStart(2,"0")}:${mapQeMinute} ${mapQePeriod}`);
+                  setMapQeTimeOverride(
+                    `${String(parseInt(v)).padStart(2, "0")}:${mapQeMinute} ${mapQePeriod}`
+                  );
                 }}
               >
                 <SelectTrigger className="w-16 h-6 text-[11px] font-mono px-1.5 py-0 md:w-20 md:h-8 md:text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {Array.from({ length: 12 }, (_, i) => String(i + 1)).map((h) => (
-                    <SelectItem key={h} value={h} className="font-mono text-xs">
-                      {String(parseInt(h)).padStart(2, "0")}
-                    </SelectItem>
-                  ))}
+                  {Array.from({ length: 12 }, (_, i) => String(i + 1)).map(
+                    h => (
+                      <SelectItem
+                        key={h}
+                        value={h}
+                        className="font-mono text-xs"
+                      >
+                        {String(parseInt(h)).padStart(2, "0")}
+                      </SelectItem>
+                    )
+                  )}
                 </SelectContent>
               </Select>
-              <span className="text-muted-foreground font-mono text-[11px] md:text-sm">:</span>
+              <span className="text-muted-foreground font-mono text-[11px] md:text-sm">
+                :
+              </span>
               {/* Minute */}
               <Select
                 value={mapQeMinute}
-                onOpenChange={(o) => setMapQeSelectOpen(o)}
-                onValueChange={(v) => {
+                onOpenChange={o => setMapQeSelectOpen(o)}
+                onValueChange={v => {
                   setMapQeMinute(v);
-                  setMapQeTimeOverride(`${String(parseInt(mapQeHour)).padStart(2,"0")}:${v} ${mapQePeriod}`);
+                  setMapQeTimeOverride(
+                    `${String(parseInt(mapQeHour)).padStart(2, "0")}:${v} ${mapQePeriod}`
+                  );
                 }}
               >
                 <SelectTrigger className="w-16 h-6 text-[11px] font-mono px-1.5 py-0 md:w-20 md:h-8 md:text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0")).map((m) => (
-                    <SelectItem key={m} value={m} className="font-mono text-xs">{m}</SelectItem>
+                  {Array.from({ length: 60 }, (_, i) =>
+                    String(i).padStart(2, "0")
+                  ).map(m => (
+                    <SelectItem key={m} value={m} className="font-mono text-xs">
+                      {m}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               {/* AM/PM */}
               <Select
                 value={mapQePeriod}
-                onOpenChange={(o) => setMapQeSelectOpen(o)}
-                onValueChange={(v) => {
+                onOpenChange={o => setMapQeSelectOpen(o)}
+                onValueChange={v => {
                   setMapQePeriod(v);
-                  setMapQeTimeOverride(`${String(parseInt(mapQeHour)).padStart(2,"0")}:${mapQeMinute} ${v}`);
+                  setMapQeTimeOverride(
+                    `${String(parseInt(mapQeHour)).padStart(2, "0")}:${mapQeMinute} ${v}`
+                  );
                 }}
               >
                 <SelectTrigger className="w-14 h-6 text-[11px] px-1.5 py-0 md:w-16 md:h-8 md:text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="AM" className="text-xs">AM</SelectItem>
-                  <SelectItem value="PM" className="text-xs">PM</SelectItem>
+                  <SelectItem value="AM" className="text-xs">
+                    AM
+                  </SelectItem>
+                  <SelectItem value="PM" className="text-xs">
+                    PM
+                  </SelectItem>
                 </SelectContent>
               </Select>
               {/* Now button — inline */}
@@ -4072,26 +5909,33 @@ export default function IntelligenceMapping() {
                 type="button"
                 onClick={() => {
                   const n = new Date();
-                  const h24 = n.getHours(); const min = n.getMinutes();
+                  const h24 = n.getHours();
+                  const min = n.getMinutes();
                   const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
                   const ampm = h24 < 12 ? "AM" : "PM";
                   setMapQeHour(String(h12));
                   setMapQeMinute(String(min).padStart(2, "0"));
                   setMapQePeriod(ampm);
-                  setMapQeTimeOverride(`${String(h12).padStart(2,"0")}:${String(min).padStart(2,"0")} ${ampm}`);
+                  setMapQeTimeOverride(
+                    `${String(h12).padStart(2, "0")}:${String(min).padStart(2, "0")} ${ampm}`
+                  );
                 }}
                 className="h-6 px-2 text-[10px] font-medium rounded border border-border bg-muted/30 hover:bg-accent/50 active:scale-95 transition-all whitespace-nowrap md:h-8 md:px-3 md:text-xs"
-              >Now</button>
+              >
+                Now
+              </button>
               {/* Date button — toggles stepper */}
               <button
                 type="button"
-                onClick={() => setShowMapQeDateStepper((v) => !v)}
+                onClick={() => setShowMapQeDateStepper(v => !v)}
                 className={`h-6 px-2 text-[10px] font-medium rounded border transition-all whitespace-nowrap active:scale-95 md:h-8 md:px-3 md:text-xs ${
                   showMapQeDateStepper
                     ? "border-primary bg-primary text-primary-foreground"
                     : "border-border bg-muted/30 hover:bg-accent/50"
                 }`}
-              >Date</button>
+              >
+                Date
+              </button>
             </div>
 
             {/* Date stepper — only visible when Date button is toggled on */}
@@ -4100,292 +5944,531 @@ export default function IntelligenceMapping() {
                 <button
                   type="button"
                   className="px-2 py-0.5 text-base font-bold text-muted-foreground hover:text-foreground transition-colors"
-                  onClick={() => setMapQeRowDate(_addDaysToYmd(mapQeRowDate, -1))}
-                >◀</button>
+                  onClick={() =>
+                    setMapQeRowDate(_addDaysToYmd(mapQeRowDate, -1))
+                  }
+                >
+                  ◀
+                </button>
                 <span className="text-[11px] font-semibold tracking-widest text-foreground font-mono">
                   {_formatPerthDateLabel(mapQeRowDate)}
                 </span>
                 <button
                   type="button"
                   className="px-2 py-0.5 text-base font-bold text-muted-foreground hover:text-foreground transition-colors"
-                  onClick={() => setMapQeRowDate(_addDaysToYmd(mapQeRowDate, 1))}
-                >▶</button>
+                  onClick={() =>
+                    setMapQeRowDate(_addDaysToYmd(mapQeRowDate, 1))
+                  }
+                >
+                  ▶
+                </button>
               </div>
             )}
 
             {/* No sheet selected warning */}
             {rsSelectedSheetId === null ? (
               <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-3 md:px-4 md:py-4 text-center">
-                <p className="text-xs md:text-sm font-semibold text-amber-400 mb-1">No running sheet selected</p>
-                <p className="text-[11px] md:text-xs text-muted-foreground">Select an operation and running sheet in the right panel first, then tap &amp; hold the map again.</p>
+                <p className="text-xs md:text-sm font-semibold text-amber-400 mb-1">
+                  No running sheet selected
+                </p>
+                <p className="text-[11px] md:text-xs text-muted-foreground">
+                  Select an operation and running sheet in the right panel
+                  first, then tap &amp; hold the map again.
+                </p>
               </div>
             ) : (
               <div className="space-y-2 md:space-y-3">
                 {/* ARR panel removed per user request */}
 
                 {/* Inline observation field */}
-                {rsInlineLabel && (() => {
-                  const selectedSheet = (rsSheetsData as any[] | undefined)?.find((s: any) => s.id === rsSelectedSheetId);
-                  const rosterCins: string[] = [];
-                  if (selectedSheet?.sheetCins) {
-                    try {
-                      const parsed: Array<{ cin: string; isTeamLeader?: boolean }> = typeof selectedSheet.sheetCins === "string"
-                        ? JSON.parse(selectedSheet.sheetCins)
-                        : selectedSheet.sheetCins;
-                      parsed
-                        .sort((a, b) => {
-                          if (a.isTeamLeader && !b.isTeamLeader) return -1;
-                          if (!a.isTeamLeader && b.isTeamLeader) return 1;
-                          const numA = parseInt(a.cin ?? "", 10);
-                          const numB = parseInt(b.cin ?? "", 10);
-                          if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
-                          return (a.cin ?? "").localeCompare(b.cin ?? "");
-                        })
-                        .forEach(c => { if (c.cin) rosterCins.push(c.cin); });
-                    } catch { /* ignore */ }
-                  }
-                  const inlineReadOnly = isTouchDevice && !rsInlineTypingMode;
-                  return (
-                    <div className="rounded-lg border border-border bg-muted/40 p-2.5 md:p-3.5 flex flex-col gap-2 md:gap-2.5" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] md:text-xs font-bold uppercase tracking-wide text-muted-foreground">Observation</span>
-                        <button
-                          type="button"
-                          onClick={undoInlineText}
-                          disabled={rsInlineUndoStack.length === 0}
-                          title="Undo"
-                          className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold border border-border text-muted-foreground transition-all active:scale-95 hover:bg-accent/50 disabled:opacity-40 disabled:pointer-events-none"
-                        >
-                          <Undo2 className="h-3 w-3" />
-                          Undo
-                        </button>
-                      </div>
-                      <textarea
-                        ref={rsInlineInputRef}
-                        value={rsInlineText}
-                        readOnly={inlineReadOnly}
-                        onClick={() => { if (inlineReadOnly) enableInlineTyping(); }}
-                        onChange={(e) => {
-                          const next = e.target.value;
-                          const now = Date.now();
-                          // Group rapid keystrokes into a single undo step; only
-                          // snapshot when there's been a pause since the last one.
-                          if (now - rsInlineTypingPushRef.current > 600) {
-                            pushInlineUndo(rsInlineText);
-                          }
-                          rsInlineTypingPushRef.current = now;
-                          setRsInlineText(next);
-                          resetInlineTimer();
-                        }}
-                        onFocus={resetInlineTimer}
-                        onKeyDown={(e) => {
-                          if (e.key === " " || e.key === "Tab") {
-                            const textarea = e.currentTarget;
-                            const pos = textarea.selectionStart ?? 0;
-                            const textBefore = rsInlineText.slice(0, pos);
-                            const match = textBefore.match(/(\S+)$/);
-                            if (match) {
-                              const word = match[1].toLowerCase();
-                              const expansion = mapQeShortcutMap[word];
-                              if (expansion) {
-                                e.preventDefault();
-                                const before = textBefore.slice(0, textBefore.length - match[1].length);
-                                const after = rsInlineText.slice(pos);
-                                const newText = before + expansion + " " + after;
-                                pushInlineUndo(rsInlineText);
-                                setRsInlineText(newText);
-                                resetInlineTimer();
-                                requestAnimationFrame(() => {
-                                  const newPos = before.length + expansion.length + 1;
-                                  textarea.setSelectionRange(newPos, newPos);
-                                });
+                {rsInlineLabel &&
+                  (() => {
+                    const selectedSheet = (
+                      rsSheetsData as any[] | undefined
+                    )?.find((s: any) => s.id === rsSelectedSheetId);
+                    const rosterCins: string[] = [];
+                    if (selectedSheet?.sheetCins) {
+                      try {
+                        const parsed: Array<{
+                          cin: string;
+                          isTeamLeader?: boolean;
+                        }> =
+                          typeof selectedSheet.sheetCins === "string"
+                            ? JSON.parse(selectedSheet.sheetCins)
+                            : selectedSheet.sheetCins;
+                        parsed
+                          .sort((a, b) => {
+                            if (a.isTeamLeader && !b.isTeamLeader) return -1;
+                            if (!a.isTeamLeader && b.isTeamLeader) return 1;
+                            const numA = parseInt(a.cin ?? "", 10);
+                            const numB = parseInt(b.cin ?? "", 10);
+                            if (!isNaN(numA) && !isNaN(numB))
+                              return numA - numB;
+                            return (a.cin ?? "").localeCompare(b.cin ?? "");
+                          })
+                          .forEach(c => {
+                            if (c.cin) rosterCins.push(c.cin);
+                          });
+                      } catch {
+                        /* ignore */
+                      }
+                    }
+                    const inlineReadOnly = isTouchDevice && !rsInlineTypingMode;
+                    return (
+                      <div
+                        className="rounded-lg border border-border bg-muted/40 p-2.5 md:p-3.5 flex flex-col gap-2 md:gap-2.5"
+                        onClick={e => e.stopPropagation()}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] md:text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                            Observation
+                          </span>
+                          <button
+                            type="button"
+                            onClick={undoInlineText}
+                            disabled={rsInlineUndoStack.length === 0}
+                            title="Undo"
+                            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold border border-border text-muted-foreground transition-all active:scale-95 hover:bg-accent/50 disabled:opacity-40 disabled:pointer-events-none"
+                          >
+                            <Undo2 className="h-3 w-3" />
+                            Undo
+                          </button>
+                        </div>
+                        <textarea
+                          ref={rsInlineInputRef}
+                          value={rsInlineText}
+                          readOnly={inlineReadOnly}
+                          onClick={() => {
+                            if (inlineReadOnly) enableInlineTyping();
+                          }}
+                          onChange={e => {
+                            const next = e.target.value;
+                            const now = Date.now();
+                            // Group rapid keystrokes into a single undo step; only
+                            // snapshot when there's been a pause since the last one.
+                            if (now - rsInlineTypingPushRef.current > 600) {
+                              pushInlineUndo(rsInlineText);
+                            }
+                            rsInlineTypingPushRef.current = now;
+                            setRsInlineText(next);
+                            resetInlineTimer();
+                          }}
+                          onFocus={resetInlineTimer}
+                          onKeyDown={e => {
+                            if (e.key === " " || e.key === "Tab") {
+                              const textarea = e.currentTarget;
+                              const pos = textarea.selectionStart ?? 0;
+                              const textBefore = rsInlineText.slice(0, pos);
+                              const match = textBefore.match(/(\S+)$/);
+                              if (match) {
+                                const word = match[1].toLowerCase();
+                                const expansion = mapQeShortcutMap[word];
+                                if (expansion) {
+                                  e.preventDefault();
+                                  const before = textBefore.slice(
+                                    0,
+                                    textBefore.length - match[1].length
+                                  );
+                                  const after = rsInlineText.slice(pos);
+                                  const newText =
+                                    before + expansion + " " + after;
+                                  pushInlineUndo(rsInlineText);
+                                  setRsInlineText(newText);
+                                  resetInlineTimer();
+                                  requestAnimationFrame(() => {
+                                    const newPos =
+                                      before.length + expansion.length + 1;
+                                    textarea.setSelectionRange(newPos, newPos);
+                                  });
+                                }
                               }
                             }
+                          }}
+                          placeholder={
+                            inlineReadOnly
+                              ? "Tap shortcuts below, or tap here to type…"
+                              : "Add details (optional)…"
                           }
-                        }}
-                        placeholder={inlineReadOnly ? "Tap shortcuts below, or tap here to type…" : "Add details (optional)…"}
-                        rows={4}
-                        className={`w-full resize-none rounded-md border border-border bg-background px-2.5 py-1.5 text-[11px] placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring md:px-3 md:py-2 md:text-sm lg:min-h-[140px] ${inlineReadOnly ? "cursor-pointer" : ""}`}
-                      />
-                      {/* Shortcut buttons */}
-                      {(() => {
-                        // ── QE chips: exact mirror of main RS chip set, values, and order ──────────
-                        // Single source of truth: assignedTarget (target.getById) for all target fields.
-                        // Chip set matches SheetDetail exactly: TGT, HBF, HB, V1F, V1, extra vehicles, wildcards, DEP, ARR, folder shortcuts.
-                        // Order: qeChipOrder (read from RS localStorage key) with wildcards always last.
-                        const appendText = (text: string) => { pushInlineUndo(rsInlineText); setRsInlineText(prev => prev ? `${prev} ${text}` : text); resetInlineTimer(); rsInlineInputRef.current?.focus(); };
-                        const t = assignedTarget as any;
-                        if (!t) return null;
+                          rows={4}
+                          className={`w-full resize-none rounded-md border border-border bg-background px-2.5 py-1.5 text-[11px] placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring md:px-3 md:py-2 md:text-sm lg:min-h-[140px] ${inlineReadOnly ? "cursor-pointer" : ""}`}
+                        />
+                        {/* Shortcut buttons */}
+                        {(() => {
+                          // ── QE chips: exact mirror of main RS chip set, values, and order ──────────
+                          // Single source of truth: assignedTarget (target.getById) for all target fields.
+                          // Chip set matches SheetDetail exactly: TGT, HBF, HB, V1F, V1, extra vehicles, wildcards, DEP, ARR, folder shortcuts.
+                          // Order: qeChipOrder (read from RS localStorage key) with wildcards always last.
+                          const appendText = (text: string) => {
+                            pushInlineUndo(rsInlineText);
+                            setRsInlineText(prev =>
+                              prev ? `${prev} ${text}` : text
+                            );
+                            resetInlineTimer();
+                            rsInlineInputRef.current?.focus();
+                          };
+                          const t = assignedTarget as any;
+                          if (!t) return null;
 
-                        // Extra vehicle chips from JSON (V2F/V2, V3F/V3, …)
-                        const extraVehicleChips: Array<{ label: string; display: string; getValue: () => string | null }> = [];
-                        try {
-                          const evs: Array<{ full: string; short: string }> = JSON.parse(t.extraVehicles ?? '[]');
-                          evs.forEach((ev: { full: string; short: string }, i: number) => {
-                            const num = i + 2;
-                            if (ev.full) extraVehicleChips.push({ label: `V${num}F`, display: `V${num}F`, getValue: () => ev.full });
-                            if (ev.short) {
-                              extraVehicleChips.push({ label: `V${num}`, display: ev.short ? `V${num} ${ev.short}` : `V${num}`, getValue: () => ev.short });
-                            }
-                          });
-                        } catch {}
+                          // Extra vehicle chips from JSON (V2F/V2, V3F/V3, …)
+                          const extraVehicleChips: Array<{
+                            label: string;
+                            display: string;
+                            getValue: () => string | null;
+                          }> = [];
+                          try {
+                            const evs: Array<{ full: string; short: string }> =
+                              JSON.parse(t.extraVehicles ?? "[]");
+                            evs.forEach(
+                              (
+                                ev: { full: string; short: string },
+                                i: number
+                              ) => {
+                                const num = i + 2;
+                                if (ev.full)
+                                  extraVehicleChips.push({
+                                    label: `V${num}F`,
+                                    display: `V${num}F`,
+                                    getValue: () => ev.full,
+                                  });
+                                if (ev.short) {
+                                  extraVehicleChips.push({
+                                    label: `V${num}`,
+                                    display: ev.short
+                                      ? `V${num} ${ev.short}`
+                                      : `V${num}`,
+                                    getValue: () => ev.short,
+                                  });
+                                }
+                              }
+                            );
+                          } catch {}
 
-                        // Wild field chips (#1, #2, …)
-                        const wildChips: Array<{ label: string; display: string; getValue: () => string | null }> = [];
-                        try {
-                          const wfs: Array<{ label: string; value: string }> = JSON.parse(t.wildFields ?? '[]');
-                          wfs.forEach((wf: { label: string; value: string }) => {
-                            if (wf.value) wildChips.push({ label: wf.label, display: wf.label, getValue: () => wf.value });
-                          });
-                        } catch {}
+                          // Wild field chips (#1, #2, …)
+                          const wildChips: Array<{
+                            label: string;
+                            display: string;
+                            getValue: () => string | null;
+                          }> = [];
+                          try {
+                            const wfs: Array<{ label: string; value: string }> =
+                              JSON.parse(t.wildFields ?? "[]");
+                            wfs.forEach(
+                              (wf: { label: string; value: string }) => {
+                                if (wf.value)
+                                  wildChips.push({
+                                    label: wf.label,
+                                    display: wf.label,
+                                    getValue: () => wf.value,
+                                  });
+                              }
+                            );
+                          } catch {}
 
-                        // Folder shortcut chips (showInRs=true, exclude legacy 'D')
-                        const folderShortcutChips: Array<{ label: string; display: string; getValue: () => string | null }> =
-                          (generalShortcuts as any[] ?? []).filter((s: any) => (s.trigger as string).toUpperCase() !== "D" && !!s.showInRs).map((s: any) => ({
-                            label: (s.trigger as string).toUpperCase(),
-                            display: (s.trigger as string).toUpperCase(),
-                            getValue: () => s.expansion as string,
-                          }));
+                          // Folder shortcut chips (showInRs=true, exclude legacy 'D')
+                          const folderShortcutChips: Array<{
+                            label: string;
+                            display: string;
+                            getValue: () => string | null;
+                          }> = ((generalShortcuts as any[]) ?? [])
+                            .filter(
+                              (s: any) =>
+                                (s.trigger as string).toUpperCase() !== "D" &&
+                                !!s.showInRs
+                            )
+                            .map((s: any) => ({
+                              label: (s.trigger as string).toUpperCase(),
+                              display: (s.trigger as string).toUpperCase(),
+                              getValue: () => s.expansion as string,
+                            }));
 
-                        // Full chip list — identical order to SheetDetail fields array
-                        const allChips: Array<{ label: string; display: string; getValue: () => string | null }> = [
-                          { label: "TGT", display: "TGT", getValue: () => t.tgt ?? null },
-                          { label: "HBF", display: "HBF", getValue: () => t.hbf ?? null },
-                          { label: "HB",  display: "HB",  getValue: () => t.hb  ?? null },
-                          { label: "V1F", display: "V1F", getValue: () => t.v1f ?? null },
-                          { label: "V1",  display: t.v1 ? `V1 ${t.v1}` : "V1", getValue: () => t.v1 ?? null },
-                          ...extraVehicleChips,
-                          ...wildChips,
-                          { label: "DEP", display: "DEP", getValue: () => t.dep ?? null },
-                          { label: "ARR", display: "ARR", getValue: () => t.arr ?? null },
-                          ...folderShortcutChips,
-                        ];
+                          // Full chip list — identical order to SheetDetail fields array
+                          const allChips: Array<{
+                            label: string;
+                            display: string;
+                            getValue: () => string | null;
+                          }> = [
+                            {
+                              label: "TGT",
+                              display: "TGT",
+                              getValue: () => t.tgt ?? null,
+                            },
+                            {
+                              label: "HBF",
+                              display: "HBF",
+                              getValue: () => t.hbf ?? null,
+                            },
+                            {
+                              label: "HB",
+                              display: "HB",
+                              getValue: () => t.hb ?? null,
+                            },
+                            {
+                              label: "V1F",
+                              display: "V1F",
+                              getValue: () => t.v1f ?? null,
+                            },
+                            {
+                              label: "V1",
+                              display: t.v1 ? `V1 ${t.v1}` : "V1",
+                              getValue: () => t.v1 ?? null,
+                            },
+                            ...extraVehicleChips,
+                            ...wildChips,
+                            {
+                              label: "DEP",
+                              display: "DEP",
+                              getValue: () => t.dep ?? null,
+                            },
+                            {
+                              label: "ARR",
+                              display: "ARR",
+                              getValue: () => t.arr ?? null,
+                            },
+                            ...folderShortcutChips,
+                          ];
 
-                        const available = allChips.filter(s => s.getValue() !== null);
-                        if (available.length === 0) return null;
+                          const available = allChips.filter(
+                            s => s.getValue() !== null
+                          );
+                          if (available.length === 0) return null;
 
-                        // Apply saved RS order — wildcards always last (mirrors SheetDetail)
-                        const isWildcard = (lbl: string) => /^#\d+$/.test(lbl);
-                        const nonWildAvail = available.filter(s => !isWildcard(s.label));
-                        const wildAvail    = available.filter(s => isWildcard(s.label));
-                        const orderedNonWild = qeChipOrder.length > 0
-                          ? [
-                              ...qeChipOrder.filter(lbl => !isWildcard(lbl)).map(lbl => nonWildAvail.find(s => s.label === lbl)).filter(Boolean) as typeof available,
-                              ...nonWildAvail.filter(s => !qeChipOrder.includes(s.label)),
-                            ]
-                          : nonWildAvail;
-                        const orderedWild = qeChipOrder.length > 0
-                          ? [
-                              ...qeChipOrder.filter(isWildcard).map(lbl => wildAvail.find(s => s.label === lbl)).filter(Boolean) as typeof available,
-                              ...wildAvail.filter(s => !qeChipOrder.includes(s.label)),
-                            ]
-                          : wildAvail;
-                        const orderedChips = [...orderedNonWild, ...orderedWild];
+                          // Apply saved RS order — wildcards always last (mirrors SheetDetail)
+                          const isWildcard = (lbl: string) =>
+                            /^#\d+$/.test(lbl);
+                          const nonWildAvail = available.filter(
+                            s => !isWildcard(s.label)
+                          );
+                          const wildAvail = available.filter(s =>
+                            isWildcard(s.label)
+                          );
+                          const orderedNonWild =
+                            qeChipOrder.length > 0
+                              ? [
+                                  ...(qeChipOrder
+                                    .filter(lbl => !isWildcard(lbl))
+                                    .map(lbl =>
+                                      nonWildAvail.find(s => s.label === lbl)
+                                    )
+                                    .filter(Boolean) as typeof available),
+                                  ...nonWildAvail.filter(
+                                    s => !qeChipOrder.includes(s.label)
+                                  ),
+                                ]
+                              : nonWildAvail;
+                          const orderedWild =
+                            qeChipOrder.length > 0
+                              ? [
+                                  ...(qeChipOrder
+                                    .filter(isWildcard)
+                                    .map(lbl =>
+                                      wildAvail.find(s => s.label === lbl)
+                                    )
+                                    .filter(Boolean) as typeof available),
+                                  ...wildAvail.filter(
+                                    s => !qeChipOrder.includes(s.label)
+                                  ),
+                                ]
+                              : wildAvail;
+                          const orderedChips = [
+                            ...orderedNonWild,
+                            ...orderedWild,
+                          ];
 
-                        // Display rules — same as SheetDetail:
-                        // Vn short (V1/V2/…): show label + rego; everything else: trigger label only
-                        const shortcutFolderLabels = new Set((generalShortcuts as any[] ?? []).map((s: any) => (s.trigger as string).toUpperCase()));
-                        const TRIGGER_ONLY = new Set(["TGT", "HBF", "HB", "V1F", "DEP", "ARR"]);
-                        const isVnShort = (lbl: string) => /^V\d+$/.test(lbl);
-                        const isVnFull  = (lbl: string) => /^V\d+F$/.test(lbl);
-                        const isStandard = (lbl: string) => !isVnShort(lbl) && (shortcutFolderLabels.has(lbl) || TRIGGER_ONLY.has(lbl) || isVnFull(lbl));
+                          // Display rules — same as SheetDetail:
+                          // Vn short (V1/V2/…): show label + rego; everything else: trigger label only
+                          const shortcutFolderLabels = new Set(
+                            ((generalShortcuts as any[]) ?? []).map((s: any) =>
+                              (s.trigger as string).toUpperCase()
+                            )
+                          );
+                          const TRIGGER_ONLY = new Set([
+                            "TGT",
+                            "HBF",
+                            "HB",
+                            "V1F",
+                            "DEP",
+                            "ARR",
+                          ]);
+                          const isVnShort = (lbl: string) => /^V\d+$/.test(lbl);
+                          const isVnFull = (lbl: string) => /^V\d+F$/.test(lbl);
+                          const isStandard = (lbl: string) =>
+                            !isVnShort(lbl) &&
+                            (shortcutFolderLabels.has(lbl) ||
+                              TRIGGER_ONLY.has(lbl) ||
+                              isVnFull(lbl));
 
-                        return (
-                          <div className="flex flex-wrap gap-1 md:gap-1.5">
-                            {orderedChips.map((s) => (
-                              <button
-                                key={s.label}
-                                onClick={() => { const v = s.getValue(); if (v) appendText(v); }}
-                                data-qe-chip={s.label}
-                                className="cursor-pointer px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
-                              >
-                                {isVnShort(s.label) ? s.display : isStandard(s.label) ? s.label : s.display}
-                              </button>
-                            ))}
-                          </div>
-                        );
-                      })()}
-                      {/* Address chips — full RS address and short street address */}
-                      {mapQeAddress && (() => {
-                        const appendText = (text: string) => { pushInlineUndo(rsInlineText); setRsInlineText(prev => prev ? `${prev} ${text}` : text); resetInlineTimer(); rsInlineInputRef.current?.focus(); };
-                        // Extract short address from bracket code: e.g. "21 Olding Way, MELVILLE WA (21 OLDING WAY)" → "21 Olding Way"
-                        const bracketMatch = mapQeAddress.match(/^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/);
-                        // Short address: title-case the bracket code content (e.g. "21 OLDING WAY" → "21 Olding Way")
-                        const toTitleCase = (s: string) => s.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
-                        const shortAddr = bracketMatch
-                          ? toTitleCase(bracketMatch[2])
-                          : mapQeAddress.split(",")[0]?.trim() ?? mapQeAddress;
-                        return (
-                          <div className="flex flex-col gap-1 md:gap-1.5">
-                            <button
-                              onClick={() => appendText(mapQeAddress)}
-                              className="w-full text-left px-2.5 py-1.5 rounded-md border border-teal-500/30 bg-teal-500/5 text-teal-400 hover:bg-teal-500/15 active:scale-[0.98] transition-all md:px-3.5 md:py-2.5"
-                            >
-                              <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-teal-500/70 block mb-0.5">Full Address</span>
-                              <span className="text-[10px] md:text-sm font-mono leading-tight break-all">{mapQeAddress}</span>
-                            </button>
-                            <button
-                              onClick={() => appendText(shortAddr)}
-                              className="w-full text-left px-2.5 py-1.5 rounded-md border border-teal-500/20 bg-teal-500/5 text-teal-300 hover:bg-teal-500/10 active:scale-[0.98] transition-all md:px-3.5 md:py-2.5"
-                            >
-                              <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-teal-500/70 block mb-0.5">Short Address</span>
-                              <span className="text-[10px] md:text-sm font-mono leading-tight">{shortAddr}</span>
-                            </button>
-                          </div>
-                        );
-                      })()}
-                      {/* Entity chips — quick-insert shortcuts mined from this sheet's own
+                          return (
+                            <div className="flex flex-wrap gap-1 md:gap-1.5">
+                              {orderedChips.map(s => (
+                                <button
+                                  key={s.label}
+                                  onClick={() => {
+                                    const v = s.getValue();
+                                    if (v) appendText(v);
+                                  }}
+                                  data-qe-chip={s.label}
+                                  className="cursor-pointer px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                                >
+                                  {isVnShort(s.label)
+                                    ? s.display
+                                    : isStandard(s.label)
+                                      ? s.label
+                                      : s.display}
+                                </button>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                        {/* Address chips — full RS address and short street address */}
+                        {mapQeAddress &&
+                          (() => {
+                            const appendText = (text: string) => {
+                              pushInlineUndo(rsInlineText);
+                              setRsInlineText(prev =>
+                                prev ? `${prev} ${text}` : text
+                              );
+                              resetInlineTimer();
+                              rsInlineInputRef.current?.focus();
+                            };
+                            // Extract short address from bracket code: e.g. "21 Olding Way, MELVILLE WA (21 OLDING WAY)" → "21 Olding Way"
+                            const bracketMatch = mapQeAddress.match(
+                              /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
+                            );
+                            // Short address: title-case the bracket code content (e.g. "21 OLDING WAY" → "21 Olding Way")
+                            const toTitleCase = (s: string) =>
+                              s
+                                .toLowerCase()
+                                .replace(/\b\w/g, c => c.toUpperCase());
+                            const shortAddr = bracketMatch
+                              ? toTitleCase(bracketMatch[2])
+                              : (mapQeAddress.split(",")[0]?.trim() ??
+                                mapQeAddress);
+                            return (
+                              <div className="flex flex-col gap-1 md:gap-1.5">
+                                <button
+                                  onClick={() => appendText(mapQeAddress)}
+                                  className="w-full text-left px-2.5 py-1.5 rounded-md border border-teal-500/30 bg-teal-500/5 text-teal-400 hover:bg-teal-500/15 active:scale-[0.98] transition-all md:px-3.5 md:py-2.5"
+                                >
+                                  <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-teal-500/70 block mb-0.5">
+                                    Full Address
+                                  </span>
+                                  <span className="text-[10px] md:text-sm font-mono leading-tight break-all">
+                                    {mapQeAddress}
+                                  </span>
+                                </button>
+                                <button
+                                  onClick={() => appendText(shortAddr)}
+                                  className="w-full text-left px-2.5 py-1.5 rounded-md border border-teal-500/20 bg-teal-500/5 text-teal-300 hover:bg-teal-500/10 active:scale-[0.98] transition-all md:px-3.5 md:py-2.5"
+                                >
+                                  <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-teal-500/70 block mb-0.5">
+                                    Short Address
+                                  </span>
+                                  <span className="text-[10px] md:text-sm font-mono leading-tight">
+                                    {shortAddr}
+                                  </span>
+                                </button>
+                              </div>
+                            );
+                          })()}
+                        {/* Entity chips — quick-insert shortcuts mined from this sheet's own
                           observations (surname / short address / vehicle rego), shared
                           across every officer on the sheet via the server. */}
-                      {rsEntityChips && rsEntityChips.length > 0 && (() => {
-                        const appendText = (text: string) => { pushInlineUndo(rsInlineText); setRsInlineText(prev => prev ? `${prev} ${text}` : text); resetInlineTimer(); rsInlineInputRef.current?.focus(); };
-                        return (
-                          <div className="flex flex-wrap gap-1 md:gap-1.5">
-                            {rsEntityChips.map((chip) => (
+                        {rsEntityChips &&
+                          rsEntityChips.length > 0 &&
+                          (() => {
+                            const appendText = (text: string) => {
+                              pushInlineUndo(rsInlineText);
+                              setRsInlineText(prev =>
+                                prev ? `${prev} ${text}` : text
+                              );
+                              resetInlineTimer();
+                              rsInlineInputRef.current?.focus();
+                            };
+                            return (
+                              <div className="flex flex-wrap gap-1 md:gap-1.5">
+                                {rsEntityChips.map(chip => (
+                                  <button
+                                    key={chip.key}
+                                    onClick={() => appendText(chip.insertValue)}
+                                    className="px-2 py-0.5 rounded text-[10px] font-bold border border-violet-500/30 bg-violet-500/5 text-violet-400 hover:bg-violet-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                                  >
+                                    <span className="font-mono normal-case">
+                                      {chip.insertValue}
+                                    </span>
+                                  </button>
+                                ))}
+                              </div>
+                            );
+                          })()}
+                        {/* CIN picker — multi-select with TEAM */}
+                        {rosterCins.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 md:gap-2">
+                            <button
+                              onClick={() => {
+                                const allSel = rosterCins.every(c =>
+                                  rsInlineCins.has(c)
+                                );
+                                const next = allSel
+                                  ? new Set<string>()
+                                  : new Set(rosterCins);
+                                setRsInlineCins(next);
+                                rsInlineCinsRef.current = next;
+                                resetInlineTimer();
+                              }}
+                              className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all active:scale-95 md:px-3.5 md:py-1.5 md:text-sm ${rosterCins.every(c => rsInlineCins.has(c)) ? "bg-amber-500/20 border-amber-500/60 text-amber-400" : "bg-muted/40 border-amber-500/30 text-amber-500/80 hover:bg-amber-500/10"}`}
+                            >
+                              TEAM
+                            </button>
+                            {rosterCins.map(cin => (
                               <button
-                                key={chip.key}
-                                onClick={() => appendText(chip.insertValue)}
-                                className="px-2 py-0.5 rounded text-[10px] font-bold border border-violet-500/30 bg-violet-500/5 text-violet-400 hover:bg-violet-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                                key={cin}
+                                onClick={() => {
+                                  const next = new Set(rsInlineCins);
+                                  if (next.has(cin)) {
+                                    next.delete(cin);
+                                  } else {
+                                    next.add(cin);
+                                  }
+                                  setRsInlineCins(next);
+                                  rsInlineCinsRef.current = next;
+                                  resetInlineTimer();
+                                }}
+                                className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all active:scale-95 md:px-3.5 md:py-1.5 md:text-sm ${rsInlineCins.has(cin) ? "bg-primary/20 border-primary/60 text-primary" : "bg-muted/40 border-border text-foreground/80 hover:bg-muted/70 hover:text-foreground"}`}
                               >
-                                <span className="font-mono normal-case">{chip.insertValue}</span>
+                                {cin}
                               </button>
                             ))}
                           </div>
-                        );
-                      })()}
-                      {/* CIN picker — multi-select with TEAM */}
-                      {rosterCins.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 md:gap-2">
+                        )}
+                        <div className="flex items-center justify-end gap-2">
                           <button
-                            onClick={() => { const allSel = rosterCins.every(c => rsInlineCins.has(c)); const next = allSel ? new Set<string>() : new Set(rosterCins); setRsInlineCins(next); rsInlineCinsRef.current = next; resetInlineTimer(); }}
-                            className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all active:scale-95 md:px-3.5 md:py-1.5 md:text-sm ${rosterCins.every(c => rsInlineCins.has(c)) ? "bg-amber-500/20 border-amber-500/60 text-amber-400" : "bg-muted/40 border-amber-500/30 text-amber-500/80 hover:bg-amber-500/10"}`}
-                          >TEAM</button>
-                          {rosterCins.map((cin) => (
-                            <button key={cin} onClick={() => { const next = new Set(rsInlineCins); if (next.has(cin)) { next.delete(cin); } else { next.add(cin); } setRsInlineCins(next); rsInlineCinsRef.current = next; resetInlineTimer(); }}
-                              className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all active:scale-95 md:px-3.5 md:py-1.5 md:text-sm ${rsInlineCins.has(cin) ? "bg-primary/20 border-primary/60 text-primary" : "bg-muted/40 border-border text-foreground/80 hover:bg-muted/70 hover:text-foreground"}`}>
-                              {cin}
-                            </button>
-                          ))}
+                            onClick={submitInlineField}
+                            disabled={rsAddingRow}
+                            className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-[10px] font-semibold text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-50 md:px-4 md:py-2 md:text-sm md:gap-1.5"
+                          >
+                            {rsAddingRow ? (
+                              <Spinner className="h-3 w-3 md:h-4 md:w-4" />
+                            ) : (
+                              <Send className="h-3 w-3 md:h-4 md:w-4" />
+                            )}
+                            Submit
+                          </button>
                         </div>
-                      )}
-                      <div className="flex items-center justify-end gap-2">
-                        <button onClick={submitInlineField} disabled={rsAddingRow}
-                          className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-[10px] font-semibold text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-50 md:px-4 md:py-2 md:text-sm md:gap-1.5">
-                          {rsAddingRow ? <Spinner className="h-3 w-3 md:h-4 md:w-4" /> : <Send className="h-3 w-3 md:h-4 md:w-4" />}
-                          Submit
-                        </button>
                       </div>
-                    </div>
-                  );
-                })()}
+                    );
+                  })()}
 
                 {/* Quick action buttons removed per user request */}
 
                 {/* Last entry confirmation */}
                 {rsLastEntry && (
                   <div className="rounded-md border border-green-500/30 bg-green-500/10 px-2.5 py-2 md:px-3.5 md:py-3">
-                    <p className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-green-400 mb-0.5">Last Entry</p>
-                    <p className="text-[11px] md:text-sm font-mono text-foreground">{rsLastEntry.time} — {rsLastEntry.label}</p>
+                    <p className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-green-400 mb-0.5">
+                      Last Entry
+                    </p>
+                    <p className="text-[11px] md:text-sm font-mono text-foreground">
+                      {rsLastEntry.time} — {rsLastEntry.label}
+                    </p>
                   </div>
                 )}
               </div>
@@ -4399,32 +6482,45 @@ export default function IntelligenceMapping() {
         <div
           className="absolute inset-0 z-40 flex items-end justify-center"
           style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}
-          onClick={() => { setPendingLatLng(null); setEditingMarkerId(null); }}
+          onClick={() => {
+            setPendingLatLng(null);
+            setEditingMarkerId(null);
+          }}
         >
           <div
             className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8 max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
+            onClick={e => e.stopPropagation()}
           >
             {/* Header */}
             <div className="flex items-center justify-between mb-4">
               <div>
-                <p className="text-sm font-bold text-foreground">{editingMarkerId ? "Edit Map Marker" : "Place Map Marker"}</p>
+                <p className="text-sm font-bold text-foreground">
+                  {editingMarkerId ? "Edit Map Marker" : "Place Map Marker"}
+                </p>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
                   {pendingLatLng.lat.toFixed(5)}, {pendingLatLng.lng.toFixed(5)}
                 </p>
               </div>
-              <button onClick={() => { setPendingLatLng(null); setEditingMarkerId(null); }} className="text-muted-foreground hover:text-foreground">
+              <button
+                onClick={() => {
+                  setPendingLatLng(null);
+                  setEditingMarkerId(null);
+                }}
+                className="text-muted-foreground hover:text-foreground"
+              >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
             {/* 0. Location / Business Name — shown at top for quick identification */}
             <div className="mb-3">
-              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Location / Business Name</label>
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
+                Location / Business Name
+              </label>
               <input
                 type="text"
                 value={cmLabel}
-                onChange={(e) => setCmLabel(e.target.value)}
+                onChange={e => setCmLabel(e.target.value)}
                 placeholder="e.g. Target address, coffee shop..."
                 className="w-full text-sm bg-background border border-border rounded-md px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
               />
@@ -4432,11 +6528,13 @@ export default function IntelligenceMapping() {
 
             {/* 0b. Address */}
             <div className="mb-3 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1">Address</p>
+              <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1">
+                Address
+              </p>
               <input
                 type="text"
                 value={cmAddress}
-                onChange={(e) => setCmAddress(e.target.value)}
+                onChange={e => setCmAddress(e.target.value)}
                 placeholder="Auto-filled from coordinates…"
                 className="w-full text-sm bg-transparent border-none outline-none text-foreground placeholder:text-muted-foreground"
               />
@@ -4444,10 +6542,12 @@ export default function IntelligenceMapping() {
 
             {/* 0c. Notes — directly below address */}
             <div className="mb-4">
-              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Notes</label>
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
+                Notes
+              </label>
               <Textarea
                 value={cmNote}
-                onChange={(e) => setCmNote(e.target.value)}
+                onChange={e => setCmNote(e.target.value)}
                 placeholder="Optional notes..."
                 rows={2}
                 className="text-sm resize-none"
@@ -4456,13 +6556,17 @@ export default function IntelligenceMapping() {
 
             {/* 1. Icon picker */}
             <div className="mb-4">
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">Marker Icon</p>
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                Marker Icon
+              </p>
               <div className="space-y-3">
-                {MARKER_ICON_GROUPS.map((group) => (
+                {MARKER_ICON_GROUPS.map(group => (
                   <div key={group.label}>
-                    <p className="text-[10px] text-muted-foreground/70 mb-1.5">{group.label}</p>
+                    <p className="text-[10px] text-muted-foreground/70 mb-1.5">
+                      {group.label}
+                    </p>
                     <div className="flex flex-wrap gap-2">
-                      {group.icons.map((iconKey) => (
+                      {group.icons.map(iconKey => (
                         <button
                           key={iconKey}
                           onClick={() => setCmIcon(iconKey as MarkerIcon)}
@@ -4474,7 +6578,10 @@ export default function IntelligenceMapping() {
                           }`}
                         >
                           <img
-                            src={getMarkerDataUrl(iconKey as MarkerIcon, cmColour)}
+                            src={getMarkerDataUrl(
+                              iconKey as MarkerIcon,
+                              cmColour
+                            )}
                             alt={MARKER_ICON_LABELS[iconKey as MarkerIcon]}
                             className="w-7 h-7 object-contain"
                           />
@@ -4488,15 +6595,19 @@ export default function IntelligenceMapping() {
 
             {/* 2. Colour picker */}
             <div className="mb-4">
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">Colour</p>
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                Colour
+              </p>
               <div className="flex gap-2">
-                {(Object.keys(MARKER_COLOURS) as MarkerColour[]).map((col) => (
+                {(Object.keys(MARKER_COLOURS) as MarkerColour[]).map(col => (
                   <button
                     key={col}
                     onClick={() => setCmColour(col)}
                     title={MARKER_COLOUR_LABELS[col]}
                     className={`w-8 h-8 rounded-full border-2 transition-all ${
-                      cmColour === col ? "border-foreground scale-110" : "border-transparent hover:border-foreground/40"
+                      cmColour === col
+                        ? "border-foreground scale-110"
+                        : "border-transparent hover:border-foreground/40"
                     }`}
                     style={{ background: MARKER_COLOURS[col] }}
                   />
@@ -4506,7 +6617,9 @@ export default function IntelligenceMapping() {
 
             {/* 3. Rotation */}
             <div className="mb-4">
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">Rotation — {cmRotation}°</p>
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                Rotation — {cmRotation}°
+              </p>
               <div className="flex items-center gap-3">
                 {/* Rotated preview */}
                 <div className="shrink-0 w-10 h-10 flex items-center justify-center">
@@ -4524,21 +6637,37 @@ export default function IntelligenceMapping() {
                   max={359}
                   step={1}
                   value={cmRotation}
-                  onChange={(e) => setCmRotation(Number(e.target.value))}
+                  onChange={e => setCmRotation(Number(e.target.value))}
                   className="flex-1 accent-primary"
                 />
                 {/* Quick preset buttons */}
                 <div className="flex gap-1">
-                  {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => (
+                  {[0, 45, 90, 135, 180, 225, 270, 315].map(deg => (
                     <button
                       key={deg}
                       onClick={() => setCmRotation(deg)}
                       title={`${deg}°`}
                       className={`w-6 h-6 text-[9px] rounded border transition-all ${
-                        cmRotation === deg ? "bg-primary text-primary-foreground border-primary" : "border-border hover:border-primary/50 text-muted-foreground"
+                        cmRotation === deg
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "border-border hover:border-primary/50 text-muted-foreground"
                       }`}
                     >
-                      {deg === 0 ? "N" : deg === 45 ? "NE" : deg === 90 ? "E" : deg === 135 ? "SE" : deg === 180 ? "S" : deg === 225 ? "SW" : deg === 270 ? "W" : "NW"}
+                      {deg === 0
+                        ? "N"
+                        : deg === 45
+                          ? "NE"
+                          : deg === 90
+                            ? "E"
+                            : deg === 135
+                              ? "SE"
+                              : deg === 180
+                                ? "S"
+                                : deg === 225
+                                  ? "SW"
+                                  : deg === 270
+                                    ? "W"
+                                    : "NW"}
                     </button>
                   ))}
                 </div>
@@ -4547,13 +6676,15 @@ export default function IntelligenceMapping() {
 
             {/* 4. (Label moved to top, Operation/Person/Vehicle removed) */}
 
-
             {/* Save / Cancel */}
             <div className="flex gap-3">
               <Button
                 variant="outline"
                 className="flex-1"
-                onClick={() => { setPendingLatLng(null); setEditingMarkerId(null); }}
+                onClick={() => {
+                  setPendingLatLng(null);
+                  setEditingMarkerId(null);
+                }}
               >
                 Cancel
               </Button>
@@ -4600,59 +6731,178 @@ export default function IntelligenceMapping() {
                     setEditingMarkerId(null);
                     setCmRotation(0);
                   } catch {
-                    toast.error(editingMarkerId !== null ? "Failed to update marker" : "Failed to save marker");
+                    toast.error(
+                      editingMarkerId !== null
+                        ? "Failed to update marker"
+                        : "Failed to save marker"
+                    );
                   } finally {
                     setCmSaving(false);
                   }
                 }}
               >
-                {cmSaving ? <Spinner className="h-4 w-4" /> : editingMarkerId !== null ? "Save Changes" : "Place Marker"}
+                {cmSaving ? (
+                  <Spinner className="h-4 w-4" />
+                ) : editingMarkerId !== null ? (
+                  "Save Changes"
+                ) : (
+                  "Place Marker"
+                )}
               </Button>
             </div>
           </div>
         </div>
       )}
       {/* ── Target Edit Dialog ── */}
-      <Dialog open={editingTargetId !== null} onOpenChange={(open) => { if (!open) setEditingTargetId(null); }}>
+      <Dialog
+        open={editingTargetId !== null}
+        onOpenChange={open => {
+          if (!open) setEditingTargetId(null);
+        }}
+      >
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Target</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-3 py-2">
-            {([
-              { label: "Full Name, Born", val: etName, set: setEtName, isHbf: false, isV1f: false, isV2f: false },
-              { label: "Target (TGT)", val: etTgt, set: setEtTgt, isHbf: false, isV1f: false, isV2f: false },
-              { label: "Home Address Full (HBF)", val: etHbf, set: setEtHbf, isHbf: true, isV1f: false, isV2f: false },
-              { label: "Home (HB)", val: etHb, set: setEtHb, isHbf: false, isV1f: false, isV2f: false },
-              { label: "Vehicle 1 Full (V1F)", val: etV1f, set: setEtV1f, isHbf: false, isV1f: true, isV2f: false },
-              { label: "Vehicle (V1)", val: etV1, set: setEtV1, isHbf: false, isV1f: false, isV2f: false },
-              { label: "Vehicle 2 Full (V2F)", val: etV2f, set: setEtV2f, isHbf: false, isV1f: false, isV2f: true },
-              { label: "Vehicle (V2)", val: etV2, set: setEtV2, isHbf: false, isV1f: false, isV2f: false },
-              { label: "Depart (DEP)", val: etDep, set: setEtDep, isHbf: false, isV1f: false, isV2f: false },
-              { label: "Arrive (ARR)", val: etArr, set: setEtArr, isHbf: false, isV1f: false, isV2f: false },
-            ] as { label: string; val: string; set: (v: string) => void; isHbf: boolean; isV1f: boolean; isV2f: boolean }[]).map(({ label, val, set, isHbf, isV1f, isV2f }) => (
+            {(
+              [
+                {
+                  label: "Full Name, Born",
+                  val: etName,
+                  set: setEtName,
+                  isHbf: false,
+                  isV1f: false,
+                  isV2f: false,
+                },
+                {
+                  label: "Target (TGT)",
+                  val: etTgt,
+                  set: setEtTgt,
+                  isHbf: false,
+                  isV1f: false,
+                  isV2f: false,
+                },
+                {
+                  label: "Home Address Full (HBF)",
+                  val: etHbf,
+                  set: setEtHbf,
+                  isHbf: true,
+                  isV1f: false,
+                  isV2f: false,
+                },
+                {
+                  label: "Home (HB)",
+                  val: etHb,
+                  set: setEtHb,
+                  isHbf: false,
+                  isV1f: false,
+                  isV2f: false,
+                },
+                {
+                  label: "Vehicle 1 Full (V1F)",
+                  val: etV1f,
+                  set: setEtV1f,
+                  isHbf: false,
+                  isV1f: true,
+                  isV2f: false,
+                },
+                {
+                  label: "Vehicle (V1)",
+                  val: etV1,
+                  set: setEtV1,
+                  isHbf: false,
+                  isV1f: false,
+                  isV2f: false,
+                },
+                {
+                  label: "Vehicle 2 Full (V2F)",
+                  val: etV2f,
+                  set: setEtV2f,
+                  isHbf: false,
+                  isV1f: false,
+                  isV2f: true,
+                },
+                {
+                  label: "Vehicle (V2)",
+                  val: etV2,
+                  set: setEtV2,
+                  isHbf: false,
+                  isV1f: false,
+                  isV2f: false,
+                },
+                {
+                  label: "Depart (DEP)",
+                  val: etDep,
+                  set: setEtDep,
+                  isHbf: false,
+                  isV1f: false,
+                  isV2f: false,
+                },
+                {
+                  label: "Arrive (ARR)",
+                  val: etArr,
+                  set: setEtArr,
+                  isHbf: false,
+                  isV1f: false,
+                  isV2f: false,
+                },
+              ] as {
+                label: string;
+                val: string;
+                set: (v: string) => void;
+                isHbf: boolean;
+                isV1f: boolean;
+                isV2f: boolean;
+              }[]
+            ).map(({ label, val, set, isHbf, isV1f, isV2f }) => (
               <div key={label} className="flex flex-col gap-1">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{label}</label>
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  {label}
+                </label>
                 {isHbf ? (
                   <AddressAutocompleteInput
                     value={val}
                     onChange={set}
-                    onShortAddress={(short) => { if (!etHb) setEtHb(short); }}
-                    locationBias={mapRef.current ? (() => { const c = mapRef.current!.getCenter(); return c ? { lat: c.lat(), lng: c.lng() } : null; })() : null}
+                    onShortAddress={short => {
+                      if (!etHb) setEtHb(short);
+                    }}
+                    locationBias={
+                      mapRef.current
+                        ? (() => {
+                            const c = mapRef.current!.getCenter();
+                            return c ? { lat: c.lat(), lng: c.lng() } : null;
+                          })()
+                        : null
+                    }
                     placeholder="Search or type address…"
                   />
                 ) : (
                   <Input
                     value={val}
                     onChange={e => set(e.target.value)}
-                    onBlur={isV1f ? (e) => { const s = extractShortVehicle(e.target.value); if (s && !etV1) setEtV1(s); } : isV2f ? (e) => { const s = extractShortVehicle(e.target.value); if (s && !etV2) setEtV2(s); } : undefined}
+                    onBlur={
+                      isV1f
+                        ? e => {
+                            const s = extractShortVehicle(e.target.value);
+                            if (s && !etV1) setEtV1(s);
+                          }
+                        : isV2f
+                          ? e => {
+                              const s = extractShortVehicle(e.target.value);
+                              if (s && !etV2) setEtV2(s);
+                            }
+                          : undefined
+                    }
                   />
                 )}
               </div>
             ))}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditingTargetId(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setEditingTargetId(null)}>
+              Cancel
+            </Button>
             <Button
               disabled={etSaving}
               onClick={() => {

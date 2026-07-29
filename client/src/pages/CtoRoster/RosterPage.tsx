@@ -1804,21 +1804,20 @@ export default function RosterPage() {
       if (!teamGroups.has(m.teamId)) teamGroups.set(m.teamId, []);
       teamGroups.get(m.teamId)!.push(m);
     }
-    for (const [, group] of Array.from(teamGroups.entries())) {
+    for (const [teamId, group] of Array.from(teamGroups.entries())) {
       const withoutActive = group
         .filter((m: Member) => m.id !== activeId)
         .sort((a: Member, b: Member) => a.sortOrder - b.sortOrder);
-      let insertIdx = withoutActive.length;
-      if (
-        insertBeforeMemberId !== null &&
-        group.some((m: Member) => m.id === activeId)
-      ) {
-        const beforeIdx = withoutActive.findIndex(
-          (m: Member) => m.id === insertBeforeMemberId
-        );
-        if (beforeIdx !== -1) insertIdx = beforeIdx;
+      if (teamId === targetTeamId) {
+        let insertIdx = withoutActive.length;
+        if (insertBeforeMemberId !== null) {
+          const beforeIdx = withoutActive.findIndex(
+            (m: Member) => m.id === insertBeforeMemberId
+          );
+          if (beforeIdx !== -1) insertIdx = beforeIdx;
+        }
+        withoutActive.splice(insertIdx, 0, activeMember);
       }
-      withoutActive.splice(insertIdx, 0, activeMember);
       withoutActive.forEach((m: Member, i: number) => {
         m.sortOrder = i;
       });

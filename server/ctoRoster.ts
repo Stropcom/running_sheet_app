@@ -1821,18 +1821,90 @@ export interface RepeatCtoRosterCycleResult {
   membersUpdated: number;
 }
 
+export interface CtoRosterCyclePreviewDay {
+  date: string;
+  shiftCode: string;
+  shiftTime: string | null;
+}
+
+export interface CtoRosterCyclePreview {
+  cycleStart: string;
+  cycleEnd: string;
+  cycleLengthDays: number;
+  pattern: CtoRosterCyclePreviewDay[];
+}
+
 /**
- * Detects a member's existing cycle as the full span from their earliest to
- * latest entered shift (gaps within that span are treated as blank/rest days,
- * faithfully preserving whatever they actually entered), then repeats that
- * pattern forward to fillUntilDate — for the source member themselves, and
- * optionally for every other member of the same team.
+ * The cycle boundary is the earliest-to-latest shift that actually has a real
+ * code — a stray blank/cleared cell at either edge (e.g. from testing a cell
+ * and clicking "Clear") must not silently stretch or shrink the detected
+ * cycle length, since that throws off every date after it once repeated.
+ */
+function detectCycleBoundary(
+  shifts: { shiftDate: string; shiftCode: string }[]
+): { cycleStart: string; cycleEnd: string; cycleLengthDays: number } {
+  const codedDates = shifts
+    .filter(s => s.shiftCode !== "")
+    .map(s => s.shiftDate)
+    .sort();
+  if (codedDates.length === 0) {
+    throw new Error(
+      "This member has no shifts entered yet — nothing to repeat."
+    );
+  }
+  const cycleStart = codedDates[0];
+  const cycleEnd = codedDates[codedDates.length - 1];
+  const cycleLengthDays = daysBetweenDateStrs(cycleStart, cycleEnd) + 1;
+  if (cycleLengthDays < 1 || cycleLengthDays > 90) {
+    throw new Error(
+      `Detected cycle looks wrong (${cycleLengthDays} days, ${cycleStart} to ${cycleEnd}) — check this member's existing shifts.`
+    );
+  }
+  return { cycleStart, cycleEnd, cycleLengthDays };
+}
+
+/**
+ * Read-only preview of a member's detected cycle, for the admin to check
+ * (and, if needed, override) before actually applying the repeat.
+ */
+export async function detectCtoRosterCycle(
+  memberId: number
+): Promise<CtoRosterCyclePreview> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const shifts = await db
+    .select()
+    .from(ctoRosterShifts)
+    .where(eq(ctoRosterShifts.memberId, memberId));
+  const { cycleStart, cycleEnd, cycleLengthDays } = detectCycleBoundary(shifts);
+  const byDate = new Map(shifts.map(s => [s.shiftDate, s]));
+  const pattern: CtoRosterCyclePreviewDay[] = [];
+  for (let i = 0; i < cycleLengthDays; i++) {
+    const d = addDaysToDateStr(cycleStart, i);
+    const s = byDate.get(d);
+    pattern.push({
+      date: d,
+      shiftCode: s?.shiftCode ?? "",
+      shiftTime: s?.shiftTime ?? null,
+    });
+  }
+  return { cycleStart, cycleEnd, cycleLengthDays, pattern };
+}
+
+/**
+ * Repeats a member's existing cycle forward to fillUntilDate — for the
+ * source member themselves, and optionally for every other member of the
+ * same team. The cycle boundary auto-detects from the member's coded shifts
+ * (see detectCycleBoundary) unless cycleStartOverride/cycleEndOverride are
+ * given, which the admin can supply after reviewing the detected preview.
  */
 export async function repeatCtoRosterCycle(
   sourceMemberId: number,
   fillUntilDate: string,
   copyToTeam: boolean,
-  updatedBy?: number
+  updatedBy?: number,
+  cycleStartOverride?: string,
+  cycleEndOverride?: string
 ): Promise<RepeatCtoRosterCycleResult> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
@@ -1847,14 +1919,21 @@ export async function repeatCtoRosterCycle(
     );
   }
 
-  const dates = sourceShifts.map(s => s.shiftDate).sort();
-  const cycleStart = dates[0];
-  const cycleEnd = dates[dates.length - 1];
-  const cycleLengthDays = daysBetweenDateStrs(cycleStart, cycleEnd) + 1;
-  if (cycleLengthDays < 1 || cycleLengthDays > 90) {
-    throw new Error(
-      `Detected cycle looks wrong (${cycleLengthDays} days, ${cycleStart} to ${cycleEnd}) — check this member's existing shifts.`
-    );
+  let cycleStart: string;
+  let cycleEnd: string;
+  let cycleLengthDays: number;
+  if (cycleStartOverride && cycleEndOverride) {
+    cycleStart = cycleStartOverride;
+    cycleEnd = cycleEndOverride;
+    cycleLengthDays = daysBetweenDateStrs(cycleStart, cycleEnd) + 1;
+    if (cycleLengthDays < 1 || cycleLengthDays > 90) {
+      throw new Error(
+        `Cycle length looks wrong (${cycleLengthDays} days, ${cycleStart} to ${cycleEnd}).`
+      );
+    }
+  } else {
+    ({ cycleStart, cycleEnd, cycleLengthDays } =
+      detectCycleBoundary(sourceShifts));
   }
   if (fillUntilDate <= cycleEnd) {
     throw new Error(

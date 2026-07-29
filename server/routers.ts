@@ -69,6 +69,7 @@ import {
   updateCtoRosterOutlookSettings,
   getCtoRosterAuditLog,
   repeatCtoRosterCycle,
+  detectCtoRosterCycle,
   addCtoRosterTeam,
   renameCtoRosterTeam,
   deleteCtoRosterTeam,
@@ -4520,9 +4521,21 @@ export const appRouter = router({
         }),
 
       /**
+       * Read-only preview of a member's detected cycle (start/end/length +
+       * day-by-day pattern), so the admin can verify it before applying —
+       * catches a stray blank cell at either edge silently corrupting the
+       * detected boundary.
+       */
+      detectCycle: adminProcedure
+        .input(z.object({ memberId: z.number() }))
+        .query(async ({ input }) => detectCtoRosterCycle(input.memberId)),
+
+      /**
        * Detects a member's existing shift pattern (their earliest-to-latest
-       * entered span) and repeats it forward to fillUntilDate, optionally
+       * *coded* span) and repeats it forward to fillUntilDate, optionally
        * copying the result to every other member of the same team.
+       * cycleStartDate/cycleEndDate let the admin override the auto-detected
+       * boundary after reviewing the detectCycle preview.
        */
       repeatCycle: adminProcedure
         .input(
@@ -4531,6 +4544,14 @@ export const appRouter = router({
             sourceMemberName: z.string().optional(),
             fillUntilDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
             copyToTeam: z.boolean(),
+            cycleStartDate: z
+              .string()
+              .regex(/^\d{4}-\d{2}-\d{2}$/)
+              .optional(),
+            cycleEndDate: z
+              .string()
+              .regex(/^\d{4}-\d{2}-\d{2}$/)
+              .optional(),
           })
         )
         .mutation(async ({ ctx, input }) => {
@@ -4538,7 +4559,9 @@ export const appRouter = router({
             input.sourceMemberId,
             input.fillUntilDate,
             input.copyToTeam,
-            ctx.user.id
+            ctx.user.id,
+            input.cycleStartDate,
+            input.cycleEndDate
           );
           writeCtoRosterAudit({
             userId: ctx.user.id,

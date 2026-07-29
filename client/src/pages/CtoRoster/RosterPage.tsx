@@ -874,7 +874,9 @@ function RepeatCycleSheet({
   onApply: (
     sourceMemberId: number,
     fillUntilDate: string,
-    copyToTeam: boolean
+    copyToTeam: boolean,
+    cycleStartDate: string,
+    cycleEndDate: string
   ) => void;
   isLoading: boolean;
   result: RepeatCycleResult | null;
@@ -883,14 +885,49 @@ function RepeatCycleSheet({
   const [sourceMemberId, setSourceMemberId] = useState<number | "">("");
   const [fillUntilDate, setFillUntilDate] = useState(ROSTER_END);
   const [copyToTeam, setCopyToTeam] = useState(true);
+  // Auto-detected boundary, editable — the admin should check this against
+  // the grid before applying, since a stray blank cell can shift it.
+  const [cycleStartDate, setCycleStartDate] = useState("");
+  const [cycleEndDate, setCycleEndDate] = useState("");
+  const [boundaryTouched, setBoundaryTouched] = useState(false);
 
   useEffect(() => {
     if (open) {
       setSourceMemberId("");
       setFillUntilDate(ROSTER_END);
       setCopyToTeam(true);
+      setCycleStartDate("");
+      setCycleEndDate("");
+      setBoundaryTouched(false);
     }
   }, [open]);
+
+  const detectQuery = trpc.ctoRoster.roster.detectCycle.useQuery(
+    { memberId: sourceMemberId === "" ? 0 : sourceMemberId },
+    { enabled: sourceMemberId !== "" }
+  );
+
+  // Pre-fill the editable boundary fields from the detected cycle, unless
+  // the admin has already started editing them for this selection.
+  useEffect(() => {
+    if (detectQuery.data && !boundaryTouched) {
+      setCycleStartDate(detectQuery.data.cycleStart);
+      setCycleEndDate(detectQuery.data.cycleEnd);
+    }
+  }, [detectQuery.data, boundaryTouched]);
+
+  useEffect(() => {
+    setBoundaryTouched(false);
+  }, [sourceMemberId]);
+
+  const cycleLengthDays =
+    cycleStartDate && cycleEndDate
+      ? Math.round(
+          (new Date(cycleEndDate + "T00:00:00Z").getTime() -
+            new Date(cycleStartDate + "T00:00:00Z").getTime()) /
+            86_400_000
+        ) + 1
+      : null;
 
   const sourceMember = members.find(m => m.id === sourceMemberId);
   const sourceTeam = teams.find(t => t.id === sourceMember?.teamId);
@@ -899,7 +936,13 @@ function RepeatCycleSheet({
         m => m.teamId === sourceMember.teamId && m.id !== sourceMember.id
       ).length
     : 0;
-  const canSubmit = sourceMemberId !== "" && !!fillUntilDate;
+  const canSubmit =
+    sourceMemberId !== "" &&
+    !!fillUntilDate &&
+    !!cycleStartDate &&
+    !!cycleEndDate &&
+    cycleStartDate <= cycleEndDate &&
+    fillUntilDate > cycleEndDate;
 
   const inner = (
     <div className="space-y-4">
@@ -923,11 +966,79 @@ function RepeatCycleSheet({
             </option>
           ))}
         </select>
-        <p className="text-xs text-muted-foreground mt-1.5">
-          Whatever this member already has entered — from their earliest to
-          latest shift — becomes the cycle that repeats.
-        </p>
       </div>
+
+      {sourceMemberId !== "" && detectQuery.isLoading && (
+        <p className="text-sm text-muted-foreground">Detecting cycle…</p>
+      )}
+
+      {sourceMemberId !== "" && detectQuery.isError && (
+        <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+          {detectQuery.error.message}
+        </div>
+      )}
+
+      {sourceMemberId !== "" && detectQuery.data && (
+        <div className="space-y-3">
+          <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              Detected cycle — check this against the grid
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs text-muted-foreground">Start</label>
+                <input
+                  type="date"
+                  value={cycleStartDate}
+                  onChange={e => {
+                    setBoundaryTouched(true);
+                    setCycleStartDate(e.target.value);
+                  }}
+                  min={ROSTER_START}
+                  max={ROSTER_END}
+                  className="w-full h-9 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">End</label>
+                <input
+                  type="date"
+                  value={cycleEndDate}
+                  onChange={e => {
+                    setBoundaryTouched(true);
+                    setCycleEndDate(e.target.value);
+                  }}
+                  min={ROSTER_START}
+                  max={ROSTER_END}
+                  className="w-full h-9 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {cycleLengthDays !== null ? `${cycleLengthDays}-day cycle` : ""}
+              {boundaryTouched ? " (edited from detected)" : ""} — the day after
+              this end date is where the repeat starts.
+            </p>
+            {/* Compact day-by-day preview */}
+            <div className="flex flex-wrap gap-1 pt-1">
+              {detectQuery.data.pattern.map(d => (
+                <span
+                  key={d.date}
+                  title={`${d.date}${d.shiftTime ? " · " + d.shiftTime : ""}`}
+                  className={cn(
+                    "inline-flex items-center justify-center h-6 min-w-[1.75rem] px-1 rounded text-[10px] font-bold uppercase",
+                    d.shiftCode
+                      ? shiftClass(d.shiftCode)
+                      : "bg-muted text-muted-foreground border border-dashed border-border"
+                  )}
+                >
+                  {d.shiftCode || "—"}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div>
         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
@@ -963,8 +1074,8 @@ function RepeatCycleSheet({
 
       {result && (
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
-          Detected a {result.cycleLengthDays}-day cycle ({result.cycleStart} to{" "}
-          {result.cycleEnd}). Filled {result.daysFilledForSource} more day
+          Repeated the {result.cycleLengthDays}-day cycle ({result.cycleStart}{" "}
+          to {result.cycleEnd}). Filled {result.daysFilledForSource} more day
           {result.daysFilledForSource !== 1 ? "s" : ""} for this member
           {result.membersUpdated > 0
             ? ` and copied it to ${result.membersUpdated} teammate${result.membersUpdated !== 1 ? "s" : ""}.`
@@ -985,8 +1096,15 @@ function RepeatCycleSheet({
           className="flex-1"
           disabled={!canSubmit || isLoading}
           onClick={() => {
-            if (sourceMemberId === "") return;
-            onApply(sourceMemberId, fillUntilDate, copyToTeam);
+            if (sourceMemberId === "" || !cycleStartDate || !cycleEndDate)
+              return;
+            onApply(
+              sourceMemberId,
+              fillUntilDate,
+              copyToTeam,
+              cycleStartDate,
+              cycleEndDate
+            );
           }}
         >
           {isLoading ? "Applying…" : "Repeat Cycle"}
@@ -2549,7 +2667,13 @@ export default function RosterPage() {
           members={displayMembers}
           teams={(teamsData as Team[]) ?? []}
           onClose={() => setRepeatCycleOpen(false)}
-          onApply={(sourceMemberId, fillUntilDate, copyToTeam) =>
+          onApply={(
+            sourceMemberId,
+            fillUntilDate,
+            copyToTeam,
+            cycleStartDate,
+            cycleEndDate
+          ) =>
             repeatCycle.mutate({
               sourceMemberId,
               sourceMemberName: displayMembers.find(
@@ -2557,6 +2681,8 @@ export default function RosterPage() {
               )?.name,
               fillUntilDate,
               copyToTeam,
+              cycleStartDate,
+              cycleEndDate,
             })
           }
           isLoading={repeatCycle.isPending}

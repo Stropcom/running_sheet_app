@@ -49,6 +49,8 @@ import {
   Users,
   FolderPlus,
   Pencil,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -480,6 +482,21 @@ function ManageTeamsDialog({
     },
     onError: e => toast.error(`Failed to delete team: ${e.message}`),
   });
+  const reorderTeams = trpc.ctoRoster.teams.reorder.useMutation({
+    onSuccess: () => invalidate(),
+    onError: e => toast.error(`Failed to reorder teams: ${e.message}`),
+  });
+
+  // teams is already sorted by sortOrder ascending (server-side) — moving a
+  // team up/down just swaps its sortOrder with its neighbour's.
+  const moveTeam = (index: number, direction: -1 | 1) => {
+    const other = index + direction;
+    if (other < 0 || other >= teams.length) return;
+    reorderTeams.mutate([
+      { id: teams[index].id, sortOrder: teams[other].sortOrder },
+      { id: teams[other].id, sortOrder: teams[index].sortOrder },
+    ]);
+  };
 
   return (
     <Dialog
@@ -523,8 +540,32 @@ function ManageTeamsDialog({
             <p className="text-sm text-muted-foreground">No teams yet.</p>
           ) : (
             <div className="rounded-lg border border-border divide-y divide-border">
-              {teams.map(t => (
+              {teams.map((t, i) => (
                 <div key={t.id} className="flex items-center gap-2 px-3 py-2">
+                  <div className="flex flex-col -my-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-5 w-5 p-0"
+                      onClick={() => moveTeam(i, -1)}
+                      disabled={i === 0 || reorderTeams.isPending}
+                      title="Move up"
+                    >
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-5 w-5 p-0"
+                      onClick={() => moveTeam(i, 1)}
+                      disabled={
+                        i === teams.length - 1 || reorderTeams.isPending
+                      }
+                      title="Move down"
+                    >
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
                   {renamingId === t.id ? (
                     <>
                       <Input

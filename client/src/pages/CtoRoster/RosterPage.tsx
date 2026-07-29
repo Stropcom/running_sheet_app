@@ -1831,7 +1831,8 @@ export default function RosterPage() {
           const beforeIdx = withoutActive.findIndex(
             (m: Member) => m.id === insertBeforeMemberId
           );
-          if (beforeIdx !== -1) insertIdx = movingDown ? beforeIdx + 1 : beforeIdx;
+          if (beforeIdx !== -1)
+            insertIdx = movingDown ? beforeIdx + 1 : beforeIdx;
         }
         withoutActive.splice(insertIdx, 0, activeMember);
       }
@@ -2114,6 +2115,21 @@ export default function RosterPage() {
                 >
                   Member
                 </div>
+                {/* Floating month badge — see desktop header row for why. */}
+                <div
+                  style={{
+                    position: "sticky",
+                    left: `${nameColWidthForGrid + 10}px`,
+                    width: 0,
+                    height: `${HEADER_HEIGHT}px`,
+                    zIndex: 35,
+                  }}
+                  className="flex items-center pointer-events-none"
+                >
+                  <span className="whitespace-nowrap rounded-full bg-primary text-primary-foreground text-xs font-semibold px-3 py-1 shadow-md">
+                    {MONTHS[visibleMonthIndex]}
+                  </span>
+                </div>
                 {ALL_DATES.map(d => {
                   const ds = format(d, "yyyy-MM-dd");
                   const isToday = ds === today;
@@ -2354,6 +2370,26 @@ export default function RosterPage() {
                     }}
                   >
                     Member
+                  </div>
+                  {/* Floating month badge — pinned just right of the frozen
+                      Member column so it stays on-screen the whole time you
+                      scroll horizontally through dates, instead of only
+                      being visible via the toolbar's month label above.
+                      width: 0 keeps it out of the flex layout's width
+                      calculation so it doesn't push the date columns over. */}
+                  <div
+                    style={{
+                      position: "sticky",
+                      left: `${NAME_COL_WIDTH + 10}px`,
+                      width: 0,
+                      height: `${HEADER_HEIGHT}px`,
+                      zIndex: 35,
+                    }}
+                    className="flex items-center pointer-events-none"
+                  >
+                    <span className="whitespace-nowrap rounded-full bg-primary text-primary-foreground text-xs font-semibold px-3 py-1 shadow-md">
+                      {MONTHS[visibleMonthIndex]}
+                    </span>
                   </div>
                   {/* Date columns */}
                   {ALL_DATES.map(d => {

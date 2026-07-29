@@ -73,11 +73,68 @@ export async function writeCtoRosterAudit(entry: {
 }
 
 // ── Teams ─────────────────────────────────────────────────────────────────────
+// The live roster's teams aren't seeded automatically (the source app only
+// ever bootstrapped them via a one-off seed script) — admins manage them here.
 
 export async function getAllCtoRosterTeams(): Promise<CtoRosterTeam[]> {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(ctoRosterTeams).orderBy(ctoRosterTeams.sortOrder);
+}
+
+export async function addCtoRosterTeam(name: string): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const [{ maxOrder }] = await db
+    .select({ maxOrder: max(ctoRosterTeams.sortOrder) })
+    .from(ctoRosterTeams);
+  const [result] = await db
+    .insert(ctoRosterTeams)
+    .values({ name, sortOrder: (maxOrder ?? -1) + 1 });
+  return result.insertId as number;
+}
+
+export async function renameCtoRosterTeam(
+  teamId: number,
+  name: string
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db
+    .update(ctoRosterTeams)
+    .set({ name })
+    .where(eq(ctoRosterTeams.id, teamId));
+}
+
+/** Refuses to delete a team that still has members — move or remove them first. */
+export async function deleteCtoRosterTeam(teamId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const remaining = await db
+    .select({ id: ctoRosterMembers.id })
+    .from(ctoRosterMembers)
+    .where(eq(ctoRosterMembers.teamId, teamId));
+  if (remaining.length > 0) {
+    throw new Error(
+      `This team still has ${remaining.length} member(s) — move or remove them before deleting the team.`
+    );
+  }
+  await db.delete(ctoRosterTeams).where(eq(ctoRosterTeams.id, teamId));
+}
+
+export async function reorderCtoRosterTeams(
+  rows: { id: number; sortOrder: number }[]
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await Promise.all(
+    rows.map(t =>
+      db
+        .update(ctoRosterTeams)
+        .set({ sortOrder: t.sortOrder })
+        .where(eq(ctoRosterTeams.id, t.id))
+    )
+  );
 }
 
 // ── Members ───────────────────────────────────────────────────────────────────

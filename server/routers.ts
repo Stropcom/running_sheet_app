@@ -68,6 +68,10 @@ import {
   getCtoRosterOutlookSettings,
   updateCtoRosterOutlookSettings,
   getCtoRosterAuditLog,
+  addCtoRosterTeam,
+  renameCtoRosterTeam,
+  deleteCtoRosterTeam,
+  reorderCtoRosterTeams,
 } from "./ctoRoster";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { sdk } from "./_core/sdk";
@@ -4225,6 +4229,38 @@ export const appRouter = router({
       list: protectedProcedure.query(async () => {
         return getAllCtoRosterTeams();
       }),
+
+      /** Add a new team to the live roster — admin only */
+      add: adminProcedure
+        .input(z.object({ name: z.string().min(1).max(64) }))
+        .mutation(async ({ input }) => {
+          const id = await addCtoRosterTeam(input.name);
+          return { success: true, id };
+        }),
+
+      rename: adminProcedure
+        .input(
+          z.object({ teamId: z.number(), name: z.string().min(1).max(64) })
+        )
+        .mutation(async ({ input }) => {
+          await renameCtoRosterTeam(input.teamId, input.name);
+          return { success: true };
+        }),
+
+      /** Refuses to delete a team that still has members */
+      delete: adminProcedure
+        .input(z.object({ teamId: z.number() }))
+        .mutation(async ({ input }) => {
+          await deleteCtoRosterTeam(input.teamId);
+          return { success: true };
+        }),
+
+      reorder: adminProcedure
+        .input(z.array(z.object({ id: z.number(), sortOrder: z.number() })))
+        .mutation(async ({ input }) => {
+          await reorderCtoRosterTeams(input);
+          return { success: true };
+        }),
     }),
 
     members: router({

@@ -124,7 +124,30 @@ type SortableNavItemProps = {
   isObservationFocused: boolean;
   setShortcutsPanelOpen: React.Dispatch<React.SetStateAction<boolean>>;
   subItemClass: (active: boolean) => string;
+  sidebarScrollRef: React.RefObject<HTMLDivElement | null>;
 };
+
+// Expanding Op Manager / CTO Roster reveals sub-items below the clicked
+// button without generating a scroll event, so on a short sidebar viewport
+// the new items can land almost entirely below the fold. Scrolling to bring
+// the whole newly-revealed block into view doesn't help when that block is
+// taller than the viewport — it just aligns to its top and still hides most
+// of it. Instead, scroll the clicked button itself up near the top of the
+// container, which maximizes the space left below it for the reveal.
+function scrollToggleNearTop(
+  container: HTMLElement | null,
+  btn: HTMLElement | null
+) {
+  if (!container || !btn) return;
+  const containerRect = container.getBoundingClientRect();
+  const btnRect = btn.getBoundingClientRect();
+  const offsetWithinContainer =
+    btnRect.top - containerRect.top + container.scrollTop;
+  container.scrollTo({
+    top: Math.max(0, offsetWithinContainer - 12),
+    behavior: "smooth",
+  });
+}
 
 function SortableNavItem({
   id,
@@ -145,6 +168,7 @@ function SortableNavItem({
   isObservationFocused,
   setShortcutsPanelOpen,
   subItemClass,
+  sidebarScrollRef,
 }: SortableNavItemProps) {
   const {
     attributes,
@@ -171,30 +195,6 @@ function SortableNavItem({
   ) : null;
 
   const itemProps = { ref: setNodeRef, style, ...attributes };
-
-  // Expanding Op Manager / CTO Roster pushes the rest of the sidebar list
-  // down without generating a scroll event, so the newly revealed sub-items
-  // can end up below the fold with no indication anything changed. Scroll
-  // just enough to bring them into view — block: "nearest" is a no-op if
-  // they're already visible, and this only fires on expand, not collapse.
-  const opManagerContentRef = useRef<HTMLDivElement>(null);
-  const ctoRosterContentRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (opManagerExpanded) {
-      opManagerContentRef.current?.scrollIntoView({
-        block: "nearest",
-        behavior: "smooth",
-      });
-    }
-  }, [opManagerExpanded]);
-  useEffect(() => {
-    if (ctoRosterSubExpanded) {
-      ctoRosterContentRef.current?.scrollIntoView({
-        block: "nearest",
-        behavior: "smooth",
-      });
-    }
-  }, [ctoRosterSubExpanded]);
 
   if (id === "operations")
     return (
@@ -491,7 +491,12 @@ function SortableNavItem({
       <SidebarMenuItem {...itemProps}>
         <SidebarMenuButton
           isActive={opManagerActive}
-          onClick={() => setOpManagerExpanded(v => !v)}
+          onClick={e => {
+            const willExpand = !opManagerExpanded;
+            setOpManagerExpanded(v => !v);
+            if (willExpand)
+              scrollToggleNearTop(sidebarScrollRef.current, e.currentTarget);
+          }}
           tooltip="Op Manager"
           className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-purple-500/50 shadow-sm"
         >
@@ -510,10 +515,7 @@ function SortableNavItem({
           {gripHandle}
         </SidebarMenuButton>
         {opManagerExpanded && !isCollapsed && (
-          <div
-            ref={opManagerContentRef}
-            className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5"
-          >
+          <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
             <button
               onClick={() => setLocation("/operation-manager")}
               className={subItemClass(
@@ -524,7 +526,15 @@ function SortableNavItem({
               CTO Weekly Tasking
             </button>
             <button
-              onClick={() => setCtoRosterSubExpanded(v => !v)}
+              onClick={e => {
+                const willExpand = !ctoRosterSubExpanded;
+                setCtoRosterSubExpanded(v => !v);
+                if (willExpand)
+                  scrollToggleNearTop(
+                    sidebarScrollRef.current,
+                    e.currentTarget
+                  );
+              }}
               className={subItemClass(location.startsWith("/cto-roster"))}
             >
               <Users className="h-3.5 w-3.5 shrink-0 text-purple-500" />
@@ -536,10 +546,7 @@ function SortableNavItem({
               )}
             </button>
             {ctoRosterSubExpanded && (
-              <div
-                ref={ctoRosterContentRef}
-                className="ml-4 border-l border-sidebar-border/40 pl-3 flex flex-col gap-0.5 mb-0.5"
-              >
+              <div className="ml-4 border-l border-sidebar-border/40 pl-3 flex flex-col gap-0.5 mb-0.5">
                 <button
                   onClick={() => setLocation("/cto-roster")}
                   className={subItemClass(location === "/cto-roster")}
@@ -1096,6 +1103,7 @@ function DashboardLayoutContent({
                       isObservationFocused={isObservationFocused}
                       setShortcutsPanelOpen={setShortcutsPanelOpen}
                       subItemClass={subItemClass}
+                      sidebarScrollRef={sidebarScrollRef}
                     />
                   ))}
                 </SortableContext>

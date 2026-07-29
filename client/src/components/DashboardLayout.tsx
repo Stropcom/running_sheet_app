@@ -136,7 +136,8 @@ type SortableNavItemProps = {
 // container, which maximizes the space left below it for the reveal.
 function scrollToggleNearTop(
   container: HTMLElement | null,
-  btn: HTMLElement | null
+  btn: HTMLElement | null,
+  behavior: ScrollBehavior = "smooth"
 ) {
   if (!container || !btn) return;
   const containerRect = container.getBoundingClientRect();
@@ -145,7 +146,7 @@ function scrollToggleNearTop(
     btnRect.top - containerRect.top + container.scrollTop;
   container.scrollTo({
     top: Math.max(0, offsetWithinContainer - 12),
-    behavior: "smooth",
+    behavior,
   });
 }
 
@@ -490,6 +491,7 @@ function SortableNavItem({
     return (
       <SidebarMenuItem {...itemProps}>
         <SidebarMenuButton
+          data-nav-toggle="op-manager"
           isActive={opManagerActive}
           onClick={e => {
             const willExpand = !opManagerExpanded;
@@ -526,6 +528,7 @@ function SortableNavItem({
               CTO Weekly Tasking
             </button>
             <button
+              data-nav-toggle="cto-roster"
               onClick={e => {
                 const willExpand = !ctoRosterSubExpanded;
                 setCtoRosterSubExpanded(v => !v);
@@ -744,9 +747,27 @@ function DashboardLayoutContent({
 
   // Restore the sidebar's scroll position immediately on mount (before paint)
   // so re-opening a nav item deep in the list doesn't visibly jump to the top.
+  // For pages under Op Manager / CTO Roster specifically, don't just trust
+  // the carried-over scrollTop from the previous page (a `let` surviving the
+  // full remount every navigation causes) — re-pin the deepest expanded
+  // toggle near the top of the list every time, deterministically, so all of
+  // its children get the maximum space and stay visible on every page under
+  // it until it's collapsed, not just on the page where it was expanded.
   useLayoutEffect(() => {
-    if (sidebarScrollRef.current) {
-      sidebarScrollRef.current.scrollTop = lastSidebarScrollTop;
+    const container = sidebarScrollRef.current;
+    if (!container) return;
+    const toggleSelector = location.startsWith("/cto-roster")
+      ? '[data-nav-toggle="cto-roster"]'
+      : location.startsWith("/operation-manager")
+        ? '[data-nav-toggle="op-manager"]'
+        : null;
+    const toggleBtn = toggleSelector
+      ? container.querySelector<HTMLElement>(toggleSelector)
+      : null;
+    if (toggleBtn) {
+      scrollToggleNearTop(container, toggleBtn, "instant");
+    } else {
+      container.scrollTop = lastSidebarScrollTop;
     }
   }, []);
 

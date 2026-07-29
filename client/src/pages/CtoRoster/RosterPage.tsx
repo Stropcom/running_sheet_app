@@ -1429,8 +1429,8 @@ export default function RosterPage() {
   });
 
   const reorderMembers = trpc.ctoRoster.members.reorder.useMutation({
-    onSuccess: () => {
-      refetchMembers();
+    onSuccess: async () => {
+      await refetchMembers();
       setLocalMembers(null);
     },
     onError: e => {

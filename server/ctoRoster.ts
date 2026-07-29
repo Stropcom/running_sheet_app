@@ -1783,3 +1783,168 @@ export async function getCtoRosterAuditLog(
   ]);
   return { entries, total: Number(total) };
 }
+
+// ── Repeat Cycle → Team ──────────────────────────────────────────────────────
+// Takes a source member's already-entered shift pattern (whatever contiguous
+// span they have, e.g. a 2-week rotation), tiles it forward to a chosen end
+// date, and optionally copies the resulting calendar to every other member of
+// the same team. Used for e.g. "Strop has a 2-week cycle entered — repeat it
+// for the rest of the year and copy it to the rest of Team 1."
+
+function addDaysToDateStr(dateStr: string, n: number): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + n);
+  return dt.toISOString().slice(0, 10);
+}
+
+function daysBetweenDateStrs(a: string, b: string): number {
+  const [ay, am, ad] = a.split("-").map(Number);
+  const [by, bm, bd] = b.split("-").map(Number);
+  const da = Date.UTC(ay, am - 1, ad);
+  const db_ = Date.UTC(by, bm - 1, bd);
+  return Math.round((db_ - da) / 86_400_000);
+}
+
+type CyclePatternDay = {
+  shiftCode: string;
+  shiftTime: string | null;
+  comment: string | null;
+  isActing: boolean;
+} | null;
+
+export interface RepeatCtoRosterCycleResult {
+  cycleStart: string;
+  cycleEnd: string;
+  cycleLengthDays: number;
+  daysFilledForSource: number;
+  membersUpdated: number;
+}
+
+/**
+ * Detects a member's existing cycle as the full span from their earliest to
+ * latest entered shift (gaps within that span are treated as blank/rest days,
+ * faithfully preserving whatever they actually entered), then repeats that
+ * pattern forward to fillUntilDate — for the source member themselves, and
+ * optionally for every other member of the same team.
+ */
+export async function repeatCtoRosterCycle(
+  sourceMemberId: number,
+  fillUntilDate: string,
+  copyToTeam: boolean,
+  updatedBy?: number
+): Promise<RepeatCtoRosterCycleResult> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const sourceShifts = await db
+    .select()
+    .from(ctoRosterShifts)
+    .where(eq(ctoRosterShifts.memberId, sourceMemberId));
+  if (sourceShifts.length === 0) {
+    throw new Error(
+      "This member has no shifts entered yet — nothing to repeat."
+    );
+  }
+
+  const dates = sourceShifts.map(s => s.shiftDate).sort();
+  const cycleStart = dates[0];
+  const cycleEnd = dates[dates.length - 1];
+  const cycleLengthDays = daysBetweenDateStrs(cycleStart, cycleEnd) + 1;
+  if (cycleLengthDays < 1 || cycleLengthDays > 90) {
+    throw new Error(
+      `Detected cycle looks wrong (${cycleLengthDays} days, ${cycleStart} to ${cycleEnd}) — check this member's existing shifts.`
+    );
+  }
+  if (fillUntilDate <= cycleEnd) {
+    throw new Error(
+      `Fill-until date must be after the end of the existing cycle (${cycleEnd}).`
+    );
+  }
+
+  const byDate = new Map(sourceShifts.map(s => [s.shiftDate, s]));
+  const pattern: CyclePatternDay[] = [];
+  for (let i = 0; i < cycleLengthDays; i++) {
+    const d = addDaysToDateStr(cycleStart, i);
+    const s = byDate.get(d);
+    pattern.push(
+      s
+        ? {
+            shiftCode: s.shiftCode,
+            shiftTime: s.shiftTime,
+            comment: s.comment,
+            isActing: s.isActing ?? false,
+          }
+        : null
+    );
+  }
+
+  const writeDay = async (
+    memberId: number,
+    shiftDate: string,
+    day: CyclePatternDay
+  ) => {
+    if (!day) return;
+    await db
+      .insert(ctoRosterShifts)
+      .values({
+        memberId,
+        shiftDate,
+        shiftCode: day.shiftCode,
+        shiftTime: day.shiftTime,
+        comment: day.comment,
+        isActing: day.isActing,
+        updatedBy,
+      })
+      .onDuplicateKeyUpdate({
+        set: {
+          shiftCode: day.shiftCode,
+          shiftTime: day.shiftTime,
+          comment: day.comment,
+          isActing: day.isActing,
+          updatedBy,
+        },
+      });
+  };
+
+  // Fill the source member forward from the end of their existing cycle.
+  let daysFilledForSource = 0;
+  let cursor = addDaysToDateStr(cycleEnd, 1);
+  while (cursor <= fillUntilDate) {
+    const offset = daysBetweenDateStrs(cycleStart, cursor) % cycleLengthDays;
+    const day = pattern[offset];
+    if (day) {
+      await writeDay(sourceMemberId, cursor, day);
+      daysFilledForSource++;
+    }
+    cursor = addDaysToDateStr(cursor, 1);
+  }
+
+  // Copy the complete cycle (start to fillUntilDate) to the rest of the team.
+  let membersUpdated = 0;
+  if (copyToTeam) {
+    const members = await getAllCtoRosterMembers();
+    const sourceMember = members.find(m => m.id === sourceMemberId);
+    if (!sourceMember) throw new Error("Member not found");
+    const teammates = members.filter(
+      m => m.teamId === sourceMember.teamId && m.id !== sourceMemberId
+    );
+    for (const teammate of teammates) {
+      let d = cycleStart;
+      while (d <= fillUntilDate) {
+        const offset = daysBetweenDateStrs(cycleStart, d) % cycleLengthDays;
+        await writeDay(teammate.id, d, pattern[offset]);
+        d = addDaysToDateStr(d, 1);
+      }
+      membersUpdated++;
+    }
+  }
+
+  return {
+    cycleStart,
+    cycleEnd,
+    cycleLengthDays,
+    daysFilledForSource,
+    membersUpdated,
+  };
+}

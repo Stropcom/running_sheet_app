@@ -49,6 +49,7 @@ import {
   Copy,
   ClipboardPaste,
   Scissors,
+  Repeat,
 } from "lucide-react";
 import {
   SHIFT_CODES,
@@ -126,6 +127,13 @@ type ShiftCode =
   | "aoc";
 type Member = { id: number; name: string; teamId: number; sortOrder: number };
 type Team = { id: number; name: string; sortOrder: number };
+type RepeatCycleResult = {
+  cycleStart: string;
+  cycleEnd: string;
+  cycleLengthDays: number;
+  daysFilledForSource: number;
+  membersUpdated: number;
+};
 type ShiftData = {
   memberId: number;
   shiftDate: string;
@@ -846,6 +854,185 @@ function BulkCopySheet({
   );
 }
 
+// ── Repeat Cycle → Team ───────────────────────────────────────────────────────
+// Repeats a member's already-entered shift pattern (e.g. a 2-week rotation)
+// forward to a chosen date, then optionally copies the result to every other
+// member of the same team.
+function RepeatCycleSheet({
+  open,
+  members,
+  teams,
+  onClose,
+  onApply,
+  isLoading,
+  result,
+}: {
+  open: boolean;
+  members: Member[];
+  teams: Team[];
+  onClose: () => void;
+  onApply: (
+    sourceMemberId: number,
+    fillUntilDate: string,
+    copyToTeam: boolean
+  ) => void;
+  isLoading: boolean;
+  result: RepeatCycleResult | null;
+}) {
+  const isMobile = useIsMobile();
+  const [sourceMemberId, setSourceMemberId] = useState<number | "">("");
+  const [fillUntilDate, setFillUntilDate] = useState(ROSTER_END);
+  const [copyToTeam, setCopyToTeam] = useState(true);
+
+  useEffect(() => {
+    if (open) {
+      setSourceMemberId("");
+      setFillUntilDate(ROSTER_END);
+      setCopyToTeam(true);
+    }
+  }, [open]);
+
+  const sourceMember = members.find(m => m.id === sourceMemberId);
+  const sourceTeam = teams.find(t => t.id === sourceMember?.teamId);
+  const teammateCount = sourceMember
+    ? members.filter(
+        m => m.teamId === sourceMember.teamId && m.id !== sourceMember.id
+      ).length
+    : 0;
+  const canSubmit = sourceMemberId !== "" && !!fillUntilDate;
+
+  const inner = (
+    <div className="space-y-4">
+      <div>
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
+          Member with the pattern to repeat
+        </p>
+        <select
+          value={sourceMemberId}
+          onChange={e =>
+            setSourceMemberId(
+              e.target.value === "" ? "" : Number(e.target.value)
+            )
+          }
+          className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+        >
+          <option value="">Select member…</option>
+          {members.map(m => (
+            <option key={m.id} value={m.id}>
+              {m.name}
+            </option>
+          ))}
+        </select>
+        <p className="text-xs text-muted-foreground mt-1.5">
+          Whatever this member already has entered — from their earliest to
+          latest shift — becomes the cycle that repeats.
+        </p>
+      </div>
+
+      <div>
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
+          Repeat through
+        </p>
+        <input
+          type="date"
+          value={fillUntilDate}
+          onChange={e => setFillUntilDate(e.target.value)}
+          min={ROSTER_START}
+          max={ROSTER_END}
+          className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+      </div>
+
+      <label className="flex items-start gap-2.5 cursor-pointer rounded-lg border border-border bg-muted/30 p-3">
+        <Switch
+          checked={copyToTeam}
+          onCheckedChange={setCopyToTeam}
+          className="mt-0.5"
+        />
+        <div>
+          <span className="text-sm font-medium">
+            Also copy to the rest of {sourceTeam ? sourceTeam.name : "the team"}
+          </span>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {sourceMember
+              ? `Applies the same repeated cycle to ${teammateCount} other member${teammateCount !== 1 ? "s" : ""} of ${sourceTeam?.name ?? "this team"}, overwriting their existing shifts in that range.`
+              : "Applies the same repeated cycle to every other member of this member's team."}
+          </p>
+        </div>
+      </label>
+
+      {result && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+          Detected a {result.cycleLengthDays}-day cycle ({result.cycleStart} to{" "}
+          {result.cycleEnd}). Filled {result.daysFilledForSource} more day
+          {result.daysFilledForSource !== 1 ? "s" : ""} for this member
+          {result.membersUpdated > 0
+            ? ` and copied it to ${result.membersUpdated} teammate${result.membersUpdated !== 1 ? "s" : ""}.`
+            : "."}
+        </div>
+      )}
+
+      <div className="flex gap-2 pt-1">
+        <Button
+          variant="outline"
+          className="flex-1"
+          onClick={onClose}
+          disabled={isLoading}
+        >
+          Cancel
+        </Button>
+        <Button
+          className="flex-1"
+          disabled={!canSubmit || isLoading}
+          onClick={() => {
+            if (sourceMemberId === "") return;
+            onApply(sourceMemberId, fillUntilDate, copyToTeam);
+          }}
+        >
+          {isLoading ? "Applying…" : "Repeat Cycle"}
+        </Button>
+      </div>
+    </div>
+  );
+
+  if (isMobile) {
+    return (
+      <Sheet
+        open={open}
+        onOpenChange={o => {
+          if (!o) onClose();
+        }}
+      >
+        <SheetContent
+          side="bottom"
+          className="rounded-t-2xl max-h-[92vh] overflow-y-auto pb-8"
+        >
+          <SheetHeader className="mb-4">
+            <SheetTitle>Repeat Cycle to Team</SheetTitle>
+          </SheetHeader>
+          {inner}
+        </SheetContent>
+      </Sheet>
+    );
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={o => {
+        if (!o) onClose();
+      }}
+    >
+      <DialogContent className="max-w-md w-full max-h-[90vh] overflow-y-auto">
+        <DialogHeader className="mb-2">
+          <DialogTitle>Repeat Cycle to Team</DialogTitle>
+        </DialogHeader>
+        {inner}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── Main page ──────────────────────────────────────────────────────────────
 export default function RosterPage() {
   const { user } = useAuth();
@@ -1006,6 +1193,9 @@ export default function RosterPage() {
     dates: string[]; // ordered unique dates in the block
   } | null>(null); // null = nothing copied yet; non-null = ready to paste
   const [bulkCopyOpen, setBulkCopyOpen] = useState(false); // old dialog (kept for fallback, unused)
+  const [repeatCycleOpen, setRepeatCycleOpen] = useState(false);
+  const [repeatCycleResult, setRepeatCycleResult] =
+    useState<RepeatCycleResult | null>(null);
 
   // Cell edit sheet
   const [editSheet, setEditSheet] = useState<{
@@ -1106,6 +1296,18 @@ export default function RosterPage() {
       toast.success(`Copied ${data.count} shifts`);
     },
     onError: e => toast.error(`Bulk copy failed: ${e.message}`),
+  });
+  const repeatCycle = trpc.ctoRoster.roster.repeatCycle.useMutation({
+    onSuccess: data => {
+      utils.ctoRoster.roster.getRange.invalidate();
+      setRepeatCycleResult(data);
+      toast.success(
+        data.membersUpdated > 0
+          ? `Cycle repeated and copied to ${data.membersUpdated} teammate${data.membersUpdated !== 1 ? "s" : ""}`
+          : "Cycle repeated"
+      );
+    },
+    onError: e => toast.error(`Repeat cycle failed: ${e.message}`),
   });
 
   const reorderMembers = trpc.ctoRoster.members.reorder.useMutation({
@@ -1645,6 +1847,19 @@ export default function RosterPage() {
               >
                 <Scissors className="h-3.5 w-3.5" />
                 {bulkCopyMode ? `${selectedCells.size} sel` : "Bulk Copy"}
+              </button>
+            )}
+            {/* Repeat Cycle → Team */}
+            {isAdmin && (
+              <button
+                onClick={() => {
+                  setRepeatCycleResult(null);
+                  setRepeatCycleOpen(true);
+                }}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-border text-muted-foreground hover:bg-muted transition-colors h-8"
+              >
+                <Repeat className="h-3.5 w-3.5" />
+                Repeat Cycle
               </button>
             )}
             {/* Copy block button */}
@@ -2327,6 +2542,25 @@ export default function RosterPage() {
             })
           }
           isLoading={bulkCopy.isPending}
+        />
+
+        <RepeatCycleSheet
+          open={repeatCycleOpen}
+          members={displayMembers}
+          teams={(teamsData as Team[]) ?? []}
+          onClose={() => setRepeatCycleOpen(false)}
+          onApply={(sourceMemberId, fillUntilDate, copyToTeam) =>
+            repeatCycle.mutate({
+              sourceMemberId,
+              sourceMemberName: displayMembers.find(
+                m => m.id === sourceMemberId
+              )?.name,
+              fillUntilDate,
+              copyToTeam,
+            })
+          }
+          isLoading={repeatCycle.isPending}
+          result={repeatCycleResult}
         />
       </div>
     </DashboardLayout>

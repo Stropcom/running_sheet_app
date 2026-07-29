@@ -68,6 +68,7 @@ import {
   getCtoRosterOutlookSettings,
   updateCtoRosterOutlookSettings,
   getCtoRosterAuditLog,
+  repeatCtoRosterCycle,
   addCtoRosterTeam,
   renameCtoRosterTeam,
   deleteCtoRosterTeam,
@@ -4516,6 +4517,42 @@ export const appRouter = router({
             detail: `Copied ${count} shifts to [${(input.targetMemberNames ?? []).join(", ")}] from ${input.startDate} to ${input.endDate}`,
           });
           return { success: true, count };
+        }),
+
+      /**
+       * Detects a member's existing shift pattern (their earliest-to-latest
+       * entered span) and repeats it forward to fillUntilDate, optionally
+       * copying the result to every other member of the same team.
+       */
+      repeatCycle: adminProcedure
+        .input(
+          z.object({
+            sourceMemberId: z.number(),
+            sourceMemberName: z.string().optional(),
+            fillUntilDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+            copyToTeam: z.boolean(),
+          })
+        )
+        .mutation(async ({ ctx, input }) => {
+          const result = await repeatCtoRosterCycle(
+            input.sourceMemberId,
+            input.fillUntilDate,
+            input.copyToTeam,
+            ctx.user.id
+          );
+          writeCtoRosterAudit({
+            userId: ctx.user.id,
+            userName: ctx.user.name,
+            action: "repeat_cycle",
+            memberId: input.sourceMemberId,
+            memberName: input.sourceMemberName ?? null,
+            detail:
+              `Repeated ${result.cycleLengthDays}-day cycle (${result.cycleStart} to ${result.cycleEnd}) through ${input.fillUntilDate}` +
+              (input.copyToTeam
+                ? `, copied to ${result.membersUpdated} teammate(s)`
+                : ""),
+          });
+          return result;
         }),
     }),
 

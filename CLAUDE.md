@@ -77,3 +77,5 @@ Package manager is **pnpm** (see `packageManager` field in `package.json`); don'
 ## Root-level scratch files
 
 `todo.md`, `map_implementation_context.md`, and `map_tab_bar_notes.md` at the repo root are working notes from prior implementation sessions (task tracking / handoff notes for the map + running-sheet quick-entry feature), not authoritative docs — treat `drizzle/schema.ts`, `routers.ts`, and the actual component code as ground truth over them.
+
+`ops-notes.md` is a running log of production/droplet incidents (outages, high CPU/latency, deploy issues) — check it whenever the user reports something happening on the live droplet, in case it's a recurrence of something already investigated. Append new incidents there rather than only answering in chat, so the next session has the history.

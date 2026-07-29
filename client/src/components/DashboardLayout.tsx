@@ -555,7 +555,7 @@ function SortableNavItem({
                   className={subItemClass(location === "/cto-roster")}
                 >
                   <Users className="h-3.5 w-3.5 shrink-0" />
-                  Shift Grid
+                  Roster
                 </button>
                 <button
                   onClick={() => setLocation("/cto-roster/my-shifts")}
@@ -565,11 +565,11 @@ function SortableNavItem({
                   My Shifts
                 </button>
                 <button
-                  onClick={() => setLocation("/cto-roster/members")}
-                  className={subItemClass(location === "/cto-roster/members")}
+                  onClick={() => setLocation("/cto-roster/outlook")}
+                  className={subItemClass(location === "/cto-roster/outlook")}
                 >
-                  <Users className="h-3.5 w-3.5 shrink-0" />
-                  Members
+                  <Binoculars className="h-3.5 w-3.5 shrink-0" />
+                  Outlook
                 </button>
                 <button
                   onClick={() => setLocation("/cto-roster/drafts")}
@@ -590,13 +590,6 @@ function SortableNavItem({
                   Saved Rosters
                 </button>
                 <button
-                  onClick={() => setLocation("/cto-roster/outlook")}
-                  className={subItemClass(location === "/cto-roster/outlook")}
-                >
-                  <Binoculars className="h-3.5 w-3.5 shrink-0" />
-                  Outlook
-                </button>
-                <button
                   onClick={() => setLocation("/cto-roster/ea-compliance")}
                   className={subItemClass(
                     location === "/cto-roster/ea-compliance"
@@ -611,6 +604,13 @@ function SortableNavItem({
                 >
                   <ScrollText className="h-3.5 w-3.5 shrink-0" />
                   Audit Log
+                </button>
+                <button
+                  onClick={() => setLocation("/cto-roster/members")}
+                  className={subItemClass(location === "/cto-roster/members")}
+                >
+                  <Users className="h-3.5 w-3.5 shrink-0" />
+                  Members
                 </button>
               </div>
             )}

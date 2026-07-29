@@ -929,18 +929,18 @@ function MapSidebarNav({
             </button>
             {ctoRosterSubExpanded && (
               <div className="ml-4 border-l border-border/40 pl-2 flex flex-col gap-0.5 mb-0.5">
-                {subBtn("/cto-roster", Users, "Shift Grid")}
+                {subBtn("/cto-roster", Users, "Roster")}
                 {subBtn("/cto-roster/my-shifts", Users, "My Shifts")}
-                {subBtn("/cto-roster/members", Users, "Members")}
+                {subBtn("/cto-roster/outlook", Binoculars, "Outlook")}
                 {subBtn("/cto-roster/drafts", FileEdit, "Drafts")}
                 {subBtn("/cto-roster/saved-rosters", BookOpen, "Saved Rosters")}
-                {subBtn("/cto-roster/outlook", Binoculars, "Outlook")}
                 {subBtn(
                   "/cto-roster/ea-compliance",
                   ShieldCheck,
                   "EA Compliance"
                 )}
                 {subBtn("/cto-roster/audit", ScrollText, "Audit Log")}
+                {subBtn("/cto-roster/members", Users, "Members")}
               </div>
             )}
           </div>

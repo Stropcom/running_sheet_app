@@ -712,6 +712,29 @@ function DashboardLayoutContent({
       sidebarScrollRef.current.scrollTop = lastSidebarScrollTop;
     }
   }, []);
+
+  // Clicking a nav item (e.g. a CTO Roster sub-item) navigates to a new page,
+  // which mounts a whole new DashboardLayout — so scroll position can only be
+  // preserved by remembering it *before* that happens. Expanding a folder
+  // doesn't fire a scroll event on its own (nothing has been dragged/wheeled),
+  // so relying on onScroll alone missed exactly this case: the user expands
+  // Op Manager → CTO Roster, then clicks a sub-item without ever manually
+  // scrolling. Capture the clicked button's position directly instead, with
+  // some headroom so it lands a little below the very top edge, not flush
+  // against it.
+  const handleSidebarNavClickCapture = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      const btn = (e.target as HTMLElement).closest("button");
+      const container = sidebarScrollRef.current;
+      if (!btn || !container || !container.contains(btn)) return;
+      const containerRect = container.getBoundingClientRect();
+      const btnRect = btn.getBoundingClientRect();
+      const offsetWithinContainer =
+        btnRect.top - containerRect.top + container.scrollTop;
+      lastSidebarScrollTop = Math.max(0, offsetWithinContainer - 160);
+    },
+    []
+  );
   const isMobile = useIsMobile();
 
   const { data: outstanding } = trpc.sheet.outstandingForMe.useQuery(
@@ -1005,6 +1028,7 @@ function DashboardLayoutContent({
             onScroll={e => {
               lastSidebarScrollTop = e.currentTarget.scrollTop;
             }}
+            onClickCapture={handleSidebarNavClickCapture}
           >
             <SidebarMenu className="px-2 gap-1.5">
               {/* ── Draggable main nav items ── */}

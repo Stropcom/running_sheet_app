@@ -3,6 +3,7 @@
  * Rendered as a React portal directly on document.body (outside #root) so the
  * @media print CSS can hide #root and show only this element.
  */
+import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { format, eachDayOfInterval, parseISO, isValid } from "date-fns";
 import {
@@ -11,6 +12,19 @@ import {
   shiftClass,
 } from "@shared/ctoRosterShiftUtils";
 import { cn } from "@/lib/utils";
+
+/**
+ * Toggles a body class while this component is mounted so the shared
+ * @media print rules that hide #root only apply here — several other pages
+ * (OperationManagerPage, WitnessListPage, Intelligence profiles, etc.) print
+ * in place via their own .no-print rules and must be unaffected.
+ */
+function usePrintingBodyClass() {
+  useEffect(() => {
+    document.body.classList.add("cto-roster-printing");
+    return () => document.body.classList.remove("cto-roster-printing");
+  }, []);
+}
 
 type Member = { id: number; name: string; teamId: number; sortOrder: number };
 type Team = { id: number; name: string; sortOrder: number };
@@ -48,6 +62,7 @@ export function PrintRosterView({
   members,
   shiftMap,
 }: Props) {
+  usePrintingBodyClass();
   const start = safeDate(startDate);
   const end = safeDate(endDate);
   if (!start || !end) return null;
@@ -70,6 +85,7 @@ export function PrintRosterView({
       className="print-only"
       style={{ fontFamily: "Arial, sans-serif", fontSize: 9, color: "#000" }}
     >
+      <style>{`@media print { @page { size: A4 landscape; margin: 10mm 8mm; } }`}</style>
       {/* Header */}
       <div
         style={{

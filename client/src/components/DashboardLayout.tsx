@@ -85,6 +85,7 @@ import {
 import React, {
   CSSProperties,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useCallback,
@@ -95,6 +96,13 @@ import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { Button } from "./ui/button";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useSectionColor } from "@/contexts/SectionColorContext";
+
+// Every page mounts its own <DashboardLayout>, so navigating between pages
+// unmounts and remounts this whole component — including the sidebar's
+// scrollable nav list, which would otherwise reset to the top on every click.
+// This module-level value survives that remount so the sidebar stays scrolled
+// to wherever the user left it (e.g. deep in an expanded Op Manager folder).
+let lastSidebarScrollTop = 0;
 
 // ─── SortableNavItem ─────────────────────────────────────────────────────────
 type SortableNavItemProps = {
@@ -695,6 +703,15 @@ function DashboardLayoutContent({
   const isCollapsed = state === "collapsed";
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
+  const sidebarScrollRef = useRef<HTMLDivElement>(null);
+
+  // Restore the sidebar's scroll position immediately on mount (before paint)
+  // so re-opening a nav item deep in the list doesn't visibly jump to the top.
+  useLayoutEffect(() => {
+    if (sidebarScrollRef.current) {
+      sidebarScrollRef.current.scrollTop = lastSidebarScrollTop;
+    }
+  }, []);
   const isMobile = useIsMobile();
 
   const { data: outstanding } = trpc.sheet.outstandingForMe.useQuery(
@@ -932,7 +949,7 @@ function DashboardLayoutContent({
 
   return (
     <>
-      <div className="relative" ref={sidebarRef}>
+      <div className="relative print:hidden" ref={sidebarRef}>
         <Sidebar
           collapsible="icon"
           className="border-r border-sidebar-border rounded-r-2xl shadow-2xl overflow-hidden"
@@ -982,7 +999,13 @@ function DashboardLayoutContent({
           </SidebarHeader>
 
           {/* Navigation */}
-          <SidebarContent className="gap-0 pt-2 pb-2">
+          <SidebarContent
+            className="gap-0 pt-2 pb-2"
+            ref={sidebarScrollRef}
+            onScroll={e => {
+              lastSidebarScrollTop = e.currentTarget.scrollTop;
+            }}
+          >
             <SidebarMenu className="px-2 gap-1.5">
               {/* ── Draggable main nav items ── */}
               <DndContext

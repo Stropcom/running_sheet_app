@@ -237,17 +237,21 @@
 
 /* ── CTO Roster: print / PDF export ──────────────────────────────────────── */
 /* Hidden on screen, shown only during print — see PrintRosterView.tsx, which
-   portals a flat print-only table directly onto document.body. */
+   portals a flat print-only table directly onto document.body. Scoped under
+   body.cto-roster-printing (toggled by PrintRosterView while it's mounted) so
+   this doesn't affect the several other pages that print in place via their
+   own .no-print rules (OperationManagerPage, WitnessListPage, Intelligence
+   profile pages, etc). */
 .print-only {
   display: none;
 }
 
 @media print {
-  #root {
+  body.cto-roster-printing #root {
     display: none !important;
   }
 
-  .print-only {
+  body.cto-roster-printing .print-only {
     display: block !important;
     width: 100% !important;
     background: white !important;
@@ -256,14 +260,9 @@
     margin: 0 !important;
   }
 
-  * {
+  body.cto-roster-printing * {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
-  }
-
-  @page {
-    size: A4 landscape;
-    margin: 10mm 8mm;
   }
 }
 

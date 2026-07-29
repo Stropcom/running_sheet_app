@@ -1794,6 +1794,23 @@ export default function RosterPage() {
     }
     if (activeId === insertBeforeMemberId) return;
 
+    // Same-team drags need to know direction: dnd-kit reports `over` as
+    // whichever row the pointer currently sits inside, without saying which
+    // side of it. Dragging downward past a row should land the dragged
+    // member after it (matching where the pointer physically left it);
+    // dragging upward should land it before. Comparing original sortOrder
+    // tells us which side the drag crossed from.
+    const originalActive = localMembers.find(m => m.id === activeId);
+    if (!originalActive) return;
+    const overOriginalSortOrder =
+      insertBeforeMemberId !== null
+        ? localMembers.find(m => m.id === insertBeforeMemberId)?.sortOrder
+        : undefined;
+    const movingDown =
+      originalActive.teamId === targetTeamId &&
+      overOriginalSortOrder !== undefined &&
+      originalActive.sortOrder < overOriginalSortOrder;
+
     const updated = localMembers.map(m => ({ ...m }));
     const activeMember = updated.find(m => m.id === activeId);
     if (!activeMember) return;
@@ -1814,7 +1831,7 @@ export default function RosterPage() {
           const beforeIdx = withoutActive.findIndex(
             (m: Member) => m.id === insertBeforeMemberId
           );
-          if (beforeIdx !== -1) insertIdx = beforeIdx;
+          if (beforeIdx !== -1) insertIdx = movingDown ? beforeIdx + 1 : beforeIdx;
         }
         withoutActive.splice(insertIdx, 0, activeMember);
       }

@@ -241,6 +241,11 @@ import {
   confirmFaceMatch as confirmFaceMatchDb,
   createFaceMatchDismissal,
   type FaceMatchCandidate,
+  createNotificationsForUsers,
+  getNotificationsForUser,
+  getUnreadNotificationCount,
+  markNotificationRead,
+  markAllNotificationsRead,
 } from "./db";
 
 import {
@@ -272,10 +277,7 @@ import {
   markWeekPosted,
   listAllOpManagerWeeks,
   copyOpManagerWeek,
-  savePushSubscription,
-  removePushSubscription,
 } from "./db";
-import { sendPushToAll, sendPushToUsers } from "./webPush";
 
 // ─── Role Guards ──────────────────────────────────────────────────────────────
 
@@ -2050,6 +2052,33 @@ export const appRouter = router({
 
         return { success: true };
       }),
+  }),
+
+  // ─── In-app Notifications ───────────────────────────────────────────────────
+  // General-purpose inbox any module can write into (opManager's postWeek is
+  // the first user) — reliable counterpart to browser push, which depends on
+  // OS permissions/per-device subscriptions and is broken outright on iOS
+  // Safari unless installed as a home-screen PWA.
+  notifications: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      return getNotificationsForUser(ctx.user.id);
+    }),
+
+    unreadCount: protectedProcedure.query(async ({ ctx }) => {
+      return { count: await getUnreadNotificationCount(ctx.user.id) };
+    }),
+
+    markRead: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await markNotificationRead(input.id, ctx.user.id);
+        return { ok: true };
+      }),
+
+    markAllRead: protectedProcedure.mutation(async ({ ctx }) => {
+      await markAllNotificationsRead(ctx.user.id);
+      return { ok: true };
+    }),
   }),
 
   // ─── Audit Logs ─────────────────────────────────────────────────────────────
@@ -4335,44 +4364,23 @@ export const appRouter = router({
         const title = "New CTO Tasking Posted";
         const body = `CTO Tasking for the week of ${weekLabel} has been posted.`;
         const url = "/operation-manager";
-        // Surface real sent/failed counts to the client instead of a blind
-        // "ok" — the button used to always toast success even when nobody
-        // was actually subscribed or VAPID wasn't configured, with the only
-        // trace being a server console warning nobody was looking at.
-        const result = await (input.userIds && input.userIds.length > 0
-          ? sendPushToUsers(input.userIds, title, body, url)
-          : sendPushToAll(title, body, url)
-        ).catch(err => {
-          console.warn("[Push] Failed to send notifications:", err);
-          return { sent: 0, failed: input.userIds?.length ?? 0 };
-        });
-        return { ok: true, ...result };
-      }),
-
-    // ── Push subscriptions ────────────────────────────────────────────────────
-    subscribePush: protectedProcedure
-      .input(
-        z.object({
-          endpoint: z.string(),
-          p256dh: z.string(),
-          auth: z.string(),
-        })
-      )
-      .mutation(async ({ ctx, input }) => {
-        await savePushSubscription(
-          ctx.user.id,
-          input.endpoint,
-          input.p256dh,
-          input.auth
+        // In-app inbox only — browser push was removed (unreliable: depends
+        // on OS permissions/per-device subscriptions, broken outright on iOS
+        // Safari unless installed as a home-screen PWA). See notifications
+        // router / drizzle schema comment.
+        const targetUserIds =
+          input.userIds && input.userIds.length > 0
+            ? input.userIds
+            : (await getAllUsers()).map(u => u.id);
+        await createNotificationsForUsers(targetUserIds, {
+          title,
+          body,
+          url,
+          sourceModule: "opManager",
+        }).catch(err =>
+          console.warn("[Notifications] Failed to create in-app notifications:", err)
         );
-        return { ok: true };
-      }),
-
-    unsubscribePush: protectedProcedure
-      .input(z.object({ endpoint: z.string() }))
-      .mutation(async ({ input }) => {
-        await removePushSubscription(input.endpoint);
-        return { ok: true };
+        return { ok: true, notified: targetUserIds.length };
       }),
   }),
 

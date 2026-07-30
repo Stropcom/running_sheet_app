@@ -773,15 +773,31 @@ export const opManagerPostedWeeks = mysqlTable("op_manager_posted_weeks", {
 export type OpManagerPostedWeek = typeof opManagerPostedWeeks.$inferSelect;
 
 // ─── Push Subscriptions ───────────────────────────────────────────────────────
-export const pushSubscriptions = mysqlTable("push_subscriptions", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(), // FK → users.id
-  endpoint: text("endpoint").notNull(),
-  p256dh: text("p256dh").notNull(),
-  auth: text("auth").notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
-export type PushSubscription = typeof pushSubscriptions.$inferSelect;
+// In-app notification inbox. Deliberately not browser push (removed after
+// proving unreliable — depends on OS permissions/per-device subscriptions,
+// broken outright on iOS Safari unless installed as a home-screen PWA). Any
+// module can write a row here for a recipient; the bell in DashboardLayout
+// polls unread count and lists them, since every user already has to log
+// into RunLog to do their job.
+export const notifications = mysqlTable(
+  "notifications",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(), // FK → users.id (recipient)
+    title: varchar("title", { length: 200 }).notNull(),
+    body: text("body").notNull(),
+    url: varchar("url", { length: 255 }), // optional deep link
+    sourceModule: varchar("sourceModule", { length: 64 }), // e.g. "opManager"
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    readAt: timestamp("readAt"),
+  },
+  t => [
+    index("notifications_userId_idx").on(t.userId),
+    index("notifications_userId_readAt_idx").on(t.userId, t.readAt),
+  ]
+);
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = typeof notifications.$inferInsert;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CTO Roster — ported from the standalone roster_app (same Manus platform

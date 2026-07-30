@@ -18,9 +18,6 @@ import {
   Sun,
   Moon,
   Phone,
-  Bell,
-  BellOff,
-  BellRing,
   ImageIcon,
   Trash2,
   Upload,
@@ -88,99 +85,6 @@ function PasswordField({
   );
 }
 
-// ─── Push Notification Hook ────────────────────────────────────────────────────
-function urlBase64ToUint8Array(base64String: string): Uint8Array {
-  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-  const rawData = window.atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-  for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
-  return outputArray as unknown as Uint8Array<ArrayBuffer>;
-}
-
-function useNotificationStatus() {
-  const [status, setStatus] = useState<"unsupported" | "denied" | "granted" | "default">("default");
-  const [isSubscribed, setIsSubscribed] = useState(false);
-  const [loading, setLoading] = useState(false);
-
-  const subscribeMutation = trpc.opManager.subscribePush.useMutation();
-  const unsubscribeMutation = trpc.opManager.unsubscribePush.useMutation();
-
-  useEffect(() => {
-    if (!("Notification" in window) || !("serviceWorker" in navigator)) {
-      setStatus("unsupported");
-      return;
-    }
-    setStatus(Notification.permission as "denied" | "granted" | "default");
-    // Check if already subscribed
-    navigator.serviceWorker.ready.then((reg) => {
-      reg.pushManager.getSubscription().then((sub) => {
-        setIsSubscribed(!!sub);
-      });
-    }).catch(() => {});
-  }, []);
-
-  const enable = async () => {
-    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
-      toast.error("Push notifications are not supported in this browser.");
-      return;
-    }
-    setLoading(true);
-    try {
-      const permission = await Notification.requestPermission();
-      setStatus(permission as "denied" | "granted" | "default");
-      if (permission !== "granted") {
-        toast.error("Notification permission denied. Please allow notifications in your browser settings.");
-        setLoading(false);
-        return;
-      }
-      const reg = await navigator.serviceWorker.ready;
-      // Get VAPID public key from env
-      const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined;
-      if (!vapidKey) {
-        toast.error("Push notifications are not configured on this server.");
-        setLoading(false);
-        return;
-      }
-      const subscription = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapidKey) as unknown as BufferSource,
-      });
-      const json = subscription.toJSON();
-      await subscribeMutation.mutateAsync({
-        endpoint: json.endpoint!,
-        p256dh: (json.keys as Record<string, string>).p256dh,
-        auth: (json.keys as Record<string, string>).auth,
-      });
-      setIsSubscribed(true);
-      toast.success("Notifications enabled! You'll be notified when new CTO Tasking is posted.");
-    } catch (err) {
-      toast.error("Failed to enable notifications. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const disable = async () => {
-    setLoading(true);
-    try {
-      const reg = await navigator.serviceWorker.ready;
-      const sub = await reg.pushManager.getSubscription();
-      if (sub) {
-        await unsubscribeMutation.mutateAsync({ endpoint: sub.endpoint });
-        await sub.unsubscribe();
-      }
-      setIsSubscribed(false);
-      toast.success("Notifications disabled.");
-    } catch {
-      toast.error("Failed to disable notifications.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return { status, isSubscribed, loading, enable, disable };
-}
 
 export default function MyProfilePage() {
   const { isAuthenticated } = useAuth({ redirectOnUnauthenticated: true });
@@ -195,8 +99,6 @@ export default function MyProfilePage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [success, setSuccess] = useState(false);
-
-  const { status: notifStatus, isSubscribed, loading: notifLoading, enable: enableNotif, disable: disableNotif } = useNotificationStatus();
 
   const updatePasswordMutation = trpc.profile.updatePassword.useMutation({
     onSuccess: () => {
@@ -381,77 +283,6 @@ export default function MyProfilePage() {
               <InfoRow icon={Phone}     label="Mobile Phone" value={(profile as { phone?: string | null } | undefined)?.phone} />
               <InfoRow icon={AtSign}    label="Username"     value={profile?.username} />
               <InfoRow icon={Shield}    label="Access Level" value={roleConf?.label} />
-            </div>
-          )}
-        </div>
-
-        {/* Push Notifications Card */}
-        <div className="rounded-xl border border-border bg-card p-6 mb-6 shadow-sm">
-          <h2 className="text-sm font-semibold text-foreground mb-1 flex items-center gap-2">
-            <Bell className="w-4 h-4 text-primary" />
-            Push Notifications
-          </h2>
-          <p className="text-xs text-muted-foreground mb-4">
-            Receive a notification on this device when a new CTO Tasking Week is posted.
-          </p>
-
-          {notifStatus === "unsupported" ? (
-            <div className="flex items-center gap-3 rounded-lg bg-muted/40 border border-border/60 px-4 py-3">
-              <BellOff className="w-4 h-4 text-muted-foreground shrink-0" />
-              <p className="text-sm text-muted-foreground">Push notifications are not supported in this browser.</p>
-            </div>
-          ) : notifStatus === "denied" ? (
-            <div className="flex items-center gap-3 rounded-lg bg-destructive/10 border border-destructive/20 px-4 py-3">
-              <BellOff className="w-4 h-4 text-destructive shrink-0" />
-              <div>
-                <p className="text-sm font-medium text-destructive">Notifications blocked</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  You have blocked notifications for this site. To enable them, update your browser's site settings and reload the page.
-                </p>
-              </div>
-            </div>
-          ) : isSubscribed ? (
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0">
-                  <BellRing className="w-4 h-4 text-emerald-500" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-emerald-500">Notifications enabled</p>
-                  <p className="text-xs text-muted-foreground">This device will receive CTO Tasking alerts.</p>
-                </div>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={disableNotif}
-                disabled={notifLoading}
-                className="shrink-0 text-muted-foreground hover:text-destructive hover:border-destructive/50"
-              >
-                <BellOff className="w-3.5 h-3.5 mr-1.5" />
-                Disable
-              </Button>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-muted/60 flex items-center justify-center shrink-0">
-                  <BellOff className="w-4 h-4 text-muted-foreground" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-foreground">Notifications off</p>
-                  <p className="text-xs text-muted-foreground">Enable to get alerted when new CTO Tasking is posted.</p>
-                </div>
-              </div>
-              <Button
-                size="sm"
-                onClick={enableNotif}
-                disabled={notifLoading}
-                className="shrink-0"
-              >
-                <Bell className="w-3.5 h-3.5 mr-1.5" />
-                Enable Notifications
-              </Button>
             </div>
           )}
         </div>

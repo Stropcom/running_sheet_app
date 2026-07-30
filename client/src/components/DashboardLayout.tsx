@@ -94,6 +94,7 @@ import React, {
 import { useObservationFocus } from "@/contexts/ObservationFocusContext";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
+import { NotificationBell } from "./NotificationBell";
 import { Button } from "./ui/button";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useSectionColor } from "@/contexts/SectionColorContext";
@@ -1060,6 +1061,12 @@ function DashboardLayoutContent({
                 </div>
               )}
               {!isCollapsed && (
+                <NotificationBell
+                  className="hover:bg-sidebar-accent"
+                  iconClassName="h-4 w-4 text-sidebar-foreground/60"
+                />
+              )}
+              {!isCollapsed && (
                 <button
                   onClick={toggleHomeMode}
                   className="h-8 w-8 flex items-center justify-center hover:bg-sidebar-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0 ml-auto"
@@ -1464,6 +1471,7 @@ function DashboardLayoutContent({
               </span>
             </div>
             <div className="flex items-center gap-2">
+              <NotificationBell />
               {/* Active RS quick-link (mobile) */}
               <button
                 onClick={() => {

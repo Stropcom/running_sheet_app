@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -27,8 +27,6 @@ import {
   Eye,
   Edit2,
   Printer,
-  Bell,
-  BellOff,
   CheckCircle2,
   GripVertical,
   Copy,
@@ -212,71 +210,6 @@ interface OnCallEntry {
   dayScope: string;
 }
 
-// ─── Push notification hook ───────────────────────────────────────────────────
-function usePushSubscription() {
-  const [subscribed, setSubscribed] = useState(false);
-  const subscribeMut = trpc.opManager.subscribePush.useMutation();
-  const unsubscribeMut = trpc.opManager.unsubscribePush.useMutation();
-
-  useEffect(() => {
-    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
-    navigator.serviceWorker.ready
-      .then(async reg => {
-        const existing = await reg.pushManager.getSubscription();
-        setSubscribed(!!existing);
-      })
-      .catch(() => {});
-  }, []);
-
-  const subscribe = useCallback(async () => {
-    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
-      toast.error("Push notifications are not supported in this browser.");
-      return;
-    }
-    try {
-      const reg = await navigator.serviceWorker.ready;
-      const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY as string;
-      if (!vapidKey) {
-        toast.error("Push notifications not configured.");
-        return;
-      }
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: vapidKey,
-      });
-      const json = sub.toJSON();
-      const keys = json.keys as Record<string, string>;
-      await subscribeMut.mutateAsync({
-        endpoint: json.endpoint!,
-        p256dh: keys["p256dh"],
-        auth: keys["auth"],
-      });
-      setSubscribed(true);
-      toast.success("Push notifications enabled.");
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to enable push notifications.");
-    }
-  }, [subscribeMut]);
-
-  const unsubscribe = useCallback(async () => {
-    try {
-      const reg = await navigator.serviceWorker.ready;
-      const sub = await reg.pushManager.getSubscription();
-      if (sub) {
-        await unsubscribeMut.mutateAsync({ endpoint: sub.endpoint });
-        await sub.unsubscribe();
-      }
-      setSubscribed(false);
-      toast.success("Push notifications disabled.");
-    } catch {
-      toast.error("Failed to disable push notifications.");
-    }
-  }, [unsubscribeMut]);
-
-  return { subscribed, subscribe, unsubscribe };
-}
-
 // ─── Unique ID helper ─────────────────────────────────────────────────────────
 let _uid = 0;
 const uid = () => String(++_uid);
@@ -299,8 +232,6 @@ export default function OperationManagerPage() {
   // ── New-week dialog state ─────────────────────────────────────────────────────
   const [newWeekDialogOpen, setNewWeekDialogOpen] = useState(false);
   const [isCreatingWeek, setIsCreatingWeek] = useState(false);
-
-  const { subscribed, subscribe, unsubscribe } = usePushSubscription();
 
   // ── Queries ───────────────────────────────────────────────────────────────────
   const opsQuery = trpc.operation.list.useQuery(undefined, {
@@ -690,29 +621,17 @@ export default function OperationManagerPage() {
   const handleConfirmNotify = async () => {
     setNotifyDialogOpen(false);
     try {
-      const result = await postWeekMut.mutateAsync({
+      await postWeekMut.mutateAsync({
         weekStart,
         userIds:
           selectedUserIds.size > 0 ? Array.from(selectedUserIds) : undefined,
       });
       await utils.opManager.isWeekPosted.invalidate();
-      // Report the real push outcome (sent/failed device subscriptions) —
-      // "posted" always succeeds even when nobody actually got a
-      // notification (no VAPID keys, nobody subscribed, expired
-      // subscriptions), so a plain "Notified N users" toast was misleading.
-      const sent = result.sent ?? 0;
-      const failed = result.failed ?? 0;
-      if (selectedUserIds.size === 0) {
-        toast.success("CTO Tasking posted (no users notified).");
-      } else if (sent === 0) {
-        toast.warning(
-          `CTO Tasking posted, but no notifications were delivered (${failed} failed). Selected users may not have notifications enabled on any device.`
-        );
-      } else {
-        toast.success(
-          `CTO Tasking posted. Sent to ${sent} device${sent === 1 ? "" : "s"}${failed > 0 ? `, ${failed} failed` : ""}.`
-        );
-      }
+      toast.success(
+        selectedUserIds.size > 0
+          ? `CTO Tasking posted. Notified ${selectedUserIds.size} user${selectedUserIds.size === 1 ? "" : "s"} (check their notification bell).`
+          : "CTO Tasking posted (no users notified)."
+      );
     } catch {
       toast.error("Failed to post CTO Tasking.");
     }
@@ -1052,22 +971,6 @@ export default function OperationManagerPage() {
               onBack={() => setViewMode("folder")}
               rightSlot={
                 <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={subscribed ? unsubscribe : subscribe}
-                    title={
-                      subscribed
-                        ? "Disable notifications"
-                        : "Enable notifications"
-                    }
-                  >
-                    {subscribed ? (
-                      <Bell className="h-4 w-4 text-primary" />
-                    ) : (
-                      <BellOff className="h-4 w-4 text-muted-foreground" />
-                    )}
-                  </Button>
                   {isAdmin && (
                     <>
                       <Button

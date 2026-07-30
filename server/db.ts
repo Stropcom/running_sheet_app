@@ -49,7 +49,7 @@ import {
   opManagerTaskingCells,
   opManagerSupervisorContacts,
   opManagerPostedWeeks,
-  pushSubscriptions,
+  notifications,
   entityAliases,
   InsertEntityAlias,
   entityDedupDecisions,
@@ -6051,36 +6051,64 @@ export async function markWeekPosted(weekStart: string, postedBy: number) {
   return { weekStart, postedAt: new Date() };
 }
 
-// ─── Push Subscriptions ───────────────────────────────────────────────────────
-export async function savePushSubscription(
-  userId: number,
-  endpoint: string,
-  p256dh: string,
-  auth: string
+// ─── In-app Notifications ─────────────────────────────────────────────────────
+// See schema.ts comment on the notifications table for why this exists
+// instead of browser push.
+export async function createNotificationsForUsers(
+  userIds: number[],
+  params: { title: string; body: string; url?: string; sourceModule?: string }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  // Remove any existing subscription for this endpoint
-  await db.delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, endpoint));
-  await db.insert(pushSubscriptions).values({ userId, endpoint, p256dh, auth });
+  if (!db || userIds.length === 0) return;
+  await db.insert(notifications).values(
+    userIds.map(userId => ({
+      userId,
+      title: params.title,
+      body: params.body,
+      url: params.url,
+      sourceModule: params.sourceModule,
+    }))
+  );
 }
 
-export async function removePushSubscription(endpoint: string) {
+export async function getNotificationsForUser(userId: number, limit = 50) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(notifications)
+    .where(eq(notifications.userId, userId))
+    .orderBy(desc(notifications.createdAt))
+    .limit(limit);
+}
+
+export async function getUnreadNotificationCount(userId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const rows = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(notifications)
+    .where(and(eq(notifications.userId, userId), isNull(notifications.readAt)));
+  return Number(rows[0]?.count ?? 0);
+}
+
+export async function markNotificationRead(id: number, userId: number) {
   const db = await getDb();
   if (!db) return;
-  await db.delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, endpoint));
+  // Scoped to userId so one user can't mark another's notification read.
+  await db
+    .update(notifications)
+    .set({ readAt: new Date() })
+    .where(and(eq(notifications.id, id), eq(notifications.userId, userId)));
 }
 
-export async function getAllPushSubscriptions() {
+export async function markAllNotificationsRead(userId: number) {
   const db = await getDb();
-  if (!db) return [];
-  return db.select().from(pushSubscriptions);
-}
-
-export async function getPushSubscriptionsByUserId(userId: number) {
-  const db = await getDb();
-  if (!db) return [];
-  return db.select().from(pushSubscriptions).where(eq(pushSubscriptions.userId, userId));
+  if (!db) return;
+  await db
+    .update(notifications)
+    .set({ readAt: new Date() })
+    .where(and(eq(notifications.userId, userId), isNull(notifications.readAt)));
 }
 
 // ─── Witness List ───────────────────────────────────────────────────────────

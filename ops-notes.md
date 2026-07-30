@@ -11,6 +11,38 @@ happen before."
 
 ---
 
+## 2026-07-30 (even later) — Doc Import upload failing: missing OCR model in production build
+
+Uploading a document (especially HEIC) through CTO Roster's new "Doc
+Import" feature failed with a client-side error: `Unexpected token '<',
+"<html> <h"... is not valid JSON`. Two separate issues surfaced along
+the way:
+
+1. nginx's default `client_max_body_size` (1MB) was rejecting the
+   base64-encoded upload body outright, returning nginx's own HTML error
+   page — the tRPC client then failed to parse that HTML as JSON,
+   producing the cryptic error. Fixed by adding `client_max_body_size
+   30M;` to the `server {}` block in `/etc/nginx/sites-available/runlog`
+   (droplet-only config, not in this repo) and reloading nginx.
+2. That fix alone didn't resolve it — `pm2 logs runlog` showed the real
+   cause: `Error: ENOENT: no such file or directory, open
+   '/opt/runlog/dist/models/eng.traineddata.gz'`. The production build
+   script only copied `server/faceRecognition/models` into `dist/models`,
+   never `server/externalIntel/models` (the OCR feature's vendored
+   Tesseract trained-data file) — esbuild bundles the whole server into
+   one `dist/index.js`, so every module's `__dirname` resolves to the
+   same `dist/` folder after bundling, meaning the missing copy step
+   left the OCR worker with nothing to load. Fixed in `package.json`'s
+   `build` script (commit on `claude/claude-md-docs-o4trnz`). Verified
+   by running the actual production build locally and uploading through
+   it end-to-end — dev mode (`tsx watch`) never goes through the
+   bundling step, so this was invisible until a real deploy.
+
+**Action needed**: pull latest + redeploy for the model-copy fix to take
+effect — this ops-notes entry alone doesn't apply it.
+
+---
+
 ## 2026-07-30 (later) — CPU 100% hang, root cause found and fixed: EA Compliance "Check"
 
 User reported CPU 100% recurring — this morning, and again this evening —

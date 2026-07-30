@@ -12,58 +12,16 @@ cleanupOutdatedCaches();
 // registerType: "autoUpdate" (see main.tsx) relies on the service worker
 // activating itself as soon as a new version installs — the generateSW
 // strategy injects this automatically, but injectManifest (needed here for
-// the push handler below) does not, so without this a new build installs
-// and sits in "waiting" forever, never taking over, no matter how the page
-// is reloaded. skipWaiting() here is what lets it activate immediately.
+// the custom precache/activate logic) does not, so without this a new build
+// installs and sits in "waiting" forever, never taking over, no matter how
+// the page is reloaded. skipWaiting() here is what lets it activate
+// immediately.
 self.skipWaiting();
 
 // Take control of any already-open tabs as soon as this version activates,
 // not just future navigations.
 self.addEventListener("activate", (event: ExtendableEvent) => {
   event.waitUntil(self.clients.claim());
-});
-
-// ── Push notification handler ─────────────────────────────────────────────────
-self.addEventListener("push", (event: PushEvent) => {
-  let data: { title?: string; body?: string; url?: string; icon?: string } = {};
-  try {
-    data = event.data?.json() ?? {};
-  } catch {
-    data = { title: "RunLog", body: event.data?.text() ?? "" };
-  }
-
-  const title = data.title ?? "RunLog";
-  const options: NotificationOptions = {
-    body: data.body ?? "",
-    icon: data.icon ?? "/icon-192.png",
-    badge: "/icon-192.png",
-    data: { url: data.url ?? "/" },
-    requireInteraction: false,
-  };
-
-  event.waitUntil(self.registration.showNotification(title, options));
-});
-
-// ── Notification click handler ────────────────────────────────────────────────
-self.addEventListener("notificationclick", (event: NotificationEvent) => {
-  event.notification.close();
-  const url = (event.notification.data?.url as string) ?? "/";
-  event.waitUntil(
-    self.clients
-      .matchAll({ type: "window", includeUncontrolled: true })
-      .then((clientList) => {
-        for (const client of clientList) {
-          if ("focus" in client) {
-            client.focus();
-            if ("navigate" in client) {
-              (client as WindowClient).navigate(url);
-            }
-            return;
-          }
-        }
-        return self.clients.openWindow(url);
-      })
-  );
 });
 
 // Skip waiting so updates activate immediately

@@ -79,6 +79,7 @@ import {
   renameCtoRosterTeam,
   deleteCtoRosterTeam,
   reorderCtoRosterTeams,
+  upsertRosterShiftNotification,
 } from "./ctoRoster";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { sdk } from "./_core/sdk";
@@ -227,6 +228,14 @@ import {
   confirmFaceMatch as confirmFaceMatchDb,
   createFaceMatchDismissal,
   type FaceMatchCandidate,
+  createNotificationsForUsers,
+  getNotificationsForUser,
+  getUnreadNotificationCount,
+  markNotificationRead,
+  markAllNotificationsRead,
+  deleteNotification,
+  deleteReadNotificationsForUser,
+  purgeExpiredNotifications,
 } from "./db";
 
 import {
@@ -258,10 +267,7 @@ import {
   markWeekPosted,
   listAllOpManagerWeeks,
   copyOpManagerWeek,
-  savePushSubscription,
-  removePushSubscription,
 } from "./db";
-import { sendPushToAll, sendPushToUsers } from "./webPush";
 
 // ─── Role Guards ──────────────────────────────────────────────────────────────
 
@@ -364,6 +370,15 @@ export const appRouter = router({
           action: "user_updated",
           details: `CIN ${ctx.user.cin ?? "Unknown"} changed password`,
           createdAt: Date.now(),
+        });
+        return { success: true };
+      }),
+
+    updateRosterShiftNotifPref: protectedProcedure
+      .input(z.object({ enabled: z.boolean() }))
+      .mutation(async ({ input, ctx }) => {
+        await updateUser(ctx.user.id, {
+          rosterShiftNotificationsEnabled: input.enabled,
         });
         return { success: true };
       }),
@@ -2036,6 +2051,48 @@ export const appRouter = router({
 
         return { success: true };
       }),
+  }),
+
+  // ─── In-app Notifications ───────────────────────────────────────────────────
+  // General-purpose inbox any module can write into (opManager's postWeek is
+  // the first user) — reliable counterpart to browser push, which depends on
+  // OS permissions/per-device subscriptions and is broken outright on iOS
+  // Safari unless installed as a home-screen PWA.
+  notifications: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      // Opportunistic purge (no cron — see references/periodic-updates.md),
+      // same pattern as recycleBin.list below.
+      await purgeExpiredNotifications();
+      return getNotificationsForUser(ctx.user.id);
+    }),
+
+    unreadCount: protectedProcedure.query(async ({ ctx }) => {
+      return { count: await getUnreadNotificationCount(ctx.user.id) };
+    }),
+
+    markRead: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await markNotificationRead(input.id, ctx.user.id);
+        return { ok: true };
+      }),
+
+    markAllRead: protectedProcedure.mutation(async ({ ctx }) => {
+      await markAllNotificationsRead(ctx.user.id);
+      return { ok: true };
+    }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await deleteNotification(input.id, ctx.user.id);
+        return { ok: true };
+      }),
+
+    clearRead: protectedProcedure.mutation(async ({ ctx }) => {
+      await deleteReadNotificationsForUser(ctx.user.id);
+      return { ok: true };
+    }),
   }),
 
   // ─── Audit Logs ─────────────────────────────────────────────────────────────
@@ -4188,42 +4245,23 @@ export const appRouter = router({
         const title = "New CTO Tasking Posted";
         const body = `CTO Tasking for the week of ${weekLabel} has been posted.`;
         const url = "/operation-manager";
-        if (input.userIds && input.userIds.length > 0) {
-          await sendPushToUsers(input.userIds, title, body, url).catch(err =>
-            console.warn("[Push] Failed to send targeted notifications:", err)
-          );
-        } else {
-          await sendPushToAll(title, body, url).catch(err =>
-            console.warn("[Push] Failed to send notifications:", err)
-          );
-        }
-        return { ok: true };
-      }),
-
-    // ── Push subscriptions ────────────────────────────────────────────────────
-    subscribePush: protectedProcedure
-      .input(
-        z.object({
-          endpoint: z.string(),
-          p256dh: z.string(),
-          auth: z.string(),
-        })
-      )
-      .mutation(async ({ ctx, input }) => {
-        await savePushSubscription(
-          ctx.user.id,
-          input.endpoint,
-          input.p256dh,
-          input.auth
+        // In-app inbox only — browser push was removed (unreliable: depends
+        // on OS permissions/per-device subscriptions, broken outright on iOS
+        // Safari unless installed as a home-screen PWA). See notifications
+        // router / drizzle schema comment.
+        const targetUserIds =
+          input.userIds && input.userIds.length > 0
+            ? input.userIds
+            : (await getAllUsers()).map(u => u.id);
+        await createNotificationsForUsers(targetUserIds, {
+          title,
+          body,
+          url,
+          sourceModule: "opManager",
+        }).catch(err =>
+          console.warn("[Notifications] Failed to create in-app notifications:", err)
         );
-        return { ok: true };
-      }),
-
-    unsubscribePush: protectedProcedure
-      .input(z.object({ endpoint: z.string() }))
-      .mutation(async ({ input }) => {
-        await removePushSubscription(input.endpoint);
-        return { ok: true };
+        return { ok: true, notified: targetUserIds.length };
       }),
   }),
 
@@ -4478,6 +4516,11 @@ export const appRouter = router({
             input.shiftDate
           );
           const oldShift = existing.find(s => s.shiftDate === input.shiftDate);
+          const changed =
+            (oldShift?.shiftCode ?? "") !== input.shiftCode ||
+            (oldShift?.shiftTime ?? null) !== (input.shiftTime ?? null) ||
+            (oldShift?.isActing ?? false) !== (input.isActing ?? false) ||
+            (oldShift?.comment ?? null) !== (input.comment ?? null);
           await upsertCtoRosterShift(
             input.memberId,
             input.shiftDate,
@@ -4509,6 +4552,18 @@ export const appRouter = router({
               comment: input.comment ?? null,
             }),
           });
+          if (changed) {
+            upsertRosterShiftNotification({
+              memberId: input.memberId,
+              actingUserId: ctx.user.id,
+              kind: "count",
+              count: 1,
+              startDate: input.shiftDate,
+              endDate: input.shiftDate,
+            }).catch(err =>
+              console.warn("[Notifications] Roster shift notify failed:", err)
+            );
+          }
           return { success: true };
         }),
 
@@ -4539,6 +4594,21 @@ export const appRouter = router({
           })
         )
         .mutation(async ({ ctx, input }) => {
+          const sortedDates = [...input.dates].sort();
+          const existing = await getCtoRosterShiftsForMember(
+            input.memberId,
+            sortedDates[0],
+            sortedDates[sortedDates.length - 1]
+          );
+          const existingByDate = new Map(existing.map(s => [s.shiftDate, s]));
+          const changedDates = input.dates.filter(d => {
+            const old = existingByDate.get(d);
+            return (
+              (old?.shiftCode ?? "") !== input.shiftCode ||
+              (old?.shiftTime ?? null) !== (input.shiftTime ?? null) ||
+              (old?.isActing ?? false) !== (input.isActing ?? false)
+            );
+          });
           await bulkUpdateCtoRosterShifts(
             input.dates.map(d => ({
               memberId: input.memberId,
@@ -4557,6 +4627,19 @@ export const appRouter = router({
             memberName: input.memberName ?? null,
             detail: `${input.dates.length} shifts set to ${input.shiftCode || "(clear)"}${input.isActing ? " [acting]" : ""}`,
           });
+          if (changedDates.length > 0) {
+            const sortedChanged = [...changedDates].sort();
+            upsertRosterShiftNotification({
+              memberId: input.memberId,
+              actingUserId: ctx.user.id,
+              kind: "count",
+              count: sortedChanged.length,
+              startDate: sortedChanged[0],
+              endDate: sortedChanged[sortedChanged.length - 1],
+            }).catch(err =>
+              console.warn("[Notifications] Roster shift notify failed:", err)
+            );
+          }
           return { success: true, count: input.dates.length };
         }),
 
@@ -4573,7 +4656,7 @@ export const appRouter = router({
           })
         )
         .mutation(async ({ ctx, input }) => {
-          const count = await bulkCopyCtoRosterShifts(
+          const { count, changedByMember } = await bulkCopyCtoRosterShifts(
             input.sourceMemberId,
             input.targetMemberIds,
             input.startDate,
@@ -4587,6 +4670,21 @@ export const appRouter = router({
             memberId: input.sourceMemberId,
             memberName: input.sourceMemberName ?? null,
             detail: `Copied ${count} shifts to [${(input.targetMemberNames ?? []).join(", ")}] from ${input.startDate} to ${input.endDate}`,
+          });
+          // Notify each target whose own shifts actually changed — never the
+          // source member, and never a target whose copied cells matched
+          // what was already there.
+          changedByMember.forEach((changed, memberId) => {
+            upsertRosterShiftNotification({
+              memberId,
+              actingUserId: ctx.user.id,
+              kind: "count",
+              count: changed,
+              startDate: input.startDate,
+              endDate: input.endDate,
+            }).catch(err =>
+              console.warn("[Notifications] Roster shift notify failed:", err)
+            );
           });
           return { success: true, count };
         }),
@@ -4646,7 +4744,20 @@ export const appRouter = router({
                 ? `, copied to ${result.membersUpdated} teammate(s)`
                 : ""),
           });
-          return result;
+          result.changedByMember.forEach((change, memberId) => {
+            upsertRosterShiftNotification({
+              memberId,
+              actingUserId: ctx.user.id,
+              kind: "count",
+              count: change.count,
+              startDate: change.startDate,
+              endDate: change.endDate,
+            }).catch(err =>
+              console.warn("[Notifications] Roster shift notify failed:", err)
+            );
+          });
+          const { changedByMember: _changedByMember, ...publicResult } = result;
+          return publicResult;
         }),
     }),
 
@@ -4821,6 +4932,17 @@ export const appRouter = router({
             action: "draft_merge",
             detail: `Merged draft "${draft?.name ?? input.draftId}" (${result.applied} cells applied, ${result.skipped} skipped)`,
           });
+          // Generic message only — a merge can touch many cells across many
+          // dates, so an exact per-shift count isn't worth tracking here.
+          for (const memberId of result.affectedMemberIds) {
+            upsertRosterShiftNotification({
+              memberId,
+              actingUserId: ctx.user.id,
+              kind: "generic",
+            }).catch(err =>
+              console.warn("[Notifications] Roster shift notify failed:", err)
+            );
+          }
           return result;
         }),
 

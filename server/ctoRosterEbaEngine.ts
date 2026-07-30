@@ -108,6 +108,34 @@ function diffHours(a: Date, b: Date): number {
   return (b.getTime() - a.getTime()) / 3_600_000;
 }
 
+/**
+ * Counts Sat/Sun days in [startDate, endDate] (inclusive) via closed-form
+ * arithmetic rather than iterating day-by-day — a member's first/last
+ * recorded shift can legitimately (or from a bad data entry) span years,
+ * and a day-by-day loop over that range runs synchronously with no yield,
+ * blocking the whole single-threaded server for its entire duration. This
+ * is O(1) regardless of range size.
+ */
+function countWeekendDaysInRange(startDate: string, endDate: string): number {
+  if (startDate > endDate) return 0;
+  const [sy, sm, sd] = startDate.split("-").map(Number);
+  const [ey, em, ed] = endDate.split("-").map(Number);
+  const start = new Date(sy, sm - 1, sd);
+  const end = new Date(ey, em - 1, ed);
+  const totalDays =
+    Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1;
+  const startDow = start.getDay(); // 0=Sun..6=Sat
+
+  const fullWeeks = Math.floor(totalDays / 7);
+  let count = fullWeeks * 2;
+  const remainder = totalDays % 7;
+  for (let i = 0; i < remainder; i++) {
+    const dow = (startDow + i) % 7;
+    if (dow === 0 || dow === 6) count++;
+  }
+  return count;
+}
+
 // ── Main engine ───────────────────────────────────────────────────────────────
 
 /**
@@ -442,13 +470,7 @@ function checkWeekendFrequency(
     s => isWeekend(s.shiftDate) && isWorkedShift(s.shiftCode)
   );
 
-  // Count total weekend days in range
-  let totalWeekendDays = 0;
-  let d = startDate;
-  while (d <= endDate) {
-    if (isWeekend(d)) totalWeekendDays++;
-    d = addDays(d, 1);
-  }
+  const totalWeekendDays = countWeekendDaysInRange(startDate, endDate);
 
   const totalWeekends = Math.floor(totalWeekendDays / 2);
   const workedWeekends = Math.ceil(weekendDaysWorked.length / 2);

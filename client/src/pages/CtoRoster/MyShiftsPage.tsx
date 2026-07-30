@@ -4,8 +4,10 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CalendarDays, Clock, TrendingUp, ChevronLeft, ChevronRight } from "lucide-react";
-import { SHIFT_LABELS, SHIFT_TIMES, shiftClass, ON_DUTY_CODES, ROSTER_START, ROSTER_END } from "@shared/ctoRosterShiftUtils";
+import { CalendarDays, Clock, TrendingUp, ChevronLeft, ChevronRight, PhoneCall, Plane, GraduationCap, Bell, BellOff } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { toast } from "sonner";
+import { SHIFT_LABELS, SHIFT_TIMES, shiftClass, ON_DUTY_CODES, ON_CALL_CODES, ROSTER_START, ROSTER_END } from "@shared/ctoRosterShiftUtils";
 import {
   format, parseISO, isBefore, isToday, startOfToday,
   startOfMonth, endOfMonth, eachDayOfInterval,
@@ -16,6 +18,13 @@ import DashboardLayout from "@/components/DashboardLayout";
 
 type ShiftEntry = { shiftDate: string; shiftCode: string };
 
+// My Shifts' "On Duty" figure additionally counts Court, unlike the shared
+// ON_DUTY_CODES (used for Outlook/Roster-grid deployable headcount, where
+// Court attendance isn't "available" the same way) — scoped to this page only.
+const MY_SHIFTS_ON_DUTY_CODES = new Set([...Array.from(ON_DUTY_CODES), "c"]);
+
+const ROSTER_YEAR = parseISO(ROSTER_START).getFullYear();
+
 const ROSTER_MONTHS: Date[] = (() => {
   const months: Date[] = [];
   let d = startOfMonth(parseISO(ROSTER_START));
@@ -25,11 +34,19 @@ const ROSTER_MONTHS: Date[] = (() => {
 })();
 
 export default function MyShiftsPage() {
-  const { user } = useAuth();
+  const { user, refresh } = useAuth();
   const { data: shifts, isLoading } = trpc.ctoRoster.roster.myShifts.useQuery({});
   const { data: members } = trpc.ctoRoster.members.list.useQuery();
   const isRosterMember = !!members?.some((m: any) => m.cin === user?.cin);
   const today = startOfToday();
+
+  // Roster shift-change notifications — opt-out only, doesn't affect any
+  // other notification type (e.g. CTO Weekly Tasking posts).
+  const updateNotifPref = trpc.profile.updateRosterShiftNotifPref.useMutation({
+    onSuccess: () => refresh(),
+    onError: () => toast.error("Failed to update notification setting."),
+  });
+  const notifEnabled = user?.rosterShiftNotificationsEnabled ?? true;
 
   // Calendar month state — default to current month
   const [calMonth, setCalMonth] = useState<Date>(() => {
@@ -47,13 +64,18 @@ export default function MyShiftsPage() {
   }, [shifts]);
 
   const { stats } = useMemo(() => {
-    if (!shifts) return { stats: { onDuty: 0, leave: 0, rest: 0, total: 0 } };
+    if (!shifts) return { stats: { onDuty: 0, rest: 0, leave: 0, onCall: 0, deployment: 0, training: 0, total: 0 } };
     const sorted = [...shifts].sort((a, b) => a.shiftDate.localeCompare(b.shiftDate));
     const stats = {
-      onDuty: sorted.filter(s => ON_DUTY_CODES.has(s.shiftCode)).length,
-      leave:  sorted.filter(s => s.shiftCode === "l").length,
-      rest:   sorted.filter(s => s.shiftCode === "r").length,
-      total:  sorted.length,
+      onDuty:     sorted.filter(s => MY_SHIFTS_ON_DUTY_CODES.has(s.shiftCode)).length,
+      // Plain "o" (weekend on-call) counts as both Rest and On-Call — it's
+      // a rest day with an on-call obligation, not a worked shift.
+      rest:       sorted.filter(s => s.shiftCode === "r" || s.shiftCode === "o").length,
+      leave:      sorted.filter(s => s.shiftCode === "l").length,
+      onCall:     sorted.filter(s => ON_CALL_CODES.has(s.shiftCode)).length,
+      deployment: sorted.filter(s => s.shiftCode === "dep").length,
+      training:   sorted.filter(s => s.shiftCode === "tt").length,
+      total:      sorted.length,
     };
     return { stats };
   }, [shifts, today]);
@@ -93,24 +115,44 @@ export default function MyShiftsPage() {
     <div className="flex flex-col h-full min-h-0 overflow-y-auto px-4 py-3">
       <div className="max-w-2xl mx-auto w-full pb-10 px-0">
         {/* Page title */}
-        <div className="mb-4">
-          <h1 className="text-xl font-semibold text-foreground tracking-tight">My Shifts</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">Your personal duty schedule for 2026</p>
+        <div className="mb-4 flex items-baseline justify-between gap-2">
+          <div className="flex items-baseline gap-2">
+            <h1 className="text-xl font-semibold text-foreground tracking-tight">My Shifts</h1>
+            <span className="text-sm text-muted-foreground">{ROSTER_YEAR}</span>
+          </div>
+          {/* Roster is still being actively edited/tested — this lets people
+              turn off "your shift changed" notifications without affecting
+              any other notification type. */}
+          <div className="flex items-center gap-1.5">
+            {notifEnabled
+              ? <Bell className="h-3.5 w-3.5 text-muted-foreground" />
+              : <BellOff className="h-3.5 w-3.5 text-muted-foreground" />
+            }
+            <span className="text-xs text-muted-foreground">Shift notifications</span>
+            <Switch
+              checked={notifEnabled}
+              disabled={updateNotifPref.isPending}
+              onCheckedChange={checked => updateNotifPref.mutate({ enabled: checked })}
+            />
+          </div>
         </div>
 
-        {/* ── Compact stats row ──────────────────────────────────────────────── */}
-        <div className="flex items-center gap-2 mb-5 flex-wrap">
+        {/* ── Compact stats grid ──────────────────────────────────────────────── */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 mb-5">
           {[
-            { label: "On Duty", value: stats.onDuty, icon: TrendingUp,  color: "text-emerald-600" },
-            { label: "Leave",   value: stats.leave,  icon: CalendarDays, color: "text-purple-600" },
-            { label: "Rest",    value: stats.rest,   icon: Clock,        color: "text-amber-600" },
-            { label: "Total",   value: stats.total,  icon: CalendarDays, color: "text-indigo-600" },
+            { label: "On Duty",    value: stats.onDuty,     icon: TrendingUp,    color: "text-emerald-600" },
+            { label: "Rest",       value: stats.rest,       icon: Clock,         color: "text-amber-600" },
+            { label: "Leave",      value: stats.leave,      icon: CalendarDays,  color: "text-purple-600" },
+            { label: "On-Call",    value: stats.onCall,     icon: PhoneCall,     color: "text-sky-600" },
+            { label: "Deployment", value: stats.deployment, icon: Plane,         color: "text-rose-600" },
+            { label: "Training",   value: stats.training,   icon: GraduationCap, color: "text-teal-600" },
+            { label: "Total",      value: stats.total,      icon: CalendarDays,  color: "text-indigo-600" },
           ].map(stat => (
             <div key={stat.label}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border/60 bg-card shadow-sm"
+              className="flex flex-col items-center justify-center gap-0.5 px-2 py-2 rounded-lg border border-border/60 bg-card shadow-sm text-center"
             >
-              <stat.icon className={cn("h-3 w-3 flex-shrink-0", stat.color)} />
-              <span className="text-[11px] text-muted-foreground font-medium">{stat.label}</span>
+              <stat.icon className={cn("h-3.5 w-3.5 flex-shrink-0", stat.color)} />
+              <span className="text-[11px] text-muted-foreground font-medium leading-tight">{stat.label}</span>
               {isLoading
                 ? <Skeleton className="h-4 w-6 rounded" />
                 : <span className={cn("text-sm font-bold tabular-nums", stat.color)}>{stat.value}</span>
@@ -193,13 +235,6 @@ export default function MyShiftsPage() {
                           {format(d, "d")}
                         </span>
 
-                        {/* Shift code badge */}
-                        {code && (
-                          <span className="absolute top-1.5 right-1.5 text-[9px] font-bold uppercase opacity-75">
-                            {code}
-                          </span>
-                        )}
-
                         {/* Shift label bottom */}
                         {code && (
                           <span className="absolute bottom-1 left-1 right-1 text-[7px] leading-tight opacity-70 font-medium truncate">
@@ -236,12 +271,11 @@ export default function MyShiftsPage() {
                   </p>
                   {selectedShiftCode ? (
                     <div className="mt-1.5">
-                      <span className="text-lg font-bold uppercase">{selectedShiftCode}</span>
-                      <span className="ml-2 text-sm opacity-80">
+                      <span className="text-lg font-bold">
                         {SHIFT_LABELS[selectedShiftCode as keyof typeof SHIFT_LABELS] ?? selectedShiftCode}
                       </span>
                       {SHIFT_TIMES[selectedShiftCode as keyof typeof SHIFT_TIMES] && (
-                        <span className="ml-2 text-xs opacity-65">
+                        <span className="ml-2 text-sm opacity-70">
                           {SHIFT_TIMES[selectedShiftCode as keyof typeof SHIFT_TIMES]}
                         </span>
                       )}

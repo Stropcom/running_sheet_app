@@ -19,6 +19,7 @@ import {
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import DashboardLayout from "@/components/DashboardLayout";
 import { MapView } from "@/components/Map";
 import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
 import { TargetProfileContent } from "@/components/TargetProfileContent";
@@ -62,12 +63,10 @@ import {
   MapPin,
   Settings2,
   X,
-  ArrowLeft,
   Radio,
   AlertTriangle,
   Home,
   FolderOpen,
-  Pencil,
   Check,
   FileText,
   ClipboardCheck,
@@ -92,19 +91,10 @@ import {
   LocateFixed,
   Navigation2,
   ExternalLink,
-  Shield,
-  Users,
-  ShieldCheck,
   Settings,
-  UserCog,
-  LayoutGrid,
-  FolderOpen as FolderIcon,
   Clock,
   Image as ImageIcon,
   Undo2,
-  Link2,
-  Binoculars,
-  FileEdit,
 } from "lucide-react";
 
 // Phone/tablet (touch, no physical keyboard) vs laptop/desktop (mouse +
@@ -764,287 +754,6 @@ function haversineMetres(
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// ── Map Sidebar Nav Component ─────────────────────────────────────────────────
-// Mirrors DashboardLayout's main sidebar: same expandable folders (To-Do,
-// Op Manager → CTO Roster) and the same interaction pattern, so navigating
-// from the map feels identical to every other page.
-function MapSidebarNav({
-  user,
-  onNavigate,
-  navOrder,
-}: {
-  user: any;
-  onNavigate: (path: string) => void;
-  navOrder: string[];
-}) {
-  const curPath = window.location.pathname;
-  const [adminExpanded, setAdminExpanded] = useState(false);
-  const [userMgmtExpanded, setUserMgmtExpanded] = useState(false);
-  const [courtExpanded, setCourtExpanded] = useState(false);
-  const [todoExpanded, setTodoExpanded] = useState(
-    () =>
-      curPath === "/todo" ||
-      curPath === "/todo/images" ||
-      curPath === "/todo/governance"
-  );
-  const [opManagerExpanded, setOpManagerExpanded] = useState(
-    () =>
-      curPath.startsWith("/operation-manager") ||
-      curPath.startsWith("/cto-roster")
-  );
-  const [ctoRosterSubExpanded, setCtoRosterSubExpanded] = useState(() =>
-    curPath.startsWith("/cto-roster")
-  );
-
-  const navBtn = (
-    path: string,
-    Icon: React.ComponentType<{ className?: string }>,
-    label: string,
-    iconColor?: string
-  ) => {
-    const isActive =
-      path === "/"
-        ? curPath === "/" ||
-          curPath.startsWith("/operation/") ||
-          curPath.startsWith("/sheet/")
-        : curPath === path || curPath.startsWith(path);
-    return (
-      <button
-        key={path}
-        onClick={() => onNavigate(path)}
-        className={`flex items-center gap-3 w-full px-3 py-0 h-14 rounded-xl border text-sm font-medium transition-all shadow-sm ${
-          isActive
-            ? "bg-accent border-primary/40 text-foreground shadow-md"
-            : "bg-card border-border/60 text-foreground/80 hover:bg-accent/60 hover:border-border"
-        }`}
-      >
-        <Icon
-          className={`h-5 w-5 flex-shrink-0 ${iconColor ?? "text-foreground/60"}`}
-        />
-        <span className="truncate">{label}</span>
-      </button>
-    );
-  };
-
-  const subBtn = (
-    path: string,
-    Icon: React.ComponentType<{ className?: string }>,
-    label: string,
-    extra?: React.ReactNode
-  ) => {
-    const isActive = curPath === path || curPath.startsWith(path);
-    return (
-      <button
-        key={path}
-        onClick={() => onNavigate(path)}
-        className={`flex items-center gap-2 w-full px-3 py-2 text-sm transition-colors hover:bg-accent/60 rounded-md ${
-          isActive
-            ? "bg-accent text-foreground font-medium"
-            : "text-foreground/70"
-        }`}
-      >
-        <Icon className="h-3.5 w-3.5 flex-shrink-0" />
-        <span className="flex-1 truncate">{label}</span>
-        {extra}
-      </button>
-    );
-  };
-
-  // ── To-Do folder (mirrors DashboardLayout's To-Do folder) ──────────────────
-  const renderTodoFolder = () => {
-    const isActive =
-      curPath === "/todo" ||
-      curPath === "/todo/images" ||
-      curPath === "/todo/governance";
-    return (
-      <div key="todo">
-        <button
-          onClick={() => setTodoExpanded(v => !v)}
-          className={`flex items-center gap-3 w-full px-3 h-14 rounded-xl border text-sm font-medium transition-all shadow-sm ${
-            isActive || todoExpanded
-              ? "bg-accent border-primary/40 text-foreground"
-              : "bg-card border-border/60 text-foreground/80 hover:bg-accent/60"
-          }`}
-        >
-          <ClipboardList className="h-5 w-5 flex-shrink-0 text-red-400" />
-          <span className="flex-1 truncate">To-Do</span>
-          {todoExpanded ? (
-            <ChevronDown className="h-3.5 w-3.5 text-foreground/40" />
-          ) : (
-            <ChevronRight className="h-3.5 w-3.5 text-foreground/40" />
-          )}
-        </button>
-        {todoExpanded && (
-          <div className="ml-4 border-l border-border/50 pl-2 flex flex-col gap-0.5 mb-1 mt-0.5">
-            {subBtn("/todo", Shield, "Certify")}
-            {subBtn("/todo/images", Link2, "Link Images")}
-            {subBtn("/todo/governance", ClipboardCheck, "RS Governance")}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  // ── Op Manager folder (mirrors DashboardLayout's Op Manager → CTO Roster) ──
-  const renderOpManagerFolder = () => {
-    const isActive =
-      curPath.startsWith("/operation-manager") ||
-      curPath.startsWith("/cto-roster");
-    return (
-      <div key="operationManager">
-        <button
-          onClick={() => setOpManagerExpanded(v => !v)}
-          className={`flex items-center gap-3 w-full px-3 h-14 rounded-xl border text-sm font-medium transition-all shadow-sm ${
-            isActive || opManagerExpanded
-              ? "bg-accent border-primary/40 text-foreground"
-              : "bg-card border-border/60 text-foreground/80 hover:bg-accent/60"
-          }`}
-        >
-          <ClipboardList className="h-5 w-5 flex-shrink-0 text-purple-500" />
-          <span className="flex-1 truncate">Op Manager</span>
-          {opManagerExpanded ? (
-            <ChevronDown className="h-3.5 w-3.5 text-foreground/40" />
-          ) : (
-            <ChevronRight className="h-3.5 w-3.5 text-foreground/40" />
-          )}
-        </button>
-        {opManagerExpanded && (
-          <div className="ml-4 mt-0.5 mb-0.5 border-l border-border/50 pl-2 flex flex-col gap-0.5">
-            {subBtn("/operation-manager", ClipboardList, "CTO Weekly Tasking")}
-            <button
-              onClick={() => setCtoRosterSubExpanded(v => !v)}
-              className={`flex items-center gap-2 w-full px-3 py-2 text-sm transition-colors hover:bg-accent/60 rounded-md ${
-                curPath.startsWith("/cto-roster")
-                  ? "bg-accent text-foreground font-medium"
-                  : "text-foreground/70"
-              }`}
-            >
-              <Users className="h-3.5 w-3.5 flex-shrink-0" />
-              <span className="flex-1 truncate">CTO Roster</span>
-              {ctoRosterSubExpanded ? (
-                <ChevronDown className="h-3 w-3 text-foreground/40" />
-              ) : (
-                <ChevronRight className="h-3 w-3 text-foreground/40" />
-              )}
-            </button>
-            {ctoRosterSubExpanded && (
-              <div className="ml-4 border-l border-border/40 pl-2 flex flex-col gap-0.5 mb-0.5">
-                {subBtn("/cto-roster", Users, "Roster")}
-                {subBtn("/cto-roster/my-shifts", Users, "My Shifts")}
-                {subBtn("/cto-roster/outlook", Binoculars, "Outlook")}
-                {subBtn("/cto-roster/drafts", FileEdit, "Drafts")}
-                {subBtn("/cto-roster/saved-rosters", BookOpen, "Saved Rosters")}
-                {subBtn(
-                  "/cto-roster/ea-compliance",
-                  ShieldCheck,
-                  "EA Compliance"
-                )}
-                {subBtn("/cto-roster/audit", ScrollText, "Audit Log")}
-                {subBtn("/cto-roster/members", Users, "Members")}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  return (
-    <div className="flex-1 overflow-y-auto py-2 px-2 flex flex-col gap-1.5">
-      {navOrder.map(key => {
-        if (key === "todo") return renderTodoFolder();
-        if (key === "operationManager") return renderOpManagerFolder();
-        const item = NAV_KEY_MAP[key];
-        if (!item) return null;
-        return navBtn(item.path, item.Icon, item.label, item.iconColor);
-      })}
-
-      {/* Administration folder */}
-      <button
-        onClick={() => setAdminExpanded(v => !v)}
-        className={`flex items-center gap-3 w-full px-3 h-14 rounded-xl border text-sm font-medium transition-all shadow-sm ${
-          adminExpanded
-            ? "bg-accent border-primary/40 text-foreground"
-            : "bg-card border-border/60 text-foreground/80 hover:bg-accent/60"
-        }`}
-      >
-        <Settings className="h-5 w-5 flex-shrink-0 text-slate-500" />
-        <span className="flex-1 truncate">Administration</span>
-        {adminExpanded ? (
-          <ChevronDown className="h-3.5 w-3.5 text-foreground/40" />
-        ) : (
-          <ChevronRight className="h-3.5 w-3.5 text-foreground/40" />
-        )}
-      </button>
-      {adminExpanded && (
-        <div className="ml-4 border-l border-border/50 pl-2 flex flex-col gap-0.5 mb-1">
-          {/* Court expandable */}
-          <button
-            onClick={() => setCourtExpanded(v => !v)}
-            className={`flex items-center gap-2 w-full px-3 py-2 text-sm transition-colors hover:bg-accent/60 rounded-md ${
-              curPath.startsWith("/court")
-                ? "bg-accent text-foreground font-medium"
-                : "text-foreground/70"
-            }`}
-          >
-            <Scale className="h-3.5 w-3.5 flex-shrink-0" />
-            <span className="flex-1">Court</span>
-            {courtExpanded ? (
-              <ChevronDown className="h-3 w-3 text-foreground/40" />
-            ) : (
-              <ChevronRight className="h-3 w-3 text-foreground/40" />
-            )}
-          </button>
-          {courtExpanded && (
-            <div className="ml-4 border-l border-border/40 pl-2 flex flex-col gap-0.5 mb-0.5">
-              {subBtn("/court/statements", FolderOpen, "Statements")}
-              {subBtn("/court/witness-list", FolderOpen, "Witness List")}
-              {subBtn(
-                "/court/wipc",
-                ShieldCheck,
-                "WIPC",
-                <span className="text-[9px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1 rounded leading-4">
-                  🔒
-                </span>
-              )}
-            </div>
-          )}
-          {subBtn("/audit", ScrollText, "Audit Log")}
-          {subBtn("/draft", WifiOff, "Draft Mode")}
-          {subBtn("/operation-management", ArrowRightLeft, "Archive")}
-          {subBtn("/recycle-bin", Trash2, "Recycle Bin")}
-          {subBtn("/help", HelpCircle, "Help")}
-        </div>
-      )}
-
-      {/* User Management folder */}
-      <button
-        onClick={() => setUserMgmtExpanded(v => !v)}
-        className={`flex items-center gap-3 w-full px-3 h-14 rounded-xl border text-sm font-medium transition-all shadow-sm ${
-          userMgmtExpanded
-            ? "bg-accent border-primary/40 text-foreground"
-            : "bg-card border-border/60 text-foreground/80 hover:bg-accent/60"
-        }`}
-      >
-        <UserCog className="h-5 w-5 flex-shrink-0 text-blue-500" />
-        <span className="flex-1 truncate">User Management</span>
-        {userMgmtExpanded ? (
-          <ChevronDown className="h-3.5 w-3.5 text-foreground/40" />
-        ) : (
-          <ChevronRight className="h-3.5 w-3.5 text-foreground/40" />
-        )}
-      </button>
-      {userMgmtExpanded && (
-        <div className="ml-4 border-l border-border/50 pl-2 flex flex-col gap-0.5 mb-1">
-          {subBtn("/profile", User, "My Profile")}
-          {user?.role === "admin" &&
-            subBtn("/admin", Users, "Access Management")}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function IntelligenceMapping() {
   const [, setLocation] = useLocation();
@@ -1133,23 +842,6 @@ export default function IntelligenceMapping() {
     }
     return "roadmap";
   });
-
-  // Left pane starts closed — user opens it when needed. Never auto-open on navigation.
-  // On desktop (lg+), the left pane is always open and resizable
-  const isDesktop = typeof window !== "undefined" && window.innerWidth >= 1024;
-  const [sidebarOpen, setSidebarOpen] = useState(() => isDesktop);
-  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
-    try {
-      const s = localStorage.getItem("runlog_map_sidebar_width");
-      if (s) return Math.max(200, Math.min(480, parseInt(s)));
-    } catch {
-      /* ignore */
-    }
-    return 256;
-  });
-  const sidebarResizingRef = useRef(false);
-  const sidebarResizeStartXRef = useRef(0);
-  const sidebarResizeStartWidthRef = useRef(256);
 
   // Per-device ID — tab-unique, stored in sessionStorage so each browser tab gets its own ID.
   // This is critical: two tabs logged in as the same user must have different deviceIds so
@@ -1288,15 +980,6 @@ export default function IntelligenceMapping() {
       : panelWidthNormal;
 
   // Draggable side-tab vertical position (percentage from top, 0-100)
-  const [leftTabTop, setLeftTabTop] = useState<number>(() => {
-    try {
-      const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
-      if (s) return JSON.parse(s).leftTabTop ?? 50;
-    } catch {
-      /* ignore */
-    }
-    return 50;
-  });
   const [rightTabTop, setRightTabTop] = useState<number>(() => {
     try {
       const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
@@ -1306,7 +989,6 @@ export default function IntelligenceMapping() {
     }
     return 50;
   });
-  const leftTabDraggingRef = useRef(false);
   const rightTabDraggingRef = useRef(false);
 
   // Draggable pill bar vertical position (percentage from top, 5-95)
@@ -1595,7 +1277,6 @@ export default function IntelligenceMapping() {
   const geocodeIndexRef = useRef(0);
   const geocodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const watchIdRef = useRef<number | null>(null);
-  const panelRef = useRef<HTMLDivElement | null>(null);
 
   // Persist map settings to localStorage whenever they change
   useEffect(() => {
@@ -1613,7 +1294,6 @@ export default function IntelligenceMapping() {
           collapsedTeams: Array.from(collapsedTeams),
           rsQeExpanded,
           mapDarkMode,
-          leftTabTop,
           rightTabTop,
           pillBarTop,
           panelWidthNormal,
@@ -1634,7 +1314,6 @@ export default function IntelligenceMapping() {
     collapsedTeams,
     rsQeExpanded,
     mapDarkMode,
-    leftTabTop,
     rightTabTop,
     pillBarTop,
     panelWidthNormal,
@@ -1899,34 +1578,6 @@ export default function IntelligenceMapping() {
     return map;
   }, [generalShortcuts, assignedTarget, targetShortcutsForSheet]);
 
-  // Sidebar order (mirrors main menu) for left map pane
-  const { data: sidebarOrderData } = trpc.sidebar.getOrder.useQuery(undefined, {
-    staleTime: 30_000,
-  });
-  const DEFAULT_MAP_NAV_ORDER = [
-    "operations",
-    "governance",
-    "todo",
-    "mapping",
-    "images",
-    "calendar",
-    "shortcuts",
-    "intelligence",
-    "targetRegistry",
-    "operationManager",
-  ];
-  const mapNavOrder = useMemo(() => {
-    if (!sidebarOrderData?.order?.length) return DEFAULT_MAP_NAV_ORDER;
-    const saved = sidebarOrderData.order as string[];
-    const merged = [
-      ...saved.filter((k: string) => DEFAULT_MAP_NAV_ORDER.includes(k)),
-    ];
-    for (const k of DEFAULT_MAP_NAV_ORDER) {
-      if (!merged.includes(k)) merged.push(k);
-    }
-    return merged;
-  }, [sidebarOrderData]);
-
   // Targets per operation
   const { data: allTargets } = trpc.target.registry.list.useQuery();
   const opTargetMap = new Map<number, Array<{ id: number; name: string }>>();
@@ -2072,11 +1723,9 @@ export default function IntelligenceMapping() {
   }, []);
 
   // ── Click-outside to close panels ──────────────────────────────────────────
-  // On desktop the left pane is permanently open — only close it on mobile/tablet
   const handleMapAreaClick = useCallback(() => {
-    if (sidebarOpen && !isDesktop) setSidebarOpen(false);
     if (rsActionsPaneOpen) setRsActionsPaneOpen(false);
-  }, [sidebarOpen, isDesktop, rsActionsPaneOpen]);
+  }, [rsActionsPaneOpen]);
 
   // ── Map pin rendering ────────────────────────────────────────────────────────
   const clearMarkers = useCallback(() => {
@@ -3477,165 +3126,13 @@ export default function IntelligenceMapping() {
   };
 
   return (
+    <DashboardLayout>
     <div
       className="relative flex w-full overflow-hidden"
       style={{ height: "calc(100vh - 0px)" }}
     >
-      {/* ── Side Panel ── */}
-      <div
-        ref={panelRef}
-        className={`flex flex-col min-h-0 border-r-2 border-border bg-card shadow-2xl relative flex-shrink-0 ${
-          sidebarOpen
-            ? "lg:rounded-none rounded-r-2xl transition-none"
-            : "w-0 min-w-0 overflow-hidden transition-all duration-200"
-        }`}
-        style={
-          sidebarOpen
-            ? { width: `${sidebarWidth}px`, minWidth: `${sidebarWidth}px` }
-            : undefined
-        }
-      >
-        {/* Panel Header */}
-        <div className="flex items-center justify-between px-4 py-3.5 border-b-2 border-border flex-shrink-0 bg-muted/20">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 text-primary" />
-            <span className="font-bold text-sm tracking-tight">Navigate</span>
-          </div>
-          {/* Close button: hidden on desktop (always open), visible on mobile/tablet */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 rounded-xl lg:hidden"
-            onClick={() => setSidebarOpen(false)}
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-
-        {/* App Navigation Menu */}
-        <MapSidebarNav
-          user={user}
-          onNavigate={path => {
-            if (!isDesktop) setSidebarOpen(false);
-            setLocation(path);
-          }}
-          navOrder={mapNavOrder}
-        />
-
-        {/* Resize handle — desktop only */}
-        <div
-          className="hidden lg:block absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 transition-colors z-10"
-          onMouseDown={e => {
-            e.preventDefault();
-            sidebarResizingRef.current = true;
-            sidebarResizeStartXRef.current = e.clientX;
-            sidebarResizeStartWidthRef.current = sidebarWidth;
-            const onMove = (me: MouseEvent) => {
-              if (!sidebarResizingRef.current) return;
-              const delta = me.clientX - sidebarResizeStartXRef.current;
-              const newW = Math.max(
-                200,
-                Math.min(480, sidebarResizeStartWidthRef.current + delta)
-              );
-              setSidebarWidth(newW);
-            };
-            const onUp = () => {
-              sidebarResizingRef.current = false;
-              document.removeEventListener("mousemove", onMove);
-              document.removeEventListener("mouseup", onUp);
-              try {
-                localStorage.setItem(
-                  "runlog_map_sidebar_width",
-                  String(sidebarWidth)
-                );
-              } catch {
-                /* ignore */
-              }
-            };
-            document.addEventListener("mousemove", onMove);
-            document.addEventListener("mouseup", onUp);
-          }}
-        />
-      </div>
-
       {/* ── Map Area ── */}
       <div className="flex-1 relative" onClick={handleMapAreaClick}>
-        {/* Collapsed panel arrow tab — positioned on left edge, vertically centred, above map type controls */}
-        {!sidebarOpen && (
-          <button
-            onClick={e => {
-              if (leftTabDraggingRef.current) {
-                leftTabDraggingRef.current = false;
-                return;
-              }
-              e.stopPropagation();
-              setSidebarOpen(true);
-            }}
-            className="absolute left-0 z-10 flex items-center justify-center bg-card border-2 border-l-0 border-border shadow-lg hover:bg-accent active:scale-95 transition-colors cursor-grab active:cursor-grabbing select-none touch-none"
-            style={{
-              top: `${leftTabTop}%`,
-              transform: "translateY(-50%)",
-              width: "40px",
-              height: "112px",
-              borderRadius: "0 12px 12px 0",
-            }}
-            title="Open Navigation Menu (drag to reposition)"
-            onMouseDown={e => {
-              e.stopPropagation();
-              const startY = e.clientY;
-              const startTop = leftTabTop;
-              const parentH =
-                e.currentTarget.parentElement?.clientHeight ??
-                window.innerHeight;
-              let moved = false;
-              const onMove = (me: MouseEvent) => {
-                const delta = me.clientY - startY;
-                if (Math.abs(delta) > 3) moved = true;
-                const newPct = Math.max(
-                  5,
-                  Math.min(95, startTop + (delta / parentH) * 100)
-                );
-                setLeftTabTop(newPct);
-              };
-              const onUp = () => {
-                if (moved) leftTabDraggingRef.current = true;
-                document.removeEventListener("mousemove", onMove);
-                document.removeEventListener("mouseup", onUp);
-              };
-              document.addEventListener("mousemove", onMove);
-              document.addEventListener("mouseup", onUp);
-            }}
-            onTouchStart={e => {
-              e.stopPropagation();
-              const touch = e.touches[0];
-              const startY = touch.clientY;
-              const startTop = leftTabTop;
-              const parentH =
-                e.currentTarget.parentElement?.clientHeight ??
-                window.innerHeight;
-              let moved = false;
-              const onMove = (te: TouchEvent) => {
-                const delta = te.touches[0].clientY - startY;
-                if (Math.abs(delta) > 3) moved = true;
-                const newPct = Math.max(
-                  5,
-                  Math.min(95, startTop + (delta / parentH) * 100)
-                );
-                setLeftTabTop(newPct);
-              };
-              const onEnd = () => {
-                if (moved) leftTabDraggingRef.current = true;
-                document.removeEventListener("touchmove", onMove);
-                document.removeEventListener("touchend", onEnd);
-              };
-              document.addEventListener("touchmove", onMove, { passive: true });
-              document.addEventListener("touchend", onEnd);
-            }}
-          >
-            <ChevronRight className="h-5 w-5 text-muted-foreground" />
-          </button>
-        )}
-
         {/* Loading overlay */}
         {locsLoading && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/60 backdrop-blur-sm pointer-events-none">
@@ -6929,5 +6426,6 @@ export default function IntelligenceMapping() {
         </DialogContent>
       </Dialog>
     </div>
+    </DashboardLayout>
   );
 }

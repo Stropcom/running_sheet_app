@@ -706,6 +706,98 @@ export default function OperationManagerPage() {
     }
   };
 
+  // ── Post & Notify user-selection dialog ─────────────────────────────────────────
+  // Shared between the "view" and "edit" mode returns below (both are early
+  // returns from this component, so the dialog must be rendered in whichever
+  // branch is actually mounted, not just one of them — otherwise clicking
+  // "Post & Notify" from view mode sets notifyDialogOpen but there's no
+  // <Dialog> mounted anywhere to show it).
+  const notifyDialog = (
+    <Dialog open={notifyDialogOpen} onOpenChange={setNotifyDialogOpen}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Select who to notify</DialogTitle>
+        </DialogHeader>
+        <div className="py-2 space-y-1 max-h-72 overflow-y-auto">
+          {/* Select All toggle */}
+          <div className="flex items-center gap-2 pb-2 border-b border-border/50">
+            <Checkbox
+              id="notify-all"
+              checked={
+                (usersQuery.data ?? []).length > 0 &&
+                selectedUserIds.size === (usersQuery.data ?? []).length
+              }
+              onCheckedChange={checked => {
+                if (checked) {
+                  setSelectedUserIds(
+                    new Set((usersQuery.data ?? []).map(u => u.id))
+                  );
+                } else {
+                  setSelectedUserIds(new Set());
+                }
+              }}
+            />
+            <Label htmlFor="notify-all" className="font-semibold cursor-pointer">
+              Select All
+            </Label>
+          </div>
+          {/* User list sorted: CIN 667 first, then ascending */}
+          {[...(usersQuery.data ?? [])]
+            .sort((a, b) => {
+              const cinA = a.cin ?? "";
+              const cinB = b.cin ?? "";
+              if (cinA === "667" && cinB !== "667") return -1;
+              if (cinB === "667" && cinA !== "667") return 1;
+              return cinA.localeCompare(cinB, undefined, { numeric: true });
+            })
+            .map(u => (
+              <div key={u.id} className="flex items-center gap-2 py-1">
+                <Checkbox
+                  id={`notify-user-${u.id}`}
+                  checked={selectedUserIds.has(u.id)}
+                  onCheckedChange={checked => {
+                    setSelectedUserIds(prev => {
+                      const next = new Set(prev);
+                      if (checked) next.add(u.id);
+                      else next.delete(u.id);
+                      return next;
+                    });
+                  }}
+                />
+                <Label
+                  htmlFor={`notify-user-${u.id}`}
+                  className="cursor-pointer flex items-center gap-2"
+                >
+                  <span className="font-mono text-xs text-muted-foreground w-10">
+                    {u.cin ?? "—"}
+                  </span>
+                  <span>{u.name}</span>
+                </Label>
+              </div>
+            ))}
+        </div>
+        <DialogFooter className="gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setNotifyDialogOpen(false)}
+          >
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            onClick={handleConfirmNotify}
+            disabled={postWeekMut.isPending}
+            className="gap-1"
+          >
+            <Send className="h-3.5 w-3.5" />
+            Post & Notify ({selectedUserIds.size})
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
   // ── Create operation inline ───────────────────────────────────────────────────
   const handleCreateOp = async (
     name: string,
@@ -1060,6 +1152,7 @@ export default function OperationManagerPage() {
             </div>
           )}
         </div>
+        {notifyDialog}
       </DashboardLayout>
     );
   }
@@ -1407,93 +1500,7 @@ export default function OperationManagerPage() {
         </div>
       </div>
 
-      {/* ── Post & Notify user-selection dialog ─────────────────────────────────────────── */}
-      <Dialog open={notifyDialogOpen} onOpenChange={setNotifyDialogOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Select who to notify</DialogTitle>
-          </DialogHeader>
-          <div className="py-2 space-y-1 max-h-72 overflow-y-auto">
-            {/* Select All toggle */}
-            <div className="flex items-center gap-2 pb-2 border-b border-border/50">
-              <Checkbox
-                id="notify-all"
-                checked={
-                  (usersQuery.data ?? []).length > 0 &&
-                  selectedUserIds.size === (usersQuery.data ?? []).length
-                }
-                onCheckedChange={checked => {
-                  if (checked) {
-                    setSelectedUserIds(
-                      new Set((usersQuery.data ?? []).map(u => u.id))
-                    );
-                  } else {
-                    setSelectedUserIds(new Set());
-                  }
-                }}
-              />
-              <Label
-                htmlFor="notify-all"
-                className="font-semibold cursor-pointer"
-              >
-                Select All
-              </Label>
-            </div>
-            {/* User list sorted: CIN 667 first, then ascending */}
-            {[...(usersQuery.data ?? [])]
-              .sort((a, b) => {
-                const cinA = a.cin ?? "";
-                const cinB = b.cin ?? "";
-                if (cinA === "667" && cinB !== "667") return -1;
-                if (cinB === "667" && cinA !== "667") return 1;
-                return cinA.localeCompare(cinB, undefined, { numeric: true });
-              })
-              .map(u => (
-                <div key={u.id} className="flex items-center gap-2 py-1">
-                  <Checkbox
-                    id={`notify-user-${u.id}`}
-                    checked={selectedUserIds.has(u.id)}
-                    onCheckedChange={checked => {
-                      setSelectedUserIds(prev => {
-                        const next = new Set(prev);
-                        if (checked) next.add(u.id);
-                        else next.delete(u.id);
-                        return next;
-                      });
-                    }}
-                  />
-                  <Label
-                    htmlFor={`notify-user-${u.id}`}
-                    className="cursor-pointer flex items-center gap-2"
-                  >
-                    <span className="font-mono text-xs text-muted-foreground w-10">
-                      {u.cin ?? "—"}
-                    </span>
-                    <span>{u.name}</span>
-                  </Label>
-                </div>
-              ))}
-          </div>
-          <DialogFooter className="gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setNotifyDialogOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleConfirmNotify}
-              disabled={postWeekMut.isPending}
-              className="gap-1"
-            >
-              <Send className="h-3.5 w-3.5" />
-              Post & Notify ({selectedUserIds.size})
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {notifyDialog}
     </DashboardLayout>
   );
 }

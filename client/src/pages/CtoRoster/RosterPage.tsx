@@ -22,6 +22,7 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Sheet,
   SheetContent,
@@ -148,6 +149,52 @@ type ShiftData = {
   comment?: string | null;
   isActing?: boolean;
 };
+type Secondment = {
+  id: number;
+  memberId: number;
+  destinationTeamId: number;
+  destinationTeamName: string;
+  startDate: string;
+  endDate: string;
+};
+
+// A member's row is "in scope" for a given date depending on whether it's
+// their home-team row or their acting/secondment row:
+//  - home row: out of scope (blanked) WHILE the secondment window covers
+//    the date — those days belong to the destination team instead.
+//  - acting row: out of scope OUTSIDE the secondment window — it only
+//    exists to show the days they're actually seconded here.
+// No secondment at all -> the row is always in scope (normal behaviour).
+function isDateOutsideRowScope(
+  rowMode: "home" | "acting",
+  window: { startDate: string; endDate: string } | null | undefined,
+  dateStr: string
+): boolean {
+  if (!window) return false;
+  const inWindow = dateStr >= window.startDate && dateStr <= window.endDate;
+  return rowMode === "home" ? inWindow : !inWindow;
+}
+
+// ON DUTY / ON CALL tally rows need to know, for a specific date, exactly
+// who counts toward a team — not just its static member list. A member on
+// an active secondment counts for their destination team that day, not
+// their home team, so this has to be recomputed per date rather than once
+// per team.
+function getEffectiveCountableMembers(
+  team: Team,
+  dateStr: string,
+  allMembers: Member[],
+  secondmentByMemberId: Map<number, Secondment>
+): Member[] {
+  return allMembers.filter(m => {
+    if (m.excludedFromCounts) return false;
+    const sec = secondmentByMemberId.get(m.id);
+    const onSecondmentToday =
+      !!sec && dateStr >= sec.startDate && dateStr <= sec.endDate;
+    if (onSecondmentToday) return sec!.destinationTeamId === team.id;
+    return m.teamId === team.id;
+  });
+}
 
 const MONTHS = [
   "May 2026",
@@ -1354,6 +1401,15 @@ export default function RosterPage() {
       { startDate: ROSTER_START, endDate: ROSTER_END },
       { staleTime: 60_000 }
     );
+  const { data: secondmentsData } = trpc.ctoRoster.secondments.list.useQuery();
+
+  // One secondment at a time per member (enforced server-side), so this is
+  // a straight memberId -> secondment lookup.
+  const secondmentByMemberId = useMemo(() => {
+    const map = new Map<number, Secondment>();
+    for (const s of secondmentsData ?? []) map.set(s.memberId, s as Secondment);
+    return map;
+  }, [secondmentsData]);
 
   const utils = trpc.useUtils();
   const updateShift = trpc.ctoRoster.roster.updateShift.useMutation({
@@ -2178,10 +2234,14 @@ export default function RosterPage() {
                 const teamMembers = displayMembers.filter(
                   m => m.teamId === team.id
                 );
-                // Excluded members still get a row on the grid — just not
-                // counted in the ON DUTY / ON CALL tally rows below.
-                const countableMembers = teamMembers.filter(
-                  m => !m.excludedFromCounts
+                // Members from OTHER teams currently (or upcoming-ly)
+                // seconded into this one — they get an extra "Acting" row
+                // here, on top of their normal row in their home team.
+                const secondedInMembers = displayMembers.filter(
+                  m =>
+                    m.teamId !== team.id &&
+                    secondmentByMemberId.get(m.id)?.destinationTeamId ===
+                      team.id
                 );
                 const isSurveillance =
                   team.name === "Team 1" || team.name === "Team 2";
@@ -2232,6 +2292,34 @@ export default function RosterPage() {
                         onCellPointerEnter={handleCellPointerEnter}
                         onCopyCell={handleCopyCell}
                         onPasteCell={handlePasteCell}
+                        secondmentWindow={secondmentByMemberId.get(member.id)}
+                      />
+                    ))}
+
+                    {/* Acting (secondment) rows */}
+                    {secondedInMembers.map(member => (
+                      <MemberRow
+                        key={`acting-${member.id}`}
+                        member={member}
+                        allDates={ALL_DATES}
+                        today={today}
+                        shiftMap={shiftMap}
+                        isAdmin={isAdmin}
+                        bulkMode={bulkMode}
+                        bulkCopyMode={bulkCopyMode}
+                        copiedBlock={copiedBlock}
+                        selectedCells={selectedCells}
+                        nameColWidth={nameColWidthForGrid}
+                        colWidth={COL_WIDTH}
+                        rowHeight={ROW_HEIGHT}
+                        clipboard={clipboard}
+                        onCellTap={handleCellTap}
+                        onCellPointerDown={handleCellPointerDown}
+                        onCellPointerEnter={handleCellPointerEnter}
+                        onCopyCell={handleCopyCell}
+                        onPasteCell={handlePasteCell}
+                        rowMode="acting"
+                        secondmentWindow={secondmentByMemberId.get(member.id)}
                       />
                     ))}
 
@@ -2252,7 +2340,12 @@ export default function RosterPage() {
                       {ALL_DATES.map(d => {
                         const ds = format(d, "yyyy-MM-dd");
                         const isToday = ds === today;
-                        const count = countableMembers.filter(m =>
+                        const count = getEffectiveCountableMembers(
+                          team,
+                          ds,
+                          displayMembers,
+                          secondmentByMemberId
+                        ).filter(m =>
                           ON_DUTY_CODES.has(
                             shiftMap.get(m.id)?.get(ds)?.shiftCode ?? ""
                           )
@@ -2309,7 +2402,12 @@ export default function RosterPage() {
                       {ALL_DATES.map(d => {
                         const ds = format(d, "yyyy-MM-dd");
                         const isToday = ds === today;
-                        const count = countableMembers.filter(m =>
+                        const count = getEffectiveCountableMembers(
+                          team,
+                          ds,
+                          displayMembers,
+                          secondmentByMemberId
+                        ).filter(m =>
                           ON_CALL_CODES.has(
                             shiftMap.get(m.id)?.get(ds)?.shiftCode ?? ""
                           )
@@ -2445,10 +2543,14 @@ export default function RosterPage() {
                   const teamMembers = displayMembers.filter(
                     m => m.teamId === team.id
                   );
-                  // Excluded members still get a row on the grid — just not
-                  // counted in the ON DUTY / ON CALL tally rows below.
-                  const countableMembers = teamMembers.filter(
-                    m => !m.excludedFromCounts
+                  // Members from OTHER teams currently (or upcoming-ly)
+                  // seconded into this one — they get an extra "Acting" row
+                  // here, on top of their normal row in their home team.
+                  const secondedInMembers = displayMembers.filter(
+                    m =>
+                      m.teamId !== team.id &&
+                      secondmentByMemberId.get(m.id)?.destinationTeamId ===
+                        team.id
                   );
                   const isDropTarget =
                     overTeamId === team.id && activeDragId !== null;
@@ -2517,6 +2619,9 @@ export default function RosterPage() {
                             onCellPointerEnter={handleCellPointerEnter}
                             onCopyCell={handleCopyCell}
                             onPasteCell={handlePasteCell}
+                            secondmentWindow={secondmentByMemberId.get(
+                              member.id
+                            )}
                           />
                         ))}
                         {isAdmin && activeDragId !== null && (
@@ -2528,6 +2633,35 @@ export default function RosterPage() {
                           />
                         )}
                       </SortableContext>
+
+                      {/* Acting (secondment) rows — not part of the
+                          SortableContext above, since they don't actually
+                          belong to this team's member order. */}
+                      {secondedInMembers.map(member => (
+                        <MemberRow
+                          key={`acting-${member.id}`}
+                          member={member}
+                          allDates={ALL_DATES}
+                          today={today}
+                          shiftMap={shiftMap}
+                          isAdmin={isAdmin}
+                          bulkMode={bulkMode}
+                          bulkCopyMode={bulkCopyMode}
+                          copiedBlock={copiedBlock}
+                          selectedCells={selectedCells}
+                          nameColWidth={NAME_COL_WIDTH}
+                          colWidth={COL_WIDTH}
+                          rowHeight={ROW_HEIGHT}
+                          clipboard={clipboard}
+                          onCellTap={handleCellTap}
+                          onCellPointerDown={handleCellPointerDown}
+                          onCellPointerEnter={handleCellPointerEnter}
+                          onCopyCell={handleCopyCell}
+                          onPasteCell={handlePasteCell}
+                          rowMode="acting"
+                          secondmentWindow={secondmentByMemberId.get(member.id)}
+                        />
+                      ))}
 
                       {/* On Duty row */}
                       <div className="flex gap-[3px] mt-[3px] mb-2">
@@ -2546,7 +2680,12 @@ export default function RosterPage() {
                         {ALL_DATES.map(d => {
                           const ds = format(d, "yyyy-MM-dd");
                           const isToday = ds === today;
-                          const count = countableMembers.filter(m =>
+                          const count = getEffectiveCountableMembers(
+                            team,
+                            ds,
+                            displayMembers,
+                            secondmentByMemberId
+                          ).filter(m =>
                             ON_DUTY_CODES.has(
                               shiftMap.get(m.id)?.get(ds)?.shiftCode ?? ""
                             )
@@ -2603,7 +2742,12 @@ export default function RosterPage() {
                         {ALL_DATES.map(d => {
                           const ds = format(d, "yyyy-MM-dd");
                           const isToday = ds === today;
-                          const count = countableMembers.filter(m =>
+                          const count = getEffectiveCountableMembers(
+                            team,
+                            ds,
+                            displayMembers,
+                            secondmentByMemberId
+                          ).filter(m =>
                             ON_CALL_CODES.has(
                               shiftMap.get(m.id)?.get(ds)?.shiftCode ?? ""
                             )
@@ -2812,6 +2956,8 @@ function MemberRow({
   onCellPointerEnter,
   onCopyCell,
   onPasteCell,
+  rowMode = "home",
+  secondmentWindow,
 }: {
   member: Member;
   allDates: Date[];
@@ -2846,6 +2992,9 @@ function MemberRow({
   onCellPointerEnter: (memberId: number, date: string) => void;
   onCopyCell: (shift: ShiftData | undefined) => void;
   onPasteCell: (memberId: number, date: string) => void;
+  /** "acting" = this is a secondment row rendered in the destination team, not the member's home team. */
+  rowMode?: "home" | "acting";
+  secondmentWindow?: { startDate: string; endDate: string } | null;
 }) {
   return (
     <div style={{ display: "flex", gap: "3px", marginBottom: "3px" }}>
@@ -2873,12 +3022,33 @@ function MemberRow({
           }
         >
           {member.name}
+          {rowMode === "acting" && (
+            <Badge
+              variant="outline"
+              className="ml-1.5 text-[9px] h-4 px-1 font-normal align-middle"
+            >
+              Acting
+            </Badge>
+          )}
         </span>
       </div>
 
       {/* Shift cells */}
       {allDates.map(d => {
         const ds = format(d, "yyyy-MM-dd");
+        if (isDateOutsideRowScope(rowMode, secondmentWindow, ds)) {
+          return (
+            <div
+              key={ds}
+              style={{
+                width: `${colWidth}px`,
+                height: `${rowHeight}px`,
+                flexShrink: 0,
+              }}
+              className="rounded-md bg-muted/10"
+            />
+          );
+        }
         const shift = shiftMap.get(member.id)?.get(ds);
         const code = shift?.shiftCode ?? "";
         const isToday = ds === today;
@@ -3000,6 +3170,7 @@ function SortableMemberRow({
   onCellPointerEnter,
   onCopyCell,
   onPasteCell,
+  secondmentWindow,
 }: {
   member: Member;
   allDates: Date[];
@@ -3035,6 +3206,8 @@ function SortableMemberRow({
   onCellPointerEnter: (memberId: number, date: string) => void;
   onCopyCell: (shift: ShiftData | undefined) => void;
   onPasteCell: (memberId: number, date: string) => void;
+  /** This member's own secondment, if any — their home-team cells blank out during it. */
+  secondmentWindow?: { startDate: string; endDate: string } | null;
 }) {
   const {
     attributes,
@@ -3101,6 +3274,19 @@ function SortableMemberRow({
       {/* Shift cells */}
       {allDates.map(d => {
         const ds = format(d, "yyyy-MM-dd");
+        if (isDateOutsideRowScope("home", secondmentWindow, ds)) {
+          return (
+            <div
+              key={ds}
+              style={{
+                width: `${colWidth}px`,
+                height: `${rowHeight}px`,
+                flexShrink: 0,
+              }}
+              className="rounded-md bg-muted/10"
+            />
+          );
+        }
         const shift = shiftMap.get(member.id)?.get(ds);
         const code = shift?.shiftCode ?? "";
         const isToday = ds === today;

@@ -346,6 +346,15 @@ export default function OutlookPage() {
       { startDate: start, endDate: end },
       { staleTime: 60_000 }
     );
+  const { data: secondmentsData } = trpc.ctoRoster.secondments.list.useQuery();
+  const secondmentByMemberId = useMemo(() => {
+    const map = new Map<
+      number,
+      { destinationTeamId: number; startDate: string; endDate: string }
+    >();
+    for (const s of secondmentsData ?? []) map.set(s.memberId, s);
+    return map;
+  }, [secondmentsData]);
   const { data: settingsData, refetch: refetchSettings } =
     trpc.ctoRoster.outlookSettings.get.useQuery();
   const updateSettings = trpc.ctoRoster.outlookSettings.update.useMutation({
@@ -431,11 +440,18 @@ export default function OutlookPage() {
     return days.map(d => {
       const ds = format(d, "yyyy-MM-dd");
       const teamStats: TeamDayStat[] = outlookTeams.map(team => {
-        // Members marked "excluded from counts" (see the checkbox on their
-        // roster row) don't contribute to coverage stats here at all.
-        const teamMembers = membersData.filter(
-          m => m.teamId === team.id && !m.excludedFromCounts
-        );
+        // Members marked "excluded from counts" don't contribute at all.
+        // A member on an active secondment counts toward their destination
+        // team on these dates, not their home team — otherwise Outlook
+        // wouldn't reflect who's actually rostered where on a given day.
+        const teamMembers = membersData.filter(m => {
+          if (m.excludedFromCounts) return false;
+          const sec = secondmentByMemberId.get(m.id);
+          const onSecondmentToday =
+            !!sec && ds >= sec.startDate && ds <= sec.endDate;
+          if (onSecondmentToday) return sec!.destinationTeamId === team.id;
+          return m.teamId === team.id;
+        });
         const min =
           settingsData?.teamMinimums[team.name] ??
           TEAM_MINIMUMS[team.name] ??
@@ -523,7 +539,15 @@ export default function OutlookPage() {
         atRisk,
       };
     });
-  }, [days, teamsData, outlookTeams, membersData, shiftMap, settingsData]);
+  }, [
+    days,
+    teamsData,
+    outlookTeams,
+    membersData,
+    shiftMap,
+    settingsData,
+    secondmentByMemberId,
+  ]);
 
   // Summary stats
   const summary = useMemo(() => {

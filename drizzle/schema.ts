@@ -1071,3 +1071,121 @@ export const ctoRosterEbaRules = mysqlTable("cto_roster_eba_rules", {
 });
 export type CtoRosterEbaRule = typeof ctoRosterEbaRules.$inferSelect;
 export type InsertCtoRosterEbaRule = typeof ctoRosterEbaRules.$inferInsert;
+
+// ─── External Intelligence Document Import ──────────────────────────────────
+// An officer uploads a photo/scan of a printed intelligence document (e.g. an
+// AFP target profile). OCR + deterministic parsing (no LLM — see CLAUDE.md
+// Golden Rule) extracts the document's fielded sections; an officer confirms
+// every field/entity before anything is treated as final, same principle as
+// the existing entity-dedup confirm flow. templateType identifies which
+// known document layout was used to parse it (currently just one:
+// "afp_target_profile" — the fixed table+section layout confirmed as the
+// standard format), so future layouts can be added without breaking old rows.
+
+export const externalDocuments = mysqlTable("external_documents", {
+  id: int("id").autoincrement().primaryKey(),
+  // Reuses row_attachments-style storage — not tied to a running sheet row.
+  attachmentId: int("attachmentId").notNull(),
+  templateType: varchar("templateType", { length: 64 })
+    .default("afp_target_profile")
+    .notNull(),
+  // JSON: { name, dob, aliases, role, cob, passport, ocg, ids, promisId } —
+  // the fixed demographic table, extracted cell-by-cell (see
+  // server/externalIntel/ocrPipeline.ts). Values are OCR output as-is until
+  // an officer reviews/corrects them (see status).
+  extractedFields: text("extractedFields"),
+  // Full raw OCR text of the page (minus the demographic table, which is
+  // extracted cell-by-cell instead) — kept for audit/re-processing.
+  ocrText: text("ocrText"),
+  status: mysqlEnum("status", ["pending_review", "reviewed"])
+    .default("pending_review")
+    .notNull(),
+  reviewedByCIN: varchar("reviewedByCIN", { length: 64 }),
+  reviewedAt: bigint("reviewedAt", { mode: "number" }),
+  uploadedBy: int("uploadedBy").notNull(),
+  uploadedByCIN: varchar("uploadedByCIN", { length: 64 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  deletedAt: bigint("deletedAt", { mode: "number" }),
+  deletedByCIN: varchar("deletedByCIN", { length: 64 }),
+});
+export type ExternalDocument = typeof externalDocuments.$inferSelect;
+export type InsertExternalDocument = typeof externalDocuments.$inferInsert;
+
+// One row per parsed section other than the demographic table (vehicles,
+// location of interest, summary, communications, ...). bodyText is kept
+// verbatim — narrative text is never summarized or rewritten.
+export const externalDocumentSections = mysqlTable(
+  "external_document_sections",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    documentId: int("documentId").notNull(),
+    heading: varchar("heading", { length: 64 }).notNull(),
+    bodyText: text("bodyText").notNull(),
+    sortOrder: int("sortOrder").default(0).notNull(),
+  },
+  t => [index("external_document_sections_documentId_idx").on(t.documentId)]
+);
+export type ExternalDocumentSection =
+  typeof externalDocumentSections.$inferSelect;
+export type InsertExternalDocumentSection =
+  typeof externalDocumentSections.$inferInsert;
+
+// One row per entity (person/vehicle/address/business/phone/email) found in
+// a document's sections. entityKey uses the same normalized-key scheme as
+// the existing Intelligence dedup pipeline so matches line up with it.
+// matchedExistingKey stays null until an officer confirms a match (or
+// confirms it's new) — no silent auto-attach, same as the existing
+// Merge Entities flow.
+export const externalEntityMentions = mysqlTable(
+  "external_entity_mentions",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    documentId: int("documentId").notNull(),
+    type: mysqlEnum("type", [
+      "person",
+      "vehicle",
+      "address",
+      "business",
+      "phone",
+      "email",
+    ]).notNull(),
+    entityKey: varchar("entityKey", { length: 512 }).notNull(),
+    label: varchar("label", { length: 512 }).notNull(),
+    matchedExistingKey: varchar("matchedExistingKey", { length: 512 }),
+    status: mysqlEnum("status", [
+      "pending_review",
+      "matched",
+      "new_entity",
+      "rejected",
+    ])
+      .default("pending_review")
+      .notNull(),
+    reviewedByCIN: varchar("reviewedByCIN", { length: 64 }),
+    reviewedAt: bigint("reviewedAt", { mode: "number" }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => [index("external_entity_mentions_documentId_idx").on(t.documentId)]
+);
+export type ExternalEntityMention = typeof externalEntityMentions.$inferSelect;
+export type InsertExternalEntityMention =
+  typeof externalEntityMentions.$inferInsert;
+
+// A verbatim narrative section (e.g. Summary) attached to a resolved entity
+// once an officer confirms which entity it's about. sectionId points back at
+// the source text rather than copying it, so there's one place edits/re-OCR
+// would need to happen.
+export const externalBackgroundNotes = mysqlTable(
+  "external_background_notes",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    entityKey: varchar("entityKey", { length: 512 }).notNull(),
+    documentId: int("documentId").notNull(),
+    sectionId: int("sectionId").notNull(),
+    attachedByCIN: varchar("attachedByCIN", { length: 64 }),
+    attachedAt: bigint("attachedAt", { mode: "number" }).notNull(),
+  },
+  t => [index("external_background_notes_entityKey_idx").on(t.entityKey)]
+);
+export type ExternalBackgroundNote = typeof externalBackgroundNotes.$inferSelect;
+export type InsertExternalBackgroundNote =
+  typeof externalBackgroundNotes.$inferInsert;

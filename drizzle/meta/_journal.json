@@ -407,6 +407,13 @@
       "when": 1785425888244,
       "tag": "0057_whole_ben_grimm",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "5",
+      "when": 1785427709309,
+      "tag": "0058_real_wolf_cub",
+      "breakpoints": true
     }
   ]
 }

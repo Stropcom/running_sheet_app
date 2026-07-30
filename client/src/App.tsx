@@ -35,8 +35,6 @@ import IntelligenceAssociateProfile from "@/pages/IntelligenceAssociateProfile";
 import IntelligenceVehicleProfile from "@/pages/IntelligenceVehicleProfile";
 import IntelligenceLocationProfile from "@/pages/IntelligenceLocationProfile";
 import IntelligenceMapping from "@/pages/IntelligenceMapping";
-import ExternalDocumentsPage from "@/pages/ExternalDocumentsPage";
-import ExternalDocumentDetailPage from "@/pages/ExternalDocumentDetailPage";
 import RSMapping from "@/pages/RSMapping";
 import DraftSheetPage from "@/pages/DraftSheetPage";
 import ReportsPage from "@/pages/ReportsPage";
@@ -129,11 +127,6 @@ function Router() {
         component={IntelligenceLocationProfile}
       />
       <Route path="/intelligence/mapping" component={IntelligenceMapping} />
-      <Route path="/intelligence/documents" component={ExternalDocumentsPage} />
-      <Route
-        path="/intelligence/documents/:id"
-        component={ExternalDocumentDetailPage}
-      />
       <Route path="/intelligence/rs-mapping" component={RSMapping} />
       <Route path="/governance" component={GovernanceListPage} />
       <Route path="/governance/:sheetId" component={GovernancePage} />

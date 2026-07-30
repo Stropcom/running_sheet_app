@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { formatDistanceToNow } from "date-fns";
-import { Bell, CheckCheck } from "lucide-react";
+import { Bell, CheckCheck, X, Trash2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import {
@@ -46,8 +46,20 @@ export function NotificationBell({
       utils.notifications.list.invalidate();
     },
   });
+  const deleteOne = trpc.notifications.delete.useMutation({
+    onSuccess: () => {
+      utils.notifications.unreadCount.invalidate();
+      utils.notifications.list.invalidate();
+    },
+  });
+  const clearRead = trpc.notifications.clearRead.useMutation({
+    onSuccess: () => {
+      utils.notifications.list.invalidate();
+    },
+  });
 
   const unreadCount = unread?.count ?? 0;
+  const hasRead = (list ?? []).some(n => !!n.readAt);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -65,20 +77,35 @@ export function NotificationBell({
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-80 p-0" align="end">
-        <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-border gap-1">
           <span className="text-sm font-semibold">Notifications</span>
-          {unreadCount > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 gap-1 text-xs"
-              onClick={() => markAllRead.mutate()}
-              disabled={markAllRead.isPending}
-            >
-              <CheckCheck className="h-3.5 w-3.5" />
-              Mark all read
-            </Button>
-          )}
+          <div className="flex items-center gap-1">
+            {unreadCount > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1 text-xs px-2"
+                onClick={() => markAllRead.mutate()}
+                disabled={markAllRead.isPending}
+              >
+                <CheckCheck className="h-3.5 w-3.5" />
+                Mark all read
+              </Button>
+            )}
+            {hasRead && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1 text-xs px-2 text-muted-foreground"
+                onClick={() => clearRead.mutate()}
+                disabled={clearRead.isPending}
+                title="Delete all read notifications"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Clear read
+              </Button>
+            )}
+          </div>
         </div>
         <ScrollArea className="max-h-80">
           {!list || list.length === 0 ? (
@@ -88,18 +115,20 @@ export function NotificationBell({
           ) : (
             <div className="divide-y divide-border">
               {list.map(n => (
-                <button
+                <div
                   key={n.id}
-                  onClick={() => {
-                    if (!n.readAt) markRead.mutate({ id: n.id });
-                    setOpen(false);
-                    if (n.url) setLocation(n.url);
-                  }}
-                  className={`w-full text-left px-3 py-2.5 hover:bg-accent/50 transition-colors ${
+                  className={`group flex items-start gap-1 px-3 py-2.5 hover:bg-accent/50 transition-colors ${
                     !n.readAt ? "bg-primary/5" : ""
                   }`}
                 >
-                  <div className="flex items-start gap-2">
+                  <button
+                    className="flex-1 min-w-0 text-left flex items-start gap-2"
+                    onClick={() => {
+                      if (!n.readAt) markRead.mutate({ id: n.id });
+                      setOpen(false);
+                      if (n.url) setLocation(n.url);
+                    }}
+                  >
                     {!n.readAt && (
                       <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
                     )}
@@ -116,8 +145,16 @@ export function NotificationBell({
                         })}
                       </p>
                     </div>
-                  </div>
-                </button>
+                  </button>
+                  <button
+                    className="shrink-0 h-6 w-6 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-accent transition-opacity"
+                    onClick={() => deleteOne.mutate({ id: n.id })}
+                    aria-label="Delete notification"
+                    title="Delete"
+                  >
+                    <X className="h-3.5 w-3.5 text-muted-foreground" />
+                  </button>
+                </div>
               ))}
             </div>
           )}

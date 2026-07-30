@@ -6111,6 +6111,36 @@ export async function markAllNotificationsRead(userId: number) {
     .where(and(eq(notifications.userId, userId), isNull(notifications.readAt)));
 }
 
+export async function deleteNotification(id: number, userId: number) {
+  const db = await getDb();
+  if (!db) return;
+  // Scoped to userId so one user can't delete another's notification.
+  await db
+    .delete(notifications)
+    .where(and(eq(notifications.id, id), eq(notifications.userId, userId)));
+}
+
+export async function deleteReadNotificationsForUser(userId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .delete(notifications)
+    .where(and(eq(notifications.userId, userId), isNotNull(notifications.readAt)));
+}
+
+const NOTIFICATION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+// Opportunistic purge (no cron — see references/periodic-updates.md),
+// triggered on read like purgeExpiredRecycleBinItems, so the table doesn't
+// grow forever even if nobody manually clears their bell.
+export async function purgeExpiredNotifications() {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .delete(notifications)
+    .where(lt(notifications.createdAt, new Date(Date.now() - NOTIFICATION_MAX_AGE_MS)));
+}
+
 // ─── Witness List ───────────────────────────────────────────────────────────
 
 export interface WitnessListSheetData {

@@ -246,6 +246,9 @@ import {
   getUnreadNotificationCount,
   markNotificationRead,
   markAllNotificationsRead,
+  deleteNotification,
+  deleteReadNotificationsForUser,
+  purgeExpiredNotifications,
 } from "./db";
 
 import {
@@ -2061,6 +2064,9 @@ export const appRouter = router({
   // Safari unless installed as a home-screen PWA.
   notifications: router({
     list: protectedProcedure.query(async ({ ctx }) => {
+      // Opportunistic purge (no cron — see references/periodic-updates.md),
+      // same pattern as recycleBin.list below.
+      await purgeExpiredNotifications();
       return getNotificationsForUser(ctx.user.id);
     }),
 
@@ -2077,6 +2083,18 @@ export const appRouter = router({
 
     markAllRead: protectedProcedure.mutation(async ({ ctx }) => {
       await markAllNotificationsRead(ctx.user.id);
+      return { ok: true };
+    }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await deleteNotification(input.id, ctx.user.id);
+        return { ok: true };
+      }),
+
+    clearRead: protectedProcedure.mutation(async ({ ctx }) => {
+      await deleteReadNotificationsForUser(ctx.user.id);
       return { ok: true };
     }),
   }),

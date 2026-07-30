@@ -11,6 +11,49 @@ happen before."
 
 ---
 
+## 2026-07-30 (later) — CPU 100% hang, root cause found and fixed: EA Compliance "Check"
+
+User reported CPU 100% recurring — this morning, and again this evening —
+and correctly identified the trigger both times: clicking **Check** on
+CTO Roster → EA Compliance.
+
+**Root cause:** `checkWeekendFrequency()` in `server/ctoRosterEbaEngine.ts`
+had a `while (d <= endDate) { ...; d = addDays(d, 1); }` loop counting
+weekend days between a member's first and last recorded shift **one day
+at a time**, with no upper bound. Every other loop in that file is bounded
+by an array length (safe); this was the only one driven by raw date
+arithmetic. `addDays` constructs a full `Date` object and calls
+`.toISOString()` per iteration — for a member whose shift history spans
+years (or any shift record with a bad/out-of-range date — a typo, stray
+seed/test data, etc.), this runs synchronously with **no `await`/yield
+inside the loop**, fully blocking the single-threaded Node event loop for
+the entire duration. That exactly matches the symptom: 100% CPU, server
+unresponsive to all other requests, until restarted.
+
+The default "Check" scope (`main`, no date range selected) queries a
+member's *entire* shift history with no date filter, so this was easy to
+trigger without realizing it — no unusual input needed, just an
+above-average shift history length for one member.
+
+**Fix:** replaced the day-by-day loop with closed-form date-range
+arithmetic (`countWeekendDaysInRange`) — O(1) regardless of range size,
+verified against the old loop's output across several ranges (all
+matched) including a 74-year synthetic range (instant vs. ~27k iterations
+the old code would have run). Pushed to `claude/claude-md-docs-o4trnz`.
+
+**Not yet done:** deploy to production (needs `/root/deploy.sh` — no
+droplet access from this session) and `pm2 restart runlog` if it's still
+hung when this lands.
+
+Worth noting: this doesn't explain the *previous* unexplained hang logged
+below (2026-07-30, no request traffic in logs at all that time) — that
+one had zero `[Auth]` entries since the prior deploy, meaning nothing hit
+the server, so it can't be this same request-triggered bug. Two separate
+issues, most likely — leaving the entry below as still unresolved rather
+than retroactively closing it.
+
+---
+
 ## 2026-07-30 — Unexplained CPU hang, ~50 min, root cause unknown
 
 **What happened:** `runlog` PM2 process (PID 43173, started 16:38:56 UTC

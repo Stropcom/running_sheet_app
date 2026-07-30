@@ -7,6 +7,16 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { ArrowLeft, Check, UserPlus, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -160,9 +170,19 @@ export default function ExternalDocumentDetailPage() {
   const documentId = Number(params.id);
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const { data: doc, isLoading } = trpc.externalIntel.get.useQuery({
     id: documentId,
+  });
+
+  const deleteDoc = trpc.externalIntel.delete.useMutation({
+    onSuccess: () => {
+      utils.externalIntel.list.invalidate();
+      toast.success("Document deleted");
+      setLocation("/intelligence/documents");
+    },
+    onError: err => toast.error(err.message ?? "Delete failed."),
   });
 
   const [fields, setFields] = useState<Record<string, string>>({});
@@ -232,7 +252,37 @@ export default function ExternalDocumentDetailPage() {
             Uploaded by {doc.uploadedByCIN ?? "Unknown"} ·{" "}
             {format(new Date(doc.createdAt), "d MMM yyyy, h:mm a")}
           </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto gap-1.5 text-muted-foreground hover:text-destructive"
+            onClick={() => setConfirmingDelete(true)}
+          >
+            <Trash2 className="h-4 w-4" />
+            Delete
+          </Button>
         </div>
+
+        <AlertDialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete this document?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This removes the document and its extracted fields/entities from
+                Doc Import. This can't be undone from here.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => deleteDoc.mutate({ id: documentId })}
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4">
           <div className="flex flex-col gap-3">

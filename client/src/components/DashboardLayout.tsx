@@ -57,6 +57,7 @@ import {
   ClipboardList,
   Zap,
   FolderSearch,
+  FileScan,
   ClipboardCheck,
   BookOpen,
   Scale,
@@ -444,7 +445,8 @@ function SortableNavItem({
           isActive={
             location === "/intelligence" ||
             (location.startsWith("/intelligence") &&
-              !location.startsWith("/intelligence/mapping"))
+              !location.startsWith("/intelligence/mapping") &&
+              !location.startsWith("/intelligence/documents"))
           }
           onClick={() => setLocation("/intelligence")}
           tooltip="Intelligence"
@@ -452,9 +454,29 @@ function SortableNavItem({
         >
           <FolderSearch className="h-4 w-4 text-violet-400" />
           <span
-            className={`flex-1 ${location === "/intelligence" || (location.startsWith("/intelligence") && !location.startsWith("/intelligence/mapping")) ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}
+            className={`flex-1 ${location === "/intelligence" || (location.startsWith("/intelligence") && !location.startsWith("/intelligence/mapping") && !location.startsWith("/intelligence/documents")) ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}
           >
             Intelligence
+          </span>
+          {gripHandle}
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    );
+
+  if (id === "externalDocs")
+    return (
+      <SidebarMenuItem {...itemProps}>
+        <SidebarMenuButton
+          isActive={location.startsWith("/intelligence/documents")}
+          onClick={() => setLocation("/intelligence/documents")}
+          tooltip="Doc Import"
+          className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-amber-400/50 shadow-sm"
+        >
+          <FileScan className="h-4 w-4 text-amber-400" />
+          <span
+            className={`flex-1 ${location.startsWith("/intelligence/documents") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}
+          >
+            Doc Import
           </span>
           {gripHandle}
         </SidebarMenuButton>
@@ -909,6 +931,7 @@ function DashboardLayoutContent({
     "calendar",
     "shortcuts",
     "intelligence",
+    "externalDocs",
     "targetRegistry",
     "operationManager",
   ];

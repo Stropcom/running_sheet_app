@@ -5773,6 +5773,7 @@ export const DEFAULT_SIDEBAR_ORDER = [
   "calendar",
   "shortcuts",
   "intelligence",
+  "externalDocs",
   "targetRegistry",
   "operationManager",
 ];

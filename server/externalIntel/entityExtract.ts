@@ -7,7 +7,7 @@
 // catch a person or business mentioned in a form these patterns don't cover.
 
 export interface ExtractedEntity {
-  type: "person" | "business" | "phone" | "email";
+  type: "person" | "business" | "vehicle" | "address" | "phone" | "email";
   label: string;
 }
 

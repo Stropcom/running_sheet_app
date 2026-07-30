@@ -22,7 +22,7 @@ export class AttachmentUploadError extends Error {
  * attached, manual, tRPC, and the raw binary route — so none of them can
  * drift from each other on what counts as a valid photo.
  */
-async function normalizeAndValidateImage(params: {
+export async function normalizeAndValidateImage(params: {
   buffer: Buffer;
   reportedMimeType: string;
   fileName?: string;

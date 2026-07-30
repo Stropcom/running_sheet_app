@@ -54,6 +54,19 @@ export async function processExternalDocument(
   // source document (see entityExtract.ts).
   const entities = extractEntitiesFromDocumentText(pageOcr.text);
 
+  // Vehicles and addresses are already cleanly parsed by parseSections (not
+  // regex-guessed out of narrative prose), so surface them as their own
+  // entity mentions too rather than only the narrative-derived ones.
+  for (const vehicle of sections.vehicles) {
+    entities.push({ type: "vehicle", label: vehicle });
+  }
+  if (sections.currentAddress) {
+    entities.push({ type: "address", label: sections.currentAddress });
+  }
+  if (sections.previousAddress) {
+    entities.push({ type: "address", label: sections.previousAddress });
+  }
+
   return {
     tableFields: tableResult.fields,
     tableGridDetected: tableResult.gridDetected,

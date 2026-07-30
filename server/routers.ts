@@ -4335,16 +4335,18 @@ export const appRouter = router({
         const title = "New CTO Tasking Posted";
         const body = `CTO Tasking for the week of ${weekLabel} has been posted.`;
         const url = "/operation-manager";
-        if (input.userIds && input.userIds.length > 0) {
-          await sendPushToUsers(input.userIds, title, body, url).catch(err =>
-            console.warn("[Push] Failed to send targeted notifications:", err)
-          );
-        } else {
-          await sendPushToAll(title, body, url).catch(err =>
-            console.warn("[Push] Failed to send notifications:", err)
-          );
-        }
-        return { ok: true };
+        // Surface real sent/failed counts to the client instead of a blind
+        // "ok" — the button used to always toast success even when nobody
+        // was actually subscribed or VAPID wasn't configured, with the only
+        // trace being a server console warning nobody was looking at.
+        const result = await (input.userIds && input.userIds.length > 0
+          ? sendPushToUsers(input.userIds, title, body, url)
+          : sendPushToAll(title, body, url)
+        ).catch(err => {
+          console.warn("[Push] Failed to send notifications:", err);
+          return { sent: 0, failed: input.userIds?.length ?? 0 };
+        });
+        return { ok: true, ...result };
       }),
 
     // ── Push subscriptions ────────────────────────────────────────────────────

@@ -690,17 +690,29 @@ export default function OperationManagerPage() {
   const handleConfirmNotify = async () => {
     setNotifyDialogOpen(false);
     try {
-      await postWeekMut.mutateAsync({
+      const result = await postWeekMut.mutateAsync({
         weekStart,
         userIds:
           selectedUserIds.size > 0 ? Array.from(selectedUserIds) : undefined,
       });
       await utils.opManager.isWeekPosted.invalidate();
-      toast.success(
-        selectedUserIds.size > 0
-          ? `CTO Tasking posted. Notified ${selectedUserIds.size} user${selectedUserIds.size === 1 ? "" : "s"}.`
-          : "CTO Tasking posted (no users notified)."
-      );
+      // Report the real push outcome (sent/failed device subscriptions) —
+      // "posted" always succeeds even when nobody actually got a
+      // notification (no VAPID keys, nobody subscribed, expired
+      // subscriptions), so a plain "Notified N users" toast was misleading.
+      const sent = result.sent ?? 0;
+      const failed = result.failed ?? 0;
+      if (selectedUserIds.size === 0) {
+        toast.success("CTO Tasking posted (no users notified).");
+      } else if (sent === 0) {
+        toast.warning(
+          `CTO Tasking posted, but no notifications were delivered (${failed} failed). Selected users may not have notifications enabled on any device.`
+        );
+      } else {
+        toast.success(
+          `CTO Tasking posted. Sent to ${sent} device${sent === 1 ? "" : "s"}${failed > 0 ? `, ${failed} failed` : ""}.`
+        );
+      }
     } catch {
       toast.error("Failed to post CTO Tasking.");
     }

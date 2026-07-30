@@ -1,0 +1,1 @@
+ALTER TABLE `cto_roster_members` ADD `excludedFromCounts` boolean DEFAULT false NOT NULL;

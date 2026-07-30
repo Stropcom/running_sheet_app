@@ -167,6 +167,19 @@ export async function getCtoRosterMembersByTeam(
   return all.filter(m => m.teamId === teamId);
 }
 
+/** Toggle whether a member counts toward ON DUTY / ON CALL headcount totals. */
+export async function setCtoRosterMemberExcludedFromCounts(
+  memberId: number,
+  excluded: boolean
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db
+    .update(ctoRosterMembers)
+    .set({ excludedFromCounts: excluded })
+    .where(eq(ctoRosterMembers.id, memberId));
+}
+
 /** Add an existing RunLog user (by CIN) to the roster under a team. */
 export async function addCtoRosterMember(
   cin: string,

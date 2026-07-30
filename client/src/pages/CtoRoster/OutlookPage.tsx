@@ -357,12 +357,10 @@ export default function OutlookPage() {
     >();
     for (const s of shiftsData ?? []) {
       if (!map.has(s.memberId)) map.set(s.memberId, new Map());
-      map
-        .get(s.memberId)!
-        .set(s.shiftDate, {
-          shiftCode: s.shiftCode,
-          shiftTime: s.shiftTime ?? null,
-        });
+      map.get(s.memberId)!.set(s.shiftDate, {
+        shiftCode: s.shiftCode,
+        shiftTime: s.shiftTime ?? null,
+      });
     }
     return map;
   }, [shiftsData]);
@@ -425,7 +423,11 @@ export default function OutlookPage() {
     return days.map(d => {
       const ds = format(d, "yyyy-MM-dd");
       const teamStats: TeamDayStat[] = teamsData.map(team => {
-        const teamMembers = membersData.filter(m => m.teamId === team.id);
+        // Members marked "excluded from counts" (see the checkbox on their
+        // roster row) don't contribute to coverage stats here at all.
+        const teamMembers = membersData.filter(
+          m => m.teamId === team.id && !m.excludedFromCounts
+        );
         const min =
           settingsData?.teamMinimums[team.name] ??
           TEAM_MINIMUMS[team.name] ??
@@ -460,7 +462,7 @@ export default function OutlookPage() {
           members: memberShifts,
         };
       });
-      const allMembers = membersData;
+      const allMembers = membersData.filter(m => !m.excludedFromCounts);
       const onCallMembers = allMembers
         .map(m => {
           const s = shiftMap.get(m.id)?.get(ds);

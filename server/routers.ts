@@ -23,6 +23,7 @@ import {
   deleteCtoRosterMember,
   moveCtoRosterMember,
   changeCtoRosterMemberTeam,
+  setCtoRosterMemberExcludedFromCounts,
   reorderCtoRosterMembers,
   writeCtoRosterAudit,
   getAllCtoRosterDrafts,
@@ -4339,6 +4340,17 @@ export const appRouter = router({
             input.memberId,
             input.newTeamId,
             input.keepShiftCodes
+          );
+          return { success: true };
+        }),
+
+      /** Exclude/include a member from ON DUTY / ON CALL headcount totals — admin only */
+      setExcludedFromCounts: adminProcedure
+        .input(z.object({ memberId: z.number(), excluded: z.boolean() }))
+        .mutation(async ({ input }) => {
+          await setCtoRosterMemberExcludedFromCounts(
+            input.memberId,
+            input.excluded
           );
           return { success: true };
         }),

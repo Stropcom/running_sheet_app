@@ -813,6 +813,12 @@ export const ctoRosterMembers = mysqlTable("cto_roster_members", {
   cin: varchar("cin", { length: 64 }).notNull(),
   teamId: int("teamId").notNull(),
   sortOrder: int("sortOrder").default(0).notNull(),
+  // When true, this member is excluded from ON DUTY / ON CALL headcount
+  // totals (roster grid tally rows and the Outlook coverage view) — they
+  // still appear on the grid with their own shifts, just don't count
+  // toward team numbers. For members who are rostered for tracking
+  // purposes but shouldn't inflate deployable headcount.
+  excludedFromCounts: boolean("excludedFromCounts").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (t) => [

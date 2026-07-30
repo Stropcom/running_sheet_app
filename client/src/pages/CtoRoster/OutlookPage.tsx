@@ -53,6 +53,8 @@ const TEAM_MINIMUMS: Record<string, number> = {
   OIC: 1,
 };
 const DEFAULT_MIN = 3; // fallback for any other team
+// Roster-only team, excluded from Outlook entirely (see outlookTeams below).
+const ADMIN_TEAM_NAMES = new Set(["admin", "administration"]);
 
 // Day-shift codes (includes day on-call)
 const DAY_CODES = new Set(["d", "doc"]);
@@ -334,14 +336,10 @@ export default function OutlookPage() {
     trpc.ctoRoster.teams.list.useQuery();
   const { data: membersData, isLoading: membersLoading } =
     trpc.ctoRoster.members.list.useQuery();
-  // Administration is a roster-only team (holds people who need CTO Roster
-  // access for admin purposes) — it never has real coverage/deployability
-  // numbers, so it's excluded from Outlook entirely rather than showing an
-  // always-empty, always "at risk" card.
   const outlookTeams = useMemo(
     () =>
       (teamsData ?? []).filter(
-        t => t.name.trim().toLowerCase() !== "administration"
+        t => !ADMIN_TEAM_NAMES.has(t.name.trim().toLowerCase())
       ),
     [teamsData]
   );

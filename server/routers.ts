@@ -79,6 +79,7 @@ import {
   renameCtoRosterTeam,
   deleteCtoRosterTeam,
   reorderCtoRosterTeams,
+  upsertRosterShiftNotification,
 } from "./ctoRoster";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import {
@@ -383,6 +384,15 @@ export const appRouter = router({
           action: "user_updated",
           details: `CIN ${ctx.user.cin ?? "Unknown"} changed password`,
           createdAt: Date.now(),
+        });
+        return { success: true };
+      }),
+
+    updateRosterShiftNotifPref: protectedProcedure
+      .input(z.object({ enabled: z.boolean() }))
+      .mutation(async ({ input, ctx }) => {
+        await updateUser(ctx.user.id, {
+          rosterShiftNotificationsEnabled: input.enabled,
         });
         return { success: true };
       }),
@@ -4653,6 +4663,11 @@ export const appRouter = router({
             input.shiftDate
           );
           const oldShift = existing.find(s => s.shiftDate === input.shiftDate);
+          const changed =
+            (oldShift?.shiftCode ?? "") !== input.shiftCode ||
+            (oldShift?.shiftTime ?? null) !== (input.shiftTime ?? null) ||
+            (oldShift?.isActing ?? false) !== (input.isActing ?? false) ||
+            (oldShift?.comment ?? null) !== (input.comment ?? null);
           await upsertCtoRosterShift(
             input.memberId,
             input.shiftDate,
@@ -4684,6 +4699,18 @@ export const appRouter = router({
               comment: input.comment ?? null,
             }),
           });
+          if (changed) {
+            upsertRosterShiftNotification({
+              memberId: input.memberId,
+              actingUserId: ctx.user.id,
+              kind: "count",
+              count: 1,
+              startDate: input.shiftDate,
+              endDate: input.shiftDate,
+            }).catch(err =>
+              console.warn("[Notifications] Roster shift notify failed:", err)
+            );
+          }
           return { success: true };
         }),
 
@@ -4714,6 +4741,21 @@ export const appRouter = router({
           })
         )
         .mutation(async ({ ctx, input }) => {
+          const sortedDates = [...input.dates].sort();
+          const existing = await getCtoRosterShiftsForMember(
+            input.memberId,
+            sortedDates[0],
+            sortedDates[sortedDates.length - 1]
+          );
+          const existingByDate = new Map(existing.map(s => [s.shiftDate, s]));
+          const changedDates = input.dates.filter(d => {
+            const old = existingByDate.get(d);
+            return (
+              (old?.shiftCode ?? "") !== input.shiftCode ||
+              (old?.shiftTime ?? null) !== (input.shiftTime ?? null) ||
+              (old?.isActing ?? false) !== (input.isActing ?? false)
+            );
+          });
           await bulkUpdateCtoRosterShifts(
             input.dates.map(d => ({
               memberId: input.memberId,
@@ -4732,6 +4774,19 @@ export const appRouter = router({
             memberName: input.memberName ?? null,
             detail: `${input.dates.length} shifts set to ${input.shiftCode || "(clear)"}${input.isActing ? " [acting]" : ""}`,
           });
+          if (changedDates.length > 0) {
+            const sortedChanged = [...changedDates].sort();
+            upsertRosterShiftNotification({
+              memberId: input.memberId,
+              actingUserId: ctx.user.id,
+              kind: "count",
+              count: sortedChanged.length,
+              startDate: sortedChanged[0],
+              endDate: sortedChanged[sortedChanged.length - 1],
+            }).catch(err =>
+              console.warn("[Notifications] Roster shift notify failed:", err)
+            );
+          }
           return { success: true, count: input.dates.length };
         }),
 
@@ -4748,7 +4803,7 @@ export const appRouter = router({
           })
         )
         .mutation(async ({ ctx, input }) => {
-          const count = await bulkCopyCtoRosterShifts(
+          const { count, changedByMember } = await bulkCopyCtoRosterShifts(
             input.sourceMemberId,
             input.targetMemberIds,
             input.startDate,
@@ -4762,6 +4817,21 @@ export const appRouter = router({
             memberId: input.sourceMemberId,
             memberName: input.sourceMemberName ?? null,
             detail: `Copied ${count} shifts to [${(input.targetMemberNames ?? []).join(", ")}] from ${input.startDate} to ${input.endDate}`,
+          });
+          // Notify each target whose own shifts actually changed — never the
+          // source member, and never a target whose copied cells matched
+          // what was already there.
+          changedByMember.forEach((changed, memberId) => {
+            upsertRosterShiftNotification({
+              memberId,
+              actingUserId: ctx.user.id,
+              kind: "count",
+              count: changed,
+              startDate: input.startDate,
+              endDate: input.endDate,
+            }).catch(err =>
+              console.warn("[Notifications] Roster shift notify failed:", err)
+            );
           });
           return { success: true, count };
         }),
@@ -4821,7 +4891,20 @@ export const appRouter = router({
                 ? `, copied to ${result.membersUpdated} teammate(s)`
                 : ""),
           });
-          return result;
+          result.changedByMember.forEach((change, memberId) => {
+            upsertRosterShiftNotification({
+              memberId,
+              actingUserId: ctx.user.id,
+              kind: "count",
+              count: change.count,
+              startDate: change.startDate,
+              endDate: change.endDate,
+            }).catch(err =>
+              console.warn("[Notifications] Roster shift notify failed:", err)
+            );
+          });
+          const { changedByMember: _changedByMember, ...publicResult } = result;
+          return publicResult;
         }),
     }),
 
@@ -4996,6 +5079,17 @@ export const appRouter = router({
             action: "draft_merge",
             detail: `Merged draft "${draft?.name ?? input.draftId}" (${result.applied} cells applied, ${result.skipped} skipped)`,
           });
+          // Generic message only — a merge can touch many cells across many
+          // dates, so an exact per-shift count isn't worth tracking here.
+          for (const memberId of result.affectedMemberIds) {
+            upsertRosterShiftNotification({
+              memberId,
+              actingUserId: ctx.user.id,
+              kind: "generic",
+            }).catch(err =>
+              console.warn("[Notifications] Roster shift notify failed:", err)
+            );
+          }
           return result;
         }),
 

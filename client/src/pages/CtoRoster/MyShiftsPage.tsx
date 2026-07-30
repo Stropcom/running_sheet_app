@@ -4,7 +4,9 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CalendarDays, Clock, TrendingUp, ChevronLeft, ChevronRight, PhoneCall, Plane, GraduationCap } from "lucide-react";
+import { CalendarDays, Clock, TrendingUp, ChevronLeft, ChevronRight, PhoneCall, Plane, GraduationCap, Bell, BellOff } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { toast } from "sonner";
 import { SHIFT_LABELS, SHIFT_TIMES, shiftClass, ON_DUTY_CODES, ON_CALL_CODES, ROSTER_START, ROSTER_END } from "@shared/ctoRosterShiftUtils";
 import {
   format, parseISO, isBefore, isToday, startOfToday,
@@ -32,11 +34,19 @@ const ROSTER_MONTHS: Date[] = (() => {
 })();
 
 export default function MyShiftsPage() {
-  const { user } = useAuth();
+  const { user, refresh } = useAuth();
   const { data: shifts, isLoading } = trpc.ctoRoster.roster.myShifts.useQuery({});
   const { data: members } = trpc.ctoRoster.members.list.useQuery();
   const isRosterMember = !!members?.some((m: any) => m.cin === user?.cin);
   const today = startOfToday();
+
+  // Roster shift-change notifications — opt-out only, doesn't affect any
+  // other notification type (e.g. CTO Weekly Tasking posts).
+  const updateNotifPref = trpc.profile.updateRosterShiftNotifPref.useMutation({
+    onSuccess: () => refresh(),
+    onError: () => toast.error("Failed to update notification setting."),
+  });
+  const notifEnabled = user?.rosterShiftNotificationsEnabled ?? true;
 
   // Calendar month state — default to current month
   const [calMonth, setCalMonth] = useState<Date>(() => {
@@ -105,9 +115,26 @@ export default function MyShiftsPage() {
     <div className="flex flex-col h-full min-h-0 overflow-y-auto px-4 py-3">
       <div className="max-w-2xl mx-auto w-full pb-10 px-0">
         {/* Page title */}
-        <div className="mb-4 flex items-baseline gap-2">
-          <h1 className="text-xl font-semibold text-foreground tracking-tight">My Shifts</h1>
-          <span className="text-sm text-muted-foreground">{ROSTER_YEAR}</span>
+        <div className="mb-4 flex items-baseline justify-between gap-2">
+          <div className="flex items-baseline gap-2">
+            <h1 className="text-xl font-semibold text-foreground tracking-tight">My Shifts</h1>
+            <span className="text-sm text-muted-foreground">{ROSTER_YEAR}</span>
+          </div>
+          {/* Roster is still being actively edited/tested — this lets people
+              turn off "your shift changed" notifications without affecting
+              any other notification type. */}
+          <div className="flex items-center gap-1.5">
+            {notifEnabled
+              ? <Bell className="h-3.5 w-3.5 text-muted-foreground" />
+              : <BellOff className="h-3.5 w-3.5 text-muted-foreground" />
+            }
+            <span className="text-xs text-muted-foreground">Shift notifications</span>
+            <Switch
+              checked={notifEnabled}
+              disabled={updateNotifPref.isPending}
+              onCheckedChange={checked => updateNotifPref.mutate({ enabled: checked })}
+            />
+          </div>
         </div>
 
         {/* ── Compact stats grid ──────────────────────────────────────────────── */}

@@ -6056,7 +6056,13 @@ export async function markWeekPosted(weekStart: string, postedBy: number) {
 // instead of browser push.
 export async function createNotificationsForUsers(
   userIds: number[],
-  params: { title: string; body: string; url?: string; sourceModule?: string }
+  params: {
+    title: string;
+    body: string;
+    url?: string;
+    sourceModule?: string;
+    meta?: string;
+  }
 ) {
   const db = await getDb();
   if (!db || userIds.length === 0) return;
@@ -6067,8 +6073,56 @@ export async function createNotificationsForUsers(
       body: params.body,
       url: params.url,
       sourceModule: params.sourceModule,
+      meta: params.meta,
     }))
   );
+}
+
+/**
+ * Most recent still-unread notification for this user/sourceModule created
+ * within the last `sinceMs` — used to coalesce repeated events (e.g. CTO
+ * Roster shift edits) into one bumped row instead of a new notification per
+ * event. See upsertRosterShiftNotification in ctoRoster.ts.
+ */
+export async function findRecentUnreadNotification(
+  userId: number,
+  sourceModule: string,
+  sinceMs: number
+) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db
+    .select()
+    .from(notifications)
+    .where(
+      and(
+        eq(notifications.userId, userId),
+        eq(notifications.sourceModule, sourceModule),
+        isNull(notifications.readAt),
+        gt(notifications.createdAt, new Date(Date.now() - sinceMs))
+      )
+    )
+    .orderBy(desc(notifications.createdAt))
+    .limit(1);
+  return rows[0];
+}
+
+/** Overwrite an existing notification's content and bump createdAt to now, so it resurfaces as fresh in the bell. */
+export async function updateNotificationContent(
+  id: number,
+  params: { title: string; body: string; meta?: string }
+) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(notifications)
+    .set({
+      title: params.title,
+      body: params.body,
+      meta: params.meta,
+      createdAt: new Date(),
+    })
+    .where(eq(notifications.id, id));
 }
 
 export async function getNotificationsForUser(userId: number, limit = 50) {

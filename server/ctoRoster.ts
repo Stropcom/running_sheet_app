@@ -10,7 +10,14 @@ import {
   max,
   count,
 } from "drizzle-orm";
-import { getDb, getAllUsers as getAllRunLogUsers, getUserByCin } from "./db";
+import {
+  getDb,
+  getAllUsers as getAllRunLogUsers,
+  getUserByCin,
+  createNotificationsForUsers,
+  findRecentUnreadNotification,
+  updateNotificationContent,
+} from "./db";
 import {
   ctoRosterTeams,
   ctoRosterMembers,
@@ -387,6 +394,124 @@ export async function reorderCtoRosterMembers(
   );
 }
 
+// ── Shift-change notifications ──────────────────────────────────────────────
+// Reliable in-app inbox (see drizzle/schema.ts notifications comment), used
+// instead of a notification per shift row so bulk edits don't spam. Coalesces
+// repeated events for the same member into one bumped notification if the
+// previous one is still unread and less than an hour old — while someone's
+// actively re-testing a roster change, that keeps refreshing the same row
+// instead of piling up new ones.
+const ROSTER_NOTIF_SOURCE = "ctoRosterShift";
+const ROSTER_NOTIF_COALESCE_WINDOW_MS = 60 * 60 * 1000;
+
+function formatShiftDateShort(ymd: string): string {
+  return new Date(`${ymd}T00:00:00Z`).toLocaleDateString("en-AU", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  });
+}
+
+type RosterNotifyParams =
+  | {
+      memberId: number;
+      actingUserId?: number;
+      kind: "count";
+      count: number;
+      startDate: string;
+      endDate: string;
+    }
+  | { memberId: number; actingUserId?: number; kind: "generic" };
+
+interface RosterNotifMeta {
+  generic?: boolean;
+  count?: number;
+  startDate?: string;
+  endDate?: string;
+}
+
+/**
+ * Notify the one RunLog user whose own roster shift(s) changed — never
+ * anyone else on their team. Skips: no linked RunLog account, the person who
+ * made the edit editing their own shift, the recipient having roster
+ * notifications turned off, and (for "count" kind) a zero-length change
+ * (no-op saves).
+ */
+export async function upsertRosterShiftNotification(
+  params: RosterNotifyParams
+): Promise<void> {
+  if (params.kind === "count" && params.count <= 0) return;
+
+  const members = await getAllCtoRosterMembers();
+  const member = members.find(m => m.id === params.memberId);
+  if (!member) return;
+  const user = await getUserByCin(member.cin);
+  if (!user) return;
+  if (params.actingUserId && user.id === params.actingUserId) return;
+  if (!user.rosterShiftNotificationsEnabled) return;
+
+  const title = "Your Roster Was Updated";
+  const genericBody = "Your roster was updated (including a merge).";
+  const buildCountBody = (count: number, startDate: string, endDate: string) =>
+    count === 1 && startDate === endDate
+      ? `Your shift on ${formatShiftDateShort(startDate)} was changed.`
+      : `${count} of your shifts between ${formatShiftDateShort(startDate)} and ${formatShiftDateShort(endDate)} were updated.`;
+
+  const existing = await findRecentUnreadNotification(
+    user.id,
+    ROSTER_NOTIF_SOURCE,
+    ROSTER_NOTIF_COALESCE_WINDOW_MS
+  );
+
+  if (existing) {
+    const prevMeta: RosterNotifMeta = existing.meta
+      ? JSON.parse(existing.meta)
+      : {};
+    // Once any generic (merge) event is folded in, stay generic — we don't
+    // know its exact shift count, so a precise-looking number would be
+    // misleading from here on.
+    if (params.kind === "generic" || prevMeta.generic) {
+      await updateNotificationContent(existing.id, {
+        title,
+        body: genericBody,
+        meta: JSON.stringify({ generic: true } satisfies RosterNotifMeta),
+      });
+      return;
+    }
+    const count = (prevMeta.count ?? 0) + params.count;
+    const startDate =
+      !prevMeta.startDate || params.startDate < prevMeta.startDate
+        ? params.startDate
+        : prevMeta.startDate;
+    const endDate =
+      !prevMeta.endDate || params.endDate > prevMeta.endDate
+        ? params.endDate
+        : prevMeta.endDate;
+    await updateNotificationContent(existing.id, {
+      title,
+      body: buildCountBody(count, startDate, endDate),
+      meta: JSON.stringify({ count, startDate, endDate } satisfies RosterNotifMeta),
+    });
+    return;
+  }
+
+  const body =
+    params.kind === "generic"
+      ? genericBody
+      : buildCountBody(params.count, params.startDate, params.endDate);
+  const meta: RosterNotifMeta =
+    params.kind === "generic"
+      ? { generic: true }
+      : { count: params.count, startDate: params.startDate, endDate: params.endDate };
+  await createNotificationsForUsers([user.id], {
+    title,
+    body,
+    url: "/cto-roster/my-shifts",
+    sourceModule: ROSTER_NOTIF_SOURCE,
+    meta: JSON.stringify(meta),
+  });
+}
+
 // ── Shifts ────────────────────────────────────────────────────────────────────
 
 export async function getCtoRosterShiftsForDateRange(
@@ -497,7 +622,7 @@ export async function bulkCopyCtoRosterShifts(
   startDate: string,
   endDate: string,
   updatedBy?: number
-): Promise<number> {
+): Promise<{ count: number; changedByMember: Map<number, number> }> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   const sourceShifts = await db
@@ -510,10 +635,32 @@ export async function bulkCopyCtoRosterShifts(
         lte(ctoRosterShifts.shiftDate, endDate)
       )
     );
-  if (sourceShifts.length === 0) return 0;
+  const changedByMember = new Map<number, number>();
+  if (sourceShifts.length === 0) return { count: 0, changedByMember };
+  const existingTargetShifts = await db
+    .select()
+    .from(ctoRosterShifts)
+    .where(
+      and(
+        inArray(ctoRosterShifts.memberId, targetMemberIds),
+        gte(ctoRosterShifts.shiftDate, startDate),
+        lte(ctoRosterShifts.shiftDate, endDate)
+      )
+    );
+  const existingByKey = new Map(
+    existingTargetShifts.map(s => [`${s.memberId}_${s.shiftDate}`, s])
+  );
   let count = 0;
   for (const targetId of targetMemberIds) {
     for (const s of sourceShifts) {
+      const old = existingByKey.get(`${targetId}_${s.shiftDate}`);
+      const changed =
+        (old?.shiftCode ?? "") !== s.shiftCode ||
+        (old?.comment ?? null) !== (s.comment ?? null) ||
+        (old?.isActing ?? false) !== (s.isActing ?? false);
+      if (changed) {
+        changedByMember.set(targetId, (changedByMember.get(targetId) ?? 0) + 1);
+      }
       await db
         .insert(ctoRosterShifts)
         .values({
@@ -535,7 +682,7 @@ export async function bulkCopyCtoRosterShifts(
       count++;
     }
   }
-  return count;
+  return { count, changedByMember };
 }
 
 // ── Drafts (what-if planning, merges back into live roster) ────────────────────
@@ -928,7 +1075,7 @@ export async function mergeCtoRosterDraft(
     | { memberId: number; shiftDate: string; resolution: "draft" | "live" }[]
     | undefined,
   updatedBy?: number
-): Promise<{ applied: number; skipped: number }> {
+): Promise<{ applied: number; skipped: number; affectedMemberIds: number[] }> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   const draft = await getCtoRosterDraftById(draftId);
@@ -960,6 +1107,7 @@ export async function mergeCtoRosterDraft(
   let applied = 0,
     skipped = 0,
     conflicts = 0;
+  const affectedMemberIds = new Set<number>();
   for (const ds of draftShiftRows) {
     const key = `${ds.memberId}_${ds.shiftDate}`;
     const live = liveMap.get(key);
@@ -997,12 +1145,13 @@ export async function mergeCtoRosterDraft(
       ds.shiftTime ?? undefined
     );
     applied++;
+    affectedMemberIds.add(ds.memberId);
   }
   if (conflicts > 0)
     throw new Error(
       `${conflicts} unresolved conflict(s). Resolve all conflicts before merging.`
     );
-  return { applied, skipped };
+  return { applied, skipped, affectedMemberIds: Array.from(affectedMemberIds) };
 }
 
 // ── Standalone draft teams/members (free-text — see schema comment) ────────────
@@ -1937,6 +2086,7 @@ export interface RepeatCtoRosterCycleResult {
   cycleLengthDays: number;
   daysFilledForSource: number;
   membersUpdated: number;
+  changedByMember: Map<number, { count: number; startDate: string; endDate: string }>;
 }
 
 export interface CtoRosterCyclePreviewDay {
@@ -2076,12 +2226,44 @@ export async function repeatCtoRosterCycle(
     );
   }
 
+  // Tracks actual (not no-op) changes per member, for shift-change
+  // notifications — see upsertRosterShiftNotification.
+  const changedByMember = new Map<
+    number,
+    { count: number; startDate: string; endDate: string }
+  >();
+  const recordChange = (memberId: number, shiftDate: string) => {
+    const cur = changedByMember.get(memberId);
+    if (!cur) {
+      changedByMember.set(memberId, {
+        count: 1,
+        startDate: shiftDate,
+        endDate: shiftDate,
+      });
+      return;
+    }
+    cur.count++;
+    if (shiftDate < cur.startDate) cur.startDate = shiftDate;
+    if (shiftDate > cur.endDate) cur.endDate = shiftDate;
+  };
+
+  const isSameDay = (
+    existing: CtoRosterShift | undefined,
+    day: NonNullable<CyclePatternDay>
+  ) =>
+    (existing?.shiftCode ?? "") === day.shiftCode &&
+    (existing?.shiftTime ?? null) === (day.shiftTime ?? null) &&
+    (existing?.comment ?? null) === (day.comment ?? null) &&
+    (existing?.isActing ?? false) === day.isActing;
+
   const writeDay = async (
     memberId: number,
     shiftDate: string,
-    day: CyclePatternDay
+    day: CyclePatternDay,
+    existing: CtoRosterShift | undefined
   ) => {
     if (!day) return;
+    if (!isSameDay(existing, day)) recordChange(memberId, shiftDate);
     await db
       .insert(ctoRosterShifts)
       .values({
@@ -2111,7 +2293,7 @@ export async function repeatCtoRosterCycle(
     const offset = daysBetweenDateStrs(cycleStart, cursor) % cycleLengthDays;
     const day = pattern[offset];
     if (day) {
-      await writeDay(sourceMemberId, cursor, day);
+      await writeDay(sourceMemberId, cursor, day, byDate.get(cursor));
       daysFilledForSource++;
     }
     cursor = addDaysToDateStr(cursor, 1);
@@ -2126,11 +2308,35 @@ export async function repeatCtoRosterCycle(
     const teammates = members.filter(
       m => m.teamId === sourceMember.teamId && m.id !== sourceMemberId
     );
+    const teammateIds = teammates.map(t => t.id);
+    const existingTeammateShifts = teammateIds.length
+      ? await db
+          .select()
+          .from(ctoRosterShifts)
+          .where(
+            and(
+              inArray(ctoRosterShifts.memberId, teammateIds),
+              gte(ctoRosterShifts.shiftDate, cycleStart),
+              lte(ctoRosterShifts.shiftDate, fillUntilDate)
+            )
+          )
+      : [];
+    const existingTeammateByKey = new Map(
+      existingTeammateShifts.map(s => [`${s.memberId}_${s.shiftDate}`, s])
+    );
     for (const teammate of teammates) {
       let d = cycleStart;
       while (d <= fillUntilDate) {
         const offset = daysBetweenDateStrs(cycleStart, d) % cycleLengthDays;
-        await writeDay(teammate.id, d, pattern[offset]);
+        const day = pattern[offset];
+        if (day) {
+          await writeDay(
+            teammate.id,
+            d,
+            day,
+            existingTeammateByKey.get(`${teammate.id}_${d}`)
+          );
+        }
         d = addDaysToDateStr(d, 1);
       }
       membersUpdated++;
@@ -2143,5 +2349,6 @@ export async function repeatCtoRosterCycle(
     cycleLengthDays,
     daysFilledForSource,
     membersUpdated,
+    changedByMember,
   };
 }

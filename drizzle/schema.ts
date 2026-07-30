@@ -36,6 +36,10 @@ export const users = mysqlTable("users", {
   mustChangePassword: boolean("mustChangePassword").default(false).notNull(),
   wallpaperUrl: varchar("wallpaperUrl", { length: 512 }),
   wallpaperOpacity: int("wallpaperOpacity").default(40), // 0-100, overlay darkness
+  // Opt-out for CTO Roster shift-change notifications specifically (not a
+  // global notification kill switch) — added while the roster is still
+  // being actively tested/edited, so people aren't spammed by every change.
+  rosterShiftNotificationsEnabled: boolean("rosterShiftNotificationsEnabled").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
@@ -788,6 +792,11 @@ export const notifications = mysqlTable(
     body: text("body").notNull(),
     url: varchar("url", { length: 255 }), // optional deep link
     sourceModule: varchar("sourceModule", { length: 64 }), // e.g. "opManager"
+    // Opaque JSON state for notifications that coalesce repeated events into
+    // one row instead of spamming a new one each time (e.g. CTO Roster shift
+    // changes bump {count, startDate, endDate} here rather than creating a
+    // fresh notification per edit) — see upsertRosterShiftNotification.
+    meta: text("meta"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     readAt: timestamp("readAt"),
   },

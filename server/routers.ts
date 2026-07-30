@@ -23,6 +23,11 @@ import {
   deleteCtoRosterMember,
   moveCtoRosterMember,
   changeCtoRosterMemberTeam,
+  setCtoRosterMemberExcludedFromCounts,
+  getRelevantCtoRosterSecondments,
+  createCtoRosterSecondment,
+  updateCtoRosterSecondment,
+  deleteCtoRosterSecondment,
   reorderCtoRosterMembers,
   writeCtoRosterAudit,
   getAllCtoRosterDrafts,
@@ -4332,14 +4337,80 @@ export const appRouter = router({
             memberId: z.number(),
             newTeamId: z.number(),
             keepShiftCodes: z.array(z.string()),
+            keepAllShifts: z.boolean().default(false),
           })
         )
         .mutation(async ({ input }) => {
           await changeCtoRosterMemberTeam(
             input.memberId,
             input.newTeamId,
-            input.keepShiftCodes
+            input.keepShiftCodes,
+            input.keepAllShifts
           );
+          return { success: true };
+        }),
+
+      /** Exclude/include a member from ON DUTY / ON CALL headcount totals — admin only */
+      setExcludedFromCounts: adminProcedure
+        .input(z.object({ memberId: z.number(), excluded: z.boolean() }))
+        .mutation(async ({ input }) => {
+          await setCtoRosterMemberExcludedFromCounts(
+            input.memberId,
+            input.excluded
+          );
+          return { success: true };
+        }),
+    }),
+
+    /** Temporary acting-team assignments (e.g. acting OIC for two weeks) — admin only for writes */
+    secondments: router({
+      list: protectedProcedure.query(async () => {
+        return getRelevantCtoRosterSecondments();
+      }),
+
+      create: adminProcedure
+        .input(
+          z.object({
+            memberId: z.number(),
+            destinationTeamId: z.number(),
+            startDate: z.string(),
+            endDate: z.string(),
+          })
+        )
+        .mutation(async ({ input, ctx }) => {
+          const id = await createCtoRosterSecondment(
+            input.memberId,
+            input.destinationTeamId,
+            input.startDate,
+            input.endDate,
+            ctx.user.cin ?? null
+          );
+          return { success: true, id };
+        }),
+
+      update: adminProcedure
+        .input(
+          z.object({
+            id: z.number(),
+            destinationTeamId: z.number(),
+            startDate: z.string(),
+            endDate: z.string(),
+          })
+        )
+        .mutation(async ({ input }) => {
+          await updateCtoRosterSecondment(
+            input.id,
+            input.destinationTeamId,
+            input.startDate,
+            input.endDate
+          );
+          return { success: true };
+        }),
+
+      delete: adminProcedure
+        .input(z.object({ id: z.number() }))
+        .mutation(async ({ input }) => {
+          await deleteCtoRosterSecondment(input.id);
           return { success: true };
         }),
     }),

@@ -35,6 +35,8 @@ import {
   ctoRosterOutlookSettings,
   CtoRosterEbaRule,
   CtoRosterAuditLog,
+  ctoRosterSecondments,
+  CtoRosterSecondment,
 } from "../drizzle/schema";
 import { runEbaChecks, type ShiftRecord } from "./ctoRosterEbaEngine";
 import { computeShiftInterval } from "../shared/ctoRosterShiftDuration";
@@ -167,6 +169,19 @@ export async function getCtoRosterMembersByTeam(
   return all.filter(m => m.teamId === teamId);
 }
 
+/** Toggle whether a member counts toward ON DUTY / ON CALL headcount totals. */
+export async function setCtoRosterMemberExcludedFromCounts(
+  memberId: number,
+  excluded: boolean
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db
+    .update(ctoRosterMembers)
+    .set({ excludedFromCounts: excluded })
+    .where(eq(ctoRosterMembers.id, memberId));
+}
+
 /** Add an existing RunLog user (by CIN) to the roster under a team. */
 export async function addCtoRosterMember(
   cin: string,
@@ -221,7 +236,8 @@ export async function moveCtoRosterMember(
 export async function changeCtoRosterMemberTeam(
   memberId: number,
   newTeamId: number,
-  keepShiftCodes: string[]
+  keepShiftCodes: string[],
+  keepAllShifts = false
 ): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
@@ -229,6 +245,10 @@ export async function changeCtoRosterMemberTeam(
     .update(ctoRosterMembers)
     .set({ teamId: newTeamId })
     .where(eq(ctoRosterMembers.id, memberId));
+
+  // "Keep and copy all shifts" — the member's whole schedule moves with
+  // them to the new team as-is, so there's nothing to clear.
+  if (keepAllShifts) return;
 
   const todayStr = new Date().toISOString().slice(0, 10);
   const futureShifts = await db
@@ -252,6 +272,104 @@ export async function changeCtoRosterMemberTeam(
         );
     }
   }
+}
+
+// ── Secondments (temporary acting-team assignments) ────────────────────────
+
+export interface CtoRosterSecondmentWithNames extends CtoRosterSecondment {
+  memberName: string;
+  destinationTeamName: string;
+}
+
+/**
+ * Secondments that are still relevant — active now or starting in the
+ * future (endDate >= today). Completed ones (endDate < today) are simply
+ * left out, which is what makes the destination-team pill disappear "on
+ * its own" — there's no cleanup job, every read just filters by date.
+ */
+export async function getRelevantCtoRosterSecondments(): Promise<
+  CtoRosterSecondmentWithNames[]
+> {
+  const db = await getDb();
+  if (!db) return [];
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const [rows, members, teams] = await Promise.all([
+    db
+      .select()
+      .from(ctoRosterSecondments)
+      .where(gte(ctoRosterSecondments.endDate, todayStr)),
+    getAllCtoRosterMembers(),
+    db.select().from(ctoRosterTeams),
+  ]);
+  const memberNameById = new Map(members.map(m => [m.id, m.name]));
+  const teamNameById = new Map(teams.map(t => [t.id, t.name]));
+  return rows.map(r => ({
+    ...r,
+    memberName: memberNameById.get(r.memberId) ?? "Unknown",
+    destinationTeamName: teamNameById.get(r.destinationTeamId) ?? "Unknown",
+  }));
+}
+
+/** One secondment at a time per member — reject if one is already active/upcoming. */
+export async function createCtoRosterSecondment(
+  memberId: number,
+  destinationTeamId: number,
+  startDate: string,
+  endDate: string,
+  createdByCIN: string | null
+): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  if (startDate > endDate) {
+    throw new Error("Start date must be on or before the finish date");
+  }
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const existing = await db
+    .select({ id: ctoRosterSecondments.id })
+    .from(ctoRosterSecondments)
+    .where(
+      and(
+        eq(ctoRosterSecondments.memberId, memberId),
+        gte(ctoRosterSecondments.endDate, todayStr)
+      )
+    );
+  if (existing.length > 0) {
+    throw new Error(
+      "This member already has an active or upcoming secondment — edit or cancel it first"
+    );
+  }
+  const [result] = await db.insert(ctoRosterSecondments).values({
+    memberId,
+    destinationTeamId,
+    startDate,
+    endDate,
+    createdByCIN,
+  });
+  return result.insertId as number;
+}
+
+/** Dates (and/or destination team) change often in practice — edit in place rather than cancel+recreate. */
+export async function updateCtoRosterSecondment(
+  id: number,
+  destinationTeamId: number,
+  startDate: string,
+  endDate: string
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  if (startDate > endDate) {
+    throw new Error("Start date must be on or before the finish date");
+  }
+  await db
+    .update(ctoRosterSecondments)
+    .set({ destinationTeamId, startDate, endDate })
+    .where(eq(ctoRosterSecondments.id, id));
+}
+
+export async function deleteCtoRosterSecondment(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(ctoRosterSecondments).where(eq(ctoRosterSecondments.id, id));
 }
 
 export async function reorderCtoRosterMembers(

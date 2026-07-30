@@ -1,5 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { format } from "date-fns";
 import { trpc } from "@/lib/trpc";
+import { cn } from "@/lib/utils";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -49,6 +51,9 @@ import {
   Users,
   FolderPlus,
   Pencil,
+  ChevronUp,
+  ChevronDown,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -67,6 +72,15 @@ type Member = {
   name: string;
   teamId: number;
   sortOrder: number;
+  excludedFromCounts: boolean;
+};
+type Secondment = {
+  id: number;
+  memberId: number;
+  destinationTeamId: number;
+  destinationTeamName: string;
+  startDate: string;
+  endDate: string;
 };
 
 // ── Add Member Dialog ─────────────────────────────────────────────────────────
@@ -217,17 +231,46 @@ function ChangeTeamDialog({
   onClose,
   member,
   teams,
+  existingSecondment,
 }: {
   open: boolean;
   onClose: () => void;
   member: Member | null;
   teams: Team[];
+  existingSecondment?: Secondment;
 }) {
   const utils = trpc.useUtils();
+  const [mode, setMode] = useState<"permanent" | "temporary">("permanent");
   const [newTeamId, setNewTeamId] = useState<string>("");
   const [keepCodes, setKeepCodes] = useState<Set<string>>(
     new Set(["l", "tt", "dep", "c"])
   );
+  const [keepAllShifts, setKeepAllShifts] = useState(false);
+  const [secDestTeamId, setSecDestTeamId] = useState<string>("");
+  const [secStartDate, setSecStartDate] = useState<string>("");
+  const [secEndDate, setSecEndDate] = useState<string>("");
+
+  // Reset every time the dialog is opened for a (possibly different)
+  // member — pre-fill the temporary tab from their existing secondment,
+  // if they have one, since dates get adjusted often in practice.
+  // Note: this dialog's `open` is entirely externally controlled (the
+  // parent flips it via state, there's no <DialogTrigger> inside it), so
+  // Radix's onOpenChange never fires for the true->false transition that
+  // happens when it's opened — only for dialog-initiated closes (Escape,
+  // overlay click). A plain effect on `open` is what actually catches it.
+  useEffect(() => {
+    if (!open) return;
+    setMode(existingSecondment ? "temporary" : "permanent");
+    setNewTeamId("");
+    setKeepAllShifts(false);
+    setKeepCodes(new Set(["l", "tt", "dep", "c"]));
+    setSecDestTeamId(
+      existingSecondment ? String(existingSecondment.destinationTeamId) : ""
+    );
+    setSecStartDate(existingSecondment?.startDate ?? "");
+    setSecEndDate(existingSecondment?.endDate ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, member?.id]);
 
   const changeTeam = trpc.ctoRoster.members.changeTeam.useMutation({
     onSuccess: () => {
@@ -236,10 +279,30 @@ function ChangeTeamDialog({
         `${member?.name} moved to ${teams.find(t => t.id === parseInt(newTeamId))?.name}`
       );
       onClose();
-      setNewTeamId("");
     },
     onError: e => toast.error(`Failed: ${e.message}`),
   });
+
+  const createSecondment = trpc.ctoRoster.secondments.create.useMutation({
+    onSuccess: () => {
+      utils.ctoRoster.secondments.list.invalidate();
+      toast.success(`${member?.name} seconded`);
+      onClose();
+    },
+    onError: e => toast.error(`Failed: ${e.message}`),
+  });
+
+  const updateSecondment = trpc.ctoRoster.secondments.update.useMutation({
+    onSuccess: () => {
+      utils.ctoRoster.secondments.list.invalidate();
+      toast.success("Secondment updated");
+      onClose();
+    },
+    onError: e => toast.error(`Failed: ${e.message}`),
+  });
+
+  const secondmentPending =
+    createSecondment.isPending || updateSecondment.isPending;
 
   const toggleCode = (code: string) => {
     setKeepCodes(prev => {
@@ -251,16 +314,40 @@ function ChangeTeamDialog({
   };
 
   const handleSubmit = () => {
-    if (!newTeamId) {
-      toast.error("Please select a new team");
+    if (!member) return;
+    if (mode === "permanent") {
+      if (!newTeamId) {
+        toast.error("Please select a new team");
+        return;
+      }
+      changeTeam.mutate({
+        memberId: member.id,
+        newTeamId: parseInt(newTeamId),
+        keepShiftCodes: Array.from(keepCodes),
+        keepAllShifts,
+      });
       return;
     }
-    if (!member) return;
-    changeTeam.mutate({
-      memberId: member.id,
-      newTeamId: parseInt(newTeamId),
-      keepShiftCodes: Array.from(keepCodes),
-    });
+    // Temporary secondment
+    if (!secDestTeamId || !secStartDate || !secEndDate) {
+      toast.error("Please select a destination team and both dates");
+      return;
+    }
+    if (existingSecondment) {
+      updateSecondment.mutate({
+        id: existingSecondment.id,
+        destinationTeamId: parseInt(secDestTeamId),
+        startDate: secStartDate,
+        endDate: secEndDate,
+      });
+    } else {
+      createSecondment.mutate({
+        memberId: member.id,
+        destinationTeamId: parseInt(secDestTeamId),
+        startDate: secStartDate,
+        endDate: secEndDate,
+      });
+    }
   };
 
   const currentTeam = teams.find(t => t.id === member?.teamId);
@@ -279,82 +366,192 @@ function ChangeTeamDialog({
             Change Team
           </DialogTitle>
           <DialogDescription>
-            Moving <strong>{member?.name}</strong> from{" "}
-            <strong>{currentTeam?.name ?? "—"}</strong>. Future shifts (from
-            today) will be cleared unless you choose to keep them below.
+            <strong>{member?.name}</strong> is substantively on{" "}
+            <strong>{currentTeam?.name ?? "—"}</strong>.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
-          <div className="space-y-1.5">
-            <Label className="text-sm font-medium">
-              New Team <span className="text-destructive">*</span>
-            </Label>
-            <Select value={newTeamId} onValueChange={setNewTeamId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select destination team" />
-              </SelectTrigger>
-              <SelectContent>
-                {teams
-                  .filter(t => t.id !== member?.teamId)
-                  .map(t => (
-                    <SelectItem key={t.id} value={String(t.id)}>
-                      {t.name}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label className="text-sm font-medium">
-              Keep these shifts when changing teams
-            </Label>
-            <p className="text-xs text-muted-foreground">
-              Checked shift types will be preserved from today forward.
-              Unchecked types will be removed.
-            </p>
-            <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2.5">
-              {PERSONAL_SHIFT_OPTIONS.map(opt => (
-                <label
-                  key={opt.code}
-                  className="flex items-center gap-2.5 cursor-pointer"
-                >
-                  <Checkbox
-                    id={`keep-${opt.code}`}
-                    checked={keepCodes.has(opt.code)}
-                    onCheckedChange={() => toggleCode(opt.code)}
-                  />
-                  <span className="text-sm">{opt.label}</span>
-                  <Badge
-                    variant="outline"
-                    className="text-[10px] h-4 px-1.5 ml-auto font-mono"
-                  >
-                    {opt.code}
-                  </Badge>
-                </label>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              All other shift types (Day, Afternoon, Rest, On-Call, etc.) will
-              be cleared from today forward.
-            </p>
-          </div>
+        <div className="flex rounded-lg border border-border p-0.5 bg-muted/30">
+          <button
+            onClick={() => setMode("permanent")}
+            className={cn(
+              "flex-1 text-sm rounded-md py-1.5 transition-colors",
+              mode === "permanent"
+                ? "bg-card shadow-sm font-medium"
+                : "text-muted-foreground"
+            )}
+          >
+            Permanent move
+          </button>
+          <button
+            onClick={() => setMode("temporary")}
+            className={cn(
+              "flex-1 text-sm rounded-md py-1.5 transition-colors",
+              mode === "temporary"
+                ? "bg-card shadow-sm font-medium"
+                : "text-muted-foreground"
+            )}
+          >
+            Temporary (acting)
+          </button>
         </div>
+
+        {mode === "permanent" ? (
+          <div className="space-y-4 py-2">
+            <p className="text-xs text-muted-foreground">
+              Future shifts (from today) will be cleared unless you choose to
+              keep them below.
+            </p>
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">
+                New Team <span className="text-destructive">*</span>
+              </Label>
+              <Select value={newTeamId} onValueChange={setNewTeamId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select destination team" />
+                </SelectTrigger>
+                <SelectContent>
+                  {teams
+                    .filter(t => t.id !== member?.teamId)
+                    .map(t => (
+                      <SelectItem key={t.id} value={String(t.id)}>
+                        {t.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <label className="flex items-center gap-2.5 cursor-pointer rounded-lg border border-border bg-muted/30 p-3">
+              <Checkbox
+                id="keep-all-shifts"
+                checked={keepAllShifts}
+                onCheckedChange={v => setKeepAllShifts(v === true)}
+              />
+              <span className="text-sm font-medium">
+                Keep and copy all shifts
+              </span>
+            </label>
+            <p className="text-xs text-muted-foreground -mt-2">
+              {keepAllShifts
+                ? "Every shift stays exactly as-is — nothing is cleared."
+                : "Otherwise, pick which shift types to keep below; everything else is cleared from today forward."}
+            </p>
+
+            {!keepAllShifts && (
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">
+                  Keep these shifts when changing teams
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Checked shift types will be preserved from today forward.
+                  Unchecked types will be removed.
+                </p>
+                <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2.5">
+                  {PERSONAL_SHIFT_OPTIONS.map(opt => (
+                    <label
+                      key={opt.code}
+                      className="flex items-center gap-2.5 cursor-pointer"
+                    >
+                      <Checkbox
+                        id={`keep-${opt.code}`}
+                        checked={keepCodes.has(opt.code)}
+                        onCheckedChange={() => toggleCode(opt.code)}
+                      />
+                      <span className="text-sm">{opt.label}</span>
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] h-4 px-1.5 ml-auto font-mono"
+                      >
+                        {opt.code}
+                      </Badge>
+                    </label>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  All other shift types (Day, Afternoon, Rest, On-Call, etc.)
+                  will be cleared from today forward.
+                </p>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-4 py-2">
+            <p className="text-xs text-muted-foreground">
+              {member?.name} keeps showing on {currentTeam?.name ?? "—"} as
+              normal. For the dates below, their shifts belong to the
+              destination team instead, and they get an extra "Acting" row
+              there. Reverts automatically once the finish date passes.
+            </p>
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">
+                Destination Team <span className="text-destructive">*</span>
+              </Label>
+              <Select value={secDestTeamId} onValueChange={setSecDestTeamId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select destination team" />
+                </SelectTrigger>
+                <SelectContent>
+                  {teams
+                    .filter(t => t.id !== member?.teamId)
+                    .map(t => (
+                      <SelectItem key={t.id} value={String(t.id)}>
+                        {t.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">
+                  Start <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  type="date"
+                  value={secStartDate}
+                  onChange={e => setSecStartDate(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">
+                  Finish <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  type="date"
+                  value={secEndDate}
+                  onChange={e => setSecEndDate(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
         <DialogFooter>
           <Button
             variant="outline"
             onClick={onClose}
-            disabled={changeTeam.isPending}
+            disabled={changeTeam.isPending || secondmentPending}
           >
             Cancel
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={changeTeam.isPending || !newTeamId}
+            disabled={
+              changeTeam.isPending ||
+              secondmentPending ||
+              (mode === "permanent" ? !newTeamId : false)
+            }
           >
-            {changeTeam.isPending ? "Moving…" : "Move Member"}
+            {mode === "permanent"
+              ? changeTeam.isPending
+                ? "Moving…"
+                : "Move Member"
+              : secondmentPending
+                ? "Saving…"
+                : existingSecondment
+                  ? "Update Secondment"
+                  : "Second Member"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -480,6 +677,21 @@ function ManageTeamsDialog({
     },
     onError: e => toast.error(`Failed to delete team: ${e.message}`),
   });
+  const reorderTeams = trpc.ctoRoster.teams.reorder.useMutation({
+    onSuccess: () => invalidate(),
+    onError: e => toast.error(`Failed to reorder teams: ${e.message}`),
+  });
+
+  // teams is already sorted by sortOrder ascending (server-side) — moving a
+  // team up/down just swaps its sortOrder with its neighbour's.
+  const moveTeam = (index: number, direction: -1 | 1) => {
+    const other = index + direction;
+    if (other < 0 || other >= teams.length) return;
+    reorderTeams.mutate([
+      { id: teams[index].id, sortOrder: teams[other].sortOrder },
+      { id: teams[other].id, sortOrder: teams[index].sortOrder },
+    ]);
+  };
 
   return (
     <Dialog
@@ -523,8 +735,32 @@ function ManageTeamsDialog({
             <p className="text-sm text-muted-foreground">No teams yet.</p>
           ) : (
             <div className="rounded-lg border border-border divide-y divide-border">
-              {teams.map(t => (
+              {teams.map((t, i) => (
                 <div key={t.id} className="flex items-center gap-2 px-3 py-2">
+                  <div className="flex flex-col -my-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-5 w-5 p-0"
+                      onClick={() => moveTeam(i, -1)}
+                      disabled={i === 0 || reorderTeams.isPending}
+                      title="Move up"
+                    >
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-5 w-5 p-0"
+                      onClick={() => moveTeam(i, 1)}
+                      disabled={
+                        i === teams.length - 1 || reorderTeams.isPending
+                      }
+                      title="Move down"
+                    >
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
                   {renamingId === t.id ? (
                     <>
                       <Input
@@ -609,10 +845,25 @@ function ManageTeamsDialog({
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function MemberManagementPage() {
   const { user: currentUser } = useAuth();
+  const utils = trpc.useUtils();
   const { data: teamsData, isLoading: teamsLoading } =
     trpc.ctoRoster.teams.list.useQuery();
   const { data: membersData, isLoading: membersLoading } =
     trpc.ctoRoster.members.list.useQuery();
+  const { data: secondmentsData } = trpc.ctoRoster.secondments.list.useQuery();
+
+  const setExcludedFromCounts =
+    trpc.ctoRoster.members.setExcludedFromCounts.useMutation({
+      onSuccess: () => utils.ctoRoster.members.list.invalidate(),
+      onError: e => toast.error(`Failed to update: ${e.message}`),
+    });
+  const deleteSecondment = trpc.ctoRoster.secondments.delete.useMutation({
+    onSuccess: () => {
+      utils.ctoRoster.secondments.list.invalidate();
+      toast.success("Secondment cancelled");
+    },
+    onError: e => toast.error(`Failed to cancel: ${e.message}`),
+  });
 
   const [showAdd, setShowAdd] = useState(false);
   const [showManageTeams, setShowManageTeams] = useState(false);
@@ -623,6 +874,8 @@ export default function MemberManagementPage() {
 
   const teams = (teamsData as Team[] | undefined) ?? [];
   const members = (membersData as Member[] | undefined) ?? [];
+  const secondments = (secondmentsData as Secondment[] | undefined) ?? [];
+  const secondmentByMemberId = new Map(secondments.map(s => [s.memberId, s]));
   const isLoading = teamsLoading || membersLoading;
 
   if (currentUser?.role !== "admin") {
@@ -739,9 +992,67 @@ export default function MemberManagementPage() {
                           <TableRow key={member.id}>
                             <TableCell className="font-medium text-sm">
                               {member.name}
+                              {member.excludedFromCounts && (
+                                <Badge
+                                  variant="outline"
+                                  className="ml-2 text-[10px] font-normal text-muted-foreground"
+                                >
+                                  Excluded from counts
+                                </Badge>
+                              )}
+                              {secondmentByMemberId.has(member.id) && (
+                                <Badge
+                                  variant="outline"
+                                  className="ml-2 text-[10px] font-normal text-primary border-primary/40 gap-1"
+                                >
+                                  Acting:{" "}
+                                  {
+                                    secondmentByMemberId.get(member.id)!
+                                      .destinationTeamName
+                                  }{" "}
+                                  until{" "}
+                                  {format(
+                                    new Date(
+                                      secondmentByMemberId.get(member.id)!
+                                        .endDate + "T00:00:00"
+                                    ),
+                                    "d MMM"
+                                  )}
+                                  <button
+                                    onClick={() =>
+                                      deleteSecondment.mutate({
+                                        id: secondmentByMemberId.get(member.id)!
+                                          .id,
+                                      })
+                                    }
+                                    disabled={deleteSecondment.isPending}
+                                    title="Cancel secondment"
+                                    className="hover:text-destructive"
+                                  >
+                                    <X className="h-2.5 w-2.5" />
+                                  </button>
+                                </Badge>
+                              )}
                             </TableCell>
                             <TableCell className="text-right">
-                              <div className="flex items-center justify-end gap-1.5">
+                              <div className="flex items-center justify-end gap-3">
+                                <label
+                                  className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none"
+                                  title="When checked, this member's shifts don't count toward the team's ON DUTY / ON CALL totals (roster grid and Outlook)"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={member.excludedFromCounts}
+                                    onChange={e =>
+                                      setExcludedFromCounts.mutate({
+                                        memberId: member.id,
+                                        excluded: e.target.checked,
+                                      })
+                                    }
+                                    className="h-3.5 w-3.5 accent-muted-foreground cursor-pointer"
+                                  />
+                                  Exclude from counts
+                                </label>
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -789,6 +1100,11 @@ export default function MemberManagementPage() {
           onClose={() => setChangeTeamMember(null)}
           member={changeTeamMember}
           teams={teams}
+          existingSecondment={
+            changeTeamMember
+              ? secondmentByMemberId.get(changeTeamMember.id)
+              : undefined
+          }
         />
         <DeleteMemberDialog
           open={!!deleteMemberTarget}

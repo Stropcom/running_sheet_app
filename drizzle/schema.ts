@@ -813,6 +813,12 @@ export const ctoRosterMembers = mysqlTable("cto_roster_members", {
   cin: varchar("cin", { length: 64 }).notNull(),
   teamId: int("teamId").notNull(),
   sortOrder: int("sortOrder").default(0).notNull(),
+  // When true, this member is excluded from ON DUTY / ON CALL headcount
+  // totals (roster grid tally rows and the Outlook coverage view) — they
+  // still appear on the grid with their own shifts, just don't count
+  // toward team numbers. For members who are rostered for tracking
+  // purposes but shouldn't inflate deployable headcount.
+  excludedFromCounts: boolean("excludedFromCounts").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (t) => [
@@ -821,6 +827,39 @@ export const ctoRosterMembers = mysqlTable("cto_roster_members", {
 ]);
 export type CtoRosterMember = typeof ctoRosterMembers.$inferSelect;
 export type InsertCtoRosterMember = typeof ctoRosterMembers.$inferInsert;
+
+// ─── CTO Roster: Secondments (temporary acting-team assignments) ────────────
+// A time-bounded move to a second team (e.g. acting OIC for two weeks)
+// layered on top of a member's substantive team — it does NOT touch
+// ctoRosterMembers.teamId. While startDate <= today <= endDate (or the
+// secondment is upcoming, i.e. endDate >= today), the member's name pill
+// shows in BOTH teams: their shifts within [startDate, endDate] belong to
+// destinationTeamId for display/counting purposes, everything outside that
+// window stays with their substantive team. One secondment at a time per
+// member — creating a new one while an active/upcoming one exists is
+// rejected by the server rather than allowing overlaps. Auto-reverts
+// purely by date (endDate < today), no scheduled job involved — see
+// getRelevantCtoRosterSecondments in ctoRoster.ts.
+export const ctoRosterSecondments = mysqlTable(
+  "cto_roster_secondments",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    memberId: int("memberId").notNull(),
+    destinationTeamId: int("destinationTeamId").notNull(),
+    startDate: date("startDate", { mode: "string" }).notNull(),
+    endDate: date("endDate", { mode: "string" }).notNull(),
+    createdByCIN: varchar("createdByCIN", { length: 64 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  t => [
+    index("cto_roster_secondments_memberId_idx").on(t.memberId),
+    index("cto_roster_secondments_endDate_idx").on(t.endDate),
+  ]
+);
+export type CtoRosterSecondment = typeof ctoRosterSecondments.$inferSelect;
+export type InsertCtoRosterSecondment =
+  typeof ctoRosterSecondments.$inferInsert;
 
 // ─── CTO Roster: Shifts ───────────────────────────────────────────────────────
 // Valid shift codes: d, a, r, o, l, c, tt, dep, doc, adoc, ad, aoc

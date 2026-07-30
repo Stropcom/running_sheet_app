@@ -58,7 +58,9 @@ export default function MyShiftsPage() {
     const sorted = [...shifts].sort((a, b) => a.shiftDate.localeCompare(b.shiftDate));
     const stats = {
       onDuty:     sorted.filter(s => MY_SHIFTS_ON_DUTY_CODES.has(s.shiftCode)).length,
-      rest:       sorted.filter(s => s.shiftCode === "r").length,
+      // Plain "o" (weekend on-call) counts as both Rest and On-Call — it's
+      // a rest day with an on-call obligation, not a worked shift.
+      rest:       sorted.filter(s => s.shiftCode === "r" || s.shiftCode === "o").length,
       leave:      sorted.filter(s => s.shiftCode === "l").length,
       onCall:     sorted.filter(s => ON_CALL_CODES.has(s.shiftCode)).length,
       deployment: sorted.filter(s => s.shiftCode === "dep").length,

@@ -234,7 +234,8 @@ export async function moveCtoRosterMember(
 export async function changeCtoRosterMemberTeam(
   memberId: number,
   newTeamId: number,
-  keepShiftCodes: string[]
+  keepShiftCodes: string[],
+  keepAllShifts = false
 ): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
@@ -242,6 +243,10 @@ export async function changeCtoRosterMemberTeam(
     .update(ctoRosterMembers)
     .set({ teamId: newTeamId })
     .where(eq(ctoRosterMembers.id, memberId));
+
+  // "Keep and copy all shifts" — the member's whole schedule moves with
+  // them to the new team as-is, so there's nothing to clear.
+  if (keepAllShifts) return;
 
   const todayStr = new Date().toISOString().slice(0, 10);
   const futureShifts = await db

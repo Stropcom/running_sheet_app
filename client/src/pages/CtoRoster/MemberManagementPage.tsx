@@ -231,6 +231,7 @@ function ChangeTeamDialog({
   const [keepCodes, setKeepCodes] = useState<Set<string>>(
     new Set(["l", "tt", "dep", "c"])
   );
+  const [keepAllShifts, setKeepAllShifts] = useState(false);
 
   const changeTeam = trpc.ctoRoster.members.changeTeam.useMutation({
     onSuccess: () => {
@@ -240,6 +241,7 @@ function ChangeTeamDialog({
       );
       onClose();
       setNewTeamId("");
+      setKeepAllShifts(false);
     },
     onError: e => toast.error(`Failed: ${e.message}`),
   });
@@ -263,6 +265,7 @@ function ChangeTeamDialog({
       memberId: member.id,
       newTeamId: parseInt(newTeamId),
       keepShiftCodes: Array.from(keepCodes),
+      keepAllShifts,
     });
   };
 
@@ -309,40 +312,58 @@ function ChangeTeamDialog({
             </Select>
           </div>
 
-          <div className="space-y-2">
-            <Label className="text-sm font-medium">
-              Keep these shifts when changing teams
-            </Label>
-            <p className="text-xs text-muted-foreground">
-              Checked shift types will be preserved from today forward.
-              Unchecked types will be removed.
-            </p>
-            <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2.5">
-              {PERSONAL_SHIFT_OPTIONS.map(opt => (
-                <label
-                  key={opt.code}
-                  className="flex items-center gap-2.5 cursor-pointer"
-                >
-                  <Checkbox
-                    id={`keep-${opt.code}`}
-                    checked={keepCodes.has(opt.code)}
-                    onCheckedChange={() => toggleCode(opt.code)}
-                  />
-                  <span className="text-sm">{opt.label}</span>
-                  <Badge
-                    variant="outline"
-                    className="text-[10px] h-4 px-1.5 ml-auto font-mono"
+          <label className="flex items-center gap-2.5 cursor-pointer rounded-lg border border-border bg-muted/30 p-3">
+            <Checkbox
+              id="keep-all-shifts"
+              checked={keepAllShifts}
+              onCheckedChange={v => setKeepAllShifts(v === true)}
+            />
+            <span className="text-sm font-medium">
+              Keep and copy all shifts
+            </span>
+          </label>
+          <p className="text-xs text-muted-foreground -mt-2">
+            {keepAllShifts
+              ? "Every shift stays exactly as-is — nothing is cleared."
+              : "Otherwise, pick which shift types to keep below; everything else is cleared from today forward."}
+          </p>
+
+          {!keepAllShifts && (
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">
+                Keep these shifts when changing teams
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Checked shift types will be preserved from today forward.
+                Unchecked types will be removed.
+              </p>
+              <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2.5">
+                {PERSONAL_SHIFT_OPTIONS.map(opt => (
+                  <label
+                    key={opt.code}
+                    className="flex items-center gap-2.5 cursor-pointer"
                   >
-                    {opt.code}
-                  </Badge>
-                </label>
-              ))}
+                    <Checkbox
+                      id={`keep-${opt.code}`}
+                      checked={keepCodes.has(opt.code)}
+                      onCheckedChange={() => toggleCode(opt.code)}
+                    />
+                    <span className="text-sm">{opt.label}</span>
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] h-4 px-1.5 ml-auto font-mono"
+                    >
+                      {opt.code}
+                    </Badge>
+                  </label>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                All other shift types (Day, Afternoon, Rest, On-Call, etc.) will
+                be cleared from today forward.
+              </p>
             </div>
-            <p className="text-xs text-muted-foreground">
-              All other shift types (Day, Afternoon, Rest, On-Call, etc.) will
-              be cleared from today forward.
-            </p>
-          </div>
+          )}
         </div>
 
         <DialogFooter>

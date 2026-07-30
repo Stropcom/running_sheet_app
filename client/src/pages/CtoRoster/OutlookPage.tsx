@@ -333,6 +333,14 @@ export default function OutlookPage() {
     trpc.ctoRoster.teams.list.useQuery();
   const { data: membersData, isLoading: membersLoading } =
     trpc.ctoRoster.members.list.useQuery();
+  // Administration is a roster-only team (holds people who need CTO Roster
+  // access for admin purposes) — it never has real coverage/deployability
+  // numbers, so it's excluded from Outlook entirely rather than showing an
+  // always-empty, always "at risk" card.
+  const outlookTeams = useMemo(
+    () => (teamsData ?? []).filter(t => t.name !== "Administration"),
+    [teamsData]
+  );
   const { data: shiftsData, isLoading: shiftsLoading } =
     trpc.ctoRoster.roster.getRange.useQuery(
       { startDate: start, endDate: end },
@@ -422,7 +430,7 @@ export default function OutlookPage() {
     if (!teamsData || !membersData) return [];
     return days.map(d => {
       const ds = format(d, "yyyy-MM-dd");
-      const teamStats: TeamDayStat[] = teamsData.map(team => {
+      const teamStats: TeamDayStat[] = outlookTeams.map(team => {
         // Members marked "excluded from counts" (see the checkbox on their
         // roster row) don't contribute to coverage stats here at all.
         const teamMembers = membersData.filter(
@@ -462,7 +470,10 @@ export default function OutlookPage() {
           members: memberShifts,
         };
       });
-      const allMembers = membersData.filter(m => !m.excludedFromCounts);
+      const outlookTeamIds = new Set(outlookTeams.map(t => t.id));
+      const allMembers = membersData.filter(
+        m => !m.excludedFromCounts && outlookTeamIds.has(m.teamId)
+      );
       const onCallMembers = allMembers
         .map(m => {
           const s = shiftMap.get(m.id)?.get(ds);
@@ -512,7 +523,7 @@ export default function OutlookPage() {
         atRisk,
       };
     });
-  }, [days, teamsData, membersData, shiftMap, settingsData]);
+  }, [days, teamsData, outlookTeams, membersData, shiftMap, settingsData]);
 
   // Summary stats
   const summary = useMemo(() => {
@@ -565,13 +576,11 @@ export default function OutlookPage() {
 
   const handleOpenSettings = () => {
     const currentMins: Record<string, number> = {};
-    if (teamsData) {
-      for (const team of teamsData) {
-        currentMins[team.name] =
-          settingsData?.teamMinimums[team.name] ??
-          TEAM_MINIMUMS[team.name] ??
-          DEFAULT_MIN;
-      }
+    for (const team of outlookTeams) {
+      currentMins[team.name] =
+        settingsData?.teamMinimums[team.name] ??
+        TEAM_MINIMUMS[team.name] ??
+        DEFAULT_MIN;
     }
     setEditMins(currentMins);
     setEditOnCallMin(settingsData?.onCallMin ?? ON_CALL_MIN);
@@ -596,9 +605,9 @@ export default function OutlookPage() {
 
   // Build dynamic minimums label for legend
   const minimumsLabel = useMemo(() => {
-    if (!teamsData)
+    if (outlookTeams.length === 0)
       return "Minimums: Team 1 & 2 = 5 · PTT = 2 · Capability = 1";
-    const parts = teamsData.map(t => {
+    const parts = outlookTeams.map(t => {
       const min =
         settingsData?.teamMinimums[t.name] ??
         TEAM_MINIMUMS[t.name] ??
@@ -606,7 +615,7 @@ export default function OutlookPage() {
       return `${t.name} = ${min}`;
     });
     return "Minimums: " + parts.join(" · ");
-  }, [teamsData, settingsData]);
+  }, [outlookTeams, settingsData]);
 
   return (
     <DashboardLayout>
@@ -953,7 +962,7 @@ export default function OutlookPage() {
                     be considered deployable.
                   </p>
                   <div className="space-y-3">
-                    {teamsData?.map(team => (
+                    {outlookTeams.map(team => (
                       <div key={team.id} className="flex items-center gap-3">
                         <Label className="w-28 text-sm font-medium flex-shrink-0">
                           {team.name}

@@ -4333,13 +4333,15 @@ export const appRouter = router({
             memberId: z.number(),
             newTeamId: z.number(),
             keepShiftCodes: z.array(z.string()),
+            keepAllShifts: z.boolean().default(false),
           })
         )
         .mutation(async ({ input }) => {
           await changeCtoRosterMemberTeam(
             input.memberId,
             input.newTeamId,
-            input.keepShiftCodes
+            input.keepShiftCodes,
+            input.keepAllShifts
           );
           return { success: true };
         }),

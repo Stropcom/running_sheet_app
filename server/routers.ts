@@ -89,6 +89,8 @@ import {
   getExternalDocumentList,
   getExternalDocumentById,
   updateExternalDocumentFields,
+  updateExternalDocumentSection,
+  updateExternalEntityMentionLabel,
   resolveExternalEntityMention,
   confirmExternalDocumentReview,
   softDeleteExternalDocument,
@@ -2834,6 +2836,32 @@ export const appRouter = router({
       )
       .mutation(async ({ input }) => {
         await updateExternalDocumentFields(input.id, input.fields);
+        return { ok: true };
+      }),
+
+    /** Officer corrections to a section's verbatim text (Vehicles/Addresses/Summary/Communications) before confirming. */
+    updateSection: protectedProcedure
+      .input(
+        z.object({
+          sectionId: z.number(),
+          bodyText: z.string(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        await updateExternalDocumentSection(input.sectionId, input.bodyText);
+        return { ok: true };
+      }),
+
+    /** Officer corrections to an extracted entity's label before matching/confirming. */
+    updateMentionLabel: protectedProcedure
+      .input(
+        z.object({
+          mentionId: z.number(),
+          label: z.string().min(1),
+        })
+      )
+      .mutation(async ({ input }) => {
+        await updateExternalEntityMentionLabel(input.mentionId, input.label);
         return { ok: true };
       }),
 

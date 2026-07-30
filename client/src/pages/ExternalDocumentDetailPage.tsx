@@ -17,7 +17,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ArrowLeft, Check, UserPlus, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, UserPlus, Trash2, Save } from "lucide-react";
 import { format } from "date-fns";
 
 const FIELD_LABELS: Record<string, string> = {
@@ -52,33 +52,61 @@ function MentionRow({
 }) {
   const utils = trpc.useUtils();
   const [searchOpen, setSearchOpen] = useState(false);
+  const [label, setLabel] = useState(mention.label);
   const canSearchMatches = DEDUP_TYPES.has(mention.type);
+  const labelDirty = label !== mention.label;
+
+  useEffect(() => setLabel(mention.label), [mention.label]);
 
   const { data: matches } = trpc.externalIntel.searchMatchesForMention.useQuery(
     { type: mention.type, label: mention.label },
     { enabled: searchOpen && canSearchMatches }
   );
 
+  const invalidate = () =>
+    utils.externalIntel.get.invalidate({ id: documentId });
   const resolve = trpc.externalIntel.resolveMention.useMutation({
-    onSuccess: () => utils.externalIntel.get.invalidate({ id: documentId }),
+    onSuccess: invalidate,
   });
+  const updateLabel = trpc.externalIntel.updateMentionLabel.useMutation({
+    onSuccess: invalidate,
+  });
+
+  const labelField = (
+    <div className="flex items-center gap-1 min-w-0 flex-1">
+      <Input
+        value={label}
+        onChange={e => setLabel(e.target.value)}
+        className="h-7 text-sm"
+      />
+      {labelDirty && (
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-7 w-7 shrink-0"
+          onClick={() => updateLabel.mutate({ mentionId: mention.id, label })}
+          disabled={updateLabel.isPending}
+        >
+          <Save className="h-3.5 w-3.5" />
+        </Button>
+      )}
+    </div>
+  );
 
   if (mention.status !== "pending_review") {
     const isRejected = mention.status === "rejected";
     return (
       <div
-        className={`flex items-center justify-between gap-2 px-3 py-2 rounded-lg border ${
+        className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${
           isRejected
             ? "border-border/50 opacity-50"
             : "border-emerald-500/30 bg-emerald-500/5"
         }`}
       >
-        <div className="flex items-center gap-2 min-w-0">
-          <Badge variant="outline" className="shrink-0 capitalize">
-            {mention.type}
-          </Badge>
-          <span className="text-sm truncate">{mention.label}</span>
-        </div>
+        <Badge variant="outline" className="shrink-0 capitalize">
+          {mention.type}
+        </Badge>
+        {labelField}
         <span className="text-xs text-muted-foreground shrink-0">
           {isRejected
             ? "Not relevant"
@@ -92,13 +120,11 @@ function MentionRow({
 
   return (
     <div className="flex flex-col gap-2 px-3 py-2 rounded-lg border border-border">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <Badge variant="outline" className="shrink-0 capitalize">
-            {mention.type}
-          </Badge>
-          <span className="text-sm truncate">{mention.label}</span>
-        </div>
+      <div className="flex items-center gap-2">
+        <Badge variant="outline" className="shrink-0 capitalize">
+          {mention.type}
+        </Badge>
+        {labelField}
         <div className="flex items-center gap-1 shrink-0">
           {canSearchMatches && (
             <Button
@@ -190,9 +216,45 @@ export default function ExternalDocumentDetailPage() {
     if (doc?.fields) setFields(doc.fields as Record<string, string>);
   }, [doc?.fields]);
 
+  const [sectionEdits, setSectionEdits] = useState<Record<number, string>>({});
+  useEffect(() => {
+    if (doc?.sections) {
+      setSectionEdits(
+        Object.fromEntries(doc.sections.map((s: any) => [s.id, s.bodyText]))
+      );
+    }
+  }, [doc?.sections]);
+  const sectionsDirty = useMemo(
+    () =>
+      (doc?.sections ?? []).some(
+        (s: any) => (sectionEdits[s.id] ?? "") !== s.bodyText
+      ),
+    [doc?.sections, sectionEdits]
+  );
+
   const updateFields = trpc.externalIntel.updateFields.useMutation({
     onSuccess: () => toast.success("Fields saved"),
   });
+  const updateSection = trpc.externalIntel.updateSection.useMutation();
+  const saveSectionEdits = async () => {
+    const changed = (doc?.sections ?? []).filter(
+      (s: any) => (sectionEdits[s.id] ?? "") !== s.bodyText
+    );
+    try {
+      await Promise.all(
+        changed.map((s: any) =>
+          updateSection.mutateAsync({
+            sectionId: s.id,
+            bodyText: sectionEdits[s.id] ?? "",
+          })
+        )
+      );
+      utils.externalIntel.get.invalidate({ id: documentId });
+      toast.success("Section corrections saved");
+    } catch (err: any) {
+      toast.error(err?.message ?? "Save failed.");
+    }
+  };
   const confirmReview = trpc.externalIntel.confirmReview.useMutation({
     onSuccess: () => {
       utils.externalIntel.get.invalidate({ id: documentId });
@@ -332,7 +394,7 @@ export default function ExternalDocumentDetailPage() {
             {doc.sections.length > 0 && (
               <section className="flex flex-col gap-2">
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                  Document sections (verbatim)
+                  Document sections
                 </h2>
                 <div className="flex flex-col gap-3">
                   {doc.sections.map((s: any) => (
@@ -341,14 +403,28 @@ export default function ExternalDocumentDetailPage() {
                         {SECTION_LABELS[s.heading] ?? s.heading}
                       </span>
                       <Textarea
-                        value={s.bodyText}
-                        readOnly
-                        className="text-sm resize-none bg-muted/30"
+                        value={sectionEdits[s.id] ?? s.bodyText}
+                        onChange={e =>
+                          setSectionEdits(edits => ({
+                            ...edits,
+                            [s.id]: e.target.value,
+                          }))
+                        }
+                        className="text-sm resize-none"
                         rows={s.heading === "summary" ? 6 : 2}
                       />
                     </div>
                   ))}
                 </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-fit"
+                  onClick={saveSectionEdits}
+                  disabled={!sectionsDirty || updateSection.isPending}
+                >
+                  Save section corrections
+                </Button>
               </section>
             )}
 

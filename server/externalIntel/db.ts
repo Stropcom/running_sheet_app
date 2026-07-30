@@ -12,6 +12,7 @@ import type {
   ParsedSections,
   ExtractedEntity,
 } from "./index";
+import { normalizeEntityKey } from "./entityExtract";
 
 export interface CreateExternalDocumentParams {
   attachmentId: number;
@@ -193,6 +194,37 @@ export async function updateExternalDocumentFields(
     .update(externalDocuments)
     .set({ extractedFields: JSON.stringify(fields) })
     .where(eq(externalDocuments.id, id));
+}
+
+/** Officer corrections to a section's verbatim text (OCR isn't perfect — see external_intel_import_plan.md's confirm-before-final principle). */
+export async function updateExternalDocumentSection(
+  sectionId: number,
+  bodyText: string
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .update(externalDocumentSections)
+    .set({ bodyText })
+    .where(eq(externalDocumentSections.id, sectionId));
+}
+
+/** Officer corrections to an extracted entity's label (e.g. fixing OCR noise) before matching/confirming — re-derives entityKey so it still lines up with the dedup engine's normalization. */
+export async function updateExternalEntityMentionLabel(
+  mentionId: number,
+  label: string
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [mention] = await db
+    .select({ type: externalEntityMentions.type })
+    .from(externalEntityMentions)
+    .where(eq(externalEntityMentions.id, mentionId));
+  if (!mention) throw new Error("Entity mention not found");
+  await db
+    .update(externalEntityMentions)
+    .set({ label, entityKey: normalizeEntityKey(mention.type, label) })
+    .where(eq(externalEntityMentions.id, mentionId));
 }
 
 export async function resolveExternalEntityMention(

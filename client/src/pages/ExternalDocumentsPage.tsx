@@ -71,9 +71,21 @@ function UploadDocumentDialog({
         return;
       }
       setFile({ blob, mimeType, fileName });
-      const reader = new FileReader();
-      reader.onload = () => setPreview(reader.result as string);
-      reader.readAsDataURL(blob);
+      // If compression fell through untouched, this is either a HEIC/HEIF
+      // photo (most browsers can't decode/render it directly — the server
+      // still converts it via heicConvert) or an already-small file. Either
+      // way, only try to preview it if it's a browser-renderable format —
+      // rendering a raw HEIC through <img> just shows a broken image.
+      const isHeic =
+        !compressed &&
+        (/^image\/hei[cf]/i.test(f.type) || /\.hei[cf]$/i.test(f.name));
+      if (!isHeic) {
+        const reader = new FileReader();
+        reader.onload = () => setPreview(reader.result as string);
+        reader.readAsDataURL(blob);
+      } else {
+        setPreview(null);
+      }
     } catch {
       toast.error("Couldn't process that file — try again.");
     }
@@ -134,12 +146,16 @@ function UploadDocumentDialog({
           />
           {file ? (
             <div className="flex flex-col gap-2 w-fit">
-              {preview && (
+              {preview ? (
                 <img
                   src={preview}
                   alt="Selected document"
                   className="max-w-[220px] rounded-lg border border-border"
                 />
+              ) : (
+                <div className="w-[220px] aspect-square rounded-lg border border-border bg-muted flex items-center justify-center text-xs text-muted-foreground text-center px-2">
+                  {file.fileName}
+                </div>
               )}
               <Button
                 variant="outline"

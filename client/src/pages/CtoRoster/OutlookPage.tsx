@@ -50,6 +50,7 @@ const TEAM_MINIMUMS: Record<string, number> = {
   "Team 2": 5,
   PTT: 2,
   Capability: 1,
+  OIC: 1,
 };
 const DEFAULT_MIN = 3; // fallback for any other team
 
@@ -338,7 +339,10 @@ export default function OutlookPage() {
   // numbers, so it's excluded from Outlook entirely rather than showing an
   // always-empty, always "at risk" card.
   const outlookTeams = useMemo(
-    () => (teamsData ?? []).filter(t => t.name !== "Administration"),
+    () =>
+      (teamsData ?? []).filter(
+        t => t.name.trim().toLowerCase() !== "administration"
+      ),
     [teamsData]
   );
   const { data: shiftsData, isLoading: shiftsLoading } =

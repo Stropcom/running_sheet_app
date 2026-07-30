@@ -1445,15 +1445,6 @@ export default function RosterPage() {
     },
   });
 
-  const setExcludedFromCounts =
-    trpc.ctoRoster.members.setExcludedFromCounts.useMutation({
-      onSuccess: () => refetchMembers(),
-      onError: e => toast.error(`Failed to update: ${e.message}`),
-    });
-  const handleToggleExcluded = (memberId: number, excluded: boolean) => {
-    setExcludedFromCounts.mutate({ memberId, excluded });
-  };
-
   const displayMembers: Member[] = useMemo(() => {
     const source = localMembers ?? (membersData as Member[] | undefined) ?? [];
     return [...source].sort((a, b) => a.sortOrder - b.sortOrder);
@@ -2241,7 +2232,6 @@ export default function RosterPage() {
                         onCellPointerEnter={handleCellPointerEnter}
                         onCopyCell={handleCopyCell}
                         onPasteCell={handlePasteCell}
-                        onToggleExcluded={handleToggleExcluded}
                       />
                     ))}
 
@@ -2527,7 +2517,6 @@ export default function RosterPage() {
                             onCellPointerEnter={handleCellPointerEnter}
                             onCopyCell={handleCopyCell}
                             onPasteCell={handlePasteCell}
-                            onToggleExcluded={handleToggleExcluded}
                           />
                         ))}
                         {isAdmin && activeDragId !== null && (
@@ -2823,7 +2812,6 @@ function MemberRow({
   onCellPointerEnter,
   onCopyCell,
   onPasteCell,
-  onToggleExcluded,
 }: {
   member: Member;
   allDates: Date[];
@@ -2858,7 +2846,6 @@ function MemberRow({
   onCellPointerEnter: (memberId: number, date: string) => void;
   onCopyCell: (shift: ShiftData | undefined) => void;
   onPasteCell: (memberId: number, date: string) => void;
-  onToggleExcluded: (memberId: number, excluded: boolean) => void;
 }) {
   return (
     <div style={{ display: "flex", gap: "3px", marginBottom: "3px" }}>
@@ -2877,25 +2864,13 @@ function MemberRow({
           background: "var(--color-card)",
         }}
       >
-        {isAdmin && (
-          <input
-            type="checkbox"
-            data-no-dnd="true"
-            checked={member.excludedFromCounts}
-            onChange={e => onToggleExcluded(member.id, e.target.checked)}
-            className="flex-shrink-0 ml-3 h-3.5 w-3.5 accent-muted-foreground cursor-pointer"
-            title={
-              member.excludedFromCounts
-                ? "Excluded from ON DUTY / ON CALL counts — check to include"
-                : "Counted in ON DUTY / ON CALL totals — check to exclude"
-            }
-          />
-        )}
         <span
-          className={cn(
-            "flex-1 truncate text-sm font-medium text-foreground pr-2",
-            isAdmin ? "pl-2" : "pl-3"
-          )}
+          className="flex-1 truncate text-sm font-medium text-foreground pl-3 pr-2"
+          title={
+            member.excludedFromCounts
+              ? "Excluded from ON DUTY / ON CALL counts — change in CTO Roster → Members"
+              : undefined
+          }
         >
           {member.name}
         </span>
@@ -3025,7 +3000,6 @@ function SortableMemberRow({
   onCellPointerEnter,
   onCopyCell,
   onPasteCell,
-  onToggleExcluded,
 }: {
   member: Member;
   allDates: Date[];
@@ -3061,7 +3035,6 @@ function SortableMemberRow({
   onCellPointerEnter: (memberId: number, date: string) => void;
   onCopyCell: (shift: ShiftData | undefined) => void;
   onPasteCell: (memberId: number, date: string) => void;
-  onToggleExcluded: (memberId: number, excluded: boolean) => void;
 }) {
   const {
     attributes,
@@ -3110,25 +3083,16 @@ function SortableMemberRow({
             <GripVertical className="h-4 w-4" />
           </button>
         )}
-        {isAdmin && (
-          <input
-            type="checkbox"
-            data-no-dnd="true"
-            checked={member.excludedFromCounts}
-            onChange={e => onToggleExcluded(member.id, e.target.checked)}
-            className="flex-shrink-0 h-3.5 w-3.5 accent-muted-foreground cursor-pointer"
-            title={
-              member.excludedFromCounts
-                ? "Excluded from ON DUTY / ON CALL counts — check to include"
-                : "Counted in ON DUTY / ON CALL totals — check to exclude"
-            }
-          />
-        )}
         <span
           className={cn(
             "flex-1 truncate text-sm font-medium text-foreground pr-2",
-            isAdmin ? "pl-2" : "pl-3"
+            !isAdmin && "pl-3"
           )}
+          title={
+            member.excludedFromCounts
+              ? "Excluded from ON DUTY / ON CALL counts — change in CTO Roster → Members"
+              : undefined
+          }
         >
           {member.name}
         </span>

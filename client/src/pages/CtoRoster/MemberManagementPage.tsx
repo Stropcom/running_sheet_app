@@ -69,6 +69,7 @@ type Member = {
   name: string;
   teamId: number;
   sortOrder: number;
+  excludedFromCounts: boolean;
 };
 
 // ── Add Member Dialog ─────────────────────────────────────────────────────────
@@ -650,10 +651,17 @@ function ManageTeamsDialog({
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function MemberManagementPage() {
   const { user: currentUser } = useAuth();
+  const utils = trpc.useUtils();
   const { data: teamsData, isLoading: teamsLoading } =
     trpc.ctoRoster.teams.list.useQuery();
   const { data: membersData, isLoading: membersLoading } =
     trpc.ctoRoster.members.list.useQuery();
+
+  const setExcludedFromCounts =
+    trpc.ctoRoster.members.setExcludedFromCounts.useMutation({
+      onSuccess: () => utils.ctoRoster.members.list.invalidate(),
+      onError: e => toast.error(`Failed to update: ${e.message}`),
+    });
 
   const [showAdd, setShowAdd] = useState(false);
   const [showManageTeams, setShowManageTeams] = useState(false);
@@ -780,9 +788,34 @@ export default function MemberManagementPage() {
                           <TableRow key={member.id}>
                             <TableCell className="font-medium text-sm">
                               {member.name}
+                              {member.excludedFromCounts && (
+                                <Badge
+                                  variant="outline"
+                                  className="ml-2 text-[10px] font-normal text-muted-foreground"
+                                >
+                                  Excluded from counts
+                                </Badge>
+                              )}
                             </TableCell>
                             <TableCell className="text-right">
-                              <div className="flex items-center justify-end gap-1.5">
+                              <div className="flex items-center justify-end gap-3">
+                                <label
+                                  className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none"
+                                  title="When checked, this member's shifts don't count toward the team's ON DUTY / ON CALL totals (roster grid and Outlook)"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={member.excludedFromCounts}
+                                    onChange={e =>
+                                      setExcludedFromCounts.mutate({
+                                        memberId: member.id,
+                                        excluded: e.target.checked,
+                                      })
+                                    }
+                                    className="h-3.5 w-3.5 accent-muted-foreground cursor-pointer"
+                                  />
+                                  Exclude from counts
+                                </label>
                                 <Button
                                   variant="ghost"
                                   size="sm"

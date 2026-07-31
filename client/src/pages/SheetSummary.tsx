@@ -103,6 +103,8 @@ interface SheetSummaryVehicleLike {
 interface SheetSummaryEntryLike {
   id: number;
   text: string;
+  time?: string | null;
+  location?: string | null;
 }
 
 interface SheetSummaryRecordLike {
@@ -295,7 +297,15 @@ function exportSummaryToPDF(params: {
     : `<p class="muted-note">None recorded.</p>`;
 
   const summaryHtml = entries.length
-    ? `<ul class="plain-list">${entries.map(e => `<li>${esc(e.text)}</li>`).join("")}</ul>`
+    ? `<table class="summary-table">
+        <thead><tr><th style="width:70px">Time</th><th style="width:28%">Address</th><th>Observation</th></tr></thead>
+        <tbody>${entries
+          .map(
+            e =>
+              `<tr><td>${esc(e.time || "—")}</td><td>${esc(e.location || "")}</td><td>${esc(e.text)}</td></tr>`
+          )
+          .join("")}</tbody>
+      </table>`
     : `<p class="muted-note">No running sheet rows yet.</p>`;
 
   const communicationParts = [
@@ -318,22 +328,20 @@ function exportSummaryToPDF(params: {
 * { box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 @page{ margin:20mm 15mm; @top-center{content:'PROTECTED';font-family:'Roboto',sans-serif;font-size:12px;font-weight:700;color:#dc2626;letter-spacing:0.08em} @bottom-center{content:"Page " counter(page) " of " counter(pages);font-family:'Roboto',sans-serif;font-size:11px;font-weight:700;color:${BLUE_DARK};letter-spacing:0.04em} }
 body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.6; color:${GREY_TEXT}; background:#fff; }
-.cover-header { background:${BLUE_DARK} !important; color:#fff !important; padding:24px 32px 20px; }
-.brand-row { display:flex; align-items:center; gap:10px; margin-bottom:12px; opacity:0.85; }
+.cover-header { background:${BLUE_DARK} !important; color:#fff !important; padding:26px 32px 22px; text-align:center; }
+.brand-row { display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:14px; opacity:0.85; }
 .brand-dot { width:10px; height:10px; border-radius:50%; background:${BLUE_MID}; }
 .brand-label { font-size:10px; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; color:${BLUE_MID}; }
-.entity-name { font-size:20px; font-weight:700; letter-spacing:-0.01em; line-height:1.2; }
-.entity-sub { font-size:12px; opacity:0.75; margin-top:4px; }
-.meta-pills{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
-.meta-pill{display:inline-flex;align-items:center;gap:4px;padding:4px 11px;border-radius:9999px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.28);font-size:9px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;color:rgba(255,255,255,0.72)}
-.meta-pill strong{color:#fff;font-weight:700;text-transform:none;letter-spacing:0;margin-left:2px}
-.status-pill{display:inline-flex;align-items:center;gap:4px;padding:4px 11px;border-radius:9999px;font-size:9px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;margin-top:12px}
+.main-title { font-size:26px; font-weight:800; letter-spacing:0.04em; text-transform:uppercase; line-height:1.2; }
+.op-date-line { font-size:16px; font-weight:600; margin-top:8px; }
+.sheet-name { font-size:11px; opacity:0.65; margin-top:6px; }
+.status-pill{display:inline-flex;align-items:center;gap:4px;padding:4px 11px;border-radius:9999px;font-size:9px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;margin-top:14px}
 .status-complete{background:rgba(134,239,172,0.18);color:#86efac;border:1px solid rgba(134,239,172,0.4)}
 .status-open{background:rgba(255,255,255,0.12);color:rgba(255,255,255,0.75);border:1px solid rgba(255,255,255,0.28)}
 .content { padding:20px 32px; }
 .section { margin-bottom:18px; }
 .section-title { font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${BLUE_DARK} !important; padding:6px 10px; background:${BLUE_LIGHT} !important; border-left:3px solid ${BLUE_MID}; margin-bottom:10px; }
-.detail-grid { display:grid; grid-template-columns:140px 1fr; gap:5px 12px; font-size:10.5px; }
+.detail-grid { display:grid; grid-template-columns:140px 1fr; gap:6px 12px; font-size:10.5px; }
 .detail-label { color:#64748b; font-weight:600; }
 .detail-value { color:${GREY_TEXT}; }
 .ops-list { display:flex; flex-wrap:wrap; gap:6px; }
@@ -341,26 +349,28 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 .plain-list { list-style:disc; padding-left:18px; }
 .plain-list li { margin-bottom:5px; font-size:10.5px; }
 .muted-note { font-size:10px; color:#94a3b8; font-style:italic; }
+.summary-table { width:100%; border-collapse:collapse; }
+.summary-table th { background:${BLUE_LIGHT} !important; color:${BLUE_DARK} !important; font-weight:700; font-size:9.5px; text-transform:uppercase; letter-spacing:0.04em; text-align:left; padding:6px 8px; border-bottom:2px solid ${BLUE_DARK}; }
+.summary-table td { vertical-align:top; font-size:10.5px; padding:6px 8px; border-bottom:1px solid ${GREY_BORDER}; }
 .footer { margin-top:28px; padding-top:12px; border-top:1px solid ${GREY_BORDER}; display:flex; justify-content:space-between; font-size:9px; color:#94a3b8; }
-@media print { * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; } .cover-header { background:${BLUE_DARK} !important; } .section-title { background:${BLUE_LIGHT} !important; } .op-badge { background:${BLUE_LIGHT} !important; } }
+@media print { * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; } .cover-header { background:${BLUE_DARK} !important; } .section-title { background:${BLUE_LIGHT} !important; } .op-badge { background:${BLUE_LIGHT} !important; } .summary-table th { background:${BLUE_LIGHT} !important; } }
 </style></head><body>
 <div class="cover-header">
-  <div class="brand-row"><div class="brand-dot"></div><span class="brand-label">RunLog Supervisor Summary</span></div>
-  <div class="entity-name">${esc(sheetTitle)}</div>
-  <div class="entity-sub">${esc(form.operationName)}${form.dayDate ? ` &middot; ${esc(form.dayDate)}` : ""}</div>
-  <div class="meta-pills">
-    <span class="meta-pill">Team <strong>${esc(form.teamLabel || "—")}</strong></span>
-    <span class="meta-pill">Start <strong>${esc(form.startTime || "—")}</strong></span>
-    <span class="meta-pill">Finish <strong>${esc(form.finishTime || "—")}</strong></span>
-    ${form.targetName ? `<span class="meta-pill">Target <strong>${esc(form.targetName)}</strong></span>` : ""}
-  </div>
+  <div class="brand-row"><div class="brand-dot"></div><span class="brand-label">RunLog</span></div>
+  <div class="main-title">Supervisor Summary</div>
+  <div class="op-date-line">${esc(form.operationName || "—")}${form.dayDate ? ` &middot; ${esc(form.dayDate)}` : ""}</div>
+  <div class="sheet-name">${esc(sheetTitle)}</div>
   ${statusPillHtml}
 </div>
 <div class="content">
   ${section(
     "Deployment",
     `<div class="detail-grid">
+      ${detailRow("Team", form.teamLabel)}
       ${detailRow("Team Members CIN", form.teamCins)}
+      ${detailRow("Start time", form.startTime)}
+      ${detailRow("Finish time", form.finishTime)}
+      ${detailRow("Target (TGT)", form.targetName)}
       ${detailRow("Location", form.location)}
     </div>`
   )}
@@ -1046,7 +1056,7 @@ export default function SheetSummaryPage() {
                 <div className="space-y-2">
                   {(entries ?? []).map(entry => (
                     <div key={entry.id} className="flex items-start gap-2">
-                      {entry.rowId == null && (
+                      {entry.rowId == null ? (
                         <input
                           type="time"
                           value={to24hInputValue(entry.timeMinutes)}
@@ -1064,6 +1074,10 @@ export default function SheetSummaryPage() {
                           className="h-9 shrink-0 rounded-md border border-input bg-transparent px-2 text-sm w-[6.5rem]"
                           title="Set a time to sort this line into place"
                         />
+                      ) : (
+                        <span className="h-9 shrink-0 flex items-center px-2 text-sm text-muted-foreground w-[6.5rem]">
+                          {entry.time ?? "—"}
+                        </span>
                       )}
                       <Textarea
                         value={entryDrafts[entry.id] ?? entry.text}

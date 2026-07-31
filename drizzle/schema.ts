@@ -644,14 +644,21 @@ export const sheetSummaryEntries = mysqlTable(
     id: int("id").autoincrement().primaryKey(),
     sheetId: int("sheetId").notNull(),
     rowId: int("rowId"),
+    // Just the "what happened" body — address brackets stripped, no time or
+    // location baked in (those are their own columns below so the PDF export
+    // can render Time / Address / Observation as separate table columns
+    // without duplicating the address inside the observation text).
     text: text("text").notNull(),
-    // Only set for manually-added lines (rowId null) — a supervisor-entered
-    // time used to sort the line into place among the row-linked lines, the
-    // same "time — location — text" ordering the running sheet itself uses.
-    // Row-linked lines are ordered by their source row instead; this stays
-    // null for them.
+    // Row-linked lines get a time+location snapshot at generation (matching
+    // the append-only philosophy — frozen at the moment the line was
+    // created, not live-derived, so it never silently drifts if the source
+    // row is later edited). Manually-added lines start with both null;
+    // "time" becomes supervisor-entered (via the time picker) once set,
+    // which is what sorts the line into place among the row-linked lines.
+    // "location" has no manual-entry equivalent — it stays null for those.
     time: varchar("time", { length: 32 }),
     timeMinutes: int("timeMinutes"),
+    location: text("location"),
     deleted: boolean("deleted").notNull().default(false),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

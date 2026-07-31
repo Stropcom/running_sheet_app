@@ -5084,7 +5084,6 @@ export function computeSheetSummaryVehicles(
   return vehicles.filter(v => !dismissed.has(v.key));
 }
 
-/** Auto-generated summary line for one RS row: "time — location — what happened". */
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -5105,22 +5104,25 @@ function stripLocationBrackets(
   return result;
 }
 
-function buildSummaryEntryText(row: {
+/**
+ * Splits one RS row into the Summary line's three fields — time, location,
+ * and just the "what happened" text — kept separate (rather than
+ * concatenated into one string) so the PDF export can render them as
+ * distinct Time / Address / Observation table columns without the address
+ * being duplicated inside the observation text.
+ */
+function buildSummaryEntryFields(row: {
   time: string | null;
   observation: string | null;
-}): string {
+}): { text: string; location: string | null } {
   const raw = row.observation ?? "";
   const entities = extractEntitiesFromText(raw);
   const location = entities.find(e => e.type === "address");
 
-  const text = stripLocationBrackets(raw, entities);
-
-  const parts = [
-    row.time ?? null,
-    location ? location.shortForm || location.fullDescription : null,
-    text || null,
-  ].filter((p): p is string => !!p);
-  return parts.join(" — ");
+  return {
+    text: stripLocationBrackets(raw, entities),
+    location: location ? location.shortForm || location.fullDescription : null,
+  };
 }
 
 /**
@@ -5166,11 +5168,17 @@ export async function getSheetSummaryEntries(
   const missing = rows.filter(r => !existingRowIds.has(r.id));
   if (missing.length > 0) {
     await db.insert(sheetSummaryEntries).values(
-      missing.map(r => ({
-        sheetId,
-        rowId: r.id,
-        text: buildSummaryEntryText(r),
-      }))
+      missing.map(r => {
+        const fields = buildSummaryEntryFields(r);
+        return {
+          sheetId,
+          rowId: r.id,
+          text: fields.text,
+          location: fields.location,
+          time: r.time,
+          timeMinutes: r.timeMinutes,
+        };
+      })
     );
   }
 

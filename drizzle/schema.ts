@@ -590,6 +590,7 @@ export type InsertGovernanceRecord = typeof governanceRecords.$inferInsert;
 export const sheetSummaries = mysqlTable("sheet_summaries", {
   id: int("id").autoincrement().primaryKey(),
   sheetId: int("sheetId").notNull().unique(),
+  // Derived from CTO Roster team membership by CIN: "Team 1" / "Team 2" / "Blended".
   teamLabel: varchar("teamLabel", { length: 100 }),
   teamCins: text("teamCins"),
   operationName: varchar("operationName", { length: 255 }),
@@ -597,14 +598,21 @@ export const sheetSummaries = mysqlTable("sheet_summaries", {
   startTime: varchar("startTime", { length: 32 }),
   finishTime: varchar("finishTime", { length: 32 }),
   targetName: text("targetName"),
-  address: text("address"),
+  // Sourced from the RS row containing "surveillance commenced", not target.hbf.
+  location: text("location"),
+  // Vehicles shown on the tab are always computed live (Target Registry + RS
+  // text mentions); this only tracks which computed entries were dismissed.
+  dismissedVehicleKeys: text("dismissedVehicleKeys"),
   ioSupport: text("ioSupport"),
   intelSupport: text("intelSupport"),
+  // JSON array of { key: string; detail: string } for the checked projects.
   specialProjects: text("specialProjects"),
+  ioContactTiming: varchar("ioContactTiming", { length: 64 }),
+  ioContactMethod: varchar("ioContactMethod", { length: 32 }),
+  // JSON array of strings, one per objective line.
   objectives: text("objectives"),
+  // JSON array of strings, one per critical-decision entry.
   criticalDecisions: text("criticalDecisions"),
-  summary: text("summary"),
-  newIntelForProfile: text("newIntelForProfile"),
   issues: text("issues"),
   lastEditedByCIN: varchar("lastEditedByCIN", { length: 64 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -613,6 +621,27 @@ export const sheetSummaries = mysqlTable("sheet_summaries", {
 
 export type SheetSummary = typeof sheetSummaries.$inferSelect;
 export type InsertSheetSummary = typeof sheetSummaries.$inferInsert;
+
+// One line per running-sheet row, auto-generated the first time that row is
+// seen and then append-only synced: reopening the tab only adds lines for RS
+// rows not yet represented here — it never regenerates or overwrites a line
+// the supervisor has already edited or deleted.
+export const sheetSummaryEntries = mysqlTable(
+  "sheet_summary_entries",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    sheetId: int("sheetId").notNull(),
+    rowId: int("rowId").notNull(),
+    text: text("text").notNull(),
+    deleted: boolean("deleted").notNull().default(false),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => [uniqueIndex("sheet_summary_entries_row_idx").on(table.rowId)]
+);
+
+export type SheetSummaryEntry = typeof sheetSummaryEntries.$inferSelect;
+export type InsertSheetSummaryEntry = typeof sheetSummaryEntries.$inferInsert;
 
 // ─── WIPC Vault ───────────────────────────────────────────────────────────────
 // All sensitive fields in these tables are AES-256-GCM encrypted at rest

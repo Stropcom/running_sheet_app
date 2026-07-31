@@ -157,6 +157,13 @@ import {
   computeGovernancePercent,
   getSheetSummary,
   upsertSheetSummary,
+  orderTeamCins,
+  extractSummaryLocation,
+  computeSheetSummaryVehicles,
+  getSheetSummaryEntries,
+  updateSheetSummaryEntry,
+  deleteSheetSummaryEntry,
+  getSheetSummarySupportHistory,
   getGovernanceTodoForCin,
   getUnlinkedImagesTodoForCin,
   getOperationDeleteStats,
@@ -3077,21 +3084,49 @@ export const appRouter = router({
           const timedRows = rows
             .filter(r => r.time)
             .sort((a, b) => (a.timeMinutes ?? 0) - (b.timeMinutes ?? 0));
-          let cinRoster: { cin: string }[] = [];
+          let cinRoster: { cin: string; isTeamLeader?: boolean }[] = [];
           try {
             cinRoster = sheet.sheetCins ? JSON.parse(sheet.sheetCins) : [];
           } catch {
             cinRoster = [];
           }
+
+          // Team label: derived from CTO Roster team membership by CIN —
+          // "Team 1"/"Team 2" if every CIN on the sheet belongs to the same
+          // roster team, "Blended" if they span more than one, null if none
+          // of the CINs are found on the roster at all.
+          const [rosterMembers, rosterTeams] = await Promise.all([
+            getAllCtoRosterMembers(),
+            getAllCtoRosterTeams(),
+          ]);
+          const teamNameByCin = new Map(
+            rosterMembers.map(m => [
+              m.cin,
+              rosterTeams.find(t => t.id === m.teamId)?.name,
+            ])
+          );
+          const matchedTeamNames = new Set(
+            cinRoster
+              .map(c => teamNameByCin.get(c.cin))
+              .filter((n): n is string => !!n)
+          );
+          const teamLabel =
+            matchedTeamNames.size === 1
+              ? Array.from(matchedTeamNames)[0]
+              : matchedTeamNames.size > 1
+                ? "Blended"
+                : null;
+
           record = await upsertSheetSummary({
             sheetId: input.sheetId,
-            teamCins: cinRoster.map(c => c.cin).join(", ") || null,
+            teamLabel,
+            teamCins: orderTeamCins(cinRoster).join(", ") || null,
             operationName: operation?.name ?? null,
             dayDate: format(new Date(sheet.createdAt), "d MMMM yyyy"),
             startTime: timedRows[0]?.time ?? null,
             finishTime: timedRows[timedRows.length - 1]?.time ?? null,
             targetName: target?.name ?? sheet.targetName ?? null,
-            address: target?.hbf ?? null,
+            location: extractSummaryLocation(rows),
           });
         }
         return record;
@@ -3109,20 +3144,100 @@ export const appRouter = router({
           startTime: z.string().nullable().optional(),
           finishTime: z.string().nullable().optional(),
           targetName: z.string().nullable().optional(),
-          address: z.string().nullable().optional(),
+          location: z.string().nullable().optional(),
           ioSupport: z.string().nullable().optional(),
           intelSupport: z.string().nullable().optional(),
           specialProjects: z.string().nullable().optional(),
+          ioContactTiming: z.string().nullable().optional(),
+          ioContactMethod: z.string().nullable().optional(),
           objectives: z.string().nullable().optional(),
           criticalDecisions: z.string().nullable().optional(),
-          summary: z.string().nullable().optional(),
-          newIntelForProfile: z.string().nullable().optional(),
           issues: z.string().nullable().optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
         const userCIN = ctx.user.cin ?? ctx.user.username ?? "Unknown";
         return upsertSheetSummary({ ...input, lastEditedByCIN: userCIN });
+      }),
+
+    /** Computed (never stored) vehicle list: Target Registry vehicles + RS-mentioned vehicles, minus dismissed */
+    getVehicles: protectedProcedure
+      .input(z.object({ sheetId: z.number() }))
+      .query(async ({ input }) => {
+        const sheet = await getRunningSheetById(input.sheetId);
+        if (!sheet) throw new TRPCError({ code: "NOT_FOUND" });
+        const [target, rows, record] = await Promise.all([
+          sheet.targetId ? getTargetById(sheet.targetId) : null,
+          getRowsBySheetId(input.sheetId),
+          getSheetSummary(input.sheetId),
+        ]);
+        let dismissed: string[] = [];
+        try {
+          dismissed = record?.dismissedVehicleKeys
+            ? JSON.parse(record.dismissedVehicleKeys)
+            : [];
+        } catch {
+          dismissed = [];
+        }
+        return computeSheetSummaryVehicles(target ?? null, rows, dismissed);
+      }),
+
+    /** Dismiss one computed vehicle entry so it stops reappearing on this sheet's Summary tab */
+    dismissVehicle: protectedProcedure
+      .input(z.object({ sheetId: z.number(), key: z.string() }))
+      .mutation(async ({ input, ctx }) => {
+        const record = await getSheetSummary(input.sheetId);
+        let dismissed: string[] = [];
+        try {
+          dismissed = record?.dismissedVehicleKeys
+            ? JSON.parse(record.dismissedVehicleKeys)
+            : [];
+        } catch {
+          dismissed = [];
+        }
+        if (!dismissed.includes(input.key)) dismissed.push(input.key);
+        const userCIN = ctx.user.cin ?? ctx.user.username ?? "Unknown";
+        await upsertSheetSummary({
+          sheetId: input.sheetId,
+          dismissedVehicleKeys: JSON.stringify(dismissed),
+          lastEditedByCIN: userCIN,
+        });
+        return { success: true };
+      }),
+
+    /** Previously-used IO/Intel support names on this Operation, for autocomplete */
+    getSupportHistory: protectedProcedure
+      .input(
+        z.object({
+          operationId: z.number(),
+          field: z.enum(["ioSupport", "intelSupport"]),
+        })
+      )
+      .query(async ({ input }) => {
+        return getSheetSummarySupportHistory(input.operationId, input.field);
+      }),
+
+    /** Per-RS-row summary lines (auto-syncs new rows, never touches edited/deleted ones) */
+    getEntries: protectedProcedure
+      .input(z.object({ sheetId: z.number() }))
+      .query(async ({ input }) => {
+        return getSheetSummaryEntries(input.sheetId);
+      }),
+
+    /** Edit a single summary line */
+    updateEntry: protectedProcedure
+      .input(z.object({ id: z.number(), text: z.string() }))
+      .mutation(async ({ input }) => {
+        await updateSheetSummaryEntry(input.id, input.text);
+        return { success: true };
+      }),
+
+    /** Delete a single summary line (soft — it will never be regenerated) */
+    deleteEntry: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await deleteSheetSummaryEntry(input.id);
+        return { success: true };
       }),
   }),
 

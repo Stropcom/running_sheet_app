@@ -49,6 +49,8 @@ import {
   sheetSummaries,
   SheetSummary,
   InsertSheetSummary,
+  sheetSummaryEntries,
+  SheetSummaryEntry,
   targetShortcuts,
   InsertTargetShortcut,
   operationTargetLinks,
@@ -4144,17 +4146,15 @@ export async function mergeEntities(
       })
       .where(eq(entityAliases.id, existing[0].id));
   } else {
-    await db
-      .insert(entityAliases)
-      .values({
-        type,
-        loserKey,
-        loserLabel,
-        winnerKey,
-        winnerLabel,
-        mergedByCIN,
-        mergedAt: Date.now(),
-      });
+    await db.insert(entityAliases).values({
+      type,
+      loserKey,
+      loserLabel,
+      winnerKey,
+      winnerLabel,
+      mergedByCIN,
+      mergedAt: Date.now(),
+    });
   }
 }
 
@@ -4909,14 +4909,15 @@ export interface SheetSummaryUpsertInput {
   startTime?: string | null;
   finishTime?: string | null;
   targetName?: string | null;
-  address?: string | null;
+  location?: string | null;
+  dismissedVehicleKeys?: string | null;
   ioSupport?: string | null;
   intelSupport?: string | null;
   specialProjects?: string | null;
+  ioContactTiming?: string | null;
+  ioContactMethod?: string | null;
   objectives?: string | null;
   criticalDecisions?: string | null;
-  summary?: string | null;
-  newIntelForProfile?: string | null;
   issues?: string | null;
   lastEditedByCIN?: string | null;
 }
@@ -4945,6 +4946,217 @@ export async function upsertSheetSummary(
     await db.insert(sheetSummaries).values({ sheetId, ...fields });
   }
   return getSheetSummary(sheetId);
+}
+
+/** Sort CINs ascending by their numeric portion (e.g. "QA1" < "TA01" < "BS12"); falls back to plain string compare when neither has digits. */
+export function sortCinsNumerically(cins: string[]): string[] {
+  return [...cins].sort((a, b) => {
+    const na = parseInt(a.replace(/\D/g, ""), 10);
+    const nb = parseInt(b.replace(/\D/g, ""), 10);
+    if (!isNaN(na) && !isNaN(nb) && na !== nb) return na - nb;
+    return a.localeCompare(b);
+  });
+}
+
+/** Team-leader-first, then ascending-numeric-CIN ordering for the Summary tab's Team Members field. */
+export function orderTeamCins(
+  sheetCins: { cin: string; isTeamLeader?: boolean }[]
+): string[] {
+  const leaders = sheetCins.filter(c => c.isTeamLeader).map(c => c.cin);
+  const others = sheetCins.filter(c => !c.isTeamLeader).map(c => c.cin);
+  return [...sortCinsNumerically(leaders), ...sortCinsNumerically(others)];
+}
+
+/** Location for the Summary tab: the RS row whose observation mentions "surveillance commenced" — an address entity extracted from it if found, otherwise the raw row text. Null if no such row exists. */
+export function extractSummaryLocation(
+  rows: { observation: string | null }[]
+): string | null {
+  const row = rows.find(r =>
+    (r.observation ?? "").toLowerCase().includes("surveillance commenced")
+  );
+  if (!row?.observation) return null;
+  const entities = extractEntitiesFromText(row.observation);
+  const address = entities.find(e => e.type === "address");
+  return address
+    ? address.shortForm || address.fullDescription
+    : row.observation;
+}
+
+export interface SheetSummaryVehicle {
+  key: string;
+  label: string;
+}
+
+/** Vehicles for the Summary tab: Target Registry vehicles (v1f/v1, v2f/v2, extraVehicles) plus vehicles mentioned in RS row text, minus any the supervisor has dismissed. Always computed live, never stored. */
+export function computeSheetSummaryVehicles(
+  target:
+    | {
+        v1f: string | null;
+        v1: string | null;
+        v2f: string | null;
+        v2: string | null;
+        extraVehicles: string | null;
+      }
+    | null
+    | undefined,
+  rows: { observation: string | null }[],
+  dismissedKeys: string[]
+): SheetSummaryVehicle[] {
+  const vehicles: SheetSummaryVehicle[] = [];
+  const seen = new Set<string>();
+  const add = (key: string, label: string) => {
+    const normalized = label.trim().toLowerCase();
+    if (!label.trim() || seen.has(normalized)) return;
+    seen.add(normalized);
+    vehicles.push({ key, label: label.trim() });
+  };
+
+  if (target) {
+    const v1 = target.v1f?.trim() || target.v1?.trim();
+    if (v1) add("target:v1", v1);
+    const v2 = target.v2f?.trim() || target.v2?.trim();
+    if (v2) add("target:v2", v2);
+    if (target.extraVehicles) {
+      try {
+        const extras: Array<{ full?: string; short?: string }> = JSON.parse(
+          target.extraVehicles
+        );
+        extras.forEach((ev, idx) => {
+          const label = ev.full?.trim() || ev.short?.trim();
+          if (label) add(`target:extra${idx}`, label);
+        });
+      } catch {
+        // ignore malformed JSON
+      }
+    }
+  }
+
+  for (const row of rows) {
+    if (!row.observation) continue;
+    const entities = extractEntitiesFromText(row.observation);
+    for (const e of entities) {
+      if (e.type !== "vehicle") continue;
+      const label = e.shortForm || e.fullDescription;
+      if (!label) continue;
+      add(`rs:${label.trim().toLowerCase()}`, label);
+    }
+  }
+
+  const dismissed = new Set(dismissedKeys);
+  return vehicles.filter(v => !dismissed.has(v.key));
+}
+
+/** Auto-generated summary line for one RS row: "time — location — what happened". */
+function buildSummaryEntryText(row: {
+  time: string | null;
+  observation: string | null;
+}): string {
+  const text = row.observation ?? "";
+  const entities = extractEntitiesFromText(text);
+  const location = entities.find(e => e.type === "address");
+  const parts = [
+    row.time ?? null,
+    location ? location.shortForm || location.fullDescription : null,
+    text || null,
+  ].filter((p): p is string => !!p);
+  return parts.join(" — ");
+}
+
+/**
+ * Returns the Summary tab's per-row entry list, first append-only syncing in
+ * any RS rows that don't have an entry yet. Existing entries (including ones
+ * the supervisor has edited or soft-deleted) are never touched or regenerated.
+ */
+export async function getSheetSummaryEntries(
+  sheetId: number
+): Promise<SheetSummaryEntry[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const rows = (await getRowsBySheetId(sheetId)).filter(r =>
+    (r.observation ?? "").trim()
+  );
+  const existing = await db
+    .select()
+    .from(sheetSummaryEntries)
+    .where(eq(sheetSummaryEntries.sheetId, sheetId));
+  const existingRowIds = new Set(existing.map(e => e.rowId));
+
+  const missing = rows.filter(r => !existingRowIds.has(r.id));
+  if (missing.length > 0) {
+    await db.insert(sheetSummaryEntries).values(
+      missing.map(r => ({
+        sheetId,
+        rowId: r.id,
+        text: buildSummaryEntryText(r),
+      }))
+    );
+  }
+
+  const all =
+    missing.length > 0
+      ? await db
+          .select()
+          .from(sheetSummaryEntries)
+          .where(eq(sheetSummaryEntries.sheetId, sheetId))
+      : existing;
+
+  const rowOrder = new Map(rows.map((r, idx) => [r.id, idx]));
+  return all
+    .filter(e => !e.deleted)
+    .sort(
+      (a, b) => (rowOrder.get(a.rowId) ?? 0) - (rowOrder.get(b.rowId) ?? 0)
+    );
+}
+
+export async function updateSheetSummaryEntry(
+  id: number,
+  text: string
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(sheetSummaryEntries)
+    .set({ text })
+    .where(eq(sheetSummaryEntries.id, id));
+}
+
+export async function deleteSheetSummaryEntry(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(sheetSummaryEntries)
+    .set({ deleted: true })
+    .where(eq(sheetSummaryEntries.id, id));
+}
+
+/** Previously-used IO/Intel support names for the same Operation, for the Summary tab's autocomplete. */
+export async function getSheetSummarySupportHistory(
+  operationId: number,
+  field: "ioSupport" | "intelSupport"
+): Promise<string[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({
+      value:
+        field === "ioSupport"
+          ? sheetSummaries.ioSupport
+          : sheetSummaries.intelSupport,
+    })
+    .from(sheetSummaries)
+    .innerJoin(runningSheets, eq(sheetSummaries.sheetId, runningSheets.id))
+    .where(eq(runningSheets.operationId, operationId));
+
+  const names = new Set<string>();
+  for (const r of rows) {
+    if (!r.value) continue;
+    for (const name of r.value.split(",")) {
+      const trimmed = name.trim();
+      if (trimmed) names.add(trimmed);
+    }
+  }
+  return Array.from(names).sort((a, b) => a.localeCompare(b));
 }
 
 // ─── Target Shortcuts ─────────────────────────────────────────────────────────
@@ -5104,16 +5316,14 @@ export async function upsertWipcOfficerProfile(
       .set({ ...encrypted, updatedAt: new Date() })
       .where(eq(wipcOfficerProfiles.userId, userId));
   } else {
-    await db
-      .insert(wipcOfficerProfiles)
-      .values({
-        userId,
-        fullName: encrypted.fullName as string,
-        afpId: encrypted.afpId as string,
-        workLocation: encrypted.workLocation as string | undefined,
-        portfolio: encrypted.portfolio as string | undefined,
-        contactNumber: encrypted.contactNumber as string | undefined,
-      });
+    await db.insert(wipcOfficerProfiles).values({
+      userId,
+      fullName: encrypted.fullName as string,
+      afpId: encrypted.afpId as string,
+      workLocation: encrypted.workLocation as string | undefined,
+      portfolio: encrypted.portfolio as string | undefined,
+      contactNumber: encrypted.contactNumber as string | undefined,
+    });
   }
 }
 
@@ -8041,28 +8251,24 @@ export async function copyOpManagerWeek(
     await db
       .delete(opManagerSupervisorContacts)
       .where(eq(opManagerSupervisorContacts.weekStart, toWeekStart));
-    await db
-      .insert(opManagerSupervisorContacts)
-      .values(
-        contacts.map(({ id: _id, weekStart: _ws, ...rest }) => ({
-          ...rest,
-          weekStart: toWeekStart,
-        }))
-      );
+    await db.insert(opManagerSupervisorContacts).values(
+      contacts.map(({ id: _id, weekStart: _ws, ...rest }) => ({
+        ...rest,
+        weekStart: toWeekStart,
+      }))
+    );
   }
   const priority = await getOpManagerPriorityBoard(fromWeekStart);
   if (priority.length > 0) {
     await db
       .delete(opManagerPriorityRows)
       .where(eq(opManagerPriorityRows.weekStart, toWeekStart));
-    await db
-      .insert(opManagerPriorityRows)
-      .values(
-        priority.map(({ id: _id, weekStart: _ws, ...rest }) => ({
-          ...rest,
-          weekStart: toWeekStart,
-        }))
-      );
+    await db.insert(opManagerPriorityRows).values(
+      priority.map(({ id: _id, weekStart: _ws, ...rest }) => ({
+        ...rest,
+        weekStart: toWeekStart,
+      }))
+    );
   }
   // Copy task names only — shiftTime always comes from auto-population
   const tasking = await getOpManagerTaskingCalendar(fromWeekStart);

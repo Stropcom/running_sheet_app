@@ -979,18 +979,6 @@ export default function IntelligenceMapping() {
       ? panelWidthProfile
       : panelWidthNormal;
 
-  // Draggable side-tab vertical position (percentage from top, 0-100)
-  const [rightTabTop, setRightTabTop] = useState<number>(() => {
-    try {
-      const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
-      if (s) return JSON.parse(s).rightTabTop ?? 50;
-    } catch {
-      /* ignore */
-    }
-    return 50;
-  });
-  const rightTabDraggingRef = useRef(false);
-
   // Draggable pill bar vertical position (percentage from top, 5-95)
   const [pillBarTop, setPillBarTop] = useState<number>(() => {
     try {
@@ -1294,7 +1282,6 @@ export default function IntelligenceMapping() {
           collapsedTeams: Array.from(collapsedTeams),
           rsQeExpanded,
           mapDarkMode,
-          rightTabTop,
           pillBarTop,
           panelWidthNormal,
           panelWidthProfile,
@@ -1314,7 +1301,6 @@ export default function IntelligenceMapping() {
     collapsedTeams,
     rsQeExpanded,
     mapDarkMode,
-    rightTabTop,
     pillBarTop,
     panelWidthNormal,
     panelWidthProfile,
@@ -3126,7 +3112,12 @@ export default function IntelligenceMapping() {
   };
 
   return (
-    <DashboardLayout>
+    <DashboardLayout
+      rightPaneToggle={{
+        isOpen: rsActionsPaneOpen,
+        onToggle: () => setRsActionsPaneOpen(o => !o),
+      }}
+    >
     <div
       className="relative flex w-full overflow-hidden"
       style={{ height: "calc(100vh - 0px)" }}
@@ -3460,81 +3451,9 @@ export default function IntelligenceMapping() {
           </div>
         </div>
 
-        {/* RS Actions pane toggle tab — right edge, draggable */}
-        {!rsActionsPaneOpen && (
-          <button
-            onClick={e => {
-              if (rightTabDraggingRef.current) {
-                rightTabDraggingRef.current = false;
-                return;
-              }
-              e.stopPropagation();
-              setRsActionsPaneOpen(true);
-            }}
-            className="absolute right-0 z-10 flex items-center justify-center bg-card border-2 border-r-0 border-border shadow-lg hover:bg-accent active:scale-95 transition-colors cursor-grab active:cursor-grabbing select-none touch-none"
-            style={{
-              top: `${rightTabTop}%`,
-              transform: "translateY(-50%)",
-              width: "40px",
-              height: "112px",
-              borderRadius: "12px 0 0 12px",
-            }}
-            title="Open Map Settings (drag to reposition)"
-            onMouseDown={e => {
-              e.stopPropagation();
-              const startY = e.clientY;
-              const startTop = rightTabTop;
-              const parentH =
-                e.currentTarget.parentElement?.clientHeight ??
-                window.innerHeight;
-              let moved = false;
-              const onMove = (me: MouseEvent) => {
-                const delta = me.clientY - startY;
-                if (Math.abs(delta) > 3) moved = true;
-                const newPct = Math.max(
-                  5,
-                  Math.min(95, startTop + (delta / parentH) * 100)
-                );
-                setRightTabTop(newPct);
-              };
-              const onUp = () => {
-                if (moved) rightTabDraggingRef.current = true;
-                document.removeEventListener("mousemove", onMove);
-                document.removeEventListener("mouseup", onUp);
-              };
-              document.addEventListener("mousemove", onMove);
-              document.addEventListener("mouseup", onUp);
-            }}
-            onTouchStart={e => {
-              e.stopPropagation();
-              const touch = e.touches[0];
-              const startY = touch.clientY;
-              const startTop = rightTabTop;
-              const parentH =
-                e.currentTarget.parentElement?.clientHeight ??
-                window.innerHeight;
-              let moved = false;
-              const onMove = (te: TouchEvent) => {
-                const delta = te.touches[0].clientY - startY;
-                if (Math.abs(delta) > 3) moved = true;
-                const newPct = Math.max(
-                  5,
-                  Math.min(95, startTop + (delta / parentH) * 100)
-                );
-                setRightTabTop(newPct);
-              };
-              const onEnd = () => {
-                if (moved) rightTabDraggingRef.current = true;
-                document.removeEventListener("touchmove", onMove);
-                document.removeEventListener("touchend", onEnd);
-              };
-              document.addEventListener("touchmove", onMove, { passive: true });
-              document.addEventListener("touchend", onEnd);
-            }}
-          >
-            <ChevronLeft className="h-5 w-5 text-muted-foreground" />
-          </button>
-        )}
+        {/* RS Actions pane is now opened via the header folder-expander icon
+            (DashboardLayout's rightPaneToggle prop) instead of a draggable
+            side tab — see the DashboardLayout invocation below. */}
 
         {/* ── Draggable Floating Pill Bar (all devices) ──
              Tap-hold the drag handle to reposition vertically. Position persisted to localStorage. */}
@@ -3627,8 +3546,9 @@ export default function IntelligenceMapping() {
             {/* Home pill (all devices) — solid filled chip (not translucent) so
                 it stays legible over busy satellite imagery, matching the
                 other opaque on-map markers (e.g. the pink custom marker pin).
-                Lighter -500 shade instead of -700 for a softer look, -700
-                border keeps the pill defined against light terrain. */}
+                -400 fill / -600 border (one step softer than the previous
+                -500/-700) keeps it defined against terrain without reading
+                as heavy; all four pills share this same fixed w-20 size. */}
             <button
               onClick={e => {
                 if (pillBarIsDraggingRef.current) {
@@ -3637,7 +3557,7 @@ export default function IntelligenceMapping() {
                 }
                 setLocation("/");
               }}
-              className="flex flex-col items-center justify-center gap-1 px-5 py-2.5 rounded-2xl shadow-lg border transition-all w-20 text-white border-slate-700 bg-slate-500 hover:bg-slate-400 active:scale-95"
+              className="flex flex-col items-center justify-center gap-1 px-5 py-2.5 rounded-2xl shadow-lg border transition-all w-20 text-white border-slate-600 bg-slate-400 hover:bg-slate-300 active:scale-95"
               title="Home"
             >
               <Home className="h-5 w-5 flex-shrink-0" />
@@ -3664,9 +3584,9 @@ export default function IntelligenceMapping() {
                     }
                     if (activeSheet) setLocation(`/sheet/${rsSelectedSheetId}`);
                   }}
-                  className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all min-w-[80px] px-5 py-2.5 ${
+                  className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all w-20 px-5 py-2.5 ${
                     activeSheet
-                      ? "text-white border-blue-700 bg-blue-500 hover:bg-blue-400 active:scale-95 cursor-pointer"
+                      ? "text-white border-blue-600 bg-blue-400 hover:bg-blue-300 active:scale-95 cursor-pointer"
                       : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"
                   }`}
                   title={
@@ -3696,9 +3616,9 @@ export default function IntelligenceMapping() {
                     }
                     if (hasSheet) setMapQeOpen(true);
                   }}
-                  className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all min-w-[80px] px-5 py-2.5 ${
+                  className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all w-20 px-5 py-2.5 ${
                     hasSheet
-                      ? "text-white border-emerald-700 bg-emerald-500 hover:bg-emerald-400 active:scale-95 cursor-pointer"
+                      ? "text-white border-emerald-600 bg-emerald-400 hover:bg-emerald-300 active:scale-95 cursor-pointer"
                       : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"
                   }`}
                   title={
@@ -3722,7 +3642,7 @@ export default function IntelligenceMapping() {
                 }
                 setLocation("/intelligence");
               }}
-              className="flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all w-20 px-5 py-2.5 text-white border-violet-700 bg-violet-500 hover:bg-violet-400 active:scale-95"
+              className="flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all w-20 px-5 py-2.5 text-white border-violet-600 bg-violet-400 hover:bg-violet-300 active:scale-95"
               title="Intel Profiles"
             >
               <FolderSearch className="h-5 w-5 flex-shrink-0" />

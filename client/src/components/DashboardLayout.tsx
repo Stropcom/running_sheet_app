@@ -46,6 +46,7 @@ import {
   ScrollText,
   Users,
   PanelLeft,
+  PanelRight,
   LogOut,
   ShieldCheck,
   Crown,
@@ -663,8 +664,10 @@ const ROLE_CONFIG = {
 
 export default function DashboardLayout({
   children,
+  rightPaneToggle,
 }: {
   children: React.ReactNode;
+  rightPaneToggle?: { isOpen: boolean; onToggle: () => void };
 }) {
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
@@ -723,7 +726,10 @@ export default function DashboardLayout({
     <SidebarProvider
       style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
     >
-      <DashboardLayoutContent setSidebarWidth={setSidebarWidth}>
+      <DashboardLayoutContent
+        setSidebarWidth={setSidebarWidth}
+        rightPaneToggle={rightPaneToggle}
+      >
         {children}
       </DashboardLayoutContent>
     </SidebarProvider>
@@ -733,9 +739,11 @@ export default function DashboardLayout({
 function DashboardLayoutContent({
   children,
   setSidebarWidth,
+  rightPaneToggle,
 }: {
   children: React.ReactNode;
   setSidebarWidth: (w: number) => void;
+  rightPaneToggle?: { isOpen: boolean; onToggle: () => void };
 }) {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -1442,7 +1450,7 @@ function DashboardLayoutContent({
         {isMobile && (
           <div className="flex border-b border-border h-14 items-center justify-between bg-background/95 px-3 backdrop-blur sticky top-0 z-40">
             <div className="flex items-center gap-2">
-              <SidebarTrigger className="h-9 w-9 rounded-lg" />
+              <SidebarTrigger className="h-10 w-10 rounded-lg" />
               <span className="text-base font-semibold text-foreground">
                 Running Sheet
               </span>
@@ -1473,38 +1481,72 @@ function DashboardLayoutContent({
                   <Map className="h-7 w-7" />
                 </button>
               )}
+              {/* Right pane folder-expander (page-specific, e.g. Map's RS Actions pane) */}
+              {rightPaneToggle && (
+                <button
+                  onClick={rightPaneToggle.onToggle}
+                  className={`flex items-center justify-center h-10 w-10 rounded-lg transition-colors ${
+                    rightPaneToggle.isOpen
+                      ? "text-primary bg-primary/10"
+                      : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                  }`}
+                  aria-label="Toggle side panel"
+                  title="Toggle side panel"
+                >
+                  <PanelRight className="h-5 w-5" />
+                </button>
+              )}
             </div>
           </div>
         )}
-        {!isMobile && location !== "/intelligence/mapping" && (
+        {!isMobile && (location !== "/intelligence/mapping" || rightPaneToggle) && (
           <div className="flex justify-end items-center gap-2 px-4 pt-2 pb-0">
-            {/* Active RS quick-link (desktop) — folder-chip style matching the
-                Operations sidebar item's blue theme; fades out when there's
-                no active RS, same as before. */}
-            <button
-              onClick={() => {
-                if (activeRsId) setLocation(`/sheet/${activeRsId}`);
-              }}
-              className={`flex items-center justify-center gap-2 min-w-[130px] px-3 py-2 rounded-xl border text-sm font-semibold shadow-sm transition-all ${
-                activeRsId
-                  ? "text-blue-700 border-blue-700/50 bg-blue-700/10 hover:bg-blue-700/20 cursor-pointer"
-                  : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"
-              }`}
-              title={activeRsId ? "Go to Active RS" : "No active RS selected"}
-            >
-              <ClipboardList className="h-6 w-6" />
-              <span>Active RS</span>
-            </button>
-            {/* Map quick-link (desktop) — folder-chip style matching the
-                Mapping sidebar item's turquoise theme. */}
-            <button
-              onClick={() => setLocation("/intelligence/mapping")}
-              className="flex items-center justify-center gap-2 min-w-[130px] px-3 py-2 rounded-xl border border-teal-400/50 bg-teal-400/10 text-teal-400 hover:bg-teal-400/20 text-sm font-semibold shadow-sm transition-all"
-              title="Map"
-            >
-              <Map className="h-6 w-6" />
-              <span>Map</span>
-            </button>
+            {location !== "/intelligence/mapping" && (
+              <>
+                {/* Active RS quick-link (desktop) — folder-chip style matching the
+                    Operations sidebar item's blue theme; fades out when there's
+                    no active RS, same as before. */}
+                <button
+                  onClick={() => {
+                    if (activeRsId) setLocation(`/sheet/${activeRsId}`);
+                  }}
+                  className={`flex items-center justify-center gap-2 min-w-[130px] px-3 py-2 rounded-xl border text-sm font-semibold shadow-sm transition-all ${
+                    activeRsId
+                      ? "text-blue-700 border-blue-700/50 bg-blue-700/10 hover:bg-blue-700/20 cursor-pointer"
+                      : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"
+                  }`}
+                  title={activeRsId ? "Go to Active RS" : "No active RS selected"}
+                >
+                  <ClipboardList className="h-6 w-6" />
+                  <span>Active RS</span>
+                </button>
+                {/* Map quick-link (desktop) — folder-chip style matching the
+                    Mapping sidebar item's turquoise theme. */}
+                <button
+                  onClick={() => setLocation("/intelligence/mapping")}
+                  className="flex items-center justify-center gap-2 min-w-[130px] px-3 py-2 rounded-xl border border-teal-400/50 bg-teal-400/10 text-teal-400 hover:bg-teal-400/20 text-sm font-semibold shadow-sm transition-all"
+                  title="Map"
+                >
+                  <Map className="h-6 w-6" />
+                  <span>Map</span>
+                </button>
+              </>
+            )}
+            {/* Right pane folder-expander (page-specific, e.g. Map's RS Actions pane) */}
+            {rightPaneToggle && (
+              <button
+                onClick={rightPaneToggle.onToggle}
+                className={`flex items-center justify-center h-10 w-10 rounded-lg border transition-colors ${
+                  rightPaneToggle.isOpen
+                    ? "text-primary border-primary/50 bg-primary/10"
+                    : "text-muted-foreground border-sidebar-border/50 hover:text-foreground hover:bg-accent"
+                }`}
+                aria-label="Toggle side panel"
+                title="Toggle side panel"
+              >
+                <PanelRight className="h-5 w-5" />
+              </button>
+            )}
           </div>
         )}
         <main className="flex-1 min-h-screen bg-background/90">{children}</main>

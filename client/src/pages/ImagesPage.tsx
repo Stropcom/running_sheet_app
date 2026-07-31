@@ -77,24 +77,32 @@ function OperationFolderList({
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="p-2.5 rounded-lg bg-pink-500/10 border border-pink-500/20">
-          <ImageIcon className="w-5 h-5 text-pink-500" />
-        </div>
-        <div className="flex-1">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-6">
+        <div className="flex items-center gap-3 flex-1">
+          <div className="p-2.5 rounded-lg bg-pink-500/10 border border-pink-500/20 shrink-0">
+            <ImageIcon className="w-5 h-5 text-pink-500" />
+          </div>
           <h1 className="text-xl font-semibold text-foreground">Images</h1>
-          <p className="text-sm text-muted-foreground">
-            Photos attached to running sheet observations, by operation.
-          </p>
         </div>
-        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setCompareOpen(true)}>
-          <ScanFace className="w-3.5 h-3.5" />
-          Compare Faces
-        </Button>
-        <Button size="sm" className="gap-1.5" onClick={() => setUploadOpen(true)}>
-          <Upload className="w-3.5 h-3.5" />
-          Upload
-        </Button>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5 justify-center"
+            onClick={() => setCompareOpen(true)}
+          >
+            <ScanFace className="w-3.5 h-3.5" />
+            Compare Faces
+          </Button>
+          <Button
+            size="sm"
+            className="gap-1.5 justify-center"
+            onClick={() => setUploadOpen(true)}
+          >
+            <Upload className="w-3.5 h-3.5" />
+            Upload
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (

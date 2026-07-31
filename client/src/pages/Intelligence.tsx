@@ -13,6 +13,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useIsMobile } from "@/hooks/useMobile";
+import {
   Search,
   User,
   Car,
@@ -1040,6 +1048,7 @@ export default function IntelligencePage() {
     return photoCountByKey.get(key) ?? 0;
   };
   const [, navigate] = useLocation();
+  const isMobile = useIsMobile();
   const [search, setSearch]         = useState("");
   const [activeTab, setActiveTab]   = useState<TabView>("operations");
   const [selected, setSelected]     = useState<Entity | null>(null);
@@ -1166,21 +1175,36 @@ export default function IntelligencePage() {
 
         {/* Date filter */}
         <div className="mb-4">
-          <div className="flex gap-1.5 flex-wrap mb-2">
-            {DATE_PRESETS.map((p) => (
-              <button
-                key={p.value}
-                onClick={() => setDatePreset(p.value)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                  datePreset === p.value
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-muted/40 text-muted-foreground border-border/60 hover:bg-muted/70"
-                }`}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
+          {isMobile ? (
+            <Select value={datePreset} onValueChange={(v) => setDatePreset(v as DatePreset)}>
+              <SelectTrigger className="w-full h-9 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {DATE_PRESETS.map((p) => (
+                  <SelectItem key={p.value} value={p.value}>
+                    {p.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <div className="flex gap-1.5 flex-wrap mb-2">
+              {DATE_PRESETS.map((p) => (
+                <button
+                  key={p.value}
+                  onClick={() => setDatePreset(p.value)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                    datePreset === p.value
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-muted/40 text-muted-foreground border-border/60 hover:bg-muted/70"
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          )}
           {datePreset === "custom" && (
             <div className="flex gap-2 items-center mt-2">
               <Calendar className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -1202,33 +1226,54 @@ export default function IntelligencePage() {
         </div>
 
         {/* Tab nav */}
-        <div className="flex gap-1 flex-wrap mb-5 border-b border-border/40 pb-0">
-          {TAB_OPTIONS.map((tab) => {
-            const count = tabCounts[tab.value];
-            const isActive = activeTab === tab.value;
-            return (
-              <button
-                key={tab.value}
-                onClick={() => setActiveTab(tab.value)}
-                className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors -mb-px ${
-                  isActive
-                    ? "border-primary text-foreground"
-                    : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
-                }`}
-              >
-                {tab.icon}
-                {tab.label}
-                {count !== undefined && count > 0 && (
-                  <span className={`ml-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
-                    isActive ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
-                  }`}>
-                    {count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
+        {isMobile ? (
+          <div className="mb-5">
+            <Select value={activeTab} onValueChange={(v) => setActiveTab(v as TabView)}>
+              <SelectTrigger className="w-full h-9 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TAB_OPTIONS.map((tab) => {
+                  const count = tabCounts[tab.value];
+                  return (
+                    <SelectItem key={tab.value} value={tab.value}>
+                      {tab.label}
+                      {count !== undefined && count > 0 ? ` (${count})` : ""}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : (
+          <div className="flex gap-1 flex-wrap mb-5 border-b border-border/40 pb-0">
+            {TAB_OPTIONS.map((tab) => {
+              const count = tabCounts[tab.value];
+              const isActive = activeTab === tab.value;
+              return (
+                <button
+                  key={tab.value}
+                  onClick={() => setActiveTab(tab.value)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors -mb-px ${
+                    isActive
+                      ? "border-primary text-foreground"
+                      : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+                  }`}
+                >
+                  {tab.icon}
+                  {tab.label}
+                  {count !== undefined && count > 0 && (
+                    <span className={`ml-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
+                      isActive ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
+                    }`}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Search bar + sort control (shown for entity tabs, not operations) */}
         {activeTab !== "operations" && (

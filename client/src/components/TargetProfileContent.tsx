@@ -36,13 +36,27 @@ function SectionHeading({ label, count }: { label: string; count: number }) {
 // ─── PDF export ────────────────────────────────────────────────────────────
 function buildTargetProfileHtml(
   profile: NonNullable<ReturnType<typeof useTargetProfile>["data"]>,
-  photos: ProfilePhoto[]
+  photos: ProfilePhoto[],
+  fieldHistory: { fieldName: string; previousValue: string; supersededAt: number; supersededByCIN: string | null }[] = []
 ) {
   const esc = (s: string | null | undefined) =>
     (s ?? "")
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;");
+  const prevHtml = (field: string, variant: "light" | "dark" = "light") => {
+    const items = fieldHistory.filter(h => h.fieldName === field);
+    if (!items.length) return "";
+    const textColor = variant === "dark" ? "rgba(255,255,255,0.75)" : "#92400e";
+    const badgeBg = variant === "dark" ? "rgba(255,255,255,0.18)" : "#fef3c7";
+    const badgeColor = variant === "dark" ? "#fff" : "#92400e";
+    return items
+      .map(
+        h =>
+          `<div style="font-size:9px;color:${textColor};margin-top:2px"><span style="font-weight:700;text-transform:uppercase;letter-spacing:0.05em;background:${badgeBg};color:${badgeColor};border-radius:3px;padding:1px 4px;margin-right:4px">Previous</span>${esc(h.previousValue)} <span style="opacity:0.7">— ${new Date(h.supersededAt).toLocaleDateString("en-AU")}${h.supersededByCIN ? ` (CIN${esc(h.supersededByCIN)})` : ""}</span></div>`
+      )
+      .join("");
+  };
   const BLUE_DARK = "#1e3a8a";
   const BLUE_MID = "#93c5fd";
   const BLUE_LIGHT = "#dbeafe";
@@ -100,6 +114,8 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
   <div class="entity-type-badge">&#128100; Person — Target</div>
   <div class="entity-name">${esc(profile.name)}</div>
   ${profile.tgt ? `<div class="entity-sub">TGT Alias: ${esc(profile.tgt)}</div>` : ""}
+  ${prevHtml("name", "dark")}
+  ${prevHtml("tgt", "dark")}
   <div class="gen-time">Generated: ${generatedAt}</div>
 </div>
 <div class="stats-row">
@@ -130,7 +146,9 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
     <div class="section-title">Registered Details</div>
     <div class="detail-grid">
       ${profile.hbf ? `<span class="detail-label">Home Address</span><span class="detail-value">${esc(formatIntelAddress(profile.hbf))}</span>` : ""}
+      ${prevHtml("hbf") ? `<span style="grid-column:1/-1">${prevHtml("hbf")}</span>` : ""}
       ${profile.v1f ? `<span class="detail-label">Vehicle 1</span><span class="detail-value">${esc(formatIntelVehicle(profile.v1f))}</span>` : ""}
+      ${prevHtml("v1f") ? `<span style="grid-column:1/-1">${prevHtml("v1f")}</span>` : ""}
       ${profile.v2f ? `<span class="detail-label">Vehicle 2</span><span class="detail-value">${esc(formatIntelVehicle(profile.v2f))}</span>` : ""}
       ${
         profile.extraVehicles
@@ -186,6 +204,49 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 </body></html>`;
 }
 
+interface FieldHistoryItem {
+  previousValue: string;
+  supersededAt: number;
+  supersededByCIN: string | null;
+}
+
+/** Renders any recorded "Previous" values for a field — see mergeTargetFieldDetails in server/db.ts. Nothing is ever deleted on a merge conflict, just superseded, and this is where that history surfaces. */
+function PreviousNotes({
+  items,
+  variant = "light",
+}: {
+  items: FieldHistoryItem[];
+  variant?: "light" | "dark";
+}) {
+  if (items.length === 0) return null;
+  return (
+    <div className="mt-1 flex flex-col gap-0.5">
+      {items.map((h, i) => (
+        <p
+          key={i}
+          className={`text-[11px] ${variant === "dark" ? "text-white/70" : "text-muted-foreground"}`}
+        >
+          <span
+            className={`font-semibold uppercase tracking-wide text-[10px] mr-1.5 px-1.5 py-0.5 rounded ${
+              variant === "dark"
+                ? "bg-white/15 text-white"
+                : "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+            }`}
+          >
+            Previous
+          </span>
+          {h.previousValue}
+          <span className="opacity-70">
+            {" — "}
+            {new Date(h.supersededAt).toLocaleDateString("en-AU")}
+            {h.supersededByCIN ? ` (CIN${h.supersededByCIN})` : ""}
+          </span>
+        </p>
+      ))}
+    </div>
+  );
+}
+
 function useTargetProfile(targetId: number) {
   return trpc.intelligence.targetProfile.useQuery(
     { targetId },
@@ -205,10 +266,17 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
     { enabled: targetId > 0 }
   );
   const photos = (photosData ?? []) as ProfilePhoto[];
+  const { data: fieldHistoryData } = trpc.target.registry.getFieldHistory.useQuery(
+    { targetId },
+    { enabled: targetId > 0 }
+  );
+  const fieldHistory = fieldHistoryData ?? [];
+  const historyFor = (field: string) =>
+    fieldHistory.filter(h => h.fieldName === field);
 
   function exportPdf() {
     if (!profile) return;
-    const html = buildTargetProfileHtml(profile, photos);
+    const html = buildTargetProfileHtml(profile, photos, fieldHistory);
     const win = window.open("", "_blank");
     if (!win) return;
     win.document.write(html);
@@ -250,6 +318,8 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
                       TGT Alias: {profile.tgt}
                     </p>
                   )}
+                  <PreviousNotes items={historyFor("name")} variant="dark" />
+                  <PreviousNotes items={historyFor("tgt")} variant="dark" />
                 </div>
                 <Button
                   variant="outline"
@@ -342,9 +412,12 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
                         <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">
                           Home Address
                         </span>
-                        <span className="font-mono text-xs text-foreground">
-                          {formatIntelAddress(profile.hbf)}
-                        </span>
+                        <div className="min-w-0">
+                          <span className="font-mono text-xs text-foreground">
+                            {formatIntelAddress(profile.hbf)}
+                          </span>
+                          <PreviousNotes items={historyFor("hbf")} />
+                        </div>
                       </div>
                     )}
                     {profile.v1f && (
@@ -352,9 +425,12 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
                         <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">
                           Vehicle 1
                         </span>
-                        <span className="font-mono text-xs text-foreground">
-                          {formatIntelVehicle(profile.v1f)}
-                        </span>
+                        <div className="min-w-0">
+                          <span className="font-mono text-xs text-foreground">
+                            {formatIntelVehicle(profile.v1f)}
+                          </span>
+                          <PreviousNotes items={historyFor("v1f")} />
+                        </div>
                       </div>
                     )}
                     {profile.v2f && (

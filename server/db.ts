@@ -28,6 +28,8 @@ import {
   InsertShortcut,
   targets,
   InsertTarget,
+  targetFieldHistory,
+  InsertTargetFieldHistory,
   users,
   governanceRecords,
   GovernanceRecord,
@@ -1487,6 +1489,109 @@ export async function getTargetById(id: number) {
   if (!db) return undefined;
   const [result] = await db.select().from(targets).where(eq(targets.id, id)).limit(1);
   return result;
+}
+
+// ─── Target Duplicate Detection & Field-Level Merge ────────────────────────
+// Reuses the same deterministic (non-AI) name-similarity heuristic already
+// used for Intelligence entity dedup (see entityDedup.ts) — the Target
+// Registry has its own separate flow because a target is a structured
+// record with several fields, not a single label string, so a match needs
+// to resolve field-by-field (see mergeTargetFieldDetails) rather than just
+// picking a winner label.
+
+export type TargetFieldName = "name" | "tgt" | "hbf" | "hb" | "v1f" | "v1" | "dep" | "arr";
+
+/** Fuzzy-checks a candidate target name against every existing live target's name. Best match first, or null if nothing close enough. */
+export async function findPossibleDuplicateTarget(
+  name: string,
+  excludeId?: number
+): Promise<{ id: number; name: string; score: number; reason: string } | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select({ id: targets.id, name: targets.name })
+    .from(targets)
+    .where(isNull(targets.deletedAt));
+  const candidates: DedupCandidateEntity[] = rows
+    .filter(r => r.id !== excludeId)
+    .map(r => ({ key: String(r.id), label: r.name, type: "person" as DedupType, rowCount: 0 }));
+  const matches = findPossibleDuplicates(name, "person", "__new__", candidates);
+  if (matches.length === 0) return null;
+  const best = matches[0];
+  return { id: Number(best.key), name: best.label, score: best.score, reason: best.reason };
+}
+
+/** All recorded "previous" values for a target, most recently superseded first. */
+export async function getTargetFieldHistory(targetId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(targetFieldHistory)
+    .where(eq(targetFieldHistory.targetId, targetId))
+    .orderBy(desc(targetFieldHistory.supersededAt));
+}
+
+/**
+ * Applies officer-resolved field choices when a new-target entry turned out
+ * to match an existing target. For each resolved field, `value` becomes the
+ * target's new live value; if `discarded` is also present (a real new-vs-
+ * existing conflict, not just filling in a previously-blank field), that
+ * losing value is preserved as history rather than dropped — nothing is
+ * ever silently overwritten or lost.
+ */
+export async function mergeTargetFieldDetails(
+  targetId: number,
+  resolutions: { field: TargetFieldName; value: string; discarded?: string }[],
+  appendExtraVehicles: { full: string; short: string }[],
+  appendWildFields: { label: string; value: string }[],
+  byCIN: string | null
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const current = await getTargetById(targetId);
+  if (!current) throw new Error("Target not found");
+
+  const now = Date.now();
+  const patch: Partial<InsertTarget> = {};
+  const historyRows: InsertTargetFieldHistory[] = [];
+  for (const r of resolutions) {
+    patch[r.field] = r.value;
+    if (r.discarded && r.discarded.trim() && r.discarded.trim() !== r.value.trim()) {
+      historyRows.push({
+        targetId,
+        fieldName: r.field,
+        previousValue: r.discarded,
+        supersededAt: now,
+        supersededByCIN: byCIN,
+      });
+    }
+  }
+
+  // Extra vehicles / wild fields are purely additive (dynamic lists, not a
+  // single value to conflict over) — append anything not already present.
+  if (appendExtraVehicles.length > 0) {
+    let existing: { full: string; short: string }[] = [];
+    try { existing = current.extraVehicles ? JSON.parse(current.extraVehicles) : []; } catch { existing = []; }
+    const existingKeys = new Set(existing.map(v => `${v.full.trim()}|${v.short.trim()}`.toLowerCase()));
+    const toAdd = appendExtraVehicles.filter(v => (v.full.trim() || v.short.trim()) && !existingKeys.has(`${v.full.trim()}|${v.short.trim()}`.toLowerCase()));
+    if (toAdd.length > 0) patch.extraVehicles = JSON.stringify([...existing, ...toAdd]);
+  }
+  if (appendWildFields.length > 0) {
+    let existing: { label: string; value: string }[] = [];
+    try { existing = current.wildFields ? JSON.parse(current.wildFields) : []; } catch { existing = []; }
+    const existingKeys = new Set(existing.map(w => `${w.label.trim()}|${w.value.trim()}`.toLowerCase()));
+    const toAdd = appendWildFields.filter(w => w.value.trim() && !existingKeys.has(`${w.label.trim()}|${w.value.trim()}`.toLowerCase()));
+    if (toAdd.length > 0) patch.wildFields = JSON.stringify([...existing, ...toAdd]);
+  }
+
+  if (Object.keys(patch).length > 0) {
+    await db.update(targets).set(patch).where(eq(targets.id, targetId));
+  }
+  if (historyRows.length > 0) {
+    await db.insert(targetFieldHistory).values(historyRows);
+  }
+  return getTargetById(targetId);
 }
 
 export async function softDeleteTarget(id: number, cin: string) {

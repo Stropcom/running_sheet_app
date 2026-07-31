@@ -330,6 +330,25 @@ export const targets = mysqlTable("targets", {
 export type Target = typeof targets.$inferSelect;
 export type InsertTarget = typeof targets.$inferInsert;
 
+// ─── Target Field History ────────────────────────────────────────────────────
+// When adding a new target whose name matches an existing one, the officer
+// resolves each conflicting field (new value vs existing value) rather than
+// silently overwriting or duplicating the target. Whichever value loses that
+// choice is kept here (not deleted) so historic detail is never lost — the
+// UI shows it back as a "Previous" note on the target profile.
+
+export const targetFieldHistory = mysqlTable("target_field_history", {
+  id: int("id").autoincrement().primaryKey(),
+  targetId: int("targetId").notNull(),
+  fieldName: varchar("fieldName", { length: 32 }).notNull(), // e.g. "name" | "tgt" | "hbf" | "hb" | "v1f" | "v1" | "dep" | "arr"
+  previousValue: text("previousValue").notNull(),
+  supersededAt: bigint("supersededAt", { mode: "number" }).notNull(),
+  supersededByCIN: varchar("supersededByCIN", { length: 64 }),
+});
+
+export type TargetFieldHistory = typeof targetFieldHistory.$inferSelect;
+export type InsertTargetFieldHistory = typeof targetFieldHistory.$inferInsert;
+
 // ─── Operation-Target Links ──────────────────────────────────────────────────
 // Many-to-many join: a target can be linked to multiple operations, and an
 // operation can have multiple targets. Deleting an operation removes its links

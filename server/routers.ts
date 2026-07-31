@@ -132,6 +132,9 @@ import {
   updateTarget,
   deleteTarget,
   getTargetById,
+  findPossibleDuplicateTarget,
+  mergeTargetFieldDetails,
+  getTargetFieldHistory,
   setSheetTarget,
   deepSearchOperations,
   getAllIntelligenceEntities,
@@ -2468,6 +2471,46 @@ export const appRouter = router({
         .input(z.object({ targetId: z.number() }))
         .query(async ({ input }) => {
           return getLinkedOperationsForTarget(input.targetId);
+        }),
+
+      /** Fuzzy-checks a candidate name against existing targets — backs the "possible duplicate" prompt when adding a new target. */
+      findPossibleDuplicate: protectedProcedure
+        .input(z.object({ name: z.string().min(1), excludeId: z.number().optional() }))
+        .query(async ({ input }) => {
+          return findPossibleDuplicateTarget(input.name, input.excludeId);
+        }),
+
+      /** Applies officer-resolved field choices when a new target entry is merged into an existing one instead of creating a duplicate. */
+      mergeFieldDetails: protectedProcedure
+        .input(
+          z.object({
+            targetId: z.number(),
+            resolutions: z.array(
+              z.object({
+                field: z.enum(["name", "tgt", "hbf", "hb", "v1f", "v1", "dep", "arr"]),
+                value: z.string(),
+                discarded: z.string().optional(),
+              })
+            ),
+            appendExtraVehicles: z.array(z.object({ full: z.string(), short: z.string() })).optional(),
+            appendWildFields: z.array(z.object({ label: z.string(), value: z.string() })).optional(),
+          })
+        )
+        .mutation(async ({ input, ctx }) => {
+          return mergeTargetFieldDetails(
+            input.targetId,
+            input.resolutions,
+            input.appendExtraVehicles ?? [],
+            input.appendWildFields ?? [],
+            ctx.user.cin ?? null
+          );
+        }),
+
+      /** "Previous" values recorded when a field was resolved in favor of the other side during a merge — never deleted, just superseded. */
+      getFieldHistory: protectedProcedure
+        .input(z.object({ targetId: z.number() }))
+        .query(async ({ input }) => {
+          return getTargetFieldHistory(input.targetId);
         }),
     }),
   }),

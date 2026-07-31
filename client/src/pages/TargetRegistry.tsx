@@ -40,6 +40,8 @@ import {
   Car,
   Home,
   Hash,
+  AlertTriangle,
+  Merge,
 } from "lucide-react";
 import { ViewToggle } from "@/components/ViewToggle";
 import { useViewMode } from "@/contexts/ViewModeContext";
@@ -48,6 +50,7 @@ import { useLocation } from "wouter";
 import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
 import { EntityAutocompleteInput } from "@/components/EntityAutocompleteInput";
 import { extractShortVehicle, extractShortTarget, extractShortAddress } from "@/lib/addressFormat";
+import { TargetMergeDialog, type ExistingTargetLike } from "@/components/TargetMergeDialog";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -602,19 +605,34 @@ function AddTargetDialog({
   const [extraVehicles, setExtraVehicles] = useState<ExtraVehicle[]>([]);
   const [wildFields, setWildFields] = useState<WildField[]>([]);
   const [saving, setSaving] = useState(false);
+  const utils = trpc.useUtils();
+
+  // ── Possible-duplicate detection (fires on Save, not while typing) ──
+  // A name that fuzzy-matches an existing target offers a merge instead of
+  // silently creating a lookalike duplicate record.
+  const [dupMatch, setDupMatch] = useState<{ id: number; name: string; reason: string } | null>(null);
+  const [existingFull, setExistingFull] = useState<ExistingTargetLike | null>(null);
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [checkingDup, setCheckingDup] = useState(false);
+
+  const resetAndClose = () => {
+    setForm(EMPTY_FORM);
+    setExtraVehicles([]);
+    setWildFields([]);
+    setDupMatch(null);
+    setExistingFull(null);
+    setMergeOpen(false);
+    onClose();
+  };
 
   const setField = (field: keyof TargetForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(f => ({ ...f, [field]: e.target.value }));
 
-  const handleSave = async () => {
-    if (!form.name.trim()) { toast.error("Target name is required."); return; }
+  const saveAsNew = async () => {
     setSaving(true);
     try {
       await onSave({ ...form, extraVehicles, wildFields });
-      setForm(EMPTY_FORM);
-      setExtraVehicles([]);
-      setWildFields([]);
-      onClose();
+      resetAndClose();
     } catch (err: any) {
       toast.error(err?.message ?? "Failed to save target.");
     } finally {
@@ -622,8 +640,36 @@ function AddTargetDialog({
     }
   };
 
+  const handleSave = async () => {
+    if (!form.name.trim()) { toast.error("Target name is required."); return; }
+    setCheckingDup(true);
+    try {
+      const match = await utils.target.registry.findPossibleDuplicate.fetch({ name: form.name });
+      if (match) {
+        setDupMatch(match);
+      } else {
+        await saveAsNew();
+      }
+    } catch {
+      // If the duplicate check itself fails, don't block the save.
+      await saveAsNew();
+    } finally {
+      setCheckingDup(false);
+    }
+  };
+
+  const handleMergeInstead = async () => {
+    if (!dupMatch) return;
+    const full = await utils.target.getById.fetch({ id: dupMatch.id });
+    if (!full) { toast.error("Couldn't load the existing target."); return; }
+    setExistingFull(full);
+    setDupMatch(null);
+    setMergeOpen(true);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
+    <>
+    <Dialog open={open && !mergeOpen} onOpenChange={v => { if (!v) resetAndClose(); }}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Add Target to Registry</DialogTitle>
@@ -743,13 +789,52 @@ function AddTargetDialog({
           ))}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button onClick={handleSave} disabled={saving}>
-            {saving ? "Saving…" : "Save Target"}
+          <Button variant="outline" onClick={resetAndClose} disabled={saving || checkingDup}>Cancel</Button>
+          <Button onClick={handleSave} disabled={saving || checkingDup}>
+            {checkingDup ? "Checking…" : saving ? "Saving…" : "Save Target"}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    {/* Possible duplicate — asks before either creating a lookalike or merging */}
+    <AlertDialog open={dupMatch !== null} onOpenChange={v => { if (!v) setDupMatch(null); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+            Possible duplicate target
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            "{form.name}" looks like it may be the same person as an existing target, <strong>{dupMatch?.name}</strong> ({dupMatch?.reason}). Is this the same person?
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter className="gap-2">
+          <AlertDialogCancel onClick={() => setDupMatch(null)}>Cancel</AlertDialogCancel>
+          <Button variant="outline" onClick={() => { setDupMatch(null); saveAsNew(); }}>
+            No, different person — create new
+          </Button>
+          <Button onClick={handleMergeInstead}>
+            <Merge className="w-4 h-4 mr-1.5" /> Yes — merge details
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    {/* Field-level merge into the existing target */}
+    {existingFull && (
+      <TargetMergeDialog
+        open={mergeOpen}
+        onOpenChange={v => { setMergeOpen(v); if (!v) setExistingFull(null); }}
+        existing={existingFull}
+        incoming={{ ...form, extraVehicles, wildFields }}
+        onMerged={() => {
+          utils.target.registry.list.invalidate();
+          resetAndClose();
+        }}
+      />
+    )}
+    </>
   );
 }
 

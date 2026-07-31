@@ -4040,27 +4040,6 @@ export default function IntelligenceMapping() {
                 </div>
               )}
 
-              {/* Sheet link — shown below RS dropdown when sheet selected */}
-              {rsSelectedSheetId !== null &&
-                rsSheetsData &&
-                (() => {
-                  const sheet = (rsSheetsData as any[]).find(
-                    (s: any) => s.id === rsSelectedSheetId
-                  );
-                  return sheet ? (
-                    <button
-                      onClick={() => setLocation(`/sheet/${rsSelectedSheetId}`)}
-                      className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-primary/40 bg-primary/10 hover:bg-primary/20 active:scale-[0.98] transition-all min-w-0"
-                    >
-                      <MapIcon className="h-3.5 w-3.5 text-primary flex-shrink-0" />
-                      <span className="text-xs font-semibold text-primary truncate flex-1 text-left">
-                        {sheet.title || `Sheet #${sheet.id}`}
-                      </span>
-                      <ExternalLink className="h-3 w-3 text-primary/60 flex-shrink-0" />
-                    </button>
-                  ) : null;
-                })()}
-
               {/* RS Quick Entry moved to bottom tab bar — use the indigo RS Entry pill instead */}
             </div>
             {/* end RS Selection */}
@@ -4097,21 +4076,6 @@ export default function IntelligenceMapping() {
                         <ExternalLink className="h-3 w-3 text-blue-500/60 flex-shrink-0" />
                       </button>
                     )}
-                    {rsTargetData && (
-                      <button
-                        onClick={() => {
-                          setPaneTargetProfileId(rsTargetData.id);
-                          setPaneOperationProfileId(null);
-                        }}
-                        className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-violet-500/40 bg-violet-500/10 hover:bg-violet-500/20 active:scale-[0.98] transition-all min-w-0"
-                      >
-                        <User className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />
-                        <span className="text-xs font-semibold text-violet-500 truncate flex-1 text-left">
-                          {rsTargetData.tgt ?? rsTargetData.name}
-                        </span>
-                        <ExternalLink className="h-3 w-3 text-violet-500/60 flex-shrink-0" />
-                      </button>
-                    )}
                   </div>
                 );
               })()}
@@ -4140,14 +4104,12 @@ export default function IntelligenceMapping() {
                 }
                 return (
                   <button
-                    onClick={() =>
-                      setLocation(`/images/${opId}/${rsSelectedSheetId}`)
-                    }
+                    onClick={() => setLocation(`/images/${opId}`)}
                     className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-pink-500/40 bg-pink-500/10 hover:bg-pink-500/20 active:scale-[0.98] transition-all min-w-0"
                   >
                     <ImageIcon className="h-3.5 w-3.5 text-pink-500 flex-shrink-0" />
                     <span className="text-xs font-semibold text-pink-500 truncate flex-1 text-left">
-                      RS images
+                      Operation Images
                     </span>
                     <ExternalLink className="h-3 w-3 text-pink-500/60 flex-shrink-0" />
                   </button>

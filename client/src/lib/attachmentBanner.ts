@@ -81,6 +81,8 @@ export interface EntityChipLike {
   type: string;
   rowCount: number;
   photos?: Array<RowAttachmentLike & { id: number; url: string }>;
+  /** True when this vehicle/location matches a value superseded by a target-merge. */
+  isPrevious?: boolean;
 }
 
 // Full-width bar (not a shrink-to-content pill) to match the web page's
@@ -96,19 +98,22 @@ export function buildChipHtml(label: string, type: string, count: number): strin
   return `<div style="display:flex;align-items:center;gap:4px;width:100%;box-sizing:border-box;padding:4px 12px;border-radius:9999px;font-size:10px;font-weight:600;${style};margin:2px 0">${escHtml(displayLabel)} <span style="opacity:0.6">×${count}</span></div>`;
 }
 
+const PREVIOUS_BADGE_HTML = `<span style="display:inline-block;margin:2px 0 2px 4px;padding:1px 6px;border-radius:3px;font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;background:#fef3c7;color:#92400e">Previous</span>`;
+
 // One chip + its own photo thumbnails directly beneath it.
 export function buildEntityWithPhotosHtml(item: EntityChipLike, photoPx = 70): string {
   const chip = buildChipHtml(item.label, item.type, item.rowCount);
+  const previousBadge = item.isPrevious ? `<div>${PREVIOUS_BADGE_HTML}</div>` : "";
   const photos = item.photos ?? [];
   if (!photos.length) {
-    return `<div style="margin-bottom:4px">${chip}</div>`;
+    return `<div style="margin-bottom:4px">${chip}${previousBadge}</div>`;
   }
   const photoCells = photos.map(p => `<div style="width:${photoPx}px;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden">
       <img src="${escHtml(toAbsolutePhotoUrl(p.url))}" style="width:100%;aspect-ratio:1;object-fit:cover;display:block" />
       <div style="background:#000;color:#fff;font-size:6px;padding:2px 3px">${escHtml(formatAttachmentBanner(p))}</div>
     </div>`).join("");
   return `<div style="margin-bottom:8px">
-    <div style="margin-bottom:4px">${chip}</div>
+    <div style="margin-bottom:4px">${chip}${previousBadge}</div>
     <div style="display:flex;flex-wrap:wrap;gap:6px;padding-left:6px">${photoCells}</div>
   </div>`;
 }

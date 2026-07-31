@@ -4163,6 +4163,8 @@ export interface IntelProfileEntity {
   rowCount: number;
   /** Only populated on the Operation profile — photos linked to this entity. */
   photos?: OperationEntityPhoto[];
+  /** True when this vehicle/location matches a value superseded by a target-merge (see target_field_history). */
+  isPrevious?: boolean;
 }
 
 export interface IntelTargetProfile {
@@ -4228,6 +4230,8 @@ export interface IntelVehicleProfile {
   linkedSheets: Array<{ id: number; title: string; operationId: number; operationName: string }>;
   assocPersons: IntelProfileEntity[];
   assocLocations: IntelProfileEntity[];
+  /** True when this vehicle itself matches a value superseded by a target-merge. */
+  isPrevious?: boolean;
 }
 
 export interface IntelLocationProfile {
@@ -4237,6 +4241,8 @@ export interface IntelLocationProfile {
   linkedSheets: Array<{ id: number; title: string; operationId: number; operationName: string }>;
   assocPersons: IntelProfileEntity[];
   assocVehicles: IntelProfileEntity[];
+  /** True when this location itself matches a value superseded by a target-merge. */
+  isPrevious?: boolean;
 }
 
 // A target's registered name is often followed by descriptive detail
@@ -4245,6 +4251,67 @@ export interface IntelLocationProfile {
 function targetCoreName(name: string): string {
   const commaIdx = name.indexOf(",");
   return (commaIdx > 0 ? name.slice(0, commaIdx) : name).trim().toLowerCase();
+}
+
+// ─── "Previous" entity propagation (target-merge history) ─────────────────
+// A vehicle/address superseded during a duplicate-target merge (see
+// mergeTargetFieldDetails) should read as "Previous" everywhere it shows up
+// as an associated-entity chip across Intelligence profiles, not just on
+// the target's own Registered Details — otherwise the same real vehicle/
+// address can appear both "current" and unmarked-stale elsewhere, which is
+// exactly the confusion this is meant to prevent. Matching is by
+// registration (vehicles) / normalized address core (locations) rather
+// than exact string equality, since the free-text entity mined from an
+// observation rarely matches the manually-typed V1F/HBF field byte-for-byte.
+
+const VEHICLE_REGO_PATTERN = /\b\d[A-Za-z]{2,3}\d{3}\b/;
+
+function extractRegoUpper(text: string): string | null {
+  const m = text.match(VEHICLE_REGO_PATTERN);
+  return m ? m[0].toUpperCase() : null;
+}
+
+function addressCoreLower(text: string): string {
+  return text
+    .replace(/\([^)]{1,120}\)\s*$/, "")
+    .replace(/^(?:unit|lot|apt|apartment|suite|ste)\s*\d+[a-z]?[,\s]*|^\d{1,4}[a-z]?\/(?=\d)/i, "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+async function getPreviousEntityMatchers(): Promise<{ vehicleRegos: Set<string>; addressCores: Set<string> }> {
+  const db = await getDb();
+  if (!db) return { vehicleRegos: new Set(), addressCores: new Set() };
+  const rows = await db.select().from(targetFieldHistory);
+  const vehicleRegos = new Set<string>();
+  const addressCores = new Set<string>();
+  for (const r of rows) {
+    if (r.fieldName === "v1f" || r.fieldName === "v1") {
+      const rego = extractRegoUpper(r.previousValue);
+      if (rego) vehicleRegos.add(rego);
+    } else if (r.fieldName === "hbf" || r.fieldName === "hb") {
+      const core = addressCoreLower(r.previousValue);
+      if (core) addressCores.add(core);
+    }
+  }
+  return { vehicleRegos, addressCores };
+}
+
+/** Mutates matching vehicle/location entities in place, flagging isPrevious. */
+function markPreviousEntities(
+  assocVehicles: IntelProfileEntity[],
+  assocLocations: IntelProfileEntity[],
+  matchers: { vehicleRegos: Set<string>; addressCores: Set<string> }
+): void {
+  for (const v of assocVehicles) {
+    const rego = extractRegoUpper(v.label);
+    if (rego && matchers.vehicleRegos.has(rego)) v.isPrevious = true;
+  }
+  for (const l of assocLocations) {
+    const core = addressCoreLower(l.label);
+    if (matchers.addressCores.has(core)) l.isPrevious = true;
+  }
 }
 
 async function buildTargetOperationalAssociations(
@@ -4375,6 +4442,7 @@ export async function getIntelTargetProfile(targetId: number): Promise<IntelTarg
   const targetLabel = target.tgt ?? target.name;
   const { assocPersons, assocVehicles, assocLocations } = await buildTargetOperationalAssociations(targetId, targetLabel, target.name, allEntities);
   await populateAssocPhotos(assocPersons, assocVehicles, assocLocations);
+  markPreviousEntities(assocVehicles, assocLocations, await getPreviousEntityMatchers());
 
   return {
     targetId,
@@ -4462,11 +4530,13 @@ export async function getIntelOperationProfile(operationId: number): Promise<Int
     targetProfiles.map(t => t.targetId),
     { vehicle: Array.from(vehicleKeys), associate: Array.from(personKeys), location: Array.from(locationKeys) }
   );
+  const previousMatchers = await getPreviousEntityMatchers();
   for (const t of targetProfiles) {
     t.photos = targetPhotos.get(t.targetId) ?? [];
     for (const p of t.assocPersons) p.photos = entityPhotos.get(`associate::${normalizeEntityLabel(p.label)}`) ?? [];
     for (const v of t.assocVehicles) v.photos = entityPhotos.get(`vehicle::${normalizeEntityLabel(v.label)}`) ?? [];
     for (const l of t.assocLocations) l.photos = entityPhotos.get(`location::${normalizeEntityLabel(l.label)}`) ?? [];
+    markPreviousEntities(t.assocVehicles, t.assocLocations, previousMatchers);
   }
 
   return {
@@ -4578,6 +4648,7 @@ export async function getIntelAssociateProfile(label: string): Promise<IntelAsso
   const assocVehicles = Array.from(assocVehiclesMap.values()).sort((a, b) => a.label.localeCompare(b.label));
   const assocLocations = Array.from(assocLocationsMap.values()).sort((a, b) => a.label.localeCompare(b.label));
   await populateAssocPhotos([], assocVehicles, assocLocations);
+  markPreviousEntities(assocVehicles, assocLocations, await getPreviousEntityMatchers());
 
   return {
     label: entity.shortForm,
@@ -4662,6 +4733,10 @@ export async function getIntelVehicleProfile(label: string): Promise<IntelVehicl
   const assocPersons = Array.from(assocPersonsMap.values()).sort((a, b) => a.label.localeCompare(b.label));
   const assocLocations = Array.from(assocLocationsMap.values()).sort((a, b) => a.label.localeCompare(b.label));
   await populateAssocPhotos(assocPersons, [], assocLocations);
+  const previousMatchers = await getPreviousEntityMatchers();
+  markPreviousEntities([], assocLocations, previousMatchers);
+  const selfRego = extractRegoUpper(entity.shortForm);
+  const isPrevious = !!selfRego && previousMatchers.vehicleRegos.has(selfRego);
 
   return {
     label: entity.shortForm,
@@ -4671,6 +4746,7 @@ export async function getIntelVehicleProfile(label: string): Promise<IntelVehicl
     linkedSheets: Array.from(sheetMap.values()),
     assocPersons,
     assocLocations,
+    isPrevious,
   };
 }
 
@@ -4747,6 +4823,9 @@ export async function getIntelLocationProfile(label: string): Promise<IntelLocat
   const assocPersons = Array.from(assocPersonsMap.values()).sort((a, b) => a.label.localeCompare(b.label));
   const assocVehicles = Array.from(assocVehiclesMap.values()).sort((a, b) => a.label.localeCompare(b.label));
   await populateAssocPhotos(assocPersons, assocVehicles, []);
+  const previousMatchers = await getPreviousEntityMatchers();
+  markPreviousEntities(assocVehicles, [], previousMatchers);
+  const isPrevious = previousMatchers.addressCores.has(addressCoreLower(entity.shortForm));
 
   return {
     label: entity.shortForm,
@@ -4755,6 +4834,7 @@ export async function getIntelLocationProfile(label: string): Promise<IntelLocat
     linkedSheets: Array.from(sheetMap.values()),
     assocPersons,
     assocVehicles,
+    isPrevious,
   };
 }
 

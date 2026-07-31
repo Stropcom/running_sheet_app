@@ -503,7 +503,7 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 .status-pill{display:inline-flex;align-items:center;gap:4px;padding:4px 11px;border-radius:9999px;font-size:9px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;margin-top:14px}
 .status-complete{background:rgba(134,239,172,0.18);color:#86efac;border:1px solid rgba(134,239,172,0.4)}
 .status-open{background:rgba(255,255,255,0.12);color:rgba(255,255,255,0.75);border:1px solid rgba(255,255,255,0.28)}
-.content { padding:20px 32px; }
+.content { padding:20px 32px; border:1.5px solid ${BLUE_DARK}; border-top:none; }
 .section { margin-bottom:18px; }
 .section-title { font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${BLUE_DARK} !important; padding:6px 10px; background:${BLUE_LIGHT} !important; border-left:3px solid ${BLUE_MID}; margin-bottom:10px; }
 .detail-grid { display:grid; grid-template-columns:140px 1fr; gap:6px 12px; font-size:10.5px; }
@@ -519,8 +519,12 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 .summary-table th:last-child, .summary-table td:last-child { border-right:none; }
 .summary-table td { vertical-align:top; font-size:10.5px; padding:6px 8px; border-bottom:1px solid ${GREY_BORDER}; border-right:1px solid ${GREY_BORDER}; }
 .summary-table tbody tr:last-child td { border-bottom:none; }
-.footer { margin-top:28px; padding-top:12px; border-top:1px solid ${GREY_BORDER}; display:flex; justify-content:space-between; font-size:9px; color:#94a3b8; }
-@media print { * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; } .cover-header { background:${BLUE_DARK} !important; } .section-title { background:${BLUE_LIGHT} !important; } .op-badge { background:${BLUE_LIGHT} !important; } .summary-table th { background:${BLUE_LIGHT} !important; } }
+.footer-note { margin-top:28px; padding-top:12px; border-top:1px solid ${GREY_BORDER}; font-size:9px; color:#94a3b8; }
+.footer-band { background:${BLUE_DARK} !important; color:#fff !important; padding:8px 32px; display:grid; grid-template-columns:1fr 1fr 1fr; align-items:center; font-size:9px; font-weight:700; letter-spacing:0.04em; }
+.footer-band span:first-child { text-align:left; }
+.footer-band span:last-child { text-align:right; color:rgba(255,255,255,0.85); text-transform:uppercase; }
+.footer-protected { text-align:center; font-weight:800; letter-spacing:0.14em; color:#f87171; text-transform:uppercase; }
+@media print { * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; } .cover-header { background:${BLUE_DARK} !important; } .section-title { background:${BLUE_LIGHT} !important; } .op-badge { background:${BLUE_LIGHT} !important; } .summary-table th { background:${BLUE_LIGHT} !important; } .footer-band { background:${BLUE_DARK} !important; } }
 </style></head><body>
 <div class="cover-header">
   <div class="brand-row"><div class="brand-dot"></div><span class="brand-label">RunLog</span></div>
@@ -559,10 +563,14 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
   ${section("Critical Decisions", criticalDecisionsHtml)}
   ${section("Summary", summaryHtml)}
   ${section("Issues", form.issues.trim() ? `<p>${esc(form.issues)}</p>` : "")}
-  <div class="footer">
+  <div class="footer-note">
     <span>Generated: ${generatedAt}</span>
-    <span>RunLog &middot; Protected</span>
   </div>
+</div>
+<div class="footer-band">
+  <span></span>
+  <span class="footer-protected">Protected</span>
+  <span>RunLog</span>
 </div>
 ${buildExportPreviewCloseBar()}
 </body></html>`;

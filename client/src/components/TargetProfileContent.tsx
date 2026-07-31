@@ -103,10 +103,10 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
   <div class="gen-time">Generated: ${generatedAt}</div>
 </div>
 <div class="stats-row">
-  <div class="stat-box"><div class="stat-num">${profile.observationCount}</div><div class="stat-label">Observations</div></div>
+  <div class="stat-box"><div class="stat-num">${profile.operations.length}</div><div class="stat-label">Operations</div></div>
   <div class="stat-box"><div class="stat-num">${profile.linkedSheets.length}</div><div class="stat-label">Running Sheets</div></div>
   <div class="stat-box"><div class="stat-num">${profile.assocPersons.length + profile.assocVehicles.length + profile.assocLocations.length}</div><div class="stat-label">Associations</div></div>
-  <div class="stat-box"><div class="stat-num">${profile.operations.length}</div><div class="stat-label">Operations</div></div>
+  <div class="stat-box"><div class="stat-num">${profile.observationCount}</div><div class="stat-label">Observations</div></div>
 </div>
 <div class="content">
   ${
@@ -264,7 +264,7 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
             {/* Stats */}
             <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-border/60 bg-blue-50/50 dark:bg-blue-950/20">
               {[
-                { label: "Observations", value: profile.observationCount },
+                { label: "Operations", value: profile.operations.length },
                 { label: "Running Sheets", value: profile.linkedSheets.length },
                 {
                   label: "Associations",
@@ -273,7 +273,7 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
                     profile.assocVehicles.length +
                     profile.assocLocations.length,
                 },
-                { label: "Operations", value: profile.operations.length },
+                { label: "Observations", value: profile.observationCount },
               ].map(stat => (
                 <div key={stat.label} className="px-4 py-3 text-center">
                   <p className="text-xl font-bold text-blue-900 dark:text-blue-300">

@@ -3086,12 +3086,19 @@ export async function listEntityMerges() {
   return db.select().from(entityAliases).orderBy(desc(entityAliases.mergedAt));
 }
 
-/** Search existing entities of one type by substring — backs the manual Merge Entities picker. */
-export async function searchIntelligenceEntities(type: DedupType, query: string): Promise<DedupCandidateEntity[]> {
+/**
+ * Search existing entities of one type by substring — backs the manual Merge
+ * Entities picker (excludeTargets: true, the default) and the Target
+ * Registry name/vehicle autocomplete (excludeTargets: false — that feature's
+ * whole point is suggesting entities already seen in observations, and most
+ * of those worth adding as a Target have often already been promoted to one
+ * elsewhere, so filtering them out there defeats the feature).
+ */
+export async function searchIntelligenceEntities(type: DedupType, query: string, excludeTargets = true): Promise<DedupCandidateEntity[]> {
   const allEntities = await getAllIntelligenceEntities();
   const q = query.trim().toLowerCase();
   return allEntities
-    .filter((e) => !e.isTarget && e.type === type && (!q || e.shortForm.toLowerCase().includes(q)))
+    .filter((e) => (!excludeTargets || !e.isTarget) && e.type === type && (!q || e.shortForm.toLowerCase().includes(q)))
     .map((e) => ({
       key: computeEntityKey(type, e.shortForm),
       label: e.shortForm,

@@ -45,7 +45,7 @@ export function EntityAutocompleteInput({
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   const { data: results } = trpc.intelligence.searchEntities.useQuery(
-    { type: entityType, query },
+    { type: entityType, query, excludeTargets: false },
     { enabled: open && query.trim().length > 0 }
   );
   const suggestions = results ?? [];

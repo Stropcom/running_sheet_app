@@ -2812,16 +2812,17 @@ export const appRouter = router({
       return listEntityMerges();
     }),
 
-    /** Substring search over existing entities of one type — backs the manual Merge Entities picker. */
+    /** Substring search over existing entities of one type — backs the manual Merge Entities picker and the Target Registry autocomplete. */
     searchEntities: protectedProcedure
       .input(
         z.object({
           type: z.enum(["person", "vehicle", "address", "business"]),
           query: z.string().default(""),
+          excludeTargets: z.boolean().default(true),
         })
       )
       .query(async ({ input }) => {
-        return searchIntelligenceEntities(input.type, input.query);
+        return searchIntelligenceEntities(input.type, input.query, input.excludeTargets);
       }),
   }),
 

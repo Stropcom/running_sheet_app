@@ -271,8 +271,9 @@ function exportToPDF(
   const authorEntry = cinRoster.find((c) => c.isAuthor);
   const authorCin = authorEntry?.cin ?? null;
 
-  // Find the most recent active certification belonging to the author CIN
-  let preparedByCell = "";
+  // Find the most recent active certification belonging to the author CIN.
+  // Rendered light-on-dark since it sits inside the cover-header meta pill.
+  let preparedByPill = "";
   if (authorCin) {
     let latestCert: { certifiedByCIN?: string; certifiedByName: string; certifiedAt: number } | null = null;
     for (const row of rows) {
@@ -289,10 +290,10 @@ function exportToPDF(
     if (latestCert) {
       const certCin = ('certifiedByCIN' in latestCert ? (latestCert as any).certifiedByCIN : null) || latestCert.certifiedByName;
       const certTime = format(new Date(latestCert.certifiedAt), "d MMMM yyyy h:mmaaa");
-      preparedByCell = `<span style='color:#22c55e;white-space:nowrap'>&#10003; ${certCin} &nbsp;<span style='color:#555;font-size:10px'>${certTime}</span></span>`;
+      preparedByPill = `<span style='color:#86efac;white-space:nowrap'>&#10003; ${certCin}</span> <span style='opacity:0.65;font-weight:400;text-transform:none;letter-spacing:0'>${certTime}</span>`;
     } else {
       // Author exists but hasn't certified yet — show CIN without tick
-      preparedByCell = `<span style='color:#000'>${authorCin}</span>`;
+      preparedByPill = authorCin;
     }
   }
 
@@ -337,29 +338,37 @@ function exportToPDF(
   }
 
   // ── Page headers ────────────────────────────────────────────────────────────
-  // Strategy: use <thead> to repeat the meta table (without imagery) on every page.
-  // Page 1: show first-page-header (title + meta + imagery) above the table.
-  //         The <thead> meta rows are hidden on page 1 via beforeprint JS.
-  // Pages 2+: <thead> shows (title + meta + column headers) via display:table-header-group.
+  // Styled to match the Intelligence Profile / CTO Weekly Tasking exports:
+  // a full-bleed dark-blue cover-header banner with the meta info (Operation/
+  // Target/Date/Prepared By) as rounded pills, instead of the old bordered
+  // label/value table.
+  //
+  // Strategy: use <thead> to repeat a compact version of the banner on every
+  // page. Page 1: show first-page-header (full banner + imagery) above the
+  // table. The <thead> banner row is hidden on page 1 via beforeprint JS.
+  // Pages 2+: <thead> shows (compact banner + column headers) via
+  // display:table-header-group.
   //
   // beforeprint: hides first-page-header, removes 'hide-on-print' from thead meta rows.
   // afterprint:  restores first-page-header, re-adds 'hide-on-print' to thead meta rows.
 
-  const metaRowsHtml = `
-    <tr><td class="meta-label">OPERATION:</td><td class="meta-value">${operationName}</td></tr>
-    <tr><td class="meta-label">TARGET:</td><td class="meta-value">${targetFullName ?? ""}</td></tr>
-    <tr><td class="meta-label">DATE:</td><td class="meta-value">${dateStr}</td></tr>
-    ${authorCin ? `<tr><td class="meta-label">PREPARED BY:</td><td class="meta-value">${preparedByCell}</td></tr>` : ""}`;
+  const metaPillsHtml = `
+    <span class="meta-pill">Operation <strong>${operationName}</strong></span>
+    ${targetFullName ? `<span class="meta-pill">Target <strong>${targetFullName}</strong></span>` : ""}
+    <span class="meta-pill">Date <strong>${dateStr}</strong></span>
+    ${authorCin ? `<span class="meta-pill">Prepared by <strong>${preparedByPill}</strong></span>` : ""}`;
 
-  // First-page header block (shown on screen and on page 1 during print)
-  const pageHeader = `
-    <div class="first-page-header" id="first-page-header">
-      <div class="page-title">WC SURVEILLANCE RUNNING SHEET</div>
-      <table class="meta-table"><tbody>
-        ${metaRowsHtml}
-        <tr><td class="meta-label">IMAGERY:</td><td class="meta-value">${imageryRowHtml}</td></tr>
-      </tbody></table>
-    </div>`;
+  // Cover-header banner builder — `compact` is used for the repeating
+  // per-page thead version (smaller title, no imagery line).
+  function coverHeaderHtml(compact: boolean): string {
+    return `
+      <div class="cover-header">
+        <div class="brand-label">RunLog &middot; Surveillance Running Sheet</div>
+        <div class="rs-title${compact ? " rs-title-sm" : ""}">WC SURVEILLANCE RUNNING SHEET</div>
+        <div class="meta-pills">${metaPillsHtml}</div>
+        ${compact ? "" : `<div class="imagery-line">Imagery taken: <strong>${imageryRowHtml}</strong></div>`}
+      </div>`;
+  }
 
   // ── Running sheet table ──────────────────────────────────────────────────────
   // Spacer row inserted after each log entry for breathing room
@@ -482,22 +491,26 @@ function exportToPDF(
     /* Force background colours to print — Chrome strips backgrounds by default */
     *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;color-adjust:exact !important}
     body{font-family:'Roboto',sans-serif;background:#fff;color:#000;margin:0;padding:0;font-size:11px}
-    .page-title{font-size:20px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;text-align:center;margin-bottom:1.2em}
-    .page-title-sm{font-size:15px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;text-align:center;margin-bottom:0.5em;margin-top:4px}
-    /* Blue card — wraps the meta info block (page-1 header and the repeating page header).
-       Square corners, deliberately: a single border on a <div> like this is always drawn as
-       one unbroken rectangle by the browser, with no edge cases. */
-    .rs-card{border:1.5px solid #1e3a8a}
-    /* Meta info table — light blue label cells */
-    .meta-table{width:100%;border-collapse:collapse;table-layout:auto}
-    .meta-table tr:not(:last-child) td{border-bottom:1px solid #c7d5ee}
-    .meta-label{padding:5px 8px;font-weight:700;font-size:11px;white-space:nowrap;background:#dbeafe;border-right:1px solid #93c5fd;text-transform:uppercase;width:1%;color:#1e3a8a}
-    .meta-value{padding:5px 8px;font-size:11px;color:#000;background:#fff}
+    /* Cover-header banner — matches the Intelligence Profile / CTO Weekly
+       Tasking export style: full-bleed dark-blue block, brand label, title,
+       and meta info as rounded pills instead of a bordered label/value table.
+       No border-radius, deliberately — sits flush above the log table so the
+       two read as one continuous document block, and a single rectangle
+       renders reliably across page breaks with no edge cases. */
+    .cover-header{background:#1e3a8a;color:#fff;padding:16px 20px 14px}
+    .brand-label{font-size:9px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#93c5fd;margin-bottom:8px}
+    .rs-title{font-size:18px;font-weight:700;letter-spacing:0.03em}
+    .rs-title-sm{font-size:13px}
+    .meta-pills{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+    .meta-pill{display:inline-flex;align-items:center;gap:4px;padding:4px 11px;border-radius:9999px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.28);font-size:9px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;color:rgba(255,255,255,0.72)}
+    .meta-pill strong{color:#fff;font-weight:700;text-transform:none;letter-spacing:0;margin-left:2px}
+    .imagery-line{font-size:10px;margin-top:10px;color:rgba(255,255,255,0.78)}
+    .imagery-line strong{color:#fff;font-weight:700}
     /* Log table — the outer border is a single declaration on the <table> element itself
        (border-collapse:collapse), not assembled from separate per-cell rules. That's what
        guarantees it always renders as one continuous, unbroken, uniform-width rectangle
        regardless of rowspan, spacer rows, or which row happens to be last. */
-    table.log-table{width:100%;border:1.5px solid #1e3a8a;border-collapse:collapse;table-layout:auto}
+    table.log-table{width:100%;border:1.5px solid #1e3a8a;border-top:none;border-collapse:collapse;table-layout:auto}
     col.c-time{width:80px}
     col.c-obs{width:auto}
     col.c-cert{width:1%}
@@ -506,9 +519,8 @@ function exportToPDF(
     .log-table th:last-child,.log-table td:last-child{border-right:none}
     .log-table td{vertical-align:top;word-break:break-word;overflow:hidden;color:#000;border-right:1px solid #e2e9f6;border-bottom:1px solid #eef2fb}
     .log-table td:last-child{white-space:nowrap;word-break:normal;width:1%}
-    /* thead wrapper cell — no border/padding/bg so the meta card floats free of the log table's own border */
-    .thead-meta-cell{padding:0 !important;border:none !important;background:transparent !important}
-    .thead-meta-inner{padding-bottom:10px}
+    /* thead wrapper cell — no border/padding so the banner floats free of the log table's own border */
+    .thead-meta-cell{padding:0 !important;border:none !important}
     /* Certification pills */
     .pill{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:9999px;font-size:10px;font-weight:700;white-space:nowrap}
     .pill-certified{background:#d1fae5;color:#059669;border:1px solid #6ee7b7}
@@ -516,8 +528,10 @@ function exportToPDF(
     /* Date divider — centered pill instead of a full-width bar */
     .date-divider-row td{background:#f1f6ff;text-align:center;padding:6px 0}
     .date-divider-pill{display:inline-block;padding:3px 14px;border-radius:9999px;background:#1e3a8a;color:#fff;font-size:10px;font-weight:700;letter-spacing:0.06em}
-    /* Screen: show first-page-header (with imagery); hide print-only blocks */
-    .first-page-header{text-align:left;margin-bottom:10px}
+    /* Screen: show first-page-header (with imagery); hide print-only blocks.
+       No margin-bottom — sits flush against the log table's top edge so the
+       banner and table read as one continuous bordered block. */
+    .first-page-header{text-align:left}
     .print-only{display:none !important}
     @media print{
       /* Prevent observation rows from splitting across pages */
@@ -573,15 +587,9 @@ function exportToPDF(
     })();
   </script>
   </head><body>
-  <!-- SCREEN VIEW: full header with imagery — hidden during print -->
+  <!-- SCREEN VIEW: full banner with imagery — hidden during print -->
   <div class="first-page-header" id="first-page-header">
-    <div class="page-title">WC SURVEILLANCE RUNNING SHEET</div>
-    <div class="rs-card">
-      <table class="meta-table"><tbody>
-        ${metaRowsHtml}
-        <tr><td class="meta-label">IMAGERY:</td><td class="meta-value">${imageryRowHtml}</td></tr>
-      </tbody></table>
-    </div>
+    ${coverHeaderHtml(false)}
   </div>
   <table class="log-table">
     <colgroup>
@@ -590,20 +598,11 @@ function exportToPDF(
       <col class="c-cert"/>
     </colgroup>
     <thead>
-      <!-- Full header repeats on every page via thead display:table-header-group.
-           Hidden on screen (first-page-header shows instead); shown during print by JS.
-           Includes imagery row so every page has the complete header. -->
+      <!-- Compact banner repeats on every page via thead display:table-header-group.
+           Hidden on screen (first-page-header shows instead); shown during print by JS. -->
       <tr class="print-only" data-pd="table-row">
         <td colspan="3" class="thead-meta-cell">
-          <div class="thead-meta-inner">
-            <div class="page-title-sm">WC SURVEILLANCE RUNNING SHEET</div>
-            <div class="rs-card">
-              <table class="meta-table"><tbody>
-                ${metaRowsHtml}
-                <tr><td class="meta-label">IMAGERY:</td><td class="meta-value">${imageryRowHtml}</td></tr>
-              </tbody></table>
-            </div>
-          </div>
+          ${coverHeaderHtml(true)}
         </td>
       </tr>
       <tr>

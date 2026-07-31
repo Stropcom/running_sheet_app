@@ -514,9 +514,11 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 .plain-list { list-style:disc; padding-left:18px; }
 .plain-list li { margin-bottom:5px; font-size:10.5px; }
 .muted-note { font-size:10px; color:#94a3b8; font-style:italic; }
-.summary-table { width:100%; border-collapse:collapse; }
-.summary-table th { background:${BLUE_LIGHT} !important; color:${BLUE_DARK} !important; font-weight:700; font-size:9.5px; text-transform:uppercase; letter-spacing:0.04em; text-align:left; padding:6px 8px; border-bottom:2px solid ${BLUE_DARK}; }
-.summary-table td { vertical-align:top; font-size:10.5px; padding:6px 8px; border-bottom:1px solid ${GREY_BORDER}; }
+.summary-table { width:100%; border-collapse:collapse; border:1.5px solid ${BLUE_DARK}; }
+.summary-table th { background:${BLUE_LIGHT} !important; color:${BLUE_DARK} !important; font-weight:700; font-size:9.5px; text-transform:uppercase; letter-spacing:0.04em; text-align:left; padding:6px 8px; border-bottom:2px solid ${BLUE_DARK}; border-right:1px solid #c7d5ee; }
+.summary-table th:last-child, .summary-table td:last-child { border-right:none; }
+.summary-table td { vertical-align:top; font-size:10.5px; padding:6px 8px; border-bottom:1px solid ${GREY_BORDER}; border-right:1px solid ${GREY_BORDER}; }
+.summary-table tbody tr:last-child td { border-bottom:none; }
 .footer { margin-top:28px; padding-top:12px; border-top:1px solid ${GREY_BORDER}; display:flex; justify-content:space-between; font-size:9px; color:#94a3b8; }
 @media print { * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; } .cover-header { background:${BLUE_DARK} !important; } .section-title { background:${BLUE_LIGHT} !important; } .op-badge { background:${BLUE_LIGHT} !important; } .summary-table th { background:${BLUE_LIGHT} !important; } }
 </style></head><body>

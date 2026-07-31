@@ -160,7 +160,7 @@ function SheetFolderList({
 }) {
   const utils = trpc.useUtils();
   const [viewMode, setViewMode] = useState<"sheets" | "combined">("sheets");
-  const [lightbox, setLightbox] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<{ id: number; url: string } | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [linking, setLinking] = useState<{ id: number; url: string } | null>(null);
   const { data: operation } = trpc.operation.get.useQuery({ id: operationId });
@@ -327,7 +327,7 @@ function SheetFolderList({
                         src={a.url}
                         alt="Attached photograph"
                         className="w-full aspect-square object-cover cursor-zoom-in"
-                        onClick={() => setLightbox(a.url)}
+                        onClick={() => setLightbox({ id: a.id, url: a.url })}
                       />
                       <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1">
                         <p className="text-[10px] text-white truncate">{formatAttachmentBanner(a)}</p>
@@ -336,10 +336,6 @@ function SheetFolderList({
                         linkedCount={a.linkedCount}
                         onClick={() => setLinking({ id: a.id, url: a.url })}
                         positionClassName="absolute top-1.5 left-1.5"
-                      />
-                      <DeletePhotoButton
-                        pending={deleteAttachment.isPending}
-                        onConfirm={() => deleteAttachment.mutate({ id: a.id })}
                       />
                     </div>
                     <LinkedEntityPills entities={a.linkedEntities} onClick={() => setLinking({ id: a.id, url: a.url })} />
@@ -362,11 +358,20 @@ function SheetFolderList({
           >
             <X className="h-5 w-5" />
           </button>
-          <img
-            src={lightbox}
-            alt="Attached photograph"
-            className="max-w-full max-h-full rounded shadow-2xl"
-          />
+          <div className="relative max-w-full max-h-full" onClick={e => e.stopPropagation()}>
+            <img
+              src={lightbox.url}
+              alt="Attached photograph"
+              className="block max-w-full max-h-full rounded shadow-2xl"
+            />
+            <DeletePhotoButton
+              pending={deleteAttachment.isPending}
+              onConfirm={() => { deleteAttachment.mutate({ id: lightbox.id }); setLightbox(null); }}
+              positionClassName="absolute bottom-3 right-3"
+              iconSize="h-10 w-10"
+              glyphSize="h-4 w-4"
+            />
+          </div>
         </div>
       )}
 
@@ -396,7 +401,7 @@ function SheetGallery({
   onBack: () => void;
 }) {
   const utils = trpc.useUtils();
-  const [lightbox, setLightbox] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<{ id: number; url: string } | null>(null);
   const [linking, setLinking] = useState<{ id: number; url: string } | null>(null);
   const { data: sheet } = trpc.sheet.get.useQuery({ id: sheetId });
   const { data: attachments, isLoading } =
@@ -460,7 +465,7 @@ function SheetGallery({
                   src={a.url}
                   alt="Attached photograph"
                   className="w-full aspect-square object-cover cursor-zoom-in"
-                  onClick={() => setLightbox(a.url)}
+                  onClick={() => setLightbox({ id: a.id, url: a.url })}
                 />
                 <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1">
                   <p className="text-[10px] text-white truncate">{formatAttachmentBanner(a)}</p>
@@ -469,10 +474,6 @@ function SheetGallery({
                   linkedCount={a.linkedCount}
                   onClick={() => setLinking({ id: a.id, url: a.url })}
                   positionClassName="absolute top-1.5 left-1.5"
-                />
-                <DeletePhotoButton
-                  pending={deleteAttachment.isPending}
-                  onConfirm={() => deleteAttachment.mutate({ id: a.id })}
                 />
               </div>
               <LinkedEntityPills entities={a.linkedEntities} onClick={() => setLinking({ id: a.id, url: a.url })} />
@@ -492,11 +493,20 @@ function SheetGallery({
           >
             <X className="h-5 w-5" />
           </button>
-          <img
-            src={lightbox}
-            alt="Attached photograph"
-            className="max-w-full max-h-full rounded shadow-2xl"
-          />
+          <div className="relative max-w-full max-h-full" onClick={e => e.stopPropagation()}>
+            <img
+              src={lightbox.url}
+              alt="Attached photograph"
+              className="block max-w-full max-h-full rounded shadow-2xl"
+            />
+            <DeletePhotoButton
+              pending={deleteAttachment.isPending}
+              onConfirm={() => { deleteAttachment.mutate({ id: lightbox.id }); setLightbox(null); }}
+              positionClassName="absolute bottom-3 right-3"
+              iconSize="h-10 w-10"
+              glyphSize="h-4 w-4"
+            />
+          </div>
         </div>
       )}
 

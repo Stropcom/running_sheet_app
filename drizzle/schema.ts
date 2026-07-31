@@ -27,7 +27,9 @@ export const users = mysqlTable("users", {
   team: mysqlEnum("team", ["TEAM1", "TEAM2", "PTT"]),
   email: varchar("email", { length: 320 }),
   phone: varchar("phone", { length: 32 }),
-  role: mysqlEnum("role", ["observer", "member", "admin"]).default("observer").notNull(),
+  role: mysqlEnum("role", ["observer", "member", "admin"])
+    .default("observer")
+    .notNull(),
   // Legacy OAuth field — kept nullable so existing rows are not broken
   openId: varchar("openId", { length: 64 }),
   loginMethod: varchar("loginMethod", { length: 64 }).default("local"),
@@ -39,7 +41,9 @@ export const users = mysqlTable("users", {
   // Opt-out for CTO Roster shift-change notifications specifically (not a
   // global notification kill switch) — added while the roster is still
   // being actively tested/edited, so people aren't spammed by every change.
-  rosterShiftNotificationsEnabled: boolean("rosterShiftNotificationsEnabled").default(true).notNull(),
+  rosterShiftNotificationsEnabled: boolean("rosterShiftNotificationsEnabled")
+    .default(true)
+    .notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
@@ -59,7 +63,9 @@ export const operations = mysqlTable("operations", {
   createdBy: int("createdBy").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-  status: mysqlEnum("status", ["active", "before_court", "archive"]).default("active").notNull(),
+  status: mysqlEnum("status", ["active", "before_court", "archive"])
+    .default("active")
+    .notNull(),
   deletedAt: bigint("deletedAt", { mode: "number" }),
   deletedByCIN: varchar("deletedByCIN", { length: 64 }),
 });
@@ -184,24 +190,39 @@ export type InsertRowAttachment = typeof rowAttachments.$inferInsert;
 // de-duplicate entities. entityLabel keeps the label text as shown at link
 // time for display without needing to re-run extraction.
 
-export const attachmentEntityLinks = mysqlTable("attachment_entity_links", {
-  id: int("id").autoincrement().primaryKey(),
-  attachmentId: int("attachmentId").notNull(),
-  category: mysqlEnum("category", ["target", "vehicle", "associate", "location", "unidentified_person"]).notNull(),
-  targetId: int("targetId"), // set when category = "target"
-  entityKey: varchar("entityKey", { length: 512 }), // normalized label, set when category != "target"
-  entityLabel: varchar("entityLabel", { length: 512 }).notNull(), // display label at link time
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-}, (table) => ({
-  // Guards the non-target linkAttachmentToEntity path (entityKey is only
-  // set there) against a request landing twice — e.g. a fast double-tap on
-  // the face-select Confirm button before it disables — creating two
-  // Unidentified Person pool entries for what's really one confirmed face.
-  entityKeyDedupIdx: uniqueIndex("attachment_entity_links_dedup_idx").on(table.attachmentId, table.category, table.entityKey),
-}));
+export const attachmentEntityLinks = mysqlTable(
+  "attachment_entity_links",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    attachmentId: int("attachmentId").notNull(),
+    category: mysqlEnum("category", [
+      "target",
+      "vehicle",
+      "associate",
+      "location",
+      "unidentified_person",
+    ]).notNull(),
+    targetId: int("targetId"), // set when category = "target"
+    entityKey: varchar("entityKey", { length: 512 }), // normalized label, set when category != "target"
+    entityLabel: varchar("entityLabel", { length: 512 }).notNull(), // display label at link time
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => ({
+    // Guards the non-target linkAttachmentToEntity path (entityKey is only
+    // set there) against a request landing twice — e.g. a fast double-tap on
+    // the face-select Confirm button before it disables — creating two
+    // Unidentified Person pool entries for what's really one confirmed face.
+    entityKeyDedupIdx: uniqueIndex("attachment_entity_links_dedup_idx").on(
+      table.attachmentId,
+      table.category,
+      table.entityKey
+    ),
+  })
+);
 
 export type AttachmentEntityLink = typeof attachmentEntityLinks.$inferSelect;
-export type InsertAttachmentEntityLink = typeof attachmentEntityLinks.$inferInsert;
+export type InsertAttachmentEntityLink =
+  typeof attachmentEntityLinks.$inferInsert;
 
 // ─── Person Detections (face recognition) ──────────────────────────────────
 // One row per face an officer confirmed in a photo via the face-select
@@ -259,7 +280,12 @@ export const entityAliases = mysqlTable(
   "entity_aliases",
   {
     id: int("id").autoincrement().primaryKey(),
-    type: mysqlEnum("type", ["person", "vehicle", "address", "business"]).notNull(),
+    type: mysqlEnum("type", [
+      "person",
+      "vehicle",
+      "address",
+      "business",
+    ]).notNull(),
     loserKey: varchar("loserKey", { length: 512 }).notNull(), // normalized key merged away
     loserLabel: varchar("loserLabel", { length: 512 }).notNull(), // kept as "also known as" on the winner
     winnerKey: varchar("winnerKey", { length: 512 }).notNull(), // normalized key that survives
@@ -267,9 +293,12 @@ export const entityAliases = mysqlTable(
     mergedByCIN: varchar("mergedByCIN", { length: 64 }),
     mergedAt: bigint("mergedAt", { mode: "number" }).notNull(),
   },
-  (table) => ({
+  table => ({
     // A given loser key can only ever be merged into one winner at a time.
-    loserKeyIdx: uniqueIndex("entity_aliases_loser_idx").on(table.type, table.loserKey),
+    loserKeyIdx: uniqueIndex("entity_aliases_loser_idx").on(
+      table.type,
+      table.loserKey
+    ),
   })
 );
 
@@ -283,19 +312,29 @@ export const entityDedupDecisions = mysqlTable(
   "entity_dedup_decisions",
   {
     id: int("id").autoincrement().primaryKey(),
-    type: mysqlEnum("type", ["person", "vehicle", "address", "business"]).notNull(),
+    type: mysqlEnum("type", [
+      "person",
+      "vehicle",
+      "address",
+      "business",
+    ]).notNull(),
     keyA: varchar("keyA", { length: 255 }).notNull(), // alphabetically-lesser of the pair
     keyB: varchar("keyB", { length: 255 }).notNull(),
     decidedByCIN: varchar("decidedByCIN", { length: 64 }),
     decidedAt: bigint("decidedAt", { mode: "number" }).notNull(),
   },
-  (table) => ({
-    pairIdx: uniqueIndex("entity_dedup_decisions_pair_idx").on(table.type, table.keyA, table.keyB),
+  table => ({
+    pairIdx: uniqueIndex("entity_dedup_decisions_pair_idx").on(
+      table.type,
+      table.keyA,
+      table.keyB
+    ),
   })
 );
 
 export type EntityDedupDecision = typeof entityDedupDecisions.$inferSelect;
-export type InsertEntityDedupDecision = typeof entityDedupDecisions.$inferInsert;
+export type InsertEntityDedupDecision =
+  typeof entityDedupDecisions.$inferInsert;
 
 // ─── Targets ────────────────────────────────────────────────────────────────
 // One row per target in the global registry. Targets are independent of
@@ -304,21 +343,21 @@ export type InsertEntityDedupDecision = typeof entityDedupDecisions.$inferInsert
 
 export const targets = mysqlTable("targets", {
   id: int("id").autoincrement().primaryKey(),
-  operationId: int("operationId"),  // nullable — legacy field, use join table instead
+  operationId: int("operationId"), // nullable — legacy field, use join table instead
   name: varchar("name", { length: 255 }).notNull(), // e.g. "Target 1" or a codename
-  tgt: text("tgt"),   // Target (person) details
-  hbf: text("hbf"),   // Home Address Full
-  hb:  text("hb"),    // Home Base (short)
-  v1f: text("v1f"),   // Vehicle 1 Full description
-  v1:  text("v1"),    // Vehicle 1 (short)
-  v2f: text("v2f"),   // Vehicle 2 Full description (legacy — migrated into extraVehicles)
-  v2:  text("v2"),    // Vehicle 2 (short) (legacy — migrated into extraVehicles)
+  tgt: text("tgt"), // Target (person) details
+  hbf: text("hbf"), // Home Address Full
+  hb: text("hb"), // Home Base (short)
+  v1f: text("v1f"), // Vehicle 1 Full description
+  v1: text("v1"), // Vehicle 1 (short)
+  v2f: text("v2f"), // Vehicle 2 Full description (legacy — migrated into extraVehicles)
+  v2: text("v2"), // Vehicle 2 (short) (legacy — migrated into extraVehicles)
   // Dynamic extra vehicles beyond V1: JSON array of {full: string, short: string}
   extraVehicles: text("extraVehicles"),
   // Numbered wild fields: JSON array of {label: string, value: string} e.g. [{label:"#1",value:"..."},{label:"#2",value:"..."}]
   wildFields: text("wildFields"),
-  dep: text("dep"),   // Depart address/location
-  arr: text("arr"),   // Arrive address/location
+  dep: text("dep"), // Depart address/location
+  arr: text("arr"), // Arrive address/location
   createdBy: int("createdBy").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -362,7 +401,8 @@ export const operationTargetLinks = mysqlTable("operation_target_links", {
 });
 
 export type OperationTargetLink = typeof operationTargetLinks.$inferSelect;
-export type InsertOperationTargetLink = typeof operationTargetLinks.$inferInsert;
+export type InsertOperationTargetLink =
+  typeof operationTargetLinks.$inferInsert;
 
 // ─── Observation Shortcuts ──────────────────────────────────────────────────
 // Global list of text shortcuts for the observation field.
@@ -371,8 +411,8 @@ export type InsertOperationTargetLink = typeof operationTargetLinks.$inferInsert
 export const shortcuts = mysqlTable("shortcuts", {
   id: int("id").autoincrement().primaryKey(),
   trigger: varchar("trigger", { length: 64 }).notNull().unique(), // e.g. "sc"
-  expansion: text("expansion").notNull(),                         // e.g. "Surveillance commenced in the vicinity of"
-  showInRs: boolean("showInRs").notNull().default(true),          // whether this shortcut appears as a chip in RS and RS QE
+  expansion: text("expansion").notNull(), // e.g. "Surveillance commenced in the vicinity of"
+  showInRs: boolean("showInRs").notNull().default(true), // whether this shortcut appears as a chip in RS and RS QE
   createdBy: int("createdBy").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -426,24 +466,30 @@ export const subObservationMembers = mysqlTable("sub_observation_members", {
 });
 
 export type SubObservationMember = typeof subObservationMembers.$inferSelect;
-export type InsertSubObservationMember = typeof subObservationMembers.$inferInsert;
+export type InsertSubObservationMember =
+  typeof subObservationMembers.$inferInsert;
 
 // ─── Sub-Observation Certifications ───────────────────────────────────────────
 // Each CIN on a sub-observation can be certified independently.
 
-export const subObservationCertifications = mysqlTable("sub_observation_certifications", {
-  id: int("id").autoincrement().primaryKey(),
-  subObsId: int("subObsId").notNull(),
-  memberId: int("memberId").notNull(), // references sub_observation_members.id
-  certifiedByUserId: int("certifiedByUserId").notNull(),
-  certifiedByName: varchar("certifiedByName", { length: 255 }).notNull(),
-  certifiedByCIN: varchar("certifiedByCIN", { length: 64 }).notNull(),
-  certifiedAt: bigint("certifiedAt", { mode: "number" }).notNull(),
-  isActive: boolean("isActive").default(true).notNull(),
-});
+export const subObservationCertifications = mysqlTable(
+  "sub_observation_certifications",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    subObsId: int("subObsId").notNull(),
+    memberId: int("memberId").notNull(), // references sub_observation_members.id
+    certifiedByUserId: int("certifiedByUserId").notNull(),
+    certifiedByName: varchar("certifiedByName", { length: 255 }).notNull(),
+    certifiedByCIN: varchar("certifiedByCIN", { length: 64 }).notNull(),
+    certifiedAt: bigint("certifiedAt", { mode: "number" }).notNull(),
+    isActive: boolean("isActive").default(true).notNull(),
+  }
+);
 
-export type SubObservationCertification = typeof subObservationCertifications.$inferSelect;
-export type InsertSubObservationCertification = typeof subObservationCertifications.$inferInsert;
+export type SubObservationCertification =
+  typeof subObservationCertifications.$inferSelect;
+export type InsertSubObservationCertification =
+  typeof subObservationCertifications.$inferInsert;
 
 // ─── Audit Logs ───────────────────────────────────────────────────────────────
 
@@ -537,6 +583,37 @@ export const governanceRecords = mysqlTable("governance_records", {
 export type GovernanceRecord = typeof governanceRecords.$inferSelect;
 export type InsertGovernanceRecord = typeof governanceRecords.$inferInsert;
 
+// ─── Sheet Summary ──────────────────────────────────────────────────────────
+// A supervisor's brief overview of a running sheet's deployment — one row
+// per sheet, auto-created (and prepopulated from the sheet/operation/target)
+// the first time the Summary tab is opened, then freely editable.
+export const sheetSummaries = mysqlTable("sheet_summaries", {
+  id: int("id").autoincrement().primaryKey(),
+  sheetId: int("sheetId").notNull().unique(),
+  teamLabel: varchar("teamLabel", { length: 100 }),
+  teamCins: text("teamCins"),
+  operationName: varchar("operationName", { length: 255 }),
+  dayDate: varchar("dayDate", { length: 64 }),
+  startTime: varchar("startTime", { length: 32 }),
+  finishTime: varchar("finishTime", { length: 32 }),
+  targetName: text("targetName"),
+  address: text("address"),
+  ioSupport: text("ioSupport"),
+  intelSupport: text("intelSupport"),
+  specialProjects: text("specialProjects"),
+  objectives: text("objectives"),
+  criticalDecisions: text("criticalDecisions"),
+  summary: text("summary"),
+  newIntelForProfile: text("newIntelForProfile"),
+  issues: text("issues"),
+  lastEditedByCIN: varchar("lastEditedByCIN", { length: 64 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type SheetSummary = typeof sheetSummaries.$inferSelect;
+export type InsertSheetSummary = typeof sheetSummaries.$inferInsert;
+
 // ─── WIPC Vault ───────────────────────────────────────────────────────────────
 // All sensitive fields in these tables are AES-256-GCM encrypted at rest
 // using the WIPC_VAULT_KEY environment secret. The raw values are NEVER stored
@@ -551,11 +628,11 @@ export const wipcOfficerProfiles = mysqlTable("wipc_officer_profiles", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull().unique(), // FK → users.id
   // Encrypted fields (AES-256-GCM via wipcVault.ts)
-  fullName: text("fullName").notNull(),       // encrypted
-  afpId: text("afpId").notNull(),             // encrypted
-  workLocation: text("workLocation"),         // encrypted
-  portfolio: text("portfolio"),               // encrypted
-  contactNumber: text("contactNumber"),       // encrypted
+  fullName: text("fullName").notNull(), // encrypted
+  afpId: text("afpId").notNull(), // encrypted
+  workLocation: text("workLocation"), // encrypted
+  portfolio: text("portfolio"), // encrypted
+  contactNumber: text("contactNumber"), // encrypted
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -571,12 +648,12 @@ export const wipcMembers = mysqlTable("wipc_members", {
   id: int("id").autoincrement().primaryKey(),
   createdBy: int("createdBy").notNull(), // FK → users.id (admin who created)
   // Encrypted identity fields (AES-256-GCM via wipcVault.ts)
-  fullName: text("fullName").notNull(),   // encrypted
-  dob: text("dob"),                       // encrypted (DD/MM/YYYY)
-  afpId: text("afpId").notNull(),         // encrypted
-  cinNumber: text("cinNumber"),           // encrypted — CIN-to-identity link
-  aiInitials: text("aiInitials"),         // encrypted
-  aiKnownAs: text("aiKnownAs"),           // encrypted
+  fullName: text("fullName").notNull(), // encrypted
+  dob: text("dob"), // encrypted (DD/MM/YYYY)
+  afpId: text("afpId").notNull(), // encrypted
+  cinNumber: text("cinNumber"), // encrypted — CIN-to-identity link
+  aiInitials: text("aiInitials"), // encrypted
+  aiKnownAs: text("aiKnownAs"), // encrypted
   // Role flags (not sensitive, stored plaintext as booleans)
   isUco: boolean("isUco").default(false).notNull(),
   isOco: boolean("isOco").default(false).notNull(),
@@ -596,7 +673,7 @@ export const wipcAuditLog = mysqlTable("wipc_audit_log", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
   action: varchar("action", { length: 64 }).notNull(), // e.g. READ_MEMBERS, SAVE_MEMBER, DELETE_MEMBER, SAVE_OFFICER, READ_OFFICER, GENERATE_WIPC, GENERATE_STAT_DEC
-  targetId: int("targetId"),   // wipcMembers.id or wipcOfficerProfiles.id if applicable
+  targetId: int("targetId"), // wipcMembers.id or wipcOfficerProfiles.id if applicable
   detail: varchar("detail", { length: 512 }), // non-sensitive context (e.g. operation name)
   ipAddress: varchar("ipAddress", { length: 64 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -611,21 +688,21 @@ export type InsertWipcAuditEntry = typeof wipcAuditLog.$inferInsert;
 
 export const customMapMarkers = mysqlTable("custom_map_markers", {
   id: int("id").autoincrement().primaryKey(),
-  createdBy: int("createdBy").notNull(),          // FK → users.id
-  operationId: int("operationId"),                // FK → operations.id (nullable)
-  targetId: int("targetId"),                      // FK → targets.id (nullable)
+  createdBy: int("createdBy").notNull(), // FK → users.id
+  operationId: int("operationId"), // FK → operations.id (nullable)
+  targetId: int("targetId"), // FK → targets.id (nullable)
   lat: double("lat").notNull(),
   lng: double("lng").notNull(),
-  label: varchar("label", { length: 255 }),       // user-typed name/business
-  address: varchar("address", { length: 512 }),   // reverse-geocoded or typed
-  markerIcon: varchar("markerIcon", { length: 64 }).notNull(),  // e.g. "house_filled"
+  label: varchar("label", { length: 255 }), // user-typed name/business
+  address: varchar("address", { length: 512 }), // reverse-geocoded or typed
+  markerIcon: varchar("markerIcon", { length: 64 }).notNull(), // e.g. "house_filled"
   markerColour: varchar("markerColour", { length: 32 }).notNull(), // "red"|"yellow"|"blue"|"purple"
-  note: text("note"),                             // observation note
-  assocPersons: text("assocPersons"),             // JSON array of person label strings
-  assocVehicles: text("assocVehicles"),           // JSON array of vehicle label strings
+  note: text("note"), // observation note
+  assocPersons: text("assocPersons"), // JSON array of person label strings
+  assocVehicles: text("assocVehicles"), // JSON array of vehicle label strings
   rotation: int("rotation").default(0).notNull(), // degrees 0-359
   linkedIntelLabel: varchar("linkedIntelLabel", { length: 512 }), // manually merged intel pin label (null = no merge)
-  deletedAt: bigint("deletedAt", { mode: "number" }),  // soft-delete timestamp
+  deletedAt: bigint("deletedAt", { mode: "number" }), // soft-delete timestamp
   deletedByCIN: varchar("deletedByCIN", { length: 32 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -639,21 +716,28 @@ export type InsertCustomMapMarker = typeof customMapMarkers.$inferInsert;
 // sharing. operationIds is a JSON array of operation IDs the user has selected
 // — used for operation-scoped visibility filtering.
 
-export const userLocations = mysqlTable("user_locations", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(),          // FK → users.id
-  deviceId: varchar("deviceId", { length: 128 }).notNull(), // unique per browser/device
-  lat: double("lat").notNull(),
-  lng: double("lng").notNull(),
-  speed: double("speed"),                   // m/s from GPS, null when unknown
-  heading: double("heading"),               // degrees 0-360, null when unknown
-  accuracy: double("accuracy"),             // metres
-  operationIds: text("operationIds").notNull().default("[]"), // JSON array of op IDs
-  sharingEnabled: boolean("sharingEnabled").default(false).notNull(),
-  updatedAt: bigint("updatedAt", { mode: "number" }).notNull(),
-}, (table) => ({
-  userDeviceIdx: uniqueIndex("idx_user_device").on(table.userId, table.deviceId),
-}));
+export const userLocations = mysqlTable(
+  "user_locations",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(), // FK → users.id
+    deviceId: varchar("deviceId", { length: 128 }).notNull(), // unique per browser/device
+    lat: double("lat").notNull(),
+    lng: double("lng").notNull(),
+    speed: double("speed"), // m/s from GPS, null when unknown
+    heading: double("heading"), // degrees 0-360, null when unknown
+    accuracy: double("accuracy"), // metres
+    operationIds: text("operationIds").notNull().default("[]"), // JSON array of op IDs
+    sharingEnabled: boolean("sharingEnabled").default(false).notNull(),
+    updatedAt: bigint("updatedAt", { mode: "number" }).notNull(),
+  },
+  table => ({
+    userDeviceIdx: uniqueIndex("idx_user_device").on(
+      table.userId,
+      table.deviceId
+    ),
+  })
+);
 
 export type UserLocation = typeof userLocations.$inferSelect;
 export type InsertUserLocation = typeof userLocations.$inferInsert;
@@ -677,15 +761,15 @@ export const styleRules = mysqlTable("style_rules", {
   id: int("id").autoincrement().primaryKey(),
   guideId: int("guideId").notNull(),
   ruleType: mysqlEnum("ruleType", [
-    "abbreviation",      // banned abbreviation → full word
-    "phrase_required",   // observation type must contain a required phrase
-    "sentence_start",    // observation must start with a specific pattern
-    "article_missing",   // missing article (the/a/an) before a noun
-    "passive_voice",     // passive voice pattern to flag
-    "tense",             // wrong tense pattern
-    "punctuation",       // missing punctuation (e.g. full stop at end)
-    "capitalisation",    // suburb/place name must be ALL CAPS
-    "custom",            // free-form custom rule
+    "abbreviation", // banned abbreviation → full word
+    "phrase_required", // observation type must contain a required phrase
+    "sentence_start", // observation must start with a specific pattern
+    "article_missing", // missing article (the/a/an) before a noun
+    "passive_voice", // passive voice pattern to flag
+    "tense", // wrong tense pattern
+    "punctuation", // missing punctuation (e.g. full stop at end)
+    "capitalisation", // suburb/place name must be ALL CAPS
+    "custom", // free-form custom rule
   ]).notNull(),
   // What to detect (regex pattern or plain text trigger)
   pattern: varchar("pattern", { length: 512 }).notNull(),
@@ -709,8 +793,8 @@ export type InsertStyleRule = typeof styleRules.$inferInsert;
 
 export const rsMappingWaypoints = mysqlTable("rs_mapping_waypoints", {
   id: int("id").autoincrement().primaryKey(),
-  sheetId: int("sheetId").notNull(),       // FK → running_sheets.id
-  rowId: int("rowId").notNull(),           // FK → sheet_rows.id
+  sheetId: int("sheetId").notNull(), // FK → running_sheets.id
+  rowId: int("rowId").notNull(), // FK → sheet_rows.id
   // Optional manual position override (set when user drags the waypoint)
   lat: double("lat"),
   lng: double("lng"),
@@ -736,7 +820,9 @@ export const userSidebarOrder = mysqlTable("user_sidebar_order", {
   /** JSON array of nav item keys in user-defined order, e.g. ["operations","todo","governance",...] */
   orderedKeys: text("orderedKeys").notNull(),
   /** 'folder' (default) or 'tile' */
-  homeScreenMode: varchar("homeScreenMode", { length: 16 }).default("folder").notNull(),
+  homeScreenMode: varchar("homeScreenMode", { length: 16 })
+    .default("folder")
+    .notNull(),
   /** JSON array of 10 tile keys in display order (row1=[0,1], row2=[2,3,4,5], row3=[6,7,8,9]) */
   tileOrder: text("tileOrder"),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -748,10 +834,10 @@ export type UserSidebarOrder = typeof userSidebarOrder.$inferSelect;
 export const opManagerPriorityRows = mysqlTable("op_manager_priority_rows", {
   id: int("id").autoincrement().primaryKey(),
   weekStart: varchar("weekStart", { length: 10 }).notNull(), // ISO date string YYYY-MM-DD (Monday)
-  category: varchar("category", { length: 64 }).notNull(),   // e.g. "A-TACC", "WC"
-  priority: int("priority").notNull(),                        // 1, 2, 3 ...
-  operationId: int("operationId"),                            // FK to operations (nullable — may be free-text)
-  operationName: varchar("operationName", { length: 255 }),   // free-text fallback
+  category: varchar("category", { length: 64 }).notNull(), // e.g. "A-TACC", "WC"
+  priority: int("priority").notNull(), // 1, 2, 3 ...
+  operationId: int("operationId"), // FK to operations (nullable — may be free-text)
+  operationName: varchar("operationName", { length: 255 }), // free-text fallback
   team: varchar("team", { length: 64 }),
   requestType: varchar("requestType", { length: 128 }),
   sortOrder: int("sortOrder").default(0).notNull(),
@@ -763,9 +849,9 @@ export type OpManagerPriorityRow = typeof opManagerPriorityRows.$inferSelect;
 export const opManagerTaskingCells = mysqlTable("op_manager_tasking_cells", {
   id: int("id").autoincrement().primaryKey(),
   weekStart: varchar("weekStart", { length: 10 }).notNull(),
-  dayIndex: int("dayIndex").notNull(),   // 0=Mon … 6=Sun
+  dayIndex: int("dayIndex").notNull(), // 0=Mon … 6=Sun
   teamRow: varchar("teamRow", { length: 64 }).notNull(), // "surv1" | "surv2" | "ptt" | "cap"
-  shiftTime: varchar("shiftTime", { length: 32 }),       // "RDO" | "0600-1400" | custom
+  shiftTime: varchar("shiftTime", { length: 32 }), // "RDO" | "0600-1400" | custom
   primaryTask: varchar("primaryTask", { length: 255 }),
   secondaryTask: varchar("secondaryTask", { length: 255 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -773,18 +859,22 @@ export const opManagerTaskingCells = mysqlTable("op_manager_tasking_cells", {
 });
 export type OpManagerTaskingCell = typeof opManagerTaskingCells.$inferSelect;
 
-export const opManagerSupervisorContacts = mysqlTable("op_manager_supervisor_contacts", {
-  id: int("id").autoincrement().primaryKey(),
-  weekStart: varchar("weekStart", { length: 10 }).notNull(),
-  role: varchar("role", { length: 128 }).notNull(), // e.g. "CTO", "Team 1 TL", "On Call Supervisor"
-  userId: int("userId"),                             // FK to users (nullable)
-  customName: varchar("customName", { length: 255 }),
-  phone: varchar("phone", { length: 32 }),
-  sortOrder: int("sortOrder").default(0).notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
-export type OpManagerSupervisorContact = typeof opManagerSupervisorContacts.$inferSelect;
+export const opManagerSupervisorContacts = mysqlTable(
+  "op_manager_supervisor_contacts",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    weekStart: varchar("weekStart", { length: 10 }).notNull(),
+    role: varchar("role", { length: 128 }).notNull(), // e.g. "CTO", "Team 1 TL", "On Call Supervisor"
+    userId: int("userId"), // FK to users (nullable)
+    customName: varchar("customName", { length: 255 }),
+    phone: varchar("phone", { length: 32 }),
+    sortOrder: int("sortOrder").default(0).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  }
+);
+export type OpManagerSupervisorContact =
+  typeof opManagerSupervisorContacts.$inferSelect;
 
 // ─── Op Manager Posted Weeks ─────────────────────────────────────────────────
 export const opManagerPostedWeeks = mysqlTable("op_manager_posted_weeks", {
@@ -849,26 +939,30 @@ export const ctoRosterTeams = mysqlTable("cto_roster_teams", {
 export type CtoRosterTeam = typeof ctoRosterTeams.$inferSelect;
 export type InsertCtoRosterTeam = typeof ctoRosterTeams.$inferInsert;
 
-export const ctoRosterMembers = mysqlTable("cto_roster_members", {
-  id: int("id").autoincrement().primaryKey(),
-  // FK to users.cin, not users.id — matches how the rest of RunLog stamps
-  // CIN (not a raw user id) on operational records, so roster history still
-  // reads correctly even if a user's own name/profile changes later.
-  cin: varchar("cin", { length: 64 }).notNull(),
-  teamId: int("teamId").notNull(),
-  sortOrder: int("sortOrder").default(0).notNull(),
-  // When true, this member is excluded from ON DUTY / ON CALL headcount
-  // totals (roster grid tally rows and the Outlook coverage view) — they
-  // still appear on the grid with their own shifts, just don't count
-  // toward team numbers. For members who are rostered for tracking
-  // purposes but shouldn't inflate deployable headcount.
-  excludedFromCounts: boolean("excludedFromCounts").default(false).notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (t) => [
-  index("cto_roster_members_teamId_idx").on(t.teamId),
-  uniqueIndex("cto_roster_members_cin_idx").on(t.cin),
-]);
+export const ctoRosterMembers = mysqlTable(
+  "cto_roster_members",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    // FK to users.cin, not users.id — matches how the rest of RunLog stamps
+    // CIN (not a raw user id) on operational records, so roster history still
+    // reads correctly even if a user's own name/profile changes later.
+    cin: varchar("cin", { length: 64 }).notNull(),
+    teamId: int("teamId").notNull(),
+    sortOrder: int("sortOrder").default(0).notNull(),
+    // When true, this member is excluded from ON DUTY / ON CALL headcount
+    // totals (roster grid tally rows and the Outlook coverage view) — they
+    // still appear on the grid with their own shifts, just don't count
+    // toward team numbers. For members who are rostered for tracking
+    // purposes but shouldn't inflate deployable headcount.
+    excludedFromCounts: boolean("excludedFromCounts").default(false).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  t => [
+    index("cto_roster_members_teamId_idx").on(t.teamId),
+    uniqueIndex("cto_roster_members_cin_idx").on(t.cin),
+  ]
+);
 export type CtoRosterMember = typeof ctoRosterMembers.$inferSelect;
 export type InsertCtoRosterMember = typeof ctoRosterMembers.$inferInsert;
 
@@ -907,25 +1001,45 @@ export type InsertCtoRosterSecondment =
 
 // ─── CTO Roster: Shifts ───────────────────────────────────────────────────────
 // Valid shift codes: d, a, r, o, l, c, tt, dep, doc, adoc, ad, aoc
-export const CTO_ROSTER_SHIFT_CODES = ["d", "a", "r", "o", "l", "c", "tt", "dep", "doc", "adoc", "ad", "aoc"] as const;
-export type CtoRosterShiftCode = typeof CTO_ROSTER_SHIFT_CODES[number];
+export const CTO_ROSTER_SHIFT_CODES = [
+  "d",
+  "a",
+  "r",
+  "o",
+  "l",
+  "c",
+  "tt",
+  "dep",
+  "doc",
+  "adoc",
+  "ad",
+  "aoc",
+] as const;
+export type CtoRosterShiftCode = (typeof CTO_ROSTER_SHIFT_CODES)[number];
 
-export const ctoRosterShifts = mysqlTable("cto_roster_shifts", {
-  id: int("id").autoincrement().primaryKey(),
-  memberId: int("memberId").notNull(),
-  shiftDate: date("shiftDate", { mode: "string" }).notNull(),
-  shiftCode: varchar("shiftCode", { length: 8 }).notNull(),
-  /** Optional custom start time override, e.g. "07:00" */
-  shiftTime: varchar("shiftTime", { length: 8 }),
-  comment: text("comment"),
-  isActing: boolean("isActing").default(false).notNull(),
-  updatedBy: int("updatedBy"), // FK → users.id
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (t) => [
-  uniqueIndex("cto_roster_shifts_member_date_idx").on(t.memberId, t.shiftDate),
-  index("cto_roster_shifts_date_idx").on(t.shiftDate),
-]);
+export const ctoRosterShifts = mysqlTable(
+  "cto_roster_shifts",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    memberId: int("memberId").notNull(),
+    shiftDate: date("shiftDate", { mode: "string" }).notNull(),
+    shiftCode: varchar("shiftCode", { length: 8 }).notNull(),
+    /** Optional custom start time override, e.g. "07:00" */
+    shiftTime: varchar("shiftTime", { length: 8 }),
+    comment: text("comment"),
+    isActing: boolean("isActing").default(false).notNull(),
+    updatedBy: int("updatedBy"), // FK → users.id
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  t => [
+    uniqueIndex("cto_roster_shifts_member_date_idx").on(
+      t.memberId,
+      t.shiftDate
+    ),
+    index("cto_roster_shifts_date_idx").on(t.shiftDate),
+  ]
+);
 export type CtoRosterShift = typeof ctoRosterShifts.$inferSelect;
 export type InsertCtoRosterShift = typeof ctoRosterShifts.$inferInsert;
 
@@ -943,7 +1057,9 @@ export const ctoRosterDrafts = mysqlTable("cto_roster_drafts", {
    * 'seeded'     — copied from live roster; Leave/Court locked; can be merged back
    * 'standalone' — blank slate; fully editable teams/members; cannot be merged; can be saved as a named roster
    */
-  draftType: mysqlEnum("draftType", ["seeded", "standalone"]).default("seeded").notNull(),
+  draftType: mysqlEnum("draftType", ["seeded", "standalone"])
+    .default("seeded")
+    .notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   /** Auto-expires 14 days after creation */
   expiresAt: timestamp("expiresAt").notNull(),
@@ -953,14 +1069,16 @@ export type CtoRosterDraft = typeof ctoRosterDrafts.$inferSelect;
 export type InsertCtoRosterDraft = typeof ctoRosterDrafts.$inferInsert;
 
 /** Teams owned by a standalone draft (not linked to live teams) */
-export const ctoRosterDraftTeams = mysqlTable("cto_roster_draft_teams", {
-  id: int("id").autoincrement().primaryKey(),
-  draftId: int("draftId").notNull(),
-  name: varchar("name", { length: 64 }).notNull(),
-  sortOrder: int("sortOrder").default(0).notNull(),
-}, (t) => [
-  index("cto_roster_draft_teams_draftId_idx").on(t.draftId),
-]);
+export const ctoRosterDraftTeams = mysqlTable(
+  "cto_roster_draft_teams",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    draftId: int("draftId").notNull(),
+    name: varchar("name", { length: 64 }).notNull(),
+    sortOrder: int("sortOrder").default(0).notNull(),
+  },
+  t => [index("cto_roster_draft_teams_draftId_idx").on(t.draftId)]
+);
 export type CtoRosterDraftTeam = typeof ctoRosterDraftTeams.$inferSelect;
 export type InsertCtoRosterDraftTeam = typeof ctoRosterDraftTeams.$inferInsert;
 
@@ -969,39 +1087,53 @@ export type InsertCtoRosterDraftTeam = typeof ctoRosterDraftTeams.$inferInsert;
  * a free-text name, unlike ctoRosterMembers — a blank-slate "what if" draft
  * can plan around a hypothetical position that isn't a real CIN yet.
  */
-export const ctoRosterDraftMembers = mysqlTable("cto_roster_draft_members", {
-  id: int("id").autoincrement().primaryKey(),
-  draftId: int("draftId").notNull(),
-  /** References cto_roster_draft_teams.id for standalone drafts */
-  teamId: int("teamId").notNull(),
-  name: varchar("name", { length: 128 }).notNull(),
-  sortOrder: int("sortOrder").default(0).notNull(),
-}, (t) => [
-  index("cto_roster_draft_members_draftId_idx").on(t.draftId),
-  index("cto_roster_draft_members_teamId_idx").on(t.teamId),
-]);
+export const ctoRosterDraftMembers = mysqlTable(
+  "cto_roster_draft_members",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    draftId: int("draftId").notNull(),
+    /** References cto_roster_draft_teams.id for standalone drafts */
+    teamId: int("teamId").notNull(),
+    name: varchar("name", { length: 128 }).notNull(),
+    sortOrder: int("sortOrder").default(0).notNull(),
+  },
+  t => [
+    index("cto_roster_draft_members_draftId_idx").on(t.draftId),
+    index("cto_roster_draft_members_teamId_idx").on(t.teamId),
+  ]
+);
 export type CtoRosterDraftMember = typeof ctoRosterDraftMembers.$inferSelect;
-export type InsertCtoRosterDraftMember = typeof ctoRosterDraftMembers.$inferInsert;
+export type InsertCtoRosterDraftMember =
+  typeof ctoRosterDraftMembers.$inferInsert;
 
-export const ctoRosterDraftShifts = mysqlTable("cto_roster_draft_shifts", {
-  id: int("id").autoincrement().primaryKey(),
-  draftId: int("draftId").notNull(),
-  memberId: int("memberId").notNull(),
-  shiftDate: date("shiftDate", { mode: "string" }).notNull(),
-  shiftCode: varchar("shiftCode", { length: 8 }).notNull(),
-  shiftTime: varchar("shiftTime", { length: 8 }),
-  comment: text("comment"),
-  isActing: boolean("isActing").default(false).notNull(),
-  updatedBy: int("updatedBy"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (t) => [
-  uniqueIndex("cto_roster_draft_shifts_draft_member_date_idx").on(t.draftId, t.memberId, t.shiftDate),
-  index("cto_roster_draft_shifts_draftId_idx").on(t.draftId),
-  index("cto_roster_draft_shifts_date_idx").on(t.shiftDate),
-]);
+export const ctoRosterDraftShifts = mysqlTable(
+  "cto_roster_draft_shifts",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    draftId: int("draftId").notNull(),
+    memberId: int("memberId").notNull(),
+    shiftDate: date("shiftDate", { mode: "string" }).notNull(),
+    shiftCode: varchar("shiftCode", { length: 8 }).notNull(),
+    shiftTime: varchar("shiftTime", { length: 8 }),
+    comment: text("comment"),
+    isActing: boolean("isActing").default(false).notNull(),
+    updatedBy: int("updatedBy"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  t => [
+    uniqueIndex("cto_roster_draft_shifts_draft_member_date_idx").on(
+      t.draftId,
+      t.memberId,
+      t.shiftDate
+    ),
+    index("cto_roster_draft_shifts_draftId_idx").on(t.draftId),
+    index("cto_roster_draft_shifts_date_idx").on(t.shiftDate),
+  ]
+);
 export type CtoRosterDraftShift = typeof ctoRosterDraftShifts.$inferSelect;
-export type InsertCtoRosterDraftShift = typeof ctoRosterDraftShifts.$inferInsert;
+export type InsertCtoRosterDraftShift =
+  typeof ctoRosterDraftShifts.$inferInsert;
 
 // ─── CTO Roster: Saved Rosters (named point-in-time archive/export) ─────────
 export const ctoRosterSavedRosters = mysqlTable("cto_roster_saved_rosters", {
@@ -1015,88 +1147,118 @@ export const ctoRosterSavedRosters = mysqlTable("cto_roster_saved_rosters", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 export type CtoRosterSavedRoster = typeof ctoRosterSavedRosters.$inferSelect;
-export type InsertCtoRosterSavedRoster = typeof ctoRosterSavedRosters.$inferInsert;
+export type InsertCtoRosterSavedRoster =
+  typeof ctoRosterSavedRosters.$inferInsert;
 
-export const ctoRosterSavedRosterTeams = mysqlTable("cto_roster_saved_roster_teams", {
-  id: int("id").autoincrement().primaryKey(),
-  savedRosterId: int("savedRosterId").notNull(),
-  name: varchar("name", { length: 64 }).notNull(),
-  sortOrder: int("sortOrder").default(0).notNull(),
-}, (t) => [
-  index("cto_roster_saved_roster_teams_rosterId_idx").on(t.savedRosterId),
-]);
-export type CtoRosterSavedRosterTeam = typeof ctoRosterSavedRosterTeams.$inferSelect;
-export type InsertCtoRosterSavedRosterTeam = typeof ctoRosterSavedRosterTeams.$inferInsert;
+export const ctoRosterSavedRosterTeams = mysqlTable(
+  "cto_roster_saved_roster_teams",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    savedRosterId: int("savedRosterId").notNull(),
+    name: varchar("name", { length: 64 }).notNull(),
+    sortOrder: int("sortOrder").default(0).notNull(),
+  },
+  t => [index("cto_roster_saved_roster_teams_rosterId_idx").on(t.savedRosterId)]
+);
+export type CtoRosterSavedRosterTeam =
+  typeof ctoRosterSavedRosterTeams.$inferSelect;
+export type InsertCtoRosterSavedRosterTeam =
+  typeof ctoRosterSavedRosterTeams.$inferInsert;
 
 /** Frozen snapshot of a member's display name at save time — a saved roster is a point-in-time archive. */
-export const ctoRosterSavedRosterMembers = mysqlTable("cto_roster_saved_roster_members", {
-  id: int("id").autoincrement().primaryKey(),
-  savedRosterId: int("savedRosterId").notNull(),
-  teamId: int("teamId").notNull(),
-  name: varchar("name", { length: 128 }).notNull(),
-  sortOrder: int("sortOrder").default(0).notNull(),
-}, (t) => [
-  index("cto_roster_saved_roster_members_rosterId_idx").on(t.savedRosterId),
-  index("cto_roster_saved_roster_members_teamId_idx").on(t.teamId),
-]);
-export type CtoRosterSavedRosterMember = typeof ctoRosterSavedRosterMembers.$inferSelect;
-export type InsertCtoRosterSavedRosterMember = typeof ctoRosterSavedRosterMembers.$inferInsert;
+export const ctoRosterSavedRosterMembers = mysqlTable(
+  "cto_roster_saved_roster_members",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    savedRosterId: int("savedRosterId").notNull(),
+    teamId: int("teamId").notNull(),
+    name: varchar("name", { length: 128 }).notNull(),
+    sortOrder: int("sortOrder").default(0).notNull(),
+  },
+  t => [
+    index("cto_roster_saved_roster_members_rosterId_idx").on(t.savedRosterId),
+    index("cto_roster_saved_roster_members_teamId_idx").on(t.teamId),
+  ]
+);
+export type CtoRosterSavedRosterMember =
+  typeof ctoRosterSavedRosterMembers.$inferSelect;
+export type InsertCtoRosterSavedRosterMember =
+  typeof ctoRosterSavedRosterMembers.$inferInsert;
 
-export const ctoRosterSavedRosterShifts = mysqlTable("cto_roster_saved_roster_shifts", {
-  id: int("id").autoincrement().primaryKey(),
-  savedRosterId: int("savedRosterId").notNull(),
-  memberId: int("memberId").notNull(),
-  shiftDate: date("shiftDate", { mode: "string" }).notNull(),
-  shiftCode: varchar("shiftCode", { length: 8 }).notNull(),
-  shiftTime: varchar("shiftTime", { length: 8 }),
-  comment: text("comment"),
-  isActing: boolean("isActing").default(false).notNull(),
-  updatedBy: int("updatedBy"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (t) => [
-  uniqueIndex("cto_roster_saved_roster_shifts_roster_member_date_idx").on(t.savedRosterId, t.memberId, t.shiftDate),
-  index("cto_roster_saved_roster_shifts_rosterId_idx").on(t.savedRosterId),
-  index("cto_roster_saved_roster_shifts_date_idx").on(t.shiftDate),
-]);
-export type CtoRosterSavedRosterShift = typeof ctoRosterSavedRosterShifts.$inferSelect;
-export type InsertCtoRosterSavedRosterShift = typeof ctoRosterSavedRosterShifts.$inferInsert;
+export const ctoRosterSavedRosterShifts = mysqlTable(
+  "cto_roster_saved_roster_shifts",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    savedRosterId: int("savedRosterId").notNull(),
+    memberId: int("memberId").notNull(),
+    shiftDate: date("shiftDate", { mode: "string" }).notNull(),
+    shiftCode: varchar("shiftCode", { length: 8 }).notNull(),
+    shiftTime: varchar("shiftTime", { length: 8 }),
+    comment: text("comment"),
+    isActing: boolean("isActing").default(false).notNull(),
+    updatedBy: int("updatedBy"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  t => [
+    uniqueIndex("cto_roster_saved_roster_shifts_roster_member_date_idx").on(
+      t.savedRosterId,
+      t.memberId,
+      t.shiftDate
+    ),
+    index("cto_roster_saved_roster_shifts_rosterId_idx").on(t.savedRosterId),
+    index("cto_roster_saved_roster_shifts_date_idx").on(t.shiftDate),
+  ]
+);
+export type CtoRosterSavedRosterShift =
+  typeof ctoRosterSavedRosterShifts.$inferSelect;
+export type InsertCtoRosterSavedRosterShift =
+  typeof ctoRosterSavedRosterShifts.$inferInsert;
 
 // ─── CTO Roster: Audit Log ────────────────────────────────────────────────────
 // Kept separate from RunLog's own auditLogs table — roster audit rows carry
 // shift-specific oldValue/newValue JSON diffs that don't fit that table's shape.
-export const ctoRosterAuditLog = mysqlTable("cto_roster_audit_log", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId"),
-  userName: varchar("userName", { length: 128 }),
-  /** upsert_shift | delete_shift | bulk_update | bulk_copy | add_member | delete_member | change_team | reorder | draft_merge | save_as_roster */
-  action: varchar("action", { length: 64 }).notNull(),
-  memberId: int("memberId"),
-  memberName: varchar("memberName", { length: 128 }),
-  shiftDate: varchar("shiftDate", { length: 16 }),
-  oldValue: text("oldValue"),
-  newValue: text("newValue"),
-  detail: text("detail"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-}, (t) => [
-  index("cto_roster_audit_log_createdAt_idx").on(t.createdAt),
-  index("cto_roster_audit_log_userId_idx").on(t.userId),
-]);
+export const ctoRosterAuditLog = mysqlTable(
+  "cto_roster_audit_log",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId"),
+    userName: varchar("userName", { length: 128 }),
+    /** upsert_shift | delete_shift | bulk_update | bulk_copy | add_member | delete_member | change_team | reorder | draft_merge | save_as_roster */
+    action: varchar("action", { length: 64 }).notNull(),
+    memberId: int("memberId"),
+    memberName: varchar("memberName", { length: 128 }),
+    shiftDate: varchar("shiftDate", { length: 16 }),
+    oldValue: text("oldValue"),
+    newValue: text("newValue"),
+    detail: text("detail"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => [
+    index("cto_roster_audit_log_createdAt_idx").on(t.createdAt),
+    index("cto_roster_audit_log_userId_idx").on(t.userId),
+  ]
+);
 export type CtoRosterAuditLog = typeof ctoRosterAuditLog.$inferSelect;
 export type InsertCtoRosterAuditLog = typeof ctoRosterAuditLog.$inferInsert;
 
 // ─── CTO Roster: Outlook Settings (coverage minimums) ───────────────────────
-export const ctoRosterOutlookSettings = mysqlTable("cto_roster_outlook_settings", {
-  id: int("id").autoincrement().primaryKey(),
-  /** Minimum on-duty headcount per team (JSON: { "Team 1": 5, "Team 2": 5, "PTT": 2, "Capability": 1 }) */
-  teamMinimums: text("teamMinimums").notNull(),
-  onCallMin: int("onCallMin").default(5).notNull(),
-  /** Combined minimum for BLENDED state (Team 1 + Team 2 combined) */
-  combinedMin: int("combinedMin").default(5).notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
-export type CtoRosterOutlookSettings = typeof ctoRosterOutlookSettings.$inferSelect;
-export type InsertCtoRosterOutlookSettings = typeof ctoRosterOutlookSettings.$inferInsert;
+export const ctoRosterOutlookSettings = mysqlTable(
+  "cto_roster_outlook_settings",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    /** Minimum on-duty headcount per team (JSON: { "Team 1": 5, "Team 2": 5, "PTT": 2, "Capability": 1 }) */
+    teamMinimums: text("teamMinimums").notNull(),
+    onCallMin: int("onCallMin").default(5).notNull(),
+    /** Combined minimum for BLENDED state (Team 1 + Team 2 combined) */
+    combinedMin: int("combinedMin").default(5).notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  }
+);
+export type CtoRosterOutlookSettings =
+  typeof ctoRosterOutlookSettings.$inferSelect;
+export type InsertCtoRosterOutlookSettings =
+  typeof ctoRosterOutlookSettings.$inferInsert;
 
 // ─── CTO Roster: EBA Rules (EA compliance engine config) ────────────────────
 export const ctoRosterEbaRules = mysqlTable("cto_roster_eba_rules", {
@@ -1115,4 +1277,3 @@ export const ctoRosterEbaRules = mysqlTable("cto_roster_eba_rules", {
 });
 export type CtoRosterEbaRule = typeof ctoRosterEbaRules.$inferSelect;
 export type InsertCtoRosterEbaRule = typeof ctoRosterEbaRules.$inferInsert;
-

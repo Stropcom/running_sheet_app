@@ -16,6 +16,7 @@ import {
   FileText,
   Link2,
   Link2Off,
+  NotebookText,
 } from "lucide-react";
 import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useLocation } from "wouter";
@@ -43,7 +44,11 @@ interface DisplayImageryEntry extends ImageryEntry {
 
 function parseImagery(raw: string | null | undefined): ImageryEntry[] {
   if (!raw) return [];
-  try { return JSON.parse(raw) as ImageryEntry[]; } catch { return []; }
+  try {
+    return JSON.parse(raw) as ImageryEntry[];
+  } catch {
+    return [];
+  }
 }
 
 function completionPercent(fields: boolean[]): number {
@@ -96,11 +101,15 @@ function CheckRow({
             </span>
           )}
           {tickedByName && (
-            <span className="text-[10px] text-emerald-400/70 font-medium">{tickedByName}</span>
+            <span className="text-[10px] text-emerald-400/70 font-medium">
+              {tickedByName}
+            </span>
           )}
         </div>
       )}
-      {disabled && !checked && <Lock className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />}
+      {disabled && !checked && (
+        <Lock className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />
+      )}
     </div>
   );
 }
@@ -121,7 +130,11 @@ function SectionHeader({
   onToggle: () => void;
 }) {
   const color =
-    percent === 100 ? "text-emerald-500" : percent >= 50 ? "text-cyan-500" : "text-rose-500";
+    percent === 100
+      ? "text-emerald-500"
+      : percent >= 50
+        ? "text-cyan-500"
+        : "text-rose-500";
   return (
     <button
       onClick={onToggle}
@@ -129,7 +142,9 @@ function SectionHeader({
     >
       <div className="flex-1 text-left">
         <p className="text-sm font-semibold text-foreground">{title}</p>
-        {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
+        {subtitle && (
+          <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
+        )}
       </div>
       <span className={`text-xs font-bold ${color}`}>{percent}%</span>
       {expanded ? (
@@ -144,7 +159,11 @@ function SectionHeader({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 // Photo-trigger phrases
-const PHOTO_PHRASES = ["PHOTOGRAPHS TAKEN", "PHOTOGRAPH TAKEN", "PHOTOGRAPH/S TAKEN"];
+const PHOTO_PHRASES = [
+  "PHOTOGRAPHS TAKEN",
+  "PHOTOGRAPH TAKEN",
+  "PHOTOGRAPH/S TAKEN",
+];
 
 export default function GovernancePage() {
   const params = useParams<{ sheetId: string }>();
@@ -162,7 +181,8 @@ export default function GovernancePage() {
     { id: sheetId },
     { enabled: !!sheetId }
   );
-  const isClosed = !!(sheetData as { closedAt?: number | null } | undefined)?.closedAt;
+  const isClosed = !!(sheetData as { closedAt?: number | null } | undefined)
+    ?.closedAt;
 
   // Fetch governance record (auto-created on first load)
   const { data: gov, isLoading } = trpc.governance.getBySheet.useQuery(
@@ -182,7 +202,9 @@ export default function GovernancePage() {
   const [imagery, setImagery] = useState<ImageryEntry[]>([]);
   const [notes, setNotes] = useState("");
   const [dueDate, setDueDate] = useState("");
-  const [notesTimeout, setNotesTimeout] = useState<ReturnType<typeof setTimeout> | null>(null);
+  const [notesTimeout, setNotesTimeout] = useState<ReturnType<
+    typeof setTimeout
+  > | null>(null);
 
   // Section expand state
   const [tlExpanded, setTlExpanded] = useState(true);
@@ -205,25 +227,34 @@ export default function GovernancePage() {
   // ── Derived data from sheet ──
   const sheet = exportData?.sheet;
 
-  const sheetCins: Array<{ cin: string; isTeamLeader?: boolean; isAuthor?: boolean; hasImages?: boolean }> =
-    useMemo(() => {
-      try { return JSON.parse(sheet?.sheetCins ?? "[]"); } catch { return []; }
-    }, [sheet?.sheetCins]);
+  const sheetCins: Array<{
+    cin: string;
+    isTeamLeader?: boolean;
+    isAuthor?: boolean;
+    hasImages?: boolean;
+  }> = useMemo(() => {
+    try {
+      return JSON.parse(sheet?.sheetCins ?? "[]");
+    } catch {
+      return [];
+    }
+  }, [sheet?.sheetCins]);
 
-  const teamLeader = sheetCins.find((c) => c.isTeamLeader);
-  const author = sheetCins.find((c) => c.isAuthor);
+  const teamLeader = sheetCins.find(c => c.isTeamLeader);
+  const author = sheetCins.find(c => c.isAuthor);
 
   // Determine if all CINs in every row are certified
   const allSigned = useMemo(() => {
     if (!exportData) return false;
     const rows = exportData.rows ?? [];
     if (rows.length === 0) return false;
-    return rows.every((r) => {
+    return rows.every(r => {
       const members = r.members ?? [];
       if (members.length === 0) return true; // row with no members is not blocking
       return members.every((m: { id: number }) =>
         (r.certifications ?? []).some(
-          (c: { memberId: number; isActive: boolean }) => c.memberId === m.id && c.isActive
+          (c: { memberId: number; isActive: boolean }) =>
+            c.memberId === m.id && c.isActive
         )
       );
     });
@@ -243,7 +274,7 @@ export default function GovernancePage() {
         savedInOpFolder: false,
       });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allSigned]);
 
   // Auto-derive imagery entries:
@@ -254,12 +285,17 @@ export default function GovernancePage() {
     const rows = exportData?.rows ?? [];
 
     // Build a map: cin -> { rowTime, type } from photo-phrase rows
-    const photoRowMap = new Map<string, { rowTime: string; type: "photo" | "video" | "" }>();
+    const photoRowMap = new Map<
+      string,
+      { rowTime: string; type: "photo" | "video" | "" }
+    >();
     for (const row of rows) {
       const obs = (row.observation ?? "").toUpperCase();
-      const hasPhrase = PHOTO_PHRASES.some((p) => obs.includes(p));
+      const hasPhrase = PHOTO_PHRASES.some(p => obs.includes(p));
       if (!hasPhrase) continue;
-      const rowCins = (row.members ?? []).map((m: { memberName: string }) => m.memberName);
+      const rowCins = (row.members ?? []).map(
+        (m: { memberName: string }) => m.memberName
+      );
       const time = row.time ?? "";
       // Detect video vs photo
       const isVideo = obs.includes("VIDEO");
@@ -279,7 +315,7 @@ export default function GovernancePage() {
     }
 
     // Start with all hasImages CINs from team details
-    const imageCins = sheetCins.filter((c) => c.hasImages).map((c) => c.cin);
+    const imageCins = sheetCins.filter(c => c.hasImages).map(c => c.cin);
 
     // Also include any CINs found in photo rows not already in the list
     for (const cin of Array.from(photoRowMap.keys())) {
@@ -287,7 +323,7 @@ export default function GovernancePage() {
     }
 
     // Build entries, enriching with row data where available
-    const entries: ImageryEntry[] = imageCins.map((cin) => {
+    const entries: ImageryEntry[] = imageCins.map(cin => {
       const rowData = photoRowMap.get(cin);
       return {
         cin,
@@ -322,12 +358,14 @@ export default function GovernancePage() {
       }
       return;
     }
-    const autoKeys = new Set(autoImagery.map((e) => e.cin + "||" + e.rowTime));
-    const existingKeys = new Set(existing.map((e) => e.cin + "||" + e.rowTime));
+    const autoKeys = new Set(autoImagery.map(e => e.cin + "||" + e.rowTime));
+    const existingKeys = new Set(existing.map(e => e.cin + "||" + e.rowTime));
     // Remove stale entries (removed from team list / observations)
-    const pruned = existing.filter((e) => autoKeys.has(e.cin + "||" + e.rowTime));
+    const pruned = existing.filter(e => autoKeys.has(e.cin + "||" + e.rowTime));
     // Add new entries not yet stored
-    const newEntries = autoImagery.filter((e) => !existingKeys.has(e.cin + "||" + e.rowTime));
+    const newEntries = autoImagery.filter(
+      e => !existingKeys.has(e.cin + "||" + e.rowTime)
+    );
     const merged = [...pruned, ...newEntries];
     // Only save if something changed
     const changed = pruned.length !== existing.length || newEntries.length > 0;
@@ -335,7 +373,7 @@ export default function GovernancePage() {
       saveImagery(merged);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gov?.id, JSON.stringify(autoImagery.map((e) => e.cin + e.rowTime))]);
+  }, [gov?.id, JSON.stringify(autoImagery.map(e => e.cin + e.rowTime))]);
 
   // ── Toggle helper ──
   type BoolField =
@@ -390,26 +428,40 @@ export default function GovernancePage() {
     const target = displayImagery[idx];
     if (!target) return;
     const key = target.cin + "||" + target.rowTime;
-    const existingIdx = imagery.findIndex((e) => e.cin + "||" + e.rowTime === key);
+    const existingIdx = imagery.findIndex(
+      e => e.cin + "||" + e.rowTime === key
+    );
     let next: ImageryEntry[];
     if (existingIdx >= 0) {
-      next = imagery.map((e, i) => (i === existingIdx ? { ...e, ...patch } : e));
+      next = imagery.map((e, i) =>
+        i === existingIdx ? { ...e, ...patch } : e
+      );
     } else {
       // Entry not yet in stored imagery — append it (strip derived-only fields;
       // only cin/rowTime/type/saved are persisted)
-      next = [...imagery, { cin: target.cin, rowTime: target.rowTime, type: target.type, saved: target.saved, ...patch }];
+      next = [
+        ...imagery,
+        {
+          cin: target.cin,
+          rowTime: target.rowTime,
+          type: target.type,
+          saved: target.saved,
+          ...patch,
+        },
+      ];
     }
     saveImagery(next);
   }
 
   // Derive imageryTaken from team details (hasImages flag) — not a stored boolean
-  const hasAnyImagery = sheetCins.some((c) => c.hasImages);
+  const hasAnyImagery = sheetCins.some(c => c.hasImages);
 
   // ── Completion percentages ──
   // TL section: 2 items
   const tlPercent = gov
     ? completionPercent([
-        (gov as Record<string, unknown>).summaryNotification as boolean ?? false,
+        ((gov as Record<string, unknown>).summaryNotification as boolean) ??
+          false,
         gov.sentToIO,
       ])
     : 0;
@@ -428,7 +480,8 @@ export default function GovernancePage() {
   // - If no imagery flagged AND no autoImagery rows AND no stored rows: 100% (N/A)
   // - Otherwise: percentage of rows marked as saved
   //   Use autoImagery as the source of truth for CINs; merge saved flags from stored imagery.
-  const imageryTakenChecked = !!(gov as Record<string, unknown> | undefined)?.imageryTaken;
+  const imageryTakenChecked = !!(gov as Record<string, unknown> | undefined)
+    ?.imageryTaken;
 
   // Per-CIN photo/entity-link stats — pooled across every row that CIN appears
   // on, since the auto-derived imagery entry only tracks the first
@@ -436,15 +489,20 @@ export default function GovernancePage() {
   // any row that CIN is a member of.
   const cinPhotoStats = useMemo(() => {
     const rows = exportData?.rows ?? [];
-    const map = new Map<string, { attachmentCount: number; linkedCount: number }>();
+    const map = new Map<
+      string,
+      { attachmentCount: number; linkedCount: number }
+    >();
     for (const row of rows) {
       const atts = (row.attachments ?? []) as Array<{ linkedCount?: number }>;
       if (atts.length === 0) continue;
-      const rowCins = (row.members ?? []).map((m: { memberName: string }) => m.memberName);
+      const rowCins = (row.members ?? []).map(
+        (m: { memberName: string }) => m.memberName
+      );
       for (const cin of rowCins) {
         const stat = map.get(cin) ?? { attachmentCount: 0, linkedCount: 0 };
         stat.attachmentCount += atts.length;
-        stat.linkedCount += atts.filter((a) => (a.linkedCount ?? 0) > 0).length;
+        stat.linkedCount += atts.filter(a => (a.linkedCount ?? 0) > 0).length;
         map.set(cin, stat);
       }
     }
@@ -456,8 +514,8 @@ export default function GovernancePage() {
   // If autoImagery is empty, no imagery to show.
   const displayImagery = useMemo<DisplayImageryEntry[]>(() => {
     if (autoImagery.length === 0) return [];
-    const savedMap = new Map(imagery.map((e) => [e.cin + e.rowTime, e.saved]));
-    return autoImagery.map((e) => {
+    const savedMap = new Map(imagery.map(e => [e.cin + e.rowTime, e.saved]));
+    return autoImagery.map(e => {
       const stat = cinPhotoStats.get(e.cin);
       const attachmentCount = stat?.attachmentCount ?? 0;
       const linkedCount = stat?.linkedCount ?? 0;
@@ -470,23 +528,27 @@ export default function GovernancePage() {
       };
     });
   }, [autoImagery, imagery, cinPhotoStats]);
-  const hasAnyImageryData = hasAnyImagery || autoImagery.length > 0 || imagery.length > 0;
+  const hasAnyImageryData =
+    hasAnyImagery || autoImagery.length > 0 || imagery.length > 0;
   // A row only counts toward completion once it's both marked saved AND every
   // one of its photos is linked to an entity.
   const imgPercent = hasAnyImageryData
-    ? completionPercent(displayImagery.map((e) => e.saved && e.allLinked))
+    ? completionPercent(displayImagery.map(e => e.saved && e.allLinked))
     : 100;
 
   // Overall: TL (2) + Operative (4) + Imagery rows (only if any imagery data)
   const overallPercent = gov
     ? completionPercent([
-        (gov as Record<string, unknown>).summaryNotification as boolean ?? false,
+        ((gov as Record<string, unknown>).summaryNotification as boolean) ??
+          false,
         gov.sentToIO,
         allSigned && gov.savedAsWord,
         allSigned && gov.savedAsPdf,
         allSigned && gov.uploadedToPromis,
         allSigned && gov.savedInOpFolder,
-        ...(hasAnyImageryData ? displayImagery.map((e) => e.saved && e.allLinked) : []),
+        ...(hasAnyImageryData
+          ? displayImagery.map(e => e.saved && e.allLinked)
+          : []),
       ])
     : 0;
 
@@ -527,8 +589,13 @@ export default function GovernancePage() {
             Running Sheet
           </button>
           <button
-            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground border-b-2 border-primary -mb-px transition-colors"
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+            onClick={() => navigate(`/summary/${sheetId}`)}
           >
+            <NotebookText className="w-4 h-4" />
+            Summary
+          </button>
+          <button className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground border-b-2 border-primary -mb-px transition-colors">
             <ClipboardCheck className="w-4 h-4" />
             Governance
           </button>
@@ -541,14 +608,21 @@ export default function GovernancePage() {
               <ClipboardCheck className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold text-foreground">RS Governance</h1>
-              <p className="text-xs text-muted-foreground mt-0.5">{sheet?.title ?? "Loading…"}</p>
+              <h1 className="text-lg font-semibold text-foreground">
+                RS Governance
+              </h1>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {sheet?.title ?? "Loading…"}
+              </p>
             </div>
           </div>
           <div className="flex flex-col items-end gap-1.5">
             <div className="flex items-center gap-2">
               {isOverdue && (
-                <Badge variant="destructive" className="text-[10px] px-1.5 py-0.5 flex items-center gap-1">
+                <Badge
+                  variant="destructive"
+                  className="text-[10px] px-1.5 py-0.5 flex items-center gap-1"
+                >
                   <AlertTriangle className="w-3 h-3" /> OVERDUE
                 </Badge>
               )}
@@ -557,8 +631,8 @@ export default function GovernancePage() {
                   overallPercent === 100
                     ? "text-emerald-500"
                     : overallPercent >= 50
-                    ? "text-cyan-500"
-                    : "text-rose-500"
+                      ? "text-cyan-500"
+                      : "text-rose-500"
                 }`}
               >
                 {overallPercent}%
@@ -572,15 +646,21 @@ export default function GovernancePage() {
         <div className="grid grid-cols-2 gap-3 mb-5 text-xs">
           <div className="rounded-lg border border-border/40 bg-card/40 px-3 py-2.5">
             <p className="text-muted-foreground mb-0.5">Operation</p>
-            <p className="font-medium text-foreground">{exportData?.operation?.name ?? "—"}</p>
+            <p className="font-medium text-foreground">
+              {exportData?.operation?.name ?? "—"}
+            </p>
           </div>
           <div className="rounded-lg border border-border/40 bg-card/40 px-3 py-2.5">
             <p className="text-muted-foreground mb-0.5">Target</p>
-            <p className="font-medium text-foreground">{exportData?.targetFullName ?? sheet?.targetName ?? "—"}</p>
+            <p className="font-medium text-foreground">
+              {exportData?.targetFullName ?? sheet?.targetName ?? "—"}
+            </p>
           </div>
           <div className="rounded-lg border border-border/40 bg-card/40 px-3 py-2.5">
             <p className="text-muted-foreground mb-0.5">Team Leader</p>
-            <p className="font-medium text-foreground">{teamLeader?.cin ?? "—"}</p>
+            <p className="font-medium text-foreground">
+              {teamLeader?.cin ?? "—"}
+            </p>
           </div>
           <div className="rounded-lg border border-border/40 bg-card/40 px-3 py-2.5">
             <p className="text-muted-foreground mb-0.5">RS Author</p>
@@ -589,7 +669,9 @@ export default function GovernancePage() {
           <div className="rounded-lg border border-border/40 bg-card/40 px-3 py-2.5">
             <p className="text-muted-foreground mb-0.5">Sheet Date</p>
             <p className="font-medium text-foreground">
-              {sheet?.createdAt ? format(new Date(sheet.createdAt), "dd MMM yyyy") : "—"}
+              {sheet?.createdAt
+                ? format(new Date(sheet.createdAt), "dd MMM yyyy")
+                : "—"}
             </p>
           </div>
           <div className="rounded-lg border border-border/40 bg-card/40 px-3 py-2.5">
@@ -597,7 +679,7 @@ export default function GovernancePage() {
             <input
               type="date"
               value={dueDate}
-              onChange={(e) => handleDueDateChange(e.target.value)}
+              onChange={e => handleDueDateChange(e.target.value)}
               disabled={isClosed}
               className="w-full bg-transparent text-foreground font-medium text-xs outline-none disabled:opacity-50 disabled:cursor-not-allowed"
             />
@@ -611,23 +693,32 @@ export default function GovernancePage() {
             subtitle="Summary notification and IO sign-off"
             percent={tlPercent}
             expanded={tlExpanded}
-            onToggle={() => setTlExpanded((v) => !v)}
+            onToggle={() => setTlExpanded(v => !v)}
           />
           {tlExpanded && gov && (
             <div className="mt-2 space-y-2">
               <CheckRow
                 label="Summary complete"
-                checked={(gov as Record<string, unknown>).summaryNotification as boolean ?? false}
+                checked={
+                  ((gov as Record<string, unknown>)
+                    .summaryNotification as boolean) ?? false
+                }
                 onToggle={() => toggle("summaryNotification")}
                 cin={(gov as Record<string, unknown>).isurvCIN as string | null}
-                tickedByName={(gov as Record<string, unknown>).isurvName as string | null}
+                tickedByName={
+                  (gov as Record<string, unknown>).isurvName as string | null
+                }
               />
               <CheckRow
                 label="Sent to IO"
                 checked={gov.sentToIO}
                 onToggle={() => toggle("sentToIO")}
-                cin={(gov as Record<string, unknown>).sentToIOCIN as string | null}
-                tickedByName={(gov as Record<string, unknown>).sentToIOName as string | null}
+                cin={
+                  (gov as Record<string, unknown>).sentToIOCIN as string | null
+                }
+                tickedByName={
+                  (gov as Record<string, unknown>).sentToIOName as string | null
+                }
               />
             </div>
           )}
@@ -640,7 +731,7 @@ export default function GovernancePage() {
             subtitle="Author tasks and document management"
             percent={opPercent}
             expanded={opExpanded}
-            onToggle={() => setOpExpanded((v) => !v)}
+            onToggle={() => setOpExpanded(v => !v)}
           />
           {opExpanded && gov && (
             <div className="mt-2 space-y-2">
@@ -658,7 +749,9 @@ export default function GovernancePage() {
                   <AlertTriangle className="w-5 h-5 text-rose-500 shrink-0" />
                 )}
                 <div className="flex-1 min-w-0">
-                  <p className={`text-sm font-medium ${allSigned ? "text-foreground" : "text-rose-400"}`}>
+                  <p
+                    className={`text-sm font-medium ${allSigned ? "text-foreground" : "text-rose-400"}`}
+                  >
                     Signed by all team members
                   </p>
                   <p className="text-xs text-muted-foreground mt-0.5">
@@ -674,7 +767,8 @@ export default function GovernancePage() {
                 <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/30 border border-border/30">
                   <Lock className="w-3.5 h-3.5 text-muted-foreground" />
                   <p className="text-xs text-muted-foreground">
-                    Complete certification of all rows to unlock the remaining checks
+                    Complete certification of all rows to unlock the remaining
+                    checks
                   </p>
                 </div>
               )}
@@ -684,32 +778,64 @@ export default function GovernancePage() {
                 checked={allSigned && gov.savedAsWord}
                 onToggle={() => toggle("savedAsWord")}
                 disabled={!allSigned}
-                cin={(gov as Record<string, unknown>).savedAsWordCIN as string | null}
-                tickedByName={(gov as Record<string, unknown>).savedAsWordName as string | null}
+                cin={
+                  (gov as Record<string, unknown>).savedAsWordCIN as
+                    | string
+                    | null
+                }
+                tickedByName={
+                  (gov as Record<string, unknown>).savedAsWordName as
+                    | string
+                    | null
+                }
               />
               <CheckRow
                 label="Saved as PDF"
                 checked={allSigned && gov.savedAsPdf}
                 onToggle={() => toggle("savedAsPdf")}
                 disabled={!allSigned}
-                cin={(gov as Record<string, unknown>).savedAsPdfCIN as string | null}
-                tickedByName={(gov as Record<string, unknown>).savedAsPdfName as string | null}
+                cin={
+                  (gov as Record<string, unknown>).savedAsPdfCIN as
+                    | string
+                    | null
+                }
+                tickedByName={
+                  (gov as Record<string, unknown>).savedAsPdfName as
+                    | string
+                    | null
+                }
               />
               <CheckRow
                 label="Uploaded to PROMIS"
                 checked={allSigned && gov.uploadedToPromis}
                 onToggle={() => toggle("uploadedToPromis")}
                 disabled={!allSigned}
-                cin={(gov as Record<string, unknown>).uploadedToPromisCIN as string | null}
-                tickedByName={(gov as Record<string, unknown>).uploadedToPromisName as string | null}
+                cin={
+                  (gov as Record<string, unknown>).uploadedToPromisCIN as
+                    | string
+                    | null
+                }
+                tickedByName={
+                  (gov as Record<string, unknown>).uploadedToPromisName as
+                    | string
+                    | null
+                }
               />
               <CheckRow
                 label="Saved in Operation folder"
                 checked={allSigned && gov.savedInOpFolder}
                 onToggle={() => toggle("savedInOpFolder")}
                 disabled={!allSigned}
-                cin={(gov as Record<string, unknown>).savedInOpFolderCIN as string | null}
-                tickedByName={(gov as Record<string, unknown>).savedInOpFolderName as string | null}
+                cin={
+                  (gov as Record<string, unknown>).savedInOpFolderCIN as
+                    | string
+                    | null
+                }
+                tickedByName={
+                  (gov as Record<string, unknown>).savedInOpFolderName as
+                    | string
+                    | null
+                }
               />
             </div>
           )}
@@ -722,26 +848,40 @@ export default function GovernancePage() {
             subtitle="Photos and videos taken during surveillance"
             percent={imgPercent}
             expanded={imgExpanded}
-            onToggle={() => setImgExpanded((v) => !v)}
+            onToggle={() => setImgExpanded(v => !v)}
           />
           {imgExpanded && gov && (
             <div className="mt-2 space-y-2">
               {/* Imagery taken — colour reflects save + link status */}
               {(() => {
-                const allCompleteImg = displayImagery.length > 0 && displayImagery.every((e) => e.saved && e.allLinked);
-                const someSavedImg = displayImagery.some((e) => e.saved && e.allLinked);
-                const unlinkedCount = displayImagery.filter((e) => !e.allLinked).length;
+                const allCompleteImg =
+                  displayImagery.length > 0 &&
+                  displayImagery.every(e => e.saved && e.allLinked);
+                const someSavedImg = displayImagery.some(
+                  e => e.saved && e.allLinked
+                );
+                const unlinkedCount = displayImagery.filter(
+                  e => !e.allLinked
+                ).length;
                 const bannerClass = !hasAnyImagery
                   ? "bg-rose-500/10 border-rose-500/30"
                   : allCompleteImg
                     ? "bg-emerald-500/10 border-emerald-500/30"
                     : "bg-cyan-500/10 border-cyan-500/30";
-                const iconEl = !hasAnyImagery
-                  ? <span className="text-rose-500 text-lg shrink-0 leading-none">✗</span>
+                const iconEl = !hasAnyImagery ? (
+                  <span className="text-rose-500 text-lg shrink-0 leading-none">
+                    ✗
+                  </span>
+                ) : allCompleteImg ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-5 h-5 text-cyan-500 shrink-0" />
+                );
+                const titleColor = !hasAnyImagery
+                  ? "text-rose-400"
                   : allCompleteImg
-                    ? <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
-                    : <AlertTriangle className="w-5 h-5 text-cyan-500 shrink-0" />;
-                const titleColor = !hasAnyImagery ? "text-rose-400" : allCompleteImg ? "text-foreground" : "text-cyan-500";
+                    ? "text-foreground"
+                    : "text-cyan-500";
                 const subText = !hasAnyImagery
                   ? "No imagery flagged on team details — no imagery taken"
                   : allCompleteImg
@@ -752,13 +892,17 @@ export default function GovernancePage() {
                         ? "Some imagery not yet saved"
                         : "Imagery flagged — not yet saved";
                 return (
-                  <div className={`flex items-center gap-3 px-4 py-3 rounded-lg border ${bannerClass}`}>
+                  <div
+                    className={`flex items-center gap-3 px-4 py-3 rounded-lg border ${bannerClass}`}
+                  >
                     {iconEl}
                     <div className="flex-1 min-w-0">
                       <p className={`text-sm font-medium ${titleColor}`}>
                         Imagery taken during surveillance
                       </p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{subText}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {subText}
+                      </p>
                     </div>
                   </div>
                 );
@@ -777,13 +921,16 @@ export default function GovernancePage() {
                   {displayImagery.map((entry, idx) => {
                     const operationId = exportData?.operation?.id;
                     const goLinkPhotos = () => {
-                      if (operationId) navigate(`/images/${operationId}/${sheetId}`);
+                      if (operationId)
+                        navigate(`/images/${operationId}/${sheetId}`);
                     };
                     return (
                       <div
                         key={idx}
                         className={`grid grid-cols-5 gap-1 items-center px-3 py-2 ${
-                          idx < displayImagery.length - 1 ? "border-b border-border/20" : ""
+                          idx < displayImagery.length - 1
+                            ? "border-b border-border/20"
+                            : ""
                         }`}
                       >
                         <span className="text-xs text-foreground font-medium truncate text-center justify-self-center">
@@ -794,8 +941,10 @@ export default function GovernancePage() {
                         </span>
                         <select
                           value={entry.type}
-                          onChange={(e) =>
-                            updateImageryRow(idx, { type: e.target.value as "photo" | "video" | "" })
+                          onChange={e =>
+                            updateImageryRow(idx, {
+                              type: e.target.value as "photo" | "video" | "",
+                            })
                           }
                           className="justify-self-center bg-transparent text-xs text-foreground outline-none border border-border/40 rounded px-1 py-0.5"
                         >
@@ -852,8 +1001,9 @@ export default function GovernancePage() {
 
               {imagery.length === 0 && (
                 <p className="text-xs text-muted-foreground px-1 py-2">
-                  No imagery entries detected. Rows containing "PHOTOGRAPH/S TAKEN" or team members
-                  with imagery flagged will appear here automatically.
+                  No imagery entries detected. Rows containing "PHOTOGRAPH/S
+                  TAKEN" or team members with imagery flagged will appear here
+                  automatically.
                 </p>
               )}
             </div>
@@ -862,10 +1012,12 @@ export default function GovernancePage() {
 
         {/* Notes */}
         <div className="mb-6">
-          <p className="text-xs font-medium text-muted-foreground mb-2">Notes</p>
+          <p className="text-xs font-medium text-muted-foreground mb-2">
+            Notes
+          </p>
           <Textarea
             value={notes}
-            onChange={(e) => handleNotesChange(e.target.value)}
+            onChange={e => handleNotesChange(e.target.value)}
             placeholder="Any additional notes for this running sheet write-off…"
             rows={3}
             disabled={isClosed}
@@ -876,14 +1028,16 @@ export default function GovernancePage() {
         {/* Completion bar */}
         <div className="rounded-xl border border-border/50 bg-card/40 px-4 py-3">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-xs font-medium text-foreground">Overall completion</p>
+            <p className="text-xs font-medium text-foreground">
+              Overall completion
+            </p>
             <p
               className={`text-sm font-bold ${
                 overallPercent === 100
                   ? "text-emerald-500"
                   : overallPercent >= 50
-                  ? "text-cyan-500"
-                  : "text-rose-500"
+                    ? "text-cyan-500"
+                    : "text-rose-500"
               }`}
             >
               {overallPercent}%
@@ -895,8 +1049,8 @@ export default function GovernancePage() {
                 overallPercent === 100
                   ? "bg-emerald-500"
                   : overallPercent >= 50
-                  ? "bg-cyan-500"
-                  : "bg-rose-500"
+                    ? "bg-cyan-500"
+                    : "bg-rose-500"
               }`}
               style={{ width: `${overallPercent}%` }}
             />

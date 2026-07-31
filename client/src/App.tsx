@@ -19,6 +19,7 @@ import ShortcutsPage from "./pages/ShortcutsPage";
 import IntelligencePage from "./pages/Intelligence";
 import AssociationMap from "./pages/AssociationMap";
 import GovernancePage from "./pages/Governance";
+import SheetSummaryPage from "./pages/SheetSummary";
 import GovernanceListPage from "./pages/GovernanceList";
 import TargetRegistryPage from "./pages/TargetRegistry";
 import OperationManagementPage from "./pages/OperationManagementPage";
@@ -130,6 +131,7 @@ function Router() {
       <Route path="/intelligence/rs-mapping" component={RSMapping} />
       <Route path="/governance" component={GovernanceListPage} />
       <Route path="/governance/:sheetId" component={GovernancePage} />
+      <Route path="/summary/:sheetId" component={SheetSummaryPage} />
       <Route path="/target-registry" component={TargetRegistryPage} />
       <Route path="/images" component={ImagesPage} />
       <Route path="/images/:operationId" component={ImagesPage} />

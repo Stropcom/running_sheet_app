@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import { format } from "date-fns";
 import { storagePut, storageGetBytes } from "./storage";
 import { detectAndEmbedFaces, cosineSimilarity } from "./faceRecognition";
 import { TRPCError } from "@trpc/server";
@@ -154,6 +155,8 @@ import {
   type GovernanceUpsertInput,
   getGovernanceRecordsBySheetIds,
   computeGovernancePercent,
+  getSheetSummary,
+  upsertSheetSummary,
   getGovernanceTodoForCin,
   getUnlinkedImagesTodoForCin,
   getOperationDeleteStats,
@@ -2475,7 +2478,12 @@ export const appRouter = router({
 
       /** Fuzzy-checks a candidate name against existing targets — backs the "possible duplicate" prompt when adding a new target. */
       findPossibleDuplicate: protectedProcedure
-        .input(z.object({ name: z.string().min(1), excludeId: z.number().optional() }))
+        .input(
+          z.object({
+            name: z.string().min(1),
+            excludeId: z.number().optional(),
+          })
+        )
         .query(async ({ input }) => {
           return findPossibleDuplicateTarget(input.name, input.excludeId);
         }),
@@ -2487,13 +2495,26 @@ export const appRouter = router({
             targetId: z.number(),
             resolutions: z.array(
               z.object({
-                field: z.enum(["name", "tgt", "hbf", "hb", "v1f", "v1", "dep", "arr"]),
+                field: z.enum([
+                  "name",
+                  "tgt",
+                  "hbf",
+                  "hb",
+                  "v1f",
+                  "v1",
+                  "dep",
+                  "arr",
+                ]),
                 value: z.string(),
                 discarded: z.string().optional(),
               })
             ),
-            appendExtraVehicles: z.array(z.object({ full: z.string(), short: z.string() })).optional(),
-            appendWildFields: z.array(z.object({ label: z.string(), value: z.string() })).optional(),
+            appendExtraVehicles: z
+              .array(z.object({ full: z.string(), short: z.string() }))
+              .optional(),
+            appendWildFields: z
+              .array(z.object({ label: z.string(), value: z.string() }))
+              .optional(),
           })
         )
         .mutation(async ({ input, ctx }) => {
@@ -2865,7 +2886,11 @@ export const appRouter = router({
         })
       )
       .query(async ({ input }) => {
-        return searchIntelligenceEntities(input.type, input.query, input.excludeTargets);
+        return searchIntelligenceEntities(
+          input.type,
+          input.query,
+          input.excludeTargets
+        );
       }),
   }),
 
@@ -3029,6 +3054,75 @@ export const appRouter = router({
           ...cinUpdate,
         } as Parameters<typeof upsertGovernanceRecord>[0]);
         return record;
+      }),
+  }),
+
+  // ─── Sheet Summary ──────────────────────────────────────────────────────────
+  summary: router({
+    /** Get (or auto-create, prepopulated from the sheet) the summary for a sheet */
+    getBySheet: protectedProcedure
+      .input(z.object({ sheetId: z.number() }))
+      .query(async ({ input }) => {
+        const sheet = await getRunningSheetById(input.sheetId);
+        if (!sheet) throw new TRPCError({ code: "NOT_FOUND" });
+        let record = await getSheetSummary(input.sheetId);
+        if (!record) {
+          const operation = sheet.operationId
+            ? await getOperationById(sheet.operationId)
+            : null;
+          const target = sheet.targetId
+            ? await getTargetById(sheet.targetId)
+            : null;
+          const rows = await getRowsBySheetId(input.sheetId);
+          const timedRows = rows
+            .filter(r => r.time)
+            .sort((a, b) => (a.timeMinutes ?? 0) - (b.timeMinutes ?? 0));
+          let cinRoster: { cin: string }[] = [];
+          try {
+            cinRoster = sheet.sheetCins ? JSON.parse(sheet.sheetCins) : [];
+          } catch {
+            cinRoster = [];
+          }
+          record = await upsertSheetSummary({
+            sheetId: input.sheetId,
+            teamCins: cinRoster.map(c => c.cin).join(", ") || null,
+            operationName: operation?.name ?? null,
+            dayDate: format(new Date(sheet.createdAt), "d MMMM yyyy"),
+            startTime: timedRows[0]?.time ?? null,
+            finishTime: timedRows[timedRows.length - 1]?.time ?? null,
+            targetName: target?.name ?? sheet.targetName ?? null,
+            address: target?.hbf ?? null,
+          });
+        }
+        return record;
+      }),
+
+    /** Update summary fields (free text, save-as-you-go) */
+    update: protectedProcedure
+      .input(
+        z.object({
+          sheetId: z.number(),
+          teamLabel: z.string().nullable().optional(),
+          teamCins: z.string().nullable().optional(),
+          operationName: z.string().nullable().optional(),
+          dayDate: z.string().nullable().optional(),
+          startTime: z.string().nullable().optional(),
+          finishTime: z.string().nullable().optional(),
+          targetName: z.string().nullable().optional(),
+          address: z.string().nullable().optional(),
+          ioSupport: z.string().nullable().optional(),
+          intelSupport: z.string().nullable().optional(),
+          specialProjects: z.string().nullable().optional(),
+          objectives: z.string().nullable().optional(),
+          criticalDecisions: z.string().nullable().optional(),
+          summary: z.string().nullable().optional(),
+          newIntelForProfile: z.string().nullable().optional(),
+          issues: z.string().nullable().optional(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const userCIN = ctx.user.cin ?? ctx.user.username ?? "Unknown";
+        return upsertSheetSummary({ ...input, lastEditedByCIN: userCIN });
       }),
   }),
 
@@ -4303,7 +4397,10 @@ export const appRouter = router({
           url,
           sourceModule: "opManager",
         }).catch(err =>
-          console.warn("[Notifications] Failed to create in-app notifications:", err)
+          console.warn(
+            "[Notifications] Failed to create in-app notifications:",
+            err
+          )
         );
         return { ok: true, notified: targetUserIds.length };
       }),

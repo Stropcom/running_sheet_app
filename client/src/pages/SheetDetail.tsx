@@ -7,12 +7,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useIsMobile } from "@/hooks/useMobile";
 import CinInput from "@/components/CinInput";
@@ -90,21 +84,6 @@ import { useLocation, useParams } from "wouter";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { WifiOff, RefreshCw, ChevronDown } from "lucide-react";
-import {
-  Document,
-  Packer,
-  Paragraph,
-  Table,
-  TableRow,
-  TableCell,
-  TextRun,
-  WidthType,
-  AlignmentType,
-  BorderStyle,
-  HeadingLevel,
-  ShadingType,
-  VerticalAlign,
-} from "docx";
 import { useOffline } from "@/contexts/OfflineContext";
 import {
   saveCachedSheet,
@@ -272,7 +251,9 @@ function exportToPDF(
   const authorCin = authorEntry?.cin ?? null;
 
   // Find the most recent active certification belonging to the author CIN.
-  // Rendered light-on-dark since it sits inside the cover-header meta pill.
+  // Light-on-dark, used only in the footer band's "Prepared by" — the top
+  // banner's meta pill shows the plain CIN with no tick regardless of
+  // certification status.
   let preparedByPill = "";
   if (authorCin) {
     let latestCert: { certifiedByCIN?: string; certifiedByName: string; certifiedAt: number } | null = null;
@@ -356,7 +337,7 @@ function exportToPDF(
     <span class="meta-pill">Operation <strong>${operationName}</strong></span>
     ${targetFullName ? `<span class="meta-pill">Target <strong>${targetFullName}</strong></span>` : ""}
     <span class="meta-pill">Date <strong>${dateStr}</strong></span>
-    ${authorCin ? `<span class="meta-pill">Prepared by <strong>${preparedByPill}</strong></span>` : ""}`;
+    ${authorCin ? `<span class="meta-pill">Prepared by <strong>${authorCin}</strong></span>` : ""}`;
 
   // Cover-header banner builder — `compact` is used for the repeating
   // per-page thead version (smaller title). The imagery line is included in
@@ -526,13 +507,13 @@ function exportToPDF(
     /* thead wrapper cell — no border/padding so the banner floats free of the log table's own border */
     .thead-meta-cell{padding:0 !important;border:none !important}
     /* Footer band — repeats at the bottom of every printed page (display:table-footer-group).
-       Same light blue as the column header row, not the dark banner — a plain background fill,
-       no border tricks, so it can't run into the per-cell border issues a bordered footer did. */
+       Same dark blue as the top banner — a plain background fill, no border tricks, so it
+       can't run into the per-cell border issues a bordered footer did. */
     tfoot{display:table-footer-group}
-    .footer-band td{background:#dbeafe;padding:8px 14px}
+    .footer-band td{background:#1e3a8a;padding:8px 14px}
     .footer-grid{display:grid;grid-template-columns:1fr 1fr 1fr;align-items:center}
-    .footer-cin{font-size:10px;color:#1e3a8a;font-weight:700;letter-spacing:0.04em;text-transform:uppercase}
-    .footer-protected{text-align:center;font-size:11px;font-weight:800;letter-spacing:0.14em;color:#dc2626}
+    .footer-cin{font-size:10px;color:rgba(255,255,255,0.85);font-weight:700;letter-spacing:0.04em;text-transform:uppercase;text-align:right}
+    .footer-protected{text-align:center;font-size:11px;font-weight:800;letter-spacing:0.14em;color:#f87171}
     /* Certification pills */
     .pill{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:9999px;font-size:10px;font-weight:700;white-space:nowrap}
     .pill-certified{background:#d1fae5;color:#059669;border:1px solid #6ee7b7}
@@ -627,8 +608,9 @@ function exportToPDF(
       <!-- Repeats at the bottom of every printed page. -->
       <tr class="footer-band"><td colspan="3">
         <div class="footer-grid">
-          <span class="footer-cin">${authorCin ? `Prepared by ${authorCin}` : ""}</span>
+          <span></span>
           <span class="footer-protected">Protected</span>
+          <span class="footer-cin">${authorCin ? `Prepared by ${preparedByPill}` : ""}</span>
         </div>
       </td></tr>
     </tfoot>
@@ -643,338 +625,6 @@ function exportToPDF(
   win.document.close();
   win.focus();
   setTimeout(() => { win.print(); }, 400);
-}
-
-// ─── Word Export ─────────────────────────────────────────────────────────────
-
-async function exportToWord(
-  sheetTitle: string,
-  rows: ExportRow[],
-  operation: OperationMeta,
-  sheetCinsRaw: string | null,
-  sheetCreatedAt: Date,
-  targetFullName?: string | null,
-) {
-  // Parse TEAM roster — sort: TL first, then numerically
-  let cinRoster: CinEntry[] = [];
-  try {
-    const raw: CinEntry[] = sheetCinsRaw ? JSON.parse(sheetCinsRaw) : [];
-    cinRoster = [...raw].sort((a, b) => {
-      if (a.isTeamLeader && !b.isTeamLeader) return -1;
-      if (!a.isTeamLeader && b.isTeamLeader) return 1;
-      const aNum = parseInt(a.cin, 10); const bNum = parseInt(b.cin, 10);
-      if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
-      return a.cin.localeCompare(b.cin);
-    });
-  } catch { cinRoster = []; }
-
-  const operationName = operation?.name ?? "";
-  const promisNumber = operation?.promisNumber ?? "";
-  const imsNumber = operation?.imsNumber ?? "";
-  const investigationUnit = operation?.investigationUnit ?? "";
-  const dateStr = format(new Date(sheetCreatedAt), "d MMMM yyyy");
-
-  // Derive author CIN
-  const authorEntry = cinRoster.find((c) => c.isAuthor);
-  const authorCin = authorEntry?.cin ?? null;
-
-  // Find most recent active certification for the author
-  let preparedByText = authorCin ?? "";
-  if (authorCin) {
-    let latestCert: { certifiedByName: string; certifiedAt: number } | null = null;
-    for (const row of rows) {
-      for (const cert of row.certifications) {
-        if (!cert.isActive) continue;
-        const certCin = ('certifiedByCIN' in cert ? (cert as any).certifiedByCIN : null) || cert.certifiedByName;
-        if (certCin === authorCin) {
-          if (!latestCert || cert.certifiedAt > latestCert.certifiedAt) latestCert = cert;
-        }
-      }
-    }
-    if (latestCert) {
-      const certCin = ('certifiedByCIN' in latestCert ? (latestCert as any).certifiedByCIN : null) || latestCert.certifiedByName;
-      const certTime = format(new Date(latestCert.certifiedAt), "d MMMM yyyy h:mmaaa");
-      preparedByText = `${certCin} (certified ${certTime})`;
-    }
-  }
-
-  // Imagery entries
-  const IMAGERY_PHRASES = ["PHOTOGRAPHS TAKEN","PHOTOGRAPH/S TAKEN","PHOTOGRAPH TAKEN","VIDEO TAKEN","VIDEO FOOTAGE TAKEN","PHOTOS TAKEN","PHOTO TAKEN"];
-  const imageryEntries: { cin: string; time: string }[] = [];
-  for (const row of rows) {
-    const obs = (row.observation ?? "").toUpperCase();
-    const hasImagery = IMAGERY_PHRASES.some((p) => obs.includes(p));
-    if (hasImagery && row.time) {
-      for (const m of row.members) {
-        if (m.memberName !== "__SPACE__") imageryEntries.push({ cin: m.memberName, time: row.time });
-      }
-    }
-  }
-  const seenImagery = new Set<string>();
-  const uniqueImageryEntries = imageryEntries.filter((e) => {
-    const key = `${e.cin}|${e.time}`;
-    if (seenImagery.has(key)) return false;
-    seenImagery.add(key);
-    return true;
-  });
-  const imageryText = uniqueImageryEntries.length > 0
-    ? uniqueImageryEntries.map((e) => `${e.cin} (${e.time})`).join(", ")
-    : "Nil";
-
-  // Team roster string
-  const rosterText = cinRoster.length > 0
-    ? cinRoster.map((c) => c.cin + (c.isTeamLeader ? " (TL)" : "")).join(", ")
-    : "";
-
-  // ── Shared border/shading helpers ───────────────────────────────────────────
-  const FONT = "Roboto";
-  const BODY_SIZE = 22; // 11pt (docx size is in half-points)
-  const thinBorder = { style: BorderStyle.SINGLE, size: 6, color: "94A3B8" };
-  const outerBorder = { style: BorderStyle.SINGLE, size: 12, color: "334155" };
-  const headerShading = { type: ShadingType.SOLID, color: "DBEAFE", fill: "DBEAFE" };
-
-  // ── Meta table (cover info) ──────────────────────────────────────────────────
-  function metaRow(label: string, value: string) {
-    return new TableRow({
-      children: [
-        new TableCell({
-          width: { size: 22, type: WidthType.PERCENTAGE },
-          shading: headerShading,
-          borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
-          verticalAlign: VerticalAlign.CENTER,
-          children: [new Paragraph({ children: [new TextRun({ text: label, font: FONT, bold: true, size: BODY_SIZE, color: "000000" })] })],
-        }),
-        new TableCell({
-          width: { size: 78, type: WidthType.PERCENTAGE },
-          borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
-          verticalAlign: VerticalAlign.CENTER,
-          children: [new Paragraph({ children: [new TextRun({ text: value, font: FONT, size: BODY_SIZE, color: "000000" })] })],
-        }),
-      ],
-    });
-  }
-
-  const metaRows = [
-    metaRow("OPERATION:", operationName),
-    ...(targetFullName ? [metaRow("TARGET:", targetFullName)] : []),
-    metaRow("DATE:", dateStr),
-    ...(promisNumber ? [metaRow("PROMIS:", promisNumber)] : []),
-    ...(imsNumber ? [metaRow("IMS:", imsNumber)] : []),
-    ...(investigationUnit ? [metaRow("UNIT:", investigationUnit)] : []),
-    ...(preparedByText ? [metaRow("PREPARED BY:", preparedByText)] : []),
-    ...(rosterText ? [metaRow("TEAM:", rosterText)] : []),
-    metaRow("IMAGERY:", imageryText),
-  ];
-
-  const metaTable = new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    borders: {
-      top: outerBorder, bottom: outerBorder, left: outerBorder, right: outerBorder,
-      insideHorizontal: thinBorder, insideVertical: thinBorder,
-    },
-    rows: metaRows,
-  });
-
-  // ── Running sheet table ──────────────────────────────────────────────────────
-  function thCell(text: string, widthPct: number) {
-    return new TableCell({
-      width: { size: widthPct, type: WidthType.PERCENTAGE },
-      shading: headerShading,
-      borders: { top: outerBorder, bottom: outerBorder, left: thinBorder, right: thinBorder },
-      verticalAlign: VerticalAlign.CENTER,
-      children: [new Paragraph({ children: [new TextRun({ text, font: FONT, bold: true, size: BODY_SIZE, color: "000000" })] })],
-    });
-  }
-
-  const headerRow = new TableRow({
-    tableHeader: true,
-    children: [
-      thCell("Time", 10),
-      thCell("Observation", 72),
-      thCell("CIN Certified", 18),
-    ],
-  });
-
-  // ── Build day-offset map for Word export rows (rowDate-aware, falls back to inference) ──
-  const wordDayOffsetMap = new Map<number, number>();
-  {
-    const timedByRowNumber = [...rows]
-      .filter((r) => r.timeMinutes != null)
-      .sort((a, b) => a.rowNumber - b.rowNumber);
-    const wordRowDates = timedByRowNumber.map((r) => r.rowDate).filter((d): d is string => !!d);
-    const wordMinRowDate = wordRowDates.length > 0 ? wordRowDates.slice().sort()[0] : null;
-    // First pass: rowDate (highest priority) or stored dayOffset (legacy)
-    for (const r of timedByRowNumber) {
-      if (r.rowDate && wordMinRowDate) {
-        const anchor = ymdToPerthMs(wordMinRowDate);
-        const rowDay = ymdToPerthMs(r.rowDate);
-        wordDayOffsetMap.set(r.id, Math.round((rowDay - anchor) / 86400000));
-      } else if (r.dayOffset && r.dayOffset !== 0) {
-        wordDayOffsetMap.set(r.id, r.dayOffset);
-      }
-    }
-    // Second pass: infer for rows with no explicit date/offset
-    let day = 0;
-    let prevEff = -1;
-    for (const r of timedByRowNumber) {
-      if (wordDayOffsetMap.has(r.id)) {
-        prevEff = r.timeMinutes! + wordDayOffsetMap.get(r.id)! * 1440;
-        day = wordDayOffsetMap.get(r.id)!;
-        continue;
-      }
-      const mins = r.timeMinutes!;
-      const eff = mins + day * 1440;
-      if (prevEff >= 0 && eff < prevEff - 120) { day++; }
-      wordDayOffsetMap.set(r.id, day);
-      prevEff = mins + day * 1440;
-    }
-  }
-
-  const dataRows: TableRow[] = [];
-  let wordPrevDay = -1;
-  for (const row of rows) {
-    const wordDay = wordDayOffsetMap.get(row.id) ?? 0;
-    if (row.timeMinutes != null && wordDay > wordPrevDay && wordPrevDay >= 0) {
-      // Prefer an explicit rowDate from a row on that day
-      const wordRowOnDay = rows.find((r) => (wordDayOffsetMap.get(r.id) ?? 0) === wordDay && r.rowDate);
-      let divLabel: string;
-      if (wordRowOnDay?.rowDate) {
-        divLabel = formatPerthDateLabel(wordRowOnDay.rowDate);
-      } else {
-        const divDate = new Date(sheetCreatedAt);
-        divDate.setDate(divDate.getDate() + wordDay);
-        divLabel = divDate.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: PERTH_TIME_ZONE }).toUpperCase();
-      }
-      dataRows.push(new TableRow({
-        children: [
-          new TableCell({
-            columnSpan: 3,
-            shading: { type: ShadingType.SOLID, color: "1E3A5F", fill: "1E3A5F" },
-            borders: { top: outerBorder, bottom: outerBorder, left: outerBorder, right: outerBorder },
-            children: [new Paragraph({
-              alignment: AlignmentType.CENTER,
-              children: [new TextRun({ text: `── ${divLabel} ──`, font: FONT, bold: true, size: 18, color: "93C5FD" })],
-            })],
-          }),
-        ],
-      }));
-    }
-    if (row.timeMinutes != null) wordPrevDay = wordDay;
-    const timeText = row.time ?? "";
-    const obsText = row.observation ?? "";
-
-    if (row.members.length === 0) {
-      dataRows.push(new TableRow({
-        children: [
-          new TableCell({
-            width: { size: 10, type: WidthType.PERCENTAGE },
-            borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
-            children: [new Paragraph({ children: [new TextRun({ text: timeText, size: 18, font: "Courier New", color: "000000" })] })],
-          }),
-          new TableCell({
-            width: { size: 72, type: WidthType.PERCENTAGE },
-            borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
-            children: obsText.split("\n").map((line) => new Paragraph({ children: [new TextRun({ text: line, font: FONT, size: BODY_SIZE, color: "000000" })] })),
-          }),
-          new TableCell({
-            width: { size: 18, type: WidthType.PERCENTAGE },
-            borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
-            children: [new Paragraph({ children: [] })],
-          }),
-        ],
-      }));
-    } else {
-      // One row per member, time+obs span via rowspan emulation (repeat in first member row only)
-      row.members.forEach((m, idx) => {
-        const isSpacer = m.memberName === "__SPACE__";
-        const cert = isSpacer ? undefined : row.certifications.find((c) => c.memberId === m.id && c.isActive);
-        const certifierCIN = cert ? (('certifiedByCIN' in cert ? (cert as any).certifiedByCIN : null) || cert.certifiedByName) : null;
-        const certText = cert
-          ? `\u2713 ${certifierCIN} ${format(new Date(cert.certifiedAt), "dd/MM/yy h:mmaaa")}`
-          : (isSpacer ? "" : `${m.memberName} Pending`);
-        const certColor = cert ? "22C55E" : (isSpacer ? "000000" : "EF4444");
-
-        // For multi-member rows, only show time and obs on the first member row
-        const timePara = idx === 0
-          ? [new Paragraph({ children: [new TextRun({ text: timeText, size: 18, font: "Courier New", color: "000000" })] })]
-          : [new Paragraph({ children: [] })];
-        const obsPara = idx === 0
-          ? obsText.split("\n").map((line) => new Paragraph({ children: [new TextRun({ text: line, font: FONT, size: BODY_SIZE, color: "000000" })] }))
-          : [new Paragraph({ children: [] })];
-
-        dataRows.push(new TableRow({
-          children: [
-            new TableCell({
-              width: { size: 10, type: WidthType.PERCENTAGE },
-              borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
-              children: timePara,
-            }),
-            new TableCell({
-              width: { size: 72, type: WidthType.PERCENTAGE },
-              borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
-              children: obsPara,
-            }),
-            new TableCell({
-              width: { size: 18, type: WidthType.PERCENTAGE },
-              borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
-              children: [new Paragraph({ children: [new TextRun({ text: certText, font: FONT, size: 18, color: certColor, bold: !!cert })] })],
-            }),
-          ],
-        }));
-      });
-    }
-  }
-
-  const logTable = new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    borders: {
-      top: outerBorder, bottom: outerBorder, left: outerBorder, right: outerBorder,
-      insideHorizontal: thinBorder, insideVertical: thinBorder,
-    },
-    rows: [headerRow, ...dataRows],
-  });
-
-  // ── Build document ───────────────────────────────────────────────────────────
-  const doc = new Document({
-    sections: [{
-      properties: {
-        page: {
-          margin: { top: 1134, bottom: 1134, left: 1134, right: 1134 }, // ~2cm margins
-        },
-      },
-      children: [
-        new Paragraph({
-          heading: HeadingLevel.HEADING_1,
-          alignment: AlignmentType.CENTER,
-          children: [new TextRun({ text: "WC SURVEILLANCE RUNNING SHEET", font: FONT, bold: true, size: 32, color: "000000", allCaps: true })],
-          spacing: { after: 200 },
-        }),
-        new Paragraph({
-          alignment: AlignmentType.CENTER,
-          children: [new TextRun({ text: "PROTECTED", font: FONT, bold: true, size: 24, color: "DC2626", allCaps: true })],
-          spacing: { after: 240 },
-        }),
-        metaTable,
-        new Paragraph({ children: [], spacing: { after: 240 } }),
-        logTable,
-        new Paragraph({
-          alignment: AlignmentType.CENTER,
-          children: [new TextRun({ text: "PROTECTED", font: FONT, bold: true, size: 24, color: "DC2626", allCaps: true })],
-          spacing: { before: 240 },
-        }),
-      ],
-    }],
-  });
-
-  const blob = await Packer.toBlob(doc);
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${sheetTitle.replace(/[^a-zA-Z0-9\s_-]/g, "")}.docx`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
 
 // ─── Sortable CIN item ────────────────────────────────────────────────────────
@@ -2680,7 +2330,7 @@ export default function SheetDetail() {
     onError: (e) => toast.error(e.message),
   });
 
-  const [pendingExportType, setPendingExportType] = useState<"pdf" | "word" | null>(null);
+  const [pendingExportType, setPendingExportType] = useState<"pdf" | null>(null);
   const [exportEnabled, setExportEnabled] = useState(false);
   const { data: exportData, isFetching: exportFetching, refetch: refetchExport } = trpc.export.sheetData.useQuery(
     { id: sheetId },
@@ -2692,26 +2342,15 @@ export default function SheetDetail() {
 
   // When export data arrives and there is a pending type, trigger the download
   useEffect(() => {
-    if (exportData && pendingExportType && sheet) {
-      if (pendingExportType === "pdf") {
-        exportToPDF(
-          sheet.title,
-          exportData.rows,
-          exportData.operation ?? null,
-          exportData.sheet.sheetCins ?? null,
-          exportData.sheet.createdAt,
-          exportData.targetFullName ?? null,
-        );
-      } else if (pendingExportType === "word") {
-        exportToWord(
-          sheet.title,
-          exportData.rows,
-          exportData.operation ?? null,
-          exportData.sheet.sheetCins ?? null,
-          exportData.sheet.createdAt,
-          exportData.targetFullName ?? null,
-        ).catch((e) => toast.error("Word export failed: " + e.message));
-      }
+    if (exportData && pendingExportType === "pdf" && sheet) {
+      exportToPDF(
+        sheet.title,
+        exportData.rows,
+        exportData.operation ?? null,
+        exportData.sheet.sheetCins ?? null,
+        exportData.sheet.createdAt,
+        exportData.targetFullName ?? null,
+      );
       setPendingExportType(null);
     }
   }, [exportData, pendingExportType, sheet]);
@@ -2773,14 +2412,14 @@ export default function SheetDetail() {
     setRosterInputValid(false);
   };
 
-  const handleExport = useCallback((type: "pdf" | "word" = "pdf") => {
+  const handleExport = useCallback(() => {
     if (!sheet) return;
     if (exportData && !exportFetching) {
-      setPendingExportType(type);
+      setPendingExportType("pdf");
       refetchExport();
       return;
     }
-    setPendingExportType(type);
+    setPendingExportType("pdf");
     setExportEnabled(true);
   }, [sheet, exportData, exportFetching, refetchExport]);
 
@@ -2985,38 +2624,16 @@ export default function SheetDetail() {
                 </Tooltip>
               )
             )}
-            {/* Export dropdown */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-2"
-                  disabled={exportFetching}
-                >
-                  <Download className="w-4 h-4" />
-                  {exportFetching ? "Preparing..." : "Export"}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem
-                  className="gap-2 cursor-pointer"
-                  onClick={() => handleExport("pdf")}
-                >
-                  <FileText className="w-4 h-4 text-rose-400" />
-                  Print / Save PDF
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="gap-2 cursor-pointer"
-                  onClick={() => handleExport("word")}
-                >
-                  <FileText className="w-4 h-4 text-blue-400" />
-                  Download Word (.docx)
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-2"
+              disabled={exportFetching}
+              onClick={handleExport}
+            >
+              <Download className="w-4 h-4" />
+              {exportFetching ? "Preparing..." : "Export PDF"}
+            </Button>
           </div>
         </div>
 

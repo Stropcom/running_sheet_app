@@ -525,6 +525,14 @@ function exportToPDF(
     .log-table td:last-child{white-space:nowrap;word-break:normal;width:1%}
     /* thead wrapper cell — no border/padding so the banner floats free of the log table's own border */
     .thead-meta-cell{padding:0 !important;border:none !important}
+    /* Footer band — repeats at the bottom of every printed page (display:table-footer-group).
+       Same light blue as the column header row, not the dark banner — a plain background fill,
+       no border tricks, so it can't run into the per-cell border issues a bordered footer did. */
+    tfoot{display:table-footer-group}
+    .footer-band td{background:#dbeafe;padding:8px 14px}
+    .footer-grid{display:grid;grid-template-columns:1fr 1fr 1fr;align-items:center}
+    .footer-cin{font-size:10px;color:#1e3a8a;font-weight:700;letter-spacing:0.04em;text-transform:uppercase}
+    .footer-protected{text-align:center;font-size:11px;font-weight:800;letter-spacing:0.14em;color:#dc2626}
     /* Certification pills */
     .pill{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:9999px;font-size:10px;font-weight:700;white-space:nowrap}
     .pill-certified{background:#d1fae5;color:#059669;border:1px solid #6ee7b7}
@@ -615,6 +623,15 @@ function exportToPDF(
         <th>CIN Certified</th>
       </tr>
     </thead>
+    <tfoot>
+      <!-- Repeats at the bottom of every printed page. -->
+      <tr class="footer-band"><td colspan="3">
+        <div class="footer-grid">
+          <span class="footer-cin">${authorCin ? `Prepared by ${authorCin}` : ""}</span>
+          <span class="footer-protected">Protected</span>
+        </div>
+      </td></tr>
+    </tfoot>
     <tbody>${tableRows}</tbody>
   </table>
   ${buildExportPreviewCloseBar()}

@@ -820,11 +820,11 @@ function OperationsTab({
       op.sheetCount = sheetIds.size;
       opList.push(op);
     });
-    // Separate (Registry) — always pinned to bottom
+    // (Registry) — targets/entities not linked to any operation — is excluded
+    // from this folder list entirely; it's not a real operation.
     const isRegistry = (op: OperationSummary) =>
       op.operationId === 0 || op.operationName === "(Registry)";
-    const registry = opList.filter(isRegistry);
-    const normal   = opList.filter((op) => !isRegistry(op));
+    const normal = opList.filter((op) => !isRegistry(op));
     // Get latest sheet title across all entities in an operation (used for recency sort)
     const getLatestSheet = (op: OperationSummary) => {
       let best = "";
@@ -835,12 +835,10 @@ function OperationsTab({
       }
       return best;
     };
-    const sorted = [...normal].sort((a, b) => {
+    return [...normal].sort((a, b) => {
       if (sortOrder === "recent") return getLatestSheet(b).localeCompare(getLatestSheet(a));
       return a.operationName.localeCompare(b.operationName); // az (default)
     });
-    const sortedRegistry = [...registry].sort((a, b) => a.operationName.localeCompare(b.operationName));
-    return [...sorted, ...sortedRegistry];
   }, [entities, allOps, sortOrder]);
 
   const filtered = useMemo(() => {
@@ -1142,8 +1140,9 @@ export default function IntelligencePage() {
     const counts: Partial<Record<TabView, number>> = {};
     if (!filteredEntities) return counts;
     // Count all operations: entity-derived + any with no entities yet
+    // (excludes the operationId=0 "(Registry)" pseudo-operation — not a real op)
     const opIds = new Set<number>();
-    for (const e of filteredEntities) for (const o of e.occurrences) opIds.add(o.operationId);
+    for (const e of filteredEntities) for (const o of e.occurrences) if (o.operationId !== 0) opIds.add(o.operationId);
     const allOpCount = Math.max(opIds.size, allOps?.length ?? 0);
     counts["operations"]  = allOpCount;
     counts["targets"]     = filteredEntities.filter((e) => e.isTarget === true).length;

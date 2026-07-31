@@ -375,11 +375,8 @@ function exportToPDF(
   }
 
   // ── Running sheet table ──────────────────────────────────────────────────────
-  // Spacer row inserted after each log entry for breathing room. Keeps the
-  // dark side borders (side-border) so the table's vertical rules stay
-  // unbroken even where a row has no content — only the top/bottom border is
-  // suppressed here.
-  const spacerRow = `<tr><td colspan="3" class="side-border" style="padding:0;height:8px;border-top:none;border-bottom:none;background:transparent"></td></tr>`;
+  // Spacer row inserted after each log entry for breathing room
+  const spacerRow = `<tr><td colspan="3" style="padding:0;height:8px;border:none;background:transparent"></td></tr>`;
 
   // ── Build day-offset map for export rows (rowDate-aware, falls back to inference) ──
   const exportDayOffsetMap = new Map<number, number>();
@@ -417,7 +414,7 @@ function exportToPDF(
   }
 
   const dateDividerRow = (label: string) =>
-    `<tr class="date-divider-row"><td colspan="3" class="side-border"><span class="date-divider-pill">${label}</span></td></tr>`;
+    `<tr class="date-divider-row"><td colspan="3"><span class="date-divider-pill">${label}</span></td></tr>`;
 
   const tableRows = (() => {
     let prevDay = -1;
@@ -513,32 +510,21 @@ function exportToPDF(
     .meta-pill strong{color:#fff;font-weight:700;text-transform:none;letter-spacing:0;margin-left:2px}
     .imagery-line{font-size:10px;margin-top:10px;color:rgba(255,255,255,0.78)}
     .imagery-line strong{color:#fff;font-weight:700}
-    /* Log table — border-collapse:separate with a border declared on every
-       individual cell (not one shared declaration on the <table> element).
-       Chrome's print engine reliably drops a table-level outer border on the
-       right/bottom edge wherever it paginates a table across pages — giving
-       every cell its own border-left/border-right means the side rules never
-       depend on which fragment happens to be "the edge" on a given page. */
-    table.log-table{width:100%;border-collapse:separate;border-spacing:0;table-layout:auto}
+    /* Log table — the outer border is a single declaration on the <table> element itself
+       (border-collapse:collapse), not assembled from separate per-cell rules. That's what
+       guarantees it always renders as one continuous, unbroken, uniform-width rectangle
+       regardless of rowspan, spacer rows, or which row happens to be last. */
+    table.log-table{width:100%;border:1.5px solid #1e3a8a;border-top:none;border-collapse:collapse;table-layout:auto}
     col.c-time{width:80px}
     col.c-obs{width:auto}
     col.c-cert{width:1%}
     .log-table th{background:#dbeafe;color:#1e3a8a;font-weight:700;padding:6px;text-align:left;
        border-bottom:2px solid #1e3a8a;border-right:1px solid #c7d5ee}
-    .log-table th:first-child,.log-table td:first-child{border-left:1.5px solid #1e3a8a}
-    .log-table th:last-child,.log-table td:last-child{border-right:1.5px solid #1e3a8a}
+    .log-table th:last-child,.log-table td:last-child{border-right:none}
     .log-table td{vertical-align:top;word-break:break-word;overflow:hidden;color:#000;border-right:1px solid #e2e9f6;border-bottom:1px solid #eef2fb}
     .log-table td:last-child{white-space:nowrap;word-break:normal;width:1%}
-    /* Full-width (colspan=3) rows — banner cell, spacer rows, date dividers — need the
-       same dark left/right edges applied directly since :first-child/:last-child both
-       resolve to the same single cell and so only get border-right from the rule above. */
-    .side-border{border-left:1.5px solid #1e3a8a;border-right:1.5px solid #1e3a8a}
-    /* thead wrapper cell — no padding/top/bottom border so the banner floats free above the column headers */
-    .thead-meta-cell{padding:0 !important;border-top:none !important;border-bottom:none !important}
-    /* Repeats at the bottom of every printed page (display:table-footer-group) so each
-       page ends on a clean dark closing line instead of trailing off mid-row. */
-    tfoot{display:table-footer-group}
-    .table-foot-cell{border-top:1.5px solid #1e3a8a;padding:0;height:0;line-height:0;font-size:0}
+    /* thead wrapper cell — no border/padding so the banner floats free of the log table's own border */
+    .thead-meta-cell{padding:0 !important;border:none !important}
     /* Certification pills */
     .pill{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:9999px;font-size:10px;font-weight:700;white-space:nowrap}
     .pill-certified{background:#d1fae5;color:#059669;border:1px solid #6ee7b7}
@@ -619,7 +605,7 @@ function exportToPDF(
       <!-- Compact banner repeats on every page via thead display:table-header-group.
            Hidden on screen (first-page-header shows instead); shown during print by JS. -->
       <tr class="print-only" data-pd="table-row">
-        <td colspan="3" class="thead-meta-cell side-border">
+        <td colspan="3" class="thead-meta-cell">
           ${coverHeaderHtml(true)}
         </td>
       </tr>
@@ -629,11 +615,6 @@ function exportToPDF(
         <th>CIN Certified</th>
       </tr>
     </thead>
-    <tfoot>
-      <!-- Repeats at the bottom of every printed page so each page ends on a
-           clean dark closing line instead of trailing off mid-row. -->
-      <tr><td colspan="3" class="side-border table-foot-cell"></td></tr>
-    </tfoot>
     <tbody>${tableRows}</tbody>
   </table>
   ${buildExportPreviewCloseBar()}

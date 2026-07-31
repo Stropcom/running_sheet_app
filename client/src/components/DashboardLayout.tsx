@@ -35,7 +35,6 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
-  SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
@@ -1450,42 +1449,51 @@ function DashboardLayoutContent({
         {isMobile && (
           <div className="flex border-b border-border h-14 items-center justify-between bg-background/95 px-3 backdrop-blur sticky top-0 z-40">
             <div className="flex items-center gap-2">
-              <SidebarTrigger className="h-10 w-10 rounded-lg" />
+              <button
+                onClick={toggleSidebar}
+                className="flex items-center justify-center h-11 w-11 rounded-lg text-foreground hover:bg-accent transition-colors"
+                aria-label="Toggle navigation"
+              >
+                <PanelLeft className="h-6 w-6" />
+              </button>
               <span className="text-base font-semibold text-foreground">
                 Running Sheet
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <NotificationBell />
+              <NotificationBell
+                className="h-11 w-11 hover:bg-accent"
+                iconClassName="h-6 w-6 text-muted-foreground"
+              />
               {/* Active RS quick-link (mobile) */}
               <button
                 onClick={() => {
                   if (activeRsId) setLocation(`/sheet/${activeRsId}`);
                 }}
-                className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg transition-all ${
+                className={`flex items-center justify-center h-11 w-11 rounded-lg transition-all ${
                   activeRsId
                     ? "text-emerald-500 hover:bg-emerald-500/10 cursor-pointer"
                     : "text-muted-foreground/30 cursor-default"
                 }`}
                 title={activeRsId ? "Go to Active RS" : "No active RS selected"}
               >
-                <ClipboardList className="h-7 w-7" />
+                <ClipboardList className="h-6 w-6" />
               </button>
               {/* Map quick-link (mobile) */}
               {location !== "/intelligence/mapping" && (
                 <button
                   onClick={() => setLocation("/intelligence/mapping")}
-                  className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+                  className="flex items-center justify-center h-11 w-11 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
                   title="Back to Map"
                 >
-                  <Map className="h-7 w-7" />
+                  <Map className="h-6 w-6" />
                 </button>
               )}
               {/* Right pane folder-expander (page-specific, e.g. Map's RS Actions pane) */}
               {rightPaneToggle && (
                 <button
                   onClick={rightPaneToggle.onToggle}
-                  className={`flex items-center justify-center h-10 w-10 rounded-lg transition-colors ${
+                  className={`flex items-center justify-center h-11 w-11 rounded-lg transition-colors ${
                     rightPaneToggle.isOpen
                       ? "text-primary bg-primary/10"
                       : "text-muted-foreground hover:text-foreground hover:bg-accent"
@@ -1493,7 +1501,7 @@ function DashboardLayoutContent({
                   aria-label="Toggle side panel"
                   title="Toggle side panel"
                 >
-                  <PanelRight className="h-5 w-5" />
+                  <PanelRight className="h-6 w-6" />
                 </button>
               )}
             </div>

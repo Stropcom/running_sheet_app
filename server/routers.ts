@@ -168,6 +168,7 @@ import {
   completeSheetSummary,
   reopenSheetSummary,
   addManualSheetSummaryEntry,
+  setSheetSummaryEntryTime,
   getGovernanceTodoForCin,
   getUnlinkedImagesTodoForCin,
   getOperationDeleteStats,
@@ -3352,6 +3353,28 @@ export const appRouter = router({
           });
         }
         await updateSheetSummaryEntry(input.id, input.text);
+        return { success: true };
+      }),
+
+    /** Set a manually-added summary line's time — sorts it into place among the row-linked lines */
+    setEntryTime: protectedProcedure
+      .input(
+        z.object({
+          sheetId: z.number(),
+          id: z.number(),
+          time: z.string(),
+          timeMinutes: z.number(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const record = await getSheetSummary(input.sheetId);
+        if (record?.completedAt) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Summary is complete — reopen it before editing.",
+          });
+        }
+        await setSheetSummaryEntryTime(input.id, input.time, input.timeMinutes);
         return { success: true };
       }),
 

@@ -5113,10 +5113,7 @@ function buildSummaryEntryText(row: {
   const entities = extractEntitiesFromText(raw);
   const location = entities.find(e => e.type === "address");
 
-  let text = stripLocationBrackets(raw, entities);
-  // "Continued via:" reads awkwardly as a supervisor-facing summary line —
-  // "travelled to" says the same thing more naturally.
-  text = text.replace(/continued\s+via\s*:/gi, "travelled to");
+  const text = stripLocationBrackets(raw, entities);
 
   const parts = [
     row.time ?? null,
@@ -5131,12 +5128,12 @@ function buildSummaryEntryText(row: {
  * any RS rows that don't have an entry yet. Existing entries (including ones
  * the supervisor has edited or soft-deleted) are never touched or regenerated.
  *
- * "Travelled Via" rows (a row ending in "whereat" whose immediately preceding
- * row contains "continued via:" — the same convention used to exclude these
- * rows from Court Statements, see routers.ts's statement.previewData) are
- * skipped entirely: they're pure transit markers, not evidential content, so
- * they never get their own summary line. The "continued via:" row itself is
- * kept, with that phrase reworded to "travelled to" by buildSummaryEntryText.
+ * "Travelled Via" rows — a row containing "continued via:" (the street/road
+ * list, whether inline or on its own) and, where present, the paired row
+ * immediately after it ending in "whereat" (the same convention used to
+ * exclude these from Court Statements, see routers.ts's
+ * statement.previewData) — are pure transit routing, not evidential content,
+ * so neither gets its own summary line at all.
  */
 export async function getSheetSummaryEntries(
   sheetId: number
@@ -5146,12 +5143,14 @@ export async function getSheetSummaryEntries(
 
   const allRows = await getRowsBySheetId(sheetId);
   const travelledViaRowIds = new Set<number>();
-  for (let i = 1; i < allRows.length; i++) {
-    const obs = (allRows[i].observation ?? "").trim();
-    if (!/whereat$/i.test(obs)) continue;
-    const prevObs = (allRows[i - 1].observation ?? "").toLowerCase();
-    if (prevObs.includes("continued via:")) {
+  for (let i = 0; i < allRows.length; i++) {
+    const obs = (allRows[i].observation ?? "").toLowerCase();
+    if (obs.includes("continued via:")) {
       travelledViaRowIds.add(allRows[i].id);
+      const next = allRows[i + 1];
+      if (next && /whereat$/i.test((next.observation ?? "").trim())) {
+        travelledViaRowIds.add(next.id);
+      }
     }
   }
 
@@ -5184,12 +5183,27 @@ export async function getSheetSummaryEntries(
       : existing;
 
   const rowOrder = new Map(rows.map((r, idx) => [r.id, idx]));
-  // Manually-added lines (rowId null) have no row to sort by — they sort
-  // after every row-linked line, in the order they were added.
-  const sortKey = (e: SheetSummaryEntry) =>
-    e.rowId != null && rowOrder.has(e.rowId)
-      ? rowOrder.get(e.rowId)!
-      : rows.length + e.id;
+  // Row-linked lines sort by their source row's position. Manually-added
+  // lines (rowId null) with no time yet sort above everything else, newest
+  // first — "adds the row to the top and stays there until a time is
+  // added" — via a negative key derived from id (higher id = added later =
+  // more negative = further toward the top). Once a manual line has a time,
+  // it's slotted in among the row-linked lines by comparing that time
+  // against each row's own time.
+  const sortKey = (e: SheetSummaryEntry): number => {
+    if (e.rowId != null) {
+      return rowOrder.has(e.rowId)
+        ? rowOrder.get(e.rowId)!
+        : rows.length + e.id;
+    }
+    if (e.timeMinutes == null) return -1 - e.id;
+    let idx = 0;
+    for (const r of rows) {
+      if (r.timeMinutes != null && r.timeMinutes <= e.timeMinutes) idx++;
+      else break;
+    }
+    return idx - 0.5;
+  };
   return all.filter(e => !e.deleted).sort((a, b) => sortKey(a) - sortKey(b));
 }
 
@@ -5219,6 +5233,20 @@ export async function updateSheetSummaryEntry(
   await db
     .update(sheetSummaryEntries)
     .set({ text })
+    .where(eq(sheetSummaryEntries.id, id));
+}
+
+/** Sets a manually-added summary line's time, which is what lets it sort into place among the row-linked lines instead of staying pinned at the top. */
+export async function setSheetSummaryEntryTime(
+  id: number,
+  time: string,
+  timeMinutes: number
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(sheetSummaryEntries)
+    .set({ time, timeMinutes })
     .where(eq(sheetSummaryEntries.id, id));
 }
 

@@ -645,6 +645,13 @@ export const sheetSummaryEntries = mysqlTable(
     sheetId: int("sheetId").notNull(),
     rowId: int("rowId"),
     text: text("text").notNull(),
+    // Only set for manually-added lines (rowId null) — a supervisor-entered
+    // time used to sort the line into place among the row-linked lines, the
+    // same "time — location — text" ordering the running sheet itself uses.
+    // Row-linked lines are ordered by their source row instead; this stays
+    // null for them.
+    time: varchar("time", { length: 32 }),
+    timeMinutes: int("timeMinutes"),
     deleted: boolean("deleted").notNull().default(false),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

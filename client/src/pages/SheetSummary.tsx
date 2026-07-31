@@ -120,6 +120,32 @@ function parseJsonArray<T>(raw: string | null | undefined): T[] {
   }
 }
 
+// ─── Time helpers for manually-added Summary lines ─────────────────────────
+// A native <input type="time"> works in 24h "HH:MM"; the rest of the app
+// (sheet_rows.time) stores "h:mm AM/PM" plus a separate minutes-since-
+// midnight value for sorting — these convert between the two.
+
+function to24hInputValue(minutes: number | null | undefined): string {
+  if (minutes == null) return "";
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+function from24hInputValue(
+  value: string
+): { display: string; minutes: number } | null {
+  const m = value.match(/^(\d{2}):(\d{2})$/);
+  if (!m) return null;
+  const h24 = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  const minutes = h24 * 60 + min;
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  const period = h24 < 12 ? "AM" : "PM";
+  const display = `${h12}:${String(min).padStart(2, "0")} ${period}`;
+  return { display, minutes };
+}
+
 // ─── Field row helpers ──────────────────────────────────────────────────────
 
 function FieldInput({
@@ -452,6 +478,10 @@ export default function SheetSummaryPage() {
   });
   const updateEntryMutation = trpc.summary.updateEntry.useMutation({
     onError: () => toast.error("Failed to save summary line"),
+  });
+  const setEntryTimeMutation = trpc.summary.setEntryTime.useMutation({
+    onSuccess: () => utils.summary.getEntries.invalidate({ sheetId }),
+    onError: () => toast.error("Failed to set line time"),
   });
   const deleteEntryMutation = trpc.summary.deleteEntry.useMutation({
     onSuccess: () => utils.summary.getEntries.invalidate({ sheetId }),
@@ -1002,9 +1032,39 @@ export default function SheetSummaryPage() {
               {/* Summary — one editable/deletable line per RS row, append-only synced */}
               <div>
                 <SectionLabel>Summary</SectionLabel>
+                {!isLocked && (
+                  <button
+                    type="button"
+                    onClick={() => addEntryMutation.mutate({ sheetId })}
+                    disabled={addEntryMutation.isPending}
+                    className="mb-2 flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add
+                  </button>
+                )}
                 <div className="space-y-2">
                   {(entries ?? []).map(entry => (
                     <div key={entry.id} className="flex items-start gap-2">
+                      {entry.rowId == null && (
+                        <input
+                          type="time"
+                          value={to24hInputValue(entry.timeMinutes)}
+                          disabled={isLocked}
+                          onChange={e => {
+                            const parsed = from24hInputValue(e.target.value);
+                            if (!parsed) return;
+                            setEntryTimeMutation.mutate({
+                              sheetId,
+                              id: entry.id,
+                              time: parsed.display,
+                              timeMinutes: parsed.minutes,
+                            });
+                          }}
+                          className="h-9 shrink-0 rounded-md border border-input bg-transparent px-2 text-sm w-[6.5rem]"
+                          title="Set a time to sort this line into place"
+                        />
+                      )}
                       <Textarea
                         value={entryDrafts[entry.id] ?? entry.text}
                         onChange={e =>
@@ -1037,17 +1097,6 @@ export default function SheetSummaryPage() {
                     </p>
                   )}
                 </div>
-                {!isLocked && (
-                  <button
-                    type="button"
-                    onClick={() => addEntryMutation.mutate({ sheetId })}
-                    disabled={addEntryMutation.isPending}
-                    className="mt-2 flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    Add
-                  </button>
-                )}
               </div>
 
               <FieldTextarea

@@ -2,6 +2,7 @@ import { useRoute, useLocation } from "wouter";
 import { useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { formatIntelAddress } from "@/lib/addressFormat";
+import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -68,7 +69,9 @@ function buildLocationProfileHtml(profile: IntelLocationProfile, photos: Profile
     ${profile.assocVehicles.length ? `<div class="sub-title">Vehicles</div>${buildEntityListWithPhotosHtml(profile.assocVehicles)}` : ""}
   </div>` : ""}
   <div class="footer"><span>RunLog — Location Intelligence Profile</span><span>SENSITIVE — FOR OFFICIAL USE ONLY — ${generatedAt}</span></div>
-</div></body></html>`;
+</div>
+${buildExportPreviewCloseBar()}
+</body></html>`;
 }
 
 export default function IntelligenceLocationProfile() {

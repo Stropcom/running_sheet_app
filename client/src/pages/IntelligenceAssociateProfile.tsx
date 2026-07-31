@@ -7,6 +7,7 @@ import { ArrowLeft, FileDown, User, FileText } from "lucide-react";
 import { EntityPhotosSection } from "@/components/EntityPhotosSection";
 import { buildPhotoGridHtml, buildEntityListWithPhotosHtml, type RowAttachmentLike } from "@/lib/attachmentBanner";
 import { IntelEntityWithPhotos, type IntelAssocEntity } from "@/components/IntelEntityChip";
+import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 
 type ProfilePhoto = RowAttachmentLike & { id: number; url: string };
 
@@ -63,7 +64,9 @@ function buildAssociateProfileHtml(profile: IntelAssociateProfile, photos: Profi
     ${profile.assocLocations.length ? `<div class="sub-title">Locations</div>${buildEntityListWithPhotosHtml(profile.assocLocations)}` : ""}
   </div>` : ""}
   <div class="footer"><span>RunLog — Associate Intelligence Profile</span><span>SENSITIVE — FOR OFFICIAL USE ONLY — ${generatedAt}</span></div>
-</div></body></html>`;
+</div>
+${buildExportPreviewCloseBar()}
+</body></html>`;
 }
 
 export default function IntelligenceAssociateProfile() {

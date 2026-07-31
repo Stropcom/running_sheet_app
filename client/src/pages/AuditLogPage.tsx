@@ -1,5 +1,6 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
+import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
@@ -113,6 +114,7 @@ function exportAuditToPDF(sheetTitle: string, logs: AuditLog[]) {
     </tr></thead>
     <tbody>${tableRows}</tbody>
   </table>
+  ${buildExportPreviewCloseBar()}
 </body></html>`;
 
   const win = window.open("", "_blank");

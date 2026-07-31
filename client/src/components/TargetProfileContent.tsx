@@ -5,6 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { FileDown, User, Folder, FileText } from "lucide-react";
 import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
+import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 import { EntityPhotosSection } from "@/components/EntityPhotosSection";
 import {
   buildPhotoGridHtml,
@@ -201,6 +202,7 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
     <span>SENSITIVE — FOR OFFICIAL USE ONLY — ${generatedAt}</span>
   </div>
 </div>
+${buildExportPreviewCloseBar()}
 </body></html>`;
 }
 

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, FileDown, User, Car, FileText } from "lucide-react";
 import { formatIntelVehicle } from "@/lib/addressFormat";
+import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 import { EntityPhotosSection } from "@/components/EntityPhotosSection";
 import { buildPhotoGridHtml, buildEntityListWithPhotosHtml, type RowAttachmentLike } from "@/lib/attachmentBanner";
 import { IntelEntityWithPhotos, type IntelAssocEntity } from "@/components/IntelEntityChip";
@@ -69,7 +70,9 @@ function buildVehicleProfileHtml(profile: IntelVehicleProfile, photos: ProfilePh
     ${profile.assocLocations.length ? `<div class="sub-title">Locations</div>${buildEntityListWithPhotosHtml(profile.assocLocations)}` : ""}
   </div>` : ""}
   <div class="footer"><span>RunLog — Vehicle Intelligence Profile</span><span>SENSITIVE — FOR OFFICIAL USE ONLY — ${generatedAt}</span></div>
-</div></body></html>`;
+</div>
+${buildExportPreviewCloseBar()}
+</body></html>`;
 }
 
 export default function IntelligenceVehicleProfile() {

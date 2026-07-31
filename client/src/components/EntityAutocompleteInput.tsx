@@ -12,7 +12,7 @@
 import { useRef, useState, type FocusEvent } from "react";
 import { User, Car } from "lucide-react";
 import { trpc } from "@/lib/trpc";
-import { formatIntelVehicle } from "@/lib/addressFormat";
+import { formatIntelVehicle, expandIntelVehicleToFullForm } from "@/lib/addressFormat";
 
 interface Props {
   value: string;
@@ -27,6 +27,16 @@ interface Props {
 
 function displayLabel(entityType: "person" | "vehicle", label: string): string {
   return entityType === "vehicle" ? formatIntelVehicle(label) : label;
+}
+
+// The value actually written into the field on selection. Vehicles need the
+// full RS observation convention ("description, bearing WA registration
+// REGO (Vehicle REGO)"), not the Intelligence-style "[rego] [description]"
+// shown in the dropdown — so it reads the way an officer would type it, and
+// so the bracket lets the onBlur extractShortVehicle handler auto-fill the
+// short Vehicle (V1) field, same as if it had been typed by hand.
+function fillValue(entityType: "person" | "vehicle", label: string): string {
+  return entityType === "vehicle" ? expandIntelVehicleToFullForm(label) : label;
 }
 
 export function EntityAutocompleteInput({
@@ -110,7 +120,7 @@ export function EntityAutocompleteInput({
               onMouseDown={e => {
                 // Use mousedown so it fires before the input's blur
                 e.preventDefault();
-                onChange(displayLabel(entityType, s.label));
+                onChange(fillValue(entityType, s.label));
                 setOpen(false);
               }}
             >

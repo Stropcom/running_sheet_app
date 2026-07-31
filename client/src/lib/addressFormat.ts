@@ -542,3 +542,37 @@ export function formatIntelVehicle(shortForm: string, fullObservation?: string):
   // No description available — return just the registration
   return rego;
 }
+
+/**
+ * Reverse of formatIntelVehicle's "[rego] [description]" display format —
+ * expands it back into the full RS observation/V1F convention:
+ * "[description], bearing WA registration [rego] (Vehicle [rego])".
+ *
+ * Used when a user picks a vehicle suggestion (sourced from Intelligence
+ * entities, which are stored/displayed rego-first, e.g. "1GBG656 grey Ford
+ * Ranger") to fill a Target Registry Vehicle Full (V1F) field — so the
+ * inserted text reads the same way an officer would type it, and so
+ * extractShortVehicle can find the trailing "(Vehicle REGO)" bracket to
+ * auto-fill the short Vehicle (V1) field on blur, same as if it had been
+ * typed by hand.
+ *
+ * Returns the input unchanged if it doesn't look like "[rego] [description]"
+ * (e.g. already has a bracket, or has no rego-looking leading token).
+ *
+ * Example:
+ *   "1GBG656 grey Ford Ranger" → "grey Ford Ranger, bearing WA registration 1GBG656 (Vehicle 1GBG656)"
+ */
+export function expandIntelVehicleToFullForm(introLabel: string): string {
+  if (!introLabel) return introLabel;
+  const trimmed = introLabel.trim();
+  // Already has a bracket code — nothing to expand.
+  if (/\([^)]{1,80}\)\s*$/.test(trimmed)) return trimmed;
+  const match = trimmed.match(/^([A-Za-z0-9-]{5,8})\s+(.+)$/);
+  if (!match) return trimmed;
+  const rego = match[1].toUpperCase();
+  const description = match[2].trim();
+  // Only treat the leading token as a rego if it mixes letters and digits —
+  // avoids misfiring on a plain description with no recognised rego.
+  if (!/[A-Za-z]/.test(rego) || !/\d/.test(rego)) return trimmed;
+  return `${description}, bearing WA registration ${rego} (Vehicle ${rego})`;
+}

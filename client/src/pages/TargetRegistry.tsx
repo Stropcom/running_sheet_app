@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -207,6 +207,35 @@ function TargetCard({
   const [wildFields, setWildFields] = useState<WildField[]>(() => parseWildFields(target.wildFields));
   const [dirty, setDirty] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // Re-sync editable fields when the underlying record actually changes on
+  // the server (e.g. a duplicate-target merge updates it while this card
+  // is already mounted, since it's keyed by id and doesn't remount) — the
+  // useState initializers above only run once, so without this the card
+  // keeps showing whatever was true when it first mounted. Skipped while
+  // the user has unsaved local edits so an in-progress edit isn't clobbered
+  // by a background refetch.
+  useEffect(() => {
+    if (dirty) return;
+    setName(target.name);
+    setTgt(target.tgt ?? "");
+    setHbf(target.hbf ?? "");
+    setHb(target.hb ?? "");
+    setV1f(target.v1f ?? "");
+    setV1(target.v1 ?? "");
+    setDep(target.dep ?? "");
+    setArr(target.arr ?? "");
+    const parsedVehicles = parseExtraVehicles(target.extraVehicles);
+    setExtraVehicles(
+      parsedVehicles.length > 0
+        ? parsedVehicles
+        : target.v2f || target.v2
+          ? [{ full: target.v2f ?? "", short: target.v2 ?? "" }]
+          : []
+    );
+    setWildFields(parseWildFields(target.wildFields));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target.updatedAt?.getTime()]);
 
   const mark = (fn: () => void) => { fn(); setDirty(true); };
 
@@ -809,14 +838,20 @@ function AddTargetDialog({
             "{form.name}" looks like it may be the same person as an existing target, <strong>{dupMatch?.name}</strong> ({dupMatch?.reason}). Is this the same person?
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <AlertDialogFooter className="gap-2">
-          <AlertDialogCancel onClick={() => setDupMatch(null)}>Cancel</AlertDialogCancel>
-          <Button variant="outline" onClick={() => { setDupMatch(null); saveAsNew(); }}>
-            No, different person — create new
-          </Button>
-          <Button onClick={handleMergeInstead}>
+        <AlertDialogFooter className="flex flex-col sm:flex-col gap-2">
+          <Button onClick={handleMergeInstead} className="w-full">
             <Merge className="w-4 h-4 mr-1.5" /> Yes — merge details
           </Button>
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => { setDupMatch(null); saveAsNew(); }}
+          >
+            No, different person — create new
+          </Button>
+          <AlertDialogCancel onClick={() => setDupMatch(null)} className="w-full mt-0">
+            Cancel
+          </AlertDialogCancel>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
@@ -850,7 +885,13 @@ export default function TargetRegistryPage() {
   const [sortBy, setSortBy] = useState<"alpha" | "recent" | "operation">("alpha");
   const [showCreate, setShowCreate] = useState(false);
   const [linkTarget, setLinkTarget] = useState<RegistryTarget | null>(null);
-  const [selectedTileTarget, setSelectedTileTarget] = useState<RegistryTarget | null>(null);
+  // Store just the id, not a snapshot of the target object — deriving it
+  // live from `targets` below means the tile dialog always reflects the
+  // latest data (e.g. right after a merge), instead of freezing whatever
+  // was true at the moment the tile was clicked.
+  const [selectedTileTargetId, setSelectedTileTargetId] = useState<number | null>(null);
+  const selectedTileTarget =
+    (targets?.find(t => t.id === selectedTileTargetId) as RegistryTarget | undefined) ?? null;
 
   const createMutation = trpc.target.registry.create.useMutation({
     onSuccess: () => { utils.target.registry.list.invalidate(); toast.success("Target added to registry."); },
@@ -990,7 +1031,7 @@ export default function TargetRegistryPage() {
               <div
                 key={t.id}
                 className="group flex flex-col gap-3 p-5 rounded-xl border border-border bg-card hover:bg-accent/20 hover:border-primary/30 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 cursor-pointer"
-                onClick={() => setSelectedTileTarget(t as RegistryTarget)}
+                onClick={() => setSelectedTileTargetId(t.id)}
               >
                 {/* Header */}
                 <div className="flex items-start justify-between gap-2">
@@ -1059,7 +1100,7 @@ export default function TargetRegistryPage() {
 
       {/* Tile view — target detail dialog */}
       {selectedTileTarget && (
-        <Dialog open={!!selectedTileTarget} onOpenChange={(open) => { if (!open) setSelectedTileTarget(null); }}>
+        <Dialog open={!!selectedTileTarget} onOpenChange={(open) => { if (!open) setSelectedTileTargetId(null); }}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
@@ -1069,8 +1110,8 @@ export default function TargetRegistryPage() {
             </DialogHeader>
             <TargetCard
               target={selectedTileTarget}
-              onDeleted={() => { setSelectedTileTarget(null); utils.target.registry.list.invalidate(); }}
-              onLinkOps={() => { setSelectedTileTarget(null); setLinkTarget(selectedTileTarget); }}
+              onDeleted={() => { setSelectedTileTargetId(null); utils.target.registry.list.invalidate(); }}
+              onLinkOps={() => { setLinkTarget(selectedTileTarget); setSelectedTileTargetId(null); }}
               defaultExpanded
             />
           </DialogContent>

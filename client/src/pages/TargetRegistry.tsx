@@ -46,6 +46,7 @@ import { useViewMode } from "@/contexts/ViewModeContext";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
 import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
+import { EntityAutocompleteInput } from "@/components/EntityAutocompleteInput";
 import { extractShortVehicle, extractShortTarget, extractShortAddress } from "@/lib/addressFormat";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -319,9 +320,10 @@ function TargetCard({
 
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Full Name, Born</label>
-            <Input
+            <EntityAutocompleteInput
+              entityType="person"
               value={name}
-              onChange={e => { setName(e.target.value); setDirty(true); }}
+              onChange={v => { setName(v); setDirty(true); }}
               onBlur={(e) => {
                 const short = extractShortTarget(e.target.value);
                 if (short && !tgt) mark(() => setTgt(short));
@@ -358,9 +360,10 @@ function TargetCard({
           {/* Vehicle 1 Full (V1F) */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle 1 Full (V1F)</label>
-            <Input
+            <EntityAutocompleteInput
+              entityType="vehicle"
               value={v1f}
-              onChange={e => mark(() => setV1f(e.target.value))}
+              onChange={v => mark(() => setV1f(v))}
               onBlur={(e) => {
                 const short = extractShortVehicle(e.target.value);
                 if (short && !v1) mark(() => setV1(short));
@@ -389,9 +392,10 @@ function TargetCard({
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle {num} Full (V{num}F)</label>
-                  <Input
+                  <EntityAutocompleteInput
+                    entityType="vehicle"
                     value={ev.full}
-                    onChange={e => updateVehicle(i, 'full', e.target.value)}
+                    onChange={v => updateVehicle(i, 'full', v)}
                     onBlur={(e) => {
                       const short = extractShortVehicle(e.target.value);
                       if (short && !ev.short) updateVehicle(i, 'short', short);
@@ -627,9 +631,10 @@ function AddTargetDialog({
         <div className="flex flex-col gap-3 py-2">
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Full Name, Born *</label>
-            <Input
+            <EntityAutocompleteInput
+              entityType="person"
               value={form.name}
-              onChange={setField("name")}
+              onChange={v => setForm(f => ({ ...f, name: v }))}
               onBlur={(e) => {
                 const short = extractShortTarget(e.target.value);
                 if (short) setForm(f => ({ ...f, tgt: f.tgt || short }));
@@ -668,9 +673,10 @@ function AddTargetDialog({
           {/* Vehicle 1 Full (V1F) */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle 1 Full (V1F)</label>
-            <Input
+            <EntityAutocompleteInput
+              entityType="vehicle"
               value={form.v1f}
-              onChange={setField("v1f")}
+              onChange={v => setForm(f => ({ ...f, v1f: v }))}
               onBlur={(e) => {
                 const short = extractShortVehicle(e.target.value);
                 if (short) setForm(f => ({ ...f, v1: f.v1 || short }));
@@ -693,9 +699,10 @@ function AddTargetDialog({
                   <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5"><Car className="w-3 h-3" /> Vehicle {num}</span>
                   <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => setExtraVehicles(v => v.filter((_, idx) => idx !== i))}><X className="w-3 h-3" /></Button>
                 </div>
-                <Input
+                <EntityAutocompleteInput
+                  entityType="vehicle"
                   value={ev.full}
-                  onChange={e => setExtraVehicles(v => v.map((item, idx) => idx === i ? { ...item, full: e.target.value } : item))}
+                  onChange={v => setExtraVehicles(list => list.map((item, idx) => idx === i ? { ...item, full: v } : item))}
                   onBlur={(e) => {
                     const short = extractShortVehicle(e.target.value);
                     if (short) setExtraVehicles(v => v.map((item, idx) => idx === i ? { ...item, short: item.short || short } : item));

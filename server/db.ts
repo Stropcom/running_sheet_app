@@ -4271,10 +4271,21 @@ function extractRegoUpper(text: string): string | null {
   return m ? m[0].toUpperCase() : null;
 }
 
+// Normalizes down to just the street segment (house number + street name),
+// dropping suburb/state/postcode/bracket-code — so a manually-typed HBF value
+// ("6 Shearman Street, ATTADALE WA (6 Shearman Street)") and a free-text
+// entity mined from an observation ("6 Shearman Street, ATTADALE" or just
+// "6 Shearman Street") reduce to the same comparable core regardless of which
+// optional parts either side happens to include.
 function addressCoreLower(text: string): string {
-  return text
-    .replace(/\([^)]{1,120}\)\s*$/, "")
+  // Prefer the canonical bracket short-form when present (mirrors the
+  // client's extractShortAddress) — it's just the street, no suburb/state.
+  const bracketMatch = text.match(/\(([^)]{1,120})\)\s*$/);
+  const base = bracketMatch ? bracketMatch[1] : text;
+  return base
+    .replace(/,?\s*(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\s*\d{0,4}\s*$/i, "")
     .replace(/^(?:unit|lot|apt|apartment|suite|ste)\s*\d+[a-z]?[,\s]*|^\d{1,4}[a-z]?\/(?=\d)/i, "")
+    .split(",")[0]
     .trim()
     .toLowerCase()
     .replace(/\s+/g, " ");

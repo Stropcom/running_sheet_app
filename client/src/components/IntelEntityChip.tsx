@@ -65,6 +65,11 @@ export function IntelEntityChip({
       {icon}
       {label}
       <span className="opacity-60">×{item.rowCount}</span>
+      {item.isPrevious && (
+        <span className="ml-auto px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide bg-black/10 dark:bg-white/15">
+          Previous
+        </span>
+      )}
     </button>
   );
 }
@@ -125,11 +130,6 @@ export function IntelEntityWithPhotos({
   return (
     <div className="flex flex-col gap-1.5">
       <IntelEntityChip item={item} onClick={onClick} />
-      {item.isPrevious && (
-        <span className="self-start ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-amber-500/15 text-amber-700 dark:text-amber-400">
-          Previous
-        </span>
-      )}
       {(item.photos ?? []).length > 0 && (
         <div className="pl-1">
           <IntelPhotoStrip photos={item.photos!} size="w-14 h-14" />

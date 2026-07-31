@@ -1,0 +1,1 @@
+ALTER TABLE `sheet_summary_entries` ADD `edited` boolean DEFAULT false NOT NULL;

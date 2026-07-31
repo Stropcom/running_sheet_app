@@ -5159,6 +5159,7 @@ export async function getSheetSummaryEntries(
   const rows = allRows.filter(
     r => (r.observation ?? "").trim() && !travelledViaRowIds.has(r.id)
   );
+  const rowById = new Map(rows.map(r => [r.id, r]));
   const existing = await db
     .select()
     .from(sheetSummaryEntries)
@@ -5182,13 +5183,60 @@ export async function getSheetSummaryEntries(
     );
   }
 
-  const all =
+  let all =
     missing.length > 0
       ? await db
           .select()
           .from(sheetSummaryEntries)
           .where(eq(sheetSummaryEntries.sheetId, sheetId))
       : existing;
+
+  // Keep unedited row-linked lines synced with their source row — editing
+  // an RS row (e.g. adding a vehicle mention) should flow through to a
+  // Summary line the supervisor hasn't touched. A line that's been edited
+  // stays exactly as the supervisor left it, no matter what happens to the
+  // row afterward.
+  const pendingUpdates: Promise<unknown>[] = [];
+  all = all.map(e => {
+    if (e.edited || e.rowId == null) return e;
+    const row = rowById.get(e.rowId);
+    if (!row) {
+      if (e.deleted) return e;
+      pendingUpdates.push(
+        db
+          .update(sheetSummaryEntries)
+          .set({ deleted: true })
+          .where(eq(sheetSummaryEntries.id, e.id))
+      );
+      return { ...e, deleted: true };
+    }
+    const fields = buildSummaryEntryFields(row);
+    const changed =
+      fields.text !== e.text ||
+      fields.location !== e.location ||
+      row.time !== e.time ||
+      row.timeMinutes !== e.timeMinutes;
+    if (!changed) return e;
+    pendingUpdates.push(
+      db
+        .update(sheetSummaryEntries)
+        .set({
+          text: fields.text,
+          location: fields.location,
+          time: row.time,
+          timeMinutes: row.timeMinutes,
+        })
+        .where(eq(sheetSummaryEntries.id, e.id))
+    );
+    return {
+      ...e,
+      text: fields.text,
+      location: fields.location,
+      time: row.time,
+      timeMinutes: row.timeMinutes,
+    };
+  });
+  if (pendingUpdates.length > 0) await Promise.all(pendingUpdates);
 
   const rowOrder = new Map(rows.map((r, idx) => [r.id, idx]));
   // Row-linked lines sort by their source row's position. Manually-added
@@ -5240,7 +5288,7 @@ export async function updateSheetSummaryEntry(
   if (!db) return;
   await db
     .update(sheetSummaryEntries)
-    .set({ text })
+    .set({ text, edited: true })
     .where(eq(sheetSummaryEntries.id, id));
 }
 

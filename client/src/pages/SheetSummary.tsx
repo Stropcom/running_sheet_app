@@ -1,7 +1,15 @@
 import { trpc } from "@/lib/trpc";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useAuth } from "@/_core/hooks/useAuth";
 import {
@@ -15,6 +23,7 @@ import {
   Lock,
   Unlock,
   Download,
+  Clock,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useParams, useLocation } from "wouter";
@@ -122,32 +131,6 @@ function parseJsonArray<T>(raw: string | null | undefined): T[] {
   }
 }
 
-// ─── Time helpers for manually-added Summary lines ─────────────────────────
-// A native <input type="time"> works in 24h "HH:MM"; the rest of the app
-// (sheet_rows.time) stores "h:mm AM/PM" plus a separate minutes-since-
-// midnight value for sorting — these convert between the two.
-
-function to24hInputValue(minutes: number | null | undefined): string {
-  if (minutes == null) return "";
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-}
-
-function from24hInputValue(
-  value: string
-): { display: string; minutes: number } | null {
-  const m = value.match(/^(\d{2}):(\d{2})$/);
-  if (!m) return null;
-  const h24 = parseInt(m[1], 10);
-  const min = parseInt(m[2], 10);
-  const minutes = h24 * 60 + min;
-  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
-  const period = h24 < 12 ? "AM" : "PM";
-  const display = `${h12}:${String(min).padStart(2, "0")} ${period}`;
-  return { display, minutes };
-}
-
 // ─── Field row helpers ──────────────────────────────────────────────────────
 
 function FieldInput({
@@ -226,6 +209,188 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
     <p className="text-xs font-medium text-muted-foreground mb-1.5">
       {children}
     </p>
+  );
+}
+
+// ─── Summary line time picker ──────────────────────────────────────────────
+// Same trigger-button + Hour/Minute/AM-PM Select popover as the running
+// sheet's row time picker and the map's RS Quick Entry — kept for a
+// manually-added Summary line since only Hour/Minute/Period apply here (no
+// day-offset/date stepper, a Summary line doesn't need one).
+
+function SummaryTimePicker({
+  value,
+  disabled,
+  onSave,
+}: {
+  value: string | null;
+  disabled?: boolean;
+  onSave: (display: string, minutes: number) => void;
+}) {
+  const parsed = (() => {
+    const m = (value ?? "").match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (!m) return { hour: "12", minute: "00", period: "AM" };
+    return {
+      hour: String(parseInt(m[1], 10)),
+      minute: m[2],
+      period: m[3].toUpperCase(),
+    };
+  })();
+
+  const [open, setOpen] = useState(false);
+  const [hour, setHour] = useState(parsed.hour);
+  const [minute, setMinute] = useState(parsed.minute);
+  const [period, setPeriod] = useState(parsed.period);
+  const [selectOpen, setSelectOpen] = useState(false);
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setHour(parsed.hour);
+    setMinute(parsed.minute);
+    setPeriod(parsed.period);
+  }, [parsed.hour, parsed.minute, parsed.period]);
+
+  useEffect(() => {
+    if (!open || selectOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (
+        popoverRef.current &&
+        !popoverRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open, selectOpen]);
+
+  const hours = Array.from({ length: 12 }, (_, i) => String(i + 1));
+  const minutes = Array.from({ length: 60 }, (_, i) =>
+    String(i).padStart(2, "0")
+  );
+
+  function commit(h: string, m: string, p: string) {
+    const display = `${String(parseInt(h, 10)).padStart(2, "0")}:${m} ${p}`;
+    const minutesSinceMidnight =
+      (parseInt(h, 10) % 12) * 60 + parseInt(m, 10) + (p === "PM" ? 720 : 0);
+    onSave(display, minutesSinceMidnight);
+  }
+
+  if (disabled) {
+    return (
+      <span className="text-sm font-mono text-muted-foreground px-1 py-0.5">
+        {value || <span className="italic opacity-40">—</span>}
+      </span>
+    );
+  }
+
+  return (
+    <div className="relative" ref={popoverRef}>
+      <button
+        type="button"
+        className="flex items-center gap-1.5 text-sm font-mono hover:bg-accent/50 rounded px-1 py-0.5 transition-colors"
+        onClick={() => setOpen(v => !v)}
+      >
+        <Clock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+        {value || (
+          <span className="text-muted-foreground/50 italic text-xs">
+            Set time
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className="absolute z-50 top-full left-0 mt-1 bg-popover border border-border rounded-lg shadow-xl p-3">
+          <div className="flex items-center gap-1.5 flex-nowrap">
+            <Select
+              value={hour}
+              onOpenChange={setSelectOpen}
+              onValueChange={v => {
+                setHour(v);
+                commit(v, minute, period);
+              }}
+            >
+              <SelectTrigger className="w-16 h-8 text-sm font-mono">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {hours.map(h => (
+                  <SelectItem
+                    key={h}
+                    value={h}
+                    className="font-mono text-foreground"
+                  >
+                    {String(parseInt(h, 10)).padStart(2, "0")}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <span className="text-muted-foreground font-mono text-lg">:</span>
+            <Select
+              value={minute}
+              onOpenChange={setSelectOpen}
+              onValueChange={v => {
+                setMinute(v);
+                commit(hour, v, period);
+              }}
+            >
+              <SelectTrigger className="w-16 h-8 text-sm font-mono">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {minutes.map(m => (
+                  <SelectItem
+                    key={m}
+                    value={m}
+                    className="font-mono text-foreground"
+                  >
+                    {m}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={period}
+              onOpenChange={setSelectOpen}
+              onValueChange={v => {
+                setPeriod(v);
+                commit(hour, minute, v);
+              }}
+            >
+              <SelectTrigger className="w-16 h-8 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="AM" className="text-foreground">
+                  AM
+                </SelectItem>
+                <SelectItem value="PM" className="text-foreground">
+                  PM
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs px-2"
+              onClick={() => {
+                const now = new Date();
+                const h24 = now.getHours();
+                const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+                const m = String(now.getMinutes()).padStart(2, "0");
+                const p = h24 < 12 ? "AM" : "PM";
+                setHour(String(h12));
+                setMinute(m);
+                setPeriod(p);
+                commit(String(h12), m, p);
+              }}
+            >
+              Now
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1053,64 +1218,71 @@ export default function SheetSummaryPage() {
                     Add
                   </button>
                 )}
-                <div className="space-y-2">
-                  {(entries ?? []).map(entry => (
-                    <div key={entry.id} className="flex items-start gap-2">
-                      {entry.rowId == null ? (
-                        <input
-                          type="time"
-                          value={to24hInputValue(entry.timeMinutes)}
-                          disabled={isLocked}
-                          onChange={e => {
-                            const parsed = from24hInputValue(e.target.value);
-                            if (!parsed) return;
-                            setEntryTimeMutation.mutate({
-                              sheetId,
-                              id: entry.id,
-                              time: parsed.display,
-                              timeMinutes: parsed.minutes,
-                            });
-                          }}
-                          className="h-9 shrink-0 rounded-md border border-input bg-transparent px-2 text-sm w-[6.5rem]"
-                          title="Set a time to sort this line into place"
-                        />
-                      ) : (
-                        <span className="h-9 shrink-0 flex items-center px-2 text-sm text-muted-foreground w-[6.5rem]">
-                          {entry.time ?? "—"}
-                        </span>
-                      )}
-                      <Textarea
-                        value={entryDrafts[entry.id] ?? entry.text}
-                        onChange={e =>
-                          handleEntryChange(entry.id, e.target.value)
-                        }
-                        disabled={isLocked}
-                        rows={2}
-                        className="text-sm resize-none"
-                      />
-                      {!isLocked && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            deleteEntryMutation.mutate({
-                              sheetId,
-                              id: entry.id,
-                            })
-                          }
-                          className="text-muted-foreground hover:text-destructive transition-colors shrink-0 mt-1.5"
-                          aria-label="Remove summary line"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
+                {entries && entries.length > 0 && (
+                  <div className="rounded-lg border border-border/60 overflow-hidden">
+                    <div className="grid grid-cols-[6.5rem_1fr_2rem] bg-muted/40 px-3 py-1.5 text-xs font-medium text-muted-foreground border-b border-border/60">
+                      <span>Time</span>
+                      <span>Text</span>
+                      <span />
                     </div>
-                  ))}
-                  {entries && entries.length === 0 && (
-                    <p className="text-sm text-muted-foreground/70 italic">
-                      No running sheet rows yet.
-                    </p>
-                  )}
-                </div>
+                    <div className="divide-y divide-border/50">
+                      {entries.map(entry => (
+                        <div
+                          key={entry.id}
+                          className="grid grid-cols-[6.5rem_1fr_2rem] items-start gap-2 px-3 py-2"
+                        >
+                          {entry.rowId == null ? (
+                            <SummaryTimePicker
+                              value={entry.time ?? null}
+                              disabled={isLocked}
+                              onSave={(display, minutes) =>
+                                setEntryTimeMutation.mutate({
+                                  sheetId,
+                                  id: entry.id,
+                                  time: display,
+                                  timeMinutes: minutes,
+                                })
+                              }
+                            />
+                          ) : (
+                            <span className="text-sm font-mono text-muted-foreground px-1 py-0.5">
+                              {entry.time ?? "—"}
+                            </span>
+                          )}
+                          <Textarea
+                            value={entryDrafts[entry.id] ?? entry.text}
+                            onChange={e =>
+                              handleEntryChange(entry.id, e.target.value)
+                            }
+                            disabled={isLocked}
+                            rows={2}
+                            className="text-sm resize-none"
+                          />
+                          {!isLocked && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                deleteEntryMutation.mutate({
+                                  sheetId,
+                                  id: entry.id,
+                                })
+                              }
+                              className="text-muted-foreground hover:text-destructive transition-colors shrink-0 mt-1.5"
+                              aria-label="Remove summary line"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {entries && entries.length === 0 && (
+                  <p className="text-sm text-muted-foreground/70 italic">
+                    No running sheet rows yet.
+                  </p>
+                )}
               </div>
 
               <FieldTextarea

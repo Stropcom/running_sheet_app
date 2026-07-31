@@ -649,16 +649,21 @@ export const sheetSummaryEntries = mysqlTable(
     // can render Time / Address / Observation as separate table columns
     // without duplicating the address inside the observation text).
     text: text("text").notNull(),
-    // Row-linked lines get a time+location snapshot at generation (matching
-    // the append-only philosophy — frozen at the moment the line was
-    // created, not live-derived, so it never silently drifts if the source
-    // row is later edited). Manually-added lines start with both null;
-    // "time" becomes supervisor-entered (via the time picker) once set,
-    // which is what sorts the line into place among the row-linked lines.
-    // "location" has no manual-entry equivalent — it stays null for those.
+    // Row-linked lines get a time+location snapshot at generation, and are
+    // kept in sync with their source row's current text/time/location on
+    // every read for as long as "edited" stays false — so editing an RS row
+    // (e.g. adding a vehicle mention) flows through to a Summary line the
+    // supervisor hasn't touched yet. The moment the supervisor edits it,
+    // "edited" flips true and it's frozen from then on, exactly as before —
+    // never overwritten or regenerated again, even if the source row keeps
+    // changing. Manually-added lines start with both null; "time" becomes
+    // supervisor-entered (via the time picker) once set, which is what sorts
+    // the line into place among the row-linked lines. "location" has no
+    // manual-entry equivalent — it stays null for those.
     time: varchar("time", { length: 32 }),
     timeMinutes: int("timeMinutes"),
     location: text("location"),
+    edited: boolean("edited").notNull().default(false),
     deleted: boolean("deleted").notNull().default(false),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

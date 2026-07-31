@@ -525,6 +525,8 @@ export const auditLogs = mysqlTable("audit_logs", {
     "password_changed",
     "attachment_added",
     "attachment_deleted",
+    "summary_completed",
+    "summary_reopened",
   ]).notNull(),
   details: text("details"),
   createdAt: bigint("createdAt", { mode: "number" }).notNull(),
@@ -615,6 +617,13 @@ export const sheetSummaries = mysqlTable("sheet_summaries", {
   criticalDecisions: text("criticalDecisions"),
   issues: text("issues"),
   lastEditedByCIN: varchar("lastEditedByCIN", { length: 64 }),
+  // Set when the Team Leader (or Admin) ticks "Summary Complete" — locks the
+  // summary the same way a closed running sheet locks its rows. Cleared on
+  // reopen (see reopenedAt/reopenedByCIN below for who last reopened it).
+  completedAt: bigint("completedAt", { mode: "number" }),
+  completedByCIN: varchar("completedByCIN", { length: 64 }),
+  reopenedAt: bigint("reopenedAt", { mode: "number" }),
+  reopenedByCIN: varchar("reopenedByCIN", { length: 64 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -625,13 +634,16 @@ export type InsertSheetSummary = typeof sheetSummaries.$inferInsert;
 // One line per running-sheet row, auto-generated the first time that row is
 // seen and then append-only synced: reopening the tab only adds lines for RS
 // rows not yet represented here — it never regenerates or overwrites a line
-// the supervisor has already edited or deleted.
+// the supervisor has already edited or deleted. rowId is null for lines the
+// supervisor added manually (the "+Add" button) rather than synced from a
+// row — MySQL's unique index allows any number of NULLs, so several manual
+// lines can coexist without colliding.
 export const sheetSummaryEntries = mysqlTable(
   "sheet_summary_entries",
   {
     id: int("id").autoincrement().primaryKey(),
     sheetId: int("sheetId").notNull(),
-    rowId: int("rowId").notNull(),
+    rowId: int("rowId"),
     text: text("text").notNull(),
     deleted: boolean("deleted").notNull().default(false),
     createdAt: timestamp("createdAt").defaultNow().notNull(),

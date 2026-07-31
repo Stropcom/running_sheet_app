@@ -4948,6 +4948,44 @@ export async function upsertSheetSummary(
   return getSheetSummary(sheetId);
 }
 
+/** Locks the summary — sets completedAt/completedByCIN, clears any prior reopen record. */
+export async function completeSheetSummary(
+  sheetId: number,
+  cin: string
+): Promise<SheetSummary | null> {
+  const db = await getDb();
+  if (!db) return null;
+  await db
+    .update(sheetSummaries)
+    .set({
+      completedAt: Date.now(),
+      completedByCIN: cin,
+      reopenedAt: null,
+      reopenedByCIN: null,
+    })
+    .where(eq(sheetSummaries.sheetId, sheetId));
+  return getSheetSummary(sheetId);
+}
+
+/** Unlocks the summary — clears completedAt/completedByCIN, stamps who reopened it. */
+export async function reopenSheetSummary(
+  sheetId: number,
+  cin: string
+): Promise<SheetSummary | null> {
+  const db = await getDb();
+  if (!db) return null;
+  await db
+    .update(sheetSummaries)
+    .set({
+      completedAt: null,
+      completedByCIN: null,
+      reopenedAt: Date.now(),
+      reopenedByCIN: cin,
+    })
+    .where(eq(sheetSummaries.sheetId, sheetId));
+  return getSheetSummary(sheetId);
+}
+
 /** Sort CINs ascending by their numeric portion (e.g. "QA1" < "TA01" < "BS12"); falls back to plain string compare when neither has digits. */
 export function sortCinsNumerically(cins: string[]): string[] {
   return [...cins].sort((a, b) => {
@@ -5047,13 +5085,39 @@ export function computeSheetSummaryVehicles(
 }
 
 /** Auto-generated summary line for one RS row: "time — location — what happened". */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Strips the trailing "(ShortForm)" bracket for location/address entity mentions — the shortform duplicates what's already stated in the surrounding text. */
+function stripLocationBrackets(
+  text: string,
+  entities: ReturnType<typeof extractEntitiesFromText>
+): string {
+  let result = text;
+  for (const e of entities) {
+    if (e.type !== "address" || !e.shortForm) continue;
+    result = result.replace(
+      new RegExp(`\\s*\\(${escapeRegExp(e.shortForm)}\\)`, "g"),
+      ""
+    );
+  }
+  return result;
+}
+
 function buildSummaryEntryText(row: {
   time: string | null;
   observation: string | null;
 }): string {
-  const text = row.observation ?? "";
-  const entities = extractEntitiesFromText(text);
+  const raw = row.observation ?? "";
+  const entities = extractEntitiesFromText(raw);
   const location = entities.find(e => e.type === "address");
+
+  let text = stripLocationBrackets(raw, entities);
+  // "Continued via:" reads awkwardly as a supervisor-facing summary line —
+  // "travelled to" says the same thing more naturally.
+  text = text.replace(/continued\s+via\s*:/gi, "travelled to");
+
   const parts = [
     row.time ?? null,
     location ? location.shortForm || location.fullDescription : null,
@@ -5066,6 +5130,13 @@ function buildSummaryEntryText(row: {
  * Returns the Summary tab's per-row entry list, first append-only syncing in
  * any RS rows that don't have an entry yet. Existing entries (including ones
  * the supervisor has edited or soft-deleted) are never touched or regenerated.
+ *
+ * "Travelled Via" rows (a row ending in "whereat" whose immediately preceding
+ * row contains "continued via:" — the same convention used to exclude these
+ * rows from Court Statements, see routers.ts's statement.previewData) are
+ * skipped entirely: they're pure transit markers, not evidential content, so
+ * they never get their own summary line. The "continued via:" row itself is
+ * kept, with that phrase reworded to "travelled to" by buildSummaryEntryText.
  */
 export async function getSheetSummaryEntries(
   sheetId: number
@@ -5073,8 +5144,19 @@ export async function getSheetSummaryEntries(
   const db = await getDb();
   if (!db) return [];
 
-  const rows = (await getRowsBySheetId(sheetId)).filter(r =>
-    (r.observation ?? "").trim()
+  const allRows = await getRowsBySheetId(sheetId);
+  const travelledViaRowIds = new Set<number>();
+  for (let i = 1; i < allRows.length; i++) {
+    const obs = (allRows[i].observation ?? "").trim();
+    if (!/whereat$/i.test(obs)) continue;
+    const prevObs = (allRows[i - 1].observation ?? "").toLowerCase();
+    if (prevObs.includes("continued via:")) {
+      travelledViaRowIds.add(allRows[i].id);
+    }
+  }
+
+  const rows = allRows.filter(
+    r => (r.observation ?? "").trim() && !travelledViaRowIds.has(r.id)
   );
   const existing = await db
     .select()
@@ -5102,11 +5184,30 @@ export async function getSheetSummaryEntries(
       : existing;
 
   const rowOrder = new Map(rows.map((r, idx) => [r.id, idx]));
-  return all
-    .filter(e => !e.deleted)
-    .sort(
-      (a, b) => (rowOrder.get(a.rowId) ?? 0) - (rowOrder.get(b.rowId) ?? 0)
-    );
+  // Manually-added lines (rowId null) have no row to sort by — they sort
+  // after every row-linked line, in the order they were added.
+  const sortKey = (e: SheetSummaryEntry) =>
+    e.rowId != null && rowOrder.has(e.rowId)
+      ? rowOrder.get(e.rowId)!
+      : rows.length + e.id;
+  return all.filter(e => !e.deleted).sort((a, b) => sortKey(a) - sortKey(b));
+}
+
+/** Adds a blank, manually-added summary line (not tied to any RS row) for additional information the supervisor wants to note. */
+export async function addManualSheetSummaryEntry(
+  sheetId: number
+): Promise<SheetSummaryEntry | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const [result] = await db
+    .insert(sheetSummaryEntries)
+    .values({ sheetId, rowId: null, text: "" });
+  const [row] = await db
+    .select()
+    .from(sheetSummaryEntries)
+    .where(eq(sheetSummaryEntries.id, result.insertId as number))
+    .limit(1);
+  return row ?? null;
 }
 
 export async function updateSheetSummaryEntry(
@@ -5157,6 +5258,34 @@ export async function getSheetSummarySupportHistory(
     }
   }
   return Array.from(names).sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * The most recently-created summary on the same Operation (excluding this
+ * sheet), used to carry forward Investigator, Intel Support, Special
+ * Projects, and Objectives into a newly-created summary. Everything else
+ * (Location, Team, Target, the Communication section, Critical Decisions,
+ * Issues) starts blank/derived fresh per the supervisor's spec.
+ */
+export async function getMostRecentSheetSummaryForOperation(
+  operationId: number,
+  excludeSheetId: number
+): Promise<SheetSummary | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select({ summary: sheetSummaries })
+    .from(sheetSummaries)
+    .innerJoin(runningSheets, eq(sheetSummaries.sheetId, runningSheets.id))
+    .where(
+      and(
+        eq(runningSheets.operationId, operationId),
+        sql`${runningSheets.id} != ${excludeSheetId}`
+      )
+    )
+    .orderBy(desc(runningSheets.createdAt))
+    .limit(1);
+  return rows[0]?.summary ?? null;
 }
 
 // ─── Target Shortcuts ─────────────────────────────────────────────────────────

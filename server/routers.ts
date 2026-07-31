@@ -164,6 +164,10 @@ import {
   updateSheetSummaryEntry,
   deleteSheetSummaryEntry,
   getSheetSummarySupportHistory,
+  getMostRecentSheetSummaryForOperation,
+  completeSheetSummary,
+  reopenSheetSummary,
+  addManualSheetSummaryEntry,
   getGovernanceTodoForCin,
   getUnlinkedImagesTodoForCin,
   getOperationDeleteStats,
@@ -3117,6 +3121,17 @@ export const appRouter = router({
                 ? "Blended"
                 : null;
 
+          // Carry forward Investigator, Intel Support, Special Projects and
+          // Objectives from the most recent summary on the same Operation —
+          // everything else (including the Communication section) starts
+          // fresh on a new summary.
+          const priorSummary = sheet.operationId
+            ? await getMostRecentSheetSummaryForOperation(
+                sheet.operationId,
+                input.sheetId
+              )
+            : null;
+
           record = await upsertSheetSummary({
             sheetId: input.sheetId,
             teamLabel,
@@ -3127,6 +3142,10 @@ export const appRouter = router({
             finishTime: timedRows[timedRows.length - 1]?.time ?? null,
             targetName: target?.name ?? sheet.targetName ?? null,
             location: extractSummaryLocation(rows),
+            ioSupport: priorSummary?.ioSupport ?? null,
+            intelSupport: priorSummary?.intelSupport ?? null,
+            specialProjects: priorSummary?.specialProjects ?? null,
+            objectives: priorSummary?.objectives ?? null,
           });
         }
         return record;
@@ -3156,8 +3175,83 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input, ctx }) => {
+        const existing = await getSheetSummary(input.sheetId);
+        if (existing?.completedAt) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Summary is complete — reopen it before editing.",
+          });
+        }
         const userCIN = ctx.user.cin ?? ctx.user.username ?? "Unknown";
         return upsertSheetSummary({ ...input, lastEditedByCIN: userCIN });
+      }),
+
+    /** Team Leader (or Admin) acknowledges the summary is complete — locks it */
+    complete: protectedProcedure
+      .input(z.object({ sheetId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const sheet = await getRunningSheetById(input.sheetId);
+        if (!sheet) throw new TRPCError({ code: "NOT_FOUND" });
+
+        if (ctx.user.role !== "admin") {
+          const userCin = ctx.user.cin ?? "";
+          let sheetCins: { cin: string; isTeamLeader?: boolean }[] = [];
+          try {
+            sheetCins = sheet.sheetCins ? JSON.parse(sheet.sheetCins) : [];
+          } catch {
+            sheetCins = [];
+          }
+          const isTeamLeader = sheetCins.some(
+            c => c.isTeamLeader && c.cin === userCin
+          );
+          if (!isTeamLeader) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message:
+                "Only the listed Team Leader or an Admin can complete this summary.",
+            });
+          }
+        }
+
+        const cin = ctx.user.cin ?? ctx.user.name ?? "Unknown";
+        const record = await completeSheetSummary(input.sheetId, cin);
+        await createAuditLog({
+          sheetId: input.sheetId,
+          userId: ctx.user.id,
+          userName: ctx.user.cin ?? "Unknown",
+          userCIN: ctx.user.cin ?? undefined,
+          action: "summary_completed",
+          details: `Summary marked complete by ${cin}`,
+          createdAt: Date.now(),
+        });
+        return record;
+      }),
+
+    /** Reopens a completed summary — any Member or Admin, same as reopening a running sheet */
+    reopen: certifierOrAdminProcedure
+      .input(z.object({ sheetId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const sheet = await getRunningSheetById(input.sheetId);
+        if (!sheet) throw new TRPCError({ code: "NOT_FOUND" });
+        const existing = await getSheetSummary(input.sheetId);
+        if (!existing?.completedAt) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Summary is not complete.",
+          });
+        }
+        const cin = ctx.user.cin ?? ctx.user.name ?? "Unknown";
+        const record = await reopenSheetSummary(input.sheetId, cin);
+        await createAuditLog({
+          sheetId: input.sheetId,
+          userId: ctx.user.id,
+          userName: ctx.user.cin ?? "Unknown",
+          userCIN: ctx.user.cin ?? undefined,
+          action: "summary_reopened",
+          details: `Summary reopened by ${cin}`,
+          createdAt: Date.now(),
+        });
+        return record;
       }),
 
     /** Computed (never stored) vehicle list: Target Registry vehicles + RS-mentioned vehicles, minus dismissed */
@@ -3187,6 +3281,12 @@ export const appRouter = router({
       .input(z.object({ sheetId: z.number(), key: z.string() }))
       .mutation(async ({ input, ctx }) => {
         const record = await getSheetSummary(input.sheetId);
+        if (record?.completedAt) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Summary is complete — reopen it before editing.",
+          });
+        }
         let dismissed: string[] = [];
         try {
           dismissed = record?.dismissedVehicleKeys
@@ -3224,18 +3324,48 @@ export const appRouter = router({
         return getSheetSummaryEntries(input.sheetId);
       }),
 
+    /** Add a blank, manually-added summary line for additional information */
+    addEntry: protectedProcedure
+      .input(z.object({ sheetId: z.number() }))
+      .mutation(async ({ input }) => {
+        const record = await getSheetSummary(input.sheetId);
+        if (record?.completedAt) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Summary is complete — reopen it before editing.",
+          });
+        }
+        return addManualSheetSummaryEntry(input.sheetId);
+      }),
+
     /** Edit a single summary line */
     updateEntry: protectedProcedure
-      .input(z.object({ id: z.number(), text: z.string() }))
+      .input(
+        z.object({ sheetId: z.number(), id: z.number(), text: z.string() })
+      )
       .mutation(async ({ input }) => {
+        const record = await getSheetSummary(input.sheetId);
+        if (record?.completedAt) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Summary is complete — reopen it before editing.",
+          });
+        }
         await updateSheetSummaryEntry(input.id, input.text);
         return { success: true };
       }),
 
     /** Delete a single summary line (soft — it will never be regenerated) */
     deleteEntry: protectedProcedure
-      .input(z.object({ id: z.number() }))
+      .input(z.object({ sheetId: z.number(), id: z.number() }))
       .mutation(async ({ input }) => {
+        const record = await getSheetSummary(input.sheetId);
+        if (record?.completedAt) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Summary is complete — reopen it before editing.",
+          });
+        }
         await deleteSheetSummaryEntry(input.id);
         return { success: true };
       }),

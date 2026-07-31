@@ -1255,6 +1255,11 @@ export default function IntelligenceMapping() {
   const [mapReady, setMapReady] = useState(false);
   const mapRef = useRef<google.maps.Map | null>(null);
   const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
+  // Direct img element refs for live rotation/icon updates without stale
+  // `.content.querySelector` lookups — mirrors customMarkerImgRefs below,
+  // keyed by the intel pin's location label (same key markersRef entries
+  // are found by via `.title`).
+  const intelPinImgRefs = useRef<Map<string, HTMLImageElement>>(new Map());
   // Key: "userId_deviceId" for per-device pins
   const liveMarkersRef = useRef<
     Map<string, google.maps.marker.AdvancedMarkerElement>
@@ -1719,6 +1724,7 @@ export default function IntelligenceMapping() {
       m.map = null;
     }
     markersRef.current = [];
+    intelPinImgRefs.current.clear();
     if (geocodeTimerRef.current) {
       clearTimeout(geocodeTimerRef.current);
       geocodeTimerRef.current = null;
@@ -1727,16 +1733,38 @@ export default function IntelligenceMapping() {
 
   const createPinElement = useCallback((loc: IntelMapLocation) => {
     const isTarget = loc.type === "target_address";
-    const colour = isTarget ? "red" : ("purple" as "red" | "purple");
     const count = loc.linkCount;
+
+    // Read any saved appearance override (icon/colour/rotation) — same
+    // localStorage key the popup's rotation slider and Edit dialog write
+    // to — so a customization set once actually survives the pin being
+    // recreated (map data refresh, filter changes, etc.) instead of only
+    // taking visible effect until the next redraw.
+    let icon: MarkerIcon = "house_filled";
+    let colour: MarkerColour = isTarget ? "red" : "purple";
+    let rotation = 0;
+    try {
+      const stored = localStorage.getItem(`runlog_intel_appearance_${loc.label}`);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.icon) icon = parsed.icon;
+        if (parsed.colour) colour = parsed.colour;
+        if (typeof parsed.rotation === "number") rotation = parsed.rotation;
+      }
+    } catch {
+      /* ignore */
+    }
 
     const el = document.createElement("div");
     el.style.cssText = `position:relative;display:inline-flex;flex-direction:column;align-items:center;cursor:pointer;`;
 
     const img = document.createElement("img");
-    img.src = getMarkerDataUrl("house_filled", colour);
-    img.style.cssText = `width:40px;height:40px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4));display:block;`;
+    img.src = getMarkerDataUrl(icon, colour);
+    img.style.cssText = `width:40px;height:40px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4));display:block;transform:rotate(${rotation}deg);`;
     el.appendChild(img);
+    // Direct img ref for live rotation/icon updates — avoids stale
+    // `.content.querySelector` lookups (see intelPinImgRefs declaration).
+    intelPinImgRefs.current.set(loc.label, img);
 
     if (count > 0) {
       const badge = document.createElement("div");
@@ -2773,16 +2801,26 @@ export default function IntelligenceMapping() {
       ) as HTMLElement | null;
       if (previewImg) previewImg.style.transform = `rotate(${rotation}deg)`;
       if (degLabel) degLabel.textContent = `${rotation}°`;
-      // Update the actual map marker element
-      const markerEntry = markersRef.current.find(
-        (m: any) => m.title === label
-      );
-      if (markerEntry?.content instanceof HTMLElement) {
-        const img = markerEntry.content.querySelector(
-          "img"
-        ) as HTMLImageElement | null;
-        if (img)
-          img.style.transform = `rotate(${rotation}deg) drop-shadow(0 2px 4px rgba(0,0,0,0.4))`;
+      // Update the actual map marker element — direct img ref first (avoids
+      // stale `.content.querySelector` lookups after a marker gets
+      // recreated), falling back to querySelector if the ref isn't set.
+      // Note: `filter:drop-shadow(...)` is applied once at creation time
+      // via the img's base cssText — it must not be mixed into `transform`
+      // here, drop-shadow() isn't a valid transform function and doing so
+      // makes the browser silently reject the whole transform value.
+      const directImg = intelPinImgRefs.current.get(label);
+      if (directImg) {
+        directImg.style.transform = `rotate(${rotation}deg)`;
+      } else {
+        const markerEntry = markersRef.current.find(
+          (m: any) => m.title === label
+        );
+        if (markerEntry?.content instanceof HTMLElement) {
+          const img = markerEntry.content.querySelector(
+            "img"
+          ) as HTMLImageElement | null;
+          if (img) img.style.transform = `rotate(${rotation}deg)`;
+        }
       }
       // Persist to localStorage immediately
       try {
@@ -5132,21 +5170,23 @@ export default function IntelligenceMapping() {
                   } catch {
                     /* ignore */
                   }
-                  // Update the actual map marker element immediately
-                  const markerEntry = markersRef.current.find(
-                    (m: any) => m.title === editingIntelLabel
-                  );
-                  if (markerEntry?.content instanceof HTMLElement) {
-                    const img = markerEntry.content.querySelector(
-                      "img"
-                    ) as HTMLImageElement | null;
-                    if (img) {
-                      img.src = getMarkerDataUrl(
-                        intelEditIcon,
-                        intelEditColour
+                  // Update the actual map marker element immediately —
+                  // direct img ref first, querySelector fallback (see
+                  // intelPinImgRefs declaration).
+                  const directImg = intelPinImgRefs.current.get(editingIntelLabel);
+                  const img =
+                    directImg ??
+                    (() => {
+                      const markerEntry = markersRef.current.find(
+                        (m: any) => m.title === editingIntelLabel
                       );
-                      img.style.transform = `rotate(${intelEditRotation}deg)`;
-                    }
+                      return markerEntry?.content instanceof HTMLElement
+                        ? (markerEntry.content.querySelector("img") as HTMLImageElement | null)
+                        : null;
+                    })();
+                  if (img) {
+                    img.src = getMarkerDataUrl(intelEditIcon, intelEditColour);
+                    img.style.transform = `rotate(${intelEditRotation}deg)`;
                   }
                   setEditingIntelLabel(null);
                   toast.success("Marker appearance saved");

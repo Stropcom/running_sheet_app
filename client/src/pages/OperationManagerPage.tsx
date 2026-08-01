@@ -60,6 +60,11 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const TEAM_ROWS = ["surv1", "surv2", "ptt", "cap"] as const;
@@ -1415,13 +1420,17 @@ export default function OperationManagerPage() {
                                   {day}
                                 </p>
                                 {cov?.short && (
-                                  <span
-                                    className="flex items-center gap-1 text-[10px] font-semibold text-amber-600"
-                                    title={`Only ${cov.onDuty} of ${cov.min} minimum rostered`}
-                                  >
-                                    <AlertTriangle className="h-3 w-3" />
-                                    {cov.onDuty}/{cov.min}
-                                  </span>
+                                  <CoverageWarningBadge
+                                    teamName={TEAM_LABELS[teamRow]}
+                                    day={day}
+                                    onDuty={cov.onDuty}
+                                    min={cov.min}
+                                    primaryTask={
+                                      cell.primaryTask === "Other"
+                                        ? cell.primaryOther
+                                        : cell.primaryTask
+                                    }
+                                  />
                                 )}
                               </div>
                               <TaskingCellEditor
@@ -1499,13 +1508,19 @@ export default function OperationManagerPage() {
                                     }}
                                   >
                                     {cov?.short && (
-                                      <span
-                                        className="flex items-center gap-1 text-[10px] font-semibold text-amber-600 mb-1"
-                                        title={`Only ${cov.onDuty} of ${cov.min} minimum rostered`}
-                                      >
-                                        <AlertTriangle className="h-3 w-3" />
-                                        {cov.onDuty}/{cov.min}
-                                      </span>
+                                      <div className="mb-1">
+                                        <CoverageWarningBadge
+                                          teamName={TEAM_LABELS[teamRowEdit]}
+                                          day={DAYS[dayIndex]}
+                                          onDuty={cov.onDuty}
+                                          min={cov.min}
+                                          primaryTask={
+                                            cell.primaryTask === "Other"
+                                              ? cell.primaryOther
+                                              : cell.primaryTask
+                                          }
+                                        />
+                                      </div>
                                     )}
                                     <TaskingCellEditor
                                       cell={cell}
@@ -1713,6 +1728,52 @@ function ContactRoleCard({
         onChange={e => update({ phone: e.target.value })}
       />
     </div>
+  );
+}
+
+// ─── Coverage warning badge ───────────────────────────────────────────────────
+// Click (or hover, on desktop) to see why a tasked cell is flagged — which
+// team/day, what it's tasked for, and the actual vs minimum headcount.
+function CoverageWarningBadge({
+  teamName,
+  day,
+  onDuty,
+  min,
+  primaryTask,
+}: {
+  teamName: string;
+  day: string;
+  onDuty: number;
+  min: number;
+  primaryTask?: string | null;
+}) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          onClick={e => e.stopPropagation()}
+          className="flex items-center gap-1 text-[10px] font-semibold text-amber-600 hover:text-amber-700 hover:underline underline-offset-2"
+        >
+          <AlertTriangle className="h-3 w-3" />
+          {onDuty}/{min} rostered
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        className="w-64 text-xs space-y-1.5 p-3"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-1.5 font-semibold text-amber-600">
+          <AlertTriangle className="h-3.5 w-3.5" />
+          Tasking issue
+        </div>
+        <p className="text-foreground leading-snug">
+          {teamName} is tasked{primaryTask ? ` for "${primaryTask}"` : ""} on{" "}
+          {day}, but only {onDuty} of the {min} minimum required{" "}
+          {onDuty === 1 ? "is" : "are"} rostered on duty that day.
+        </p>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -2368,14 +2429,15 @@ function FullViewTasking({
                         </p>
                       )}
                       {taskingCoverage[key]?.short && (
-                        <span
-                          className="flex items-center gap-1 text-[10px] font-semibold text-amber-600 mt-1"
-                          title={`Only ${taskingCoverage[key].onDuty} of ${taskingCoverage[key].min} minimum rostered`}
-                        >
-                          <AlertTriangle className="h-3 w-3" />
-                          {taskingCoverage[key].onDuty}/
-                          {taskingCoverage[key].min} rostered
-                        </span>
+                        <div className="mt-1">
+                          <CoverageWarningBadge
+                            teamName={TEAM_LABELS[teamRow]}
+                            day={day}
+                            onDuty={taskingCoverage[key].onDuty}
+                            min={taskingCoverage[key].min}
+                            primaryTask={primary || null}
+                          />
+                        </div>
                       )}
                     </div>
                   </div>
@@ -2449,14 +2511,15 @@ function FullViewTasking({
                             </p>
                           )}
                           {taskingCoverage[key]?.short && (
-                            <span
-                              className="flex items-center gap-1 text-[10px] font-semibold text-amber-600 mt-1"
-                              title={`Only ${taskingCoverage[key].onDuty} of ${taskingCoverage[key].min} minimum rostered`}
-                            >
-                              <AlertTriangle className="h-3 w-3" />
-                              {taskingCoverage[key].onDuty}/
-                              {taskingCoverage[key].min}
-                            </span>
+                            <div className="mt-1">
+                              <CoverageWarningBadge
+                                teamName={TEAM_LABELS[teamRow]}
+                                day={DAYS[dayIndex]}
+                                onDuty={taskingCoverage[key].onDuty}
+                                min={taskingCoverage[key].min}
+                                primaryTask={primary || null}
+                              />
+                            </div>
                           )}
                         </td>
                       );

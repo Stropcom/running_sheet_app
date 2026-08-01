@@ -927,7 +927,9 @@ export default function GovernancePage() {
                     return (
                       <div
                         key={idx}
-                        className={`grid grid-cols-5 gap-1 items-center px-3 py-2 ${
+                        className={`grid grid-cols-5 gap-1 items-center px-3 py-2 transition-colors ${
+                          entry.saved ? "bg-emerald-500/10" : ""
+                        } ${
                           idx < displayImagery.length - 1
                             ? "border-b border-border/20"
                             : ""

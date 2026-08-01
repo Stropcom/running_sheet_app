@@ -5134,8 +5134,15 @@ function buildSummaryEntryFields(row: {
  * list, whether inline or on its own) and, where present, the paired row
  * immediately after it ending in "whereat" (the same convention used to
  * exclude these from Court Statements, see routers.ts's
- * statement.previewData) — are pure transit routing, not evidential content,
- * so neither gets its own summary line at all.
+ * statement.previewData) — are skipped when first creating a line for a row.
+ * That check is never re-applied to a line that already exists: if an edit
+ * later makes a row's text happen to match the pattern, the existing line is
+ * still kept and just updated normally — a line only disappears here if its
+ * row is genuinely gone (deleted or blanked).
+ *
+ * While the summary is marked complete, none of this runs at all — no new
+ * lines are added and no existing ones are refreshed, even if RS rows keep
+ * changing. Reopening the summary resumes syncing from where it left off.
  */
 export async function getSheetSummaryEntries(
   sheetId: number
@@ -5143,7 +5150,16 @@ export async function getSheetSummaryEntries(
   const db = await getDb();
   if (!db) return [];
 
+  const summary = await getSheetSummary(sheetId);
+  const isComplete = !!summary?.completedAt;
+
   const allRows = await getRowsBySheetId(sheetId);
+  // Rows with real content — used for sort order and for deciding whether an
+  // existing line's row is still genuinely there, regardless of Travelled
+  // Via classification (that classification only ever gates new inserts).
+  const contentRows = allRows.filter(r => (r.observation ?? "").trim());
+  const contentRowById = new Map(contentRows.map(r => [r.id, r]));
+
   const travelledViaRowIds = new Set<number>();
   for (let i = 0; i < allRows.length; i++) {
     const obs = (allRows[i].observation ?? "").toLowerCase();
@@ -5156,89 +5172,87 @@ export async function getSheetSummaryEntries(
     }
   }
 
-  const rows = allRows.filter(
-    r => (r.observation ?? "").trim() && !travelledViaRowIds.has(r.id)
-  );
-  const rowById = new Map(rows.map(r => [r.id, r]));
   const existing = await db
     .select()
     .from(sheetSummaryEntries)
     .where(eq(sheetSummaryEntries.sheetId, sheetId));
-  const existingRowIds = new Set(existing.map(e => e.rowId));
 
-  const missing = rows.filter(r => !existingRowIds.has(r.id));
-  if (missing.length > 0) {
-    await db.insert(sheetSummaryEntries).values(
-      missing.map(r => {
-        const fields = buildSummaryEntryFields(r);
-        return {
-          sheetId,
-          rowId: r.id,
-          text: fields.text,
-          location: fields.location,
-          time: r.time,
-          timeMinutes: r.timeMinutes,
-        };
-      })
+  let all = existing;
+
+  if (!isComplete) {
+    const existingRowIds = new Set(existing.map(e => e.rowId));
+    const missing = contentRows.filter(
+      r => !travelledViaRowIds.has(r.id) && !existingRowIds.has(r.id)
     );
-  }
+    if (missing.length > 0) {
+      await db.insert(sheetSummaryEntries).values(
+        missing.map(r => {
+          const fields = buildSummaryEntryFields(r);
+          return {
+            sheetId,
+            rowId: r.id,
+            text: fields.text,
+            location: fields.location,
+            time: r.time,
+            timeMinutes: r.timeMinutes,
+          };
+        })
+      );
+      all = await db
+        .select()
+        .from(sheetSummaryEntries)
+        .where(eq(sheetSummaryEntries.sheetId, sheetId));
+    }
 
-  let all =
-    missing.length > 0
-      ? await db
-          .select()
-          .from(sheetSummaryEntries)
-          .where(eq(sheetSummaryEntries.sheetId, sheetId))
-      : existing;
-
-  // Keep unedited row-linked lines synced with their source row — editing
-  // an RS row (e.g. adding a vehicle mention) should flow through to a
-  // Summary line the supervisor hasn't touched. A line that's been edited
-  // stays exactly as the supervisor left it, no matter what happens to the
-  // row afterward.
-  const pendingUpdates: Promise<unknown>[] = [];
-  all = all.map(e => {
-    if (e.edited || e.rowId == null) return e;
-    const row = rowById.get(e.rowId);
-    if (!row) {
-      if (e.deleted) return e;
+    // Keep unedited row-linked lines synced with their source row — editing
+    // an RS row (e.g. adding a vehicle mention) should flow through to a
+    // Summary line the supervisor hasn't touched. A line that's been edited
+    // stays exactly as the supervisor left it, no matter what happens to the
+    // row afterward.
+    const pendingUpdates: Promise<unknown>[] = [];
+    all = all.map(e => {
+      if (e.edited || e.rowId == null) return e;
+      const row = contentRowById.get(e.rowId);
+      if (!row) {
+        if (e.deleted) return e;
+        pendingUpdates.push(
+          db
+            .update(sheetSummaryEntries)
+            .set({ deleted: true })
+            .where(eq(sheetSummaryEntries.id, e.id))
+        );
+        return { ...e, deleted: true };
+      }
+      const fields = buildSummaryEntryFields(row);
+      const changed =
+        fields.text !== e.text ||
+        fields.location !== e.location ||
+        row.time !== e.time ||
+        row.timeMinutes !== e.timeMinutes;
+      if (!changed) return e;
       pendingUpdates.push(
         db
           .update(sheetSummaryEntries)
-          .set({ deleted: true })
+          .set({
+            text: fields.text,
+            location: fields.location,
+            time: row.time,
+            timeMinutes: row.timeMinutes,
+          })
           .where(eq(sheetSummaryEntries.id, e.id))
       );
-      return { ...e, deleted: true };
-    }
-    const fields = buildSummaryEntryFields(row);
-    const changed =
-      fields.text !== e.text ||
-      fields.location !== e.location ||
-      row.time !== e.time ||
-      row.timeMinutes !== e.timeMinutes;
-    if (!changed) return e;
-    pendingUpdates.push(
-      db
-        .update(sheetSummaryEntries)
-        .set({
-          text: fields.text,
-          location: fields.location,
-          time: row.time,
-          timeMinutes: row.timeMinutes,
-        })
-        .where(eq(sheetSummaryEntries.id, e.id))
-    );
-    return {
-      ...e,
-      text: fields.text,
-      location: fields.location,
-      time: row.time,
-      timeMinutes: row.timeMinutes,
-    };
-  });
-  if (pendingUpdates.length > 0) await Promise.all(pendingUpdates);
+      return {
+        ...e,
+        text: fields.text,
+        location: fields.location,
+        time: row.time,
+        timeMinutes: row.timeMinutes,
+      };
+    });
+    if (pendingUpdates.length > 0) await Promise.all(pendingUpdates);
+  }
 
-  const rowOrder = new Map(rows.map((r, idx) => [r.id, idx]));
+  const rowOrder = new Map(contentRows.map((r, idx) => [r.id, idx]));
   // Row-linked lines sort by their source row's position. Manually-added
   // lines (rowId null) with no time yet sort above everything else, newest
   // first — "adds the row to the top and stays there until a time is
@@ -5250,11 +5264,11 @@ export async function getSheetSummaryEntries(
     if (e.rowId != null) {
       return rowOrder.has(e.rowId)
         ? rowOrder.get(e.rowId)!
-        : rows.length + e.id;
+        : contentRows.length + e.id;
     }
     if (e.timeMinutes == null) return -1 - e.id;
     let idx = 0;
-    for (const r of rows) {
+    for (const r of contentRows) {
       if (r.timeMinutes != null && r.timeMinutes <= e.timeMinutes) idx++;
       else break;
     }

@@ -3,6 +3,8 @@ import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ViewToggle } from "@/components/ViewToggle";
+import { useViewMode } from "@/contexts/ViewModeContext";
 import {
   FolderOpen,
   Image as ImageIcon,
@@ -68,6 +70,7 @@ function OperationFolderList({
 }) {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
+  const { viewMode } = useViewMode();
   const { data: operations, isLoading } = trpc.operation.list.useQuery(
     undefined,
     {
@@ -84,24 +87,25 @@ function OperationFolderList({
           </div>
           <h1 className="text-xl font-semibold text-foreground">Images</h1>
         </div>
-        <div className="flex flex-col sm:flex-row gap-2">
+        <div className="flex items-center gap-2">
           <Button
             size="sm"
             variant="outline"
-            className="gap-1.5 justify-center"
+            className="gap-1.5 justify-center w-28"
             onClick={() => setCompareOpen(true)}
           >
             <ScanFace className="w-3.5 h-3.5" />
-            Compare Faces
+            Compare
           </Button>
           <Button
             size="sm"
-            className="gap-1.5 justify-center"
+            className="gap-1.5 justify-center w-28"
             onClick={() => setUploadOpen(true)}
           >
             <Upload className="w-3.5 h-3.5" />
             Upload
           </Button>
+          <ViewToggle />
         </div>
       </div>
 
@@ -117,6 +121,23 @@ function OperationFolderList({
             <FolderOpen className="w-8 h-8 text-muted-foreground" />
           </div>
           <p className="text-foreground font-medium mb-1">No operations yet</p>
+        </div>
+      ) : viewMode === "tile" ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {operations.map((op: any) => (
+            <div
+              key={op.id}
+              className="group flex flex-col gap-3 p-5 rounded-xl border border-border bg-card hover:bg-accent/20 hover:border-pink-500/30 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 cursor-pointer"
+              onClick={() => onSelect(op.id)}
+            >
+              <div className="p-2.5 rounded-lg bg-pink-500/10 border border-pink-500/20 shrink-0 w-fit">
+                <FolderOpen className="w-5 h-5 text-pink-500" />
+              </div>
+              <span className="font-semibold text-foreground leading-tight line-clamp-2">
+                {op.name}
+              </span>
+            </div>
+          ))}
         </div>
       ) : (
         <div className="flex flex-col gap-2">
@@ -160,9 +181,13 @@ function SheetFolderList({
 }) {
   const utils = trpc.useUtils();
   const [viewMode, setViewMode] = useState<"sheets" | "combined">("sheets");
-  const [lightbox, setLightbox] = useState<{ id: number; url: string } | null>(null);
+  const [lightbox, setLightbox] = useState<{ id: number; url: string } | null>(
+    null
+  );
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [linking, setLinking] = useState<{ id: number; url: string } | null>(null);
+  const [linking, setLinking] = useState<{ id: number; url: string } | null>(
+    null
+  );
   const { data: operation } = trpc.operation.get.useQuery({ id: operationId });
   const { data: attachments, isLoading } =
     trpc.attachment.listByOperation.useQuery({ operationId });
@@ -182,12 +207,20 @@ function SheetFolderList({
   // that did have a row picked, still group normally.
   const sheets = useMemo(() => {
     if (!attachments) return [];
-    const bySheet = new Map<number, { sheetId: number; sheetTitle: string; count: number }>();
+    const bySheet = new Map<
+      number,
+      { sheetId: number; sheetTitle: string; count: number }
+    >();
     for (const a of attachments as any[]) {
       if (a.sheetId == null) continue;
       const existing = bySheet.get(a.sheetId);
       if (existing) existing.count += 1;
-      else bySheet.set(a.sheetId, { sheetId: a.sheetId, sheetTitle: a.sheetTitle, count: 1 });
+      else
+        bySheet.set(a.sheetId, {
+          sheetId: a.sheetId,
+          sheetTitle: a.sheetTitle,
+          count: 1,
+        });
     }
     return Array.from(bySheet.values());
   }, [attachments]);
@@ -201,12 +234,20 @@ function SheetFolderList({
   const MANUAL_GROUP_KEY = -1;
   const groupedBySheet = useMemo(() => {
     if (!attachments) return [];
-    const bySheet = new Map<number, { sheetId: number; sheetTitle: string; photos: any[] }>();
+    const bySheet = new Map<
+      number,
+      { sheetId: number; sheetTitle: string; photos: any[] }
+    >();
     for (const a of attachments as any[]) {
       const key = a.sheetId ?? MANUAL_GROUP_KEY;
       let group = bySheet.get(key);
       if (!group) {
-        group = { sheetId: key, sheetTitle: key === MANUAL_GROUP_KEY ? "Manually uploaded" : a.sheetTitle, photos: [] };
+        group = {
+          sheetId: key,
+          sheetTitle:
+            key === MANUAL_GROUP_KEY ? "Manually uploaded" : a.sheetTitle,
+          photos: [],
+        };
         bySheet.set(key, group);
       }
       group.photos.push(a);
@@ -228,10 +269,16 @@ function SheetFolderList({
             {operation?.name ?? "Images"}
           </h1>
           <p className="text-sm text-muted-foreground">
-            {viewMode === "sheets" ? "Running sheets with photos" : "All photos in this operation"}
+            {viewMode === "sheets"
+              ? "Running sheets with photos"
+              : "All photos in this operation"}
           </p>
         </div>
-        <Button size="sm" className="gap-1.5" onClick={() => setUploadOpen(true)}>
+        <Button
+          size="sm"
+          className="gap-1.5"
+          onClick={() => setUploadOpen(true)}
+        >
           <Upload className="w-3.5 h-3.5" />
           Upload
         </Button>
@@ -284,9 +331,12 @@ function SheetFolderList({
           <div className="p-4 rounded-2xl bg-muted/40 mb-4">
             <ImageIcon className="w-8 h-8 text-muted-foreground" />
           </div>
-          <p className="text-foreground font-medium mb-1">No running-sheet photos yet</p>
+          <p className="text-foreground font-medium mb-1">
+            No running-sheet photos yet
+          </p>
           <p className="text-muted-foreground text-sm">
-            All photos in this operation so far were uploaded directly — switch to Operation view to see them.
+            All photos in this operation so far were uploaded directly — switch
+            to Operation view to see them.
           </p>
         </div>
       ) : viewMode === "sheets" ? (
@@ -330,7 +380,9 @@ function SheetFolderList({
                         onClick={() => setLightbox({ id: a.id, url: a.url })}
                       />
                       <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1">
-                        <p className="text-[10px] text-white truncate">{formatAttachmentBanner(a)}</p>
+                        <p className="text-[10px] text-white truncate">
+                          {formatAttachmentBanner(a)}
+                        </p>
                       </div>
                       <AttachmentLinkBadge
                         linkedCount={a.linkedCount}
@@ -338,7 +390,10 @@ function SheetFolderList({
                         positionClassName="absolute top-1.5 left-1.5"
                       />
                     </div>
-                    <LinkedEntityPills entities={a.linkedEntities} onClick={() => setLinking({ id: a.id, url: a.url })} />
+                    <LinkedEntityPills
+                      entities={a.linkedEntities}
+                      onClick={() => setLinking({ id: a.id, url: a.url })}
+                    />
                   </div>
                 ))}
               </div>
@@ -358,7 +413,10 @@ function SheetFolderList({
           >
             <X className="h-5 w-5" />
           </button>
-          <div className="relative max-w-full max-h-full" onClick={e => e.stopPropagation()}>
+          <div
+            className="relative max-w-full max-h-full"
+            onClick={e => e.stopPropagation()}
+          >
             <img
               src={lightbox.url}
               alt="Attached photograph"
@@ -366,7 +424,10 @@ function SheetFolderList({
             />
             <DeletePhotoButton
               pending={deleteAttachment.isPending}
-              onConfirm={() => { deleteAttachment.mutate({ id: lightbox.id }); setLightbox(null); }}
+              onConfirm={() => {
+                deleteAttachment.mutate({ id: lightbox.id });
+                setLightbox(null);
+              }}
               positionClassName="absolute bottom-3 right-3"
               iconSize="h-10 w-10"
               glyphSize="h-4 w-4"
@@ -380,12 +441,18 @@ function SheetFolderList({
           attachmentId={linking.id}
           photoUrl={linking.url}
           open={linking !== null}
-          onOpenChange={open => { if (!open) setLinking(null); }}
+          onOpenChange={open => {
+            if (!open) setLinking(null);
+          }}
           currentOperationId={operationId}
         />
       )}
 
-      <UploadImageDialog open={uploadOpen} onOpenChange={setUploadOpen} defaultOperationId={operationId} />
+      <UploadImageDialog
+        open={uploadOpen}
+        onOpenChange={setUploadOpen}
+        defaultOperationId={operationId}
+      />
     </div>
   );
 }
@@ -401,11 +468,16 @@ function SheetGallery({
   onBack: () => void;
 }) {
   const utils = trpc.useUtils();
-  const [lightbox, setLightbox] = useState<{ id: number; url: string } | null>(null);
-  const [linking, setLinking] = useState<{ id: number; url: string } | null>(null);
+  const [lightbox, setLightbox] = useState<{ id: number; url: string } | null>(
+    null
+  );
+  const [linking, setLinking] = useState<{ id: number; url: string } | null>(
+    null
+  );
   const { data: sheet } = trpc.sheet.get.useQuery({ id: sheetId });
-  const { data: attachments, isLoading } =
-    trpc.attachment.listBySheet.useQuery({ sheetId });
+  const { data: attachments, isLoading } = trpc.attachment.listBySheet.useQuery(
+    { sheetId }
+  );
 
   const deleteAttachment = trpc.attachment.delete.useMutation({
     onSuccess: () => {
@@ -468,7 +540,9 @@ function SheetGallery({
                   onClick={() => setLightbox({ id: a.id, url: a.url })}
                 />
                 <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1">
-                  <p className="text-[10px] text-white truncate">{formatAttachmentBanner(a)}</p>
+                  <p className="text-[10px] text-white truncate">
+                    {formatAttachmentBanner(a)}
+                  </p>
                 </div>
                 <AttachmentLinkBadge
                   linkedCount={a.linkedCount}
@@ -476,7 +550,10 @@ function SheetGallery({
                   positionClassName="absolute top-1.5 left-1.5"
                 />
               </div>
-              <LinkedEntityPills entities={a.linkedEntities} onClick={() => setLinking({ id: a.id, url: a.url })} />
+              <LinkedEntityPills
+                entities={a.linkedEntities}
+                onClick={() => setLinking({ id: a.id, url: a.url })}
+              />
             </div>
           ))}
         </div>
@@ -493,7 +570,10 @@ function SheetGallery({
           >
             <X className="h-5 w-5" />
           </button>
-          <div className="relative max-w-full max-h-full" onClick={e => e.stopPropagation()}>
+          <div
+            className="relative max-w-full max-h-full"
+            onClick={e => e.stopPropagation()}
+          >
             <img
               src={lightbox.url}
               alt="Attached photograph"
@@ -501,7 +581,10 @@ function SheetGallery({
             />
             <DeletePhotoButton
               pending={deleteAttachment.isPending}
-              onConfirm={() => { deleteAttachment.mutate({ id: lightbox.id }); setLightbox(null); }}
+              onConfirm={() => {
+                deleteAttachment.mutate({ id: lightbox.id });
+                setLightbox(null);
+              }}
               positionClassName="absolute bottom-3 right-3"
               iconSize="h-10 w-10"
               glyphSize="h-4 w-4"
@@ -515,7 +598,9 @@ function SheetGallery({
           attachmentId={linking.id}
           photoUrl={linking.url}
           open={linking !== null}
-          onOpenChange={open => { if (!open) setLinking(null); }}
+          onOpenChange={open => {
+            if (!open) setLinking(null);
+          }}
           currentOperationId={operationId}
         />
       )}

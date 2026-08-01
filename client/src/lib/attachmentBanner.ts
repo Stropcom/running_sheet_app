@@ -81,24 +81,29 @@ export interface EntityChipLike {
   type: string;
   rowCount: number;
   photos?: Array<RowAttachmentLike & { id: number; url: string }>;
+  /** True when this vehicle/location matches a value superseded by a target-merge. */
+  isPrevious?: boolean;
 }
 
 // Full-width bar (not a shrink-to-content pill) to match the web page's
 // IntelEntityChip — spans the page so any photos grouped beneath it (see
 // buildEntityWithPhotosHtml) read as one clearly-delineated section.
-export function buildChipHtml(label: string, type: string, count: number): string {
+export function buildChipHtml(label: string, type: string, count: number, isPrevious = false): string {
   const style = CHIP_PDF_COLORS[type] ?? "background:#f1f5f9;color:#475569;border:1px solid #cbd5e1";
   const displayLabel = type === "vehicle"
     ? formatIntelVehicle(label)
     : (type === "address" || type === "business")
     ? formatIntelAddress(label)
     : label;
-  return `<div style="display:flex;align-items:center;gap:4px;width:100%;box-sizing:border-box;padding:4px 12px;border-radius:9999px;font-size:10px;font-weight:600;${style};margin:2px 0">${escHtml(displayLabel)} <span style="opacity:0.6">×${count}</span></div>`;
+  const previousBadge = isPrevious
+    ? `<span style="margin-left:auto;padding:1px 6px;border-radius:3px;font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;background:rgba(0,0,0,0.1)">Previous</span>`
+    : "";
+  return `<div style="display:flex;align-items:center;gap:4px;width:100%;box-sizing:border-box;padding:4px 12px;border-radius:9999px;font-size:10px;font-weight:600;${style};margin:2px 0">${escHtml(displayLabel)} <span style="opacity:0.6">×${count}</span>${previousBadge}</div>`;
 }
 
 // One chip + its own photo thumbnails directly beneath it.
 export function buildEntityWithPhotosHtml(item: EntityChipLike, photoPx = 70): string {
-  const chip = buildChipHtml(item.label, item.type, item.rowCount);
+  const chip = buildChipHtml(item.label, item.type, item.rowCount, item.isPrevious);
   const photos = item.photos ?? [];
   if (!photos.length) {
     return `<div style="margin-bottom:4px">${chip}</div>`;

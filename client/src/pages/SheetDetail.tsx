@@ -6,13 +6,11 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useIsMobile } from "@/hooks/useMobile";
 import CinInput from "@/components/CinInput";
@@ -20,7 +18,10 @@ import { LinkAttachmentDialog } from "@/components/LinkAttachmentDialog";
 import { AttachmentLinkBadge } from "@/components/AttachmentLinkBadge";
 import { LinkedEntityPills } from "@/components/LinkedEntityPills";
 import { DeletePhotoButton } from "@/components/DeletePhotoButton";
-import { EntityDuplicateDialog, type DedupType } from "@/components/EntityDuplicateDialog";
+import {
+  EntityDuplicateDialog,
+  type DedupType,
+} from "@/components/EntityDuplicateDialog";
 import {
   Dialog,
   DialogContent,
@@ -50,6 +51,7 @@ import {
   ArrowUpDown,
   Target,
   ClipboardCheck,
+  NotebookText,
   LockKeyhole,
   LockKeyholeOpen,
   ChevronLeft,
@@ -63,10 +65,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import React, {
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import { useObservationFocus } from "@/contexts/ObservationFocusContext";
-import { convertGoogleAddresses, extractShortAddress } from "@/lib/addressFormat";
+import {
+  convertGoogleAddresses,
+  extractShortAddress,
+} from "@/lib/addressFormat";
 import { compressAttachmentImage } from "@/lib/imageCompress";
+import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 import {
   DndContext,
   closestCenter,
@@ -89,21 +101,6 @@ import { useLocation, useParams } from "wouter";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { WifiOff, RefreshCw, ChevronDown } from "lucide-react";
-import {
-  Document,
-  Packer,
-  Paragraph,
-  Table,
-  TableRow,
-  TableCell,
-  TextRun,
-  WidthType,
-  AlignmentType,
-  BorderStyle,
-  HeadingLevel,
-  ShadingType,
-  VerticalAlign,
-} from "docx";
 import { useOffline } from "@/contexts/OfflineContext";
 import {
   saveCachedSheet,
@@ -115,7 +112,13 @@ import {
   type CachedSheet,
 } from "@/lib/offlineStore";
 
-type Member = { id: number; rowId: number; memberName: string; sortOrder: number; createdAt: Date };
+type Member = {
+  id: number;
+  rowId: number;
+  memberName: string;
+  sortOrder: number;
+  createdAt: Date;
+};
 type Certification = {
   id: number;
   rowId: number;
@@ -157,7 +160,8 @@ type SheetRow = {
 
 // Same phrase list boldImageryKeywords() highlights — used to decide whether
 // to show the "attach photo" affordance on an observation cell.
-const IMAGERY_PHRASE_PATTERN = /(PHOTOGRAPHS TAKEN|PHOTOGRAPH\/S TAKEN|PHOTOGRAPH TAKEN|VIDEO FOOTAGE TAKEN|VIDEO TAKEN|PHOTOS TAKEN|PHOTO TAKEN)/i;
+const IMAGERY_PHRASE_PATTERN =
+  /(PHOTOGRAPHS TAKEN|PHOTOGRAPH\/S TAKEN|PHOTOGRAPH TAKEN|VIDEO FOOTAGE TAKEN|VIDEO TAKEN|PHOTOS TAKEN|PHOTO TAKEN)/i;
 
 // ─── Export Helpers ─────────────────────────────────────────────────────────
 
@@ -171,7 +175,12 @@ type ExportRow = {
   observation: string | null;
   isLocked: boolean;
   members: { id: number; memberName: string }[];
-  certifications: { memberId: number; certifiedByName: string; certifiedAt: number; isActive: boolean }[];
+  certifications: {
+    memberId: number;
+    certifiedByName: string;
+    certifiedAt: number;
+    isActive: boolean;
+  }[];
   attachments: { id: number; url: string }[];
 };
 
@@ -185,9 +194,16 @@ type ExportRow = {
 // same as it already appears on the running sheet itself.
 function attachmentImagesHtml(attachments: { url: string }[]): string {
   if (attachments.length === 0) return "";
-  return `<div style="margin-top:6px;display:flex;flex-wrap:wrap;align-items:flex-end;gap:6px">` +
-    attachments.map((a) => `<img src="${a.url}" style="width:33%;max-width:160px;border:1px solid #ccc;border-radius:4px" />`).join("") +
-    `</div>`;
+  return (
+    `<div style="margin-top:6px;display:flex;flex-wrap:wrap;align-items:flex-end;gap:6px">` +
+    attachments
+      .map(
+        a =>
+          `<img src="${a.url}" style="width:33%;max-width:160px;border:1px solid #ccc;border-radius:4px" />`
+      )
+      .join("") +
+    `</div>`
+  );
 }
 
 type OperationMeta = {
@@ -198,7 +214,12 @@ type OperationMeta = {
   createdAt: Date;
 } | null;
 
-type CinEntry = { cin: string; hasImages: boolean; isTeamLeader?: boolean; isAuthor?: boolean };
+type CinEntry = {
+  cin: string;
+  hasImages: boolean;
+  isTeamLeader?: boolean;
+  isAuthor?: boolean;
+};
 
 const PERTH_TIME_ZONE = "Australia/Perth";
 const PERTH_OFFSET_SUFFIX = "T00:00:00+08:00";
@@ -220,7 +241,13 @@ function addDaysToYmd(ymd: string, days: number) {
 
 function formatPerthDateLabel(ymd: string) {
   return new Date(`${ymd}${PERTH_OFFSET_SUFFIX}`)
-    .toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: PERTH_TIME_ZONE })
+    .toLocaleDateString("en-AU", {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      timeZone: PERTH_TIME_ZONE,
+    })
     .toUpperCase();
 }
 
@@ -231,9 +258,9 @@ function getTodayPerthYmd() {
     month: "2-digit",
     day: "2-digit",
   }).formatToParts(new Date());
-  const year = parts.find((p) => p.type === "year")?.value ?? "1970";
-  const month = parts.find((p) => p.type === "month")?.value ?? "01";
-  const day = parts.find((p) => p.type === "day")?.value ?? "01";
+  const year = parts.find(p => p.type === "year")?.value ?? "1970";
+  const month = parts.find(p => p.type === "month")?.value ?? "01";
+  const day = parts.find(p => p.type === "day")?.value ?? "01";
   return `${year}-${month}-${day}`;
 }
 
@@ -243,7 +270,7 @@ function exportToPDF(
   operation: OperationMeta,
   sheetCinsRaw: string | null,
   sheetCreatedAt: Date,
-  targetFullName?: string | null,
+  targetFullName?: string | null
 ) {
   const lockedBg = "#ffffff"; // White in PDF — dark green is screen-only via CSS class
   const cb = "border-right:1px solid #e2e9f6";
@@ -256,28 +283,40 @@ function exportToPDF(
     cinRoster = [...raw].sort((a, b) => {
       if (a.isTeamLeader && !b.isTeamLeader) return -1;
       if (!a.isTeamLeader && b.isTeamLeader) return 1;
-      const aNum = parseInt(a.cin, 10); const bNum = parseInt(b.cin, 10);
+      const aNum = parseInt(a.cin, 10);
+      const bNum = parseInt(b.cin, 10);
       if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
       return a.cin.localeCompare(b.cin);
     });
-  } catch { cinRoster = []; }
+  } catch {
+    cinRoster = [];
+  }
 
   // ── Page header (repeats on every page) ─────────────────────────────────────
   const operationName = operation?.name ?? "";
   const dateStr = format(new Date(sheetCreatedAt), "d MMMM yyyy");
 
   // Derive the author CIN from the roster (isAuthor flag)
-  const authorEntry = cinRoster.find((c) => c.isAuthor);
+  const authorEntry = cinRoster.find(c => c.isAuthor);
   const authorCin = authorEntry?.cin ?? null;
 
-  // Find the most recent active certification belonging to the author CIN
-  let preparedByCell = "";
+  // Find the most recent active certification belonging to the author CIN.
+  // Light-on-dark, used only in the footer band's "Prepared by" — the top
+  // banner's meta pill shows the plain CIN with no tick regardless of
+  // certification status.
+  let preparedByPill = "";
   if (authorCin) {
-    let latestCert: { certifiedByCIN?: string; certifiedByName: string; certifiedAt: number } | null = null;
+    let latestCert: {
+      certifiedByCIN?: string;
+      certifiedByName: string;
+      certifiedAt: number;
+    } | null = null;
     for (const row of rows) {
       for (const cert of row.certifications) {
         if (!cert.isActive) continue;
-        const certCin = ('certifiedByCIN' in cert ? (cert as any).certifiedByCIN : null) || cert.certifiedByName;
+        const certCin =
+          ("certifiedByCIN" in cert ? (cert as any).certifiedByCIN : null) ||
+          cert.certifiedByName;
         if (certCin === authorCin) {
           if (!latestCert || cert.certifiedAt > latestCert.certifiedAt) {
             latestCert = cert as any;
@@ -286,12 +325,18 @@ function exportToPDF(
       }
     }
     if (latestCert) {
-      const certCin = ('certifiedByCIN' in latestCert ? (latestCert as any).certifiedByCIN : null) || latestCert.certifiedByName;
-      const certTime = format(new Date(latestCert.certifiedAt), "d MMMM yyyy h:mmaaa");
-      preparedByCell = `<span style='color:#22c55e;white-space:nowrap'>&#10003; ${certCin} &nbsp;<span style='color:#555;font-size:10px'>${certTime}</span></span>`;
+      const certCin =
+        ("certifiedByCIN" in latestCert
+          ? (latestCert as any).certifiedByCIN
+          : null) || latestCert.certifiedByName;
+      const certTime = format(
+        new Date(latestCert.certifiedAt),
+        "d MMMM yyyy h:mmaaa"
+      );
+      preparedByPill = `<span style='color:#86efac;white-space:nowrap'>&#10003; ${certCin}</span> <span style='opacity:0.65;font-weight:400;text-transform:none;letter-spacing:0'>${certTime}</span>`;
     } else {
       // Author exists but hasn't certified yet — show CIN without tick
-      preparedByCell = `<span style='color:#000'>${authorCin}</span>`;
+      preparedByPill = authorCin;
     }
   }
 
@@ -308,7 +353,7 @@ function exportToPDF(
   const imageryEntries: { cin: string; time: string }[] = [];
   for (const row of rows) {
     const obs = (row.observation ?? "").toUpperCase();
-    const hasImagery = IMAGERY_PHRASES.some((p) => obs.includes(p));
+    const hasImagery = IMAGERY_PHRASES.some(p => obs.includes(p));
     if (hasImagery && row.time) {
       for (const m of row.members) {
         if (m.memberName !== "__SPACE__") {
@@ -319,46 +364,60 @@ function exportToPDF(
   }
   // Deduplicate by cin+time
   const seenImagery = new Set<string>();
-  const uniqueImageryEntries = imageryEntries.filter((e) => {
+  const uniqueImageryEntries = imageryEntries.filter(e => {
     const key = `${e.cin}|${e.time}`;
     if (seenImagery.has(key)) return false;
     seenImagery.add(key);
     return true;
   });
-  const imageryRowHtml = uniqueImageryEntries.length > 0
-    ? uniqueImageryEntries.map((e) => `${e.cin} (${e.time})`).join(", ")
-    : "Nil";
+  const imageryRowHtml =
+    uniqueImageryEntries.length > 0
+      ? uniqueImageryEntries.map(e => `${e.cin} (${e.time})`).join(", ")
+      : "Nil";
 
   // ── Bold imagery keywords in observation text ────────────────────────────────
   function boldImageryKeywords(text: string): string {
-    const pattern = /(PHOTOGRAPHS TAKEN|PHOTOGRAPH\/S TAKEN|PHOTOGRAPH TAKEN|VIDEO FOOTAGE TAKEN|VIDEO TAKEN|PHOTOS TAKEN|PHOTO TAKEN)/gi;
+    const pattern =
+      /(PHOTOGRAPHS TAKEN|PHOTOGRAPH\/S TAKEN|PHOTOGRAPH TAKEN|VIDEO FOOTAGE TAKEN|VIDEO TAKEN|PHOTOS TAKEN|PHOTO TAKEN)/gi;
     return text.replace(pattern, "<strong>$1</strong>");
   }
 
   // ── Page headers ────────────────────────────────────────────────────────────
-  // Strategy: use <thead> to repeat the meta table (without imagery) on every page.
-  // Page 1: show first-page-header (title + meta + imagery) above the table.
-  //         The <thead> meta rows are hidden on page 1 via beforeprint JS.
-  // Pages 2+: <thead> shows (title + meta + column headers) via display:table-header-group.
+  // Styled to match the Intelligence Profile / CTO Weekly Tasking exports:
+  // a full-bleed dark-blue cover-header banner with the meta info (Operation/
+  // Target/Date/Prepared By) as rounded pills, instead of the old bordered
+  // label/value table.
+  //
+  // Strategy: use <thead> to repeat a compact version of the banner on every
+  // page. Page 1: show first-page-header (full banner + imagery) above the
+  // table. The <thead> banner row is hidden on page 1 via beforeprint JS.
+  // Pages 2+: <thead> shows (compact banner + column headers) via
+  // display:table-header-group.
   //
   // beforeprint: hides first-page-header, removes 'hide-on-print' from thead meta rows.
   // afterprint:  restores first-page-header, re-adds 'hide-on-print' to thead meta rows.
 
-  const metaRowsHtml = `
-    <tr><td class="meta-label">OPERATION:</td><td class="meta-value">${operationName}</td></tr>
-    <tr><td class="meta-label">TARGET:</td><td class="meta-value">${targetFullName ?? ""}</td></tr>
-    <tr><td class="meta-label">DATE:</td><td class="meta-value">${dateStr}</td></tr>
-    ${authorCin ? `<tr><td class="meta-label">PREPARED BY:</td><td class="meta-value">${preparedByCell}</td></tr>` : ""}`;
+  const metaPillsHtml = `
+    <span class="meta-pill">Operation <strong>${operationName}</strong></span>
+    ${targetFullName ? `<span class="meta-pill">Target <strong>${targetFullName}</strong></span>` : ""}
+    <span class="meta-pill">Date <strong>${dateStr}</strong></span>
+    ${authorCin ? `<span class="meta-pill">Prepared by <strong>${authorCin}</strong></span>` : ""}`;
 
-  // First-page header block (shown on screen and on page 1 during print)
-  const pageHeader = `
-    <div class="first-page-header" id="first-page-header">
-      <div class="page-title">WC SURVEILLANCE RUNNING SHEET</div>
-      <table class="meta-table"><tbody>
-        ${metaRowsHtml}
-        <tr><td class="meta-label">IMAGERY:</td><td class="meta-value">${imageryRowHtml}</td></tr>
-      </tbody></table>
-    </div>`;
+  // Cover-header banner builder — `compact` is used for the repeating
+  // per-page thead version (smaller title). The imagery line is included in
+  // both: only the thead version actually prints (beforeprint hides
+  // first-page-header entirely and shows the print-only thead row on every
+  // page), so leaving it out of the compact variant meant it never appeared
+  // on a printed/PDF page at all — only in the on-screen preview.
+  function coverHeaderHtml(compact: boolean): string {
+    return `
+      <div class="cover-header">
+        <div class="brand-label">RunLog &middot; Surveillance Running Sheet</div>
+        <div class="rs-title${compact ? " rs-title-sm" : ""}">WC SURVEILLANCE RUNNING SHEET</div>
+        <div class="meta-pills">${metaPillsHtml}</div>
+        <div class="imagery-line">Imagery taken: <strong>${imageryRowHtml}</strong></div>
+      </div>`;
+  }
 
   // ── Running sheet table ──────────────────────────────────────────────────────
   // Spacer row inserted after each log entry for breathing room
@@ -368,10 +427,13 @@ function exportToPDF(
   const exportDayOffsetMap = new Map<number, number>();
   {
     const timedByRowNumber = [...rows]
-      .filter((r) => r.timeMinutes != null)
+      .filter(r => r.timeMinutes != null)
       .sort((a, b) => a.rowNumber - b.rowNumber);
-    const exportRowDates = timedByRowNumber.map((r) => r.rowDate).filter((d): d is string => !!d);
-    const exportMinRowDate = exportRowDates.length > 0 ? exportRowDates.slice().sort()[0] : null;
+    const exportRowDates = timedByRowNumber
+      .map(r => r.rowDate)
+      .filter((d): d is string => !!d);
+    const exportMinRowDate =
+      exportRowDates.length > 0 ? exportRowDates.slice().sort()[0] : null;
     // First pass: rowDate (highest priority) or stored dayOffset (legacy)
     for (const r of timedByRowNumber) {
       if (r.rowDate && exportMinRowDate) {
@@ -393,7 +455,9 @@ function exportToPDF(
       }
       const mins = r.timeMinutes!;
       const eff = mins + day * 1440;
-      if (prevEff >= 0 && eff < prevEff - 120) { day++; }
+      if (prevEff >= 0 && eff < prevEff - 120) {
+        day++;
+      }
       exportDayOffsetMap.set(r.id, day);
       prevEff = mins + day * 1440;
     }
@@ -409,21 +473,33 @@ function exportToPDF(
       const day = exportDayOffsetMap.get(row.id) ?? 0;
       if (row.timeMinutes != null && day > prevDay && prevDay >= 0) {
         // Prefer an explicit rowDate from a row on that day
-        const rowOnDay = rows.find((r) => (exportDayOffsetMap.get(r.id) ?? 0) === day && r.rowDate);
+        const rowOnDay = rows.find(
+          r => (exportDayOffsetMap.get(r.id) ?? 0) === day && r.rowDate
+        );
         let divLabel: string;
         if (rowOnDay?.rowDate) {
           divLabel = formatPerthDateLabel(rowOnDay.rowDate);
         } else {
           const divDate = new Date(sheetCreatedAt);
           divDate.setDate(divDate.getDate() + day);
-          divLabel = divDate.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: PERTH_TIME_ZONE }).toUpperCase();
+          divLabel = divDate
+            .toLocaleDateString("en-AU", {
+              weekday: "short",
+              day: "numeric",
+              month: "short",
+              year: "numeric",
+              timeZone: PERTH_TIME_ZONE,
+            })
+            .toUpperCase();
         }
         parts.push(dateDividerRow(divLabel));
       }
       if (row.timeMinutes != null) prevDay = day;
       const rowBg = row.isLocked ? lockedBg : "transparent";
       if (row.members.length === 0) {
-        const obsHtml = boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>")) + attachmentImagesHtml(row.attachments);
+        const obsHtml =
+          boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>")) +
+          attachmentImagesHtml(row.attachments);
         parts.push(`<tr style="background:${rowBg}">
           <td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap">${row.time ?? ""}</td>
           <td style="padding:6px 6px 8px;${bb};${cb}">${obsHtml}</td>
@@ -432,36 +508,44 @@ function exportToPDF(
         continue;
       }
       // Render one <tr> per member so CIN and Certified columns align perfectly
-      const memberRows = row.members.map((m, idx) => {
-        const isSpacer = m.memberName === "__SPACE__";
-        const cert = isSpacer ? undefined : row.certifications.find((c) => c.memberId === m.id && c.isActive);
-        const isFirst = idx === 0;
-        const rowspan = row.members.length;
-        const timeTd = isFirst
-          ? `<td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap" rowspan="${rowspan}">${row.time ?? ""}</td>`
-          : "";
-        const obsTd = isFirst
-          ? `<td style="padding:6px 6px 8px;${bb};${cb}" rowspan="${rowspan}">${boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>"))}${attachmentImagesHtml(row.attachments)}</td>`
-          : "";
-        const isLast = idx === row.members.length - 1;
-        const memberBb = isLast ? bb : "border-bottom:none";
-        const pt = isFirst ? "6px" : "2px";
-        const pb = isLast ? "8px" : "2px";
-        if (isSpacer) {
-          return `<tr style="background:${rowBg}">
+      const memberRows = row.members
+        .map((m, idx) => {
+          const isSpacer = m.memberName === "__SPACE__";
+          const cert = isSpacer
+            ? undefined
+            : row.certifications.find(c => c.memberId === m.id && c.isActive);
+          const isFirst = idx === 0;
+          const rowspan = row.members.length;
+          const timeTd = isFirst
+            ? `<td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap" rowspan="${rowspan}">${row.time ?? ""}</td>`
+            : "";
+          const obsTd = isFirst
+            ? `<td style="padding:6px 6px 8px;${bb};${cb}" rowspan="${rowspan}">${boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>"))}${attachmentImagesHtml(row.attachments)}</td>`
+            : "";
+          const isLast = idx === row.members.length - 1;
+          const memberBb = isLast ? bb : "border-bottom:none";
+          const pt = isFirst ? "6px" : "2px";
+          const pb = isLast ? "8px" : "2px";
+          if (isSpacer) {
+            return `<tr style="background:${rowBg}">
             ${timeTd}${obsTd}
             <td style="padding:${pt} 6px ${pb} 6px;${memberBb};font-size:11px">&nbsp;</td>
           </tr>`;
-        }
-        const certifierCIN = cert ? ('certifiedByCIN' in cert ? (cert as any).certifiedByCIN || cert.certifiedByName : cert.certifiedByName) : null;
-        const cinCertCell = cert
-          ? `<span class="pill pill-certified">&#10003; ${certifierCIN}</span>`
-          : `<span class="pill pill-pending">${m.memberName}</span>`;
-        return `<tr style="background:${rowBg}">
+          }
+          const certifierCIN = cert
+            ? "certifiedByCIN" in cert
+              ? (cert as any).certifiedByCIN || cert.certifiedByName
+              : cert.certifiedByName
+            : null;
+          const cinCertCell = cert
+            ? `<span class="pill pill-certified">&#10003; ${certifierCIN}</span>`
+            : `<span class="pill pill-pending">${m.memberName}</span>`;
+          return `<tr style="background:${rowBg}">
           ${timeTd}${obsTd}
           <td style="padding:${pt} 6px ${pb} 6px;${memberBb};font-size:11px">${cinCertCell}</td>
         </tr>`;
-      }).join("");
+        })
+        .join("");
       parts.push(memberRows + spacerRow);
     }
     return parts.join("");
@@ -481,22 +565,26 @@ function exportToPDF(
     /* Force background colours to print — Chrome strips backgrounds by default */
     *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;color-adjust:exact !important}
     body{font-family:'Roboto',sans-serif;background:#fff;color:#000;margin:0;padding:0;font-size:11px}
-    .page-title{font-size:20px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;text-align:center;margin-bottom:1.2em}
-    .page-title-sm{font-size:15px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;text-align:center;margin-bottom:0.5em;margin-top:4px}
-    /* Blue card — wraps the meta info block (page-1 header and the repeating page header).
-       Square corners, deliberately: a single border on a <div> like this is always drawn as
-       one unbroken rectangle by the browser, with no edge cases. */
-    .rs-card{border:1.5px solid #1e3a8a}
-    /* Meta info table — light blue label cells */
-    .meta-table{width:100%;border-collapse:collapse;table-layout:auto}
-    .meta-table tr:not(:last-child) td{border-bottom:1px solid #c7d5ee}
-    .meta-label{padding:5px 8px;font-weight:700;font-size:11px;white-space:nowrap;background:#dbeafe;border-right:1px solid #93c5fd;text-transform:uppercase;width:1%;color:#1e3a8a}
-    .meta-value{padding:5px 8px;font-size:11px;color:#000;background:#fff}
+    /* Cover-header banner — matches the Intelligence Profile / CTO Weekly
+       Tasking export style: full-bleed dark-blue block, brand label, title,
+       and meta info as rounded pills instead of a bordered label/value table.
+       No border-radius, deliberately — sits flush above the log table so the
+       two read as one continuous document block, and a single rectangle
+       renders reliably across page breaks with no edge cases. */
+    .cover-header{background:#1e3a8a;color:#fff;padding:16px 20px 14px}
+    .brand-label{font-size:9px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#93c5fd;margin-bottom:8px}
+    .rs-title{font-size:18px;font-weight:700;letter-spacing:0.03em}
+    .rs-title-sm{font-size:13px}
+    .meta-pills{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+    .meta-pill{display:inline-flex;align-items:center;gap:4px;padding:4px 11px;border-radius:9999px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.28);font-size:9px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;color:rgba(255,255,255,0.72)}
+    .meta-pill strong{color:#fff;font-weight:700;text-transform:none;letter-spacing:0;margin-left:2px}
+    .imagery-line{font-size:10px;margin-top:10px;color:rgba(255,255,255,0.78)}
+    .imagery-line strong{color:#fff;font-weight:700}
     /* Log table — the outer border is a single declaration on the <table> element itself
        (border-collapse:collapse), not assembled from separate per-cell rules. That's what
        guarantees it always renders as one continuous, unbroken, uniform-width rectangle
        regardless of rowspan, spacer rows, or which row happens to be last. */
-    table.log-table{width:100%;border:1.5px solid #1e3a8a;border-collapse:collapse;table-layout:auto}
+    table.log-table{width:100%;border:1.5px solid #1e3a8a;border-top:none;border-collapse:collapse;table-layout:auto}
     col.c-time{width:80px}
     col.c-obs{width:auto}
     col.c-cert{width:1%}
@@ -505,9 +593,16 @@ function exportToPDF(
     .log-table th:last-child,.log-table td:last-child{border-right:none}
     .log-table td{vertical-align:top;word-break:break-word;overflow:hidden;color:#000;border-right:1px solid #e2e9f6;border-bottom:1px solid #eef2fb}
     .log-table td:last-child{white-space:nowrap;word-break:normal;width:1%}
-    /* thead wrapper cell — no border/padding/bg so the meta card floats free of the log table's own border */
-    .thead-meta-cell{padding:0 !important;border:none !important;background:transparent !important}
-    .thead-meta-inner{padding-bottom:10px}
+    /* thead wrapper cell — no border/padding so the banner floats free of the log table's own border */
+    .thead-meta-cell{padding:0 !important;border:none !important}
+    /* Footer band — repeats at the bottom of every printed page (display:table-footer-group).
+       Same dark blue as the top banner — a plain background fill, no border tricks, so it
+       can't run into the per-cell border issues a bordered footer did. */
+    tfoot{display:table-footer-group}
+    .footer-band td{background:#1e3a8a;padding:8px 14px}
+    .footer-grid{display:grid;grid-template-columns:1fr 1fr 1fr;align-items:center}
+    .footer-cin{font-size:10px;color:rgba(255,255,255,0.85);font-weight:700;letter-spacing:0.04em;text-transform:uppercase;text-align:right}
+    .footer-protected{text-align:center;font-size:11px;font-weight:800;letter-spacing:0.14em;color:#f87171}
     /* Certification pills */
     .pill{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:9999px;font-size:10px;font-weight:700;white-space:nowrap}
     .pill-certified{background:#d1fae5;color:#059669;border:1px solid #6ee7b7}
@@ -515,8 +610,10 @@ function exportToPDF(
     /* Date divider — centered pill instead of a full-width bar */
     .date-divider-row td{background:#f1f6ff;text-align:center;padding:6px 0}
     .date-divider-pill{display:inline-block;padding:3px 14px;border-radius:9999px;background:#1e3a8a;color:#fff;font-size:10px;font-weight:700;letter-spacing:0.06em}
-    /* Screen: show first-page-header (with imagery); hide print-only blocks */
-    .first-page-header{text-align:left;margin-bottom:10px}
+    /* Screen: show first-page-header (with imagery); hide print-only blocks.
+       No margin-bottom — sits flush against the log table's top edge so the
+       banner and table read as one continuous bordered block. */
+    .first-page-header{text-align:left}
     .print-only{display:none !important}
     @media print{
       /* Prevent observation rows from splitting across pages */
@@ -572,15 +669,9 @@ function exportToPDF(
     })();
   </script>
   </head><body>
-  <!-- SCREEN VIEW: full header with imagery — hidden during print -->
+  <!-- SCREEN VIEW: full banner with imagery — hidden during print -->
   <div class="first-page-header" id="first-page-header">
-    <div class="page-title">WC SURVEILLANCE RUNNING SHEET</div>
-    <div class="rs-card">
-      <table class="meta-table"><tbody>
-        ${metaRowsHtml}
-        <tr><td class="meta-label">IMAGERY:</td><td class="meta-value">${imageryRowHtml}</td></tr>
-      </tbody></table>
-    </div>
+    ${coverHeaderHtml(false)}
   </div>
   <table class="log-table">
     <colgroup>
@@ -589,20 +680,11 @@ function exportToPDF(
       <col class="c-cert"/>
     </colgroup>
     <thead>
-      <!-- Full header repeats on every page via thead display:table-header-group.
-           Hidden on screen (first-page-header shows instead); shown during print by JS.
-           Includes imagery row so every page has the complete header. -->
+      <!-- Compact banner repeats on every page via thead display:table-header-group.
+           Hidden on screen (first-page-header shows instead); shown during print by JS. -->
       <tr class="print-only" data-pd="table-row">
         <td colspan="3" class="thead-meta-cell">
-          <div class="thead-meta-inner">
-            <div class="page-title-sm">WC SURVEILLANCE RUNNING SHEET</div>
-            <div class="rs-card">
-              <table class="meta-table"><tbody>
-                ${metaRowsHtml}
-                <tr><td class="meta-label">IMAGERY:</td><td class="meta-value">${imageryRowHtml}</td></tr>
-              </tbody></table>
-            </div>
-          </div>
+          ${coverHeaderHtml(true)}
         </td>
       </tr>
       <tr>
@@ -611,355 +693,32 @@ function exportToPDF(
         <th>CIN Certified</th>
       </tr>
     </thead>
+    <tfoot>
+      <!-- Repeats at the bottom of every printed page. -->
+      <tr class="footer-band"><td colspan="3">
+        <div class="footer-grid">
+          <span></span>
+          <span class="footer-protected">Protected</span>
+          <span class="footer-cin">${authorCin ? `Prepared by ${preparedByPill}` : ""}</span>
+        </div>
+      </td></tr>
+    </tfoot>
     <tbody>${tableRows}</tbody>
   </table>
-  <!-- Close button: visible on screen, hidden during print -->
-  <div id="close-bar" style="position:fixed;bottom:0;left:0;right:0;padding:12px 16px;background:#1e293b;display:flex;justify-content:flex-end;gap:12px;z-index:9999;box-shadow:0 -2px 8px rgba(0,0,0,0.4)">
-    <button onclick="window.close()" style="background:#3b82f6;color:#fff;border:none;border-radius:6px;padding:10px 24px;font-size:14px;font-weight:700;cursor:pointer;font-family:system-ui,sans-serif">&#x2715; Close Preview</button>
-    <button onclick="window.print()" style="background:#22c55e;color:#fff;border:none;border-radius:6px;padding:10px 24px;font-size:14px;font-weight:700;cursor:pointer;font-family:system-ui,sans-serif">&#128438; Print / Save PDF</button>
-  </div>
-  <div style="height:60px"></div>
-  <style>#close-bar{display:flex !important} @media print{#close-bar{display:none !important}}</style>
+  ${buildExportPreviewCloseBar()}
 </body></html>`;
 
   const win = window.open("", "_blank");
-  if (!win) { toast.error("Pop-up blocked. Please allow pop-ups and try again."); return; }
+  if (!win) {
+    toast.error("Pop-up blocked. Please allow pop-ups and try again.");
+    return;
+  }
   win.document.write(html);
   win.document.close();
   win.focus();
-  setTimeout(() => { win.print(); }, 400);
-}
-
-// ─── Word Export ─────────────────────────────────────────────────────────────
-
-async function exportToWord(
-  sheetTitle: string,
-  rows: ExportRow[],
-  operation: OperationMeta,
-  sheetCinsRaw: string | null,
-  sheetCreatedAt: Date,
-  targetFullName?: string | null,
-) {
-  // Parse TEAM roster — sort: TL first, then numerically
-  let cinRoster: CinEntry[] = [];
-  try {
-    const raw: CinEntry[] = sheetCinsRaw ? JSON.parse(sheetCinsRaw) : [];
-    cinRoster = [...raw].sort((a, b) => {
-      if (a.isTeamLeader && !b.isTeamLeader) return -1;
-      if (!a.isTeamLeader && b.isTeamLeader) return 1;
-      const aNum = parseInt(a.cin, 10); const bNum = parseInt(b.cin, 10);
-      if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
-      return a.cin.localeCompare(b.cin);
-    });
-  } catch { cinRoster = []; }
-
-  const operationName = operation?.name ?? "";
-  const promisNumber = operation?.promisNumber ?? "";
-  const imsNumber = operation?.imsNumber ?? "";
-  const investigationUnit = operation?.investigationUnit ?? "";
-  const dateStr = format(new Date(sheetCreatedAt), "d MMMM yyyy");
-
-  // Derive author CIN
-  const authorEntry = cinRoster.find((c) => c.isAuthor);
-  const authorCin = authorEntry?.cin ?? null;
-
-  // Find most recent active certification for the author
-  let preparedByText = authorCin ?? "";
-  if (authorCin) {
-    let latestCert: { certifiedByName: string; certifiedAt: number } | null = null;
-    for (const row of rows) {
-      for (const cert of row.certifications) {
-        if (!cert.isActive) continue;
-        const certCin = ('certifiedByCIN' in cert ? (cert as any).certifiedByCIN : null) || cert.certifiedByName;
-        if (certCin === authorCin) {
-          if (!latestCert || cert.certifiedAt > latestCert.certifiedAt) latestCert = cert;
-        }
-      }
-    }
-    if (latestCert) {
-      const certCin = ('certifiedByCIN' in latestCert ? (latestCert as any).certifiedByCIN : null) || latestCert.certifiedByName;
-      const certTime = format(new Date(latestCert.certifiedAt), "d MMMM yyyy h:mmaaa");
-      preparedByText = `${certCin} (certified ${certTime})`;
-    }
-  }
-
-  // Imagery entries
-  const IMAGERY_PHRASES = ["PHOTOGRAPHS TAKEN","PHOTOGRAPH/S TAKEN","PHOTOGRAPH TAKEN","VIDEO TAKEN","VIDEO FOOTAGE TAKEN","PHOTOS TAKEN","PHOTO TAKEN"];
-  const imageryEntries: { cin: string; time: string }[] = [];
-  for (const row of rows) {
-    const obs = (row.observation ?? "").toUpperCase();
-    const hasImagery = IMAGERY_PHRASES.some((p) => obs.includes(p));
-    if (hasImagery && row.time) {
-      for (const m of row.members) {
-        if (m.memberName !== "__SPACE__") imageryEntries.push({ cin: m.memberName, time: row.time });
-      }
-    }
-  }
-  const seenImagery = new Set<string>();
-  const uniqueImageryEntries = imageryEntries.filter((e) => {
-    const key = `${e.cin}|${e.time}`;
-    if (seenImagery.has(key)) return false;
-    seenImagery.add(key);
-    return true;
-  });
-  const imageryText = uniqueImageryEntries.length > 0
-    ? uniqueImageryEntries.map((e) => `${e.cin} (${e.time})`).join(", ")
-    : "Nil";
-
-  // Team roster string
-  const rosterText = cinRoster.length > 0
-    ? cinRoster.map((c) => c.cin + (c.isTeamLeader ? " (TL)" : "")).join(", ")
-    : "";
-
-  // ── Shared border/shading helpers ───────────────────────────────────────────
-  const FONT = "Roboto";
-  const BODY_SIZE = 22; // 11pt (docx size is in half-points)
-  const thinBorder = { style: BorderStyle.SINGLE, size: 6, color: "94A3B8" };
-  const outerBorder = { style: BorderStyle.SINGLE, size: 12, color: "334155" };
-  const headerShading = { type: ShadingType.SOLID, color: "DBEAFE", fill: "DBEAFE" };
-
-  // ── Meta table (cover info) ──────────────────────────────────────────────────
-  function metaRow(label: string, value: string) {
-    return new TableRow({
-      children: [
-        new TableCell({
-          width: { size: 22, type: WidthType.PERCENTAGE },
-          shading: headerShading,
-          borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
-          verticalAlign: VerticalAlign.CENTER,
-          children: [new Paragraph({ children: [new TextRun({ text: label, font: FONT, bold: true, size: BODY_SIZE, color: "000000" })] })],
-        }),
-        new TableCell({
-          width: { size: 78, type: WidthType.PERCENTAGE },
-          borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
-          verticalAlign: VerticalAlign.CENTER,
-          children: [new Paragraph({ children: [new TextRun({ text: value, font: FONT, size: BODY_SIZE, color: "000000" })] })],
-        }),
-      ],
-    });
-  }
-
-  const metaRows = [
-    metaRow("OPERATION:", operationName),
-    ...(targetFullName ? [metaRow("TARGET:", targetFullName)] : []),
-    metaRow("DATE:", dateStr),
-    ...(promisNumber ? [metaRow("PROMIS:", promisNumber)] : []),
-    ...(imsNumber ? [metaRow("IMS:", imsNumber)] : []),
-    ...(investigationUnit ? [metaRow("UNIT:", investigationUnit)] : []),
-    ...(preparedByText ? [metaRow("PREPARED BY:", preparedByText)] : []),
-    ...(rosterText ? [metaRow("TEAM:", rosterText)] : []),
-    metaRow("IMAGERY:", imageryText),
-  ];
-
-  const metaTable = new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    borders: {
-      top: outerBorder, bottom: outerBorder, left: outerBorder, right: outerBorder,
-      insideHorizontal: thinBorder, insideVertical: thinBorder,
-    },
-    rows: metaRows,
-  });
-
-  // ── Running sheet table ──────────────────────────────────────────────────────
-  function thCell(text: string, widthPct: number) {
-    return new TableCell({
-      width: { size: widthPct, type: WidthType.PERCENTAGE },
-      shading: headerShading,
-      borders: { top: outerBorder, bottom: outerBorder, left: thinBorder, right: thinBorder },
-      verticalAlign: VerticalAlign.CENTER,
-      children: [new Paragraph({ children: [new TextRun({ text, font: FONT, bold: true, size: BODY_SIZE, color: "000000" })] })],
-    });
-  }
-
-  const headerRow = new TableRow({
-    tableHeader: true,
-    children: [
-      thCell("Time", 10),
-      thCell("Observation", 72),
-      thCell("CIN Certified", 18),
-    ],
-  });
-
-  // ── Build day-offset map for Word export rows (rowDate-aware, falls back to inference) ──
-  const wordDayOffsetMap = new Map<number, number>();
-  {
-    const timedByRowNumber = [...rows]
-      .filter((r) => r.timeMinutes != null)
-      .sort((a, b) => a.rowNumber - b.rowNumber);
-    const wordRowDates = timedByRowNumber.map((r) => r.rowDate).filter((d): d is string => !!d);
-    const wordMinRowDate = wordRowDates.length > 0 ? wordRowDates.slice().sort()[0] : null;
-    // First pass: rowDate (highest priority) or stored dayOffset (legacy)
-    for (const r of timedByRowNumber) {
-      if (r.rowDate && wordMinRowDate) {
-        const anchor = ymdToPerthMs(wordMinRowDate);
-        const rowDay = ymdToPerthMs(r.rowDate);
-        wordDayOffsetMap.set(r.id, Math.round((rowDay - anchor) / 86400000));
-      } else if (r.dayOffset && r.dayOffset !== 0) {
-        wordDayOffsetMap.set(r.id, r.dayOffset);
-      }
-    }
-    // Second pass: infer for rows with no explicit date/offset
-    let day = 0;
-    let prevEff = -1;
-    for (const r of timedByRowNumber) {
-      if (wordDayOffsetMap.has(r.id)) {
-        prevEff = r.timeMinutes! + wordDayOffsetMap.get(r.id)! * 1440;
-        day = wordDayOffsetMap.get(r.id)!;
-        continue;
-      }
-      const mins = r.timeMinutes!;
-      const eff = mins + day * 1440;
-      if (prevEff >= 0 && eff < prevEff - 120) { day++; }
-      wordDayOffsetMap.set(r.id, day);
-      prevEff = mins + day * 1440;
-    }
-  }
-
-  const dataRows: TableRow[] = [];
-  let wordPrevDay = -1;
-  for (const row of rows) {
-    const wordDay = wordDayOffsetMap.get(row.id) ?? 0;
-    if (row.timeMinutes != null && wordDay > wordPrevDay && wordPrevDay >= 0) {
-      // Prefer an explicit rowDate from a row on that day
-      const wordRowOnDay = rows.find((r) => (wordDayOffsetMap.get(r.id) ?? 0) === wordDay && r.rowDate);
-      let divLabel: string;
-      if (wordRowOnDay?.rowDate) {
-        divLabel = formatPerthDateLabel(wordRowOnDay.rowDate);
-      } else {
-        const divDate = new Date(sheetCreatedAt);
-        divDate.setDate(divDate.getDate() + wordDay);
-        divLabel = divDate.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: PERTH_TIME_ZONE }).toUpperCase();
-      }
-      dataRows.push(new TableRow({
-        children: [
-          new TableCell({
-            columnSpan: 3,
-            shading: { type: ShadingType.SOLID, color: "1E3A5F", fill: "1E3A5F" },
-            borders: { top: outerBorder, bottom: outerBorder, left: outerBorder, right: outerBorder },
-            children: [new Paragraph({
-              alignment: AlignmentType.CENTER,
-              children: [new TextRun({ text: `── ${divLabel} ──`, font: FONT, bold: true, size: 18, color: "93C5FD" })],
-            })],
-          }),
-        ],
-      }));
-    }
-    if (row.timeMinutes != null) wordPrevDay = wordDay;
-    const timeText = row.time ?? "";
-    const obsText = row.observation ?? "";
-
-    if (row.members.length === 0) {
-      dataRows.push(new TableRow({
-        children: [
-          new TableCell({
-            width: { size: 10, type: WidthType.PERCENTAGE },
-            borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
-            children: [new Paragraph({ children: [new TextRun({ text: timeText, size: 18, font: "Courier New", color: "000000" })] })],
-          }),
-          new TableCell({
-            width: { size: 72, type: WidthType.PERCENTAGE },
-            borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
-            children: obsText.split("\n").map((line) => new Paragraph({ children: [new TextRun({ text: line, font: FONT, size: BODY_SIZE, color: "000000" })] })),
-          }),
-          new TableCell({
-            width: { size: 18, type: WidthType.PERCENTAGE },
-            borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
-            children: [new Paragraph({ children: [] })],
-          }),
-        ],
-      }));
-    } else {
-      // One row per member, time+obs span via rowspan emulation (repeat in first member row only)
-      row.members.forEach((m, idx) => {
-        const isSpacer = m.memberName === "__SPACE__";
-        const cert = isSpacer ? undefined : row.certifications.find((c) => c.memberId === m.id && c.isActive);
-        const certifierCIN = cert ? (('certifiedByCIN' in cert ? (cert as any).certifiedByCIN : null) || cert.certifiedByName) : null;
-        const certText = cert
-          ? `\u2713 ${certifierCIN} ${format(new Date(cert.certifiedAt), "dd/MM/yy h:mmaaa")}`
-          : (isSpacer ? "" : `${m.memberName} Pending`);
-        const certColor = cert ? "22C55E" : (isSpacer ? "000000" : "EF4444");
-
-        // For multi-member rows, only show time and obs on the first member row
-        const timePara = idx === 0
-          ? [new Paragraph({ children: [new TextRun({ text: timeText, size: 18, font: "Courier New", color: "000000" })] })]
-          : [new Paragraph({ children: [] })];
-        const obsPara = idx === 0
-          ? obsText.split("\n").map((line) => new Paragraph({ children: [new TextRun({ text: line, font: FONT, size: BODY_SIZE, color: "000000" })] }))
-          : [new Paragraph({ children: [] })];
-
-        dataRows.push(new TableRow({
-          children: [
-            new TableCell({
-              width: { size: 10, type: WidthType.PERCENTAGE },
-              borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
-              children: timePara,
-            }),
-            new TableCell({
-              width: { size: 72, type: WidthType.PERCENTAGE },
-              borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
-              children: obsPara,
-            }),
-            new TableCell({
-              width: { size: 18, type: WidthType.PERCENTAGE },
-              borders: { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder },
-              children: [new Paragraph({ children: [new TextRun({ text: certText, font: FONT, size: 18, color: certColor, bold: !!cert })] })],
-            }),
-          ],
-        }));
-      });
-    }
-  }
-
-  const logTable = new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    borders: {
-      top: outerBorder, bottom: outerBorder, left: outerBorder, right: outerBorder,
-      insideHorizontal: thinBorder, insideVertical: thinBorder,
-    },
-    rows: [headerRow, ...dataRows],
-  });
-
-  // ── Build document ───────────────────────────────────────────────────────────
-  const doc = new Document({
-    sections: [{
-      properties: {
-        page: {
-          margin: { top: 1134, bottom: 1134, left: 1134, right: 1134 }, // ~2cm margins
-        },
-      },
-      children: [
-        new Paragraph({
-          heading: HeadingLevel.HEADING_1,
-          alignment: AlignmentType.CENTER,
-          children: [new TextRun({ text: "WC SURVEILLANCE RUNNING SHEET", font: FONT, bold: true, size: 32, color: "000000", allCaps: true })],
-          spacing: { after: 200 },
-        }),
-        new Paragraph({
-          alignment: AlignmentType.CENTER,
-          children: [new TextRun({ text: "PROTECTED", font: FONT, bold: true, size: 24, color: "DC2626", allCaps: true })],
-          spacing: { after: 240 },
-        }),
-        metaTable,
-        new Paragraph({ children: [], spacing: { after: 240 } }),
-        logTable,
-        new Paragraph({
-          alignment: AlignmentType.CENTER,
-          children: [new TextRun({ text: "PROTECTED", font: FONT, bold: true, size: 24, color: "DC2626", allCaps: true })],
-          spacing: { before: 240 },
-        }),
-      ],
-    }],
-  });
-
-  const blob = await Packer.toBlob(doc);
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${sheetTitle.replace(/[^a-zA-Z0-9\s_-]/g, "")}.docx`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  setTimeout(() => {
+    win.print();
+  }, 400);
 }
 
 // ─── Sortable CIN item ────────────────────────────────────────────────────────
@@ -979,7 +738,14 @@ function SortableCinItem({
   isLocked: boolean;
   onRemove: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: member.id });
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: member.id });
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -1011,7 +777,9 @@ function SortableCinItem({
         /* Spacer — blank row for visual separation, remove on hover */
         <span className="flex-1 min-w-0" />
       ) : (
-        <span className={`text-sm font-mono font-medium flex-1 min-w-0 ${cert ? "text-[var(--certified-color)]" : "text-foreground"}`}>
+        <span
+          className={`text-sm font-mono font-medium flex-1 min-w-0 ${cert ? "text-[var(--certified-color)]" : "text-foreground"}`}
+        >
           {member.memberName}
         </span>
       )}
@@ -1027,7 +795,9 @@ function SortableCinItem({
               <Trash2 className="w-3 h-3" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="top" className="text-xs">{isSpacer ? "Remove space" : "Remove this CIN"}</TooltipContent>
+          <TooltipContent side="top" className="text-xs">
+            {isSpacer ? "Remove space" : "Remove this CIN"}
+          </TooltipContent>
         </Tooltip>
       )}
     </div>
@@ -1063,7 +833,7 @@ function MemberCell({
     const val = newName.trim();
     // If user typed 'team' (case-insensitive), expand to all roster CINs
     if (val.toLowerCase() === "team" && rosterCins && rosterCins.length > 0) {
-      rosterCins.forEach((cin) => onAddMember(row.id, cin));
+      rosterCins.forEach(cin => onAddMember(row.id, cin));
       setNewName("");
       setAdding(false);
       return;
@@ -1076,28 +846,42 @@ function MemberCell({
   // dnd-kit sensors — pointer (desktop) + touch with 250ms delay (mobile tap-hold)
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } })
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 250, tolerance: 5 },
+    })
   );
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    const oldIndex = row.members.findIndex((m) => m.id === active.id);
-    const newIndex = row.members.findIndex((m) => m.id === over.id);
+    const oldIndex = row.members.findIndex(m => m.id === active.id);
+    const newIndex = row.members.findIndex(m => m.id === over.id);
     if (oldIndex === -1 || newIndex === -1) return;
     const reordered = arrayMove(row.members, oldIndex, newIndex);
     // Mark this row as manually reordered so auto-sort is suppressed going forward
     onManualReorder?.(row.id);
-    onReorderMembers(row.id, reordered.map((m) => m.id));
+    onReorderMembers(
+      row.id,
+      reordered.map(m => m.id)
+    );
   };
 
   return (
     <div className="flex flex-col min-w-[40px]">
       {/* CIN list — drag handles allow full reordering */}
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={row.members.map((m) => m.id)} strategy={verticalListSortingStrategy}>
-          {row.members.map((member) => {
-            const cert = !!row.certifications.find((c) => c.memberId === member.id && c.isActive);
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext
+          items={row.members.map(m => m.id)}
+          strategy={verticalListSortingStrategy}
+        >
+          {row.members.map(member => {
+            const cert = !!row.certifications.find(
+              c => c.memberId === member.id && c.isActive
+            );
             return (
               <SortableCinItem
                 key={member.id}
@@ -1113,19 +897,23 @@ function MemberCell({
       </DndContext>
 
       {/* Add button — sits below all CINs */}
-      {canEdit && !row.isLocked && (
-        adding ? (
+      {canEdit &&
+        !row.isLocked &&
+        (adding ? (
           <div className="flex flex-col gap-1.5 mt-0.5">
             {rosterCins && rosterCins.length > 0 ? (
               /* Dropdown mode: pick from team roster — Space at top, duplicates allowed */
               <div className="flex items-center gap-1.5">
                 <Select
                   value={newName}
-                  onValueChange={(v) => {
+                  onValueChange={v => {
                     if (v === "__all__") {
                       // Add sequentially to preserve team order (leader first, then ascending CIN)
                       const addSequentially = (cins: string[], idx: number) => {
-                        if (idx >= cins.length) { setAdding(false); return; }
+                        if (idx >= cins.length) {
+                          setAdding(false);
+                          return;
+                        }
                         onAddMember(row.id, cins[idx]);
                         setTimeout(() => addSequentially(cins, idx + 1), 80);
                       };
@@ -1142,14 +930,26 @@ function MemberCell({
                   </SelectTrigger>
                   <SelectContent>
                     {/* Space option always at the top */}
-                    <SelectItem value={SPACER} className="text-xs text-muted-foreground italic">
+                    <SelectItem
+                      value={SPACER}
+                      className="text-xs text-muted-foreground italic"
+                    >
                       — Space —
                     </SelectItem>
-                    {rosterCins.map((cin) => (
-                      <SelectItem key={cin} value={cin} className="font-mono text-xs">{cin}</SelectItem>
+                    {rosterCins.map(cin => (
+                      <SelectItem
+                        key={cin}
+                        value={cin}
+                        className="font-mono text-xs"
+                      >
+                        {cin}
+                      </SelectItem>
                     ))}
                     {rosterCins.length > 1 && (
-                      <SelectItem value="__all__" className="text-xs font-medium text-primary">
+                      <SelectItem
+                        value="__all__"
+                        className="text-xs font-medium text-primary"
+                      >
                         ★ Add all team CINs
                       </SelectItem>
                     )}
@@ -1159,7 +959,10 @@ function MemberCell({
                   size="icon"
                   variant="ghost"
                   className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
-                  onClick={() => { setAdding(false); setNewName(""); }}
+                  onClick={() => {
+                    setAdding(false);
+                    setNewName("");
+                  }}
                 >
                   <X className="w-3 h-3" />
                 </Button>
@@ -1172,12 +975,20 @@ function MemberCell({
                   placeholder="Enter CIN"
                   value={newName}
                   onChange={setNewName}
-                  onValidCin={(cin) => { setNewName(cin); setNewNameValid(true); }}
+                  onValidCin={cin => {
+                    setNewName(cin);
+                    setNewNameValid(true);
+                  }}
                   onInvalidCin={() => setNewNameValid(false)}
                   showValidation
                   className="h-7 text-xs px-2"
                 />
-                <Button size="icon" className="h-7 w-7 shrink-0" onClick={handleAdd} disabled={!newNameValid}>
+                <Button
+                  size="icon"
+                  className="h-7 w-7 shrink-0"
+                  onClick={handleAdd}
+                  disabled={!newNameValid}
+                >
                   <Plus className="w-3 h-3" />
                 </Button>
               </div>
@@ -1191,8 +1002,7 @@ function MemberCell({
             <UserPlus className="w-3 h-3" />
             Add
           </button>
-        )
-      )}
+        ))}
     </div>
   );
 }
@@ -1213,7 +1023,12 @@ function ObservationAttachments({
 }: {
   row: SheetRow;
   canEdit: boolean;
-  onUpload: (rowId: number, blob: Blob, mimeType: string, fileName: string) => void;
+  onUpload: (
+    rowId: number,
+    blob: Blob,
+    mimeType: string,
+    fileName: string
+  ) => void;
   onDelete: (id: number) => void;
   uploading: boolean;
   deletePending?: boolean;
@@ -1221,7 +1036,9 @@ function ObservationAttachments({
 }) {
   const [preview, setPreview] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<string | null>(null);
-  const [linking, setLinking] = useState<{ id: number; url: string } | null>(null);
+  const [linking, setLinking] = useState<{ id: number; url: string } | null>(
+    null
+  );
   const inputRef = useRef<HTMLInputElement>(null);
 
   if (!IMAGERY_PHRASE_PATTERN.test(row.observation ?? "")) return null;
@@ -1237,13 +1054,18 @@ function ObservationAttachments({
       const mimeType = compressed?.mimeType ?? file.type;
       const fileName = compressed?.fileName ?? file.name;
 
-      if (blob.size > 25 * 1024 * 1024) { toast.error("Photo must be under 25 MB."); return; }
+      if (blob.size > 25 * 1024 * 1024) {
+        toast.error("Photo must be under 25 MB.");
+        return;
+      }
 
       // If compression failed, the original may be a HEIC/HEIF file the browser
       // can't preview (it gets converted to JPEG server-side) — skip the
       // raw-bytes preview for it rather than show a broken image icon. Preview
       // generation is fire-and-forget and doesn't block the actual upload.
-      const isHeic = !compressed && (/^image\/hei[cf]/i.test(file.type) || /\.hei[cf]$/i.test(file.name));
+      const isHeic =
+        !compressed &&
+        (/^image\/hei[cf]/i.test(file.type) || /\.hei[cf]$/i.test(file.name));
       if (!isHeic) {
         const reader = new FileReader();
         reader.onload = () => setPreview(reader.result as string);
@@ -1251,14 +1073,20 @@ function ObservationAttachments({
       }
       onUpload(row.id, blob, mimeType, fileName);
     } catch {
-      toast.error("Couldn't process that photo — try again, or use a different photo.");
+      toast.error(
+        "Couldn't process that photo — try again, or use a different photo."
+      );
     }
   };
 
   return (
     <div className="mt-2 flex flex-wrap items-end gap-2">
-      {row.attachments.map((a) => (
-        <div key={a.id} className="relative group" style={{ width: "33%", minWidth: 90, maxWidth: 160 }}>
+      {row.attachments.map(a => (
+        <div
+          key={a.id}
+          className="relative group"
+          style={{ width: "33%", minWidth: 90, maxWidth: 160 }}
+        >
           <img
             src={a.url}
             alt="Attached photograph"
@@ -1281,12 +1109,19 @@ function ObservationAttachments({
               glyphSize="h-2 w-2 sm:h-2.5 sm:w-2.5"
             />
           )}
-          <LinkedEntityPills entities={a.linkedEntities} onClick={() => setLinking({ id: a.id, url: a.url })} />
+          <LinkedEntityPills
+            entities={a.linkedEntities}
+            onClick={() => setLinking({ id: a.id, url: a.url })}
+          />
         </div>
       ))}
       {preview && uploading && (
         <div style={{ width: "33%", minWidth: 90, maxWidth: 160 }}>
-          <img src={preview} alt="Uploading…" className="w-full rounded border border-border opacity-50" />
+          <img
+            src={preview}
+            alt="Uploading…"
+            className="w-full rounded border border-border opacity-50"
+          />
         </div>
       )}
       {canEdit && (
@@ -1299,7 +1134,13 @@ function ObservationAttachments({
           >
             <Camera className="h-4 w-4" />
           </button>
-          <input ref={inputRef} type="file" accept="image/*,.heic,.heif" className="hidden" onChange={handleFile} />
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/*,.heic,.heif"
+            className="hidden"
+            onChange={handleFile}
+          />
         </>
       )}
 
@@ -1308,7 +1149,11 @@ function ObservationAttachments({
           className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6"
           onClick={() => setLightbox(null)}
         >
-          <img src={lightbox} alt="Attached photograph" className="max-w-full max-h-full rounded shadow-2xl" />
+          <img
+            src={lightbox}
+            alt="Attached photograph"
+            className="max-w-full max-h-full rounded shadow-2xl"
+          />
         </div>
       )}
 
@@ -1317,7 +1162,9 @@ function ObservationAttachments({
           attachmentId={linking.id}
           photoUrl={linking.url}
           open={linking !== null}
-          onOpenChange={(open) => { if (!open) setLinking(null); }}
+          onOpenChange={open => {
+            if (!open) setLinking(null);
+          }}
           currentOperationId={operationId}
         />
       )}
@@ -1326,7 +1173,6 @@ function ObservationAttachments({
 }
 
 // ─── Certify Column ───────────────────────────────────────────────────────────
-
 
 function CertifyCell({
   row,
@@ -1344,7 +1190,7 @@ function CertifyCell({
   onDeleteRow?: (rowId: number) => void;
 }) {
   const total = row.members.length;
-  const certified = row.certifications.filter((c) => c.isActive).length;
+  const certified = row.certifications.filter(c => c.isActive).length;
 
   if (total === 0) {
     // Empty row — show delete button immediately so accidental rows can be removed
@@ -1372,10 +1218,15 @@ function CertifyCell({
   return (
     <div className="flex flex-col items-center">
       {/* One row per member — same fixed height as MemberCell member rows */}
-      {row.members.map((m) => {
-        const cert = row.certifications.find((c) => c.memberId === m.id && c.isActive);
+      {row.members.map(m => {
+        const cert = row.certifications.find(
+          c => c.memberId === m.id && c.isActive
+        );
         return (
-          <div key={m.id} className={`flex flex-col items-center justify-center ${ROW_H} w-full`}>
+          <div
+            key={m.id}
+            className={`flex flex-col items-center justify-center ${ROW_H} w-full`}
+          >
             {/* Shield: single certify/uncertify toggle — no cross, just the shield */}
             {cert ? (
               /* Certified: green shield + certifier CIN side by side */
@@ -1407,10 +1258,16 @@ function CertifyCell({
                   </TooltipTrigger>
                   <TooltipContent side="top" className="text-xs">
                     <div className="flex flex-col gap-0.5">
-                      <span className="font-medium">Certified by {(cert as any).certifiedByCIN || cert.certifiedByName}</span>
+                      <span className="font-medium">
+                        Certified by{" "}
+                        {(cert as any).certifiedByCIN || cert.certifiedByName}
+                      </span>
                       <span className="text-muted-foreground flex items-center gap-1">
                         <Clock className="w-3 h-3" />
-                        {format(new Date(cert.certifiedAt), "MMM d, yyyy HH:mm:ss")}
+                        {format(
+                          new Date(cert.certifiedAt),
+                          "MMM d, yyyy HH:mm:ss"
+                        )}
                       </span>
                     </div>
                   </TooltipContent>
@@ -1438,7 +1295,9 @@ function CertifyCell({
                 ) : (
                   <ShieldCheck className="w-4 h-4 shrink-0 text-red-500" />
                 )}
-                <span className="text-[10px] leading-none text-red-500 font-medium">Certify</span>
+                <span className="text-[10px] leading-none text-red-500 font-medium">
+                  Certify
+                </span>
               </div>
             )}
           </div>
@@ -1448,12 +1307,17 @@ function CertifyCell({
       {/* Summary — at the bottom */}
       <div className="flex items-center justify-center gap-1.5 mt-1 w-full">
         {row.isLocked ? (
-          <Badge variant="outline" className="gap-1 text-[var(--certified-color)] border-[var(--locked-border)] bg-[var(--locked-bg)] text-xs py-0 px-1.5">
+          <Badge
+            variant="outline"
+            className="gap-1 text-[var(--certified-color)] border-[var(--locked-border)] bg-[var(--locked-bg)] text-xs py-0 px-1.5"
+          >
             <Lock className="w-2.5 h-2.5" />
             Locked
           </Badge>
         ) : (
-          <span className="text-xs text-muted-foreground">{certified}/{total} certified</span>
+          <span className="text-xs text-muted-foreground">
+            {certified}/{total} certified
+          </span>
         )}
       </div>
 
@@ -1471,7 +1335,9 @@ function CertifyCell({
               Uncertify All
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="top" className="text-xs">Remove all certifications and unlock row</TooltipContent>
+          <TooltipContent side="top" className="text-xs">
+            Remove all certifications and unlock row
+          </TooltipContent>
         </Tooltip>
       )}
       {!row.isLocked && onDeleteRow && (
@@ -1529,12 +1395,22 @@ function TimePickerCell({
   inferredRowDate?: string | null;
   sheetHasCrossedMidnight?: boolean;
   sheetCreatedAt?: number | null;
-  onSave: (display: string, minutes: number, dayOffset: number, rowDate?: string) => void;
+  onSave: (
+    display: string,
+    minutes: number,
+    dayOffset: number,
+    rowDate?: string
+  ) => void;
 }) {
   // Derive the RS creation date in Perth (YYYY-MM-DD) — used as the default rowDate
   const sheetCreatedYmd = useMemo(() => {
     if (!sheetCreatedAt) return getTodayPerthYmd();
-    return new Intl.DateTimeFormat("en-CA", { timeZone: PERTH_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(sheetCreatedAt));
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: PERTH_TIME_ZONE,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date(sheetCreatedAt));
   }, [sheetCreatedAt]);
 
   // Parse existing value into hour/minute/period; default to current time when empty
@@ -1543,11 +1419,19 @@ function TimePickerCell({
       const now = new Date();
       const h24 = now.getHours();
       const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
-      return { hour: String(h12), minute: String(now.getMinutes()).padStart(2, "0"), period: h24 < 12 ? "AM" : "PM" };
+      return {
+        hour: String(h12),
+        minute: String(now.getMinutes()).padStart(2, "0"),
+        period: h24 < 12 ? "AM" : "PM",
+      };
     }
     const m = value.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
     if (!m) return { hour: "12", minute: "00", period: "AM" };
-    return { hour: String(parseInt(m[1], 10)), minute: m[2].padStart(2, "0"), period: m[3].toUpperCase() };
+    return {
+      hour: String(parseInt(m[1], 10)),
+      minute: m[2].padStart(2, "0"),
+      period: m[3].toUpperCase(),
+    };
   }, [value]);
 
   const [open, setOpen] = useState(false);
@@ -1556,7 +1440,9 @@ function TimePickerCell({
   const [period, setPeriod] = useState(parsed.period);
   const [localDayOffset, setLocalDayOffset] = useState(dayOffset);
   // Default to the explicit rowDate, then inferred, then RS creation date
-  const [selectedRowDate, setSelectedRowDate] = useState<string>(() => rowDate ?? inferredRowDate ?? sheetCreatedYmd);
+  const [selectedRowDate, setSelectedRowDate] = useState<string>(
+    () => rowDate ?? inferredRowDate ?? sheetCreatedYmd
+  );
   // Track whether any Radix Select dropdown is currently open
   const [selectOpen, setSelectOpen] = useState(false);
   // Controls visibility of the date stepper (toggled by Date button)
@@ -1585,7 +1471,10 @@ function TimePickerCell({
   useEffect(() => {
     if (!open || selectOpen) return;
     const handler = (e: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+      if (
+        popoverRef.current &&
+        !popoverRef.current.contains(e.target as Node)
+      ) {
         setOpen(false);
       }
     };
@@ -1607,7 +1496,9 @@ function TimePickerCell({
   }, [hour, minute, period, localDayOffset, selectedRowDate, onSave]);
 
   const hours = Array.from({ length: 12 }, (_, i) => String(i + 1));
-  const minutes = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"));
+  const minutes = Array.from({ length: 60 }, (_, i) =>
+    String(i).padStart(2, "0")
+  );
 
   if (locked) {
     return (
@@ -1621,10 +1512,14 @@ function TimePickerCell({
     <div className="relative" ref={popoverRef}>
       <button
         className="flex items-center gap-1.5 text-sm font-mono hover:bg-accent/50 rounded px-1 py-0.5 transition-colors min-w-[90px]"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen(v => !v)}
       >
         <Clock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-        {value || <span className="text-muted-foreground/50 italic text-xs">Set time</span>}
+        {value || (
+          <span className="text-muted-foreground/50 italic text-xs">
+            Set time
+          </span>
+        )}
       </button>
       {open && (
         <div className="absolute z-50 top-full left-0 mt-1 bg-popover border border-border rounded-lg shadow-xl p-3">
@@ -1633,15 +1528,19 @@ function TimePickerCell({
             {/* Hour */}
             <Select
               value={hour}
-              onOpenChange={(o) => setSelectOpen(o)}
-              onValueChange={(v) => setHour(v)}
+              onOpenChange={o => setSelectOpen(o)}
+              onValueChange={v => setHour(v)}
             >
               <SelectTrigger className="w-16 h-8 text-sm font-mono">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {hours.map((h) => (
-                  <SelectItem key={h} value={h} className="font-mono text-foreground">
+                {hours.map(h => (
+                  <SelectItem
+                    key={h}
+                    value={h}
+                    className="font-mono text-foreground"
+                  >
                     {String(parseInt(h, 10)).padStart(2, "0")}
                   </SelectItem>
                 ))}
@@ -1651,30 +1550,40 @@ function TimePickerCell({
             {/* Minute */}
             <Select
               value={minute}
-              onOpenChange={(o) => setSelectOpen(o)}
-              onValueChange={(v) => setMinute(v)}
+              onOpenChange={o => setSelectOpen(o)}
+              onValueChange={v => setMinute(v)}
             >
               <SelectTrigger className="w-16 h-8 text-sm font-mono">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {minutes.map((m) => (
-                  <SelectItem key={m} value={m} className="font-mono text-foreground">{m}</SelectItem>
+                {minutes.map(m => (
+                  <SelectItem
+                    key={m}
+                    value={m}
+                    className="font-mono text-foreground"
+                  >
+                    {m}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             {/* AM/PM */}
             <Select
               value={period}
-              onOpenChange={(o) => setSelectOpen(o)}
-              onValueChange={(v) => setPeriod(v)}
+              onOpenChange={o => setSelectOpen(o)}
+              onValueChange={v => setPeriod(v)}
             >
               <SelectTrigger className="w-16 h-8 text-sm">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="AM" className="text-foreground">AM</SelectItem>
-                <SelectItem value="PM" className="text-foreground">PM</SelectItem>
+                <SelectItem value="AM" className="text-foreground">
+                  AM
+                </SelectItem>
+                <SelectItem value="PM" className="text-foreground">
+                  PM
+                </SelectItem>
               </SelectContent>
             </Select>
             {/* Now button — inline */}
@@ -1698,7 +1607,7 @@ function TimePickerCell({
               size="sm"
               variant={showDateStepper ? "default" : "outline"}
               className="h-8 text-xs px-2"
-              onClick={() => setShowDateStepper((v) => !v)}
+              onClick={() => setShowDateStepper(v => !v)}
             >
               Date
             </Button>
@@ -1708,15 +1617,23 @@ function TimePickerCell({
             <div className="flex items-center justify-between mb-2 px-1 py-1 rounded-md border border-border/70 bg-muted/30">
               <button
                 className="px-2 py-0.5 text-base font-bold text-muted-foreground hover:text-foreground transition-colors"
-                onClick={() => setSelectedRowDate(addDaysToYmd(selectedRowDate, -1))}
-              >◀</button>
+                onClick={() =>
+                  setSelectedRowDate(addDaysToYmd(selectedRowDate, -1))
+                }
+              >
+                ◀
+              </button>
               <span className="text-[11px] font-semibold tracking-widest text-foreground font-mono">
                 {formatPerthDateLabel(selectedRowDate)}
               </span>
               <button
                 className="px-2 py-0.5 text-base font-bold text-muted-foreground hover:text-foreground transition-colors"
-                onClick={() => setSelectedRowDate(addDaysToYmd(selectedRowDate, 1))}
-              >▶</button>
+                onClick={() =>
+                  setSelectedRowDate(addDaysToYmd(selectedRowDate, 1))
+                }
+              >
+                ▶
+              </button>
             </div>
           )}
           {/* Done button — full width */}
@@ -1749,7 +1666,8 @@ function EditableCell({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value ?? "");
-  const { notifyObservationFocus, notifyObservationBlur } = useObservationFocus();
+  const { notifyObservationFocus, notifyObservationBlur } =
+    useObservationFocus();
 
   // Sync draft with incoming value prop whenever the cell is not being edited.
   // This ensures that after an external update (e.g. TV auto-fill saving new text),
@@ -1768,7 +1686,9 @@ function EditableCell({
   };
 
   /** Auto-expand shortcut triggers on Space or Tab */
-  const handleShortcutKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleShortcutKeyDown = (
+    e: React.KeyboardEvent<HTMLTextAreaElement>
+  ) => {
     if (!shortcuts || (e.key !== " " && e.key !== "Tab")) return;
     const textarea = e.currentTarget;
     const pos = textarea.selectionStart ?? 0;
@@ -1805,8 +1725,8 @@ function EditableCell({
         <Textarea
           autoFocus
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onPaste={(e) => {
+          onChange={e => setDraft(e.target.value)}
+          onPaste={e => {
             // Auto-convert Google Maps addresses pasted into the observation field
             const pasted = e.clipboardData.getData("text");
             const converted = convertGoogleAddresses(pasted);
@@ -1815,15 +1735,30 @@ function EditableCell({
               const ta = e.currentTarget;
               const start = ta.selectionStart ?? draft.length;
               const end = ta.selectionEnd ?? draft.length;
-              const newText = draft.slice(0, start) + converted + draft.slice(end);
+              const newText =
+                draft.slice(0, start) + converted + draft.slice(end);
               setDraft(newText);
             }
           }}
           onFocus={notifyObservationFocus}
-          onBlur={() => { notifyObservationBlur(); const conv = convertGoogleAddresses(draft); if (conv !== draft) { setDraft(conv); commit(conv); } else { commit(draft); } }}
-          onKeyDown={(e) => {
-            handleShortcutKeyDown(e as React.KeyboardEvent<HTMLTextAreaElement>);
-            if (e.key === "Escape") { setDraft(value ?? ""); setEditing(false); }
+          onBlur={() => {
+            notifyObservationBlur();
+            const conv = convertGoogleAddresses(draft);
+            if (conv !== draft) {
+              setDraft(conv);
+              commit(conv);
+            } else {
+              commit(draft);
+            }
+          }}
+          onKeyDown={e => {
+            handleShortcutKeyDown(
+              e as React.KeyboardEvent<HTMLTextAreaElement>
+            );
+            if (e.key === "Escape") {
+              setDraft(value ?? "");
+              setEditing(false);
+            }
           }}
           className="text-sm min-h-[60px] resize-none"
           placeholder={placeholder}
@@ -1834,9 +1769,15 @@ function EditableCell({
       <Input
         autoFocus
         value={draft}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={e => setDraft(e.target.value)}
         onBlur={() => commit()}
-        onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setDraft(value ?? ""); setEditing(false); } }}
+        onKeyDown={e => {
+          if (e.key === "Enter") commit();
+          if (e.key === "Escape") {
+            setDraft(value ?? "");
+            setEditing(false);
+          }
+        }}
         className="h-8 text-sm"
         placeholder={placeholder}
       />
@@ -1848,7 +1789,11 @@ function EditableCell({
       className="text-sm cursor-text hover:bg-accent/50 rounded px-1 -mx-1 py-0.5 min-h-[1.75rem] transition-colors whitespace-pre-wrap"
       onClick={() => setEditing(true)}
     >
-      {value || <span className="text-muted-foreground/50 italic text-xs">{placeholder}</span>}
+      {value || (
+        <span className="text-muted-foreground/50 italic text-xs">
+          {placeholder}
+        </span>
+      )}
     </div>
   );
 }
@@ -1856,11 +1801,28 @@ function EditableCell({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 // ── SortableChip — dnd-kit sortable chip for the target field chip row ──────
-function SortableChip({ id, label, value, showValue, onInsert }: {
-  id: string; label: string; value?: string | null; showValue: boolean; onInsert: () => void;
+function SortableChip({
+  id,
+  label,
+  value,
+  showValue,
+  onInsert,
+}: {
+  id: string;
+  label: string;
+  value?: string | null;
+  showValue: boolean;
+  onInsert: () => void;
 }) {
   const isMobile = useIsMobile();
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -1870,7 +1832,7 @@ function SortableChip({ id, label, value, showValue, onInsert }: {
   return (
     <div ref={setNodeRef} style={style} className="flex items-center">
       <button
-        onMouseDown={(e) => e.preventDefault()}
+        onMouseDown={e => e.preventDefault()}
         onClick={onInsert}
         title={`Insert: ${value}`}
         className="flex items-center gap-1 pl-1 pr-2 py-0.5 rounded border border-primary/30 bg-primary/8 hover:bg-primary/15 active:scale-95 transition-all select-none cursor-pointer"
@@ -1881,7 +1843,7 @@ function SortableChip({ id, label, value, showValue, onInsert }: {
             {...attributes}
             {...listeners}
             className="flex flex-col gap-[2.5px] opacity-40 shrink-0 cursor-grab active:cursor-grabbing px-0.5 touch-none"
-            onMouseDown={(e) => e.stopPropagation()}
+            onMouseDown={e => e.stopPropagation()}
           >
             <span className="flex gap-[2.5px]">
               <span className="w-[3px] h-[3px] rounded-full bg-primary" />
@@ -1893,8 +1855,14 @@ function SortableChip({ id, label, value, showValue, onInsert }: {
             </span>
           </span>
         )}
-        <span className="text-[10px] font-bold text-primary uppercase tracking-wide">{label}</span>
-        {showValue && value && <span className="text-[10px] font-mono text-foreground/80 max-w-[160px] truncate">{value}</span>}
+        <span className="text-[10px] font-bold text-primary uppercase tracking-wide">
+          {label}
+        </span>
+        {showValue && value && (
+          <span className="text-[10px] font-mono text-foreground/80 max-w-[160px] truncate">
+            {value}
+          </span>
+        )}
       </button>
     </div>
   );
@@ -1911,17 +1879,21 @@ export default function SheetDetail() {
   // Sensors for chip drag-to-reorder (separate from CinRow sensors)
   const chipSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } })
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 250, tolerance: 5 },
+    })
   );
 
   // Offline-aware local row state — used when offline
   const [offlineRows, setOfflineRows] = useState<typeof rows | null>(null);
-  const [hasPendingOfflineChanges, setHasPendingOfflineChanges] = useState(false);
+  const [hasPendingOfflineChanges, setHasPendingOfflineChanges] =
+    useState(false);
 
   // Per-session manual reorder tracking — suppresses auto-sort for rows the user has dragged
   // (client-only; resets on page reload, which is acceptable since sortOrder is persisted)
   const manuallyReorderedRowsRef = useRef<Set<number>>(new Set());
-  const markManualReorder = (rowId: number) => manuallyReorderedRowsRef.current.add(rowId);
+  const markManualReorder = (rowId: number) =>
+    manuallyReorderedRowsRef.current.add(rowId);
   // Ref to the auto-sort function — set after parsedRoster and reorderMember are available
   const autoSortRef = useRef<((rowId: number) => void) | null>(null);
 
@@ -1932,12 +1904,18 @@ export default function SheetDetail() {
 
   const { data: rows, isLoading: rowsLoading } = trpc.row.list.useQuery(
     { sheetId },
-    { enabled: isAuthenticated && !!sheetId && isOnline, refetchInterval: isOnline ? 10000 : false }
+    {
+      enabled: isAuthenticated && !!sheetId && isOnline,
+      refetchInterval: isOnline ? 10000 : false,
+    }
   );
 
   const { data: entityChips } = trpc.row.entityChips.useQuery(
     { sheetId },
-    { enabled: isAuthenticated && !!sheetId && isOnline, refetchInterval: isOnline ? 10000 : false }
+    {
+      enabled: isAuthenticated && !!sheetId && isOnline,
+      refetchInterval: isOnline ? 10000 : false,
+    }
   );
 
   const invalidateRows = useCallback(() => {
@@ -1955,12 +1933,14 @@ export default function SheetDetail() {
       sheetCins: sheet.sheetCins
         ? (JSON.parse(sheet.sheetCins) as CachedSheet["sheetCins"])
         : [],
-      rows: rows.map((r) => ({
+      rows: rows.map(r => ({
         id: r.id,
         rowNumber: r.rowNumber,
         time: r.time ?? undefined,
         observation: r.observation ?? undefined,
-        members: r.members.map((m) => m.memberName).filter((n) => n !== "__SPACE__"),
+        members: r.members
+          .map(m => m.memberName)
+          .filter(n => n !== "__SPACE__"),
       })),
       cachedAt: Date.now(),
     };
@@ -1974,105 +1954,181 @@ export default function SheetDetail() {
       setHasPendingOfflineChanges(false);
       return;
     }
-    getCachedSheet(sheetId).then((cached) => {
-      if (!cached) return;
-      // Convert cached rows back to the expected shape
-      const converted = cached.rows.map((r) => ({
-        id: r.id,
-        sheetId,
-        rowNumber: r.rowNumber,
-        time: r.time ?? null,
-        observation: r.observation ?? null,
-        timeMinutes: null,
-        isLocked: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        members: r.members.map((name, idx) => ({ id: idx, rowId: r.id, memberName: name, sortOrder: idx, createdAt: new Date() })),
-        certifications: [] as NonNullable<typeof rows>[0]["certifications"],
-      })) as unknown as NonNullable<typeof rows>;
-      setOfflineRows(converted);
-      const hasPending = cached.rows.some((r) => r.pendingLocalId || r.pendingEdit || r.pendingDelete);
-      setHasPendingOfflineChanges(hasPending);
-    }).catch(() => {});
+    getCachedSheet(sheetId)
+      .then(cached => {
+        if (!cached) return;
+        // Convert cached rows back to the expected shape
+        const converted = cached.rows.map(r => ({
+          id: r.id,
+          sheetId,
+          rowNumber: r.rowNumber,
+          time: r.time ?? null,
+          observation: r.observation ?? null,
+          timeMinutes: null,
+          isLocked: false,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          members: r.members.map((name, idx) => ({
+            id: idx,
+            rowId: r.id,
+            memberName: name,
+            sortOrder: idx,
+            createdAt: new Date(),
+          })),
+          certifications: [] as NonNullable<typeof rows>[0]["certifications"],
+        })) as unknown as NonNullable<typeof rows>;
+        setOfflineRows(converted);
+        const hasPending = cached.rows.some(
+          r => r.pendingLocalId || r.pendingEdit || r.pendingDelete
+        );
+        setHasPendingOfflineChanges(hasPending);
+      })
+      .catch(() => {});
   }, [isOnline, sheetId]);
 
   const _addRowOnline = trpc.row.create.useMutation({
     onSuccess: invalidateRows,
-    onError: (e) => toast.error(e.message),
+    onError: e => toast.error(e.message),
   });
 
   const _updateRowOnline = trpc.row.update.useMutation({
     onSuccess: invalidateRows,
-    onError: (e) => toast.error(e.message),
+    onError: e => toast.error(e.message),
   });
 
   const _deleteRowOnline = trpc.row.delete.useMutation({
     onSuccess: invalidateRows,
-    onError: (e) => toast.error(e.message),
+    onError: e => toast.error(e.message),
   });
 
   // Offline-aware wrappers — queue locally when offline, call server when online
-  const addRow = useMemo(() => ({
-    isPending: _addRowOnline.isPending,
-    mutate: (input: { sheetId: number; time?: string; timeMinutes?: number; observation?: string }) => {
-      if (isOnline) {
-        _addRowOnline.mutate(input);
-      } else {
-        addPendingRowToCachedSheet(input.sheetId, { rowNumber: Date.now(), members: [] }).then((localId) => {
-          enqueueSyncAction({ type: "addRowToServerSheet", localId, payload: { sheetServerId: input.sheetId, members: [] } });
-          // Refresh offline rows from cache
-          getCachedSheet(input.sheetId).then((cached) => {
-            if (!cached) return;
-            const converted = cached.rows.map((r) => ({
-              id: r.id, sheetId: input.sheetId, rowNumber: r.rowNumber,
-              time: r.time ?? null, observation: r.observation ?? null, timeMinutes: null,
-              isLocked: false, createdAt: new Date(), updatedAt: new Date(),
-              members: r.members.map((name, idx) => ({ id: idx, rowId: r.id, memberName: name, sortOrder: idx, createdAt: new Date() })),
-              certifications: [] as NonNullable<typeof rows>[0]["certifications"],
-            })) as unknown as NonNullable<typeof rows>;
-            setOfflineRows(converted);
-            setHasPendingOfflineChanges(true);
-          });
-        }).catch(() => toast.error("Failed to save row locally"));
-      }
-    },
-  }), [isOnline, _addRowOnline, rows]);
+  const addRow = useMemo(
+    () => ({
+      isPending: _addRowOnline.isPending,
+      mutate: (input: {
+        sheetId: number;
+        time?: string;
+        timeMinutes?: number;
+        observation?: string;
+      }) => {
+        if (isOnline) {
+          _addRowOnline.mutate(input);
+        } else {
+          addPendingRowToCachedSheet(input.sheetId, {
+            rowNumber: Date.now(),
+            members: [],
+          })
+            .then(localId => {
+              enqueueSyncAction({
+                type: "addRowToServerSheet",
+                localId,
+                payload: { sheetServerId: input.sheetId, members: [] },
+              });
+              // Refresh offline rows from cache
+              getCachedSheet(input.sheetId).then(cached => {
+                if (!cached) return;
+                const converted = cached.rows.map(r => ({
+                  id: r.id,
+                  sheetId: input.sheetId,
+                  rowNumber: r.rowNumber,
+                  time: r.time ?? null,
+                  observation: r.observation ?? null,
+                  timeMinutes: null,
+                  isLocked: false,
+                  createdAt: new Date(),
+                  updatedAt: new Date(),
+                  members: r.members.map((name, idx) => ({
+                    id: idx,
+                    rowId: r.id,
+                    memberName: name,
+                    sortOrder: idx,
+                    createdAt: new Date(),
+                  })),
+                  certifications: [] as NonNullable<
+                    typeof rows
+                  >[0]["certifications"],
+                })) as unknown as NonNullable<typeof rows>;
+                setOfflineRows(converted);
+                setHasPendingOfflineChanges(true);
+              });
+            })
+            .catch(() => toast.error("Failed to save row locally"));
+        }
+      },
+    }),
+    [isOnline, _addRowOnline, rows]
+  );
 
-  const updateRow = useMemo(() => ({
-    isPending: _updateRowOnline.isPending,
-    mutate: (input: { id: number; time?: string; timeMinutes?: number; dayOffset?: number; rowDate?: string; observation?: string }) => {
-      if (isOnline) {
-        _updateRowOnline.mutate(input);
-      } else {
-        const updates: { time?: string; observation?: string } = {};
-        if (input.time !== undefined) updates.time = input.time;
-        if (input.observation !== undefined) updates.observation = input.observation;
-        editPendingRowInCachedSheet(sheetId, input.id, updates).then(async () => {
-          // Look up the row's pendingLocalId to determine how to enqueue
-          const cached = await getCachedSheet(sheetId);
-          if (!cached) return;
-          const cachedRow = cached.rows.find((r) => r.id === input.id);
-          if (input.id > 0) {
-            // Existing server row — enqueue direct update
-            enqueueSyncAction({ type: "updateServerRow", serverId: input.id, payload: updates });
-          } else if (cachedRow?.pendingLocalId) {
-            // New offline row — enqueue update keyed by pendingLocalId
-            enqueueSyncAction({ type: "updatePendingRow", pendingLocalId: cachedRow.pendingLocalId, payload: updates });
-          }
-          // Refresh offline rows display
-          const converted = cached.rows.map((r) => ({
-            id: r.id, sheetId, rowNumber: r.rowNumber,
-            time: r.time ?? null, observation: r.observation ?? null, timeMinutes: null,
-            isLocked: false, createdAt: new Date(), updatedAt: new Date(),
-            members: r.members.map((name, idx) => ({ id: idx, rowId: r.id, memberName: name, sortOrder: idx, createdAt: new Date() })),
-            certifications: [] as NonNullable<typeof rows>[0]["certifications"],
-          })) as unknown as NonNullable<typeof rows>;
-          setOfflineRows(converted);
-          setHasPendingOfflineChanges(true);
-        }).catch(() => {});
-      }
-    },
-  }), [isOnline, _updateRowOnline, sheetId, rows]);
+  const updateRow = useMemo(
+    () => ({
+      isPending: _updateRowOnline.isPending,
+      mutate: (input: {
+        id: number;
+        time?: string;
+        timeMinutes?: number;
+        dayOffset?: number;
+        rowDate?: string;
+        observation?: string;
+      }) => {
+        if (isOnline) {
+          _updateRowOnline.mutate(input);
+        } else {
+          const updates: { time?: string; observation?: string } = {};
+          if (input.time !== undefined) updates.time = input.time;
+          if (input.observation !== undefined)
+            updates.observation = input.observation;
+          editPendingRowInCachedSheet(sheetId, input.id, updates)
+            .then(async () => {
+              // Look up the row's pendingLocalId to determine how to enqueue
+              const cached = await getCachedSheet(sheetId);
+              if (!cached) return;
+              const cachedRow = cached.rows.find(r => r.id === input.id);
+              if (input.id > 0) {
+                // Existing server row — enqueue direct update
+                enqueueSyncAction({
+                  type: "updateServerRow",
+                  serverId: input.id,
+                  payload: updates,
+                });
+              } else if (cachedRow?.pendingLocalId) {
+                // New offline row — enqueue update keyed by pendingLocalId
+                enqueueSyncAction({
+                  type: "updatePendingRow",
+                  pendingLocalId: cachedRow.pendingLocalId,
+                  payload: updates,
+                });
+              }
+              // Refresh offline rows display
+              const converted = cached.rows.map(r => ({
+                id: r.id,
+                sheetId,
+                rowNumber: r.rowNumber,
+                time: r.time ?? null,
+                observation: r.observation ?? null,
+                timeMinutes: null,
+                isLocked: false,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+                members: r.members.map((name, idx) => ({
+                  id: idx,
+                  rowId: r.id,
+                  memberName: name,
+                  sortOrder: idx,
+                  createdAt: new Date(),
+                })),
+                certifications: [] as NonNullable<
+                  typeof rows
+                >[0]["certifications"],
+              })) as unknown as NonNullable<typeof rows>;
+              setOfflineRows(converted);
+              setHasPendingOfflineChanges(true);
+            })
+            .catch(() => {});
+        }
+      },
+    }),
+    [isOnline, _updateRowOnline, sheetId, rows]
+  );
 
   // ── Live possible-duplicate check on observation save ──────────────────────
   // Before an edited observation actually saves, extract its entities the same
@@ -2080,7 +2136,14 @@ export default function SheetDetail() {
   // existing entity. Any near-miss matches are queued and shown one at a time
   // via EntityDuplicateDialog; the real save only fires once the queue (which
   // may be empty) is drained, so this never silently loses an edit.
-  type RowSaveInput = { id: number; time?: string; timeMinutes?: number; dayOffset?: number; rowDate?: string; observation?: string };
+  type RowSaveInput = {
+    id: number;
+    time?: string;
+    timeMinutes?: number;
+    dayOffset?: number;
+    rowDate?: string;
+    observation?: string;
+  };
   interface PendingDupe {
     type: DedupType;
     label: string;
@@ -2089,44 +2152,56 @@ export default function SheetDetail() {
   const [dupeQueue, setDupeQueue] = useState<PendingDupe[]>([]);
   const [dupeIndex, setDupeIndex] = useState(0);
   const [dupeDialogOpen, setDupeDialogOpen] = useState(false);
-  const [pendingSaveInput, setPendingSaveInput] = useState<RowSaveInput | null>(null);
+  const [pendingSaveInput, setPendingSaveInput] = useState<RowSaveInput | null>(
+    null
+  );
 
-  const updateRowWithDupeCheck = useCallback(async (input: RowSaveInput) => {
-    // Offline, or no meaningful observation text — nothing to fuzzy-check, save directly.
-    if (!isOnline || !input.observation || !input.observation.trim()) {
-      updateRow.mutate(input);
-      return;
-    }
-    try {
-      const extracted = await utils.intelligence.previewEntities.fetch({ text: input.observation });
-      const relevant = extracted.filter((e) => e.type !== "unknown");
-      const queue: PendingDupe[] = [];
-      const seen = new Set<string>();
-      for (const e of relevant) {
-        const dedupeKey = `${e.type}::${e.shortForm.toLowerCase()}`;
-        if (seen.has(dedupeKey)) continue;
-        seen.add(dedupeKey);
-        const matches = await utils.intelligence.checkPossibleDuplicates.fetch({
-          type: e.type as DedupType,
-          label: e.shortForm,
-        });
-        if (matches.length > 0) {
-          queue.push({ type: e.type as DedupType, label: e.shortForm, match: matches[0] });
-        }
-      }
-      if (queue.length === 0) {
+  const updateRowWithDupeCheck = useCallback(
+    async (input: RowSaveInput) => {
+      // Offline, or no meaningful observation text — nothing to fuzzy-check, save directly.
+      if (!isOnline || !input.observation || !input.observation.trim()) {
         updateRow.mutate(input);
         return;
       }
-      setPendingSaveInput(input);
-      setDupeQueue(queue);
-      setDupeIndex(0);
-      setDupeDialogOpen(true);
-    } catch {
-      // If the duplicate check itself fails for any reason, don't block the save.
-      updateRow.mutate(input);
-    }
-  }, [isOnline, updateRow, utils]);
+      try {
+        const extracted = await utils.intelligence.previewEntities.fetch({
+          text: input.observation,
+        });
+        const relevant = extracted.filter(e => e.type !== "unknown");
+        const queue: PendingDupe[] = [];
+        const seen = new Set<string>();
+        for (const e of relevant) {
+          const dedupeKey = `${e.type}::${e.shortForm.toLowerCase()}`;
+          if (seen.has(dedupeKey)) continue;
+          seen.add(dedupeKey);
+          const matches =
+            await utils.intelligence.checkPossibleDuplicates.fetch({
+              type: e.type as DedupType,
+              label: e.shortForm,
+            });
+          if (matches.length > 0) {
+            queue.push({
+              type: e.type as DedupType,
+              label: e.shortForm,
+              match: matches[0],
+            });
+          }
+        }
+        if (queue.length === 0) {
+          updateRow.mutate(input);
+          return;
+        }
+        setPendingSaveInput(input);
+        setDupeQueue(queue);
+        setDupeIndex(0);
+        setDupeDialogOpen(true);
+      } catch {
+        // If the duplicate check itself fails for any reason, don't block the save.
+        updateRow.mutate(input);
+      }
+    },
+    [isOnline, updateRow, utils]
+  );
 
   function handleDupeDialogResolved() {
     const nextIndex = dupeIndex + 1;
@@ -2144,138 +2219,215 @@ export default function SheetDetail() {
     }
   }
 
-  const deleteRow = useMemo(() => ({
-    isPending: _deleteRowOnline.isPending,
-    mutate: (input: { id: number }) => {
-      if (isOnline) {
-        _deleteRowOnline.mutate(input);
-      } else {
-        deletePendingRowInCachedSheet(sheetId, input.id).then(() => {
-          if (input.id > 0) {
-            enqueueSyncAction({ type: "deleteServerRow", serverId: input.id });
-          }
-          getCachedSheet(sheetId).then((cached) => {
-            if (!cached) return;
-            const converted = cached.rows
-              .filter((r) => !r.pendingDelete)
-              .map((r) => ({
-                id: r.id, sheetId, rowNumber: r.rowNumber,
-                time: r.time ?? null, observation: r.observation ?? null, timeMinutes: null,
-                isLocked: false, createdAt: new Date(), updatedAt: new Date(),
-                members: r.members.map((name, idx) => ({ id: idx, rowId: r.id, memberName: name, sortOrder: idx, createdAt: new Date() })),
-                certifications: [] as NonNullable<typeof rows>[0]["certifications"],
-              })) as unknown as NonNullable<typeof rows>;
-            setOfflineRows(converted);
-            setHasPendingOfflineChanges(true);
-          });
-        }).catch(() => {});
-      }
-    },
-  }), [isOnline, _deleteRowOnline, sheetId, rows]);
+  const deleteRow = useMemo(
+    () => ({
+      isPending: _deleteRowOnline.isPending,
+      mutate: (input: { id: number }) => {
+        if (isOnline) {
+          _deleteRowOnline.mutate(input);
+        } else {
+          deletePendingRowInCachedSheet(sheetId, input.id)
+            .then(() => {
+              if (input.id > 0) {
+                enqueueSyncAction({
+                  type: "deleteServerRow",
+                  serverId: input.id,
+                });
+              }
+              getCachedSheet(sheetId).then(cached => {
+                if (!cached) return;
+                const converted = cached.rows
+                  .filter(r => !r.pendingDelete)
+                  .map(r => ({
+                    id: r.id,
+                    sheetId,
+                    rowNumber: r.rowNumber,
+                    time: r.time ?? null,
+                    observation: r.observation ?? null,
+                    timeMinutes: null,
+                    isLocked: false,
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                    members: r.members.map((name, idx) => ({
+                      id: idx,
+                      rowId: r.id,
+                      memberName: name,
+                      sortOrder: idx,
+                      createdAt: new Date(),
+                    })),
+                    certifications: [] as NonNullable<
+                      typeof rows
+                    >[0]["certifications"],
+                  })) as unknown as NonNullable<typeof rows>;
+                setOfflineRows(converted);
+                setHasPendingOfflineChanges(true);
+              });
+            })
+            .catch(() => {});
+        }
+      },
+    }),
+    [isOnline, _deleteRowOnline, sheetId, rows]
+  );
 
   const _addMemberOnline = trpc.member.add.useMutation({
     onSuccess: invalidateRows,
-    onError: (e) => toast.error(e.message),
+    onError: e => toast.error(e.message),
   });
 
   const _removeMemberOnline = trpc.member.remove.useMutation({
     onSuccess: invalidateRows,
-    onError: (e) => toast.error(e.message),
+    onError: e => toast.error(e.message),
   });
 
   // Offline-aware addMember — updates cached sheet and queues sync action
-  const addMember = useMemo(() => ({
-    isPending: _addMemberOnline.isPending,
-    mutate: (input: { rowId: number; memberName: string }) => {
-      if (isOnline) {
-        // Store rowId for auto-sort after the query refreshes
-        const rowIdToSort = input.rowId;
-        _addMemberOnline.mutate(input, {
-          onSuccess: () => {
-            invalidateRows();
-            // Auto-sort is triggered via the autoSortRowMembers ref set up below
-            setTimeout(() => autoSortRef.current?.(rowIdToSort), 300);
-          },
-        });
-      } else {
-        // Update the cached sheet row's members array
-        getCachedSheet(sheetId).then(async (cached) => {
-          if (!cached) return;
-          const row = cached.rows.find((r) => r.id === input.rowId);
-          if (!row) return;
-          // Add member to cached row
-          const updatedRows = cached.rows.map((r) =>
-            r.id === input.rowId ? { ...r, members: [...r.members, input.memberName] } : r
-          );
-          await import("@/lib/offlineStore").then(({ saveCachedSheet }) =>
-            saveCachedSheet({ ...cached, rows: updatedRows })
-          );
-          // Enqueue sync action
-          if (input.rowId > 0) {
-            enqueueSyncAction({ type: "addMemberToServerRow", serverId: input.rowId, memberName: input.memberName });
-          } else if (row.pendingLocalId) {
-            enqueueSyncAction({ type: "addMemberToServerRow", serverId: input.rowId, pendingLocalId: row.pendingLocalId, memberName: input.memberName });
-          }
-          // Refresh display
-          const updatedCached = { ...cached, rows: updatedRows };
-          const converted = updatedCached.rows.map((r) => ({
-            id: r.id, sheetId, rowNumber: r.rowNumber,
-            time: r.time ?? null, observation: r.observation ?? null, timeMinutes: null,
-            isLocked: false, createdAt: new Date(), updatedAt: new Date(),
-            members: r.members.map((name, idx) => ({ id: idx, rowId: r.id, memberName: name, sortOrder: idx, createdAt: new Date() })),
-            certifications: [] as NonNullable<typeof rows>[0]["certifications"],
-          })) as unknown as NonNullable<typeof rows>;
-          setOfflineRows(converted);
-          setHasPendingOfflineChanges(true);
-        }).catch(() => toast.error("Failed to save member locally"));
-      }
-    },
-  }), [isOnline, _addMemberOnline, sheetId, rows]);
+  const addMember = useMemo(
+    () => ({
+      isPending: _addMemberOnline.isPending,
+      mutate: (input: { rowId: number; memberName: string }) => {
+        if (isOnline) {
+          // Store rowId for auto-sort after the query refreshes
+          const rowIdToSort = input.rowId;
+          _addMemberOnline.mutate(input, {
+            onSuccess: () => {
+              invalidateRows();
+              // Auto-sort is triggered via the autoSortRowMembers ref set up below
+              setTimeout(() => autoSortRef.current?.(rowIdToSort), 300);
+            },
+          });
+        } else {
+          // Update the cached sheet row's members array
+          getCachedSheet(sheetId)
+            .then(async cached => {
+              if (!cached) return;
+              const row = cached.rows.find(r => r.id === input.rowId);
+              if (!row) return;
+              // Add member to cached row
+              const updatedRows = cached.rows.map(r =>
+                r.id === input.rowId
+                  ? { ...r, members: [...r.members, input.memberName] }
+                  : r
+              );
+              await import("@/lib/offlineStore").then(({ saveCachedSheet }) =>
+                saveCachedSheet({ ...cached, rows: updatedRows })
+              );
+              // Enqueue sync action
+              if (input.rowId > 0) {
+                enqueueSyncAction({
+                  type: "addMemberToServerRow",
+                  serverId: input.rowId,
+                  memberName: input.memberName,
+                });
+              } else if (row.pendingLocalId) {
+                enqueueSyncAction({
+                  type: "addMemberToServerRow",
+                  serverId: input.rowId,
+                  pendingLocalId: row.pendingLocalId,
+                  memberName: input.memberName,
+                });
+              }
+              // Refresh display
+              const updatedCached = { ...cached, rows: updatedRows };
+              const converted = updatedCached.rows.map(r => ({
+                id: r.id,
+                sheetId,
+                rowNumber: r.rowNumber,
+                time: r.time ?? null,
+                observation: r.observation ?? null,
+                timeMinutes: null,
+                isLocked: false,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+                members: r.members.map((name, idx) => ({
+                  id: idx,
+                  rowId: r.id,
+                  memberName: name,
+                  sortOrder: idx,
+                  createdAt: new Date(),
+                })),
+                certifications: [] as NonNullable<
+                  typeof rows
+                >[0]["certifications"],
+              })) as unknown as NonNullable<typeof rows>;
+              setOfflineRows(converted);
+              setHasPendingOfflineChanges(true);
+            })
+            .catch(() => toast.error("Failed to save member locally"));
+        }
+      },
+    }),
+    [isOnline, _addMemberOnline, sheetId, rows]
+  );
 
   // Offline-aware removeMember — updates cached sheet and queues sync action
-  const removeMember = useMemo(() => ({
-    isPending: _removeMemberOnline.isPending,
-    mutate: (input: { id: number; rowId: number }) => {
-      if (isOnline) {
-        _removeMemberOnline.mutate(input);
-      } else {
-        getCachedSheet(sheetId).then(async (cached) => {
-          if (!cached) return;
-          const row = cached.rows.find((r) => r.id === input.rowId);
-          if (!row) return;
-          // Remove member at index `input.id` (which we use as the member index offline)
-          const updatedRows = cached.rows.map((r) => {
-            if (r.id !== input.rowId) return r;
-            // input.id is the member index (we set idx as id in the converted rows)
-            const newMembers = r.members.filter((_, idx) => idx !== input.id);
-            return { ...r, members: newMembers };
-          });
-          await import("@/lib/offlineStore").then(({ saveCachedSheet }) =>
-            saveCachedSheet({ ...cached, rows: updatedRows })
-          );
-          // Enqueue sync — best effort (member removal by name)
-          if (input.rowId > 0 && row.members[input.id]) {
-            enqueueSyncAction({ type: "removeMemberFromServerRow", serverId: input.rowId, memberName: row.members[input.id] });
-          }
-          // Refresh display
-          const updatedCached = { ...cached, rows: updatedRows };
-          const converted = updatedCached.rows.map((r) => ({
-            id: r.id, sheetId, rowNumber: r.rowNumber,
-            time: r.time ?? null, observation: r.observation ?? null, timeMinutes: null,
-            isLocked: false, createdAt: new Date(), updatedAt: new Date(),
-            members: r.members.map((name, idx) => ({ id: idx, rowId: r.id, memberName: name, sortOrder: idx, createdAt: new Date() })),
-            certifications: [] as NonNullable<typeof rows>[0]["certifications"],
-          })) as unknown as NonNullable<typeof rows>;
-          setOfflineRows(converted);
-          setHasPendingOfflineChanges(true);
-        }).catch(() => {});
-      }
-    },
-  }), [isOnline, _removeMemberOnline, sheetId, rows]);
+  const removeMember = useMemo(
+    () => ({
+      isPending: _removeMemberOnline.isPending,
+      mutate: (input: { id: number; rowId: number }) => {
+        if (isOnline) {
+          _removeMemberOnline.mutate(input);
+        } else {
+          getCachedSheet(sheetId)
+            .then(async cached => {
+              if (!cached) return;
+              const row = cached.rows.find(r => r.id === input.rowId);
+              if (!row) return;
+              // Remove member at index `input.id` (which we use as the member index offline)
+              const updatedRows = cached.rows.map(r => {
+                if (r.id !== input.rowId) return r;
+                // input.id is the member index (we set idx as id in the converted rows)
+                const newMembers = r.members.filter(
+                  (_, idx) => idx !== input.id
+                );
+                return { ...r, members: newMembers };
+              });
+              await import("@/lib/offlineStore").then(({ saveCachedSheet }) =>
+                saveCachedSheet({ ...cached, rows: updatedRows })
+              );
+              // Enqueue sync — best effort (member removal by name)
+              if (input.rowId > 0 && row.members[input.id]) {
+                enqueueSyncAction({
+                  type: "removeMemberFromServerRow",
+                  serverId: input.rowId,
+                  memberName: row.members[input.id],
+                });
+              }
+              // Refresh display
+              const updatedCached = { ...cached, rows: updatedRows };
+              const converted = updatedCached.rows.map(r => ({
+                id: r.id,
+                sheetId,
+                rowNumber: r.rowNumber,
+                time: r.time ?? null,
+                observation: r.observation ?? null,
+                timeMinutes: null,
+                isLocked: false,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+                members: r.members.map((name, idx) => ({
+                  id: idx,
+                  rowId: r.id,
+                  memberName: name,
+                  sortOrder: idx,
+                  createdAt: new Date(),
+                })),
+                certifications: [] as NonNullable<
+                  typeof rows
+                >[0]["certifications"],
+              })) as unknown as NonNullable<typeof rows>;
+              setOfflineRows(converted);
+              setHasPendingOfflineChanges(true);
+            })
+            .catch(() => {});
+        }
+      },
+    }),
+    [isOnline, _removeMemberOnline, sheetId, rows]
+  );
 
   const reorderMember = trpc.member.reorder.useMutation({
     onSuccess: invalidateRows,
-    onError: (e) => toast.error(e.message),
+    onError: e => toast.error(e.message),
   });
 
   // Uploads go straight to a plain HTTP route as raw bytes rather than
@@ -2284,14 +2436,31 @@ export default function SheetDetail() {
   // failed on weak mobile connections with a cryptic browser error. Raw
   // binary avoids both the ~33% base64 size inflation and that giant string.
   const uploadAttachment = useMutation({
-    mutationFn: async ({ rowId, blob, mimeType, fileName }: { rowId: number; blob: Blob; mimeType: string; fileName: string }) => {
-      const params = new URLSearchParams({ rowId: String(rowId), fileName, mimeType });
-      const res = await fetch(`/api/attachments/upload-raw?${params.toString()}`, {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": mimeType || "application/octet-stream" },
-        body: blob,
+    mutationFn: async ({
+      rowId,
+      blob,
+      mimeType,
+      fileName,
+    }: {
+      rowId: number;
+      blob: Blob;
+      mimeType: string;
+      fileName: string;
+    }) => {
+      const params = new URLSearchParams({
+        rowId: String(rowId),
+        fileName,
+        mimeType,
       });
+      const res = await fetch(
+        `/api/attachments/upload-raw?${params.toString()}`,
+        {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": mimeType || "application/octet-stream" },
+          body: blob,
+        }
+      );
       if (!res.ok) {
         const data = await res.json().catch(() => ({}) as { error?: string });
         throw new Error(data.error || `Upload failed (${res.status})`);
@@ -2301,48 +2470,54 @@ export default function SheetDetail() {
     // Field officers are often on weak signal — retry transient network
     // failures automatically rather than making them re-tap the photo.
     retry: 2,
-    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 4000),
+    retryDelay: attempt => Math.min(1000 * 2 ** attempt, 4000),
     onSuccess: invalidateRows,
     onError: (e: Error) => toast.error(e.message),
   });
 
   const deleteAttachment = trpc.attachment.delete.useMutation({
     onSuccess: invalidateRows,
-    onError: (e) => toast.error(e.message),
+    onError: e => toast.error(e.message),
   });
 
   const certify = trpc.certification.certify.useMutation({
-    onSuccess: (data) => {
+    onSuccess: data => {
       invalidateRows();
       if (data.rowLocked) toast.success("All members certified — row locked");
       else toast.success("Member certified");
     },
-    onError: (e) => toast.error(e.message),
+    onError: e => toast.error(e.message),
   });
 
   const uncertify = trpc.certification.uncertify.useMutation({
-    onSuccess: () => { invalidateRows(); toast.success("Certification removed — row unlocked"); },
-    onError: (e) => toast.error(e.message),
+    onSuccess: () => {
+      invalidateRows();
+      toast.success("Certification removed — row unlocked");
+    },
+    onError: e => toast.error(e.message),
   });
 
   const uncertifyAll = trpc.certification.uncertifyAll.useMutation({
-    onSuccess: () => { invalidateRows(); toast.success("All certifications removed — row unlocked"); },
-    onError: (e) => toast.error(e.message),
+    onSuccess: () => {
+      invalidateRows();
+      toast.success("All certifications removed — row unlocked");
+    },
+    onError: e => toast.error(e.message),
   });
 
   const certifyAllForCin = trpc.certification.certifyAllForCin.useMutation({
-    onSuccess: (data) => {
+    onSuccess: data => {
       invalidateRows();
       toast.success(`Certified ${data.certifiedCount} row(s) across the sheet`);
     },
-    onError: (e) => toast.error(e.message),
+    onError: e => toast.error(e.message),
   });
 
   // ─── Travelled Via auto-fill ────────────────────────────────────────────────
   // Tracks which row is currently being auto-filled (shows spinner in that cell)
   const [tvLoadingRowId, setTvLoadingRowId] = useState<number | null>(null);
   const getTravelledViaStreets = trpc.travelledVia.getStreets.useMutation({
-    onError: (e) => {
+    onError: e => {
       setTvLoadingRowId(null);
       toast.error(`TV auto-fill: ${e.message}`);
     },
@@ -2356,12 +2531,18 @@ export default function SheetDetail() {
 
   // Close / Reopen mutations
   const closeSheet = trpc.sheet.close.useMutation({
-    onSuccess: () => { utils.sheet.get.invalidate({ id: sheetId }); toast.success("Running sheet closed and locked."); },
-    onError: (e) => toast.error(e.message),
+    onSuccess: () => {
+      utils.sheet.get.invalidate({ id: sheetId });
+      toast.success("Running sheet closed and locked.");
+    },
+    onError: e => toast.error(e.message),
   });
   const reopenSheet = trpc.sheet.reopen.useMutation({
-    onSuccess: () => { utils.sheet.get.invalidate({ id: sheetId }); toast.success("Running sheet reopened."); },
-    onError: (e) => toast.error(e.message),
+    onSuccess: () => {
+      utils.sheet.get.invalidate({ id: sheetId });
+      toast.success("Running sheet reopened.");
+    },
+    onError: e => toast.error(e.message),
   });
 
   const isClosed = !!sheet?.closedAt;
@@ -2373,19 +2554,23 @@ export default function SheetDetail() {
     if (!user?.cin || !sheet?.sheetCins) return false;
     try {
       const raw: CinEntry[] = JSON.parse(sheet.sheetCins);
-      return raw.some((e) => e.isTeamLeader && e.cin.toUpperCase() === user.cin!.toUpperCase());
-    } catch { return false; }
+      return raw.some(
+        e => e.isTeamLeader && e.cin.toUpperCase() === user.cin!.toUpperCase()
+      );
+    } catch {
+      return false;
+    }
   }, [user?.cin, sheet?.sheetCins]);
   const canCloseByRole = user?.role === "admin" || isCurrentUserTeamLeader;
 
   // All rows certified check (same logic as Governance.tsx allSigned)
   const allRowsCertified = useMemo(() => {
     if (!rows || rows.length === 0) return false;
-    return rows.every((r) => {
+    return rows.every(r => {
       const members = r.members ?? [];
       if (members.length === 0) return true;
-      return members.every((m) =>
-        (r.certifications ?? []).some((c) => c.memberId === m.id && c.isActive)
+      return members.every(m =>
+        (r.certifications ?? []).some(c => c.memberId === m.id && c.isActive)
       );
     });
   }, [rows]);
@@ -2394,21 +2579,33 @@ export default function SheetDetail() {
   const govComplete = useMemo(() => {
     if (!govRecord) return false;
     const g = govRecord as Record<string, unknown>;
-    const tlDone = !!(g.summaryNotification) && !!(g.sentToIO);
-    const opDone = !!(g.savedAsWord) && !!(g.savedAsPdf) && !!(g.uploadedToPromis) && !!(g.savedInOpFolder);
+    const tlDone = !!g.summaryNotification && !!g.sentToIO;
+    const opDone =
+      !!g.savedAsWord &&
+      !!g.savedAsPdf &&
+      !!g.uploadedToPromis &&
+      !!g.savedInOpFolder;
     return tlDone && opDone;
   }, [govRecord]);
 
-  const canCloseSheet = canCloseByRole && allRowsCertified && govComplete && !isClosed;
+  const canCloseSheet =
+    canCloseByRole && allRowsCertified && govComplete && !isClosed;
 
-  const canEdit = !isClosed && (user?.role === "member" || user?.role === "admin" || user?.role === "observer");
-  const canCertify = !isClosed && (user?.role === "member" || user?.role === "admin");
+  const canEdit =
+    !isClosed &&
+    (user?.role === "member" ||
+      user?.role === "admin" ||
+      user?.role === "observer");
+  const canCertify =
+    !isClosed && (user?.role === "member" || user?.role === "admin");
 
   // Parse daily roster CINs for team expansion and Certify All
   // Sort: Team Leader first, then all others in numeric/alphabetic order
   const parsedRoster = useMemo(() => {
     try {
-      const raw = sheet?.sheetCins ? (JSON.parse(sheet.sheetCins) as CinEntry[]) : [];
+      const raw = sheet?.sheetCins
+        ? (JSON.parse(sheet.sheetCins) as CinEntry[])
+        : [];
       return [...raw].sort((a, b) => {
         if (a.isTeamLeader && !b.isTeamLeader) return -1;
         if (!a.isTeamLeader && b.isTeamLeader) return 1;
@@ -2418,48 +2615,58 @@ export default function SheetDetail() {
         if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
         return a.cin.localeCompare(b.cin);
       });
-    } catch { return []; }
+    } catch {
+      return [];
+    }
   }, [sheet?.sheetCins]);
-  const rosterCinList = useMemo(() => parsedRoster.map((e) => e.cin), [parsedRoster]);
+  const rosterCinList = useMemo(
+    () => parsedRoster.map(e => e.cin),
+    [parsedRoster]
+  );
 
   // ─── CIN auto-sort helper ────────────────────────────────────────────────────
   // After any member is added, re-sort the row's CINs: TL first, then ascending CIN number.
   // Spacers keep their relative positions. Skipped if the user has manually dragged this row.
-  const autoSortRowMembers = useCallback((rowId: number) => {
-    if (manuallyReorderedRowsRef.current.has(rowId)) return; // user has custom order
-    const currentRow = rows?.find((r) => r.id === rowId);
-    if (!currentRow || currentRow.members.length < 2) return;
+  const autoSortRowMembers = useCallback(
+    (rowId: number) => {
+      if (manuallyReorderedRowsRef.current.has(rowId)) return; // user has custom order
+      const currentRow = rows?.find(r => r.id === rowId);
+      if (!currentRow || currentRow.members.length < 2) return;
 
-    // Build canonical CIN order: TL first, then ascending numeric CIN
-    const tlCin = parsedRoster.find((e) => e.isTeamLeader)?.cin?.toUpperCase();
-    const nonSpacers = currentRow.members.filter((m) => m.memberName !== SPACER);
-    const spacers = currentRow.members.filter((m) => m.memberName === SPACER);
+      // Build canonical CIN order: TL first, then ascending numeric CIN
+      const tlCin = parsedRoster.find(e => e.isTeamLeader)?.cin?.toUpperCase();
+      const nonSpacers = currentRow.members.filter(
+        m => m.memberName !== SPACER
+      );
+      const spacers = currentRow.members.filter(m => m.memberName === SPACER);
 
-    const sorted = [...nonSpacers].sort((a, b) => {
-      const aIsLeader = tlCin && a.memberName.toUpperCase() === tlCin;
-      const bIsLeader = tlCin && b.memberName.toUpperCase() === tlCin;
-      if (aIsLeader && !bIsLeader) return -1;
-      if (!aIsLeader && bIsLeader) return 1;
-      const aNum = parseInt(a.memberName, 10);
-      const bNum = parseInt(b.memberName, 10);
-      if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
-      return a.memberName.localeCompare(b.memberName);
-    });
+      const sorted = [...nonSpacers].sort((a, b) => {
+        const aIsLeader = tlCin && a.memberName.toUpperCase() === tlCin;
+        const bIsLeader = tlCin && b.memberName.toUpperCase() === tlCin;
+        if (aIsLeader && !bIsLeader) return -1;
+        if (!aIsLeader && bIsLeader) return 1;
+        const aNum = parseInt(a.memberName, 10);
+        const bNum = parseInt(b.memberName, 10);
+        if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
+        return a.memberName.localeCompare(b.memberName);
+      });
 
-    // Re-insert spacers at their original relative positions
-    const result = [...sorted];
-    for (const sp of spacers) {
-      const origIdx = currentRow.members.indexOf(sp);
-      const clampedIdx = Math.min(origIdx, result.length);
-      result.splice(clampedIdx, 0, sp);
-    }
+      // Re-insert spacers at their original relative positions
+      const result = [...sorted];
+      for (const sp of spacers) {
+        const origIdx = currentRow.members.indexOf(sp);
+        const clampedIdx = Math.min(origIdx, result.length);
+        result.splice(clampedIdx, 0, sp);
+      }
 
-    // Only call reorder if the order actually changed
-    const changed = result.some((m, i) => m.id !== currentRow.members[i]?.id);
-    if (changed) {
-      reorderMember.mutate({ rowId, orderedIds: result.map((m) => m.id) });
-    }
-  }, [rows, parsedRoster, reorderMember]);
+      // Only call reorder if the order actually changed
+      const changed = result.some((m, i) => m.id !== currentRow.members[i]?.id);
+      if (changed) {
+        reorderMember.mutate({ rowId, orderedIds: result.map(m => m.id) });
+      }
+    },
+    [rows, parsedRoster, reorderMember]
+  );
 
   // Keep the ref in sync so the addMember useMemo (declared earlier) can call it
   autoSortRef.current = autoSortRowMembers;
@@ -2471,12 +2678,16 @@ export default function SheetDetail() {
     for (const entry of parsedRoster) {
       const cin = entry.cin;
       // Find all rows where this CIN is a member
-      const relevantRows = rows.filter((r) => r.members.some((m) => m.memberName === cin));
+      const relevantRows = rows.filter(r =>
+        r.members.some(m => m.memberName === cin)
+      );
       if (relevantRows.length === 0) continue; // not in any row yet
-      const allCertified = relevantRows.every((r) =>
+      const allCertified = relevantRows.every(r =>
         r.members
-          .filter((m) => m.memberName === cin)
-          .every((m) => r.certifications.some((c) => c.memberId === m.id && c.isActive))
+          .filter(m => m.memberName === cin)
+          .every(m =>
+            r.certifications.some(c => c.memberId === m.id && c.isActive)
+          )
       );
       if (allCertified) certified.add(cin);
     }
@@ -2487,19 +2698,45 @@ export default function SheetDetail() {
   const [searchQuery, setSearchQuery] = useState("");
   // Target panel collapsed state — expanded by default, persisted in localStorage
   const [teamPanelExpanded, setTeamPanelExpanded] = useState<boolean>(() => {
-    try { return localStorage.getItem("runsheet_team_panel_expanded") !== "false"; } catch { return true; }
+    try {
+      return localStorage.getItem("runsheet_team_panel_expanded") !== "false";
+    } catch {
+      return true;
+    }
   });
-  const [targetPanelExpanded, setTargetPanelExpanded] = useState<boolean>(() => {
-    try { return localStorage.getItem("runsheet_target_panel_expanded") !== "false"; } catch { return true; }
-  });
+  const [targetPanelExpanded, setTargetPanelExpanded] = useState<boolean>(
+    () => {
+      try {
+        return (
+          localStorage.getItem("runsheet_target_panel_expanded") !== "false"
+        );
+      } catch {
+        return true;
+      }
+    }
+  );
   // Shortcut chip order for the target panel — persisted per sheet in localStorage
   // Canonical default chip order — used when no saved order exists in localStorage
   // Generates: SC, HBF, V1F, V1, V2F, V2, V3F, V3, V4F, V4 ... (up to 8 vehicles), then fixed shortcuts, then DEP/ARR, then wild fields
   const CANONICAL_CHIP_ORDER = [
-    "SC", "HBF",
+    "SC",
+    "HBF",
     ...Array.from({ length: 8 }, (_, i) => [`V${i + 1}F`, `V${i + 1}`]).flat(),
-    "TGT", "DSO", "DR", "FP", "US", "DE", "AR", "CV", "OOS", "COOS", "PU", "PT", "RACK",
-    "DEP", "ARR",
+    "TGT",
+    "DSO",
+    "DR",
+    "FP",
+    "US",
+    "DE",
+    "AR",
+    "CV",
+    "OOS",
+    "COOS",
+    "PU",
+    "PT",
+    "RACK",
+    "DEP",
+    "ARR",
     ...Array.from({ length: 10 }, (_, i) => `#${i + 1}`),
   ];
   const [targetFieldOrder, setTargetFieldOrder] = useState<string[]>(() => {
@@ -2516,36 +2753,53 @@ export default function SheetDetail() {
           } else {
             migrated.push("ARR");
           }
-          localStorage.setItem(`runsheet_field_order_${sheetId}`, JSON.stringify(migrated));
+          localStorage.setItem(
+            `runsheet_field_order_${sheetId}`,
+            JSON.stringify(migrated)
+          );
         }
         return migrated;
       }
     } catch {}
     return CANONICAL_CHIP_ORDER;
   });
-  const handleChipDragEnd = useCallback((event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    setTargetFieldOrder(prev => {
-      // Ensure both chips are in the order array — new shortcuts/wildcards may not be
-      let base = [...prev];
-      if (!base.includes(active.id as string)) base = [...base, active.id as string];
-      if (!base.includes(over.id as string)) base = [...base, over.id as string];
-      const oldIndex = base.indexOf(active.id as string);
-      const newIndex = base.indexOf(over.id as string);
-      const next = arrayMove(base, oldIndex, newIndex);
-      try { localStorage.setItem(`runsheet_field_order_${sheetId}`, JSON.stringify(next)); } catch {}
-      return next;
-    });
-  }, [sheetId]);
+  const handleChipDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      setTargetFieldOrder(prev => {
+        // Ensure both chips are in the order array — new shortcuts/wildcards may not be
+        let base = [...prev];
+        if (!base.includes(active.id as string))
+          base = [...base, active.id as string];
+        if (!base.includes(over.id as string))
+          base = [...base, over.id as string];
+        const oldIndex = base.indexOf(active.id as string);
+        const newIndex = base.indexOf(over.id as string);
+        const next = arrayMove(base, oldIndex, newIndex);
+        try {
+          localStorage.setItem(
+            `runsheet_field_order_${sheetId}`,
+            JSON.stringify(next)
+          );
+        } catch {}
+        return next;
+      });
+    },
+    [sheetId]
+  );
   // Track the last focused textarea/input so chip taps can insert text even after blur
-  const focusedTextareaRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null);
+  const focusedTextareaRef = useRef<
+    HTMLTextAreaElement | HTMLInputElement | null
+  >(null);
   // Track the last focused textarea/input via document focusin so chip taps can insert even after blur
   useEffect(() => {
     const handler = (e: FocusEvent) => {
       const el = e.target as HTMLElement;
       if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") {
-        focusedTextareaRef.current = el as HTMLTextAreaElement | HTMLInputElement;
+        focusedTextareaRef.current = el as
+          | HTMLTextAreaElement
+          | HTMLInputElement;
       }
     };
     document.addEventListener("focusin", handler, true);
@@ -2554,21 +2808,32 @@ export default function SheetDetail() {
 
   // Persist sort preference in localStorage so it survives navigation
   const [sortReversed, setSortReversed] = useState<boolean>(() => {
-    try { return localStorage.getItem("runsheet_sort_reversed") === "true"; } catch { return false; }
+    try {
+      return localStorage.getItem("runsheet_sort_reversed") === "true";
+    } catch {
+      return false;
+    }
   });
-  const toggleSortReversed = () => setSortReversed(v => {
-    const next = !v;
-    try { localStorage.setItem("runsheet_sort_reversed", String(next)); } catch {}
-    return next;
-  });
+  const toggleSortReversed = () =>
+    setSortReversed(v => {
+      const next = !v;
+      try {
+        localStorage.setItem("runsheet_sort_reversed", String(next));
+      } catch {}
+      return next;
+    });
 
   // Edit sheet state
   const [editSheetOpen, setEditSheetOpen] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editTargetName, setEditTargetName] = useState("");
-  const [editTargetMode, setEditTargetMode] = useState<"none" | "new" | "link">("none");
+  const [editTargetMode, setEditTargetMode] = useState<"none" | "new" | "link">(
+    "none"
+  );
   const [editNewTargetName, setEditNewTargetName] = useState("");
-  const [editSelectedTargetId, setEditSelectedTargetId] = useState<number | null>(null);
+  const [editSelectedTargetId, setEditSelectedTargetId] = useState<
+    number | null
+  >(null);
 
   // Target selector
   const { data: operationTargets } = trpc.target.list.useQuery(
@@ -2576,25 +2841,33 @@ export default function SheetDetail() {
     { enabled: !!sheet?.operationId }
   );
   // All targets across all operations for the cross-op picker
-  const { data: allUsers } = trpc.users.listForCin.useQuery(undefined, { enabled: isAuthenticated });
+  const { data: allUsers } = trpc.users.listForCin.useQuery(undefined, {
+    enabled: isAuthenticated,
+  });
 
-  const { data: allTargetsForSheet } = trpc.target.listAll.useQuery(
-    undefined,
-    { enabled: isAuthenticated }
-  );
+  const { data: allTargetsForSheet } = trpc.target.listAll.useQuery(undefined, {
+    enabled: isAuthenticated,
+  });
   const [editTargetSearch, setEditTargetSearch] = useState("");
   const setSheetTarget = trpc.target.setSheetTarget.useMutation({
-    onSuccess: () => { utils.sheet.get.invalidate({ id: sheetId }); toast.success("Target updated"); },
-    onError: (e) => toast.error(e.message),
+    onSuccess: () => {
+      utils.sheet.get.invalidate({ id: sheetId });
+      toast.success("Target updated");
+    },
+    onError: e => toast.error(e.message),
   });
 
   // Shortcuts: fetch once and build a trigger→expansion map
-  const { data: shortcutsData } = trpc.shortcuts.list.useQuery(undefined, { enabled: isAuthenticated, staleTime: 0 });
+  const { data: shortcutsData } = trpc.shortcuts.list.useQuery(undefined, {
+    enabled: isAuthenticated,
+    staleTime: 0,
+  });
   // Per-target shortcuts for the sheet's assigned target
-  const { data: targetShortcutsData } = trpc.targetShortcuts.listForSheet.useQuery(
-    { sheetId: sheetId! },
-    { enabled: !!sheetId && isAuthenticated }
-  );
+  const { data: targetShortcutsData } =
+    trpc.targetShortcuts.listForSheet.useQuery(
+      { sheetId: sheetId! },
+      { enabled: !!sheetId && isAuthenticated }
+    );
   // Fetch the assigned target directly by ID (works for both legacy and registry targets)
   const { data: assignedTarget } = trpc.target.getById.useQuery(
     { id: sheet?.targetId ?? 0 },
@@ -2603,38 +2876,44 @@ export default function SheetDetail() {
   const shortcutMap = useMemo(() => {
     const map: Record<string, string> = {};
     // Global shortcuts from DB
-    for (const s of shortcutsData ?? []) map[s.trigger.toLowerCase()] = s.expansion;
+    for (const s of shortcutsData ?? [])
+      map[s.trigger.toLowerCase()] = s.expansion;
     // Target-aware shortcuts: overlay TGT/HBF/HB/V1F/V1/V2F/V2/DEP/ARR from the assigned target
     if (assignedTarget) {
       const t = assignedTarget;
-      if (t.tgt) map['tgt'] = t.tgt;
-      if (t.hbf) map['hbf'] = t.hbf;
-      if (t.hb)  map['hb']  = t.hb;
-      if (t.v1f) map['v1f'] = t.v1f;
-      if (t.v1)  map['v1']  = t.v1;
-      if (t.v2f) map['v2f'] = t.v2f;
-      if (t.v2)  map['v2']  = t.v2;
-      if (t.dep) map['dep'] = t.dep;
-      if (t.arr) map['arr'] = t.arr;
+      if (t.tgt) map["tgt"] = t.tgt;
+      if (t.hbf) map["hbf"] = t.hbf;
+      if (t.hb) map["hb"] = t.hb;
+      if (t.v1f) map["v1f"] = t.v1f;
+      if (t.v1) map["v1"] = t.v1;
+      if (t.v2f) map["v2f"] = t.v2f;
+      if (t.v2) map["v2"] = t.v2;
+      if (t.dep) map["dep"] = t.dep;
+      if (t.arr) map["arr"] = t.arr;
       // Extra vehicles (V2F/V2, V3F/V3, …)
       try {
-        const evs: Array<{ full: string; short: string }> = JSON.parse((t as any).extraVehicles ?? '[]');
+        const evs: Array<{ full: string; short: string }> = JSON.parse(
+          (t as any).extraVehicles ?? "[]"
+        );
         evs.forEach((ev, i) => {
           const num = i + 2;
-          if (ev.full)  map[`v${num}f`] = ev.full;
-          if (ev.short) map[`v${num}`]  = ev.short;
+          if (ev.full) map[`v${num}f`] = ev.full;
+          if (ev.short) map[`v${num}`] = ev.short;
         });
       } catch {}
       // Wild fields (#1, #2, …)
       try {
-        const wfs: Array<{ label: string; value: string }> = JSON.parse((t as any).wildFields ?? '[]');
-        wfs.forEach((wf) => {
+        const wfs: Array<{ label: string; value: string }> = JSON.parse(
+          (t as any).wildFields ?? "[]"
+        );
+        wfs.forEach(wf => {
           if (wf.value) map[wf.label.toLowerCase()] = wf.value;
         });
       } catch {}
     }
     // Per-target custom shortcuts (override global if same trigger)
-    for (const s of targetShortcutsData ?? []) map[s.trigger.toLowerCase()] = s.expansion;
+    for (const s of targetShortcutsData ?? [])
+      map[s.trigger.toLowerCase()] = s.expansion;
     return map;
   }, [shortcutsData, targetShortcutsData, assignedTarget]);
 
@@ -2651,7 +2930,7 @@ export default function SheetDetail() {
       setEditRosterOpen(false);
       toast.success("Sheet updated");
     },
-    onError: (e) => toast.error(e.message),
+    onError: e => toast.error(e.message),
   });
 
   const deleteSheet = trpc.sheet.delete.useMutation({
@@ -2662,12 +2941,18 @@ export default function SheetDetail() {
       if (sheet) navigate(`/operation/${sheet.operationId}`);
       else navigate("/");
     },
-    onError: (e) => toast.error(e.message),
+    onError: e => toast.error(e.message),
   });
 
-  const [pendingExportType, setPendingExportType] = useState<"pdf" | "word" | null>(null);
+  const [pendingExportType, setPendingExportType] = useState<"pdf" | null>(
+    null
+  );
   const [exportEnabled, setExportEnabled] = useState(false);
-  const { data: exportData, isFetching: exportFetching, refetch: refetchExport } = trpc.export.sheetData.useQuery(
+  const {
+    data: exportData,
+    isFetching: exportFetching,
+    refetch: refetchExport,
+  } = trpc.export.sheetData.useQuery(
     { id: sheetId },
     {
       enabled: isAuthenticated && !!sheetId && exportEnabled,
@@ -2677,26 +2962,15 @@ export default function SheetDetail() {
 
   // When export data arrives and there is a pending type, trigger the download
   useEffect(() => {
-    if (exportData && pendingExportType && sheet) {
-      if (pendingExportType === "pdf") {
-        exportToPDF(
-          sheet.title,
-          exportData.rows,
-          exportData.operation ?? null,
-          exportData.sheet.sheetCins ?? null,
-          exportData.sheet.createdAt,
-          exportData.targetFullName ?? null,
-        );
-      } else if (pendingExportType === "word") {
-        exportToWord(
-          sheet.title,
-          exportData.rows,
-          exportData.operation ?? null,
-          exportData.sheet.sheetCins ?? null,
-          exportData.sheet.createdAt,
-          exportData.targetFullName ?? null,
-        ).catch((e) => toast.error("Word export failed: " + e.message));
-      }
+    if (exportData && pendingExportType === "pdf" && sheet) {
+      exportToPDF(
+        sheet.title,
+        exportData.rows,
+        exportData.operation ?? null,
+        exportData.sheet.sheetCins ?? null,
+        exportData.sheet.createdAt,
+        exportData.targetFullName ?? null
+      );
       setPendingExportType(null);
     }
   }, [exportData, pendingExportType, sheet]);
@@ -2713,8 +2987,11 @@ export default function SheetDetail() {
 
   const openEditRoster = () => {
     const parsed: CinEntry[] = (() => {
-      try { return sheet?.sheetCins ? JSON.parse(sheet.sheetCins) : []; }
-      catch { return []; }
+      try {
+        return sheet?.sheetCins ? JSON.parse(sheet.sheetCins) : [];
+      } catch {
+        return [];
+      }
     })();
     setRosterList(parsed);
     setRosterInput("");
@@ -2722,50 +2999,72 @@ export default function SheetDetail() {
   };
 
   const handleAddRosterTeam = (teamKey: "TEAM1" | "TEAM2" | "PTT") => {
-    if (!allUsers) { toast.error("User list not available"); return; }
-    const members = allUsers.filter((u) => u.team === teamKey);
-    if (members.length === 0) { toast.error("No members found in that team"); return; }
+    if (!allUsers) {
+      toast.error("User list not available");
+      return;
+    }
+    const members = allUsers.filter(u => u.team === teamKey);
+    if (members.length === 0) {
+      toast.error("No members found in that team");
+      return;
+    }
     let added = 0;
-    setRosterList((prev) => {
+    setRosterList(prev => {
       let updated = [...prev];
       for (const m of members) {
-        if (!updated.some((c) => c.cin.toLowerCase() === m.cin.toLowerCase())) {
-          updated = [...updated, { cin: m.cin, hasImages: false, isTeamLeader: false, isAuthor: false }];
+        if (!updated.some(c => c.cin.toLowerCase() === m.cin.toLowerCase())) {
+          updated = [
+            ...updated,
+            {
+              cin: m.cin,
+              hasImages: false,
+              isTeamLeader: false,
+              isAuthor: false,
+            },
+          ];
           added++;
         }
       }
       return updated;
     });
     if (added === 0) toast.info("All team members already added");
-    else toast.success(`Added ${added} member${added !== 1 ? "s" : ""} from ${teamKey.replace("TEAM", "TEAM ")}`);
+    else
+      toast.success(
+        `Added ${added} member${added !== 1 ? "s" : ""} from ${teamKey.replace("TEAM", "TEAM ")}`
+      );
   };
 
   const handleAddRosterCin = () => {
     const trimmed = rosterInput.trim().toUpperCase();
     if (!trimmed) return;
     // Must be a registered user
-    const registeredCins = new Set((allUsers ?? []).map((u) => u.cin.toUpperCase()));
+    const registeredCins = new Set(
+      (allUsers ?? []).map(u => u.cin.toUpperCase())
+    );
     if (!registeredCins.has(trimmed)) {
       toast.error(`CIN "${trimmed}" is not a registered user`);
       return;
     }
-    if (rosterList.some((c) => c.cin.toUpperCase() === trimmed)) {
+    if (rosterList.some(c => c.cin.toUpperCase() === trimmed)) {
       toast.error("CIN already in team");
       return;
     }
-    setRosterList((prev) => [...prev, { cin: trimmed, hasImages: false, isTeamLeader: false, isAuthor: false }]);
+    setRosterList(prev => [
+      ...prev,
+      { cin: trimmed, hasImages: false, isTeamLeader: false, isAuthor: false },
+    ]);
     setRosterInput("");
     setRosterInputValid(false);
   };
 
-  const handleExport = useCallback((type: "pdf" | "word" = "pdf") => {
+  const handleExport = useCallback(() => {
     if (!sheet) return;
     if (exportData && !exportFetching) {
-      setPendingExportType(type);
+      setPendingExportType("pdf");
       refetchExport();
       return;
     }
-    setPendingExportType(type);
+    setPendingExportType("pdf");
     setExportEnabled(true);
   }, [sheet, exportData, exportFetching, refetchExport]);
 
@@ -2785,14 +3084,21 @@ export default function SheetDetail() {
     // so we explicitly re-sort here to get the correct insertion sequence.
     const timedByRowNumber = [...displayRows]
       .filter((r: NonNullable<typeof rows>[0]) => r.timeMinutes != null)
-      .sort((a: NonNullable<typeof rows>[0], b: NonNullable<typeof rows>[0]) => a.rowNumber - b.rowNumber);
+      .sort(
+        (a: NonNullable<typeof rows>[0], b: NonNullable<typeof rows>[0]) =>
+          a.rowNumber - b.rowNumber
+      );
     const map = new Map<number, number>();
 
     // Find the earliest rowDate among all rows that have one (day-0 anchor)
     const allRowDates = timedByRowNumber
-      .map((r: NonNullable<typeof rows>[0]) => (r as any).rowDate as string | null | undefined)
+      .map(
+        (r: NonNullable<typeof rows>[0]) =>
+          (r as any).rowDate as string | null | undefined
+      )
       .filter((d): d is string => !!d);
-    const minRowDate = allRowDates.length > 0 ? allRowDates.slice().sort()[0] : null;
+    const minRowDate =
+      allRowDates.length > 0 ? allRowDates.slice().sort()[0] : null;
 
     // First pass: assign offsets from rowDate (highest priority) or stored dayOffset (legacy)
     for (const r of timedByRowNumber) {
@@ -2828,32 +3134,48 @@ export default function SheetDetail() {
   // True when any row in this sheet has a day offset > 0 (sheet has crossed midnight)
   const sheetHasCrossedMidnight = useMemo(() => {
     if (!displayRows) return false;
-    return Array.from(rowDayOffsetMap.values()).some((v) => v > 0);
+    return Array.from(rowDayOffsetMap.values()).some(v => v > 0);
   }, [displayRows, rowDayOffsetMap]);
 
   const filteredRows = useMemo(() => {
     if (!displayRows) return [];
-    const filtered = !searchQuery.trim() ? displayRows : displayRows.filter((row: NonNullable<typeof rows>[0]) => {
-      const q = searchQuery.toLowerCase();
-      if (row.time?.toLowerCase().includes(q)) return true;
-      if (row.observation?.toLowerCase().includes(q)) return true;
-      if (row.members?.some((m: { memberName: string }) => m.memberName.toLowerCase().includes(q))) return true;
-      return false;
-    });
+    const filtered = !searchQuery.trim()
+      ? displayRows
+      : displayRows.filter((row: NonNullable<typeof rows>[0]) => {
+          const q = searchQuery.toLowerCase();
+          if (row.time?.toLowerCase().includes(q)) return true;
+          if (row.observation?.toLowerCase().includes(q)) return true;
+          if (
+            row.members?.some((m: { memberName: string }) =>
+              m.memberName.toLowerCase().includes(q)
+            )
+          )
+            return true;
+          return false;
+        });
     // Rows with no time set ALWAYS float to the top (newest/being filled in)
-    const withTime = filtered.filter((row: NonNullable<typeof rows>[0]) => row.timeMinutes != null);
-    const noTime = filtered.filter((row: NonNullable<typeof rows>[0]) => row.timeMinutes == null);
+    const withTime = filtered.filter(
+      (row: NonNullable<typeof rows>[0]) => row.timeMinutes != null
+    );
+    const noTime = filtered.filter(
+      (row: NonNullable<typeof rows>[0]) => row.timeMinutes == null
+    );
     const effectiveMinutes = (row: NonNullable<typeof rows>[0]) =>
       (row.timeMinutes ?? 0) + (rowDayOffsetMap.get(row.id) ?? 0) * 1440;
     // Sort timed rows by effective (day-offset) timeMinutes, then rowNumber as tie-break
-    const sortedWithTime = [...withTime].sort((a: NonNullable<typeof rows>[0], b: NonNullable<typeof rows>[0]) => {
-      const timeDiff = effectiveMinutes(a) - effectiveMinutes(b);
-      if (timeDiff !== 0) return sortReversed ? -timeDiff : timeDiff;
-      return sortReversed ? (b.rowNumber - a.rowNumber) : (a.rowNumber - b.rowNumber);
-    });
+    const sortedWithTime = [...withTime].sort(
+      (a: NonNullable<typeof rows>[0], b: NonNullable<typeof rows>[0]) => {
+        const timeDiff = effectiveMinutes(a) - effectiveMinutes(b);
+        if (timeDiff !== 0) return sortReversed ? -timeDiff : timeDiff;
+        return sortReversed
+          ? b.rowNumber - a.rowNumber
+          : a.rowNumber - b.rowNumber;
+      }
+    );
     // No-time rows sorted by descending rowNumber (most recently added first)
-    const sortedNoTime = [...noTime].sort((a: NonNullable<typeof rows>[0], b: NonNullable<typeof rows>[0]) =>
-      b.rowNumber - a.rowNumber
+    const sortedNoTime = [...noTime].sort(
+      (a: NonNullable<typeof rows>[0], b: NonNullable<typeof rows>[0]) =>
+        b.rowNumber - a.rowNumber
     );
     // No-time rows always at the TOP regardless of sort direction
     return [...sortedNoTime, ...sortedWithTime];
@@ -2868,7 +3190,12 @@ export default function SheetDetail() {
       <div className="p-6 lg:p-8">
         {/* Header */}
         <div className="flex items-center gap-4 mb-6">
-          <Button variant="ghost" size="icon" className="shrink-0" onClick={() => window.history.back()}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0"
+            onClick={() => window.history.back()}
+          >
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div className="min-w-0 flex items-center gap-2">
@@ -2877,7 +3204,9 @@ export default function SheetDetail() {
             ) : (
               <>
                 <div className="min-w-0">
-                  <h1 className="text-xl font-semibold text-foreground truncate">{sheet?.title}</h1>
+                  <h1 className="text-xl font-semibold text-foreground truncate">
+                    {sheet?.title}
+                  </h1>
                 </div>
                 {sheet && (
                   <>
@@ -2893,7 +3222,10 @@ export default function SheetDetail() {
                       </Button>
                     )}
                     {isClosed && (
-                      <Badge variant="secondary" className="gap-1.5 bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300 shrink-0">
+                      <Badge
+                        variant="secondary"
+                        className="gap-1.5 bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300 shrink-0"
+                      >
                         <LockKeyhole className="w-3 h-3" />
                         CLOSED
                       </Badge>
@@ -2914,15 +3246,20 @@ export default function SheetDetail() {
                     ) : (
                       <WifiOff className="w-3.5 h-3.5" />
                     )}
-                    {hasPendingOfflineChanges ? "Offline — changes queued" : "Offline"}
+                    {hasPendingOfflineChanges
+                      ? "Offline — changes queued"
+                      : "Offline"}
                   </div>
                 </TooltipTrigger>
-                <TooltipContent>No internet connection. Changes are saved locally and will sync automatically when you reconnect.</TooltipContent>
+                <TooltipContent>
+                  No internet connection. Changes are saved locally and will
+                  sync automatically when you reconnect.
+                </TooltipContent>
               </Tooltip>
             )}
             {/* Close / Reopen button */}
-            {canManageClose && (
-              isClosed ? (
+            {canManageClose &&
+              (isClosed ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
@@ -2936,7 +3273,9 @@ export default function SheetDetail() {
                       Reopen
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Reopen this running sheet for editing</TooltipContent>
+                  <TooltipContent>
+                    Reopen this running sheet for editing
+                  </TooltipContent>
                 </Tooltip>
               ) : (
                 <Tooltip>
@@ -2949,7 +3288,9 @@ export default function SheetDetail() {
                           ? "border-emerald-500 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950"
                           : "opacity-40 cursor-not-allowed"
                       }`}
-                      onClick={() => canCloseSheet && closeSheet.mutate({ id: sheetId })}
+                      onClick={() =>
+                        canCloseSheet && closeSheet.mutate({ id: sheetId })
+                      }
                       disabled={!canCloseSheet || closeSheet.isPending}
                     >
                       <LockKeyhole className="w-4 h-4" />
@@ -2968,54 +3309,38 @@ export default function SheetDetail() {
                             : "Close sheet"}
                   </TooltipContent>
                 </Tooltip>
-              )
-            )}
-            {/* Export dropdown */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-2"
-                  disabled={exportFetching}
-                >
-                  <Download className="w-4 h-4" />
-                  {exportFetching ? "Preparing..." : "Export"}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem
-                  className="gap-2 cursor-pointer"
-                  onClick={() => handleExport("pdf")}
-                >
-                  <FileText className="w-4 h-4 text-rose-400" />
-                  Print / Save PDF
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="gap-2 cursor-pointer"
-                  onClick={() => handleExport("word")}
-                >
-                  <FileText className="w-4 h-4 text-blue-400" />
-                  Download Word (.docx)
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-
+              ))}
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-2"
+              disabled={exportFetching}
+              onClick={handleExport}
+            >
+              <Download className="w-4 h-4" />
+              {exportFetching ? "Preparing..." : "Export PDF"}
+            </Button>
           </div>
         </div>
 
         {/* Tab switcher */}
         <div className="flex gap-1 mb-5 border-b border-border">
-          <button
-            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground border-b-2 border-primary -mb-px transition-colors"
-          >
+          <button className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground border-b-2 border-primary -mb-px transition-colors">
             <FileText className="w-4 h-4" />
             Running Sheet
           </button>
           <button
             className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-            onClick={() => navigate(`/governance/${sheetId}`)}
+            onClick={() => navigate(`/summary/${sheetId}`, { replace: true })}
+          >
+            <NotebookText className="w-4 h-4" />
+            Summary
+          </button>
+          <button
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+            onClick={() =>
+              navigate(`/governance/${sheetId}`, { replace: true })
+            }
           >
             <ClipboardCheck className="w-4 h-4" />
             Governance
@@ -3027,9 +3352,14 @@ export default function SheetDetail() {
           <div className="mb-4 flex items-center gap-3 rounded-lg border border-slate-300 bg-slate-100 dark:border-slate-600 dark:bg-slate-800/60 px-4 py-3">
             <LockKeyhole className="w-4 h-4 text-slate-500 shrink-0" />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">This running sheet is closed and locked</p>
+              <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                This running sheet is closed and locked
+              </p>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Closed by <span className="font-mono font-semibold">{sheet.closedByCIN}</span>
+                Closed by{" "}
+                <span className="font-mono font-semibold">
+                  {sheet.closedByCIN}
+                </span>
                 {" on "}
                 {new Date(sheet.closedAt!).toLocaleString()}
               </p>
@@ -3059,18 +3389,27 @@ export default function SheetDetail() {
                 onClick={() => {
                   const next = !teamPanelExpanded;
                   setTeamPanelExpanded(next);
-                  try { localStorage.setItem("runsheet_team_panel_expanded", String(next)); } catch {}
+                  try {
+                    localStorage.setItem(
+                      "runsheet_team_panel_expanded",
+                      String(next)
+                    );
+                  } catch {}
                 }}
               >
                 <Users className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground truncate flex-1">TEAM — CERTIFY</span>
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground truncate flex-1">
+                  TEAM — CERTIFY
+                </span>
                 {/* Certified count badge */}
                 {parsedRoster.length > 0 && (
                   <span className="text-[10px] font-mono text-muted-foreground mr-1">
                     {cinFullyCertified.size}/{parsedRoster.length}
                   </span>
                 )}
-                <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 shrink-0 ${teamPanelExpanded ? "" : "-rotate-90"}`} />
+                <ChevronDown
+                  className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 shrink-0 ${teamPanelExpanded ? "" : "-rotate-90"}`}
+                />
               </button>
               {/* Edit pencil — independent tap zone, doesn't trigger collapse */}
               {sheet && (
@@ -3088,28 +3427,54 @@ export default function SheetDetail() {
               <div className="px-4 pb-3">
                 {parsedRoster.length > 0 ? (
                   <div className="flex flex-wrap gap-2">
-                    {parsedRoster.map((entry) => (
+                    {parsedRoster.map(entry => (
                       <button
                         key={entry.cin}
-                        onClick={() => canCertify ? certifyAllForCin.mutate({ sheetId, cin: entry.cin }) : undefined}
+                        onClick={() =>
+                          canCertify
+                            ? certifyAllForCin.mutate({
+                                sheetId,
+                                cin: entry.cin,
+                              })
+                            : undefined
+                        }
                         disabled={certifyAllForCin.isPending || !canCertify}
                         className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-mono font-medium transition-colors disabled:opacity-50 ${
                           cinFullyCertified.has(entry.cin)
                             ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/25"
-                            : canCertify ? "border-border bg-muted/40 hover:bg-primary/10 hover:border-primary/40 text-foreground" : "border-border bg-muted/40 text-foreground cursor-default"
+                            : canCertify
+                              ? "border-border bg-muted/40 hover:bg-primary/10 hover:border-primary/40 text-foreground"
+                              : "border-border bg-muted/40 text-foreground cursor-default"
                         }`}
                         title={`${canCertify ? "Certify all rows for " : ""}CIN ${entry.cin}${entry.isTeamLeader ? " (Team Leader)" : ""}${entry.isAuthor ? " (Author)" : ""}`}
                       >
-                        <ShieldCheck className={`w-3 h-3 ${cinFullyCertified.has(entry.cin) ? "text-emerald-500" : "text-primary"}`} />
-                        {entry.isTeamLeader && <span className="text-yellow-400" title="Team Leader">★</span>}
-                        {entry.isAuthor && <span className="text-sky-400" title="Running Sheet Author">✏️</span>}
+                        <ShieldCheck
+                          className={`w-3 h-3 ${cinFullyCertified.has(entry.cin) ? "text-emerald-500" : "text-primary"}`}
+                        />
+                        {entry.isTeamLeader && (
+                          <span className="text-yellow-400" title="Team Leader">
+                            ★
+                          </span>
+                        )}
+                        {entry.isAuthor && (
+                          <span
+                            className="text-sky-400"
+                            title="Running Sheet Author"
+                          >
+                            ✏️
+                          </span>
+                        )}
                         {entry.cin}
-                        {entry.hasImages && <Camera className="w-3 h-3 text-amber-400" />}
+                        {entry.hasImages && (
+                          <Camera className="w-3 h-3 text-amber-400" />
+                        )}
                       </button>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-xs text-muted-foreground italic">No team members added — tap the pencil to add CINs.</p>
+                  <p className="text-xs text-muted-foreground italic">
+                    No team members added — tap the pencil to add CINs.
+                  </p>
                 )}
               </div>
             )}
@@ -3119,194 +3484,332 @@ export default function SheetDetail() {
         {/* TARGET Panel — target card fields (when assigned) plus entity
             chips mined from this sheet's own observations, in one panel so
             officers see every quick-insert chip together. */}
-        {((sheet?.targetId && assignedTarget) || (entityChips && entityChips.length > 0)) && (() => {
-          const t = assignedTarget;
-          const hasTarget = !!(sheet?.targetId && t);
-          // Build dynamic extra vehicle fields from JSON
-          const extraVehicleFields: { label: string; value: string | null }[] = [];
-          if (t) {
-            try {
-              const evs: Array<{ full: string; short: string }> = JSON.parse((t as any).extraVehicles ?? '[]');
-              evs.forEach((ev, i) => {
-                const num = i + 2;
-                if (ev.full)  extraVehicleFields.push({ label: `V${num}F`, value: ev.full });
-                if (ev.short) extraVehicleFields.push({ label: `V${num}`,  value: ev.short });
-              });
-            } catch {}
-          }
-          // Build wild fields
-          const wildFieldItems: { label: string; value: string | null }[] = [];
-          if (t) {
-            try {
-              const wfs: Array<{ label: string; value: string }> = JSON.parse((t as any).wildFields ?? '[]');
-              wfs.forEach((wf) => { if (wf.value) wildFieldItems.push({ label: wf.label, value: wf.value }); });
-            } catch {}
-          }
-          const fields: { label: string; value: string | null }[] = t ? [
-            { label: "TGT", value: t.tgt },
-            { label: "HBF", value: t.hbf },
-            { label: "HB",  value: t.hb  },
-            { label: "V1F", value: t.v1f },
-            { label: "V1",  value: t.v1 ?? null },
-            ...extraVehicleFields,
-            ...wildFieldItems,
-            { label: "DEP", value: t.dep },
-            // All shortcut-folder triggers as chips — only those with showInRs=true, exclude legacy 'D' chip
-             ...(shortcutsData ?? []).filter((s) => s.trigger.toUpperCase() !== "D" && !!s.showInRs).map((s) => ({ label: s.trigger.toUpperCase(), value: s.expansion })),
-          ] : [];
-          const hasAnyField = fields.some((f) => f.value);
-          const hasEntityChips = !!(entityChips && entityChips.length > 0);
-          return (
-            <div className="mb-4 rounded-lg border border-border bg-card/60 overflow-hidden">
-              {/* Header — always visible. Tapping the main area toggles collapse; pencil navigates to edit */}
-              <div className="flex items-center">
-                <button
-                  className="flex-1 flex items-center gap-2 px-4 py-3 hover:bg-muted/20 active:bg-muted/30 transition-colors select-none text-left min-w-0"
-                  onClick={() => setTargetPanelExpanded(v => {
-                    const next = !v;
-                    try { localStorage.setItem("runsheet_target_panel_expanded", String(next)); } catch {}
-                    return next;
-                  })}
-                >
-                  {hasTarget ? <Target className="w-3.5 h-3.5 text-muted-foreground shrink-0" /> : <Tag className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
-                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground truncate flex-1">{hasTarget ? `TARGET — ${t!.name}` : "SHORTCUTS"}</span>
-                  <ChevronDown
-                    className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 shrink-0 ${targetPanelExpanded ? "" : "-rotate-90"}`}
-                  />
-                </button>
-                {/* Edit pencil — independent tap zone, doesn't trigger collapse */}
-                {hasTarget && (
+        {((sheet?.targetId && assignedTarget) ||
+          (entityChips && entityChips.length > 0)) &&
+          (() => {
+            const t = assignedTarget;
+            const hasTarget = !!(sheet?.targetId && t);
+            // Build dynamic extra vehicle fields from JSON
+            const extraVehicleFields: {
+              label: string;
+              value: string | null;
+            }[] = [];
+            if (t) {
+              try {
+                const evs: Array<{ full: string; short: string }> = JSON.parse(
+                  (t as any).extraVehicles ?? "[]"
+                );
+                evs.forEach((ev, i) => {
+                  const num = i + 2;
+                  if (ev.full)
+                    extraVehicleFields.push({
+                      label: `V${num}F`,
+                      value: ev.full,
+                    });
+                  if (ev.short)
+                    extraVehicleFields.push({
+                      label: `V${num}`,
+                      value: ev.short,
+                    });
+                });
+              } catch {}
+            }
+            // Build wild fields
+            const wildFieldItems: { label: string; value: string | null }[] =
+              [];
+            if (t) {
+              try {
+                const wfs: Array<{ label: string; value: string }> = JSON.parse(
+                  (t as any).wildFields ?? "[]"
+                );
+                wfs.forEach(wf => {
+                  if (wf.value)
+                    wildFieldItems.push({ label: wf.label, value: wf.value });
+                });
+              } catch {}
+            }
+            const fields: { label: string; value: string | null }[] = t
+              ? [
+                  { label: "TGT", value: t.tgt },
+                  { label: "HBF", value: t.hbf },
+                  { label: "HB", value: t.hb },
+                  { label: "V1F", value: t.v1f },
+                  { label: "V1", value: t.v1 ?? null },
+                  ...extraVehicleFields,
+                  ...wildFieldItems,
+                  { label: "DEP", value: t.dep },
+                  // All shortcut-folder triggers as chips — only those with showInRs=true, exclude legacy 'D' chip
+                  ...(shortcutsData ?? [])
+                    .filter(
+                      s => s.trigger.toUpperCase() !== "D" && !!s.showInRs
+                    )
+                    .map(s => ({
+                      label: s.trigger.toUpperCase(),
+                      value: s.expansion,
+                    })),
+                ]
+              : [];
+            const hasAnyField = fields.some(f => f.value);
+            const hasEntityChips = !!(entityChips && entityChips.length > 0);
+            return (
+              <div className="mb-4 rounded-lg border border-border bg-card/60 overflow-hidden">
+                {/* Header — always visible. Tapping the main area toggles collapse; pencil navigates to edit */}
+                <div className="flex items-center">
                   <button
-                    className="px-3 py-3 text-muted-foreground hover:text-foreground active:scale-95 transition-all shrink-0 border-l border-border/30"
-                    onClick={() => navigate(`/operation/${sheet!.operationId}?tab=target&targetId=${t!.id}&fromSheet=${sheetId}`)}
-                    title="Edit Target"
+                    className="flex-1 flex items-center gap-2 px-4 py-3 hover:bg-muted/20 active:bg-muted/30 transition-colors select-none text-left min-w-0"
+                    onClick={() =>
+                      setTargetPanelExpanded(v => {
+                        const next = !v;
+                        try {
+                          localStorage.setItem(
+                            "runsheet_target_panel_expanded",
+                            String(next)
+                          );
+                        } catch {}
+                        return next;
+                      })
+                    }
                   >
-                    <Pencil className="w-3.5 h-3.5" />
+                    {hasTarget ? (
+                      <Target className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    ) : (
+                      <Tag className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    )}
+                    <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground truncate flex-1">
+                      {hasTarget ? `TARGET — ${t!.name}` : "SHORTCUTS"}
+                    </span>
+                    <ChevronDown
+                      className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 shrink-0 ${targetPanelExpanded ? "" : "-rotate-90"}`}
+                    />
                   </button>
-                )}
-              </div>
-              {/* Collapsible details */}
-              {targetPanelExpanded && (() => {
-                // Apply saved order to the fields list
-                const visibleFields = fields.filter((f) => f.value);
-                const isWildcard = (lbl: string) => /^#\d+$/.test(lbl);
-                const nonWildVisible = visibleFields.filter(f => !isWildcard(f.label));
-                const wildcardVisible = visibleFields.filter(f => isWildcard(f.label));
-                const orderedNonWild = targetFieldOrder.length > 0
-                  ? [
-                      ...targetFieldOrder.filter(lbl => !isWildcard(lbl)).map(lbl => nonWildVisible.find(f => f.label === lbl)).filter(Boolean) as typeof visibleFields,
-                      ...nonWildVisible.filter(f => !targetFieldOrder.includes(f.label)),
-                    ]
-                  : nonWildVisible;
-                // Wildcards always at the end, in their saved order
-                const orderedWild = targetFieldOrder.length > 0
-                  ? [
-                      ...targetFieldOrder.filter(isWildcard).map(lbl => wildcardVisible.find(f => f.label === lbl)).filter(Boolean) as typeof visibleFields,
-                      ...wildcardVisible.filter(f => !targetFieldOrder.includes(f.label)),
-                    ]
-                  : wildcardVisible;
-                const orderedFields = [...orderedNonWild, ...orderedWild];
-                return (
-                  <div className="px-4 pb-3 border-t border-border/40">
-                    {hasAnyField && (() => {
-                      const shortcutFolderLabels = new Set((shortcutsData ?? []).map(s => s.trigger.toUpperCase()));
-                      const TRIGGER_ONLY_LABELS = new Set(["TGT", "HBF", "HB", "V1F", "V2F", "DEP"]);
-                      return (
-                        <DndContext
-                          sensors={chipSensors}
-                          collisionDetection={closestCenter}
-                          onDragEnd={handleChipDragEnd}
-                        >
-                          <SortableContext items={orderedFields.map(f => f.label)} strategy={horizontalListSortingStrategy}>
-                            <div className="flex flex-wrap gap-1.5 pt-2">
-                              {orderedFields.map((f) => {
-                                const insertIntoFocused = () => {
-                                  const el = focusedTextareaRef.current;
-                                  if (el) {
-                                    el.focus();
-                                    const start = el.selectionStart ?? el.value.length;
-                                    const end = el.selectionEnd ?? el.value.length;
-                                    const before = el.value.slice(0, start);
-                                    const after = el.value.slice(end);
-                                    const insert = (before && !before.endsWith(" ")) ? ` ${f.value!}` : f.value!;
-                                    try {
-                                      document.execCommand("insertText", false, insert);
-                                    } catch {
-                                      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set
-                                        || Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
-                                      if (nativeInputValueSetter) {
-                                        nativeInputValueSetter.call(el, before + insert + after);
-                                        el.dispatchEvent(new Event("input", { bubbles: true }));
-                                      }
-                                    }
-                                  }
-                                };
-                                const isVnShort = /^V\d+$/.test(f.label);
-                                const isVnFull  = /^V\d+F$/.test(f.label);
-                                const isStandard = !isVnShort && (shortcutFolderLabels.has(f.label) || TRIGGER_ONLY_LABELS.has(f.label) || isVnFull);
-                                return (
-                                  <SortableChip
-                                    key={f.label}
-                                    id={f.label}
-                                    label={f.label}
-                                    value={f.value}
-                                    showValue={isVnShort || !isStandard}
-                                    onInsert={insertIntoFocused}
-                                  />
-                                );
-                              })}
-                            </div>
-                          </SortableContext>
-                        </DndContext>
-                      );
-                    })()}
-                    {/* Entity chips — quick-insert shortcuts mined from this sheet's own
+                  {/* Edit pencil — independent tap zone, doesn't trigger collapse */}
+                  {hasTarget && (
+                    <button
+                      className="px-3 py-3 text-muted-foreground hover:text-foreground active:scale-95 transition-all shrink-0 border-l border-border/30"
+                      onClick={() =>
+                        navigate(
+                          `/operation/${sheet!.operationId}?tab=target&targetId=${t!.id}&fromSheet=${sheetId}`
+                        )
+                      }
+                      title="Edit Target"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+                {/* Collapsible details */}
+                {targetPanelExpanded &&
+                  (() => {
+                    // Apply saved order to the fields list
+                    const visibleFields = fields.filter(f => f.value);
+                    const isWildcard = (lbl: string) => /^#\d+$/.test(lbl);
+                    const nonWildVisible = visibleFields.filter(
+                      f => !isWildcard(f.label)
+                    );
+                    const wildcardVisible = visibleFields.filter(f =>
+                      isWildcard(f.label)
+                    );
+                    const orderedNonWild =
+                      targetFieldOrder.length > 0
+                        ? [
+                            ...(targetFieldOrder
+                              .filter(lbl => !isWildcard(lbl))
+                              .map(lbl =>
+                                nonWildVisible.find(f => f.label === lbl)
+                              )
+                              .filter(Boolean) as typeof visibleFields),
+                            ...nonWildVisible.filter(
+                              f => !targetFieldOrder.includes(f.label)
+                            ),
+                          ]
+                        : nonWildVisible;
+                    // Wildcards always at the end, in their saved order
+                    const orderedWild =
+                      targetFieldOrder.length > 0
+                        ? [
+                            ...(targetFieldOrder
+                              .filter(isWildcard)
+                              .map(lbl =>
+                                wildcardVisible.find(f => f.label === lbl)
+                              )
+                              .filter(Boolean) as typeof visibleFields),
+                            ...wildcardVisible.filter(
+                              f => !targetFieldOrder.includes(f.label)
+                            ),
+                          ]
+                        : wildcardVisible;
+                    const orderedFields = [...orderedNonWild, ...orderedWild];
+                    return (
+                      <div className="px-4 pb-3 border-t border-border/40">
+                        {hasAnyField &&
+                          (() => {
+                            const shortcutFolderLabels = new Set(
+                              (shortcutsData ?? []).map(s =>
+                                s.trigger.toUpperCase()
+                              )
+                            );
+                            const TRIGGER_ONLY_LABELS = new Set([
+                              "TGT",
+                              "HBF",
+                              "HB",
+                              "V1F",
+                              "V2F",
+                              "DEP",
+                            ]);
+                            return (
+                              <DndContext
+                                sensors={chipSensors}
+                                collisionDetection={closestCenter}
+                                onDragEnd={handleChipDragEnd}
+                              >
+                                <SortableContext
+                                  items={orderedFields.map(f => f.label)}
+                                  strategy={horizontalListSortingStrategy}
+                                >
+                                  <div className="flex flex-wrap gap-1.5 pt-2">
+                                    {orderedFields.map(f => {
+                                      const insertIntoFocused = () => {
+                                        const el = focusedTextareaRef.current;
+                                        if (el) {
+                                          el.focus();
+                                          const start =
+                                            el.selectionStart ??
+                                            el.value.length;
+                                          const end =
+                                            el.selectionEnd ?? el.value.length;
+                                          const before = el.value.slice(
+                                            0,
+                                            start
+                                          );
+                                          const after = el.value.slice(end);
+                                          const insert =
+                                            before && !before.endsWith(" ")
+                                              ? ` ${f.value!}`
+                                              : f.value!;
+                                          try {
+                                            document.execCommand(
+                                              "insertText",
+                                              false,
+                                              insert
+                                            );
+                                          } catch {
+                                            const nativeInputValueSetter =
+                                              Object.getOwnPropertyDescriptor(
+                                                window.HTMLTextAreaElement
+                                                  .prototype,
+                                                "value"
+                                              )?.set ||
+                                              Object.getOwnPropertyDescriptor(
+                                                window.HTMLInputElement
+                                                  .prototype,
+                                                "value"
+                                              )?.set;
+                                            if (nativeInputValueSetter) {
+                                              nativeInputValueSetter.call(
+                                                el,
+                                                before + insert + after
+                                              );
+                                              el.dispatchEvent(
+                                                new Event("input", {
+                                                  bubbles: true,
+                                                })
+                                              );
+                                            }
+                                          }
+                                        }
+                                      };
+                                      const isVnShort = /^V\d+$/.test(f.label);
+                                      const isVnFull = /^V\d+F$/.test(f.label);
+                                      const isStandard =
+                                        !isVnShort &&
+                                        (shortcutFolderLabels.has(f.label) ||
+                                          TRIGGER_ONLY_LABELS.has(f.label) ||
+                                          isVnFull);
+                                      return (
+                                        <SortableChip
+                                          key={f.label}
+                                          id={f.label}
+                                          label={f.label}
+                                          value={f.value}
+                                          showValue={isVnShort || !isStandard}
+                                          onInsert={insertIntoFocused}
+                                        />
+                                      );
+                                    })}
+                                  </div>
+                                </SortableContext>
+                              </DndContext>
+                            );
+                          })()}
+                        {/* Entity chips — quick-insert shortcuts mined from this sheet's own
                         observations (surname / short address / vehicle rego), one line
                         under the fixed chips above, shared across every officer viewing
                         the sheet since they come from the server, not a per-device setting. */}
-                    {hasEntityChips && (
-                      <div className="flex flex-wrap gap-1.5 pt-2">
-                        {entityChips!.map((chip) => {
-                          const insertIntoFocused = () => {
-                            const el = focusedTextareaRef.current;
-                            if (!el) return;
-                            el.focus();
-                            const start = el.selectionStart ?? el.value.length;
-                            const end = el.selectionEnd ?? el.value.length;
-                            const before = el.value.slice(0, start);
-                            const after = el.value.slice(end);
-                            const insert = (before && !before.endsWith(" ")) ? ` ${chip.insertValue}` : chip.insertValue;
-                            try {
-                              document.execCommand("insertText", false, insert);
-                            } catch {
-                              const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set
-                                || Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
-                              if (nativeInputValueSetter) {
-                                nativeInputValueSetter.call(el, before + insert + after);
-                                el.dispatchEvent(new Event("input", { bubbles: true }));
-                              }
-                            }
-                          };
-                          return (
-                            <button
-                              key={chip.key}
-                              onMouseDown={(e) => e.preventDefault()}
-                              onClick={insertIntoFocused}
-                              title={`Insert: ${chip.insertValue}`}
-                              className="px-2 py-0.5 rounded border border-violet-500/30 bg-violet-500/5 text-violet-400 hover:bg-violet-500/15 active:scale-95 transition-all select-none cursor-pointer"
-                            >
-                              <span className="text-[10px] font-mono max-w-[140px] truncate">{chip.insertValue}</span>
-                            </button>
-                          );
-                        })}
+                        {hasEntityChips && (
+                          <div className="flex flex-wrap gap-1.5 pt-2">
+                            {entityChips!.map(chip => {
+                              const insertIntoFocused = () => {
+                                const el = focusedTextareaRef.current;
+                                if (!el) return;
+                                el.focus();
+                                const start =
+                                  el.selectionStart ?? el.value.length;
+                                const end = el.selectionEnd ?? el.value.length;
+                                const before = el.value.slice(0, start);
+                                const after = el.value.slice(end);
+                                const insert =
+                                  before && !before.endsWith(" ")
+                                    ? ` ${chip.insertValue}`
+                                    : chip.insertValue;
+                                try {
+                                  document.execCommand(
+                                    "insertText",
+                                    false,
+                                    insert
+                                  );
+                                } catch {
+                                  const nativeInputValueSetter =
+                                    Object.getOwnPropertyDescriptor(
+                                      window.HTMLTextAreaElement.prototype,
+                                      "value"
+                                    )?.set ||
+                                    Object.getOwnPropertyDescriptor(
+                                      window.HTMLInputElement.prototype,
+                                      "value"
+                                    )?.set;
+                                  if (nativeInputValueSetter) {
+                                    nativeInputValueSetter.call(
+                                      el,
+                                      before + insert + after
+                                    );
+                                    el.dispatchEvent(
+                                      new Event("input", { bubbles: true })
+                                    );
+                                  }
+                                }
+                              };
+                              return (
+                                <button
+                                  key={chip.key}
+                                  onMouseDown={e => e.preventDefault()}
+                                  onClick={insertIntoFocused}
+                                  title={`Insert: ${chip.insertValue}`}
+                                  className="px-2 py-0.5 rounded border border-violet-500/30 bg-violet-500/5 text-violet-400 hover:bg-violet-500/15 active:scale-95 transition-all select-none cursor-pointer"
+                                >
+                                  <span className="text-[10px] font-mono max-w-[140px] truncate">
+                                    {chip.insertValue}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                );
-              })()}
-            </div>
-          );
-        })()}
+                    );
+                  })()}
+              </div>
+            );
+          })()}
 
         {/* Search bar + sort toggle + add row */}
         <div className="mb-4 flex items-center gap-2">
@@ -3334,26 +3837,30 @@ export default function SheetDetail() {
                 <ArrowUpDown className="w-4 h-4" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>{sortReversed ? "Showing newest first — click to show oldest first" : "Showing oldest first — click to show newest first"}</TooltipContent>
+            <TooltipContent>
+              {sortReversed
+                ? "Showing newest first — click to show oldest first"
+                : "Showing oldest first — click to show newest first"}
+            </TooltipContent>
           </Tooltip>
-        <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by time, observation, or CIN…"
-            className="w-full pl-9 pr-4 py-2 text-sm bg-card border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40 text-foreground placeholder:text-muted-foreground"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search by time, observation, or CIN…"
+              className="w-full pl-9 pr-4 py-2 text-sm bg-card border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40 text-foreground placeholder:text-muted-foreground"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Table */}
@@ -3361,11 +3868,15 @@ export default function SheetDetail() {
           <div className="overflow-x-auto">
             {isLoading ? (
               <div className="p-6 flex flex-col gap-3">
-                {[1, 2, 3].map((i) => <Skeleton key={i} className="h-16 rounded-lg" />)}
+                {[1, 2, 3].map(i => (
+                  <Skeleton key={i} className="h-16 rounded-lg" />
+                ))}
               </div>
             ) : !rows || rows.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-center">
-                <p className="text-muted-foreground text-sm">No rows yet. Click "Add Row" to begin.</p>
+                <p className="text-muted-foreground text-sm">
+                  No rows yet. Click "Add Row" to begin.
+                </p>
               </div>
             ) : (
               <table className="running-sheet-table w-full">
@@ -3379,260 +3890,457 @@ export default function SheetDetail() {
                 </thead>
                 <tbody>
                   {filteredRows.length === 0 && searchQuery ? (
-                    <tr><td colSpan={4} className="py-12 text-center text-sm text-muted-foreground italic">No rows match your search.</td></tr>
-                  ) : filteredRows.reduce((acc: React.ReactNode[], row: NonNullable<typeof rows>[0], idx: number) => {
-                    // ── Date-divider: insert a separator row when the day offset changes ──
-                    // In ascending order: divider goes BEFORE the first day-N row.
-                    // In reversed order: divider goes AFTER the last day-N row (i.e. before
-                    // the current row which belongs to an earlier day).
-                    if (row.timeMinutes != null) {
-                      const prevTimedRow = [...filteredRows].slice(0, idx).reverse().find((r: NonNullable<typeof rows>[0]) => r.timeMinutes != null);
-                      if (prevTimedRow) {
-                        const prevDay = rowDayOffsetMap.get(prevTimedRow.id) ?? 0;
-                        const curDay = rowDayOffsetMap.get(row.id) ?? 0;
-                        if (curDay !== prevDay) {
-                          // The divider label always shows the HIGHER day (the later calendar day)
-                          const laterDay = Math.max(prevDay, curDay);
-                          // Prefer an explicit rowDate from a row on that day
-                          const rowOnLaterDay = filteredRows.find(
-                            (r: NonNullable<typeof rows>[0]) =>
-                              (rowDayOffsetMap.get(r.id) ?? 0) === laterDay && (r as any).rowDate
-                          );
-                          let label: string;
-                          if (rowOnLaterDay && (rowOnLaterDay as any).rowDate) {
-                            label = formatPerthDateLabel((rowOnLaterDay as any).rowDate as string);
-                          } else {
-                            const sheetStartMs = sheet?.createdAt ? new Date(sheet.createdAt).getTime() : Date.now();
-                            const labelDate = new Date(sheetStartMs + laterDay * 24 * 60 * 60 * 1000);
-                            label = labelDate.toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: PERTH_TIME_ZONE }).toUpperCase();
-                          }
-                          const dividerRow = (
-                            <tr key={`divider-${row.id}`} className="date-divider-row">
-                              <td colSpan={4} className="py-1.5 px-4">
-                                <div className="flex items-center gap-3">
-                                  <div className="flex-1 h-px bg-border" />
-                                  <span className="text-[10px] font-semibold tracking-widest text-muted-foreground whitespace-nowrap">{label}</span>
-                                  <div className="flex-1 h-px bg-border" />
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                          // Always insert divider before the current row.
-                          // In ascending: divider sits above the first day-N row.
-                          // In reversed: the reduce sees rows newest-first, so the day
-                          // boundary is detected when we hit the first lower-day row;
-                          // inserting the divider before that row places it correctly
-                          // between the higher-day rows above and lower-day rows below.
-                          acc.push(dividerRow);
-                        }
-                      }
-                    }
-                    acc.push(
-                    <tr
-                      key={row.id}
-                      className={row.isLocked ? "row-locked" : "hover:bg-accent/20"}
-                    >
-                      {/* Time */}
-                      <td>
-                         <TimePickerCell
-                          value={row.time}
-                          locked={row.isLocked}
-                          dayOffset={(row as any).dayOffset ?? 0}
-                          rowDate={(row as any).rowDate ?? null}
-                          inferredRowDate={(() => {
-                            if (!sheetHasCrossedMidnight) return null;
-                            // Compute inferred date from day offset + sheet start date
-                            const dayOff = rowDayOffsetMap.get(row.id) ?? 0;
-                            const sheetStartMs = sheet?.createdAt ? new Date(sheet.createdAt).getTime() : Date.now();
-                            const d = new Date(sheetStartMs + dayOff * 86400000);
-                            return new Intl.DateTimeFormat("en-CA", { timeZone: PERTH_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
-                          })()}
-                          sheetHasCrossedMidnight={sheetHasCrossedMidnight}
-                          sheetCreatedAt={sheet?.createdAt ? new Date(sheet.createdAt).getTime() : null}
-                          onSave={(display, mins, dayOff, rd) => updateRow.mutate({ id: row.id, time: display, timeMinutes: mins, dayOffset: dayOff, rowDate: rd })}
-                        />
+                    <tr>
+                      <td
+                        colSpan={4}
+                        className="py-12 text-center text-sm text-muted-foreground italic"
+                      >
+                        No rows match your search.
                       </td>
-
-                      {/* Observation */}
-                      <td>
-                        {tvLoadingRowId === row.id ? (
-                          <div className="flex items-center gap-2 py-2 px-1 text-sm text-muted-foreground">
-                            <svg className="animate-spin h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                            </svg>
-                            Fetching route streets…
-                          </div>
-                        ) : (
-                          <EditableCell
-                            value={row.observation}
-                            locked={row.isLocked}
-                            multiline
-                            placeholder="Enter observation…"
-                            onSave={(val) => {
-                              // ── TV trigger: detect case-insensitive "tv" as the entire cell value ──
-                              if (val.trim().toLowerCase() === "tv") {
-                                // Find this row's index in filteredRows
-                                const rowIdx = filteredRows.findIndex((r: NonNullable<typeof rows>[0]) => r.id === row.id);
-                                if (rowIdx < 0) { updateRowWithDupeCheck({ id: row.id, observation: val }); return; }
-                                // Get the row immediately before and after in the display list
-                                const prevRow = rowIdx > 0 ? filteredRows[rowIdx - 1] : null;
-                                const nextRow = rowIdx < filteredRows.length - 1 ? filteredRows[rowIdx + 1] : null;
-                                if (!prevRow || !nextRow) {
-                                  toast.error("TV auto-fill: no surrounding rows found. Add a departing row above and arriving row below first.");
-                                  updateRowWithDupeCheck({ id: row.id, observation: val });
-                                  return;
-                                }
-                                // Extract address text from surrounding observation cells.
-                                // The observation text is a full sentence like:
-                                //   "Vehicle 1ICW519 STROP driver and sole occupant, departed 27 Olding Way, MELVILLE WA (27 Olding Way)"
-                                // Strategy (in priority order):
-                                //   1. Bracket code at end of text: "(27 Olding Way)" → "27 Olding Way"
-                                //   2. Street number pattern anywhere in text: "27 Olding Way" extracted from sentence
-                                //   3. Full first line as last resort
-                                const prevObs = prevRow.observation ?? "";
-                                const nextObs = nextRow.observation ?? "";
-
-                                const extractAddressFromObs = (obs: string): string => {
-                                  if (!obs) return "";
-                                  // 1. Bracket code at end: (27 Olding Way)
-                                  const bracketMatch = obs.match(/\(([^)]{3,80})\)\s*$/);
-                                  if (bracketMatch) return bracketMatch[1].trim();
-                                  // 2. Street number pattern: digits followed by street name.
-                                  //    Matches things like "27 Olding Way", "131A Lakey Street", "3/12 Smith St".
-                                  //    Extra words must also be capitalised so this stops at the street name
-                                  //    instead of swallowing trailing sentence text like "and continued via"
-                                  //    (lowercase words never continue a street name).
-                                  const streetMatch = obs.match(/\b(\d{1,5}[A-Za-z]?(?:\/\d{1,5}[A-Za-z]?)?\s+[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){0,3})/);
-                                  if (streetMatch) return streetMatch[1].trim();
-                                  // 3. Last resort: full text (server will try to geocode it)
-                                  return obs.split("\n")[0].trim();
-                                }
-
-                                // A bare street mention like "departed 45 Scott Street and continued
-                                // via:" has no suburb, which Google's geocoder often can't resolve on
-                                // its own. Scan every row in the sheet for a bracketed full address
-                                // sighting of the same street (e.g. "45 Scott Street, KOONGAMIA WA (45
-                                // Scott Street)") and prefer that — same enrichment the RS Map feature
-                                // already does for its own address matching.
-                                const knownAddressMap = new Map<string, string>();
-                                const bracketedAddrRe = /\b(\d{1,5}[A-Za-z]?(?:\/\d{1,5}[A-Za-z]?)?\s+[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){0,3},\s*[A-Z][A-Z ]{1,30}(?:\s+WA)?)\s*\(([^)]{3,80})\)/g;
-                                for (const r of filteredRows) {
-                                  if (!r.observation) continue;
-                                  bracketedAddrRe.lastIndex = 0;
-                                  let m: RegExpExecArray | null;
-                                  while ((m = bracketedAddrRe.exec(r.observation)) !== null) {
-                                    const key = m[2].trim().toLowerCase();
-                                    if (!knownAddressMap.has(key)) knownAddressMap.set(key, m[1].trim());
-                                  }
-                                }
-                                const enrichAddress = (addr: string): string => knownAddressMap.get(addr.toLowerCase()) ?? addr;
-
-                                const departAddr = enrichAddress(extractAddressFromObs(prevObs));
-                                const arriveAddr = enrichAddress(extractAddressFromObs(nextObs));
-                                if (!departAddr || !arriveAddr) {
-                                  toast.error("TV auto-fill: could not extract addresses from surrounding rows.");
-                                  updateRowWithDupeCheck({ id: row.id, observation: val });
-                                  return;
-                                }
-                                // Show spinner and call the server
-                                setTvLoadingRowId(row.id);
-                                getTravelledViaStreets.mutate(
-                                  {
-                                    departAddress: departAddr,
-                                    arriveAddress: arriveAddr,
-                                    // Pass full observation text so server can extract
-                                    // the correct suburb directly from the text
-                                    departObsText: prevObs,
-                                    arriveObsText: nextObs,
-                                  },
-                                  {
-                                    onSuccess: (data) => {
-                                      setTvLoadingRowId(null);
-                                      updateRowWithDupeCheck({ id: row.id, observation: data.streets });
-                                      toast.success("Travelled via streets auto-filled");
-                                      // TV means the whole team travelled together — auto-add any
-                                      // roster CINs not already on this row, sequenced the same way
-                                      // as the "★ Add all team CINs" dropdown option below.
-                                      if (rosterCinList.length > 0) {
-                                        const existingNames = new Set(row.members.map((m) => m.memberName));
-                                        const missingCins = rosterCinList.filter((cin) => !existingNames.has(cin));
-                                        const addSequentially = (cins: string[], idx: number) => {
-                                          if (idx >= cins.length) return;
-                                          addMember.mutate({ rowId: row.id, memberName: cins[idx] });
-                                          setTimeout(() => addSequentially(cins, idx + 1), 80);
-                                        };
-                                        addSequentially(missingCins, 0);
-                                      }
-                                    },
-                                    onError: () => {
-                                      setTvLoadingRowId(null);
-                                      // Error toast already shown by mutation onError
-                                      updateRowWithDupeCheck({ id: row.id, observation: val });
-                                    },
-                                  }
-                                );
-                                return;
-                              }
-                              // Normal save
-                              updateRowWithDupeCheck({ id: row.id, observation: val });
-                            }}
-                            shortcuts={shortcutMap}
-                          />
-                        )}
-                        <ObservationAttachments
-                          row={row}
-                          canEdit={canEdit && !row.isLocked}
-                          onUpload={(rowId, blob, mimeType, fileName) => uploadAttachment.mutate({ rowId, blob, mimeType, fileName })}
-                          onDelete={(id) => deleteAttachment.mutate({ id })}
-                          uploading={uploadAttachment.isPending}
-                          deletePending={deleteAttachment.isPending}
-                          operationId={sheet?.operationId}
-                        />
-                      </td>
-
-                      {/* Member / CIN */}
-                      <td>
-                        <MemberCell
-                          row={row}
-                          canEdit={canEdit}
-                          onAddMember={(rowId, name) => addMember.mutate({ rowId, memberName: name })}
-                          onRemoveMember={(id, rowId) => {
-                            const rowData = rows?.find((r) => r.id === rowId);
-                            if (rowData?.isLocked) {
-                              // Row is locked — uncertify all first, then remove
-                              uncertifyAll.mutate({ rowId }, {
-                                onSuccess: () => removeMember.mutate({ id, rowId }),
-                              });
-                            } else {
-                              removeMember.mutate({ id, rowId });
-                            }
-                          }}
-                          onReorderMembers={(rowId, orderedIds) => reorderMember.mutate({ rowId, orderedIds })}
-                          onManualReorder={markManualReorder}
-                          rosterCins={rosterCinList}
-                        />
-                      </td>
-
-                      {/* Certify */}
-                      <td>
-                        <CertifyCell
-                          row={row}
-                          canCertify={canCertify}
-                          onCertify={(rowId, memberId) => certify.mutate({ rowId, memberId })}
-                          onUncertify={(rowId, memberId) => uncertify.mutate({ rowId, memberId })}
-                          onUncertifyAll={(rowId) => uncertifyAll.mutate({ rowId })}
-                          onDeleteRow={canCertify ? (rowId) => {
-                            if (confirm("Delete this row?")) deleteRow.mutate({ id: rowId });
-                          } : undefined}
-                        />
-                      </td>
-
-
                     </tr>
-                    );
-                    return acc;
-                  }, [] as React.ReactNode[])}
+                  ) : (
+                    filteredRows.reduce(
+                      (
+                        acc: React.ReactNode[],
+                        row: NonNullable<typeof rows>[0],
+                        idx: number
+                      ) => {
+                        // ── Date-divider: insert a separator row when the day offset changes ──
+                        // In ascending order: divider goes BEFORE the first day-N row.
+                        // In reversed order: divider goes AFTER the last day-N row (i.e. before
+                        // the current row which belongs to an earlier day).
+                        if (row.timeMinutes != null) {
+                          const prevTimedRow = [...filteredRows]
+                            .slice(0, idx)
+                            .reverse()
+                            .find(
+                              (r: NonNullable<typeof rows>[0]) =>
+                                r.timeMinutes != null
+                            );
+                          if (prevTimedRow) {
+                            const prevDay =
+                              rowDayOffsetMap.get(prevTimedRow.id) ?? 0;
+                            const curDay = rowDayOffsetMap.get(row.id) ?? 0;
+                            if (curDay !== prevDay) {
+                              // The divider label always shows the HIGHER day (the later calendar day)
+                              const laterDay = Math.max(prevDay, curDay);
+                              // Prefer an explicit rowDate from a row on that day
+                              const rowOnLaterDay = filteredRows.find(
+                                (r: NonNullable<typeof rows>[0]) =>
+                                  (rowDayOffsetMap.get(r.id) ?? 0) ===
+                                    laterDay && (r as any).rowDate
+                              );
+                              let label: string;
+                              if (
+                                rowOnLaterDay &&
+                                (rowOnLaterDay as any).rowDate
+                              ) {
+                                label = formatPerthDateLabel(
+                                  (rowOnLaterDay as any).rowDate as string
+                                );
+                              } else {
+                                const sheetStartMs = sheet?.createdAt
+                                  ? new Date(sheet.createdAt).getTime()
+                                  : Date.now();
+                                const labelDate = new Date(
+                                  sheetStartMs + laterDay * 24 * 60 * 60 * 1000
+                                );
+                                label = labelDate
+                                  .toLocaleDateString("en-AU", {
+                                    weekday: "short",
+                                    day: "numeric",
+                                    month: "short",
+                                    year: "numeric",
+                                    timeZone: PERTH_TIME_ZONE,
+                                  })
+                                  .toUpperCase();
+                              }
+                              const dividerRow = (
+                                <tr
+                                  key={`divider-${row.id}`}
+                                  className="date-divider-row"
+                                >
+                                  <td colSpan={4} className="py-1.5 px-4">
+                                    <div className="flex items-center gap-3">
+                                      <div className="flex-1 h-px bg-border" />
+                                      <span className="text-[10px] font-semibold tracking-widest text-muted-foreground whitespace-nowrap">
+                                        {label}
+                                      </span>
+                                      <div className="flex-1 h-px bg-border" />
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                              // Always insert divider before the current row.
+                              // In ascending: divider sits above the first day-N row.
+                              // In reversed: the reduce sees rows newest-first, so the day
+                              // boundary is detected when we hit the first lower-day row;
+                              // inserting the divider before that row places it correctly
+                              // between the higher-day rows above and lower-day rows below.
+                              acc.push(dividerRow);
+                            }
+                          }
+                        }
+                        acc.push(
+                          <tr
+                            key={row.id}
+                            className={
+                              row.isLocked ? "row-locked" : "hover:bg-accent/20"
+                            }
+                          >
+                            {/* Time */}
+                            <td>
+                              <TimePickerCell
+                                value={row.time}
+                                locked={row.isLocked}
+                                dayOffset={(row as any).dayOffset ?? 0}
+                                rowDate={(row as any).rowDate ?? null}
+                                inferredRowDate={(() => {
+                                  if (!sheetHasCrossedMidnight) return null;
+                                  // Compute inferred date from day offset + sheet start date
+                                  const dayOff =
+                                    rowDayOffsetMap.get(row.id) ?? 0;
+                                  const sheetStartMs = sheet?.createdAt
+                                    ? new Date(sheet.createdAt).getTime()
+                                    : Date.now();
+                                  const d = new Date(
+                                    sheetStartMs + dayOff * 86400000
+                                  );
+                                  return new Intl.DateTimeFormat("en-CA", {
+                                    timeZone: PERTH_TIME_ZONE,
+                                    year: "numeric",
+                                    month: "2-digit",
+                                    day: "2-digit",
+                                  }).format(d);
+                                })()}
+                                sheetHasCrossedMidnight={
+                                  sheetHasCrossedMidnight
+                                }
+                                sheetCreatedAt={
+                                  sheet?.createdAt
+                                    ? new Date(sheet.createdAt).getTime()
+                                    : null
+                                }
+                                onSave={(display, mins, dayOff, rd) =>
+                                  updateRow.mutate({
+                                    id: row.id,
+                                    time: display,
+                                    timeMinutes: mins,
+                                    dayOffset: dayOff,
+                                    rowDate: rd,
+                                  })
+                                }
+                              />
+                            </td>
+
+                            {/* Observation */}
+                            <td>
+                              {tvLoadingRowId === row.id ? (
+                                <div className="flex items-center gap-2 py-2 px-1 text-sm text-muted-foreground">
+                                  <svg
+                                    className="animate-spin h-4 w-4 shrink-0"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                  >
+                                    <circle
+                                      className="opacity-25"
+                                      cx="12"
+                                      cy="12"
+                                      r="10"
+                                      stroke="currentColor"
+                                      strokeWidth="4"
+                                    />
+                                    <path
+                                      className="opacity-75"
+                                      fill="currentColor"
+                                      d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+                                    />
+                                  </svg>
+                                  Fetching route streets…
+                                </div>
+                              ) : (
+                                <EditableCell
+                                  value={row.observation}
+                                  locked={row.isLocked}
+                                  multiline
+                                  placeholder="Enter observation…"
+                                  onSave={val => {
+                                    // ── TV trigger: detect case-insensitive "tv" as the entire cell value ──
+                                    if (val.trim().toLowerCase() === "tv") {
+                                      // Find this row's index in filteredRows
+                                      const rowIdx = filteredRows.findIndex(
+                                        (r: NonNullable<typeof rows>[0]) =>
+                                          r.id === row.id
+                                      );
+                                      if (rowIdx < 0) {
+                                        updateRowWithDupeCheck({
+                                          id: row.id,
+                                          observation: val,
+                                        });
+                                        return;
+                                      }
+                                      // Get the row immediately before and after in the display list
+                                      const prevRow =
+                                        rowIdx > 0
+                                          ? filteredRows[rowIdx - 1]
+                                          : null;
+                                      const nextRow =
+                                        rowIdx < filteredRows.length - 1
+                                          ? filteredRows[rowIdx + 1]
+                                          : null;
+                                      if (!prevRow || !nextRow) {
+                                        toast.error(
+                                          "TV auto-fill: no surrounding rows found. Add a departing row above and arriving row below first."
+                                        );
+                                        updateRowWithDupeCheck({
+                                          id: row.id,
+                                          observation: val,
+                                        });
+                                        return;
+                                      }
+                                      // Extract address text from surrounding observation cells.
+                                      // The observation text is a full sentence like:
+                                      //   "Vehicle 1ICW519 STROP driver and sole occupant, departed 27 Olding Way, MELVILLE WA (27 Olding Way)"
+                                      // Strategy (in priority order):
+                                      //   1. Bracket code at end of text: "(27 Olding Way)" → "27 Olding Way"
+                                      //   2. Street number pattern anywhere in text: "27 Olding Way" extracted from sentence
+                                      //   3. Full first line as last resort
+                                      const prevObs = prevRow.observation ?? "";
+                                      const nextObs = nextRow.observation ?? "";
+
+                                      const extractAddressFromObs = (
+                                        obs: string
+                                      ): string => {
+                                        if (!obs) return "";
+                                        // 1. Bracket code at end: (27 Olding Way)
+                                        const bracketMatch =
+                                          obs.match(/\(([^)]{3,80})\)\s*$/);
+                                        if (bracketMatch)
+                                          return bracketMatch[1].trim();
+                                        // 2. Street number pattern: digits followed by street name.
+                                        //    Matches things like "27 Olding Way", "131A Lakey Street", "3/12 Smith St".
+                                        //    Extra words must also be capitalised so this stops at the street name
+                                        //    instead of swallowing trailing sentence text like "and continued via"
+                                        //    (lowercase words never continue a street name).
+                                        const streetMatch = obs.match(
+                                          /\b(\d{1,5}[A-Za-z]?(?:\/\d{1,5}[A-Za-z]?)?\s+[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){0,3})/
+                                        );
+                                        if (streetMatch)
+                                          return streetMatch[1].trim();
+                                        // 3. Last resort: full text (server will try to geocode it)
+                                        return obs.split("\n")[0].trim();
+                                      };
+
+                                      // A bare street mention like "departed 45 Scott Street and continued
+                                      // via:" has no suburb, which Google's geocoder often can't resolve on
+                                      // its own. Scan every row in the sheet for a bracketed full address
+                                      // sighting of the same street (e.g. "45 Scott Street, KOONGAMIA WA (45
+                                      // Scott Street)") and prefer that — same enrichment the RS Map feature
+                                      // already does for its own address matching.
+                                      const knownAddressMap = new Map<
+                                        string,
+                                        string
+                                      >();
+                                      const bracketedAddrRe =
+                                        /\b(\d{1,5}[A-Za-z]?(?:\/\d{1,5}[A-Za-z]?)?\s+[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){0,3},\s*[A-Z][A-Z ]{1,30}(?:\s+WA)?)\s*\(([^)]{3,80})\)/g;
+                                      for (const r of filteredRows) {
+                                        if (!r.observation) continue;
+                                        bracketedAddrRe.lastIndex = 0;
+                                        let m: RegExpExecArray | null;
+                                        while (
+                                          (m = bracketedAddrRe.exec(
+                                            r.observation
+                                          )) !== null
+                                        ) {
+                                          const key = m[2].trim().toLowerCase();
+                                          if (!knownAddressMap.has(key))
+                                            knownAddressMap.set(
+                                              key,
+                                              m[1].trim()
+                                            );
+                                        }
+                                      }
+                                      const enrichAddress = (
+                                        addr: string
+                                      ): string =>
+                                        knownAddressMap.get(
+                                          addr.toLowerCase()
+                                        ) ?? addr;
+
+                                      const departAddr = enrichAddress(
+                                        extractAddressFromObs(prevObs)
+                                      );
+                                      const arriveAddr = enrichAddress(
+                                        extractAddressFromObs(nextObs)
+                                      );
+                                      if (!departAddr || !arriveAddr) {
+                                        toast.error(
+                                          "TV auto-fill: could not extract addresses from surrounding rows."
+                                        );
+                                        updateRowWithDupeCheck({
+                                          id: row.id,
+                                          observation: val,
+                                        });
+                                        return;
+                                      }
+                                      // Show spinner and call the server
+                                      setTvLoadingRowId(row.id);
+                                      getTravelledViaStreets.mutate(
+                                        {
+                                          departAddress: departAddr,
+                                          arriveAddress: arriveAddr,
+                                          // Pass full observation text so server can extract
+                                          // the correct suburb directly from the text
+                                          departObsText: prevObs,
+                                          arriveObsText: nextObs,
+                                        },
+                                        {
+                                          onSuccess: data => {
+                                            setTvLoadingRowId(null);
+                                            updateRowWithDupeCheck({
+                                              id: row.id,
+                                              observation: data.streets,
+                                            });
+                                            toast.success(
+                                              "Travelled via streets auto-filled"
+                                            );
+                                            // TV means the whole team travelled together — auto-add any
+                                            // roster CINs not already on this row, sequenced the same way
+                                            // as the "★ Add all team CINs" dropdown option below.
+                                            if (rosterCinList.length > 0) {
+                                              const existingNames = new Set(
+                                                row.members.map(
+                                                  m => m.memberName
+                                                )
+                                              );
+                                              const missingCins =
+                                                rosterCinList.filter(
+                                                  cin => !existingNames.has(cin)
+                                                );
+                                              const addSequentially = (
+                                                cins: string[],
+                                                idx: number
+                                              ) => {
+                                                if (idx >= cins.length) return;
+                                                addMember.mutate({
+                                                  rowId: row.id,
+                                                  memberName: cins[idx],
+                                                });
+                                                setTimeout(
+                                                  () =>
+                                                    addSequentially(
+                                                      cins,
+                                                      idx + 1
+                                                    ),
+                                                  80
+                                                );
+                                              };
+                                              addSequentially(missingCins, 0);
+                                            }
+                                          },
+                                          onError: () => {
+                                            setTvLoadingRowId(null);
+                                            // Error toast already shown by mutation onError
+                                            updateRowWithDupeCheck({
+                                              id: row.id,
+                                              observation: val,
+                                            });
+                                          },
+                                        }
+                                      );
+                                      return;
+                                    }
+                                    // Normal save
+                                    updateRowWithDupeCheck({
+                                      id: row.id,
+                                      observation: val,
+                                    });
+                                  }}
+                                  shortcuts={shortcutMap}
+                                />
+                              )}
+                              <ObservationAttachments
+                                row={row}
+                                canEdit={canEdit && !row.isLocked}
+                                onUpload={(rowId, blob, mimeType, fileName) =>
+                                  uploadAttachment.mutate({
+                                    rowId,
+                                    blob,
+                                    mimeType,
+                                    fileName,
+                                  })
+                                }
+                                onDelete={id => deleteAttachment.mutate({ id })}
+                                uploading={uploadAttachment.isPending}
+                                deletePending={deleteAttachment.isPending}
+                                operationId={sheet?.operationId}
+                              />
+                            </td>
+
+                            {/* Member / CIN */}
+                            <td>
+                              <MemberCell
+                                row={row}
+                                canEdit={canEdit}
+                                onAddMember={(rowId, name) =>
+                                  addMember.mutate({ rowId, memberName: name })
+                                }
+                                onRemoveMember={(id, rowId) => {
+                                  const rowData = rows?.find(
+                                    r => r.id === rowId
+                                  );
+                                  if (rowData?.isLocked) {
+                                    // Row is locked — uncertify all first, then remove
+                                    uncertifyAll.mutate(
+                                      { rowId },
+                                      {
+                                        onSuccess: () =>
+                                          removeMember.mutate({ id, rowId }),
+                                      }
+                                    );
+                                  } else {
+                                    removeMember.mutate({ id, rowId });
+                                  }
+                                }}
+                                onReorderMembers={(rowId, orderedIds) =>
+                                  reorderMember.mutate({ rowId, orderedIds })
+                                }
+                                onManualReorder={markManualReorder}
+                                rosterCins={rosterCinList}
+                              />
+                            </td>
+
+                            {/* Certify */}
+                            <td>
+                              <CertifyCell
+                                row={row}
+                                canCertify={canCertify}
+                                onCertify={(rowId, memberId) =>
+                                  certify.mutate({ rowId, memberId })
+                                }
+                                onUncertify={(rowId, memberId) =>
+                                  uncertify.mutate({ rowId, memberId })
+                                }
+                                onUncertifyAll={rowId =>
+                                  uncertifyAll.mutate({ rowId })
+                                }
+                                onDeleteRow={
+                                  canCertify
+                                    ? rowId => {
+                                        if (confirm("Delete this row?"))
+                                          deleteRow.mutate({ id: rowId });
+                                      }
+                                    : undefined
+                                }
+                              />
+                            </td>
+                          </tr>
+                        );
+                        return acc;
+                      },
+                      [] as React.ReactNode[]
+                    )
+                  )}
                 </tbody>
               </table>
             )}
@@ -3671,20 +4379,28 @@ export default function SheetDetail() {
               <Input
                 autoFocus
                 value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
+                onChange={e => setEditTitle(e.target.value)}
               />
             </div>
             <div>
-              <label className="text-sm font-medium text-foreground mb-1.5 block">Target</label>
+              <label className="text-sm font-medium text-foreground mb-1.5 block">
+                Target
+              </label>
               <div className="flex flex-col gap-2">
                 {/* Operation's existing targets — selectable */}
-                {(operationTargets ?? []).map((t) => (
+                {(operationTargets ?? []).map(t => (
                   <button
                     key={t.id}
                     type="button"
                     onClick={() => {
-                      if (editSelectedTargetId === t.id) { setEditSelectedTargetId(null); setEditTargetMode("none"); }
-                      else { setEditSelectedTargetId(t.id); setEditTargetMode("link"); setEditNewTargetName(""); }
+                      if (editSelectedTargetId === t.id) {
+                        setEditSelectedTargetId(null);
+                        setEditTargetMode("none");
+                      } else {
+                        setEditSelectedTargetId(t.id);
+                        setEditTargetMode("link");
+                        setEditNewTargetName("");
+                      }
                     }}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-colors w-full ${
                       editSelectedTargetId === t.id
@@ -3693,8 +4409,12 @@ export default function SheetDetail() {
                     }`}
                   >
                     <Target className="w-4 h-4 shrink-0" />
-                    <span className="text-sm font-medium flex-1 truncate">{t.name}</span>
-                    {editSelectedTargetId === t.id && <CheckCircle2 className="w-4 h-4 shrink-0" />}
+                    <span className="text-sm font-medium flex-1 truncate">
+                      {t.name}
+                    </span>
+                    {editSelectedTargetId === t.id && (
+                      <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    )}
                   </button>
                 ))}
 
@@ -3704,11 +4424,19 @@ export default function SheetDetail() {
                     <Input
                       placeholder="Full name, born (e.g. John SMITH, born 1 Jan 1980)"
                       value={editNewTargetName}
-                      onChange={(e) => setEditNewTargetName(e.target.value)}
+                      onChange={e => setEditNewTargetName(e.target.value)}
                       autoFocus
                       className="flex-1"
                     />
-                    <Button type="button" size="sm" variant="ghost" onClick={() => { setEditTargetMode("none"); setEditNewTargetName(""); }}>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setEditTargetMode("none");
+                        setEditNewTargetName("");
+                      }}
+                    >
                       <X className="w-3.5 h-3.5" />
                     </Button>
                   </div>
@@ -3724,62 +4452,139 @@ export default function SheetDetail() {
                         className="h-8 text-sm"
                         placeholder="Search by name, TGT code or operation…"
                         value={editTargetSearch}
-                        onChange={(e) => setEditTargetSearch(e.target.value)}
+                        onChange={e => setEditTargetSearch(e.target.value)}
                       />
-                      <Button size="sm" variant="ghost" className="shrink-0" onClick={() => { setEditTargetMode("none"); setEditTargetSearch(""); }}>Cancel</Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="shrink-0"
+                        onClick={() => {
+                          setEditTargetMode("none");
+                          setEditTargetSearch("");
+                        }}
+                      >
+                        Cancel
+                      </Button>
                     </div>
                     <div className="max-h-52 overflow-y-auto flex flex-col gap-1">
                       {(allTargetsForSheet ?? []).filter(t => {
                         const q = editTargetSearch.toLowerCase();
-                        return t.name.toLowerCase().includes(q) || (t.tgt ?? "").toLowerCase().includes(q) || (t.operationName ?? "").toLowerCase().includes(q);
+                        return (
+                          t.name.toLowerCase().includes(q) ||
+                          (t.tgt ?? "").toLowerCase().includes(q) ||
+                          (t.operationName ?? "").toLowerCase().includes(q)
+                        );
                       }).length === 0 ? (
-                        <p className="text-xs text-muted-foreground text-center py-4">{editTargetSearch ? "No matching targets" : "Start typing to search"}</p>
+                        <p className="text-xs text-muted-foreground text-center py-4">
+                          {editTargetSearch
+                            ? "No matching targets"
+                            : "Start typing to search"}
+                        </p>
                       ) : (
-                        (allTargetsForSheet ?? []).filter(t => {
-                          const q = editTargetSearch.toLowerCase();
-                          return t.name.toLowerCase().includes(q) || (t.tgt ?? "").toLowerCase().includes(q) || (t.operationName ?? "").toLowerCase().includes(q);
-                        }).map(t => (
-                          <button
-                            key={t.id}
-                            type="button"
-                            className="flex items-start gap-3 px-3 py-2 rounded-lg hover:bg-muted/60 text-left transition-colors w-full"
-                            onClick={() => { setEditSelectedTargetId(t.id); setEditTargetSearch(""); setEditTargetMode("link"); }}
-                          >
-                            <Target className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium text-foreground truncate">{t.name}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {t.tgt ? <span className="font-mono mr-2">TGT: {t.tgt}</span> : null}
-                                {t.operationName ? <span>Op: {t.operationName}</span> : null}
-                              </p>
-                            </div>
-                          </button>
-                        ))
+                        (allTargetsForSheet ?? [])
+                          .filter(t => {
+                            const q = editTargetSearch.toLowerCase();
+                            return (
+                              t.name.toLowerCase().includes(q) ||
+                              (t.tgt ?? "").toLowerCase().includes(q) ||
+                              (t.operationName ?? "").toLowerCase().includes(q)
+                            );
+                          })
+                          .map(t => (
+                            <button
+                              key={t.id}
+                              type="button"
+                              className="flex items-start gap-3 px-3 py-2 rounded-lg hover:bg-muted/60 text-left transition-colors w-full"
+                              onClick={() => {
+                                setEditSelectedTargetId(t.id);
+                                setEditTargetSearch("");
+                                setEditTargetMode("link");
+                              }}
+                            >
+                              <Target className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-foreground truncate">
+                                  {t.name}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {t.tgt ? (
+                                    <span className="font-mono mr-2">
+                                      TGT: {t.tgt}
+                                    </span>
+                                  ) : null}
+                                  {t.operationName ? (
+                                    <span>Op: {t.operationName}</span>
+                                  ) : null}
+                                </p>
+                              </div>
+                            </button>
+                          ))
                       )}
                     </div>
                   </div>
                 )}
 
                 {/* Selected linked target chip (not from operation) */}
-                {editTargetMode === "link" && editSelectedTargetId !== null && !(operationTargets ?? []).find(t => t.id === editSelectedTargetId) && (
-                  <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-primary bg-primary/10 text-primary">
-                    <Target className="w-4 h-4 shrink-0" />
-                    <span className="text-sm font-medium flex-1 truncate">{(allTargetsForSheet ?? []).find(t => t.id === editSelectedTargetId)?.name}</span>
-                    <button type="button" onClick={() => { setEditSelectedTargetId(null); setEditTargetMode("none"); }} className="hover:text-destructive"><X className="w-3.5 h-3.5" /></button>
-                  </div>
-                )}
+                {editTargetMode === "link" &&
+                  editSelectedTargetId !== null &&
+                  !(operationTargets ?? []).find(
+                    t => t.id === editSelectedTargetId
+                  ) && (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-primary bg-primary/10 text-primary">
+                      <Target className="w-4 h-4 shrink-0" />
+                      <span className="text-sm font-medium flex-1 truncate">
+                        {
+                          (allTargetsForSheet ?? []).find(
+                            t => t.id === editSelectedTargetId
+                          )?.name
+                        }
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditSelectedTargetId(null);
+                          setEditTargetMode("none");
+                        }}
+                        className="hover:text-destructive"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
 
                 {/* Action buttons */}
-                {editTargetMode !== "new" && !(editTargetMode === "link" && editSelectedTargetId === null) && (
-                  <div className="flex gap-2">
-                    <Button type="button" size="sm" variant="outline" className="gap-2" onClick={() => { setEditTargetMode("new"); setEditSelectedTargetId(null); }}>
-                      <Plus className="w-3.5 h-3.5" /> New Target
-                    </Button>
-                    <Button type="button" size="sm" variant="outline" className="gap-2" onClick={() => { setEditTargetMode("link"); setEditSelectedTargetId(null); setEditTargetSearch(""); }}>
-                      <Search className="w-3.5 h-3.5" /> Link Existing
-                    </Button>
-                  </div>
-                )}
+                {editTargetMode !== "new" &&
+                  !(
+                    editTargetMode === "link" && editSelectedTargetId === null
+                  ) && (
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="gap-2"
+                        onClick={() => {
+                          setEditTargetMode("new");
+                          setEditSelectedTargetId(null);
+                        }}
+                      >
+                        <Plus className="w-3.5 h-3.5" /> New Target
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="gap-2"
+                        onClick={() => {
+                          setEditTargetMode("link");
+                          setEditSelectedTargetId(null);
+                          setEditTargetSearch("");
+                        }}
+                      >
+                        <Search className="w-3.5 h-3.5" /> Link Existing
+                      </Button>
+                    </div>
+                  )}
               </div>
             </div>
           </div>
@@ -3791,7 +4596,11 @@ export default function SheetDetail() {
                 className="sm:mr-auto text-destructive hover:text-destructive hover:bg-destructive/10 gap-1.5"
                 disabled={deleteSheet.isPending}
                 onClick={() => {
-                  if (confirm(`Move "${sheet?.title}" to the Recycle Bin? It can be restored from there.`)) {
+                  if (
+                    confirm(
+                      `Move "${sheet?.title}" to the Recycle Bin? It can be restored from there.`
+                    )
+                  ) {
                     deleteSheet.mutate({ id: sheetId });
                   }
                 }}
@@ -3800,21 +4609,34 @@ export default function SheetDetail() {
                 {deleteSheet.isPending ? "Deleting…" : "Delete Sheet"}
               </Button>
             )}
-            <Button variant="outline" onClick={() => setEditSheetOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setEditSheetOpen(false)}>
+              Cancel
+            </Button>
             <Button
               onClick={async () => {
                 // Apply target change first if needed
                 const currentTargetId = sheet?.targetId ?? null;
-                const newTargetId = editTargetMode === "link" ? editSelectedTargetId : null;
-                if (editTargetMode === "link" && newTargetId !== currentTargetId) {
+                const newTargetId =
+                  editTargetMode === "link" ? editSelectedTargetId : null;
+                if (
+                  editTargetMode === "link" &&
+                  newTargetId !== currentTargetId
+                ) {
                   setSheetTarget.mutate({ sheetId, targetId: newTargetId });
-                } else if (editTargetMode === "none" && editSelectedTargetId === null && currentTargetId !== null) {
+                } else if (
+                  editTargetMode === "none" &&
+                  editSelectedTargetId === null &&
+                  currentTargetId !== null
+                ) {
                   setSheetTarget.mutate({ sheetId, targetId: null });
                 }
                 updateSheet.mutate({
                   id: sheetId,
                   title: editTitle.trim(),
-                  targetName: editTargetMode === "new" ? (editNewTargetName.trim() || null) : null,
+                  targetName:
+                    editTargetMode === "new"
+                      ? editNewTargetName.trim() || null
+                      : null,
                 });
               }}
               disabled={!editTitle.trim() || updateSheet.isPending}
@@ -3833,14 +4655,19 @@ export default function SheetDetail() {
           </DialogHeader>
           <div className="flex flex-col gap-4 py-2">
             <p className="text-xs text-muted-foreground">
-              Add or remove CINs from today’s team. Mark the Team Leader and Running Sheet Author. Tick the camera icon if images were taken by that member.
+              Add or remove CINs from today’s team. Mark the Team Leader and
+              Running Sheet Author. Tick the camera icon if images were taken by
+              that member.
             </p>
             <div className="flex gap-2 items-start">
               <div className="flex-1">
                 <CinInput
                   value={rosterInput}
                   onChange={setRosterInput}
-                  onValidCin={(cin) => { setRosterInput(cin); setRosterInputValid(true); }}
+                  onValidCin={cin => {
+                    setRosterInput(cin);
+                    setRosterInputValid(true);
+                  }}
                   onInvalidCin={() => setRosterInputValid(false)}
                   placeholder="Enter CIN and press Add"
                   showValidation
@@ -3858,10 +4685,10 @@ export default function SheetDetail() {
                 Add
               </Button>
             </div>
-            {allUsers && allUsers.some((u) => u.team) && (
+            {allUsers && allUsers.some(u => u.team) && (
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-xs text-muted-foreground">Add team:</span>
-                {(["TEAM1", "TEAM2", "PTT"] as const).map((t) => (
+                {(["TEAM1", "TEAM2", "PTT"] as const).map(t => (
                   <Button
                     key={t}
                     type="button"
@@ -3870,7 +4697,11 @@ export default function SheetDetail() {
                     className="h-7 px-3 text-xs font-semibold"
                     onClick={() => handleAddRosterTeam(t)}
                   >
-                    {t === "TEAM1" ? "TEAM 1" : t === "TEAM2" ? "TEAM 2" : "PTT"}
+                    {t === "TEAM1"
+                      ? "TEAM 1"
+                      : t === "TEAM2"
+                        ? "TEAM 2"
+                        : "PTT"}
                   </Button>
                 ))}
               </div>
@@ -3880,24 +4711,47 @@ export default function SheetDetail() {
                 {/* Header row */}
                 <div className="grid grid-cols-[1fr_40px_40px_40px_32px] px-3 py-2 bg-muted/40 border-b border-border text-xs font-medium text-muted-foreground">
                   <span className="flex items-center">CIN</span>
-                  <span className="flex items-center justify-center" title="Team Leader"><span className="text-yellow-400 text-sm">★</span></span>
-                  <span className="flex items-center justify-center" title="Running Sheet Author"><span className="text-sky-400 text-sm">✏</span></span>
-                  <span className="flex items-center justify-center" title="Images taken"><Camera className="w-3.5 h-3.5" /></span>
+                  <span
+                    className="flex items-center justify-center"
+                    title="Team Leader"
+                  >
+                    <span className="text-yellow-400 text-sm">★</span>
+                  </span>
+                  <span
+                    className="flex items-center justify-center"
+                    title="Running Sheet Author"
+                  >
+                    <span className="text-sky-400 text-sm">✏</span>
+                  </span>
+                  <span
+                    className="flex items-center justify-center"
+                    title="Images taken"
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                  </span>
                   <span></span>
                 </div>
-                {rosterList.map((entry) => (
+                {rosterList.map(entry => (
                   <div
                     key={entry.cin}
                     className="grid grid-cols-[1fr_40px_40px_40px_32px] px-3 py-2.5 border-b border-border/50 last:border-0 hover:bg-muted/20 transition-colors"
                   >
-                    <span className="flex items-center text-sm font-mono font-medium text-foreground">{entry.cin}</span>
+                    <span className="flex items-center text-sm font-mono font-medium text-foreground">
+                      {entry.cin}
+                    </span>
                     {/* Team Leader — radio: selecting one clears all others */}
                     <div className="flex items-center justify-center">
                       <Checkbox
                         checked={!!entry.isTeamLeader}
                         onCheckedChange={() =>
-                          setRosterList((prev) =>
-                            prev.map((c) => ({ ...c, isTeamLeader: c.cin === entry.cin ? !entry.isTeamLeader : false }))
+                          setRosterList(prev =>
+                            prev.map(c => ({
+                              ...c,
+                              isTeamLeader:
+                                c.cin === entry.cin
+                                  ? !entry.isTeamLeader
+                                  : false,
+                            }))
                           )
                         }
                         className="data-[state=checked]:bg-yellow-500 data-[state=checked]:border-yellow-500"
@@ -3908,8 +4762,12 @@ export default function SheetDetail() {
                       <Checkbox
                         checked={!!entry.isAuthor}
                         onCheckedChange={() =>
-                          setRosterList((prev) =>
-                            prev.map((c) => ({ ...c, isAuthor: c.cin === entry.cin ? !entry.isAuthor : false }))
+                          setRosterList(prev =>
+                            prev.map(c => ({
+                              ...c,
+                              isAuthor:
+                                c.cin === entry.cin ? !entry.isAuthor : false,
+                            }))
                           )
                         }
                         className="data-[state=checked]:bg-sky-500 data-[state=checked]:border-sky-500"
@@ -3920,8 +4778,12 @@ export default function SheetDetail() {
                       <Checkbox
                         checked={entry.hasImages}
                         onCheckedChange={() =>
-                          setRosterList((prev) =>
-                            prev.map((c) => c.cin === entry.cin ? { ...c, hasImages: !c.hasImages } : c)
+                          setRosterList(prev =>
+                            prev.map(c =>
+                              c.cin === entry.cin
+                                ? { ...c, hasImages: !c.hasImages }
+                                : c
+                            )
                           )
                         }
                         className="data-[state=checked]:bg-amber-500 data-[state=checked]:border-amber-500"
@@ -3929,7 +4791,11 @@ export default function SheetDetail() {
                     </div>
                     <div className="flex items-center justify-center">
                       <button
-                        onClick={() => setRosterList((prev) => prev.filter((c) => c.cin !== entry.cin))}
+                        onClick={() =>
+                          setRosterList(prev =>
+                            prev.filter(c => c.cin !== entry.cin)
+                          )
+                        }
                         className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
                       >
                         <X className="w-3.5 h-3.5" />
@@ -3939,11 +4805,15 @@ export default function SheetDetail() {
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground text-center py-4">No CINs in team yet.</p>
+              <p className="text-sm text-muted-foreground text-center py-4">
+                No CINs in team yet.
+              </p>
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditRosterOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setEditRosterOpen(false)}>
+              Cancel
+            </Button>
             <Button
               onClick={() => {
                 // Sort before saving: TL first, then numerically
@@ -3973,7 +4843,10 @@ export default function SheetDetail() {
           type={dupeQueue[dupeIndex].type}
           mode="auto"
           candidate={{ label: dupeQueue[dupeIndex].label, rowCount: 0 }}
-          existing={{ label: dupeQueue[dupeIndex].match.label, rowCount: dupeQueue[dupeIndex].match.rowCount }}
+          existing={{
+            label: dupeQueue[dupeIndex].match.label,
+            rowCount: dupeQueue[dupeIndex].match.rowCount,
+          }}
           reason={dupeQueue[dupeIndex].match.reason}
           onResolved={handleDupeDialogResolved}
         />

@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { FileDown, User, FileText, ChevronRight } from "lucide-react";
 import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
+import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 import { buildPhotoGridHtml, buildEntityListWithPhotosHtml, type RowAttachmentLike } from "@/lib/attachmentBanner";
 import { IntelEntityWithPhotos, IntelPhotoStrip, type IntelAssocEntity } from "@/components/IntelEntityChip";
 
@@ -80,7 +81,9 @@ function buildOperationProfileHtml(profile: IntelOperationProfile) {
   <div class="section-title">Target Intelligence Profiles</div>
   ${targetsHtml}
   <div class="footer"><span>RunLog — Operation Intelligence Profile</span><span>SENSITIVE — FOR OFFICIAL USE ONLY — ${generatedAt}</span></div>
-</div></body></html>`;
+</div>
+${buildExportPreviewCloseBar()}
+</body></html>`;
 }
 
 function useOperationProfile(operationId: number) {

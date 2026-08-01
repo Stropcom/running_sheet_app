@@ -10,6 +10,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
 
 // General-purpose in-app notification inbox (see notifications router /
 // drizzle schema comment) — reliable regardless of browser push
@@ -65,7 +66,10 @@ export function NotificationBell({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
-          className={`relative h-9 w-9 flex items-center justify-center rounded-lg transition-colors ${className}`}
+          className={cn(
+            "relative h-9 w-9 flex items-center justify-center rounded-lg transition-colors",
+            className
+          )}
           aria-label="Notifications"
         >
           <Bell className={iconClassName} />

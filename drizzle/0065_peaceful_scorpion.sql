@@ -1,0 +1,1 @@
+ALTER TABLE `sheet_summary_entries` MODIFY COLUMN `rowId` int;

@@ -79,41 +79,7 @@
 import { useEffect, useRef } from "react";
 import { usePersistFn } from "@/hooks/usePersistFn";
 import { cn } from "@/lib/utils";
-
-declare global {
-  interface Window {
-    google?: typeof google;
-  }
-}
-
-// A directly-owned Google Maps Platform key (set VITE_GOOGLE_MAPS_API_KEY)
-// takes priority over the Manus forge proxy, so the app works outside the
-// Manus hosting environment once you have your own key.
-const DIRECT_GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-const API_KEY = import.meta.env.VITE_FRONTEND_FORGE_API_KEY;
-const FORGE_BASE_URL =
-  import.meta.env.VITE_FRONTEND_FORGE_API_URL ||
-  "https://forge.butterfly-effect.dev";
-const MAPS_PROXY_URL = `${FORGE_BASE_URL}/v1/maps/proxy`;
-
-function loadMapScript() {
-  return new Promise(resolve => {
-    const script = document.createElement("script");
-    script.src = DIRECT_GOOGLE_MAPS_KEY
-      ? `https://maps.googleapis.com/maps/api/js?key=${DIRECT_GOOGLE_MAPS_KEY}&v=weekly&libraries=marker,places,geocoding,geometry,routes`
-      : `${MAPS_PROXY_URL}/maps/api/js?key=${API_KEY}&v=weekly&libraries=marker,places,geocoding,geometry,routes`;
-    script.async = true;
-    script.crossOrigin = "anonymous";
-    script.onload = () => {
-      resolve(null);
-      script.remove(); // Clean up immediately
-    };
-    script.onerror = () => {
-      console.error("Failed to load Google Maps script");
-    };
-    document.head.appendChild(script);
-  });
-}
+import { loadGoogleMaps } from "@/lib/googleMaps";
 
 interface MapViewProps {
   className?: string;
@@ -134,7 +100,7 @@ export function MapView({
   const map = useRef<google.maps.Map | null>(null);
 
   const init = usePersistFn(async () => {
-    await loadMapScript();
+    await loadGoogleMaps();
     if (!mapContainer.current) {
       console.error("Map container not found");
       return;

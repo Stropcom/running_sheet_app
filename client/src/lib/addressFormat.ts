@@ -38,16 +38,16 @@ const AU_STATES = "WA|NSW|VIC|QLD|SA|TAS|NT|ACT";
 const GOOGLE_ADDRESS_RE = new RegExp(
   // Optional business name: anything before the street number that ends with ", "
   `((?:[^,\\d\\n][^,\\n]*,\\s*)?)` +
-  // Street number: optional unit/number (e.g. "3/12" or "131A")
-  `(\\d{1,5}[A-Za-z]?(?:\\/\\d{1,5}[A-Za-z]?)?)\\s+` +
-  // Street name: 1-5 words
-  `([A-Za-z][\\w\\s]{2,50}?)` +
-  // Comma + suburb + state abbreviation
-  `,\\s*([A-Za-z][\\w\\s]{1,40}?\\s+(?:${AU_STATES}))` +
-  // Optional postcode
-  `(?:\\s+(\\d{4}))?` +
-  // Optional ", Australia" suffix
-  `(?:,\\s*Australia)?`,
+    // Street number: optional unit/number (e.g. "3/12" or "131A")
+    `(\\d{1,5}[A-Za-z]?(?:\\/\\d{1,5}[A-Za-z]?)?)\\s+` +
+    // Street name: 1-5 words
+    `([A-Za-z][\\w\\s]{2,50}?)` +
+    // Comma + suburb + state abbreviation
+    `,\\s*([A-Za-z][\\w\\s]{1,40}?\\s+(?:${AU_STATES}))` +
+    // Optional postcode
+    `(?:\\s+(\\d{4}))?` +
+    // Optional ", Australia" suffix
+    `(?:,\\s*Australia)?`,
   "i"
 );
 
@@ -64,16 +64,16 @@ const GOOGLE_ADDRESS_RE = new RegExp(
 const INTERSECTION_RE = new RegExp(
   // First street name (letters/words, ends before &)
   `([A-Za-z][\\w\\s]{1,40}?)` +
-  // Intersection marker: " &," or " & " or " &\n"
-  `\\s+&,?\\s+` +
-  // Second street name
-  `([A-Za-z][\\w\\s]{1,40}?)` +
-  // Comma + suburb + state
-  `,\\s*([A-Za-z][\\w\\s]{1,40}?\\s+(?:${AU_STATES}))` +
-  // Optional postcode
-  `(?:\\s+(\\d{4}))?` +
-  // Optional ", Australia"
-  `(?:,\\s*Australia)?`,
+    // Intersection marker: " &," or " & " or " &\n"
+    `\\s+&,?\\s+` +
+    // Second street name
+    `([A-Za-z][\\w\\s]{1,40}?)` +
+    // Comma + suburb + state
+    `,\\s*([A-Za-z][\\w\\s]{1,40}?\\s+(?:${AU_STATES}))` +
+    // Optional postcode
+    `(?:\\s+(\\d{4}))?` +
+    // Optional ", Australia"
+    `(?:,\\s*Australia)?`,
   "i"
 );
 
@@ -154,7 +154,7 @@ const STREET_TYPE_MAP: Record<string, string> = {
  * e.g. "Dover Rd" → "Dover Road", "Lakey St" → "Lakey Street"
  */
 function expandStreetType(streetName: string): string {
-  return streetName.replace(/\b([A-Za-z]+)$/, (match) => {
+  return streetName.replace(/\b([A-Za-z]+)$/, match => {
     const expanded = STREET_TYPE_MAP[match.toLowerCase()];
     return expanded ?? match;
   });
@@ -169,7 +169,9 @@ function toTitleCase(s: string): string {
 /** Uppercase the suburb portion of a "Suburb STATE" string, keep state as-is */
 function upperSuburb(suburbState: string): string {
   // e.g. "Scarborough WA" → "SCARBOROUGH WA", "Southern River WA" → "SOUTHERN RIVER WA"
-  const m = suburbState.trim().match(new RegExp(`^(.+?)\\s+(${AU_STATES})$`, 'i'));
+  const m = suburbState
+    .trim()
+    .match(new RegExp(`^(.+?)\\s+(${AU_STATES})$`, "i"));
   if (m) return `${m[1].trim().toUpperCase()} ${m[2].toUpperCase()}`;
   return suburbState.trim().toUpperCase();
 }
@@ -184,13 +186,17 @@ export function containsGoogleAddress(text: string): boolean {
   // Check intersection first
   const intMatch = INTERSECTION_RE.exec(text);
   if (intMatch) {
-    const afterMatch = text.slice((intMatch.index ?? 0) + intMatch[0].length).trimStart();
+    const afterMatch = text
+      .slice((intMatch.index ?? 0) + intMatch[0].length)
+      .trimStart();
     if (!afterMatch.startsWith("(")) return true;
   }
 
   const match = GOOGLE_ADDRESS_RE.exec(text);
   if (!match) return false;
-  const afterMatch = text.slice((match.index ?? 0) + match[0].length).trimStart();
+  const afterMatch = text
+    .slice((match.index ?? 0) + match[0].length)
+    .trimStart();
   if (afterMatch.startsWith("(")) return false;
   return true;
 }
@@ -221,12 +227,28 @@ export function convertGoogleAddresses(text: string): string {
   // Step 2: handle standard numbered addresses
   result = result.replace(
     new RegExp(GOOGLE_ADDRESS_RE.source, "gi"),
-    (fullMatch, businessPrefix, streetNum, streetName, suburbState, _postcode, offset, str) => {
+    (
+      fullMatch,
+      businessPrefix,
+      streetNum,
+      streetName,
+      suburbState,
+      _postcode,
+      offset,
+      str
+    ) => {
       const afterMatch = str.slice(offset + fullMatch.length).trimStart();
       if (afterMatch.startsWith("(")) return fullMatch; // already converted
 
       const streetNameClean = toTitleCase(streetName.trim());
-      const bracketCode = toTitleCase(`${streetNum} ${streetNameClean}`);
+      // Business locations use the business name as the bracket short code
+      // (e.g. "Bicton Tavern, 1 Point Walter Road, BICTON WA (Bicton Tavern)")
+      // rather than the street code plain addresses use.
+      const businessName = businessPrefix
+        ? businessPrefix.replace(/,\s*$/, "").trim()
+        : "";
+      const bracketCode =
+        businessName || toTitleCase(`${streetNum} ${streetNameClean}`);
       const cleanedAddress = `${businessPrefix ?? ""}${streetNum} ${streetNameClean}, ${upperSuburb(suburbState)}`;
       return `${cleanedAddress} (${bracketCode})`;
     }
@@ -237,18 +259,24 @@ export function convertGoogleAddresses(text: string): string {
 
 /**
  * Build a full address string from a POI (business pin) tap.
- * Prepends the business name if it's not already in the address.
- * e.g. name="Canning River Cafe", address="Kent St & Queens Park Rd, Wilson WA 6107, Australia"
- *   → "Canning River Cafe, Kent St & Queens Park Rd, Wilson WA (KENT ST & QUEENS PARK RD)"
+ * Prepends the business name if it's not already in the address, and uses
+ * the business name as the bracket short code (business locations use their
+ * name as the bracket code, not the street — see convertGoogleAddresses).
+ * e.g. name="Bicton Tavern", address="1 Point Walter Road, Bicton WA 6157, Australia"
+ *   → "Bicton Tavern, 1 Point Walter Road, BICTON WA (Bicton Tavern)"
  */
 export function buildPoiAddress(name: string, address: string): string {
   const converted = convertGoogleAddresses(address);
-  // If the business name is already at the start of the address, don't duplicate
-  if (!name || converted.toLowerCase().startsWith(name.toLowerCase())) {
-    return converted;
-  }
-  // Prepend business name
-  return `${name}, ${converted}`;
+  if (!name) return converted;
+
+  const withoutBracket = converted.replace(/\s*\([^)]{1,80}\)\s*$/, "").trim();
+  const alreadyPrefixed = withoutBracket
+    .toLowerCase()
+    .startsWith(name.toLowerCase());
+  const addressPart = alreadyPrefixed
+    ? withoutBracket
+    : `${name}, ${withoutBracket}`;
+  return `${addressPart} (${name})`;
 }
 
 /**
@@ -286,7 +314,9 @@ export function formatIntelAddress(shortForm: string): string {
   if (parts.length >= 2) {
     const lastPart = parts[parts.length - 1].trim();
     // Check if lastPart ends with a state abbreviation: "Southern River WA" or "MELVILLE WA"
-    const stateMatch = lastPart.match(/^(.*?)\s+(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)$/i);
+    const stateMatch = lastPart.match(
+      /^(.*?)\s+(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)$/i
+    );
     if (stateMatch) {
       const suburb = stateMatch[1].trim();
       // Uppercase the suburb
@@ -307,13 +337,24 @@ export function formatIntelAddress(shortForm: string): string {
     const streetSegment = finalParts[0].trim();
     // Detect all-caps street segment: all non-digit characters are uppercase
     const nonDigitChars = streetSegment.replace(/[\d\s/]/g, "");
-    if (nonDigitChars.length > 0 && nonDigitChars === nonDigitChars.toUpperCase() && /[A-Z]{2}/.test(nonDigitChars)) {
+    if (
+      nonDigitChars.length > 0 &&
+      nonDigitChars === nonDigitChars.toUpperCase() &&
+      /[A-Z]{2}/.test(nonDigitChars)
+    ) {
       // Title-case the street segment
-      finalParts[0] = " " + streetSegment.replace(/\b(\w+)/g, (w) => {
-        if (/^\d+$/.test(w)) return w;
-        if (/^(WA|NSW|VIC|QLD|SA|TAS|NT|ACT|HWY|RD|ST|AVE|DR|CT|PL|CL|CRES|BLVD|FWY|LN|TCE|PDE|CCT|GR|CNR)$/i.test(w)) return w.toUpperCase();
-        return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
-      });
+      finalParts[0] =
+        " " +
+        streetSegment.replace(/\b(\w+)/g, w => {
+          if (/^\d+$/.test(w)) return w;
+          if (
+            /^(WA|NSW|VIC|QLD|SA|TAS|NT|ACT|HWY|RD|ST|AVE|DR|CT|PL|CL|CRES|BLVD|FWY|LN|TCE|PDE|CCT|GR|CNR)$/i.test(
+              w
+            )
+          )
+            return w.toUpperCase();
+          return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+        });
       text = finalParts.join(",").trim();
     }
   }
@@ -406,21 +447,27 @@ export function extractShortVehicle(v1f: string): string {
  * Ensure an already-formatted RS address has a bracket short-form appended.
  *
  * If the address already ends with "(...)" it is returned unchanged.
- * Otherwise, the street portion (everything before the first comma) is
- * appended as the bracket code.
+ * Otherwise, the bracket code is derived: for a business address (the first
+ * comma segment isn't a numbered street) it's the business name; otherwise
+ * it's the street portion (everything before the first comma).
  *
  * Examples:
  *   "25 Mccallum Crescent, ARDROSS"          → "25 Mccallum Crescent, ARDROSS (25 Mccallum Crescent)"
  *   "25 Mccallum Crescent, ARDROSS (25 Mccallum Crescent)" → unchanged
- *   "Blend Cafe, 25 Mccallum Crescent, ARDROSS" → "Blend Cafe, 25 Mccallum Crescent, ARDROSS (25 Mccallum Crescent)"
+ *   "Blend Cafe, 25 Mccallum Crescent, ARDROSS" → "Blend Cafe, 25 Mccallum Crescent, ARDROSS (Blend Cafe)"
  */
 export function ensureBracketCode(address: string): string {
   if (!address) return address;
   // Already has a bracket code — leave it
   if (/\([^)]{1,120}\)\s*$/.test(address)) return address;
-  // Find the street portion: the first segment that starts with a number
-  // (handles "Business Name, 25 Street, SUBURB" and "25 Street, SUBURB")
   const parts = address.split(",");
+  const firstPart = parts[0]?.trim() ?? "";
+  // If the first segment isn't a numbered street, it's a business name —
+  // business locations use their name as the bracket code.
+  if (firstPart && !/^\d/.test(firstPart)) {
+    return `${address} (${firstPart})`;
+  }
+  // Find the street portion: the first segment that starts with a number
   let streetPart = "";
   for (const p of parts) {
     const trimmed = p.trim();
@@ -430,8 +477,7 @@ export function ensureBracketCode(address: string): string {
     }
   }
   if (!streetPart) {
-    // No numbered street found — use everything before the first comma
-    streetPart = parts[0]?.trim() ?? address;
+    streetPart = firstPart || address;
   }
   return `${address} (${streetPart})`;
 }
@@ -455,7 +501,10 @@ export function ensureBracketCode(address: string): string {
  *  5. If shortForm doesn't look like a vehicle reference, return it as-is
  *    (stripped of leading "a " or "A ")
  */
-export function formatIntelVehicle(shortForm: string, fullObservation?: string): string {
+export function formatIntelVehicle(
+  shortForm: string,
+  fullObservation?: string
+): string {
   if (!shortForm) return shortForm;
 
   // Strip leading "a " or "A " (legacy normalisation)
@@ -498,21 +547,33 @@ export function formatIntelVehicle(shortForm: string, fullObservation?: string):
     // from that position to extract the vehicle description.
     // We split on closing brackets ) to avoid spilling across other vehicle references
     // like "(Vehicle 1HTU905)" when there are multiple vehicles in one observation.
-    const escapedRego = rego.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const escapedRego = rego.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const bearingIdx = fullObservation.search(
-      new RegExp('bearing\\s+(?:[A-Z]{2,3}\\s+)?registration\\s+' + escapedRego + '\\b', 'i')
+      new RegExp(
+        "bearing\\s+(?:[A-Z]{2,3}\\s+)?registration\\s+" + escapedRego + "\\b",
+        "i"
+      )
     );
     if (bearingIdx >= 0) {
       // Take text before the bearing clause, strip trailing comma/space
-      const beforeBearing = fullObservation.slice(0, bearingIdx).replace(/,?\s*$/, '').trim();
+      const beforeBearing = fullObservation
+        .slice(0, bearingIdx)
+        .replace(/,?\s*$/, "")
+        .trim();
       // Split on closing brackets to isolate the last vehicle description segment
-      const segments = beforeBearing.split(')');
+      const segments = beforeBearing.split(")");
       let lastSegment = segments[segments.length - 1].trim();
       // Strip leading connectors: "and a", "and an", "and the", "a ", "an ", "the "
-      lastSegment = lastSegment.replace(/^(?:and\s+(?:a[n]?\s+|the\s+)?|a[n]?\s+|the\s+)/i, '').trim();
-      lastSegment = lastSegment.replace(/^[aA]\s+/, '').replace(/^V\d[A-Z]?:\s*/i, '').trim();
-      if (lastSegment && lastSegment.toLowerCase() !== 'vehicle') {
-        if (lastSegment.toLowerCase().startsWith(rego.toLowerCase())) return lastSegment;
+      lastSegment = lastSegment
+        .replace(/^(?:and\s+(?:a[n]?\s+|the\s+)?|a[n]?\s+|the\s+)/i, "")
+        .trim();
+      lastSegment = lastSegment
+        .replace(/^[aA]\s+/, "")
+        .replace(/^V\d[A-Z]?:\s*/i, "")
+        .trim();
+      if (lastSegment && lastSegment.toLowerCase() !== "vehicle") {
+        if (lastSegment.toLowerCase().startsWith(rego.toLowerCase()))
+          return lastSegment;
         return `${rego} ${lastSegment}`;
       }
     }
@@ -541,4 +602,38 @@ export function formatIntelVehicle(shortForm: string, fullObservation?: string):
 
   // No description available — return just the registration
   return rego;
+}
+
+/**
+ * Reverse of formatIntelVehicle's "[rego] [description]" display format —
+ * expands it back into the full RS observation/V1F convention:
+ * "[description], bearing WA registration [rego] (Vehicle [rego])".
+ *
+ * Used when a user picks a vehicle suggestion (sourced from Intelligence
+ * entities, which are stored/displayed rego-first, e.g. "1GBG656 grey Ford
+ * Ranger") to fill a Target Registry Vehicle Full (V1F) field — so the
+ * inserted text reads the same way an officer would type it, and so
+ * extractShortVehicle can find the trailing "(Vehicle REGO)" bracket to
+ * auto-fill the short Vehicle (V1) field on blur, same as if it had been
+ * typed by hand.
+ *
+ * Returns the input unchanged if it doesn't look like "[rego] [description]"
+ * (e.g. already has a bracket, or has no rego-looking leading token).
+ *
+ * Example:
+ *   "1GBG656 grey Ford Ranger" → "grey Ford Ranger, bearing WA registration 1GBG656 (Vehicle 1GBG656)"
+ */
+export function expandIntelVehicleToFullForm(introLabel: string): string {
+  if (!introLabel) return introLabel;
+  const trimmed = introLabel.trim();
+  // Already has a bracket code — nothing to expand.
+  if (/\([^)]{1,80}\)\s*$/.test(trimmed)) return trimmed;
+  const match = trimmed.match(/^([A-Za-z0-9-]{5,8})\s+(.+)$/);
+  if (!match) return trimmed;
+  const rego = match[1].toUpperCase();
+  const description = match[2].trim();
+  // Only treat the leading token as a rego if it mixes letters and digits —
+  // avoids misfiring on a plain description with no recognised rego.
+  if (!/[A-Za-z]/.test(rego) || !/\d/.test(rego)) return trimmed;
+  return `${description}, bearing WA registration ${rego} (Vehicle ${rego})`;
 }

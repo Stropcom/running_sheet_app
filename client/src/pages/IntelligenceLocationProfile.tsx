@@ -2,6 +2,7 @@ import { useRoute, useLocation } from "wouter";
 import { useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { formatIntelAddress } from "@/lib/addressFormat";
+import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -21,6 +22,7 @@ interface IntelLocationProfile {
   linkedSheets: Array<{ id: number; title: string; operationId: number; operationName: string }>;
   assocPersons: IntelProfileEntity[];
   assocVehicles: IntelProfileEntity[];
+  isPrevious?: boolean;
 }
 
 function SectionHeading({ label, count }: { label: string; count: number }) {
@@ -52,6 +54,7 @@ function buildLocationProfileHtml(profile: IntelLocationProfile, photos: Profile
 <div class="cover-header">
   <div class="brand-label">RunLog Intelligence Profile — Location</div>
   <div class="entity-name">${esc(profile.label)}</div>
+  ${profile.isPrevious ? `<div style="display:inline-block;margin-top:6px;padding:2px 8px;border-radius:3px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;background:rgba(255,255,255,0.15);color:#fff">Previous</div>` : ""}
   <div class="gen-time">Generated: ${generatedAt}</div>
 </div>
 <div class="stats-row">
@@ -68,7 +71,9 @@ function buildLocationProfileHtml(profile: IntelLocationProfile, photos: Profile
     ${profile.assocVehicles.length ? `<div class="sub-title">Vehicles</div>${buildEntityListWithPhotosHtml(profile.assocVehicles)}` : ""}
   </div>` : ""}
   <div class="footer"><span>RunLog — Location Intelligence Profile</span><span>SENSITIVE — FOR OFFICIAL USE ONLY — ${generatedAt}</span></div>
-</div></body></html>`;
+</div>
+${buildExportPreviewCloseBar()}
+</body></html>`;
 }
 
 export default function IntelligenceLocationProfile() {
@@ -133,6 +138,11 @@ export default function IntelligenceLocationProfile() {
                       <MapPin className="w-3 h-3" /> Location
                     </span>
                     <h1 className="text-2xl font-bold tracking-tight">{displayLabel}</h1>
+                    {profile.isPrevious && (
+                      <span className="inline-block mt-2 px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-white/15 text-white">
+                        Previous
+                      </span>
+                    )}
                   </div>
                   <Button variant="outline" size="sm" onClick={exportPdf} className="bg-white/10 border-white/30 text-white hover:bg-white/20 shrink-0">
                     <FileDown className="w-4 h-4 mr-1.5" /> Export PDF

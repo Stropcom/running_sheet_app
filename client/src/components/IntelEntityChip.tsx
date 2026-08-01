@@ -18,6 +18,8 @@ export interface IntelAssocEntity {
   type: string;
   rowCount: number;
   photos?: IntelEntityPhoto[];
+  /** True when this vehicle/location matches a value superseded by a target-merge. */
+  isPrevious?: boolean;
 }
 
 export const INTEL_CHIP_CLASSES: Record<string, string> = {
@@ -63,6 +65,11 @@ export function IntelEntityChip({
       {icon}
       {label}
       <span className="opacity-60">×{item.rowCount}</span>
+      {item.isPrevious && (
+        <span className="ml-auto px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide bg-black/10 dark:bg-white/15">
+          Previous
+        </span>
+      )}
     </button>
   );
 }

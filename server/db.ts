@@ -1,4 +1,17 @@
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, like, lt, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  like,
+  lt,
+  or,
+  sql,
+} from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { createPool as createPromisePool } from "mysql2/promise";
 import { vaultEncrypt, vaultDecrypt } from "./wipcVault";
@@ -28,9 +41,16 @@ import {
   InsertShortcut,
   targets,
   InsertTarget,
+  targetFieldHistory,
+  InsertTargetFieldHistory,
   users,
   governanceRecords,
   GovernanceRecord,
+  sheetSummaries,
+  SheetSummary,
+  InsertSheetSummary,
+  sheetSummaryEntries,
+  SheetSummaryEntry,
   targetShortcuts,
   InsertTargetShortcut,
   operationTargetLinks,
@@ -55,7 +75,11 @@ import {
   entityDedupDecisions,
   InsertEntityDedupDecision,
 } from "../drizzle/schema";
-import { findPossibleDuplicates, type DedupType, type DedupCandidateEntity } from "./entityDedup";
+import {
+  findPossibleDuplicates,
+  type DedupType,
+  type DedupCandidateEntity,
+} from "./entityDedup";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 let _pool: Awaited<ReturnType<typeof createPromisePool>> | null = null;
@@ -68,13 +92,17 @@ const RECONNECT_COOLDOWN_MS = 5000; // don't retry more than once per 5s
 function isLocalDatabaseHost(databaseUrl: string): boolean {
   try {
     const { hostname } = new URL(databaseUrl);
-    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+    return (
+      hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1"
+    );
   } catch {
     return false;
   }
 }
 
-async function createDbPool(retries = 3): Promise<ReturnType<typeof drizzle> | null> {
+async function createDbPool(
+  retries = 3
+): Promise<ReturnType<typeof drizzle> | null> {
   const useSsl = !isLocalDatabaseHost(process.env.DATABASE_URL!);
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -96,7 +124,10 @@ async function createDbPool(retries = 3): Promise<ReturnType<typeof drizzle> | n
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return drizzle(pool as any);
     } catch (error) {
-      console.warn(`[Database] Connection attempt ${attempt}/${retries} failed:`, error);
+      console.warn(
+        `[Database] Connection attempt ${attempt}/${retries} failed:`,
+        error
+      );
       if (attempt < retries) {
         await new Promise(r => setTimeout(r, 1000 * attempt)); // backoff: 1s, 2s
       }
@@ -135,7 +166,11 @@ export async function getDb() {
 export async function getUserByUsername(username: string) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(users).where(eq(users.username, username)).limit(1);
+  const result = await db
+    .select()
+    .from(users)
+    .where(eq(users.username, username))
+    .limit(1);
   return result[0];
 }
 
@@ -149,14 +184,22 @@ export async function getUserById(id: number) {
 export async function getUserByCin(cin: string) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(users).where(eq(users.cin, cin)).limit(1);
+  const result = await db
+    .select()
+    .from(users)
+    .where(eq(users.cin, cin))
+    .limit(1);
   return result[0];
 }
 
 export async function getUserByOpenId(openId: string) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+  const result = await db
+    .select()
+    .from(users)
+    .where(eq(users.openId, openId))
+    .limit(1);
   return result[0];
 }
 
@@ -176,7 +219,10 @@ export async function createUser(data: InsertUser) {
 export async function updateUser(id: number, data: Partial<InsertUser>) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.update(users).set({ ...data, updatedAt: new Date() }).where(eq(users.id, id));
+  await db
+    .update(users)
+    .set({ ...data, updatedAt: new Date() })
+    .where(eq(users.id, id));
 }
 
 export async function deleteUser(id: number) {
@@ -185,7 +231,10 @@ export async function deleteUser(id: number) {
   await db.delete(users).where(eq(users.id, id));
 }
 
-export async function updateUserRole(userId: number, role: "observer" | "member" | "admin") {
+export async function updateUserRole(
+  userId: number,
+  role: "observer" | "member" | "admin"
+) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(users).set({ role }).where(eq(users.id, userId));
@@ -194,14 +243,23 @@ export async function updateUserRole(userId: number, role: "observer" | "member"
 export async function updateLastSignedIn(userId: number) {
   const db = await getDb();
   if (!db) return;
-  await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, userId));
+  await db
+    .update(users)
+    .set({ lastSignedIn: new Date() })
+    .where(eq(users.id, userId));
 }
 
 // Legacy upsert kept for OAuth callback compatibility
 export async function upsertUser(user: InsertUser): Promise<void> {
   const db = await getDb();
-  if (!db) { console.warn("[Database] Cannot upsert user: database not available"); return; }
-  await db.insert(users).values(user).onDuplicateKeyUpdate({ set: { lastSignedIn: new Date() } });
+  if (!db) {
+    console.warn("[Database] Cannot upsert user: database not available");
+    return;
+  }
+  await db
+    .insert(users)
+    .values(user)
+    .onDuplicateKeyUpdate({ set: { lastSignedIn: new Date() } });
 }
 
 // ─── Operations ─────────────────────────────────────────────────────────────
@@ -210,19 +268,33 @@ export async function getOperations() {
   const db = await getDb();
   if (!db) return [];
   // Only return active, non-deleted operations for the main operations list
-  return db.select().from(operations).where(and(eq(operations.status, "active"), isNull(operations.deletedAt))).orderBy(desc(operations.createdAt));
+  return db
+    .select()
+    .from(operations)
+    .where(and(eq(operations.status, "active"), isNull(operations.deletedAt)))
+    .orderBy(desc(operations.createdAt));
 }
 
-export async function getOperationsByStatus(status: "active" | "before_court" | "archive") {
+export async function getOperationsByStatus(
+  status: "active" | "before_court" | "archive"
+) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(operations).where(and(eq(operations.status, status), isNull(operations.deletedAt))).orderBy(desc(operations.createdAt));
+  return db
+    .select()
+    .from(operations)
+    .where(and(eq(operations.status, status), isNull(operations.deletedAt)))
+    .orderBy(desc(operations.createdAt));
 }
 
 export async function getAllOperations() {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(operations).where(isNull(operations.deletedAt)).orderBy(desc(operations.createdAt));
+  return db
+    .select()
+    .from(operations)
+    .where(isNull(operations.deletedAt))
+    .orderBy(desc(operations.createdAt));
 }
 
 export async function setOperationStatus(
@@ -235,12 +307,16 @@ export async function setOperationStatus(
   // If moving away from active, all sheets must be closed
   if (status !== "active") {
     const sheets = await db
-      .select({ id: runningSheets.id, title: runningSheets.title, closedAt: runningSheets.closedAt })
+      .select({
+        id: runningSheets.id,
+        title: runningSheets.title,
+        closedAt: runningSheets.closedAt,
+      })
       .from(runningSheets)
       .where(eq(runningSheets.operationId, id));
-    const openSheets = sheets.filter((s) => !s.closedAt);
+    const openSheets = sheets.filter(s => !s.closedAt);
     if (openSheets.length > 0) {
-      return { success: false, blockedSheets: openSheets.map((s) => s.title) };
+      return { success: false, blockedSheets: openSheets.map(s => s.title) };
     }
   }
 
@@ -251,7 +327,11 @@ export async function setOperationStatus(
 export async function getOperationById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(operations).where(eq(operations.id, id)).limit(1);
+  const result = await db
+    .select()
+    .from(operations)
+    .where(eq(operations.id, id))
+    .limit(1);
   return result[0];
 }
 
@@ -262,7 +342,10 @@ export async function createOperation(data: InsertOperation) {
   return result.insertId as number;
 }
 
-export async function updateOperation(id: number, data: Partial<InsertOperation>) {
+export async function updateOperation(
+  id: number,
+  data: Partial<InsertOperation>
+) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(operations).set(data).where(eq(operations.id, id));
@@ -271,7 +354,10 @@ export async function updateOperation(id: number, data: Partial<InsertOperation>
 export async function softDeleteOperation(id: number, cin: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.update(operations).set({ deletedAt: Date.now(), deletedByCIN: cin }).where(eq(operations.id, id));
+  await db
+    .update(operations)
+    .set({ deletedAt: Date.now(), deletedByCIN: cin })
+    .where(eq(operations.id, id));
 }
 
 export async function deleteOperation(id: number) {
@@ -279,7 +365,10 @@ export async function deleteOperation(id: number) {
   if (!db) throw new Error("Database not available");
 
   // Cascade: delete all child records before deleting the operation
-  const sheets = await db.select({ id: runningSheets.id }).from(runningSheets).where(eq(runningSheets.operationId, id));
+  const sheets = await db
+    .select({ id: runningSheets.id })
+    .from(runningSheets)
+    .where(eq(runningSheets.operationId, id));
   for (const sheet of sheets) {
     await deleteRunningSheet(sheet.id);
   }
@@ -294,15 +383,25 @@ export async function deleteOperation(id: number) {
     const otherLinks = await db
       .select({ id: operationTargetLinks.id })
       .from(operationTargetLinks)
-      .where(and(eq(operationTargetLinks.targetId, t.id), sql`${operationTargetLinks.operationId} != ${id}`))
+      .where(
+        and(
+          eq(operationTargetLinks.targetId, t.id),
+          sql`${operationTargetLinks.operationId} != ${id}`
+        )
+      )
       .limit(1);
     if (otherLinks.length === 0) {
       // Exclusively linked — delete target shortcuts then the target
-      await db.delete(targetShortcuts).where(eq(targetShortcuts.targetId, t.id));
+      await db
+        .delete(targetShortcuts)
+        .where(eq(targetShortcuts.targetId, t.id));
       await db.delete(targets).where(eq(targets.id, t.id));
     } else {
       // Linked to other ops too — just clear the legacy FK
-      await db.update(targets).set({ operationId: null }).where(eq(targets.id, t.id));
+      await db
+        .update(targets)
+        .set({ operationId: null })
+        .where(eq(targets.id, t.id));
     }
   }
   // Remove operation-target links for registry targets linked via join table
@@ -315,15 +414,24 @@ export async function deleteOperation(id: number) {
     const otherLinks = await db
       .select({ id: operationTargetLinks.id })
       .from(operationTargetLinks)
-      .where(and(eq(operationTargetLinks.targetId, link.targetId), sql`${operationTargetLinks.operationId} != ${id}`))
+      .where(
+        and(
+          eq(operationTargetLinks.targetId, link.targetId),
+          sql`${operationTargetLinks.operationId} != ${id}`
+        )
+      )
       .limit(1);
     if (otherLinks.length === 0) {
       // Only linked to this operation — delete the target too
-      await db.delete(targetShortcuts).where(eq(targetShortcuts.targetId, link.targetId));
+      await db
+        .delete(targetShortcuts)
+        .where(eq(targetShortcuts.targetId, link.targetId));
       await db.delete(targets).where(eq(targets.id, link.targetId));
     }
   }
-  await db.delete(operationTargetLinks).where(eq(operationTargetLinks.operationId, id));
+  await db
+    .delete(operationTargetLinks)
+    .where(eq(operationTargetLinks.operationId, id));
   // Delete custom map markers linked to this operation (hard delete — operation is gone)
   await db.delete(customMapMarkers).where(eq(customMapMarkers.operationId, id));
   await db.delete(operations).where(eq(operations.id, id));
@@ -332,14 +440,23 @@ export async function deleteOperation(id: number) {
 export async function getOperationDeleteStats(id: number) {
   const db = await getDb();
   if (!db) return { sheetCount: 0, rowCount: 0, targetCount: 0 };
-  const sheets = await db.select({ id: runningSheets.id }).from(runningSheets).where(eq(runningSheets.operationId, id));
-  const sheetIds = sheets.map((s) => s.id);
+  const sheets = await db
+    .select({ id: runningSheets.id })
+    .from(runningSheets)
+    .where(eq(runningSheets.operationId, id));
+  const sheetIds = sheets.map(s => s.id);
   let rowCount = 0;
   if (sheetIds.length > 0) {
-    const rowResult = await db.select({ count: sql<number>`count(*)` }).from(sheetRows).where(inArray(sheetRows.sheetId, sheetIds));
+    const rowResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(sheetRows)
+      .where(inArray(sheetRows.sheetId, sheetIds));
     rowCount = Number(rowResult[0]?.count ?? 0);
   }
-  const targetResult = await db.select({ count: sql<number>`count(*)` }).from(targets).where(eq(targets.operationId, id));
+  const targetResult = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(targets)
+    .where(eq(targets.operationId, id));
   const targetCount = Number(targetResult[0]?.count ?? 0);
   return { sheetCount: sheets.length, rowCount, targetCount };
 }
@@ -349,26 +466,52 @@ export async function getOperationDeleteStats(id: number) {
 export async function getRunningSheets() {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(runningSheets).where(isNull(runningSheets.deletedAt)).orderBy(desc(runningSheets.createdAt));
+  return db
+    .select()
+    .from(runningSheets)
+    .where(isNull(runningSheets.deletedAt))
+    .orderBy(desc(runningSheets.createdAt));
 }
 
 export async function getRunningSheetsByOperation(operationId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(runningSheets).where(and(eq(runningSheets.operationId, operationId), isNull(runningSheets.deletedAt))).orderBy(desc(runningSheets.createdAt));
+  return db
+    .select()
+    .from(runningSheets)
+    .where(
+      and(
+        eq(runningSheets.operationId, operationId),
+        isNull(runningSheets.deletedAt)
+      )
+    )
+    .orderBy(desc(runningSheets.createdAt));
 }
 
 export async function getRunningSheetsByOperations(operationIds: number[]) {
   const db = await getDb();
   if (!db) return [];
   if (operationIds.length === 0) return [];
-  return db.select().from(runningSheets).where(and(inArray(runningSheets.operationId, operationIds), isNull(runningSheets.deletedAt))).orderBy(desc(runningSheets.createdAt));
+  return db
+    .select()
+    .from(runningSheets)
+    .where(
+      and(
+        inArray(runningSheets.operationId, operationIds),
+        isNull(runningSheets.deletedAt)
+      )
+    )
+    .orderBy(desc(runningSheets.createdAt));
 }
 
 export async function getRunningSheetById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(runningSheets).where(eq(runningSheets.id, id)).limit(1);
+  const result = await db
+    .select()
+    .from(runningSheets)
+    .where(eq(runningSheets.id, id))
+    .limit(1);
   return result[0];
 }
 
@@ -379,7 +522,10 @@ export async function createRunningSheet(data: InsertRunningSheet) {
   return result.insertId as number;
 }
 
-export async function updateRunningSheet(id: number, data: Partial<InsertRunningSheet>) {
+export async function updateRunningSheet(
+  id: number,
+  data: Partial<InsertRunningSheet>
+) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(runningSheets).set(data).where(eq(runningSheets.id, id));
@@ -388,7 +534,10 @@ export async function updateRunningSheet(id: number, data: Partial<InsertRunning
 export async function softDeleteSheet(id: number, cin: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.update(runningSheets).set({ deletedAt: Date.now(), deletedByCIN: cin }).where(eq(runningSheets.id, id));
+  await db
+    .update(runningSheets)
+    .set({ deletedAt: Date.now(), deletedByCIN: cin })
+    .where(eq(runningSheets.id, id));
 }
 
 export async function deleteRunningSheet(id: number) {
@@ -396,11 +545,16 @@ export async function deleteRunningSheet(id: number) {
   if (!db) throw new Error("Database not available");
 
   // Cascade: delete all child records before deleting the sheet
-  const rows = await db.select({ id: sheetRows.id }).from(sheetRows).where(eq(sheetRows.sheetId, id));
+  const rows = await db
+    .select({ id: sheetRows.id })
+    .from(sheetRows)
+    .where(eq(sheetRows.sheetId, id));
   if (rows.length > 0) {
-    const rowIds = rows.map((r) => r.id);
+    const rowIds = rows.map(r => r.id);
     // Delete certifications and row_members for these rows
-    await db.delete(certifications).where(inArray(certifications.rowId, rowIds));
+    await db
+      .delete(certifications)
+      .where(inArray(certifications.rowId, rowIds));
     await db.delete(rowMembers).where(inArray(rowMembers.rowId, rowIds));
     await db.delete(sheetRows).where(eq(sheetRows.sheetId, id));
   }
@@ -416,7 +570,8 @@ export async function deleteRunningSheet(id: number) {
 export async function closeSheet(id: number, cin: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.update(runningSheets)
+  await db
+    .update(runningSheets)
     .set({ closedAt: Date.now(), closedByCIN: cin })
     .where(eq(runningSheets.id, id));
 }
@@ -424,15 +579,20 @@ export async function closeSheet(id: number, cin: string) {
 export async function reopenSheet(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.update(runningSheets)
+  await db
+    .update(runningSheets)
     .set({ closedAt: null, closedByCIN: null })
     .where(eq(runningSheets.id, id));
 }
 
-export async function moveRunningSheet(sheetId: number, targetOperationId: number) {
+export async function moveRunningSheet(
+  sheetId: number,
+  targetOperationId: number
+) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.update(runningSheets)
+  await db
+    .update(runningSheets)
     .set({ operationId: targetOperationId })
     .where(eq(runningSheets.id, sheetId));
 }
@@ -442,12 +602,21 @@ export async function moveRunningSheet(sheetId: number, targetOperationId: numbe
  * Certifications and governance records are NOT copied — the copy starts fresh.
  * Returns the new sheet ID.
  */
-export async function copyRunningSheet(sheetId: number, targetOperationId: number, createdBy: number, newTitle?: string): Promise<number> {
+export async function copyRunningSheet(
+  sheetId: number,
+  targetOperationId: number,
+  createdBy: number,
+  newTitle?: string
+): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
   // 1. Fetch the source sheet
-  const [srcSheet] = await db.select().from(runningSheets).where(eq(runningSheets.id, sheetId)).limit(1);
+  const [srcSheet] = await db
+    .select()
+    .from(runningSheets)
+    .where(eq(runningSheets.id, sheetId))
+    .limit(1);
   if (!srcSheet) throw new Error("Source sheet not found");
 
   // 2. Create the new sheet (reset closed state)
@@ -464,7 +633,11 @@ export async function copyRunningSheet(sheetId: number, targetOperationId: numbe
   const newSheetId = newSheetResult.insertId as number;
 
   // 3. Fetch all rows from the source sheet
-  const srcRows = await db.select().from(sheetRows).where(eq(sheetRows.sheetId, sheetId)).orderBy(sheetRows.rowNumber);
+  const srcRows = await db
+    .select()
+    .from(sheetRows)
+    .where(eq(sheetRows.sheetId, sheetId))
+    .orderBy(sheetRows.rowNumber);
 
   for (const row of srcRows) {
     // 4. Insert each row into the new sheet
@@ -479,10 +652,14 @@ export async function copyRunningSheet(sheetId: number, targetOperationId: numbe
     const newRowId = newRowResult.insertId as number;
 
     // 5. Copy row members for this row
-    const srcMembers = await db.select().from(rowMembers).where(eq(rowMembers.rowId, row.id)).orderBy(rowMembers.sortOrder);
+    const srcMembers = await db
+      .select()
+      .from(rowMembers)
+      .where(eq(rowMembers.rowId, row.id))
+      .orderBy(rowMembers.sortOrder);
     if (srcMembers.length > 0) {
       await db.insert(rowMembers).values(
-        srcMembers.map((m) => ({
+        srcMembers.map(m => ({
           rowId: newRowId,
           memberName: m.memberName,
           sortOrder: m.sortOrder,
@@ -513,14 +690,14 @@ export async function getRowsBySheetId(sheetId: number) {
   //      Day index is computed relative to the earliest rowDate in the sheet.
   //   2. dayOffset != 0 — legacy explicit toggle (kept for backward compat).
   //   3. Inference from timeMinutes sequence — for rows with neither.
-  const timedRows = raw.filter((r) => r.timeMinutes != null);
-  const noTimeRows = raw.filter((r) => r.timeMinutes == null);
+  const timedRows = raw.filter(r => r.timeMinutes != null);
+  const noTimeRows = raw.filter(r => r.timeMinutes == null);
 
   // Build effective day offset for each row.
   const dayOffsetMap = new Map<number, number>();
 
   // Find the earliest rowDate among all rows that have one, to use as day-0 anchor.
-  const rowDates = raw.map((r) => r.rowDate).filter((d): d is string => !!d);
+  const rowDates = raw.map(r => r.rowDate).filter((d): d is string => !!d);
   const minRowDate = rowDates.length > 0 ? rowDates.slice().sort()[0] : null;
 
   // First pass: assign offsets from rowDate (highest priority) or stored dayOffset (legacy)
@@ -555,7 +732,7 @@ export async function getRowsBySheetId(sheetId: number) {
     prevEffective = mins + currentDay * 1440;
   }
 
-  const effectiveMins = (r: typeof raw[0]) =>
+  const effectiveMins = (r: (typeof raw)[0]) =>
     (r.timeMinutes ?? 0) + (dayOffsetMap.get(r.id) ?? 0) * 1440;
 
   const sortedTimed = [...timedRows].sort((a, b) => {
@@ -565,7 +742,9 @@ export async function getRowsBySheetId(sheetId: number) {
   });
 
   // No-time rows float to the bottom, ordered by rowNumber
-  const sortedNoTime = [...noTimeRows].sort((a, b) => a.rowNumber - b.rowNumber);
+  const sortedNoTime = [...noTimeRows].sort(
+    (a, b) => a.rowNumber - b.rowNumber
+  );
 
   return [...sortedTimed, ...sortedNoTime];
 }
@@ -573,7 +752,11 @@ export async function getRowsBySheetId(sheetId: number) {
 export async function getRowById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(sheetRows).where(eq(sheetRows.id, id)).limit(1);
+  const result = await db
+    .select()
+    .from(sheetRows)
+    .where(eq(sheetRows.id, id))
+    .limit(1);
   return result[0];
 }
 
@@ -584,7 +767,10 @@ export async function createSheetRow(data: InsertSheetRow) {
   return result.insertId as number;
 }
 
-export async function updateSheetRow(id: number, data: Partial<InsertSheetRow>) {
+export async function updateSheetRow(
+  id: number,
+  data: Partial<InsertSheetRow>
+) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(sheetRows).set(data).where(eq(sheetRows.id, id));
@@ -597,11 +783,18 @@ export async function deleteSheetRow(id: number) {
   // pattern), so any photo attachments left on it would otherwise become
   // orphaned — unreachable by every query that joins rowAttachments back
   // to sheetRows, including the Recycle Bin. Clean those up first.
-  const attachments = await db.select({ id: rowAttachments.id }).from(rowAttachments).where(eq(rowAttachments.rowId, id));
+  const attachments = await db
+    .select({ id: rowAttachments.id })
+    .from(rowAttachments)
+    .where(eq(rowAttachments.rowId, id));
   if (attachments.length) {
-    const attachmentIds = attachments.map((a) => a.id);
-    await db.delete(attachmentEntityLinks).where(inArray(attachmentEntityLinks.attachmentId, attachmentIds));
-    await db.delete(rowAttachments).where(inArray(rowAttachments.id, attachmentIds));
+    const attachmentIds = attachments.map(a => a.id);
+    await db
+      .delete(attachmentEntityLinks)
+      .where(inArray(attachmentEntityLinks.attachmentId, attachmentIds));
+    await db
+      .delete(rowAttachments)
+      .where(inArray(rowAttachments.id, attachmentIds));
   }
   await db.delete(sheetRows).where(eq(sheetRows.id, id));
 }
@@ -617,7 +810,11 @@ export async function setRowLocked(id: number, isLocked: boolean) {
 export async function getMembersByRowId(rowId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(rowMembers).where(eq(rowMembers.rowId, rowId)).orderBy(rowMembers.sortOrder, rowMembers.createdAt);
+  return db
+    .select()
+    .from(rowMembers)
+    .where(eq(rowMembers.rowId, rowId))
+    .orderBy(rowMembers.sortOrder, rowMembers.createdAt);
 }
 
 export async function reorderRowMembers(rowId: number, orderedIds: number[]) {
@@ -626,14 +823,17 @@ export async function reorderRowMembers(rowId: number, orderedIds: number[]) {
   // Update each member's sortOrder to match the position in orderedIds
   await Promise.all(
     orderedIds.map((id, index) =>
-      db.update(rowMembers).set({ sortOrder: index }).where(and(eq(rowMembers.id, id), eq(rowMembers.rowId, rowId)))
+      db
+        .update(rowMembers)
+        .set({ sortOrder: index })
+        .where(and(eq(rowMembers.id, id), eq(rowMembers.rowId, rowId)))
     )
   );
 }
 
 export async function getMembersByRowIds(rowIds: number[]) {
   if (rowIds.length === 0) return [];
-  const results = await Promise.all(rowIds.map((rid) => getMembersByRowId(rid)));
+  const results = await Promise.all(rowIds.map(rid => getMembersByRowId(rid)));
   return results.flat();
 }
 
@@ -642,16 +842,21 @@ export async function getMembersByCINAndSheet(sheetId: number, cin: string) {
   const db = await getDb();
   if (!db) return [];
   // Get all row IDs for this sheet first
-  const rows = await db.select({ id: sheetRows.id, isLocked: sheetRows.isLocked })
+  const rows = await db
+    .select({ id: sheetRows.id, isLocked: sheetRows.isLocked })
     .from(sheetRows)
     .where(eq(sheetRows.sheetId, sheetId));
   if (rows.length === 0) return [];
-  const rowIds = rows.map((r) => r.id);
+  const rowIds = rows.map(r => r.id);
   // Find members in those rows whose memberName matches the CIN
-  const members = await db.select().from(rowMembers)
-    .where(and(inArray(rowMembers.rowId, rowIds), eq(rowMembers.memberName, cin)));
-  return members.map((m) => {
-    const row = rows.find((r) => r.id === m.rowId);
+  const members = await db
+    .select()
+    .from(rowMembers)
+    .where(
+      and(inArray(rowMembers.rowId, rowIds), eq(rowMembers.memberName, cin))
+    );
+  return members.map(m => {
+    const row = rows.find(r => r.id === m.rowId);
     return { ...m, rowIsLocked: row?.isLocked ?? false };
   });
 }
@@ -692,12 +897,21 @@ export async function createRowAttachment(data: InsertRowAttachment) {
 async function attachLinkedCounts<T extends { id: number }>(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
   rows: T[]
-): Promise<(T & { linkedCount: number; linkedCategories: string[]; linkedEntities: Array<{ category: string; label: string }> })[]> {
+): Promise<
+  (T & {
+    linkedCount: number;
+    linkedCategories: string[];
+    linkedEntities: Array<{ category: string; label: string }>;
+  })[]
+> {
   if (rows.length === 0) return [];
-  const attachmentIds = rows.map((r) => r.id);
+  const attachmentIds = rows.map(r => r.id);
   const [linkCounts, linkRows] = await Promise.all([
     db
-      .select({ attachmentId: attachmentEntityLinks.attachmentId, count: sql<number>`count(*)`.as("count") })
+      .select({
+        attachmentId: attachmentEntityLinks.attachmentId,
+        count: sql<number>`count(*)`.as("count"),
+      })
       .from(attachmentEntityLinks)
       .where(inArray(attachmentEntityLinks.attachmentId, attachmentIds))
       .groupBy(attachmentEntityLinks.attachmentId),
@@ -710,9 +924,14 @@ async function attachLinkedCounts<T extends { id: number }>(
       .from(attachmentEntityLinks)
       .where(inArray(attachmentEntityLinks.attachmentId, attachmentIds)),
   ]);
-  const countMap = new Map(linkCounts.map((l) => [l.attachmentId, Number(l.count)]));
+  const countMap = new Map(
+    linkCounts.map(l => [l.attachmentId, Number(l.count)])
+  );
   const categoryMap = new Map<number, string[]>();
-  const entityMap = new Map<number, Array<{ category: string; label: string }>>();
+  const entityMap = new Map<
+    number,
+    Array<{ category: string; label: string }>
+  >();
   for (const l of linkRows) {
     const cats = categoryMap.get(l.attachmentId) ?? [];
     if (!cats.includes(l.category)) cats.push(l.category);
@@ -721,7 +940,7 @@ async function attachLinkedCounts<T extends { id: number }>(
     ents.push({ category: l.category, label: l.entityLabel });
     entityMap.set(l.attachmentId, ents);
   }
-  return rows.map((r) => ({
+  return rows.map(r => ({
     ...r,
     linkedCount: countMap.get(r.id) ?? 0,
     linkedCategories: categoryMap.get(r.id) ?? [],
@@ -732,8 +951,15 @@ async function attachLinkedCounts<T extends { id: number }>(
 export async function getAttachmentsByRowIds(rowIds: number[]) {
   const db = await getDb();
   if (!db || rowIds.length === 0) return [];
-  const attachments = await db.select().from(rowAttachments)
-    .where(and(inArray(rowAttachments.rowId, rowIds), isNull(rowAttachments.deletedAt)))
+  const attachments = await db
+    .select()
+    .from(rowAttachments)
+    .where(
+      and(
+        inArray(rowAttachments.rowId, rowIds),
+        isNull(rowAttachments.deletedAt)
+      )
+    )
     .orderBy(asc(rowAttachments.createdAt));
   return attachLinkedCounts(db, attachments);
 }
@@ -741,7 +967,11 @@ export async function getAttachmentsByRowIds(rowIds: number[]) {
 export async function getAttachmentById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(rowAttachments).where(eq(rowAttachments.id, id)).limit(1);
+  const result = await db
+    .select()
+    .from(rowAttachments)
+    .where(eq(rowAttachments.id, id))
+    .limit(1);
   return result[0];
 }
 
@@ -754,13 +984,19 @@ async function attachRowMemberCins<T extends { rowId: number | null }>(
 ): Promise<(T & { memberCINs: string[] })[]> {
   if (rows.length === 0) return [];
   // Manually-uploaded photos may have no row at all — nothing to look up for those.
-  const rowIds = Array.from(new Set(rows.map((r) => r.rowId).filter((id): id is number => id != null)));
-  const members = rowIds.length > 0
-    ? await db
-        .select({ rowId: rowMembers.rowId, memberName: rowMembers.memberName })
-        .from(rowMembers)
-        .where(inArray(rowMembers.rowId, rowIds))
-    : [];
+  const rowIds = Array.from(
+    new Set(rows.map(r => r.rowId).filter((id): id is number => id != null))
+  );
+  const members =
+    rowIds.length > 0
+      ? await db
+          .select({
+            rowId: rowMembers.rowId,
+            memberName: rowMembers.memberName,
+          })
+          .from(rowMembers)
+          .where(inArray(rowMembers.rowId, rowIds))
+      : [];
   const byRow = new Map<number, string[]>();
   for (const m of members) {
     if (m.memberName === "__SPACE__") continue;
@@ -768,7 +1004,10 @@ async function attachRowMemberCins<T extends { rowId: number | null }>(
     arr.push(m.memberName);
     byRow.set(m.rowId, arr);
   }
-  return rows.map((r) => ({ ...r, memberCINs: r.rowId != null ? (byRow.get(r.rowId) ?? []) : [] }));
+  return rows.map(r => ({
+    ...r,
+    memberCINs: r.rowId != null ? (byRow.get(r.rowId) ?? []) : [],
+  }));
 }
 
 // All attachments across every running sheet in an operation, joined back to
@@ -799,7 +1038,13 @@ export async function getAttachmentsByOperationId(operationId: number) {
     .from(rowAttachments)
     .leftJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
     .leftJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
-    .where(and(eq(rowAttachments.operationId, operationId), isNull(runningSheets.deletedAt), isNull(rowAttachments.deletedAt)))
+    .where(
+      and(
+        eq(rowAttachments.operationId, operationId),
+        isNull(runningSheets.deletedAt),
+        isNull(rowAttachments.deletedAt)
+      )
+    )
     .orderBy(desc(rowAttachments.createdAt));
   return attachLinkedCounts(db, await attachRowMemberCins(db, rows));
 }
@@ -824,7 +1069,9 @@ export async function getAttachmentsBySheetId(sheetId: number) {
     })
     .from(rowAttachments)
     .innerJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
-    .where(and(eq(sheetRows.sheetId, sheetId), isNull(rowAttachments.deletedAt)))
+    .where(
+      and(eq(sheetRows.sheetId, sheetId), isNull(rowAttachments.deletedAt))
+    )
     .orderBy(desc(rowAttachments.createdAt));
   return attachLinkedCounts(db, await attachRowMemberCins(db, rows));
 }
@@ -833,13 +1080,19 @@ export async function getAttachmentsBySheetId(sheetId: number) {
 export async function softDeleteAttachment(id: number, cin: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.update(rowAttachments).set({ deletedAt: Date.now(), deletedByCIN: cin }).where(eq(rowAttachments.id, id));
+  await db
+    .update(rowAttachments)
+    .set({ deletedAt: Date.now(), deletedByCIN: cin })
+    .where(eq(rowAttachments.id, id));
 }
 
 export async function reinstateAttachment(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.update(rowAttachments).set({ deletedAt: null, deletedByCIN: null }).where(eq(rowAttachments.id, id));
+  await db
+    .update(rowAttachments)
+    .set({ deletedAt: null, deletedByCIN: null })
+    .where(eq(rowAttachments.id, id));
 }
 
 // Permanent delete — used when purging expired Recycle Bin items, or by an
@@ -847,7 +1100,9 @@ export async function reinstateAttachment(id: number) {
 export async function deleteRowAttachment(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.delete(attachmentEntityLinks).where(eq(attachmentEntityLinks.attachmentId, id));
+  await db
+    .delete(attachmentEntityLinks)
+    .where(eq(attachmentEntityLinks.attachmentId, id));
   await db.delete(rowAttachments).where(eq(rowAttachments.id, id));
 }
 
@@ -861,21 +1116,33 @@ export function normalizeEntityLabel(label: string): string {
 
 export async function linkAttachmentToEntity(data: {
   attachmentId: number;
-  category: "target" | "vehicle" | "associate" | "location" | "unidentified_person";
+  category:
+    | "target"
+    | "vehicle"
+    | "associate"
+    | "location"
+    | "unidentified_person";
   targetId?: number;
   entityLabel: string;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const entityKey = data.category === "target" ? null : normalizeEntityLabel(data.entityLabel);
+  const entityKey =
+    data.category === "target" ? null : normalizeEntityLabel(data.entityLabel);
   const findExisting = () =>
-    db.select({ id: attachmentEntityLinks.id }).from(attachmentEntityLinks).where(and(
-      eq(attachmentEntityLinks.attachmentId, data.attachmentId),
-      eq(attachmentEntityLinks.category, data.category),
-      data.category === "target"
-        ? eq(attachmentEntityLinks.targetId, data.targetId ?? -1)
-        : eq(attachmentEntityLinks.entityKey, entityKey ?? ""),
-    )).limit(1);
+    db
+      .select({ id: attachmentEntityLinks.id })
+      .from(attachmentEntityLinks)
+      .where(
+        and(
+          eq(attachmentEntityLinks.attachmentId, data.attachmentId),
+          eq(attachmentEntityLinks.category, data.category),
+          data.category === "target"
+            ? eq(attachmentEntityLinks.targetId, data.targetId ?? -1)
+            : eq(attachmentEntityLinks.entityKey, entityKey ?? "")
+        )
+      )
+      .limit(1);
   // Avoid duplicate links to the same entity
   const existing = await findExisting();
   if (existing.length > 0) return existing[0].id;
@@ -895,7 +1162,13 @@ export async function linkAttachmentToEntity(data: {
     // face-select Confirm button) can both pass it before either commits.
     // The unique index on (attachmentId, category, entityKey) is the real
     // guard — on conflict, the other request won the race, so reuse its row.
-    if (err && typeof err === "object" && "code" in err && err.code === "ER_DUP_ENTRY" && entityKey !== null) {
+    if (
+      err &&
+      typeof err === "object" &&
+      "code" in err &&
+      err.code === "ER_DUP_ENTRY" &&
+      entityKey !== null
+    ) {
       const raceWinner = await findExisting();
       if (raceWinner.length > 0) return raceWinner[0].id;
     }
@@ -906,13 +1179,18 @@ export async function linkAttachmentToEntity(data: {
 export async function unlinkAttachmentFromEntity(linkId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.delete(attachmentEntityLinks).where(eq(attachmentEntityLinks.id, linkId));
+  await db
+    .delete(attachmentEntityLinks)
+    .where(eq(attachmentEntityLinks.id, linkId));
 }
 
 export async function getEntityLinksByAttachmentId(attachmentId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(attachmentEntityLinks).where(eq(attachmentEntityLinks.attachmentId, attachmentId));
+  return db
+    .select()
+    .from(attachmentEntityLinks)
+    .where(eq(attachmentEntityLinks.attachmentId, attachmentId));
 }
 
 // ─── Person Detections (face recognition) ──────────────────────────────────
@@ -946,9 +1224,17 @@ export async function createPersonDetection(data: {
     // a racing duplicate confirm request (see linkAttachmentToEntity) can
     // reach here with the same linkId the other request already saved a
     // detection for. Treat that as already-done rather than erroring.
-    if (err && typeof err === "object" && "code" in err && err.code === "ER_DUP_ENTRY") {
-      const [existing] = await db.select({ id: personDetections.id }).from(personDetections)
-        .where(eq(personDetections.entityLinkId, data.entityLinkId)).limit(1);
+    if (
+      err &&
+      typeof err === "object" &&
+      "code" in err &&
+      err.code === "ER_DUP_ENTRY"
+    ) {
+      const [existing] = await db
+        .select({ id: personDetections.id })
+        .from(personDetections)
+        .where(eq(personDetections.entityLinkId, data.entityLinkId))
+        .limit(1);
       if (existing) return existing.id;
     }
     throw err;
@@ -1004,7 +1290,11 @@ export async function findSimilarFaces(
     );
   const dismissedPartners = new Set<number>();
   for (const d of dismissals) {
-    dismissedPartners.add(d.entityLinkIdA === excludeEntityLinkId ? d.entityLinkIdB : d.entityLinkIdA);
+    dismissedPartners.add(
+      d.entityLinkIdA === excludeEntityLinkId
+        ? d.entityLinkIdB
+        : d.entityLinkIdA
+    );
   }
 
   const rows = await db
@@ -1018,8 +1308,14 @@ export async function findSimilarFaces(
       photoUrl: rowAttachments.url,
     })
     .from(personDetections)
-    .innerJoin(attachmentEntityLinks, eq(personDetections.entityLinkId, attachmentEntityLinks.id))
-    .innerJoin(rowAttachments, eq(personDetections.attachmentId, rowAttachments.id))
+    .innerJoin(
+      attachmentEntityLinks,
+      eq(personDetections.entityLinkId, attachmentEntityLinks.id)
+    )
+    .innerJoin(
+      rowAttachments,
+      eq(personDetections.attachmentId, rowAttachments.id)
+    )
     .where(isNull(rowAttachments.deletedAt));
 
   const candidates: FaceMatchCandidate[] = [];
@@ -1062,7 +1358,10 @@ const FACE_IDENTITY_PRIORITY: Record<string, number> = {
   target: 2,
 };
 
-export async function confirmFaceMatch(newLinkId: number, matchedLinkId: number) {
+export async function confirmFaceMatch(
+  newLinkId: number,
+  matchedLinkId: number
+) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const [newLink] = await db
@@ -1083,12 +1382,19 @@ export async function confirmFaceMatch(newLinkId: number, matchedLinkId: number)
   // Ties (including the common Unidentified-Person-joins-an-existing-
   // Unidentified-Person-pool case) favor the matched/existing side, so a
   // single freshly-confirmed face doesn't rename an already-established pool.
-  const [winner, loser] = newPriority > matchedPriority ? [newLink, matched] : [matched, newLink];
+  const [winner, loser] =
+    newPriority > matchedPriority ? [newLink, matched] : [matched, newLink];
 
   const loserGroupWhere =
     loser.category === "target"
-      ? and(eq(attachmentEntityLinks.category, "target"), eq(attachmentEntityLinks.targetId, loser.targetId ?? -1))
-      : and(eq(attachmentEntityLinks.category, loser.category), eq(attachmentEntityLinks.entityKey, loser.entityKey ?? ""));
+      ? and(
+          eq(attachmentEntityLinks.category, "target"),
+          eq(attachmentEntityLinks.targetId, loser.targetId ?? -1)
+        )
+      : and(
+          eq(attachmentEntityLinks.category, loser.category),
+          eq(attachmentEntityLinks.entityKey, loser.entityKey ?? "")
+        );
 
   await db
     .update(attachmentEntityLinks)
@@ -1103,11 +1409,20 @@ export async function confirmFaceMatch(newLinkId: number, matchedLinkId: number)
 
 // Officer confirmed "no, not the same person" — stored unordered (smaller id
 // first) so findSimilarFaces only needs one OR lookup to check both directions.
-export async function createFaceMatchDismissal(entityLinkIdA: number, entityLinkIdB: number, cin?: string) {
+export async function createFaceMatchDismissal(
+  entityLinkIdA: number,
+  entityLinkIdB: number,
+  cin?: string
+) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const [a, b] = entityLinkIdA < entityLinkIdB ? [entityLinkIdA, entityLinkIdB] : [entityLinkIdB, entityLinkIdA];
-  await db.insert(faceMatchDismissals).values({ entityLinkIdA: a, entityLinkIdB: b, dismissedByCIN: cin });
+  const [a, b] =
+    entityLinkIdA < entityLinkIdB
+      ? [entityLinkIdA, entityLinkIdB]
+      : [entityLinkIdB, entityLinkIdA];
+  await db
+    .insert(faceMatchDismissals)
+    .values({ entityLinkIdA: a, entityLinkIdB: b, dismissedByCIN: cin });
 }
 
 // One row per distinct linked entity with its photo count — used to show a
@@ -1123,28 +1438,47 @@ export async function getEntityLinkCounts() {
       count: sql<number>`count(*)`.as("count"),
     })
     .from(attachmentEntityLinks)
-    .innerJoin(rowAttachments, eq(attachmentEntityLinks.attachmentId, rowAttachments.id))
+    .innerJoin(
+      rowAttachments,
+      eq(attachmentEntityLinks.attachmentId, rowAttachments.id)
+    )
     .where(isNull(rowAttachments.deletedAt))
-    .groupBy(attachmentEntityLinks.category, attachmentEntityLinks.targetId, attachmentEntityLinks.entityKey);
+    .groupBy(
+      attachmentEntityLinks.category,
+      attachmentEntityLinks.targetId,
+      attachmentEntityLinks.entityKey
+    );
 }
 
 // All photos linked to one entity, joined back to row/sheet for display.
 export async function getAttachmentsForEntity(params: {
-  category: "target" | "vehicle" | "associate" | "location" | "unidentified_person";
+  category:
+    | "target"
+    | "vehicle"
+    | "associate"
+    | "location"
+    | "unidentified_person";
   targetId?: number;
   entityLabel?: string;
 }) {
   const db = await getDb();
   if (!db) return [];
-  const entityKey = params.entityLabel ? normalizeEntityLabel(params.entityLabel) : null;
-  const links = await db.select().from(attachmentEntityLinks).where(and(
-    eq(attachmentEntityLinks.category, params.category),
-    params.category === "target"
-      ? eq(attachmentEntityLinks.targetId, params.targetId ?? -1)
-      : eq(attachmentEntityLinks.entityKey, entityKey ?? ""),
-  ));
+  const entityKey = params.entityLabel
+    ? normalizeEntityLabel(params.entityLabel)
+    : null;
+  const links = await db
+    .select()
+    .from(attachmentEntityLinks)
+    .where(
+      and(
+        eq(attachmentEntityLinks.category, params.category),
+        params.category === "target"
+          ? eq(attachmentEntityLinks.targetId, params.targetId ?? -1)
+          : eq(attachmentEntityLinks.entityKey, entityKey ?? "")
+      )
+    );
   if (links.length === 0) return [];
-  const attachmentIds = links.map((l) => l.attachmentId);
+  const attachmentIds = links.map(l => l.attachmentId);
   const rows = await db
     .select({
       id: rowAttachments.id,
@@ -1162,10 +1496,18 @@ export async function getAttachmentsForEntity(params: {
     .from(rowAttachments)
     .leftJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
     .leftJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
-    .where(and(inArray(rowAttachments.id, attachmentIds), isNull(rowAttachments.deletedAt)))
+    .where(
+      and(
+        inArray(rowAttachments.id, attachmentIds),
+        isNull(rowAttachments.deletedAt)
+      )
+    )
     .orderBy(desc(rowAttachments.createdAt));
   const withCins = await attachRowMemberCins(db, rows);
-  return withCins.map((r) => ({ ...r, linkId: links.find((l) => l.attachmentId === r.id)!.id }));
+  return withCins.map(r => ({
+    ...r,
+    linkId: links.find(l => l.attachmentId === r.id)!.id,
+  }));
 }
 
 export interface OperationEntityPhoto {
@@ -1185,22 +1527,55 @@ export interface OperationEntityPhoto {
 async function getAttachmentsForOperationEntities(
   targetIds: number[],
   entityKeys: { vehicle: string[]; associate: string[]; location: string[] }
-): Promise<{ targetPhotos: Map<number, OperationEntityPhoto[]>; entityPhotos: Map<string, OperationEntityPhoto[]> }> {
-  const empty = { targetPhotos: new Map<number, OperationEntityPhoto[]>(), entityPhotos: new Map<string, OperationEntityPhoto[]>() };
+): Promise<{
+  targetPhotos: Map<number, OperationEntityPhoto[]>;
+  entityPhotos: Map<string, OperationEntityPhoto[]>;
+}> {
+  const empty = {
+    targetPhotos: new Map<number, OperationEntityPhoto[]>(),
+    entityPhotos: new Map<string, OperationEntityPhoto[]>(),
+  };
   const db = await getDb();
   if (!db) return empty;
 
   const conditions = [];
-  if (targetIds.length) conditions.push(and(eq(attachmentEntityLinks.category, "target"), inArray(attachmentEntityLinks.targetId, targetIds)));
-  if (entityKeys.vehicle.length) conditions.push(and(eq(attachmentEntityLinks.category, "vehicle"), inArray(attachmentEntityLinks.entityKey, entityKeys.vehicle)));
-  if (entityKeys.associate.length) conditions.push(and(eq(attachmentEntityLinks.category, "associate"), inArray(attachmentEntityLinks.entityKey, entityKeys.associate)));
-  if (entityKeys.location.length) conditions.push(and(eq(attachmentEntityLinks.category, "location"), inArray(attachmentEntityLinks.entityKey, entityKeys.location)));
+  if (targetIds.length)
+    conditions.push(
+      and(
+        eq(attachmentEntityLinks.category, "target"),
+        inArray(attachmentEntityLinks.targetId, targetIds)
+      )
+    );
+  if (entityKeys.vehicle.length)
+    conditions.push(
+      and(
+        eq(attachmentEntityLinks.category, "vehicle"),
+        inArray(attachmentEntityLinks.entityKey, entityKeys.vehicle)
+      )
+    );
+  if (entityKeys.associate.length)
+    conditions.push(
+      and(
+        eq(attachmentEntityLinks.category, "associate"),
+        inArray(attachmentEntityLinks.entityKey, entityKeys.associate)
+      )
+    );
+  if (entityKeys.location.length)
+    conditions.push(
+      and(
+        eq(attachmentEntityLinks.category, "location"),
+        inArray(attachmentEntityLinks.entityKey, entityKeys.location)
+      )
+    );
   if (!conditions.length) return empty;
 
-  const links = await db.select().from(attachmentEntityLinks).where(or(...conditions));
+  const links = await db
+    .select()
+    .from(attachmentEntityLinks)
+    .where(or(...conditions));
   if (!links.length) return empty;
 
-  const attachmentIds = Array.from(new Set(links.map((l) => l.attachmentId)));
+  const attachmentIds = Array.from(new Set(links.map(l => l.attachmentId)));
   const rows = await db
     .select({
       id: rowAttachments.id,
@@ -1211,9 +1586,14 @@ async function getAttachmentsForOperationEntities(
     })
     .from(rowAttachments)
     .leftJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
-    .where(and(inArray(rowAttachments.id, attachmentIds), isNull(rowAttachments.deletedAt)));
+    .where(
+      and(
+        inArray(rowAttachments.id, attachmentIds),
+        isNull(rowAttachments.deletedAt)
+      )
+    );
   const withCins = await attachRowMemberCins(db, rows);
-  const byAttachmentId = new Map(withCins.map((r) => [r.id, r]));
+  const byAttachmentId = new Map(withCins.map(r => [r.id, r]));
 
   const targetPhotos = new Map<number, OperationEntityPhoto[]>();
   const entityPhotos = new Map<string, OperationEntityPhoto[]>();
@@ -1239,22 +1619,38 @@ async function getAttachmentsForOperationEntities(
 export async function getCertificationsByRowId(rowId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(certifications).where(and(eq(certifications.rowId, rowId), eq(certifications.isActive, true)));
+  return db
+    .select()
+    .from(certifications)
+    .where(
+      and(eq(certifications.rowId, rowId), eq(certifications.isActive, true))
+    );
 }
 
 export async function getCertificationsByRowIds(rowIds: number[]) {
   if (rowIds.length === 0) return [];
-  const results = await Promise.all(rowIds.map((rid) => getCertificationsByRowId(rid)));
+  const results = await Promise.all(
+    rowIds.map(rid => getCertificationsByRowId(rid))
+  );
   return results.flat();
 }
 
-export async function getCertificationByMember(rowId: number, memberId: number) {
+export async function getCertificationByMember(
+  rowId: number,
+  memberId: number
+) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db
     .select()
     .from(certifications)
-    .where(and(eq(certifications.rowId, rowId), eq(certifications.memberId, memberId), eq(certifications.isActive, true)))
+    .where(
+      and(
+        eq(certifications.rowId, rowId),
+        eq(certifications.memberId, memberId),
+        eq(certifications.isActive, true)
+      )
+    )
     .limit(1);
   return result[0];
 }
@@ -1272,13 +1668,21 @@ export async function deactivateCertification(rowId: number, memberId: number) {
   await db
     .update(certifications)
     .set({ isActive: false })
-    .where(and(eq(certifications.rowId, rowId), eq(certifications.memberId, memberId)));
+    .where(
+      and(
+        eq(certifications.rowId, rowId),
+        eq(certifications.memberId, memberId)
+      )
+    );
 }
 
 export async function deactivateAllCertificationsForRow(rowId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.update(certifications).set({ isActive: false }).where(eq(certifications.rowId, rowId));
+  await db
+    .update(certifications)
+    .set({ isActive: false })
+    .where(eq(certifications.rowId, rowId));
 }
 
 /**
@@ -1301,33 +1705,43 @@ export async function getOutstandingSheetsForCin(cin: string): Promise<
   if (!db) return [];
 
   // Find all row_members whose memberName matches the CIN
-  const members = await db.select().from(rowMembers).where(eq(rowMembers.memberName, cin));
+  const members = await db
+    .select()
+    .from(rowMembers)
+    .where(eq(rowMembers.memberName, cin));
   if (members.length === 0) return [];
 
-  const memberIds = members.map((m) => m.id);
-  const rowIds = Array.from(new Set(members.map((m) => m.rowId)));
+  const memberIds = members.map(m => m.id);
+  const rowIds = Array.from(new Set(members.map(m => m.rowId)));
 
   // Get active certifications for those members
   const certs = await db
     .select()
     .from(certifications)
-    .where(and(inArray(certifications.memberId, memberIds), eq(certifications.isActive, true)));
+    .where(
+      and(
+        inArray(certifications.memberId, memberIds),
+        eq(certifications.isActive, true)
+      )
+    );
 
   // Determine which members are uncertified
   const uncertifiedMembers = members.filter(
-    (m) => !certs.some((c) => c.memberId === m.id),
+    m => !certs.some(c => c.memberId === m.id)
   );
   if (uncertifiedMembers.length === 0) return [];
 
   // Get the rows for uncertified members
-  const uncertifiedRowIds = Array.from(new Set(uncertifiedMembers.map((m) => m.rowId)));
+  const uncertifiedRowIds = Array.from(
+    new Set(uncertifiedMembers.map(m => m.rowId))
+  );
   const rows = await db
     .select()
     .from(sheetRows)
     .where(inArray(sheetRows.id, uncertifiedRowIds));
 
   // Get distinct sheet IDs
-  const sheetIds = Array.from(new Set(rows.map((r) => r.sheetId)));
+  const sheetIds = Array.from(new Set(rows.map(r => r.sheetId)));
   if (sheetIds.length === 0) return [];
 
   // Fetch sheets — only those that still exist
@@ -1337,7 +1751,7 @@ export async function getOutstandingSheetsForCin(cin: string): Promise<
     .where(inArray(runningSheets.id, sheetIds));
 
   // Fetch operations for those sheets — only those that still exist
-  const opIds = Array.from(new Set(sheets.map((s) => s.operationId)));
+  const opIds = Array.from(new Set(sheets.map(s => s.operationId)));
   if (opIds.length === 0) return [];
   const ops = await db
     .select()
@@ -1345,22 +1759,26 @@ export async function getOutstandingSheetsForCin(cin: string): Promise<
     .where(inArray(operations.id, opIds));
 
   // Only include sheets whose operation still exists
-  const validOpIds = new Set(ops.map((o) => o.id));
-  const validSheets = sheets.filter((s) => validOpIds.has(s.operationId));
+  const validOpIds = new Set(ops.map(o => o.id));
+  const validSheets = sheets.filter(s => validOpIds.has(s.operationId));
 
-  return validSheets.map((sheet) => {
-    const op = ops.find((o) => o.id === sheet.operationId)!;
-    const uncertifiedRowCount = rows.filter((r) => r.sheetId === sheet.id).length;
-    return {
-      sheetId: sheet.id,
-      sheetTitle: sheet.title,
-      targetName: sheet.targetName ?? null,
-      operationId: sheet.operationId,
-      operationName: op.name,
-      uncertifiedRowCount,
-      createdAt: sheet.createdAt,
-    };
-  }).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  return validSheets
+    .map(sheet => {
+      const op = ops.find(o => o.id === sheet.operationId)!;
+      const uncertifiedRowCount = rows.filter(
+        r => r.sheetId === sheet.id
+      ).length;
+      return {
+        sheetId: sheet.id,
+        sheetTitle: sheet.title,
+        targetName: sheet.targetName ?? null,
+        operationId: sheet.operationId,
+        operationName: op.name,
+        uncertifiedRowCount,
+        createdAt: sheet.createdAt,
+      };
+    })
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 }
 
 /**
@@ -1371,29 +1789,37 @@ export async function getOutstandingSheetsForCin(cin: string): Promise<
  */
 export async function getCinCertStatusForSheet(
   sheetId: number,
-  cinList: string[],
+  cinList: string[]
 ): Promise<{ cin: string; certified: boolean }[]> {
   if (cinList.length === 0) return [];
   const db = await getDb();
-  if (!db) return cinList.map((cin) => ({ cin, certified: false }));
+  if (!db) return cinList.map(cin => ({ cin, certified: false }));
 
   // Get all rows for this sheet
-  const rows = await db.select({ id: sheetRows.id }).from(sheetRows).where(eq(sheetRows.sheetId, sheetId));
-  if (rows.length === 0) return cinList.map((cin) => ({ cin, certified: false }));
+  const rows = await db
+    .select({ id: sheetRows.id })
+    .from(sheetRows)
+    .where(eq(sheetRows.sheetId, sheetId));
+  if (rows.length === 0) return cinList.map(cin => ({ cin, certified: false }));
 
-  const rowIds = rows.map((r) => r.id);
+  const rowIds = rows.map(r => r.id);
 
   // Get all row_members for these rows
-  const members = await db.select().from(rowMembers).where(inArray(rowMembers.rowId, rowIds));
+  const members = await db
+    .select()
+    .from(rowMembers)
+    .where(inArray(rowMembers.rowId, rowIds));
 
   // Get all active certifications for these rows
   const certs = await getCertificationsByRowIds(rowIds);
 
-  return cinList.map((cin) => {
-    const cinMembers = members.filter((m) => m.memberName.toLowerCase() === cin.toLowerCase());
+  return cinList.map(cin => {
+    const cinMembers = members.filter(
+      m => m.memberName.toLowerCase() === cin.toLowerCase()
+    );
     if (cinMembers.length === 0) return { cin, certified: false };
-    const allCertified = cinMembers.every((m) =>
-      certs.some((c) => c.memberId === m.id && c.isActive),
+    const allCertified = cinMembers.every(m =>
+      certs.some(c => c.memberId === m.id && c.isActive)
     );
     return { cin, certified: allCertified };
   });
@@ -1421,7 +1847,11 @@ export async function getAuditLogsBySheet(sheetId: number, limit = 200) {
 export async function getAllAuditLogs(limit = 500) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt)).limit(limit);
+  return db
+    .select()
+    .from(auditLogs)
+    .orderBy(desc(auditLogs.createdAt))
+    .limit(limit);
 }
 
 // ─── Targets ─────────────────────────────────────────────────────────────────
@@ -1431,17 +1861,48 @@ export async function getTargetsByOperation(operationId: number) {
   if (!db) return [];
   // Get targets by legacy operationId FK AND by operation_target_links (registry-linked)
   // Exclude soft-deleted targets in both paths
-  const byFk = await db.select().from(targets).where(and(eq(targets.operationId, operationId), isNull(targets.deletedAt)));
+  const byFk = await db
+    .select()
+    .from(targets)
+    .where(
+      and(eq(targets.operationId, operationId), isNull(targets.deletedAt))
+    );
   const linked = await db
-    .select({ id: targets.id, name: targets.name, tgt: targets.tgt, hbf: targets.hbf, hb: targets.hb, v1f: targets.v1f, v1: targets.v1, v2f: targets.v2f, v2: targets.v2, dep: targets.dep, arr: targets.arr, extraVehicles: targets.extraVehicles, wildFields: targets.wildFields, operationId: targets.operationId, createdBy: targets.createdBy, createdAt: targets.createdAt, updatedAt: targets.updatedAt })
+    .select({
+      id: targets.id,
+      name: targets.name,
+      tgt: targets.tgt,
+      hbf: targets.hbf,
+      hb: targets.hb,
+      v1f: targets.v1f,
+      v1: targets.v1,
+      v2f: targets.v2f,
+      v2: targets.v2,
+      dep: targets.dep,
+      arr: targets.arr,
+      extraVehicles: targets.extraVehicles,
+      wildFields: targets.wildFields,
+      operationId: targets.operationId,
+      createdBy: targets.createdBy,
+      createdAt: targets.createdAt,
+      updatedAt: targets.updatedAt,
+    })
     .from(operationTargetLinks)
     .innerJoin(targets, eq(operationTargetLinks.targetId, targets.id))
-    .where(and(eq(operationTargetLinks.operationId, operationId), isNull(targets.deletedAt)));
+    .where(
+      and(
+        eq(operationTargetLinks.operationId, operationId),
+        isNull(targets.deletedAt)
+      )
+    );
   // Merge, deduplicate by id
   const seen = new Set<number>();
   const all = [];
   for (const t of [...byFk, ...linked]) {
-    if (!seen.has(t.id)) { seen.add(t.id); all.push(t); }
+    if (!seen.has(t.id)) {
+      seen.add(t.id);
+      all.push(t);
+    }
   }
   return all;
 }
@@ -1474,7 +1935,23 @@ export async function createTarget(data: InsertTarget) {
 
 export async function updateTarget(
   id: number,
-  data: Partial<Pick<InsertTarget, "name" | "tgt" | "hbf" | "hb" | "v1f" | "v1" | "v2f" | "v2" | "dep" | "arr" | "extraVehicles" | "wildFields">>
+  data: Partial<
+    Pick<
+      InsertTarget,
+      | "name"
+      | "tgt"
+      | "hbf"
+      | "hb"
+      | "v1f"
+      | "v1"
+      | "v2f"
+      | "v2"
+      | "dep"
+      | "arr"
+      | "extraVehicles"
+      | "wildFields"
+    >
+  >
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -1485,23 +1962,182 @@ export async function updateTarget(
 export async function getTargetById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
-  const [result] = await db.select().from(targets).where(eq(targets.id, id)).limit(1);
+  const [result] = await db
+    .select()
+    .from(targets)
+    .where(eq(targets.id, id))
+    .limit(1);
   return result;
+}
+
+// ─── Target Duplicate Detection & Field-Level Merge ────────────────────────
+// Reuses the same deterministic (non-AI) name-similarity heuristic already
+// used for Intelligence entity dedup (see entityDedup.ts) — the Target
+// Registry has its own separate flow because a target is a structured
+// record with several fields, not a single label string, so a match needs
+// to resolve field-by-field (see mergeTargetFieldDetails) rather than just
+// picking a winner label.
+
+export type TargetFieldName =
+  | "name"
+  | "tgt"
+  | "hbf"
+  | "hb"
+  | "v1f"
+  | "v1"
+  | "dep"
+  | "arr";
+
+/** Fuzzy-checks a candidate target name against every existing live target's name. Best match first, or null if nothing close enough. */
+export async function findPossibleDuplicateTarget(
+  name: string,
+  excludeId?: number
+): Promise<{ id: number; name: string; score: number; reason: string } | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select({ id: targets.id, name: targets.name })
+    .from(targets)
+    .where(isNull(targets.deletedAt));
+  const candidates: DedupCandidateEntity[] = rows
+    .filter(r => r.id !== excludeId)
+    .map(r => ({
+      key: String(r.id),
+      label: r.name,
+      type: "person" as DedupType,
+      rowCount: 0,
+    }));
+  const matches = findPossibleDuplicates(name, "person", "__new__", candidates);
+  if (matches.length === 0) return null;
+  const best = matches[0];
+  return {
+    id: Number(best.key),
+    name: best.label,
+    score: best.score,
+    reason: best.reason,
+  };
+}
+
+/** All recorded "previous" values for a target, most recently superseded first. */
+export async function getTargetFieldHistory(targetId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(targetFieldHistory)
+    .where(eq(targetFieldHistory.targetId, targetId))
+    .orderBy(desc(targetFieldHistory.supersededAt));
+}
+
+/**
+ * Applies officer-resolved field choices when a new-target entry turned out
+ * to match an existing target. For each resolved field, `value` becomes the
+ * target's new live value; if `discarded` is also present (a real new-vs-
+ * existing conflict, not just filling in a previously-blank field), that
+ * losing value is preserved as history rather than dropped — nothing is
+ * ever silently overwritten or lost.
+ */
+export async function mergeTargetFieldDetails(
+  targetId: number,
+  resolutions: { field: TargetFieldName; value: string; discarded?: string }[],
+  appendExtraVehicles: { full: string; short: string }[],
+  appendWildFields: { label: string; value: string }[],
+  byCIN: string | null
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const current = await getTargetById(targetId);
+  if (!current) throw new Error("Target not found");
+
+  const now = Date.now();
+  const patch: Partial<InsertTarget> = {};
+  const historyRows: InsertTargetFieldHistory[] = [];
+  for (const r of resolutions) {
+    patch[r.field] = r.value;
+    if (
+      r.discarded &&
+      r.discarded.trim() &&
+      r.discarded.trim() !== r.value.trim()
+    ) {
+      historyRows.push({
+        targetId,
+        fieldName: r.field,
+        previousValue: r.discarded,
+        supersededAt: now,
+        supersededByCIN: byCIN,
+      });
+    }
+  }
+
+  // Extra vehicles / wild fields are purely additive (dynamic lists, not a
+  // single value to conflict over) — append anything not already present.
+  if (appendExtraVehicles.length > 0) {
+    let existing: { full: string; short: string }[] = [];
+    try {
+      existing = current.extraVehicles ? JSON.parse(current.extraVehicles) : [];
+    } catch {
+      existing = [];
+    }
+    const existingKeys = new Set(
+      existing.map(v => `${v.full.trim()}|${v.short.trim()}`.toLowerCase())
+    );
+    const toAdd = appendExtraVehicles.filter(
+      v =>
+        (v.full.trim() || v.short.trim()) &&
+        !existingKeys.has(`${v.full.trim()}|${v.short.trim()}`.toLowerCase())
+    );
+    if (toAdd.length > 0)
+      patch.extraVehicles = JSON.stringify([...existing, ...toAdd]);
+  }
+  if (appendWildFields.length > 0) {
+    let existing: { label: string; value: string }[] = [];
+    try {
+      existing = current.wildFields ? JSON.parse(current.wildFields) : [];
+    } catch {
+      existing = [];
+    }
+    const existingKeys = new Set(
+      existing.map(w => `${w.label.trim()}|${w.value.trim()}`.toLowerCase())
+    );
+    const toAdd = appendWildFields.filter(
+      w =>
+        w.value.trim() &&
+        !existingKeys.has(`${w.label.trim()}|${w.value.trim()}`.toLowerCase())
+    );
+    if (toAdd.length > 0)
+      patch.wildFields = JSON.stringify([...existing, ...toAdd]);
+  }
+
+  if (Object.keys(patch).length > 0) {
+    await db.update(targets).set(patch).where(eq(targets.id, targetId));
+  }
+  if (historyRows.length > 0) {
+    await db.insert(targetFieldHistory).values(historyRows);
+  }
+  return getTargetById(targetId);
 }
 
 export async function softDeleteTarget(id: number, cin: string) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  await db.update(targets).set({ deletedAt: Date.now(), deletedByCIN: cin }).where(eq(targets.id, id));
+  await db
+    .update(targets)
+    .set({ deletedAt: Date.now(), deletedByCIN: cin })
+    .where(eq(targets.id, id));
 }
 
 export async function deleteTarget(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   // Clear any running sheets that reference this target before deleting
-  await db.update(runningSheets).set({ targetId: null }).where(eq(runningSheets.targetId, id));
+  await db
+    .update(runningSheets)
+    .set({ targetId: null })
+    .where(eq(runningSheets.targetId, id));
   // Remove all operation links for this target
-  await db.delete(operationTargetLinks).where(eq(operationTargetLinks.targetId, id));
+  await db
+    .delete(operationTargetLinks)
+    .where(eq(operationTargetLinks.targetId, id));
   await db.delete(targets).where(eq(targets.id, id));
 }
 
@@ -1510,13 +2146,24 @@ export async function setSheetTarget(sheetId: number, targetId: number | null) {
   if (!db) throw new Error("DB unavailable");
   if (targetId !== null) {
     // Verify the target belongs to the same operation as the sheet
-    const [sheet] = await db.select({ operationId: runningSheets.operationId }).from(runningSheets).where(eq(runningSheets.id, sheetId)).limit(1);
+    const [sheet] = await db
+      .select({ operationId: runningSheets.operationId })
+      .from(runningSheets)
+      .where(eq(runningSheets.id, sheetId))
+      .limit(1);
     if (!sheet) throw new Error("Sheet not found");
-    const [target] = await db.select({ operationId: targets.operationId }).from(targets).where(eq(targets.id, targetId)).limit(1);
+    const [target] = await db
+      .select({ operationId: targets.operationId })
+      .from(targets)
+      .where(eq(targets.id, targetId))
+      .limit(1);
     if (!target) throw new Error("Target not found");
     // Target Registry: targets are no longer operation-scoped, allow any target on any sheet
   }
-  await db.update(runningSheets).set({ targetId }).where(eq(runningSheets.id, sheetId));
+  await db
+    .update(runningSheets)
+    .set({ targetId })
+    .where(eq(runningSheets.id, sheetId));
 }
 
 // ─── Target Registry ────────────────────────────────────────────────────────
@@ -1525,7 +2172,11 @@ export async function setSheetTarget(sheetId: number, targetId: number | null) {
 export async function getAllTargetsForRegistry() {
   const db = await getDb();
   if (!db) return [];
-  const allTargets = await db.select().from(targets).where(isNull(targets.deletedAt)).orderBy(targets.name);
+  const allTargets = await db
+    .select()
+    .from(targets)
+    .where(isNull(targets.deletedAt))
+    .orderBy(targets.name);
   const links = await db
     .select({
       targetId: operationTargetLinks.targetId,
@@ -1535,10 +2186,15 @@ export async function getAllTargetsForRegistry() {
     .from(operationTargetLinks)
     .leftJoin(operations, eq(operationTargetLinks.operationId, operations.id));
 
-  const linkMap = new Map<number, Array<{ operationId: number; operationName: string | null }>>();
+  const linkMap = new Map<
+    number,
+    Array<{ operationId: number; operationName: string | null }>
+  >();
   for (const l of links) {
     if (!linkMap.has(l.targetId)) linkMap.set(l.targetId, []);
-    linkMap.get(l.targetId)!.push({ operationId: l.operationId, operationName: l.operationName });
+    linkMap
+      .get(l.targetId)!
+      .push({ operationId: l.operationId, operationName: l.operationName });
   }
 
   return allTargets.map(t => ({
@@ -1548,21 +2204,33 @@ export async function getAllTargetsForRegistry() {
 }
 
 /** Create a target in the global registry (no operationId required) */
-export async function createRegistryTarget(data: Omit<InsertTarget, 'operationId'> & { operationId?: number | null }) {
+export async function createRegistryTarget(
+  data: Omit<InsertTarget, "operationId"> & { operationId?: number | null }
+) {
   const db = await getDb();
-  if (!db) throw new Error('DB unavailable');
-  const [result] = await db.insert(targets).values({ ...data, operationId: data.operationId ?? null });
+  if (!db) throw new Error("DB unavailable");
+  const [result] = await db
+    .insert(targets)
+    .values({ ...data, operationId: data.operationId ?? null });
   return { id: (result as any).insertId as number };
 }
 
 /** Link a target to an operation (idempotent) */
-export async function linkTargetToOperation(targetId: number, operationId: number) {
+export async function linkTargetToOperation(
+  targetId: number,
+  operationId: number
+) {
   const db = await getDb();
-  if (!db) throw new Error('DB unavailable');
+  if (!db) throw new Error("DB unavailable");
   const [existing] = await db
     .select({ id: operationTargetLinks.id })
     .from(operationTargetLinks)
-    .where(and(eq(operationTargetLinks.targetId, targetId), eq(operationTargetLinks.operationId, operationId)))
+    .where(
+      and(
+        eq(operationTargetLinks.targetId, targetId),
+        eq(operationTargetLinks.operationId, operationId)
+      )
+    )
     .limit(1);
   if (!existing) {
     await db.insert(operationTargetLinks).values({ targetId, operationId });
@@ -1575,29 +2243,47 @@ export async function linkTargetToOperation(targetId: number, operationId: numbe
  *  1. Sets sheet.targetId if not already pointing to this target
  *  2. Creates operationTargetLinks row if missing
  */
-export async function ensureTargetFullyLinked(targetId: number, sheetId: number) {
+export async function ensureTargetFullyLinked(
+  targetId: number,
+  sheetId: number
+) {
   const db = await getDb();
-  if (!db) throw new Error('DB unavailable');
+  if (!db) throw new Error("DB unavailable");
   const [sheet] = await db
-    .select({ operationId: runningSheets.operationId, currentTargetId: runningSheets.targetId })
+    .select({
+      operationId: runningSheets.operationId,
+      currentTargetId: runningSheets.targetId,
+    })
     .from(runningSheets)
     .where(eq(runningSheets.id, sheetId))
     .limit(1);
-  if (!sheet) throw new Error('Sheet not found');
+  if (!sheet) throw new Error("Sheet not found");
   // 1. Link sheet → target
   if (sheet.currentTargetId !== targetId) {
-    await db.update(runningSheets).set({ targetId }).where(eq(runningSheets.id, sheetId));
+    await db
+      .update(runningSheets)
+      .set({ targetId })
+      .where(eq(runningSheets.id, sheetId));
   }
   // 2. Link target → operation (idempotent)
   await linkTargetToOperation(targetId, sheet.operationId);
 }
 
 /** Unlink a target from an operation */
-export async function unlinkTargetFromOperation(targetId: number, operationId: number) {
+export async function unlinkTargetFromOperation(
+  targetId: number,
+  operationId: number
+) {
   const db = await getDb();
-  if (!db) throw new Error('DB unavailable');
-  await db.delete(operationTargetLinks)
-    .where(and(eq(operationTargetLinks.targetId, targetId), eq(operationTargetLinks.operationId, operationId)));
+  if (!db) throw new Error("DB unavailable");
+  await db
+    .delete(operationTargetLinks)
+    .where(
+      and(
+        eq(operationTargetLinks.targetId, targetId),
+        eq(operationTargetLinks.operationId, operationId)
+      )
+    );
 }
 
 /** Get all operations linked to a target */
@@ -1622,13 +2308,18 @@ export async function listShortcuts() {
   return db.select().from(shortcuts).orderBy(shortcuts.trigger);
 }
 
-export async function createShortcut(data: Omit<InsertShortcut, 'id' | 'createdAt' | 'updatedAt'>) {
+export async function createShortcut(
+  data: Omit<InsertShortcut, "id" | "createdAt" | "updatedAt">
+) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   await db.insert(shortcuts).values(data);
 }
 
-export async function updateShortcut(id: number, data: { trigger?: string; expansion?: string; showInRs?: boolean }) {
+export async function updateShortcut(
+  id: number,
+  data: { trigger?: string; expansion?: string; showInRs?: boolean }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   await db.update(shortcuts).set(data).where(eq(shortcuts.id, id));
@@ -1644,17 +2335,25 @@ export async function deleteShortcut(id: number) {
 export async function seedShortcutsIfEmpty(systemUserId: number) {
   const db = await getDb();
   if (!db) return;
-  const existing = await db.select({ id: shortcuts.id }).from(shortcuts).limit(1);
+  const existing = await db
+    .select({ id: shortcuts.id })
+    .from(shortcuts)
+    .limit(1);
   if (existing.length > 0) return;
   const defaults = [
-    { trigger: 'sc',   expansion: 'Surveillance commenced in the vicinity of' },
-    { trigger: 'rack', expansion: 'Surveillance ceased in the vicinity of' },
-    { trigger: 'oos',  expansion: 'Out of sight' },
-    { trigger: 'coos', expansion: 'Continued out of sight' },
-    { trigger: 'pt',   expansion: 'PHOTOGRAPH/S TAKEN' },
+    { trigger: "sc", expansion: "Surveillance commenced in the vicinity of" },
+    { trigger: "rack", expansion: "Surveillance ceased in the vicinity of" },
+    { trigger: "oos", expansion: "Out of sight" },
+    { trigger: "coos", expansion: "Continued out of sight" },
+    { trigger: "pt", expansion: "PHOTOGRAPH/S TAKEN" },
   ];
   for (const s of defaults) {
-    await db.insert(shortcuts).values({ ...s, createdBy: systemUserId }).catch(() => {/* ignore duplicate */});
+    await db
+      .insert(shortcuts)
+      .values({ ...s, createdBy: systemUserId })
+      .catch(() => {
+        /* ignore duplicate */
+      });
   }
 }
 
@@ -1664,30 +2363,40 @@ export async function seedShortcutsIfEmpty(systemUserId: number) {
  */
 export async function ensureDefaultShortcuts(systemUserId: number) {
   const db = await getDb();
-  if (!db) { console.warn('[Shortcuts] DB unavailable, skipping ensureDefaultShortcuts'); return; }
+  if (!db) {
+    console.warn("[Shortcuts] DB unavailable, skipping ensureDefaultShortcuts");
+    return;
+  }
   const required = [
-    { trigger: 'sc',   expansion: 'Surveillance commenced in the vicinity of' },
-    { trigger: 'rack', expansion: 'Surveillance ceased in the vicinity of' },
-    { trigger: 'oos',  expansion: 'Out of sight' },
-    { trigger: 'coos', expansion: 'Continued out of sight' },
-    { trigger: 'pt',   expansion: 'PHOTOGRAPH/S TAKEN' },
-    { trigger: 'dso',  expansion: 'driver and sole occupant' },
-    { trigger: 'd',    expansion: 'departed and' },
-    { trigger: 'ar',   expansion: 'arrived and' },
+    { trigger: "sc", expansion: "Surveillance commenced in the vicinity of" },
+    { trigger: "rack", expansion: "Surveillance ceased in the vicinity of" },
+    { trigger: "oos", expansion: "Out of sight" },
+    { trigger: "coos", expansion: "Continued out of sight" },
+    { trigger: "pt", expansion: "PHOTOGRAPH/S TAKEN" },
+    { trigger: "dso", expansion: "driver and sole occupant" },
+    { trigger: "d", expansion: "departed and" },
+    { trigger: "ar", expansion: "arrived and" },
   ];
-  const existing = await db.select({ trigger: shortcuts.trigger }).from(shortcuts);
-  const existingTriggers = new Set(existing.map((s) => s.trigger.toLowerCase()));
+  const existing = await db
+    .select({ trigger: shortcuts.trigger })
+    .from(shortcuts);
+  const existingTriggers = new Set(existing.map(s => s.trigger.toLowerCase()));
   for (const s of required) {
     if (!existingTriggers.has(s.trigger.toLowerCase())) {
       try {
         await db.insert(shortcuts).values({ ...s, createdBy: systemUserId });
         console.log(`[Shortcuts] Inserted default shortcut: ${s.trigger}`);
       } catch (err) {
-        console.error(`[Shortcuts] Failed to insert shortcut '${s.trigger}':`, err);
+        console.error(
+          `[Shortcuts] Failed to insert shortcut '${s.trigger}':`,
+          err
+        );
       }
     }
   }
-  console.log(`[Shortcuts] ensureDefaultShortcuts complete. Existing: [${Array.from(existingTriggers).join(', ')}]`);
+  console.log(
+    `[Shortcuts] ensureDefaultShortcuts complete. Existing: [${Array.from(existingTriggers).join(", ")}]`
+  );
 }
 
 // ─── Deep Search ─────────────────────────────────────────────────────────────
@@ -1705,7 +2414,9 @@ export type DeepSearchMatch = {
   operationStatus: "active" | "before_court" | "archive";
 };
 
-export async function deepSearchOperations(query: string): Promise<DeepSearchMatch[]> {
+export async function deepSearchOperations(
+  query: string
+): Promise<DeepSearchMatch[]> {
   const db = await getDb();
   if (!db || !query.trim()) return [];
 
@@ -1720,27 +2431,43 @@ export async function deepSearchOperations(query: string): Promise<DeepSearchMat
         like(sql`LOWER(${operations.name})`, q),
         like(sql`LOWER(COALESCE(${operations.promisNumber}, ''))`, q),
         like(sql`LOWER(COALESCE(${operations.imsNumber}, ''))`, q),
-        like(sql`LOWER(COALESCE(${operations.investigationUnit}, ''))`, q),
+        like(sql`LOWER(COALESCE(${operations.investigationUnit}, ''))`, q)
       )
     );
 
   // 2. Sheets that match on title or sheetCins JSON text
   const sheetMatches = await db
-    .select({ operationId: runningSheets.operationId, title: runningSheets.title, sheetCins: runningSheets.sheetCins })
+    .select({
+      operationId: runningSheets.operationId,
+      title: runningSheets.title,
+      sheetCins: runningSheets.sheetCins,
+    })
     .from(runningSheets)
     .where(
       and(
         isNull(runningSheets.deletedAt),
         or(
           like(sql`LOWER(${runningSheets.title})`, q),
-          like(sql`LOWER(COALESCE(${runningSheets.sheetCins}, ''))`, q),
+          like(sql`LOWER(COALESCE(${runningSheets.sheetCins}, ''))`, q)
         )
       )
     );
 
   // 3. Targets that match on any field
   const targetMatches = await db
-    .select({ operationId: targets.operationId, name: targets.name, tgt: targets.tgt, hbf: targets.hbf, hb: targets.hb, v1f: targets.v1f, v1: targets.v1, v2f: targets.v2f, v2: targets.v2, dep: targets.dep, arr: targets.arr })
+    .select({
+      operationId: targets.operationId,
+      name: targets.name,
+      tgt: targets.tgt,
+      hbf: targets.hbf,
+      hb: targets.hb,
+      v1f: targets.v1f,
+      v1: targets.v1,
+      v2f: targets.v2f,
+      v2: targets.v2,
+      dep: targets.dep,
+      arr: targets.arr,
+    })
     .from(targets)
     .where(
       and(
@@ -1755,14 +2482,18 @@ export async function deepSearchOperations(query: string): Promise<DeepSearchMat
           like(sql`LOWER(COALESCE(${targets.v1f}, ''))`, q),
           like(sql`LOWER(COALESCE(${targets.v2f}, ''))`, q),
           like(sql`LOWER(COALESCE(${targets.dep}, ''))`, q),
-          like(sql`LOWER(COALESCE(${targets.arr}, ''))`, q),
+          like(sql`LOWER(COALESCE(${targets.arr}, ''))`, q)
         )
       )
     );
 
   // 4. Observation rows that match
   const rowMatches = await db
-    .select({ sheetId: sheetRows.sheetId, observation: sheetRows.observation, time: sheetRows.time })
+    .select({
+      sheetId: sheetRows.sheetId,
+      observation: sheetRows.observation,
+      time: sheetRows.time,
+    })
     .from(sheetRows)
     .where(like(sql`LOWER(COALESCE(${sheetRows.observation}, ''))`, q));
 
@@ -1773,8 +2504,8 @@ export async function deepSearchOperations(query: string): Promise<DeepSearchMat
     .where(like(sql`LOWER(${rowMembers.memberName})`, q));
 
   // Resolve sheetId → operationId for row/member matches
-  const rowSheetIds = Array.from(new Set(rowMatches.map((r) => r.sheetId)));
-  const memberRowIds = Array.from(new Set(memberMatches.map((m) => m.rowId)));
+  const rowSheetIds = Array.from(new Set(rowMatches.map(r => r.sheetId)));
+  const memberRowIds = Array.from(new Set(memberMatches.map(m => m.rowId)));
   let memberSheetIds: number[] = [];
   const memberRowToSheetMap: Record<number, number> = {}; // rowId -> sheetId
   if (memberRowIds.length > 0) {
@@ -1782,8 +2513,10 @@ export async function deepSearchOperations(query: string): Promise<DeepSearchMat
       .select({ id: sheetRows.id, sheetId: sheetRows.sheetId })
       .from(sheetRows)
       .where(inArray(sheetRows.id, memberRowIds));
-    memberRows.forEach((r) => { memberRowToSheetMap[r.id] = r.sheetId; });
-    memberSheetIds = Array.from(new Set(memberRows.map((r) => r.sheetId)));
+    memberRows.forEach(r => {
+      memberRowToSheetMap[r.id] = r.sheetId;
+    });
+    memberSheetIds = Array.from(new Set(memberRows.map(r => r.sheetId)));
   }
   const allSheetIds = Array.from(new Set([...rowSheetIds, ...memberSheetIds]));
   let sheetOpMap: Record<number, number> = {};
@@ -1792,41 +2525,47 @@ export async function deepSearchOperations(query: string): Promise<DeepSearchMat
       .select({ id: runningSheets.id, operationId: runningSheets.operationId })
       .from(runningSheets)
       .where(inArray(runningSheets.id, allSheetIds));
-    sheetRows2.forEach((s) => { sheetOpMap[s.id] = s.operationId; });
+    sheetRows2.forEach(s => {
+      sheetOpMap[s.id] = s.operationId;
+    });
   }
 
   // Collect all matching operationIds with context labels
   const matchMap = new Map<number, Set<string>>();
 
-  const ensure = (id: number) => { if (!matchMap.has(id)) matchMap.set(id, new Set()); };
+  const ensure = (id: number) => {
+    if (!matchMap.has(id)) matchMap.set(id, new Set());
+  };
 
-  opMatches.forEach((op) => {
+  opMatches.forEach(op => {
     ensure(op.id);
     matchMap.get(op.id)!.add("Operation details");
   });
 
-  sheetMatches.forEach((s) => {
+  sheetMatches.forEach(s => {
     // s.operationId IS the operationId directly from runningSheets.operationId
     const opId = s.operationId;
     ensure(opId);
     matchMap.get(opId)!.add(`Sheet: ${s.title}`);
   });
 
-  targetMatches.forEach((t) => {
+  targetMatches.forEach(t => {
     if (t.operationId === null) return;
     ensure(t.operationId);
     matchMap.get(t.operationId)!.add(`Target: ${t.name}`);
   });
 
-  rowMatches.forEach((r) => {
+  rowMatches.forEach(r => {
     const opId = sheetOpMap[r.sheetId];
     if (!opId) return;
     ensure(opId);
     const snippet = (r.observation ?? "").slice(0, 60);
-    matchMap.get(opId)!.add(`Observation: "${snippet}${snippet.length === 60 ? "…" : ""}"`);
+    matchMap
+      .get(opId)!
+      .add(`Observation: "${snippet}${snippet.length === 60 ? "…" : ""}"`);
   });
 
-  memberMatches.forEach((m) => {
+  memberMatches.forEach(m => {
     const sheetId = memberRowToSheetMap[m.rowId];
     if (!sheetId) return;
     const opId = sheetOpMap[sheetId];
@@ -1844,14 +2583,17 @@ export async function deepSearchOperations(query: string): Promise<DeepSearchMat
     .from(operations)
     .where(inArray(operations.id, matchedIds));
 
-  return matchedOps.map((op) => ({
+  return matchedOps.map(op => ({
     operationId: op.id,
     operationName: op.name,
     promisNumber: op.promisNumber ?? null,
     imsNumber: op.imsNumber ?? null,
     investigationUnit: op.investigationUnit ?? null,
     matchContexts: Array.from(matchMap.get(op.id) ?? []),
-    operationStatus: (op.status ?? "active") as "active" | "before_court" | "archive",
+    operationStatus: (op.status ?? "active") as
+      | "active"
+      | "before_court"
+      | "archive",
   }));
 }
 
@@ -1902,10 +2644,13 @@ export function extractEntitiesFromText(text: string): Array<{
     // SMITH (SMITH), departed..." — and without this scoping, the vehicle
     // keyword from an earlier, unrelated clause leaks into the classification
     // of a person's bracketed name later in the same sentence.
-    const lastClause = (fullDescription.split(/[,;]/).pop() ?? fullDescription).trim();
+    const lastClause = (
+      fullDescription.split(/[,;]/).pop() ?? fullDescription
+    ).trim();
     const lowerLastClause = lastClause.toLowerCase();
 
-    let type: "person" | "vehicle" | "address" | "business" | "unknown" = "unknown";
+    let type: "person" | "vehicle" | "address" | "business" | "unknown" =
+      "unknown";
 
     // ── Address-format detection (highest priority) ──────────────────────────
     // If the full description (before the parenthesis) contains a street address
@@ -1914,9 +2659,12 @@ export function extractEntitiesFromText(text: string): Array<{
     // Also classify airport terminals, train stations, bus stops, ports, and
     // numbered terminals (e.g. "Terminal 2", "Gate 3", "Platform 5") as addresses.
     // Also handles cnr/corner-of addresses and lot numbers.
-    const STREET_TYPES = /\b(st|street|rd|road|ave|avenue|dr|drive|way|ct|court|pl|place|cl|close|cres|crescent|blvd|boulevard|hwy|highway|fwy|freeway|ln|lane|tce|terrace|pde|parade|cct|circuit|gr|grove|rise|loop|link|walk|track|row|mews|quay|esplanade|promenade)\b/i;
+    const STREET_TYPES =
+      /\b(st|street|rd|road|ave|avenue|dr|drive|way|ct|court|pl|place|cl|close|cres|crescent|blvd|boulevard|hwy|highway|fwy|freeway|ln|lane|tce|terrace|pde|parade|cct|circuit|gr|grove|rise|loop|link|walk|track|row|mews|quay|esplanade|promenade)\b/i;
     const addressInFull =
-      /\b\d{1,5}\s+\w[\w\s]*(street|road|ave|avenue|drive|way|court|place|close|crescent|boulevard|highway|freeway|lane|terrace|parade|circuit)\b/i.test(fullDescription) ||
+      /\b\d{1,5}[A-Za-z]?\s+\w[\w\s]*(street|road|ave|avenue|drive|way|court|place|close|crescent|boulevard|highway|freeway|lane|terrace|parade|circuit)\b/i.test(
+        fullDescription
+      ) ||
       STREET_TYPES.test(shortForm) ||
       /^\d{1,5}\s/.test(shortForm) ||
       // cnr / corner of addresses: "cnr Smith St and Jones Ave"
@@ -1926,29 +2674,45 @@ export function extractEntitiesFromText(text: string): Array<{
       /^lot\s+\d+/i.test(shortForm) ||
       // Google Maps formatted addresses: "131 Lakey St, Southern River WA 6110, Australia"
       // Pattern: number + street name + suburb + STATE + postcode (+ optional ", Australia")
-      /\b\d{1,5}[A-Za-z]?\/\d{1,5}\s/.test(shortForm) ||  // unit/number e.g. "3/12 Smith St"
+      /\b\d{1,5}[A-Za-z]?\/\d{1,5}\s/.test(shortForm) || // unit/number e.g. "3/12 Smith St"
       /\b\d{1,5}[A-Za-z]?\/\d{1,5}\s/.test(fullDescription) ||
-      /,\s*[A-Za-z][\w\s]+\s+(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\s+\d{4}/.test(shortForm) ||
-      /,\s*[A-Za-z][\w\s]+\s+(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\s+\d{4}/.test(fullDescription) ||
+      /,\s*[A-Za-z][\w\s]+\s+(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\s+\d{4}/.test(
+        shortForm
+      ) ||
+      /,\s*[A-Za-z][\w\s]+\s+(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\s+\d{4}/.test(
+        fullDescription
+      ) ||
       /,\s*Australia\s*$/.test(shortForm) ||
       /,\s*Australia\s*$/.test(fullDescription) ||
       // Airport terminals, train stations, bus stops, ports, gates, platforms
-      /\b(terminal|gate|platform|pier|bay|berth|concourse|departure|arrival|lounge)\s+\d/i.test(shortForm) ||
-      /\b(airport|station|terminus|port|wharf|depot|interchange|shopping centre|shopping center|shopping mall|mall|plaza|precinct)\b/i.test(shortForm) ||
-      /\b(airport|station|terminus|port|wharf|depot|interchange)\b/i.test(fullDescription);
+      /\b(terminal|gate|platform|pier|bay|berth|concourse|departure|arrival|lounge)\s+\d/i.test(
+        shortForm
+      ) ||
+      /\b(airport|station|terminus|port|wharf|depot|interchange|shopping centre|shopping center|shopping mall|mall|plaza|precinct)\b/i.test(
+        shortForm
+      ) ||
+      /\b(airport|station|terminus|port|wharf|depot|interchange)\b/i.test(
+        fullDescription
+      );
 
     // ── WA vehicle registration patterns ─────────────────────────────────────
     // WA standard: 1ABC234 (digit + 3 letters + 3 digits) or older ABC-123 / ABC 123
     // Also: 1AB 234, personalised plates (letters only up to 6 chars)
-    const WA_REGO = /^\d[A-Z]{2,3}\d{3}$|^[A-Z]{1,3}[-\s]?\d{3}$|^[A-Z0-9]{2,7}$/.test(shortForm.replace(/\s/g, "").toUpperCase());
+    const WA_REGO =
+      /^\d[A-Z]{2,3}\d{3}$|^[A-Z]{1,3}[-\s]?\d{3}$|^[A-Z0-9]{2,7}$/.test(
+        shortForm.replace(/\s/g, "").toUpperCase()
+      );
     // Broader vehicle make/model keywords
-    const VEHICLE_MAKES = /\b(toyota|ford|holden|honda|mazda|nissan|mitsubishi|subaru|hyundai|kia|volkswagen|vw|bmw|mercedes|audi|lexus|volvo|jeep|dodge|chevrolet|chevy|ram|gmc|chrysler|fiat|alfa|peugeot|renault|citroen|skoda|seat|suzuki|isuzu|daihatsu|ssangyong|great wall|gwm|haval|mg|byd|tesla|rivian|land rover|range rover|defender|discovery|jaguar|porsche|ferrari|lamborghini|maserati|bentley|rolls royce|aston martin|mclaren|lotus|mini|smart|dacia|lancia|opel|vauxhall|saab|pontiac|buick|cadillac|lincoln|infiniti|acura|genesis|lucid|polestar|scout|rivian)\b/i;
-    const VEHICLE_BODY = /\b(vehicle|car|truck|van|ute|sedan|hatchback|suv|wagon|coupe|convertible|roadster|pickup|4wd|4x4|cab|dual cab|single cab|tray|flatbed|panel van|people mover|minivan|bus|minibus|motorcycle|motorbike|bike|scooter|quad|atv|boat|trailer|caravan|motorhome|rv|bearing|registration|rego|reg|plate|plated)\b/i;
+    const VEHICLE_MAKES =
+      /\b(toyota|ford|holden|honda|mazda|nissan|mitsubishi|subaru|hyundai|kia|volkswagen|vw|bmw|mercedes|audi|lexus|volvo|jeep|dodge|chevrolet|chevy|ram|gmc|chrysler|fiat|alfa|peugeot|renault|citroen|skoda|seat|suzuki|isuzu|daihatsu|ssangyong|great wall|gwm|haval|mg|byd|tesla|rivian|land rover|range rover|defender|discovery|jaguar|porsche|ferrari|lamborghini|maserati|bentley|rolls royce|aston martin|mclaren|lotus|mini|smart|dacia|lancia|opel|vauxhall|saab|pontiac|buick|cadillac|lincoln|infiniti|acura|genesis|lucid|polestar|scout|rivian)\b/i;
+    const VEHICLE_BODY =
+      /\b(vehicle|car|truck|van|ute|sedan|hatchback|suv|wagon|coupe|convertible|roadster|pickup|4wd|4x4|cab|dual cab|single cab|tray|flatbed|panel van|people mover|minivan|bus|minibus|motorcycle|motorbike|bike|scooter|quad|atv|boat|trailer|caravan|motorhome|rv|bearing|registration|rego|reg|plate|plated)\b/i;
     // A shortForm that looks like an all-caps person name (letters/spaces/
     // hyphens/apostrophes only, no digits) should never be classified as a
     // vehicle just because "vehicle" or a make appears somewhere in the same
     // clause — see the guard on the VEHICLE_BODY/MAKES branch below.
-    const shortFormLooksLikeName = /^[A-Z][A-Z\s'-]{1,40}$/.test(shortForm) && !/\d/.test(shortForm);
+    const shortFormLooksLikeName =
+      /^[A-Z][A-Z\s'-]{1,40}$/.test(shortForm) && !/\d/.test(shortForm);
 
     // ── Confidence scoring ────────────────────────────────────────────────────
     let confidence: "high" | "medium" | "low" = "low";
@@ -1956,8 +2720,17 @@ export function extractEntitiesFromText(text: string): Array<{
     if (addressInFull) {
       type = "address";
       // High confidence if has number + street type or state/postcode; medium for cnr/lot/airport
-      if (/\b\d{1,5}[A-Za-z]?\s+\w/.test(shortForm) && STREET_TYPES.test(shortForm)) confidence = "high";
-      else if (/,\s*[A-Za-z][\w\s]+\s+(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\s+\d{4}/.test(shortForm)) confidence = "high";
+      if (
+        /\b\d{1,5}[A-Za-z]?\s+\w/.test(shortForm) &&
+        STREET_TYPES.test(shortForm)
+      )
+        confidence = "high";
+      else if (
+        /,\s*[A-Za-z][\w\s]+\s+(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\s+\d{4}/.test(
+          shortForm
+        )
+      )
+        confidence = "high";
       else confidence = "medium";
     }
     // Vehicle: the clause immediately before the bracket mentions vehicle
@@ -1968,9 +2741,18 @@ export function extractEntitiesFromText(text: string): Array<{
     // from the name that follows it in the same clause, so without this
     // guard the leftover word "vehicle" wrongly classifies REEVES as a
     // vehicle. Same exclusion the WA_REGO branch below already applies.
-    else if (!shortFormLooksLikeName && (VEHICLE_BODY.test(lowerLastClause) || VEHICLE_MAKES.test(lowerLastClause) || VEHICLE_MAKES.test(lowerShort))) {
+    else if (
+      !shortFormLooksLikeName &&
+      (VEHICLE_BODY.test(lowerLastClause) ||
+        VEHICLE_MAKES.test(lowerLastClause) ||
+        VEHICLE_MAKES.test(lowerShort))
+    ) {
       type = "vehicle";
-      if (VEHICLE_BODY.test(lowerLastClause) && (VEHICLE_MAKES.test(lowerLastClause) || VEHICLE_MAKES.test(lowerShort))) confidence = "high";
+      if (
+        VEHICLE_BODY.test(lowerLastClause) &&
+        (VEHICLE_MAKES.test(lowerLastClause) || VEHICLE_MAKES.test(lowerShort))
+      )
+        confidence = "high";
       else confidence = "medium";
     }
     // WA rego plate in shortForm — strong vehicle signal
@@ -1980,7 +2762,11 @@ export function extractEntitiesFromText(text: string): Array<{
       confidence = "medium";
     }
     // Person: shortForm is all-caps word(s) with no digits, no street number pattern
-    else if (/^[A-Z][A-Z\s'-]{1,40}$/.test(shortForm) && !/\d/.test(shortForm) && !STREET_TYPES.test(shortForm)) {
+    else if (
+      /^[A-Z][A-Z\s'-]{1,40}$/.test(shortForm) &&
+      !/\d/.test(shortForm) &&
+      !STREET_TYPES.test(shortForm)
+    ) {
       type = "person";
       // High confidence if shortForm is 2 words (first + surname) or matches name-recovery
       const wordCount = shortForm.trim().split(/\s+/).length;
@@ -1992,9 +2778,19 @@ export function extractEntitiesFromText(text: string): Array<{
       confidence = "medium";
     }
     // Business: shortForm contains a proper noun (mixed case or known business words)
-    else if (/[A-Z][a-z]/.test(shortForm) || /\b(hotel|motel|cafe|restaurant|shop|store|centre|center|gym|club|bar|pub|servo|service station|petrol|chemist|pharmacy|hospital|clinic|school|college|university|church|mosque|temple|park|reserve|oval|stadium|arena|theatre|cinema|library|museum|gallery|council|police|fire|ambulance|court|prison|jail|detention)\b/i.test(lowerShort)) {
+    else if (
+      /[A-Z][a-z]/.test(shortForm) ||
+      /\b(hotel|motel|cafe|restaurant|shop|store|centre|center|gym|club|bar|pub|servo|service station|petrol|chemist|pharmacy|hospital|clinic|school|college|university|church|mosque|temple|park|reserve|oval|stadium|arena|theatre|cinema|library|museum|gallery|council|police|fire|ambulance|court|prison|jail|detention)\b/i.test(
+        lowerShort
+      )
+    ) {
       type = "business";
-      confidence = /\b(hotel|motel|cafe|restaurant|shop|store|centre|center|gym|club|bar|pub|servo|service station|petrol|chemist|pharmacy|hospital|clinic|school|college|university|church|mosque|temple|park|reserve|oval|stadium|arena|theatre|cinema|library|museum|gallery|council|police|fire|ambulance|court|prison|jail|detention)\b/i.test(lowerShort) ? "high" : "medium";
+      confidence =
+        /\b(hotel|motel|cafe|restaurant|shop|store|centre|center|gym|club|bar|pub|servo|service station|petrol|chemist|pharmacy|hospital|clinic|school|college|university|church|mosque|temple|park|reserve|oval|stadium|arena|theatre|cinema|library|museum|gallery|council|police|fire|ambulance|court|prison|jail|detention)\b/i.test(
+          lowerShort
+        )
+          ? "high"
+          : "medium";
     } else {
       // unknown — low confidence
       confidence = "low";
@@ -2025,9 +2821,17 @@ export function extractEntitiesFromText(text: string): Array<{
       //  - All other words become Title Case
       const titleCaseStreetWord = (w: string): string => {
         if (/^\d+$/.test(w)) return w; // digits unchanged
+        // Unit-letter-suffixed street numbers (e.g. "61a" → "61A") keep the
+        // digits and uppercase the trailing letter.
+        if (/^\d+[A-Za-z]$/.test(w))
+          return w.slice(0, -1) + w.slice(-1).toUpperCase();
         if (/^(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)$/i.test(w)) return w.toUpperCase(); // state codes
         // Street type abbreviations → Title Case (e.g. ST→St, RD→Rd, AVE→Ave)
-        if (/^(ST|RD|AVE|DR|CT|PL|CL|CRES|BLVD|HWY|FWY|LN|TCE|PDE|CCT|GR|CNR|WY|LOOP|RISE|RIDGE|GROVE|MEWS|CLOSE|PLACE|COURT|LANE|TERRACE|PARADE|CIRCUIT|GREEN|CORNER)$/i.test(w)) {
+        if (
+          /^(ST|RD|AVE|DR|CT|PL|CL|CRES|BLVD|HWY|FWY|LN|TCE|PDE|CCT|GR|CNR|WY|LOOP|RISE|RIDGE|GROVE|MEWS|CLOSE|PLACE|COURT|LANE|TERRACE|PARADE|CIRCUIT|GREEN|CORNER)$/i.test(
+            w
+          )
+        ) {
           return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
         }
         return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
@@ -2038,17 +2842,21 @@ export function extractEntitiesFromText(text: string): Array<{
       // Two patterns tried in order:
       //  1. Standard: starts with a street number or cnr/corner prefix
       //  2. Intersection: "Street Type & Street Type, Suburb STATE"
-      const STREET_TYPES_RE = "(?:St|Rd|Ave|Dr|Hwy|Fwy|Tce|Pde|Cct|Gr|Ln|Pl|Ct|Cl|Cres|Blvd|Way|Loop|Rise|Mews|Close|Place|Court|Lane|Terrace|Parade|Circuit|Green|Corner)";
+      const STREET_TYPES_RE =
+        "(?:St|Rd|Ave|Dr|Hwy|Fwy|Tce|Pde|Cct|Gr|Ln|Pl|Ct|Cl|Cres|Blvd|Way|Loop|Rise|Mews|Close|Place|Court|Lane|Terrace|Parade|Circuit|Green|Corner)";
       // The street-number prefix must be preceded by a word boundary (start of string,
       // space, comma, or punctuation) to prevent partial rego digits (e.g. "905" from
       // "1HTU905") from being mistaken for a street number.
-      const standardAddrRe = /(?:^|(?<=[\s,;]))((?:cnr\s+of\s+|cnr\s+|corner\s+of\s+|lot\s+\d+\s+|\d{1,5}[A-Za-z]?\/\d{1,5}\s+|\d{1,5}[A-Za-z]?\s+)[A-Za-z][\w\s&]*(?:,\s*[A-Za-z][\w\s]+)?(?:\s+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))?(?:\s+\d{4})?(?:,\s*Australia)?)$/i;
+      const standardAddrRe =
+        /(?:^|(?<=[\s,;]))((?:cnr\s+of\s+|cnr\s+|corner\s+of\s+|lot\s+\d+\s+|\d{1,5}[A-Za-z]?\/\d{1,5}\s+|\d{1,5}[A-Za-z]?\s+)[A-Za-z][\w\s&]*(?:,\s*[A-Za-z][\w\s]+)?(?:\s+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))?(?:\s+\d{4})?(?:,\s*Australia)?)$/i;
       const intersectionAddrRe = new RegExp(
         `[A-Za-z][\\w\\s]+\\s+${STREET_TYPES_RE}\\s*&\\s*[A-Za-z][\\w\\s]+\\s+${STREET_TYPES_RE}(?:,\\s*[A-Za-z][\\w\\s]+)?(?:\\s+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))?(?:\\s+\\d{4})?(?:,\\s*Australia)?$`,
         "i"
       );
       const standardMatch = fullDescription.match(standardAddrRe);
-      const addrMatch = (standardMatch ? [standardMatch[1] ?? standardMatch[0]] : null) || fullDescription.match(intersectionAddrRe);
+      const addrMatch =
+        (standardMatch ? [standardMatch[1] ?? standardMatch[0]] : null) ||
+        fullDescription.match(intersectionAddrRe);
       if (addrMatch) {
         let addrText = addrMatch[0].trim();
         // Strip postcode and ", Australia"
@@ -2058,19 +2866,21 @@ export function extractEntitiesFromText(text: string): Array<{
         const commaParts = addrText.split(",");
         if (commaParts.length >= 2) {
           const lastPart = commaParts[commaParts.length - 1].trim();
-          const stateMatch = lastPart.match(/^(.+?)\s+(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)$/i);
+          const stateMatch = lastPart.match(
+            /^(.+?)\s+(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)$/i
+          );
           if (stateMatch) {
             // Title-case the street part(s), CAPS the suburb
-            const streetParts = commaParts.slice(0, -1).map(p =>
-              p.trim().replace(/\b(\w+)/g, titleCaseStreetWord)
-            );
+            const streetParts = commaParts
+              .slice(0, -1)
+              .map(p => p.trim().replace(/\b(\w+)/g, titleCaseStreetWord));
             const suburb = stateMatch[1].trim().toUpperCase();
             displayName = [...streetParts, " " + suburb].join(",");
           } else if (AU_STATES_ADDR.test(lastPart)) {
             // Last part is just a state — drop it
-            const streetParts = commaParts.slice(0, -1).map(p =>
-              p.trim().replace(/\b(\w+)/g, titleCaseStreetWord)
-            );
+            const streetParts = commaParts
+              .slice(0, -1)
+              .map(p => p.trim().replace(/\b(\w+)/g, titleCaseStreetWord));
             displayName = streetParts.join(",").trim();
           } else {
             // No state found — just title-case the whole thing
@@ -2084,6 +2894,36 @@ export function extractEntitiesFromText(text: string): Array<{
         // Fallback: title-case the shortForm itself (it's all-caps abbreviated)
         // e.g. "4 GLYDE ST" → "4 Glyde St"
         displayName = shortForm.replace(/\b(\w+)/g, titleCaseStreetWord);
+      }
+
+      // Business location recovery: for business addresses the bracket short
+      // form is the business name itself (e.g. "Bicton Tavern, 1 Point Walter
+      // Road, BICTON WA (Bicton Tavern)"), not a street code, so the regex
+      // above only recovers the street+suburb portion. Narrative text before
+      // the address (e.g. "IOs observed the subject enter Bicton Tavern, ...")
+      // has no reliable delimiter marking where the business name starts, so
+      // rather than trying to parse it out, check whether the text
+      // immediately before the recovered address — after stripping the
+      // separating comma — ends with the (already known) shortForm at a word
+      // boundary. If so, restore it as a prefix so the Intelligence display
+      // reads "Bicton Tavern, 1 Point Walter Road, BICTON" instead of
+      // dropping the business name.
+      const addrStartIdx = fullDescription.lastIndexOf(
+        addrMatch ? addrMatch[0] : ""
+      );
+      if (addrStartIdx > 0) {
+        const beforeAddr = fullDescription
+          .slice(0, addrStartIdx)
+          .replace(/,\s*$/, "");
+        if (beforeAddr.toLowerCase().endsWith(shortForm.toLowerCase())) {
+          const nameStart = beforeAddr.length - shortForm.length;
+          const boundaryOk =
+            nameStart === 0 || /\s/.test(beforeAddr[nameStart - 1]);
+          if (boundaryOk) {
+            const matchedName = beforeAddr.slice(nameStart);
+            displayName = `${matchedName}, ${displayName.trim()}`;
+          }
+        }
       }
     } else if (type === "vehicle") {
       // For vehicle entities: build a clean display name as "REGO colour make/model".
@@ -2103,23 +2943,37 @@ export function extractEntitiesFromText(text: string): Array<{
 
       // Step 2: scan fullDescription for vehicle description words before the rego
       // Look for colour + make/model in the text
-      const COLOURS = /\b(white|black|silver|grey|gray|red|blue|green|yellow|orange|purple|brown|gold|bronze|cream|beige|maroon|navy|dark|light|bright)\b/gi;
-      const MAKES_DISPLAY = /\b(toyota|ford|holden|honda|mazda|nissan|mitsubishi|subaru|hyundai|kia|volkswagen|vw|bmw|mercedes|audi|lexus|volvo|jeep|dodge|land rover|range rover|defender|discovery|jaguar|porsche|mini|isuzu|suzuki|daihatsu|haval|gwm|mg|byd|tesla|great wall)\b/gi;
-      const BODY_TYPES = /\b(landcruiser|land cruiser|hilux|ranger|triton|navara|amarok|colorado|dmax|d-max|fortuner|prado|patrol|pathfinder|rav4|crv|cr-v|cx-5|cx5|cx-3|cx3|tucson|santa fe|santafe|sportage|tiguan|forester|outback|wrx|impreza|levorg|liberty|brz|86|corolla|camry|yaris|kluger|tarago|hiace|hilux|falcon|commodore|cruze|captiva|trax|trailblazer|everest|territory|escape|focus|fiesta|mondeo|transit|connect|courier|f-150|f150|mustang|explorer|expedition|bronco|wrangler|cherokee|grand cherokee|compass|renegade|gladiator|durango|charger|challenger|ram|1500|2500|3500|sedan|hatchback|suv|wagon|coupe|ute|van|truck|4wd|4x4|bus|minivan|people mover)\b/gi;
+      const COLOURS =
+        /\b(white|black|silver|grey|gray|red|blue|green|yellow|orange|purple|brown|gold|bronze|cream|beige|maroon|navy|dark|light|bright)\b/gi;
+      const MAKES_DISPLAY =
+        /\b(toyota|ford|holden|honda|mazda|nissan|mitsubishi|subaru|hyundai|kia|volkswagen|vw|bmw|mercedes|audi|lexus|volvo|jeep|dodge|land rover|range rover|defender|discovery|jaguar|porsche|mini|isuzu|suzuki|daihatsu|haval|gwm|mg|byd|tesla|great wall)\b/gi;
+      const BODY_TYPES =
+        /\b(landcruiser|land cruiser|hilux|ranger|triton|navara|amarok|colorado|dmax|d-max|fortuner|prado|patrol|pathfinder|rav4|crv|cr-v|cx-5|cx5|cx-3|cx3|tucson|santa fe|santafe|sportage|tiguan|forester|outback|wrx|impreza|levorg|liberty|brz|86|corolla|camry|yaris|kluger|tarago|hiace|hilux|falcon|commodore|cruze|captiva|trax|trailblazer|everest|territory|escape|focus|fiesta|mondeo|transit|connect|courier|f-150|f150|mustang|explorer|expedition|bronco|wrangler|cherokee|grand cherokee|compass|renegade|gladiator|durango|charger|challenger|ram|1500|2500|3500|sedan|hatchback|suv|wagon|coupe|ute|van|truck|4wd|4x4|bus|minivan|people mover)\b/gi;
 
       // Find the portion of fullDescription that describes the vehicle
       // (everything before any mention of the rego or "bearing"/"registration" keywords)
-      const regoIdx = fullDescription.toUpperCase().indexOf(rawRego.toUpperCase());
-      const descSource = regoIdx > 0 ? fullDescription.slice(0, regoIdx) : fullDescription;
+      const regoIdx = fullDescription
+        .toUpperCase()
+        .indexOf(rawRego.toUpperCase());
+      const descSource =
+        regoIdx > 0 ? fullDescription.slice(0, regoIdx) : fullDescription;
 
-      const colourMatches = Array.from(descSource.matchAll(COLOURS)).map(m => m[0].toLowerCase());
-      const makeMatches = Array.from(descSource.matchAll(MAKES_DISPLAY)).map(m => m[0]);
-      const bodyMatches = Array.from(descSource.matchAll(BODY_TYPES)).map(m => m[0]);
+      const colourMatches = Array.from(descSource.matchAll(COLOURS)).map(m =>
+        m[0].toLowerCase()
+      );
+      const makeMatches = Array.from(descSource.matchAll(MAKES_DISPLAY)).map(
+        m => m[0]
+      );
+      const bodyMatches = Array.from(descSource.matchAll(BODY_TYPES)).map(
+        m => m[0]
+      );
 
       // Build description: colour + make + body (deduplicated, max 3 words)
       const descParts: string[] = [];
-      if (colourMatches.length > 0) descParts.push(colourMatches[colourMatches.length - 1]);
-      if (makeMatches.length > 0) descParts.push(makeMatches[makeMatches.length - 1]);
+      if (colourMatches.length > 0)
+        descParts.push(colourMatches[colourMatches.length - 1]);
+      if (makeMatches.length > 0)
+        descParts.push(makeMatches[makeMatches.length - 1]);
       if (bodyMatches.length > 0) {
         const lastBody = bodyMatches[bodyMatches.length - 1];
         // Don't duplicate if body type is same as make (e.g. "Toyota Toyota")
@@ -2130,28 +2984,81 @@ export function extractEntitiesFromText(text: string): Array<{
 
       if (rawRego && rawRego !== shortForm) {
         // Had "Vehicle REGO" format — use rego + description
-        displayName = descParts.length > 0
-          ? `${rawRego} ${descParts.join(" ")}`
-          : rawRego;
+        displayName =
+          descParts.length > 0 ? `${rawRego} ${descParts.join(" ")}` : rawRego;
       } else if (descParts.length > 0) {
         // shortForm is already just the rego
         displayName = `${rawRego} ${descParts.join(" ")}`;
       }
       // else: keep displayName = shortForm (bare rego, no description available)
-
     } else if (type === "person") {
       // Extract the last 2-4 words immediately before the bracket — these are most
       // likely to be the full name. E.g. "Observed Jason JOHNSON (JOHNSON)" →
       // fullDescription = "Observed Jason JOHNSON", last 2 words = "Jason JOHNSON".
       // Words that are NOT part of a person's name (verbs, prepositions, articles, etc.)
       const NON_NAME_WORDS = new Set([
-        "with", "the", "a", "an", "and", "or", "at", "to", "from", "in", "on", "of",
-        "front", "back", "side", "door", "gate", "exit", "entry", "via", "near", "by",
-        "into", "out", "up", "down", "off", "over", "under", "through", "along",
-        "exited", "entered", "walked", "ran", "drove", "observed", "seen", "met",
-        "approached", "departed", "arrived", "left", "attended", "accompanied",
-        "was", "were", "is", "are", "had", "has", "been", "being",
-        "then", "also", "who", "whom", "which", "that", "this", "these", "those",
+        "with",
+        "the",
+        "a",
+        "an",
+        "and",
+        "or",
+        "at",
+        "to",
+        "from",
+        "in",
+        "on",
+        "of",
+        "front",
+        "back",
+        "side",
+        "door",
+        "gate",
+        "exit",
+        "entry",
+        "via",
+        "near",
+        "by",
+        "into",
+        "out",
+        "up",
+        "down",
+        "off",
+        "over",
+        "under",
+        "through",
+        "along",
+        "exited",
+        "entered",
+        "walked",
+        "ran",
+        "drove",
+        "observed",
+        "seen",
+        "met",
+        "approached",
+        "departed",
+        "arrived",
+        "left",
+        "attended",
+        "accompanied",
+        "was",
+        "were",
+        "is",
+        "are",
+        "had",
+        "has",
+        "been",
+        "being",
+        "then",
+        "also",
+        "who",
+        "whom",
+        "which",
+        "that",
+        "this",
+        "these",
+        "those",
       ]);
       const words = fullDescription.trim().split(/\s+/);
       // Try last 4, 3, 2 words in order — use the longest that contains shortForm
@@ -2160,12 +3067,15 @@ export function extractEntitiesFromText(text: string): Array<{
       for (let take = Math.min(4, words.length); take >= 2; take--) {
         const candidate = words.slice(-take).join(" ");
         // Candidate must be all letters/spaces/hyphens/apostrophes (a name, not a sentence)
-        const looksLikeName = /^[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ\s'\-]{1,60}$/.test(candidate);
+        const looksLikeName =
+          /^[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ\s'\-]{1,60}$/.test(candidate);
         // None of the candidate words should be a common non-name word
         const candidateWords = candidate.toLowerCase().split(/\s+/);
         const hasNonNameWord = candidateWords.some(w => NON_NAME_WORDS.has(w));
         // shortForm must be contained within the candidate (case-insensitive)
-        const shortInCandidate = candidate.toUpperCase().includes(shortForm.toUpperCase());
+        const shortInCandidate = candidate
+          .toUpperCase()
+          .includes(shortForm.toUpperCase());
         if (looksLikeName && !hasNonNameWord && shortInCandidate) {
           bestName = candidate;
           break;
@@ -2174,7 +3084,13 @@ export function extractEntitiesFromText(text: string): Array<{
       if (bestName) displayName = bestName;
     }
 
-    results.push({ shortForm: displayName, rawShortForm: shortForm, fullDescription, type, confidence });
+    results.push({
+      shortForm: displayName,
+      rawShortForm: shortForm,
+      fullDescription,
+      type,
+      confidence,
+    });
   }
 
   return results;
@@ -2223,7 +3139,10 @@ export function vehicleRegoKey(text: string): string {
 
 /** Same "type::normalizedShortForm" key scheme getAllIntelligenceEntities uses internally. */
 export function computeEntityKey(type: DedupType, shortForm: string): string {
-  const norm = type === "vehicle" ? vehicleRegoKey(shortForm) : normalizeEntityLabel(shortForm);
+  const norm =
+    type === "vehicle"
+      ? vehicleRegoKey(shortForm)
+      : normalizeEntityLabel(shortForm);
   return `${type}::${norm}`;
 }
 
@@ -2251,28 +3170,43 @@ export interface SheetEntityChip {
 // V1/V2.../DEP/ARR/wild fields — the blue chips) is skipped, since those
 // already have their own chip; these purple chips are for genuinely new
 // information logged in this sheet, not a duplicate of the target card.
-export async function getSheetEntityChips(sheetId: number): Promise<SheetEntityChip[]> {
-  const [rows, sheet] = await Promise.all([getRowsBySheetId(sheetId), getRunningSheetById(sheetId)]);
+export async function getSheetEntityChips(
+  sheetId: number
+): Promise<SheetEntityChip[]> {
+  const [rows, sheet] = await Promise.all([
+    getRowsBySheetId(sheetId),
+    getRunningSheetById(sheetId),
+  ]);
 
   const targetKeys = new Set<string>();
   if (sheet?.targetId) {
     const t = await getTargetById(sheet.targetId);
     if (t) {
-      const addKey = (type: DedupType, v?: string | null) => { if (v) targetKeys.add(computeEntityKey(type, v)); };
+      const addKey = (type: DedupType, v?: string | null) => {
+        if (v) targetKeys.add(computeEntityKey(type, v));
+      };
       addKey("person", t.tgt);
       addKey("address", t.hb);
       addKey("address", t.dep);
       addKey("address", t.arr);
       addKey("vehicle", t.v1);
       try {
-        const evs: Array<{ full: string; short: string }> = JSON.parse(t.extraVehicles ?? "[]");
-        evs.forEach((ev) => addKey("vehicle", ev.short));
+        const evs: Array<{ full: string; short: string }> = JSON.parse(
+          t.extraVehicles ?? "[]"
+        );
+        evs.forEach(ev => addKey("vehicle", ev.short));
       } catch {}
       try {
-        const wfs: Array<{ label: string; value: string }> = JSON.parse(t.wildFields ?? "[]");
+        const wfs: Array<{ label: string; value: string }> = JSON.parse(
+          t.wildFields ?? "[]"
+        );
         // A wild field's type isn't known ahead of time, so cover all three —
         // an accidental cross-type key collision on arbitrary text is negligible.
-        wfs.forEach((wf) => { addKey("person", wf.value); addKey("vehicle", wf.value); addKey("address", wf.value); });
+        wfs.forEach(wf => {
+          addKey("person", wf.value);
+          addKey("vehicle", wf.value);
+          addKey("address", wf.value);
+        });
       } catch {}
     }
   }
@@ -2290,7 +3224,8 @@ export async function getSheetEntityChips(sheetId: number): Promise<SheetEntityC
       const existing = byKey.get(key);
       if (existing) {
         existing.occurrenceCount++;
-        if (e.shortForm.length > existing.display.length) existing.display = e.shortForm;
+        if (e.shortForm.length > existing.display.length)
+          existing.display = e.shortForm;
       } else {
         byKey.set(key, {
           key,
@@ -2307,13 +3242,20 @@ export async function getSheetEntityChips(sheetId: number): Promise<SheetEntityC
   // preserving each entity's original generation order within its group
   // (Array.prototype.sort is a stable sort, so equal-type items keep their
   // relative Map-insertion order rather than being re-sorted by name/count).
-  const TYPE_ORDER: Record<SheetEntityChip["type"], number> = { vehicle: 0, person: 1, address: 2, business: 3 };
+  const TYPE_ORDER: Record<SheetEntityChip["type"], number> = {
+    vehicle: 0,
+    person: 1,
+    address: 2,
+    business: 3,
+  };
   return Array.from(byKey.values())
     .sort((a, b) => TYPE_ORDER[a.type] - TYPE_ORDER[b.type])
     .slice(0, 24);
 }
 
-export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]> {
+export async function getAllIntelligenceEntities(): Promise<
+  IntelligenceEntity[]
+> {
   const db = await getDb();
   if (!db) return [];
 
@@ -2325,7 +3267,10 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
   const aliasRows = await db.select().from(entityAliases);
   const entityAliasMap = new Map<string, { key: string; label: string }>();
   for (const a of aliasRows) {
-    entityAliasMap.set(`${a.type}::${a.loserKey}`, { key: `${a.type}::${a.winnerKey}`, label: a.winnerLabel });
+    entityAliasMap.set(`${a.type}::${a.loserKey}`, {
+      key: `${a.type}::${a.winnerKey}`,
+      label: a.winnerLabel,
+    });
   }
 
   // When two mentions of the same vehicle merge, prefer whichever is in the
@@ -2334,9 +3279,15 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
   // target-card field where the rego sits mid-sentence (e.g. "silver Hyundai
   // Santa Fe, bearing WA registration 1ICW519") — otherwise a longer but
   // awkwardly-worded raw field value would win on length alone.
-  const isCanonicalVehicleForm = (shortForm: string, regoKey: string): boolean =>
-    shortForm.toLowerCase().startsWith(regoKey);
-  const preferVehicleShortForm = (existing: string, candidate: string, regoKey: string): boolean => {
+  const isCanonicalVehicleForm = (
+    shortForm: string,
+    regoKey: string
+  ): boolean => shortForm.toLowerCase().startsWith(regoKey);
+  const preferVehicleShortForm = (
+    existing: string,
+    candidate: string,
+    regoKey: string
+  ): boolean => {
     const existingCanonical = isCanonicalVehicleForm(existing, regoKey);
     const candidateCanonical = isCanonicalVehicleForm(candidate, regoKey);
     if (candidateCanonical !== existingCanonical) return candidateCanonical;
@@ -2382,18 +3333,28 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
       operationName: operations.name,
     })
     .from(targets)
-    .innerJoin(operationTargetLinks, eq(operationTargetLinks.targetId, targets.id))
+    .innerJoin(
+      operationTargetLinks,
+      eq(operationTargetLinks.targetId, targets.id)
+    )
     .innerJoin(operations, eq(operationTargetLinks.operationId, operations.id))
     .where(isNull(targets.deletedAt));
 
   // Merge: for each target, prefer linked operation rows; fall back to direct row
   const seenTargetOpPairs = new Set<string>();
   const targetRows: Array<{
-    targetId: number; targetName: string; tgt: string | null;
-    hb: string | null; v1: string | null; v2: string | null;
-    hbf: string | null; v1f: string | null; v2f: string | null;
+    targetId: number;
+    targetName: string;
+    tgt: string | null;
+    hb: string | null;
+    v1: string | null;
+    v2: string | null;
+    hbf: string | null;
+    v1f: string | null;
+    v2f: string | null;
     extraVehicles: string | null;
-    operationId: number | null; operationName: string | null;
+    operationId: number | null;
+    operationName: string | null;
   }> = [];
 
   for (const row of linkedTargetRows) {
@@ -2416,13 +3377,20 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
       sheetTitle: runningSheets.title,
     })
     .from(runningSheets)
-    .where(and(isNotNull(runningSheets.targetId), isNull(runningSheets.deletedAt)));
+    .where(
+      and(isNotNull(runningSheets.targetId), isNull(runningSheets.deletedAt))
+    );
 
-  const targetSheetMap = new Map<number, Array<{ sheetId: number; sheetTitle: string }>>();
+  const targetSheetMap = new Map<
+    number,
+    Array<{ sheetId: number; sheetTitle: string }>
+  >();
   for (const s of sheetsByTarget) {
     if (s.targetId === null) continue;
     if (!targetSheetMap.has(s.targetId)) targetSheetMap.set(s.targetId, []);
-    targetSheetMap.get(s.targetId)!.push({ sheetId: s.sheetId, sheetTitle: s.sheetTitle });
+    targetSheetMap
+      .get(s.targetId)!
+      .push({ sheetId: s.sheetId, sheetTitle: s.sheetTitle });
   }
 
   // Build a set of TGT aliases so we can suppress them from observation-derived persons
@@ -2439,7 +3407,10 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
   // ── 2. Add formal target cards as person entities (isTarget = true) ────────
   for (const t of targetRows) {
     const linkedSheets = targetSheetMap.get(t.targetId) ?? [];
-    const sheetEntries = linkedSheets.length > 0 ? linkedSheets : [{ sheetId: 0, sheetTitle: "(no sheet linked)" }];
+    const sheetEntries =
+      linkedSheets.length > 0
+        ? linkedSheets
+        : [{ sheetId: 0, sheetTitle: "(no sheet linked)" }];
 
     // Target person entity — keyed by full name, carries tgtAlias
     const nameKey = `target::${t.targetName}`;
@@ -2470,23 +3441,47 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
     // For each full/abbreviated pair, only register the full version if it is set;
     // the abbreviated version is only used as a fallback when the full field is empty.
     // This prevents HBF + HB (or V1F + V1) from appearing as two separate entities.
-    const locationFields: Array<{ label: string; value: string | null; type: IntelligenceEntity["type"] }> = [
-      { label: "HBF", value: t.hbf?.trim() || t.hb?.trim() || null, type: "address" },
-      { label: "V1F", value: t.v1f?.trim() || t.v1?.trim() || null, type: "vehicle" },
-      { label: "V2F", value: t.v2f?.trim() || t.v2?.trim() || null, type: "vehicle" },
+    const locationFields: Array<{
+      label: string;
+      value: string | null;
+      type: IntelligenceEntity["type"];
+    }> = [
+      {
+        label: "HBF",
+        value: t.hbf?.trim() || t.hb?.trim() || null,
+        type: "address",
+      },
+      {
+        label: "V1F",
+        value: t.v1f?.trim() || t.v1?.trim() || null,
+        type: "vehicle",
+      },
+      {
+        label: "V2F",
+        value: t.v2f?.trim() || t.v2?.trim() || null,
+        type: "vehicle",
+      },
     ];
     // Also include extra vehicles (V2, V3, V4 ...) stored as JSON array {full, short}
     if (t.extraVehicles) {
       try {
-        const extras: Array<{ full?: string; short?: string }> = JSON.parse(t.extraVehicles);
+        const extras: Array<{ full?: string; short?: string }> = JSON.parse(
+          t.extraVehicles
+        );
         extras.forEach((ev, idx) => {
           const vehicleLabel = `V${idx + 2}F`; // V2F, V3F, V4F ...
           const vehicleValue = ev.full?.trim() || ev.short?.trim() || null;
           if (vehicleValue) {
-            locationFields.push({ label: vehicleLabel, value: vehicleValue, type: "vehicle" });
+            locationFields.push({
+              label: vehicleLabel,
+              value: vehicleValue,
+              type: "vehicle",
+            });
           }
         });
-      } catch { /* malformed JSON — skip */ }
+      } catch {
+        /* malformed JSON — skip */
+      }
     }
     for (const field of locationFields) {
       if (!field.value || field.value.trim() === "") continue;
@@ -2500,24 +3495,34 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
       if (!shortForm) continue;
       // Normalise whitespace so minor spacing differences don't create duplicate keys.
       // Vehicles key on registration alone (see vehicleRegoKey above).
-      const normKey = field.type === "vehicle" ? vehicleRegoKey(shortForm) : shortForm.toLowerCase().replace(/\s+/g, " ").trim();
+      const normKey =
+        field.type === "vehicle"
+          ? vehicleRegoKey(shortForm)
+          : shortForm.toLowerCase().replace(/\s+/g, " ").trim();
       const key = `${field.type}::${normKey}`;
       if (!entityMap.has(key)) {
         entityMap.set(key, { shortForm, type: field.type, occurrences: [] });
       } else {
         // Prefer the longer / richer shortForm
         const existing = entityMap.get(key)!;
-        const shouldUpgrade = field.type === "vehicle"
-          ? preferVehicleShortForm(existing.shortForm, shortForm, normKey)
-          : shortForm.length > existing.shortForm.length;
+        const shouldUpgrade =
+          field.type === "vehicle"
+            ? preferVehicleShortForm(existing.shortForm, shortForm, normKey)
+            : shortForm.length > existing.shortForm.length;
         if (shouldUpgrade) existing.shortForm = shortForm;
       }
       for (const sheet of sheetEntries) {
         // Deduplicate occurrences by sheetId+rowId (rowId=0 for target card entries)
         const occKey = `${sheet.sheetId}::0::${field.label}`;
-        const alreadyAdded = entityMap.get(key)!.occurrences.some(
-          (o) => o.sheetId === sheet.sheetId && o.rowId === 0 && o.observationSnippet === `Target card — ${t.targetName} [${field.label}]`
-        );
+        const alreadyAdded = entityMap
+          .get(key)!
+          .occurrences.some(
+            o =>
+              o.sheetId === sheet.sheetId &&
+              o.rowId === 0 &&
+              o.observationSnippet ===
+                `Target card — ${t.targetName} [${field.label}]`
+          );
         if (!alreadyAdded) {
           entityMap.get(key)!.occurrences.push({
             sheetId: sheet.sheetId,
@@ -2571,8 +3576,22 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
 
   // Helper: register or merge an entity occurrence into entityMap
   function registerOccurrence(
-    e: { shortForm: string; rawShortForm?: string; fullDescription: string; type: "person" | "vehicle" | "address" | "business" | "unknown"; confidence?: "high" | "medium" | "low" },
-    row: { sheetId: number; sheetTitle: string; operationId: number; operationName: string; rowId: number; observation: string | null; timeMinutes: number | null }
+    e: {
+      shortForm: string;
+      rawShortForm?: string;
+      fullDescription: string;
+      type: "person" | "vehicle" | "address" | "business" | "unknown";
+      confidence?: "high" | "medium" | "low";
+    },
+    row: {
+      sheetId: number;
+      sheetTitle: string;
+      operationId: number;
+      operationName: string;
+      rowId: number;
+      observation: string | null;
+      timeMinutes: number | null;
+    }
   ) {
     if (!row.observation) return;
     // If this person shortForm (or its raw bracketed token) is a known TGT alias,
@@ -2582,11 +3601,15 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
     if (e.type === "person") {
       const canonicalName =
         tgtAliasToFullName.get(e.shortForm.toUpperCase()) ??
-        (e.rawShortForm ? tgtAliasToFullName.get(e.rawShortForm.toUpperCase()) : undefined);
+        (e.rawShortForm
+          ? tgtAliasToFullName.get(e.rawShortForm.toUpperCase())
+          : undefined);
       if (canonicalName) {
         const targetKey = `target::${canonicalName}`;
         if (entityMap.has(targetKey)) {
-          const snippet = row.observation.slice(0, 80) + (row.observation.length > 80 ? "…" : "");
+          const snippet =
+            row.observation.slice(0, 80) +
+            (row.observation.length > 80 ? "…" : "");
           entityMap.get(targetKey)!.occurrences.push({
             sheetId: row.sheetId,
             sheetTitle: row.sheetTitle,
@@ -2604,7 +3627,10 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
     // Vehicles key on registration alone (see vehicleRegoKey above) so a bare
     // rego, a chip-inserted "Vehicle REGO", and a fully-described sighting of
     // the same car all collapse into one entity instead of three.
-    const normShortForm = e.type === "vehicle" ? vehicleRegoKey(e.shortForm) : e.shortForm.toLowerCase().replace(/\s+/g, " ").trim();
+    const normShortForm =
+      e.type === "vehicle"
+        ? vehicleRegoKey(e.shortForm)
+        : e.shortForm.toLowerCase().replace(/\s+/g, " ").trim();
     let key = `${e.type}::${normShortForm}`;
 
     // Confirmed entity-alias merge (fuzzy-duplicate prompt "Yes", or the
@@ -2618,28 +3644,43 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
     }
 
     if (!entityMap.has(key)) {
-      entityMap.set(key, { shortForm: displayShortForm, type: e.type, isTarget: false, occurrences: [] });
+      entityMap.set(key, {
+        shortForm: displayShortForm,
+        type: e.type,
+        isTarget: false,
+        occurrences: [],
+      });
     } else if (!resolved) {
       // Upgrade to longer / richer shortForm if available — skipped when this
       // occurrence was redirected via an alias, since the winner's label is
       // the confirmed canonical display form and shouldn't be overwritten by
       // whatever the loser's raw text happened to say.
       const existing = entityMap.get(key)!;
-      const shouldUpgrade = e.type === "vehicle"
-        ? preferVehicleShortForm(existing.shortForm, e.shortForm, normShortForm)
-        : e.shortForm.length > existing.shortForm.length;
+      const shouldUpgrade =
+        e.type === "vehicle"
+          ? preferVehicleShortForm(
+              existing.shortForm,
+              e.shortForm,
+              normShortForm
+            )
+          : e.shortForm.length > existing.shortForm.length;
       if (shouldUpgrade) existing.shortForm = e.shortForm;
     }
-    if (resolved && e.shortForm.toLowerCase().trim() !== displayShortForm.toLowerCase().trim()) {
+    if (
+      resolved &&
+      e.shortForm.toLowerCase().trim() !== displayShortForm.toLowerCase().trim()
+    ) {
       const winner = entityMap.get(key)!;
       winner.aliasLabels = winner.aliasLabels ?? [];
-      if (!winner.aliasLabels.includes(e.shortForm)) winner.aliasLabels.push(e.shortForm);
+      if (!winner.aliasLabels.includes(e.shortForm))
+        winner.aliasLabels.push(e.shortForm);
     }
     // Flag entity as low-confidence if this occurrence was uncertain
     if (e.confidence === "low" || e.type === "unknown") {
       entityMap.get(key)!.lowConfidence = true;
     }
-    const snippet = row.observation.slice(0, 80) + (row.observation.length > 80 ? "…" : "");
+    const snippet =
+      row.observation.slice(0, 80) + (row.observation.length > 80 ? "…" : "");
     entityMap.get(key)!.occurrences.push({
       sheetId: row.sheetId,
       sheetTitle: row.sheetTitle,
@@ -2658,7 +3699,12 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
     // This is critical: name-recovery may change "HOTA" → "G HOTA", so we must register
     // BOTH keys so that Pass B can find "HOTA" in subsequent rows even though the
     // display name is "G HOTA".
-    type DictEntry = { shortForm: string; rawShortForm: string; fullDescription: string; type: "person" | "vehicle" | "address" | "business" | "unknown" };
+    type DictEntry = {
+      shortForm: string;
+      rawShortForm: string;
+      fullDescription: string;
+      type: "person" | "vehicle" | "address" | "business" | "unknown";
+    };
     const sheetDict = new Map<string, DictEntry>();
 
     const registerDictEntry = (key: string, entry: DictEntry) => {
@@ -2679,12 +3725,14 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
     // first row without ever bracketing it, because the target card IS the introduction.
     // Without pre-seeding, Pass B would never find these tokens.
     // We register each alias under its lowercase key so Pass B can match it in any row.
-    for (const [alias, canonicalName] of Array.from(tgtAliasToFullName.entries())) {
+    for (const [alias, canonicalName] of Array.from(
+      tgtAliasToFullName.entries()
+    )) {
       const aliasKey = alias.toLowerCase();
       if (!sheetDict.has(aliasKey)) {
         sheetDict.set(aliasKey, {
-          shortForm: canonicalName,   // display as full canonical name
-          rawShortForm: alias,         // raw alias is the search token
+          shortForm: canonicalName, // display as full canonical name
+          rawShortForm: alias, // raw alias is the search token
           fullDescription: `Target: ${canonicalName}`,
           type: "person",
         });
@@ -2695,7 +3743,12 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
       if (!row.observation) continue;
       const bracketed = extractEntitiesFromText(row.observation);
       for (const e of bracketed) {
-        const entry: DictEntry = { shortForm: e.shortForm, rawShortForm: e.rawShortForm, fullDescription: e.fullDescription, type: e.type };
+        const entry: DictEntry = {
+          shortForm: e.shortForm,
+          rawShortForm: e.rawShortForm,
+          fullDescription: e.fullDescription,
+          type: e.type,
+        };
         // Register by displayName key (e.g. "g hota")
         registerDictEntry(e.shortForm.toLowerCase(), entry);
         // Also register by raw bracketed token key (e.g. "hota") if different
@@ -2709,8 +3762,9 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
 
     // ── Pass B: scan every row for both bracketed AND unbracketed occurrences ──
     // Build a sorted list of known short forms (longest first to avoid partial matches)
-    const knownEntries = Array.from(sheetDict.values())
-      .sort((a, b) => b.shortForm.length - a.shortForm.length);
+    const knownEntries = Array.from(sheetDict.values()).sort(
+      (a, b) => b.shortForm.length - a.shortForm.length
+    );
 
     for (const row of sheetRows_) {
       if (!row.observation) continue;
@@ -2744,7 +3798,10 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
       const parenPattern = /\([^()]{1,80}\)/g;
       let spanMatch: RegExpExecArray | null;
       while ((spanMatch = parenPattern.exec(row.observation)) !== null) {
-        parenRanges.push([spanMatch.index, spanMatch.index + spanMatch[0].length]);
+        parenRanges.push([
+          spanMatch.index,
+          spanMatch.index + spanMatch[0].length,
+        ]);
       }
 
       // Helper: returns true if the match at [start, end) is entirely inside a paren
@@ -2798,12 +3855,15 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
         }
 
         if (found) {
-          registerOccurrence({
-            shortForm: entry.shortForm,
-            rawShortForm: entry.rawShortForm,
-            fullDescription: entry.fullDescription,
-            type: entry.type,
-          }, row);
+          registerOccurrence(
+            {
+              shortForm: entry.shortForm,
+              rawShortForm: entry.rawShortForm,
+              fullDescription: entry.fullDescription,
+              type: entry.type,
+            },
+            row
+          );
         }
       }
     }
@@ -2852,7 +3912,9 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
     }
 
     // Sort by shortForm length descending so longer (fuller) versions come first
-    const sorted = [...group].sort((a, b) => b.shortForm.length - a.shortForm.length);
+    const sorted = [...group].sort(
+      (a, b) => b.shortForm.length - a.shortForm.length
+    );
     const absorbed = new Set<string>(); // lowercase shortForms that have been merged away
 
     for (let i = 0; i < sorted.length; i++) {
@@ -2868,18 +3930,22 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
         // For vehicles: also absorb when the shorter shortForm appears ANYWHERE inside
         // the longer (e.g. "ABC 123" inside "silver Toyota Hilux bearing ABC 123").
         // For addresses: keep the original prefix-only rule.
-        const isContained = entityType === "vehicle"
-          ? (() => {
-              const idx = longerLower.indexOf(shorterLower);
-              if (idx === -1) return false;
-              // Must be at a word boundary on both sides
-              const before = idx === 0 || /[\s,;\-/(]/.test(longerLower[idx - 1]);
-              const after = idx + shorterLower.length === longerLower.length || /[\s,;\-/)]/.test(longerLower[idx + shorterLower.length]);
-              return before && after;
-            })()
-          : (longerLower.startsWith(shorterLower) &&
+        const isContained =
+          entityType === "vehicle"
+            ? (() => {
+                const idx = longerLower.indexOf(shorterLower);
+                if (idx === -1) return false;
+                // Must be at a word boundary on both sides
+                const before =
+                  idx === 0 || /[\s,;\-/(]/.test(longerLower[idx - 1]);
+                const after =
+                  idx + shorterLower.length === longerLower.length ||
+                  /[\s,;\-/)]/.test(longerLower[idx + shorterLower.length]);
+                return before && after;
+              })()
+            : longerLower.startsWith(shorterLower) &&
               (longerLower.length === shorterLower.length ||
-               /^[\s,;\-/]/.test(longerLower.slice(shorterLower.length))));
+                /^[\s,;\-/]/.test(longerLower.slice(shorterLower.length)));
         if (isContained) {
           // Merge shorter's occurrences into longer, deduplicating by sheetId+rowId+snippet
           const existingKeys = new Set(
@@ -2898,7 +3964,8 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
           if (shorter.aliasLabels?.length) {
             longer.aliasLabels = longer.aliasLabels ?? [];
             for (const label of shorter.aliasLabels) {
-              if (!longer.aliasLabels.includes(label)) longer.aliasLabels.push(label);
+              if (!longer.aliasLabels.includes(label))
+                longer.aliasLabels.push(label);
             }
           }
           // For vehicles: when merging, prefer the entity with a richer display name
@@ -2907,8 +3974,12 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
           // Exception: if the longer entity is actually a bare rego and the shorter has
           // a richer description (colour+make), swap them.
           if (entityType === "vehicle") {
-            const longerHasDesc = /[a-z]/i.test(longer.shortForm.replace(/^\d[A-Z]{2,3}\d{3}\s*/i, ""));
-            const shorterHasDesc = /[a-z]/i.test(shorter.shortForm.replace(/^\d[A-Z]{2,3}\d{3}\s*/i, ""));
+            const longerHasDesc = /[a-z]/i.test(
+              longer.shortForm.replace(/^\d[A-Z]{2,3}\d{3}\s*/i, "")
+            );
+            const shorterHasDesc = /[a-z]/i.test(
+              shorter.shortForm.replace(/^\d[A-Z]{2,3}\d{3}\s*/i, "")
+            );
             if (!longerHasDesc && shorterHasDesc) {
               longer.shortForm = shorter.shortForm;
             }
@@ -2942,7 +4013,9 @@ export async function getAllIntelligenceEntities(): Promise<IntelligenceEntity[]
 
 /** Bare normalized key (no "type::" prefix) — what entity_aliases/entity_dedup_decisions store. */
 function normOnly(type: DedupType, shortForm: string): string {
-  return type === "vehicle" ? vehicleRegoKey(shortForm) : normalizeEntityLabel(shortForm);
+  return type === "vehicle"
+    ? vehicleRegoKey(shortForm)
+    : normalizeEntityLabel(shortForm);
 }
 
 export interface DuplicateMatchResult {
@@ -2960,7 +4033,10 @@ export interface DuplicateMatchResult {
  * existing entity of the same type, excluding pairs already confirmed as
  * distinct via a previous "No" answer.
  */
-export async function checkPossibleDuplicates(type: DedupType, label: string): Promise<DuplicateMatchResult[]> {
+export async function checkPossibleDuplicates(
+  type: DedupType,
+  label: string
+): Promise<DuplicateMatchResult[]> {
   const db = await getDb();
   if (!db) return [];
   const candidateCombinedKey = computeEntityKey(type, label);
@@ -2971,27 +4047,40 @@ export async function checkPossibleDuplicates(type: DedupType, label: string): P
   const existingAlias = await db
     .select()
     .from(entityAliases)
-    .where(and(eq(entityAliases.type, type), or(eq(entityAliases.loserKey, candidateBareKey), eq(entityAliases.winnerKey, candidateBareKey))))
+    .where(
+      and(
+        eq(entityAliases.type, type),
+        or(
+          eq(entityAliases.loserKey, candidateBareKey),
+          eq(entityAliases.winnerKey, candidateBareKey)
+        )
+      )
+    )
     .limit(1);
   if (existingAlias.length > 0) return [];
 
   const allEntities = await getAllIntelligenceEntities();
   const candidates: DedupCandidateEntity[] = allEntities
-    .filter((e) => !e.isTarget && e.type === type)
-    .map((e) => ({
+    .filter(e => !e.isTarget && e.type === type)
+    .map(e => ({
       key: computeEntityKey(type, e.shortForm),
       label: e.shortForm,
       type,
-      rowCount: e.occurrences.filter((o) => o.rowId > 0).length,
+      rowCount: e.occurrences.filter(o => o.rowId > 0).length,
     }));
 
-  const decisions = await db.select().from(entityDedupDecisions).where(eq(entityDedupDecisions.type, type));
+  const decisions = await db
+    .select()
+    .from(entityDedupDecisions)
+    .where(eq(entityDedupDecisions.type, type));
   const decidedDifferentBareKeys = new Set<string>();
   for (const d of decisions) {
     if (d.keyA === candidateBareKey) decidedDifferentBareKeys.add(d.keyB);
     else if (d.keyB === candidateBareKey) decidedDifferentBareKeys.add(d.keyA);
   }
-  const filtered = candidates.filter((c) => !decidedDifferentBareKeys.has(normOnly(type, c.label)));
+  const filtered = candidates.filter(
+    c => !decidedDifferentBareKeys.has(normOnly(type, c.label))
+  );
 
   return findPossibleDuplicates(label, type, candidateCombinedKey, filtered);
 }
@@ -3012,10 +4101,18 @@ export async function markEntitiesNotDuplicate(
   const existing = await db
     .select()
     .from(entityDedupDecisions)
-    .where(and(eq(entityDedupDecisions.type, type), eq(entityDedupDecisions.keyA, keyA), eq(entityDedupDecisions.keyB, keyB)))
+    .where(
+      and(
+        eq(entityDedupDecisions.type, type),
+        eq(entityDedupDecisions.keyA, keyA),
+        eq(entityDedupDecisions.keyB, keyB)
+      )
+    )
     .limit(1);
   if (existing.length > 0) return;
-  await db.insert(entityDedupDecisions).values({ type, keyA, keyB, decidedByCIN, decidedAt: Date.now() });
+  await db
+    .insert(entityDedupDecisions)
+    .values({ type, keyA, keyB, decidedByCIN, decidedAt: Date.now() });
 }
 
 /** Walks the existing alias chain from `winnerKey` to detect a would-be cycle before writing a new merge. */
@@ -3025,8 +4122,11 @@ async function wouldCreateAliasCycle(
   winnerKey: string,
   loserKey: string
 ): Promise<boolean> {
-  const rows = await db.select().from(entityAliases).where(eq(entityAliases.type, type));
-  const map = new Map(rows.map((r) => [r.loserKey, r.winnerKey]));
+  const rows = await db
+    .select()
+    .from(entityAliases)
+    .where(eq(entityAliases.type, type));
+  const map = new Map(rows.map(r => [r.loserKey, r.winnerKey]));
   let current = winnerKey;
   const seen = new Set<string>();
   while (map.has(current)) {
@@ -3054,30 +4154,56 @@ export async function mergeEntities(
   if (!db) throw new Error("Database not available");
   const winnerKey = normOnly(type, winnerLabel);
   const loserKey = normOnly(type, loserLabel);
-  if (winnerKey === loserKey) throw new Error("Cannot merge an entity into itself.");
+  if (winnerKey === loserKey)
+    throw new Error("Cannot merge an entity into itself.");
   if (await wouldCreateAliasCycle(db, type, winnerKey, loserKey)) {
-    throw new Error("This merge would create a loop with an existing merge — check current merges first.");
+    throw new Error(
+      "This merge would create a loop with an existing merge — check current merges first."
+    );
   }
   const existing = await db
     .select()
     .from(entityAliases)
-    .where(and(eq(entityAliases.type, type), eq(entityAliases.loserKey, loserKey)))
+    .where(
+      and(eq(entityAliases.type, type), eq(entityAliases.loserKey, loserKey))
+    )
     .limit(1);
   if (existing.length > 0) {
     await db
       .update(entityAliases)
-      .set({ winnerKey, winnerLabel, loserLabel, mergedByCIN, mergedAt: Date.now() })
+      .set({
+        winnerKey,
+        winnerLabel,
+        loserLabel,
+        mergedByCIN,
+        mergedAt: Date.now(),
+      })
       .where(eq(entityAliases.id, existing[0].id));
   } else {
-    await db.insert(entityAliases).values({ type, loserKey, loserLabel, winnerKey, winnerLabel, mergedByCIN, mergedAt: Date.now() });
+    await db.insert(entityAliases).values({
+      type,
+      loserKey,
+      loserLabel,
+      winnerKey,
+      winnerLabel,
+      mergedByCIN,
+      mergedAt: Date.now(),
+    });
   }
 }
 
 /** Reverses a previous merge. `loserKey` must be the bare key from an existing entity_aliases row (see listEntityMerges). */
-export async function unmergeEntity(type: DedupType, loserKey: string): Promise<void> {
+export async function unmergeEntity(
+  type: DedupType,
+  loserKey: string
+): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.delete(entityAliases).where(and(eq(entityAliases.type, type), eq(entityAliases.loserKey, loserKey)));
+  await db
+    .delete(entityAliases)
+    .where(
+      and(eq(entityAliases.type, type), eq(entityAliases.loserKey, loserKey))
+    );
 }
 
 export async function listEntityMerges() {
@@ -3086,17 +4212,33 @@ export async function listEntityMerges() {
   return db.select().from(entityAliases).orderBy(desc(entityAliases.mergedAt));
 }
 
-/** Search existing entities of one type by substring — backs the manual Merge Entities picker. */
-export async function searchIntelligenceEntities(type: DedupType, query: string): Promise<DedupCandidateEntity[]> {
+/**
+ * Search existing entities of one type by substring — backs the manual Merge
+ * Entities picker (excludeTargets: true, the default) and the Target
+ * Registry name/vehicle autocomplete (excludeTargets: false — that feature's
+ * whole point is suggesting entities already seen in observations, and most
+ * of those worth adding as a Target have often already been promoted to one
+ * elsewhere, so filtering them out there defeats the feature).
+ */
+export async function searchIntelligenceEntities(
+  type: DedupType,
+  query: string,
+  excludeTargets = true
+): Promise<DedupCandidateEntity[]> {
   const allEntities = await getAllIntelligenceEntities();
   const q = query.trim().toLowerCase();
   return allEntities
-    .filter((e) => !e.isTarget && e.type === type && (!q || e.shortForm.toLowerCase().includes(q)))
-    .map((e) => ({
+    .filter(
+      e =>
+        (!excludeTargets || !e.isTarget) &&
+        e.type === type &&
+        (!q || e.shortForm.toLowerCase().includes(q))
+    )
+    .map(e => ({
       key: computeEntityKey(type, e.shortForm),
       label: e.shortForm,
       type,
-      rowCount: e.occurrences.filter((o) => o.rowId > 0).length,
+      rowCount: e.occurrences.filter(o => o.rowId > 0).length,
     }))
     .sort((a, b) => b.rowCount - a.rowCount)
     .slice(0, 25);
@@ -3105,8 +4247,8 @@ export async function searchIntelligenceEntities(type: DedupType, query: string)
 // ─── Association Graph ───────────────────────────────────────────────────────
 
 export interface AssocNode {
-  id: string;          // e.g. "person::SAM JACK"
-  label: string;       // display label
+  id: string; // e.g. "person::SAM JACK"
+  label: string; // display label
   type: "target" | "person" | "vehicle" | "address" | "business" | "unknown";
   occurrences: number; // total times seen
   operationIds: number[];
@@ -3125,7 +4267,7 @@ export interface AssociationGraph {
 }
 
 export async function getAssociationGraph(
-  operationIds?: number[],
+  operationIds?: number[]
 ): Promise<AssociationGraph> {
   const db = await getDb();
   if (!db) return { nodes: [], edges: [] };
@@ -3141,17 +4283,29 @@ export async function getAssociationGraph(
       operationName: operations.name,
     })
     .from(sheetRows)
-    .innerJoin(runningSheets, and(eq(sheetRows.sheetId, runningSheets.id), isNull(runningSheets.deletedAt)))
+    .innerJoin(
+      runningSheets,
+      and(
+        eq(sheetRows.sheetId, runningSheets.id),
+        isNull(runningSheets.deletedAt)
+      )
+    )
     .innerJoin(operations, eq(runningSheets.operationId, operations.id));
 
   const allRows = await rowQuery;
-  const filteredRows = operationIds && operationIds.length > 0
-    ? allRows.filter((r) => operationIds.includes(r.operationId))
-    : allRows;
+  const filteredRows =
+    operationIds && operationIds.length > 0
+      ? allRows.filter(r => operationIds.includes(r.operationId))
+      : allRows;
 
   // Build TGT alias map from targets (exclude soft-deleted)
   const allTargets = await db
-    .select({ id: targets.id, name: targets.name, tgt: targets.tgt, operationId: targets.operationId })
+    .select({
+      id: targets.id,
+      name: targets.name,
+      tgt: targets.tgt,
+      operationId: targets.operationId,
+    })
     .from(targets)
     .where(isNull(targets.deletedAt));
   const tgtAliasMap = new Map<string, string>(); // alias -> full name
@@ -3164,12 +4318,22 @@ export async function getAssociationGraph(
 
   // Add target nodes from target cards
   for (const t of allTargets) {
-    if (operationIds && operationIds.length > 0 && t.operationId && !operationIds.includes(t.operationId)) continue;
+    if (
+      operationIds &&
+      operationIds.length > 0 &&
+      t.operationId &&
+      !operationIds.includes(t.operationId)
+    )
+      continue;
     const nodeId = `target::${t.name}`;
     if (!nodeMap.has(nodeId)) {
       nodeMap.set(nodeId, {
-        id: nodeId, label: t.name, type: "target",
-        occurrences: 0, operationIds: [], operationNames: [],
+        id: nodeId,
+        label: t.name,
+        type: "target",
+        occurrences: 0,
+        operationIds: [],
+        operationNames: [],
       });
     }
   }
@@ -3177,9 +4341,22 @@ export async function getAssociationGraph(
   // edgeWeight: "nodeId1|||nodeId2" -> count (always sort ids so order is consistent)
   const edgeWeight = new Map<string, number>();
 
-  const ensureNode = (id: string, label: string, type: AssocNode["type"], opId: number, opName: string) => {
+  const ensureNode = (
+    id: string,
+    label: string,
+    type: AssocNode["type"],
+    opId: number,
+    opName: string
+  ) => {
     if (!nodeMap.has(id)) {
-      nodeMap.set(id, { id, label, type, occurrences: 0, operationIds: [], operationNames: [] });
+      nodeMap.set(id, {
+        id,
+        label,
+        type,
+        occurrences: 0,
+        operationIds: [],
+        operationNames: [],
+      });
     }
     const n = nodeMap.get(id)!;
     n.occurrences++;
@@ -3252,7 +4429,9 @@ export async function getAssociationGraph(
 
 // ─── Governance Records ───────────────────────────────────────────────────────
 
-export async function getGovernanceRecord(sheetId: number): Promise<GovernanceRecord | null> {
+export async function getGovernanceRecord(
+  sheetId: number
+): Promise<GovernanceRecord | null> {
   const db = await getDb();
   if (!db) return null;
   const rows = await db
@@ -3305,47 +4484,88 @@ export interface GovernanceUpsertInput {
   notes?: string | null;
 }
 
-export async function upsertGovernanceRecord(input: GovernanceUpsertInput): Promise<GovernanceRecord | null> {
+export async function upsertGovernanceRecord(
+  input: GovernanceUpsertInput
+): Promise<GovernanceRecord | null> {
   const db = await getDb();
   if (!db) return null;
 
   const existing = await getGovernanceRecord(input.sheetId);
-  const imageryJson = input.imageryEntries !== undefined
-    ? JSON.stringify(input.imageryEntries)
-    : undefined;
+  const imageryJson =
+    input.imageryEntries !== undefined
+      ? JSON.stringify(input.imageryEntries)
+      : undefined;
 
   if (existing) {
     await db
       .update(governanceRecords)
       .set({
         ...(input.dueDate !== undefined && { dueDate: input.dueDate }),
-        ...(input.summaryNotification !== undefined && { isurv: input.summaryNotification }),
+        ...(input.summaryNotification !== undefined && {
+          isurv: input.summaryNotification,
+        }),
         ...(input.isurvCIN !== undefined && { isurvCIN: input.isurvCIN }),
         ...(input.isurvName !== undefined && { isurvName: input.isurvName }),
         ...(input.sentToIO !== undefined && { sentToIO: input.sentToIO }),
-        ...(input.sentToIOCIN !== undefined && { sentToIOCIN: input.sentToIOCIN }),
-        ...(input.sentToIOName !== undefined && { sentToIOName: input.sentToIOName }),
-        ...(input.savedAsWord !== undefined && { savedAsWord: input.savedAsWord }),
-        ...(input.savedAsWordCIN !== undefined && { savedAsWordCIN: input.savedAsWordCIN }),
-        ...(input.savedAsWordName !== undefined && { savedAsWordName: input.savedAsWordName }),
+        ...(input.sentToIOCIN !== undefined && {
+          sentToIOCIN: input.sentToIOCIN,
+        }),
+        ...(input.sentToIOName !== undefined && {
+          sentToIOName: input.sentToIOName,
+        }),
+        ...(input.savedAsWord !== undefined && {
+          savedAsWord: input.savedAsWord,
+        }),
+        ...(input.savedAsWordCIN !== undefined && {
+          savedAsWordCIN: input.savedAsWordCIN,
+        }),
+        ...(input.savedAsWordName !== undefined && {
+          savedAsWordName: input.savedAsWordName,
+        }),
         ...(input.savedAsPdf !== undefined && { savedAsPdf: input.savedAsPdf }),
-        ...(input.savedAsPdfCIN !== undefined && { savedAsPdfCIN: input.savedAsPdfCIN }),
-        ...(input.savedAsPdfName !== undefined && { savedAsPdfName: input.savedAsPdfName }),
-        ...(input.uploadedToPromis !== undefined && { uploadedToPromis: input.uploadedToPromis }),
-        ...(input.uploadedToPromisCIN !== undefined && { uploadedToPromisCIN: input.uploadedToPromisCIN }),
-        ...(input.uploadedToPromisName !== undefined && { uploadedToPromisName: input.uploadedToPromisName }),
+        ...(input.savedAsPdfCIN !== undefined && {
+          savedAsPdfCIN: input.savedAsPdfCIN,
+        }),
+        ...(input.savedAsPdfName !== undefined && {
+          savedAsPdfName: input.savedAsPdfName,
+        }),
+        ...(input.uploadedToPromis !== undefined && {
+          uploadedToPromis: input.uploadedToPromis,
+        }),
+        ...(input.uploadedToPromisCIN !== undefined && {
+          uploadedToPromisCIN: input.uploadedToPromisCIN,
+        }),
+        ...(input.uploadedToPromisName !== undefined && {
+          uploadedToPromisName: input.uploadedToPromisName,
+        }),
         ...(input.linked !== undefined && { linked: input.linked }),
         ...(input.linkedCIN !== undefined && { linkedCIN: input.linkedCIN }),
         ...(input.linkedName !== undefined && { linkedName: input.linkedName }),
-        ...(input.savedInOpFolder !== undefined && { savedInOpFolder: input.savedInOpFolder }),
-        ...(input.savedInOpFolderCIN !== undefined && { savedInOpFolderCIN: input.savedInOpFolderCIN }),
-        ...(input.savedInOpFolderName !== undefined && { savedInOpFolderName: input.savedInOpFolderName }),
-        ...(input.imageryTaken !== undefined && { imageryTaken: input.imageryTaken }),
-        ...(input.imageryTakenCIN !== undefined && { imageryTakenCIN: input.imageryTakenCIN }),
-        ...(input.imageryTakenName !== undefined && { imageryTakenName: input.imageryTakenName }),
+        ...(input.savedInOpFolder !== undefined && {
+          savedInOpFolder: input.savedInOpFolder,
+        }),
+        ...(input.savedInOpFolderCIN !== undefined && {
+          savedInOpFolderCIN: input.savedInOpFolderCIN,
+        }),
+        ...(input.savedInOpFolderName !== undefined && {
+          savedInOpFolderName: input.savedInOpFolderName,
+        }),
+        ...(input.imageryTaken !== undefined && {
+          imageryTaken: input.imageryTaken,
+        }),
+        ...(input.imageryTakenCIN !== undefined && {
+          imageryTakenCIN: input.imageryTakenCIN,
+        }),
+        ...(input.imageryTakenName !== undefined && {
+          imageryTakenName: input.imageryTakenName,
+        }),
         ...(input.coverPage !== undefined && { coverPage: input.coverPage }),
-        ...(input.coverPageCIN !== undefined && { coverPageCIN: input.coverPageCIN }),
-        ...(input.coverPageName !== undefined && { coverPageName: input.coverPageName }),
+        ...(input.coverPageCIN !== undefined && {
+          coverPageCIN: input.coverPageCIN,
+        }),
+        ...(input.coverPageName !== undefined && {
+          coverPageName: input.coverPageName,
+        }),
         ...(input.sheetCell !== undefined && { sheetCell: input.sheetCell }),
         ...(imageryJson !== undefined && { imageryEntries: imageryJson }),
         ...(input.notes !== undefined && { notes: input.notes }),
@@ -3415,8 +4635,8 @@ export function computeGovernancePercent(
   // ── Team Leader section (2 items) ──────────────────────────────────────────
   // isurv column stores the summaryNotification value
   const tlFields: boolean[] = [
-    !!rec.isurv,      // Summary complete
-    !!rec.sentToIO,   // Sent to IO
+    !!rec.isurv, // Summary complete
+    !!rec.sentToIO, // Sent to IO
   ];
 
   // ── Operative section (4 items, only countable when allSigned) ─────────────
@@ -3433,18 +4653,24 @@ export function computeGovernancePercent(
   // If no imagery was taken (no entries with a CIN), exclude imagery from the total
   let imageryFields: boolean[] = [];
   let entries: { cin?: string; saved?: boolean }[] = [];
-  try { entries = JSON.parse(rec.imageryEntries ?? "[]"); } catch { entries = []; }
+  try {
+    entries = JSON.parse(rec.imageryEntries ?? "[]");
+  } catch {
+    entries = [];
+  }
   // Only count imagery if at least one entry has a real CIN (blank placeholder rows are ignored)
-  const realEntries = entries.filter((e) => e.cin && e.cin.trim() !== "");
+  const realEntries = entries.filter(e => e.cin && e.cin.trim() !== "");
   const hasImagery = realEntries.length > 0;
   if (hasImagery) {
-    imageryFields = realEntries.map((e) => !!e.saved);
+    imageryFields = realEntries.map(e => !!e.saved);
   }
   // If no real imagery entries, imagery section is N/A — not counted
 
   const allFields = [...tlFields, ...opFields, ...imageryFields];
   if (allFields.length === 0) return 0;
-  return Math.round((allFields.filter(Boolean).length / allFields.length) * 100);
+  return Math.round(
+    (allFields.filter(Boolean).length / allFields.length) * 100
+  );
 }
 
 /** Returns all governance records for a list of sheet IDs */
@@ -3485,25 +4711,34 @@ export async function getGovernanceTodoForCin(cin: string): Promise<
 
   // Find all sheets where this CIN is TL or Author (stored in sheetCins JSON)
   // Exclude soft-deleted sheets so they don't appear in governance to-do
-  const allSheets = await db.select().from(runningSheets).where(isNull(runningSheets.deletedAt));
-  const relevantSheets = allSheets.filter((s) => {
+  const allSheets = await db
+    .select()
+    .from(runningSheets)
+    .where(isNull(runningSheets.deletedAt));
+  const relevantSheets = allSheets.filter(s => {
     try {
-      const cins: { cin: string; isTeamLeader?: boolean; isAuthor?: boolean }[] = JSON.parse(s.sheetCins ?? "[]");
-      return cins.some((c) => c.cin === cin && (c.isTeamLeader || c.isAuthor));
-    } catch { return false; }
+      const cins: {
+        cin: string;
+        isTeamLeader?: boolean;
+        isAuthor?: boolean;
+      }[] = JSON.parse(s.sheetCins ?? "[]");
+      return cins.some(c => c.cin === cin && (c.isTeamLeader || c.isAuthor));
+    } catch {
+      return false;
+    }
   });
   if (relevantSheets.length === 0) return [];
 
-  const opIds = Array.from(new Set(relevantSheets.map((s) => s.operationId)));
+  const opIds = Array.from(new Set(relevantSheets.map(s => s.operationId)));
 
   const [ops, govRecords] = await Promise.all([
     db.select().from(operations).where(inArray(operations.id, opIds)),
-    getGovernanceRecordsBySheetIds(relevantSheets.map((s) => s.id)),
+    getGovernanceRecordsBySheetIds(relevantSheets.map(s => s.id)),
   ]);
 
   // Only process sheets whose operation still exists
-  const validOpIds = new Set(ops.map((o) => o.id));
-  const validSheets = relevantSheets.filter((s) => validOpIds.has(s.operationId));
+  const validOpIds = new Set(ops.map(o => o.id));
+  const validSheets = relevantSheets.filter(s => validOpIds.has(s.operationId));
   if (validSheets.length === 0) return [];
 
   // Compute allSigned per sheet
@@ -3511,23 +4746,39 @@ export async function getGovernanceTodoForCin(cin: string): Promise<
 
   for (const sheet of validSheets) {
     const rows = await getRowsBySheetId(sheet.id);
-    const rowIds = rows.map((r) => r.id);
+    const rowIds = rows.map(r => r.id);
     const [members, certs] = await Promise.all([
       getMembersByRowIds(rowIds),
       getCertificationsByRowIds(rowIds),
     ]);
-    const allSigned = rows.length > 0 && rows.every((r) => {
-      const rowMems = members.filter((m) => m.rowId === r.id);
-      return rowMems.length > 0 && rowMems.every((m) =>
-        certs.some((c) => c.rowId === r.id && c.memberId === m.id && c.isActive)
-      );
-    });
+    const allSigned =
+      rows.length > 0 &&
+      rows.every(r => {
+        const rowMems = members.filter(m => m.rowId === r.id);
+        return (
+          rowMems.length > 0 &&
+          rowMems.every(m =>
+            certs.some(
+              c => c.rowId === r.id && c.memberId === m.id && c.isActive
+            )
+          )
+        );
+      });
 
-    const rec = govRecords.find((g) => g.sheetId === sheet.id);
-    const op = ops.find((o) => o.id === sheet.operationId);
-    const cinList: { cin: string; isTeamLeader?: boolean; isAuthor?: boolean }[] =
-      (() => { try { return JSON.parse(sheet.sheetCins ?? "[]"); } catch { return []; } })();
-    const cinEntry = cinList.find((c) => c.cin === cin);
+    const rec = govRecords.find(g => g.sheetId === sheet.id);
+    const op = ops.find(o => o.id === sheet.operationId);
+    const cinList: {
+      cin: string;
+      isTeamLeader?: boolean;
+      isAuthor?: boolean;
+    }[] = (() => {
+      try {
+        return JSON.parse(sheet.sheetCins ?? "[]");
+      } catch {
+        return [];
+      }
+    })();
+    const cinEntry = cinList.find(c => c.cin === cin);
 
     if (cinEntry?.isTeamLeader) {
       const outstanding: string[] = [];
@@ -3561,16 +4812,23 @@ export async function getGovernanceTodoForCin(cin: string): Promise<
         if (!rec?.savedAsWord) outstanding.push("Saved as Word document");
         if (!rec?.savedAsPdf) outstanding.push("Saved as PDF");
         if (!rec?.uploadedToPromis) outstanding.push("Uploaded to PROMIS");
-        if (!rec?.savedInOpFolder) outstanding.push("Saved in Operation folder");
+        if (!rec?.savedInOpFolder)
+          outstanding.push("Saved in Operation folder");
         // Check imagery entries — any unsaved imagery rows are outstanding for the author
         if (rec?.imageryEntries) {
           try {
-            const entries: { saved?: boolean }[] = JSON.parse(rec.imageryEntries);
-            const unsavedCount = entries.filter((e) => !e.saved).length;
+            const entries: { saved?: boolean }[] = JSON.parse(
+              rec.imageryEntries
+            );
+            const unsavedCount = entries.filter(e => !e.saved).length;
             if (unsavedCount > 0) {
-              outstanding.push(`${unsavedCount} imagery entr${unsavedCount === 1 ? "y" : "ies"} not saved`);
+              outstanding.push(
+                `${unsavedCount} imagery entr${unsavedCount === 1 ? "y" : "ies"} not saved`
+              );
             }
-          } catch { /* ignore parse errors */ }
+          } catch {
+            /* ignore parse errors */
+          }
         }
       } else {
         // Sheet not yet fully certified — flag it as pending certification
@@ -3610,33 +4868,45 @@ export async function getUnlinkedImagesTodoForCin(cin: string): Promise<
   const db = await getDb();
   if (!db) return [];
 
-  const allSheets = await db.select().from(runningSheets).where(isNull(runningSheets.deletedAt));
-  const authoredSheets = allSheets.filter((s) => {
+  const allSheets = await db
+    .select()
+    .from(runningSheets)
+    .where(isNull(runningSheets.deletedAt));
+  const authoredSheets = allSheets.filter(s => {
     try {
-      const cins: { cin: string; isAuthor?: boolean }[] = JSON.parse(s.sheetCins ?? "[]");
-      return cins.some((c) => c.cin === cin && c.isAuthor);
-    } catch { return false; }
+      const cins: { cin: string; isAuthor?: boolean }[] = JSON.parse(
+        s.sheetCins ?? "[]"
+      );
+      return cins.some(c => c.cin === cin && c.isAuthor);
+    } catch {
+      return false;
+    }
   });
   if (authoredSheets.length === 0) return [];
 
-  const opIds = Array.from(new Set(authoredSheets.map((s) => s.operationId)));
-  const ops = await db.select().from(operations).where(inArray(operations.id, opIds));
-  const validOpIds = new Set(ops.map((o) => o.id));
-  const validSheets = authoredSheets.filter((s) => validOpIds.has(s.operationId));
+  const opIds = Array.from(new Set(authoredSheets.map(s => s.operationId)));
+  const ops = await db
+    .select()
+    .from(operations)
+    .where(inArray(operations.id, opIds));
+  const validOpIds = new Set(ops.map(o => o.id));
+  const validSheets = authoredSheets.filter(s => validOpIds.has(s.operationId));
   if (validSheets.length === 0) return [];
 
   const results: Awaited<ReturnType<typeof getUnlinkedImagesTodoForCin>> = [];
 
   for (const sheet of validSheets) {
     const rows = await getRowsBySheetId(sheet.id);
-    const rowIds = rows.map((r) => r.id);
+    const rowIds = rows.map(r => r.id);
     const attachments = await getAttachmentsByRowIds(rowIds);
     if (attachments.length === 0) continue;
     const withLinkCounts = await attachLinkedCounts(db, attachments);
-    const unlinkedCount = withLinkCounts.filter((a) => a.linkedCount === 0).length;
+    const unlinkedCount = withLinkCounts.filter(
+      a => a.linkedCount === 0
+    ).length;
     if (unlinkedCount === 0) continue;
 
-    const op = ops.find((o) => o.id === sheet.operationId);
+    const op = ops.find(o => o.id === sheet.operationId);
     results.push({
       sheetId: sheet.id,
       sheetTitle: sheet.title,
@@ -3649,12 +4919,516 @@ export async function getUnlinkedImagesTodoForCin(cin: string): Promise<
   return results;
 }
 
+// ─── Sheet Summary ──────────────────────────────────────────────────────────
+
+export async function getSheetSummary(
+  sheetId: number
+): Promise<SheetSummary | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select()
+    .from(sheetSummaries)
+    .where(eq(sheetSummaries.sheetId, sheetId))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export interface SheetSummaryUpsertInput {
+  sheetId: number;
+  teamLabel?: string | null;
+  teamCins?: string | null;
+  operationName?: string | null;
+  dayDate?: string | null;
+  startTime?: string | null;
+  finishTime?: string | null;
+  targetName?: string | null;
+  location?: string | null;
+  dismissedVehicleKeys?: string | null;
+  ioSupport?: string | null;
+  intelSupport?: string | null;
+  specialProjects?: string | null;
+  ioContactTiming?: string | null;
+  ioContactMethod?: string | null;
+  objectives?: string | null;
+  criticalDecisions?: string | null;
+  issues?: string | null;
+  lastEditedByCIN?: string | null;
+}
+
+export async function upsertSheetSummary(
+  input: SheetSummaryUpsertInput
+): Promise<SheetSummary | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const existing = await getSheetSummary(input.sheetId);
+  const { sheetId, ...fields } = input;
+
+  if (existing) {
+    const patch: Partial<InsertSheetSummary> = {};
+    for (const [key, value] of Object.entries(fields)) {
+      if (value !== undefined) (patch as any)[key] = value;
+    }
+    if (Object.keys(patch).length > 0) {
+      await db
+        .update(sheetSummaries)
+        .set(patch)
+        .where(eq(sheetSummaries.sheetId, sheetId));
+    }
+  } else {
+    await db.insert(sheetSummaries).values({ sheetId, ...fields });
+  }
+  return getSheetSummary(sheetId);
+}
+
+/** Locks the summary — sets completedAt/completedByCIN, clears any prior reopen record. */
+export async function completeSheetSummary(
+  sheetId: number,
+  cin: string
+): Promise<SheetSummary | null> {
+  const db = await getDb();
+  if (!db) return null;
+  await db
+    .update(sheetSummaries)
+    .set({
+      completedAt: Date.now(),
+      completedByCIN: cin,
+      reopenedAt: null,
+      reopenedByCIN: null,
+    })
+    .where(eq(sheetSummaries.sheetId, sheetId));
+  return getSheetSummary(sheetId);
+}
+
+/** Unlocks the summary — clears completedAt/completedByCIN, stamps who reopened it. */
+export async function reopenSheetSummary(
+  sheetId: number,
+  cin: string
+): Promise<SheetSummary | null> {
+  const db = await getDb();
+  if (!db) return null;
+  await db
+    .update(sheetSummaries)
+    .set({
+      completedAt: null,
+      completedByCIN: null,
+      reopenedAt: Date.now(),
+      reopenedByCIN: cin,
+    })
+    .where(eq(sheetSummaries.sheetId, sheetId));
+  return getSheetSummary(sheetId);
+}
+
+/** Sort CINs ascending by their numeric portion (e.g. "QA1" < "TA01" < "BS12"); falls back to plain string compare when neither has digits. */
+export function sortCinsNumerically(cins: string[]): string[] {
+  return [...cins].sort((a, b) => {
+    const na = parseInt(a.replace(/\D/g, ""), 10);
+    const nb = parseInt(b.replace(/\D/g, ""), 10);
+    if (!isNaN(na) && !isNaN(nb) && na !== nb) return na - nb;
+    return a.localeCompare(b);
+  });
+}
+
+/** Team-leader-first, then ascending-numeric-CIN ordering for the Summary tab's Team Members field. */
+export function orderTeamCins(
+  sheetCins: { cin: string; isTeamLeader?: boolean }[]
+): string[] {
+  const leaders = sheetCins.filter(c => c.isTeamLeader).map(c => c.cin);
+  const others = sheetCins.filter(c => !c.isTeamLeader).map(c => c.cin);
+  return [...sortCinsNumerically(leaders), ...sortCinsNumerically(others)];
+}
+
+/** Location for the Summary tab: the RS row whose observation mentions "surveillance commenced" — an address entity extracted from it if found, otherwise the raw row text. Null if no such row exists. */
+export function extractSummaryLocation(
+  rows: { observation: string | null }[]
+): string | null {
+  const row = rows.find(r =>
+    (r.observation ?? "").toLowerCase().includes("surveillance commenced")
+  );
+  if (!row?.observation) return null;
+  const entities = extractEntitiesFromText(row.observation);
+  const address = entities.find(e => e.type === "address");
+  return address
+    ? address.shortForm || address.fullDescription
+    : row.observation;
+}
+
+export interface SheetSummaryVehicle {
+  key: string;
+  label: string;
+}
+
+/** Vehicles for the Summary tab: Target Registry vehicles (v1f/v1, v2f/v2, extraVehicles) plus vehicles mentioned in RS row text, minus any the supervisor has dismissed. Always computed live, never stored. */
+export function computeSheetSummaryVehicles(
+  target:
+    | {
+        v1f: string | null;
+        v1: string | null;
+        v2f: string | null;
+        v2: string | null;
+        extraVehicles: string | null;
+      }
+    | null
+    | undefined,
+  rows: { observation: string | null }[],
+  dismissedKeys: string[]
+): SheetSummaryVehicle[] {
+  const vehicles: SheetSummaryVehicle[] = [];
+  const seen = new Set<string>();
+  const add = (key: string, label: string) => {
+    const normalized = label.trim().toLowerCase();
+    if (!label.trim() || seen.has(normalized)) return;
+    seen.add(normalized);
+    vehicles.push({ key, label: label.trim() });
+  };
+
+  if (target) {
+    const v1 = target.v1f?.trim() || target.v1?.trim();
+    if (v1) add("target:v1", v1);
+    const v2 = target.v2f?.trim() || target.v2?.trim();
+    if (v2) add("target:v2", v2);
+    if (target.extraVehicles) {
+      try {
+        const extras: Array<{ full?: string; short?: string }> = JSON.parse(
+          target.extraVehicles
+        );
+        extras.forEach((ev, idx) => {
+          const label = ev.full?.trim() || ev.short?.trim();
+          if (label) add(`target:extra${idx}`, label);
+        });
+      } catch {
+        // ignore malformed JSON
+      }
+    }
+  }
+
+  for (const row of rows) {
+    if (!row.observation) continue;
+    const entities = extractEntitiesFromText(row.observation);
+    for (const e of entities) {
+      if (e.type !== "vehicle") continue;
+      const label = e.shortForm || e.fullDescription;
+      if (!label) continue;
+      add(`rs:${label.trim().toLowerCase()}`, label);
+    }
+  }
+
+  const dismissed = new Set(dismissedKeys);
+  return vehicles.filter(v => !dismissed.has(v.key));
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Strips the trailing "(ShortForm)" bracket for location/address entity mentions — the shortform duplicates what's already stated in the surrounding text. */
+function stripLocationBrackets(
+  text: string,
+  entities: ReturnType<typeof extractEntitiesFromText>
+): string {
+  let result = text;
+  for (const e of entities) {
+    if (e.type !== "address" || !e.shortForm) continue;
+    result = result.replace(
+      new RegExp(`\\s*\\(${escapeRegExp(e.shortForm)}\\)`, "g"),
+      ""
+    );
+  }
+  return result;
+}
+
+/**
+ * Splits one RS row into the Summary line's three fields — time, location,
+ * and just the "what happened" text — kept separate (rather than
+ * concatenated into one string) so the PDF export can render them as
+ * distinct Time / Address / Observation table columns without the address
+ * being duplicated inside the observation text.
+ */
+function buildSummaryEntryFields(row: {
+  time: string | null;
+  observation: string | null;
+}): { text: string; location: string | null } {
+  const raw = row.observation ?? "";
+  const entities = extractEntitiesFromText(raw);
+  const location = entities.find(e => e.type === "address");
+
+  return {
+    text: stripLocationBrackets(raw, entities),
+    location: location ? location.shortForm || location.fullDescription : null,
+  };
+}
+
+/**
+ * Returns the Summary tab's per-row entry list, first append-only syncing in
+ * any RS rows that don't have an entry yet. Existing entries (including ones
+ * the supervisor has edited or soft-deleted) are never touched or regenerated.
+ *
+ * "Travelled Via" rows — a row containing "continued via:" (the street/road
+ * list, whether inline or on its own) and, where present, the paired row
+ * immediately after it ending in "whereat" (the same convention used to
+ * exclude these from Court Statements, see routers.ts's
+ * statement.previewData) — are skipped when first creating a line for a row.
+ * That check is never re-applied to a line that already exists: if an edit
+ * later makes a row's text happen to match the pattern, the existing line is
+ * still kept and just updated normally — a line only disappears here if its
+ * row is genuinely gone (deleted or blanked).
+ *
+ * While the summary is marked complete, none of this runs at all — no new
+ * lines are added and no existing ones are refreshed, even if RS rows keep
+ * changing. Reopening the summary resumes syncing from where it left off.
+ */
+export async function getSheetSummaryEntries(
+  sheetId: number
+): Promise<SheetSummaryEntry[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const summary = await getSheetSummary(sheetId);
+  const isComplete = !!summary?.completedAt;
+
+  const allRows = await getRowsBySheetId(sheetId);
+  // Rows with real content — used for sort order and for deciding whether an
+  // existing line's row is still genuinely there, regardless of Travelled
+  // Via classification (that classification only ever gates new inserts).
+  const contentRows = allRows.filter(r => (r.observation ?? "").trim());
+  const contentRowById = new Map(contentRows.map(r => [r.id, r]));
+
+  const travelledViaRowIds = new Set<number>();
+  for (let i = 0; i < allRows.length; i++) {
+    const obs = (allRows[i].observation ?? "").toLowerCase();
+    if (obs.includes("continued via:")) {
+      travelledViaRowIds.add(allRows[i].id);
+      const next = allRows[i + 1];
+      if (next && /whereat$/i.test((next.observation ?? "").trim())) {
+        travelledViaRowIds.add(next.id);
+      }
+    }
+  }
+
+  const existing = await db
+    .select()
+    .from(sheetSummaryEntries)
+    .where(eq(sheetSummaryEntries.sheetId, sheetId));
+
+  let all = existing;
+
+  if (!isComplete) {
+    const existingRowIds = new Set(existing.map(e => e.rowId));
+    const missing = contentRows.filter(
+      r => !travelledViaRowIds.has(r.id) && !existingRowIds.has(r.id)
+    );
+    if (missing.length > 0) {
+      await db.insert(sheetSummaryEntries).values(
+        missing.map(r => {
+          const fields = buildSummaryEntryFields(r);
+          return {
+            sheetId,
+            rowId: r.id,
+            text: fields.text,
+            location: fields.location,
+            time: r.time,
+            timeMinutes: r.timeMinutes,
+          };
+        })
+      );
+      all = await db
+        .select()
+        .from(sheetSummaryEntries)
+        .where(eq(sheetSummaryEntries.sheetId, sheetId));
+    }
+
+    // Keep unedited row-linked lines synced with their source row — editing
+    // an RS row (e.g. adding a vehicle mention) should flow through to a
+    // Summary line the supervisor hasn't touched. A line that's been edited
+    // stays exactly as the supervisor left it, no matter what happens to the
+    // row afterward.
+    const pendingUpdates: Promise<unknown>[] = [];
+    all = all.map(e => {
+      if (e.edited || e.rowId == null) return e;
+      const row = contentRowById.get(e.rowId);
+      if (!row) {
+        if (e.deleted) return e;
+        pendingUpdates.push(
+          db
+            .update(sheetSummaryEntries)
+            .set({ deleted: true })
+            .where(eq(sheetSummaryEntries.id, e.id))
+        );
+        return { ...e, deleted: true };
+      }
+      const fields = buildSummaryEntryFields(row);
+      const changed =
+        fields.text !== e.text ||
+        fields.location !== e.location ||
+        row.time !== e.time ||
+        row.timeMinutes !== e.timeMinutes;
+      if (!changed) return e;
+      pendingUpdates.push(
+        db
+          .update(sheetSummaryEntries)
+          .set({
+            text: fields.text,
+            location: fields.location,
+            time: row.time,
+            timeMinutes: row.timeMinutes,
+          })
+          .where(eq(sheetSummaryEntries.id, e.id))
+      );
+      return {
+        ...e,
+        text: fields.text,
+        location: fields.location,
+        time: row.time,
+        timeMinutes: row.timeMinutes,
+      };
+    });
+    if (pendingUpdates.length > 0) await Promise.all(pendingUpdates);
+  }
+
+  const rowOrder = new Map(contentRows.map((r, idx) => [r.id, idx]));
+  // Row-linked lines sort by their source row's position. Manually-added
+  // lines (rowId null) with no time yet sort above everything else, newest
+  // first — "adds the row to the top and stays there until a time is
+  // added" — via a negative key derived from id (higher id = added later =
+  // more negative = further toward the top). Once a manual line has a time,
+  // it's slotted in among the row-linked lines by comparing that time
+  // against each row's own time.
+  const sortKey = (e: SheetSummaryEntry): number => {
+    if (e.rowId != null) {
+      return rowOrder.has(e.rowId)
+        ? rowOrder.get(e.rowId)!
+        : contentRows.length + e.id;
+    }
+    if (e.timeMinutes == null) return -1 - e.id;
+    let idx = 0;
+    for (const r of contentRows) {
+      if (r.timeMinutes != null && r.timeMinutes <= e.timeMinutes) idx++;
+      else break;
+    }
+    return idx - 0.5;
+  };
+  return all.filter(e => !e.deleted).sort((a, b) => sortKey(a) - sortKey(b));
+}
+
+/** Adds a blank, manually-added summary line (not tied to any RS row) for additional information the supervisor wants to note. */
+export async function addManualSheetSummaryEntry(
+  sheetId: number
+): Promise<SheetSummaryEntry | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const [result] = await db
+    .insert(sheetSummaryEntries)
+    .values({ sheetId, rowId: null, text: "" });
+  const [row] = await db
+    .select()
+    .from(sheetSummaryEntries)
+    .where(eq(sheetSummaryEntries.id, result.insertId as number))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function updateSheetSummaryEntry(
+  id: number,
+  text: string
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(sheetSummaryEntries)
+    .set({ text, edited: true })
+    .where(eq(sheetSummaryEntries.id, id));
+}
+
+/** Sets a manually-added summary line's time, which is what lets it sort into place among the row-linked lines instead of staying pinned at the top. */
+export async function setSheetSummaryEntryTime(
+  id: number,
+  time: string,
+  timeMinutes: number
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(sheetSummaryEntries)
+    .set({ time, timeMinutes })
+    .where(eq(sheetSummaryEntries.id, id));
+}
+
+export async function deleteSheetSummaryEntry(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(sheetSummaryEntries)
+    .set({ deleted: true })
+    .where(eq(sheetSummaryEntries.id, id));
+}
+
+/** Previously-used IO/Intel support names for the same Operation, for the Summary tab's autocomplete. */
+export async function getSheetSummarySupportHistory(
+  operationId: number,
+  field: "ioSupport" | "intelSupport"
+): Promise<string[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({
+      value:
+        field === "ioSupport"
+          ? sheetSummaries.ioSupport
+          : sheetSummaries.intelSupport,
+    })
+    .from(sheetSummaries)
+    .innerJoin(runningSheets, eq(sheetSummaries.sheetId, runningSheets.id))
+    .where(eq(runningSheets.operationId, operationId));
+
+  const names = new Set<string>();
+  for (const r of rows) {
+    if (!r.value) continue;
+    for (const name of r.value.split(",")) {
+      const trimmed = name.trim();
+      if (trimmed) names.add(trimmed);
+    }
+  }
+  return Array.from(names).sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * The most recently-created summary on the same Operation (excluding this
+ * sheet), used to carry forward Investigator, Intel Support, Special
+ * Projects, and Objectives into a newly-created summary. Everything else
+ * (Location, Team, Target, the Communication section, Critical Decisions,
+ * Issues) starts blank/derived fresh per the supervisor's spec.
+ */
+export async function getMostRecentSheetSummaryForOperation(
+  operationId: number,
+  excludeSheetId: number
+): Promise<SheetSummary | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select({ summary: sheetSummaries })
+    .from(sheetSummaries)
+    .innerJoin(runningSheets, eq(sheetSummaries.sheetId, runningSheets.id))
+    .where(
+      and(
+        eq(runningSheets.operationId, operationId),
+        sql`${runningSheets.id} != ${excludeSheetId}`
+      )
+    )
+    .orderBy(desc(runningSheets.createdAt))
+    .limit(1);
+  return rows[0]?.summary ?? null;
+}
+
 // ─── Target Shortcuts ─────────────────────────────────────────────────────────
 
 export async function getTargetShortcuts(targetId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(targetShortcuts).where(eq(targetShortcuts.targetId, targetId));
+  return db
+    .select()
+    .from(targetShortcuts)
+    .where(eq(targetShortcuts.targetId, targetId));
 }
 
 export async function createTargetShortcut(data: InsertTargetShortcut) {
@@ -3664,7 +5438,10 @@ export async function createTargetShortcut(data: InsertTargetShortcut) {
   return { id: (result as { insertId: number }).insertId };
 }
 
-export async function updateTargetShortcut(id: number, data: Partial<Pick<InsertTargetShortcut, "trigger" | "expansion">>) {
+export async function updateTargetShortcut(
+  id: number,
+  data: Partial<Pick<InsertTargetShortcut, "trigger" | "expansion">>
+) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   await db.update(targetShortcuts).set(data).where(eq(targetShortcuts.id, id));
@@ -3681,17 +5458,37 @@ export async function getTargetShortcutsForSheet(sheetId: number) {
   // Returns target shortcuts for the target assigned to the given sheet
   const db = await getDb();
   if (!db) return [];
-  const sheet = await db.select({ targetId: runningSheets.targetId }).from(runningSheets).where(eq(runningSheets.id, sheetId)).limit(1);
+  const sheet = await db
+    .select({ targetId: runningSheets.targetId })
+    .from(runningSheets)
+    .where(eq(runningSheets.id, sheetId))
+    .limit(1);
   if (!sheet[0]?.targetId) return [];
-  return db.select().from(targetShortcuts).where(eq(targetShortcuts.targetId, sheet[0].targetId));
+  return db
+    .select()
+    .from(targetShortcuts)
+    .where(eq(targetShortcuts.targetId, sheet[0].targetId));
 }
 
 // ─── WIPC Vault Helpers ───────────────────────────────────────────────────────
 // All sensitive fields are encrypted/decrypted via wipcVault.ts (AES-256-GCM).
 // These helpers are called only from server-side procedures with admin guards.
 
-const WIPC_MEMBER_FIELDS = ["fullName", "dob", "afpId", "cinNumber", "aiInitials", "aiKnownAs"] as const;
-const WIPC_OFFICER_FIELDS = ["fullName", "afpId", "workLocation", "portfolio", "contactNumber"] as const;
+const WIPC_MEMBER_FIELDS = [
+  "fullName",
+  "dob",
+  "afpId",
+  "cinNumber",
+  "aiInitials",
+  "aiKnownAs",
+] as const;
+const WIPC_OFFICER_FIELDS = [
+  "fullName",
+  "afpId",
+  "workLocation",
+  "portfolio",
+  "contactNumber",
+] as const;
 
 function encryptMember(m: Record<string, unknown>): Record<string, unknown> {
   const out = { ...m };
@@ -3748,25 +5545,46 @@ export async function createWipcAuditEntry(data: {
 export async function getWipcAuditLog(limit = 200) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(wipcAuditLog).orderBy(desc(wipcAuditLog.createdAt)).limit(limit);
+  return db
+    .select()
+    .from(wipcAuditLog)
+    .orderBy(desc(wipcAuditLog.createdAt))
+    .limit(limit);
 }
 
 /** Save or update the requesting officer profile for a user (encrypted) */
-export async function upsertWipcOfficerProfile(userId: number, data: {
-  fullName: string;
-  afpId: string;
-  workLocation?: string;
-  portfolio?: string;
-  contactNumber?: string;
-}) {
+export async function upsertWipcOfficerProfile(
+  userId: number,
+  data: {
+    fullName: string;
+    afpId: string;
+    workLocation?: string;
+    portfolio?: string;
+    contactNumber?: string;
+  }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const encrypted = encryptOfficer({ ...data }) as typeof data;
-  const existing = await db.select({ id: wipcOfficerProfiles.id }).from(wipcOfficerProfiles).where(eq(wipcOfficerProfiles.userId, userId)).limit(1);
+  const existing = await db
+    .select({ id: wipcOfficerProfiles.id })
+    .from(wipcOfficerProfiles)
+    .where(eq(wipcOfficerProfiles.userId, userId))
+    .limit(1);
   if (existing.length > 0) {
-    await db.update(wipcOfficerProfiles).set({ ...encrypted, updatedAt: new Date() }).where(eq(wipcOfficerProfiles.userId, userId));
+    await db
+      .update(wipcOfficerProfiles)
+      .set({ ...encrypted, updatedAt: new Date() })
+      .where(eq(wipcOfficerProfiles.userId, userId));
   } else {
-    await db.insert(wipcOfficerProfiles).values({ userId, fullName: encrypted.fullName as string, afpId: encrypted.afpId as string, workLocation: encrypted.workLocation as string | undefined, portfolio: encrypted.portfolio as string | undefined, contactNumber: encrypted.contactNumber as string | undefined });
+    await db.insert(wipcOfficerProfiles).values({
+      userId,
+      fullName: encrypted.fullName as string,
+      afpId: encrypted.afpId as string,
+      workLocation: encrypted.workLocation as string | undefined,
+      portfolio: encrypted.portfolio as string | undefined,
+      contactNumber: encrypted.contactNumber as string | undefined,
+    });
   }
 }
 
@@ -3774,31 +5592,48 @@ export async function upsertWipcOfficerProfile(userId: number, data: {
 export async function getWipcOfficerProfile(userId: number) {
   const db = await getDb();
   if (!db) return null;
-  const [row] = await db.select().from(wipcOfficerProfiles).where(eq(wipcOfficerProfiles.userId, userId)).limit(1);
+  const [row] = await db
+    .select()
+    .from(wipcOfficerProfiles)
+    .where(eq(wipcOfficerProfiles.userId, userId))
+    .limit(1);
   if (!row) return null;
-  return decryptOfficer(row as unknown as Record<string, unknown>) as unknown as WipcOfficerProfile;
+  return decryptOfficer(
+    row as unknown as Record<string, unknown>
+  ) as unknown as WipcOfficerProfile;
 }
 
 /** List all WIPC members (decrypted) — admin only */
 export async function listWipcMembers() {
   const db = await getDb();
   if (!db) return [];
-  const rows = await db.select().from(wipcMembers).orderBy(wipcMembers.createdAt);
-  return rows.map((r) => decryptMember(r as unknown as Record<string, unknown>) as unknown as WipcMemberRecord);
+  const rows = await db
+    .select()
+    .from(wipcMembers)
+    .orderBy(wipcMembers.createdAt);
+  return rows.map(
+    r =>
+      decryptMember(
+        r as unknown as Record<string, unknown>
+      ) as unknown as WipcMemberRecord
+  );
 }
 
 /** Save a new WIPC member (encrypted) — admin only */
-export async function createWipcMember(createdBy: number, data: {
-  fullName: string;
-  dob?: string;
-  afpId: string;
-  cinNumber?: string;
-  aiInitials?: string;
-  aiKnownAs?: string;
-  isUco?: boolean;
-  isOco?: boolean;
-  isCin?: boolean;
-}) {
+export async function createWipcMember(
+  createdBy: number,
+  data: {
+    fullName: string;
+    dob?: string;
+    afpId: string;
+    cinNumber?: string;
+    aiInitials?: string;
+    aiKnownAs?: string;
+    isUco?: boolean;
+    isOco?: boolean;
+    isCin?: boolean;
+  }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const encrypted = encryptMember({ ...data }) as typeof data;
@@ -3818,21 +5653,27 @@ export async function createWipcMember(createdBy: number, data: {
 }
 
 /** Update an existing WIPC member (encrypted) — admin only */
-export async function updateWipcMember(id: number, data: Partial<{
-  fullName: string;
-  dob: string;
-  afpId: string;
-  cinNumber: string;
-  aiInitials: string;
-  aiKnownAs: string;
-  isUco: boolean;
-  isOco: boolean;
-  isCin: boolean;
-}>) {
+export async function updateWipcMember(
+  id: number,
+  data: Partial<{
+    fullName: string;
+    dob: string;
+    afpId: string;
+    cinNumber: string;
+    aiInitials: string;
+    aiKnownAs: string;
+    isUco: boolean;
+    isOco: boolean;
+    isCin: boolean;
+  }>
+) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const encrypted = encryptMember({ ...data }) as typeof data;
-  await db.update(wipcMembers).set({ ...encrypted, updatedAt: new Date() }).where(eq(wipcMembers.id, id));
+  await db
+    .update(wipcMembers)
+    .set({ ...encrypted, updatedAt: new Date() })
+    .where(eq(wipcMembers.id, id));
 }
 
 /** Delete a WIPC member — admin only */
@@ -3870,7 +5711,12 @@ export async function getRecycleBinItems(): Promise<RecycleBinItem[]> {
   const deletedOps = await db
     .select()
     .from(operations)
-    .where(and(isNotNull(operations.deletedAt), sql`${operations.deletedAt} > ${cutoff}`));
+    .where(
+      and(
+        isNotNull(operations.deletedAt),
+        sql`${operations.deletedAt} > ${cutoff}`
+      )
+    );
   for (const op of deletedOps) {
     items.push({
       id: op.id,
@@ -3895,7 +5741,12 @@ export async function getRecycleBinItems(): Promise<RecycleBinItem[]> {
     })
     .from(runningSheets)
     .leftJoin(operations, eq(runningSheets.operationId, operations.id))
-    .where(and(isNotNull(runningSheets.deletedAt), sql`${runningSheets.deletedAt} > ${cutoff}`));
+    .where(
+      and(
+        isNotNull(runningSheets.deletedAt),
+        sql`${runningSheets.deletedAt} > ${cutoff}`
+      )
+    );
   for (const s of deletedSheets) {
     items.push({
       id: s.id,
@@ -3914,7 +5765,9 @@ export async function getRecycleBinItems(): Promise<RecycleBinItem[]> {
   const deletedTargets = await db
     .select()
     .from(targets)
-    .where(and(isNotNull(targets.deletedAt), sql`${targets.deletedAt} > ${cutoff}`));
+    .where(
+      and(isNotNull(targets.deletedAt), sql`${targets.deletedAt} > ${cutoff}`)
+    );
   for (const t of deletedTargets) {
     items.push({
       id: t.id,
@@ -3931,7 +5784,12 @@ export async function getRecycleBinItems(): Promise<RecycleBinItem[]> {
   const deletedMarkers = await db
     .select()
     .from(customMapMarkers)
-    .where(and(isNotNull(customMapMarkers.deletedAt), sql`${customMapMarkers.deletedAt} > ${cutoff}`));
+    .where(
+      and(
+        isNotNull(customMapMarkers.deletedAt),
+        sql`${customMapMarkers.deletedAt} > ${cutoff}`
+      )
+    );
   for (const m of deletedMarkers) {
     items.push({
       id: m.id,
@@ -3960,13 +5818,20 @@ export async function getRecycleBinItems(): Promise<RecycleBinItem[]> {
     .innerJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
     .innerJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
     .leftJoin(operations, eq(runningSheets.operationId, operations.id))
-    .where(and(isNotNull(rowAttachments.deletedAt), sql`${rowAttachments.deletedAt} > ${cutoff}`));
+    .where(
+      and(
+        isNotNull(rowAttachments.deletedAt),
+        sql`${rowAttachments.deletedAt} > ${cutoff}`
+      )
+    );
   for (const a of deletedAttachments) {
     items.push({
       id: a.id,
       type: "attachment",
       label: `Photo — ${a.sheetTitle}`,
-      sublabel: a.rowTime ? `${a.operationName ?? ""} · ${a.rowTime}` : a.operationName ?? undefined,
+      sublabel: a.rowTime
+        ? `${a.operationName ?? ""} · ${a.rowTime}`
+        : (a.operationName ?? undefined),
       deletedAt: a.deletedAt!,
       deletedByCIN: a.deletedByCIN ?? null,
       expiresAt: a.deletedAt! + SEVEN_DAYS_MS,
@@ -3982,19 +5847,28 @@ export async function getRecycleBinItems(): Promise<RecycleBinItem[]> {
 export async function reinstateOperation(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  await db.update(operations).set({ deletedAt: null, deletedByCIN: null }).where(eq(operations.id, id));
+  await db
+    .update(operations)
+    .set({ deletedAt: null, deletedByCIN: null })
+    .where(eq(operations.id, id));
 }
 
 export async function reinstateSheet(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  await db.update(runningSheets).set({ deletedAt: null, deletedByCIN: null }).where(eq(runningSheets.id, id));
+  await db
+    .update(runningSheets)
+    .set({ deletedAt: null, deletedByCIN: null })
+    .where(eq(runningSheets.id, id));
 }
 
 export async function reinstateTarget(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  await db.update(targets).set({ deletedAt: null, deletedByCIN: null }).where(eq(targets.id, id));
+  await db
+    .update(targets)
+    .set({ deletedAt: null, deletedByCIN: null })
+    .where(eq(targets.id, id));
 }
 
 export async function purgeExpiredRecycleBinItems() {
@@ -4005,7 +5879,12 @@ export async function purgeExpiredRecycleBinItems() {
   const expiredOps = await db
     .select({ id: operations.id })
     .from(operations)
-    .where(and(isNotNull(operations.deletedAt), sql`${operations.deletedAt} <= ${cutoff}`));
+    .where(
+      and(
+        isNotNull(operations.deletedAt),
+        sql`${operations.deletedAt} <= ${cutoff}`
+      )
+    );
   for (const op of expiredOps) {
     await deleteOperation(op.id);
   }
@@ -4013,7 +5892,12 @@ export async function purgeExpiredRecycleBinItems() {
   const expiredSheets = await db
     .select({ id: runningSheets.id })
     .from(runningSheets)
-    .where(and(isNotNull(runningSheets.deletedAt), sql`${runningSheets.deletedAt} <= ${cutoff}`));
+    .where(
+      and(
+        isNotNull(runningSheets.deletedAt),
+        sql`${runningSheets.deletedAt} <= ${cutoff}`
+      )
+    );
   for (const s of expiredSheets) {
     await deleteRunningSheet(s.id);
   }
@@ -4021,7 +5905,9 @@ export async function purgeExpiredRecycleBinItems() {
   const expiredTargets = await db
     .select({ id: targets.id })
     .from(targets)
-    .where(and(isNotNull(targets.deletedAt), sql`${targets.deletedAt} <= ${cutoff}`));
+    .where(
+      and(isNotNull(targets.deletedAt), sql`${targets.deletedAt} <= ${cutoff}`)
+    );
   for (const t of expiredTargets) {
     await deleteTarget(t.id);
   }
@@ -4029,7 +5915,12 @@ export async function purgeExpiredRecycleBinItems() {
   const expiredAttachments = await db
     .select({ id: rowAttachments.id })
     .from(rowAttachments)
-    .where(and(isNotNull(rowAttachments.deletedAt), sql`${rowAttachments.deletedAt} <= ${cutoff}`));
+    .where(
+      and(
+        isNotNull(rowAttachments.deletedAt),
+        sql`${rowAttachments.deletedAt} <= ${cutoff}`
+      )
+    );
   for (const a of expiredAttachments) {
     await deleteRowAttachment(a.id);
   }
@@ -4051,6 +5942,8 @@ export interface IntelProfileEntity {
   rowCount: number;
   /** Only populated on the Operation profile — photos linked to this entity. */
   photos?: OperationEntityPhoto[];
+  /** True when this vehicle/location matches a value superseded by a target-merge (see target_field_history). */
+  isPrevious?: boolean;
 }
 
 export interface IntelTargetProfile {
@@ -4068,7 +5961,12 @@ export interface IntelTargetProfile {
   dep: string | null;
   arr: string | null;
   operations: Array<{ id: number; name: string }>;
-  linkedSheets: Array<{ id: number; title: string; operationId: number; operationName: string }>;
+  linkedSheets: Array<{
+    id: number;
+    title: string;
+    operationId: number;
+    operationName: string;
+  }>;
   observationCount: number;
   assocPersons: IntelProfileEntity[];
   assocVehicles: IntelProfileEntity[];
@@ -4081,7 +5979,12 @@ export interface IntelOperationProfile {
   promisNumber: string | null;
   imsNumber: string | null;
   investigationUnit: string | null;
-  linkedSheets: Array<{ id: number; title: string; targetId: number | null; targetName: string | null }>;
+  linkedSheets: Array<{
+    id: number;
+    title: string;
+    targetId: number | null;
+    targetName: string | null;
+  }>;
   targets: Array<{
     targetId: number;
     name: string;
@@ -4102,8 +6005,18 @@ export interface IntelOperationProfile {
 export interface IntelAssociateProfile {
   label: string;
   type: "person" | "business";
-  linkedTargets: Array<{ targetId: number; name: string; operationId: number; operationName: string }>;
-  linkedSheets: Array<{ id: number; title: string; operationId: number; operationName: string }>;
+  linkedTargets: Array<{
+    targetId: number;
+    name: string;
+    operationId: number;
+    operationName: string;
+  }>;
+  linkedSheets: Array<{
+    id: number;
+    title: string;
+    operationId: number;
+    operationName: string;
+  }>;
   assocLocations: IntelProfileEntity[];
   assocVehicles: IntelProfileEntity[];
 }
@@ -4113,18 +6026,32 @@ export interface IntelVehicleProfile {
   firstObservation: string | null;
   linkedTarget: { targetId: number; name: string } | null;
   linkedOperations: Array<{ id: number; name: string }>;
-  linkedSheets: Array<{ id: number; title: string; operationId: number; operationName: string }>;
+  linkedSheets: Array<{
+    id: number;
+    title: string;
+    operationId: number;
+    operationName: string;
+  }>;
   assocPersons: IntelProfileEntity[];
   assocLocations: IntelProfileEntity[];
+  /** True when this vehicle itself matches a value superseded by a target-merge. */
+  isPrevious?: boolean;
 }
 
 export interface IntelLocationProfile {
   label: string;
   linkedTargets: Array<{ targetId: number; name: string }>;
   linkedOperations: Array<{ id: number; name: string }>;
-  linkedSheets: Array<{ id: number; title: string; operationId: number; operationName: string }>;
+  linkedSheets: Array<{
+    id: number;
+    title: string;
+    operationId: number;
+    operationName: string;
+  }>;
   assocPersons: IntelProfileEntity[];
   assocVehicles: IntelProfileEntity[];
+  /** True when this location itself matches a value superseded by a target-merge. */
+  isPrevious?: boolean;
 }
 
 // A target's registered name is often followed by descriptive detail
@@ -4135,21 +6062,106 @@ function targetCoreName(name: string): string {
   return (commaIdx > 0 ? name.slice(0, commaIdx) : name).trim().toLowerCase();
 }
 
+// ─── "Previous" entity propagation (target-merge history) ─────────────────
+// A vehicle/address superseded during a duplicate-target merge (see
+// mergeTargetFieldDetails) should read as "Previous" everywhere it shows up
+// as an associated-entity chip across Intelligence profiles, not just on
+// the target's own Registered Details — otherwise the same real vehicle/
+// address can appear both "current" and unmarked-stale elsewhere, which is
+// exactly the confusion this is meant to prevent. Matching is by
+// registration (vehicles) / normalized address core (locations) rather
+// than exact string equality, since the free-text entity mined from an
+// observation rarely matches the manually-typed V1F/HBF field byte-for-byte.
+
+const VEHICLE_REGO_PATTERN = /\b\d[A-Za-z]{2,3}\d{3}\b/;
+
+function extractRegoUpper(text: string): string | null {
+  const m = text.match(VEHICLE_REGO_PATTERN);
+  return m ? m[0].toUpperCase() : null;
+}
+
+// Normalizes down to just the street segment (house number + street name),
+// dropping suburb/state/postcode/bracket-code — so a manually-typed HBF value
+// ("6 Shearman Street, ATTADALE WA (6 Shearman Street)") and a free-text
+// entity mined from an observation ("6 Shearman Street, ATTADALE" or just
+// "6 Shearman Street") reduce to the same comparable core regardless of which
+// optional parts either side happens to include.
+function addressCoreLower(text: string): string {
+  // Prefer the canonical bracket short-form when present (mirrors the
+  // client's extractShortAddress) — it's just the street, no suburb/state.
+  const bracketMatch = text.match(/\(([^)]{1,120})\)\s*$/);
+  const base = bracketMatch ? bracketMatch[1] : text;
+  return base
+    .replace(/,?\s*(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\s*\d{0,4}\s*$/i, "")
+    .replace(
+      /^(?:unit|lot|apt|apartment|suite|ste)\s*\d+[a-z]?[,\s]*|^\d{1,4}[a-z]?\/(?=\d)/i,
+      ""
+    )
+    .split(",")[0]
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+async function getPreviousEntityMatchers(): Promise<{
+  vehicleRegos: Set<string>;
+  addressCores: Set<string>;
+}> {
+  const db = await getDb();
+  if (!db) return { vehicleRegos: new Set(), addressCores: new Set() };
+  const rows = await db.select().from(targetFieldHistory);
+  const vehicleRegos = new Set<string>();
+  const addressCores = new Set<string>();
+  for (const r of rows) {
+    if (r.fieldName === "v1f" || r.fieldName === "v1") {
+      const rego = extractRegoUpper(r.previousValue);
+      if (rego) vehicleRegos.add(rego);
+    } else if (r.fieldName === "hbf" || r.fieldName === "hb") {
+      const core = addressCoreLower(r.previousValue);
+      if (core) addressCores.add(core);
+    }
+  }
+  return { vehicleRegos, addressCores };
+}
+
+/** Mutates matching vehicle/location entities in place, flagging isPrevious. */
+function markPreviousEntities(
+  assocVehicles: IntelProfileEntity[],
+  assocLocations: IntelProfileEntity[],
+  matchers: { vehicleRegos: Set<string>; addressCores: Set<string> }
+): void {
+  for (const v of assocVehicles) {
+    const rego = extractRegoUpper(v.label);
+    if (rego && matchers.vehicleRegos.has(rego)) v.isPrevious = true;
+  }
+  for (const l of assocLocations) {
+    const core = addressCoreLower(l.label);
+    if (matchers.addressCores.has(core)) l.isPrevious = true;
+  }
+}
+
 async function buildTargetOperationalAssociations(
   targetId: number,
   targetLabel: string,
   targetName: string,
-  allEntities: IntelligenceEntity[],
-): Promise<{ assocPersons: IntelProfileEntity[]; assocVehicles: IntelProfileEntity[]; assocLocations: IntelProfileEntity[] }> {
+  allEntities: IntelligenceEntity[]
+): Promise<{
+  assocPersons: IntelProfileEntity[];
+  assocVehicles: IntelProfileEntity[];
+  assocLocations: IntelProfileEntity[];
+}> {
   const db = await getDb();
   if (!db) return { assocPersons: [], assocVehicles: [], assocLocations: [] };
 
   const targetSheets = await db
     .select({ id: runningSheets.id })
     .from(runningSheets)
-    .where(and(eq(runningSheets.targetId, targetId), isNull(runningSheets.deletedAt)));
+    .where(
+      and(eq(runningSheets.targetId, targetId), isNull(runningSheets.deletedAt))
+    );
 
-  if (!targetSheets.length) return { assocPersons: [], assocVehicles: [], assocLocations: [] };
+  if (!targetSheets.length)
+    return { assocPersons: [], assocVehicles: [], assocLocations: [] };
 
   const targetSheetIds = targetSheets.map(s => s.id);
   const rows = await db
@@ -4174,16 +6186,21 @@ async function buildTargetOperationalAssociations(
     if (entity.isTarget && entity.targetId === targetId) continue;
     if (!entity.isTarget && entity.type === "person" && coreName) {
       const entityLower = entity.shortForm.toLowerCase().trim();
-      if (entityLower === coreName || entityLower.endsWith(` ${coreName}`)) continue;
+      if (entityLower === coreName || entityLower.endsWith(` ${coreName}`))
+        continue;
     }
-    const relevantOccs = entity.occurrences.filter(occ => occ.rowId > 0 && targetRowIds.has(occ.rowId));
+    const relevantOccs = entity.occurrences.filter(
+      occ => occ.rowId > 0 && targetRowIds.has(occ.rowId)
+    );
     if (!relevantOccs.length) continue;
 
     const key = `${entity.type}::${entity.shortForm.toLowerCase()}`;
     const profileEntity: IntelProfileEntity = {
       id: key,
       label: entity.shortForm,
-      type: entity.isTarget ? "target" : (entity.type as IntelProfileEntity["type"]),
+      type: entity.isTarget
+        ? "target"
+        : (entity.type as IntelProfileEntity["type"]),
       sheetIds: Array.from(new Set(relevantOccs.map(o => o.sheetId))),
       operationIds: Array.from(new Set(relevantOccs.map(o => o.operationId))),
       rowCount: new Set(relevantOccs.map(o => o.rowId)).size,
@@ -4199,9 +6216,15 @@ async function buildTargetOperationalAssociations(
   }
 
   return {
-    assocPersons: Array.from(assocPersonsMap.values()).sort((a, b) => a.label.localeCompare(b.label)),
-    assocVehicles: Array.from(assocVehiclesMap.values()).sort((a, b) => a.label.localeCompare(b.label)),
-    assocLocations: Array.from(assocLocationsMap.values()).sort((a, b) => a.label.localeCompare(b.label)),
+    assocPersons: Array.from(assocPersonsMap.values()).sort((a, b) =>
+      a.label.localeCompare(b.label)
+    ),
+    assocVehicles: Array.from(assocVehiclesMap.values()).sort((a, b) =>
+      a.label.localeCompare(b.label)
+    ),
+    assocLocations: Array.from(assocLocationsMap.values()).sort((a, b) =>
+      a.label.localeCompare(b.label)
+    ),
   };
 }
 
@@ -4212,18 +6235,32 @@ async function buildTargetOperationalAssociations(
 async function populateAssocPhotos(
   assocPersons: IntelProfileEntity[],
   assocVehicles: IntelProfileEntity[],
-  assocLocations: IntelProfileEntity[],
+  assocLocations: IntelProfileEntity[]
 ): Promise<void> {
   const vehicleKeys = assocVehicles.map(v => normalizeEntityLabel(v.label));
-  const personKeys = assocPersons.filter(p => p.type !== "target").map(p => normalizeEntityLabel(p.label));
+  const personKeys = assocPersons
+    .filter(p => p.type !== "target")
+    .map(p => normalizeEntityLabel(p.label));
   const locationKeys = assocLocations.map(l => normalizeEntityLabel(l.label));
-  const { entityPhotos } = await getAttachmentsForOperationEntities([], { vehicle: vehicleKeys, associate: personKeys, location: locationKeys });
-  for (const p of assocPersons) p.photos = entityPhotos.get(`associate::${normalizeEntityLabel(p.label)}`) ?? [];
-  for (const v of assocVehicles) v.photos = entityPhotos.get(`vehicle::${normalizeEntityLabel(v.label)}`) ?? [];
-  for (const l of assocLocations) l.photos = entityPhotos.get(`location::${normalizeEntityLabel(l.label)}`) ?? [];
+  const { entityPhotos } = await getAttachmentsForOperationEntities([], {
+    vehicle: vehicleKeys,
+    associate: personKeys,
+    location: locationKeys,
+  });
+  for (const p of assocPersons)
+    p.photos =
+      entityPhotos.get(`associate::${normalizeEntityLabel(p.label)}`) ?? [];
+  for (const v of assocVehicles)
+    v.photos =
+      entityPhotos.get(`vehicle::${normalizeEntityLabel(v.label)}`) ?? [];
+  for (const l of assocLocations)
+    l.photos =
+      entityPhotos.get(`location::${normalizeEntityLabel(l.label)}`) ?? [];
 }
 
-export async function getIntelTargetProfile(targetId: number): Promise<IntelTargetProfile | null> {
+export async function getIntelTargetProfile(
+  targetId: number
+): Promise<IntelTargetProfile | null> {
   const db = await getDb();
   if (!db) return null;
 
@@ -4234,17 +6271,30 @@ export async function getIntelTargetProfile(targetId: number): Promise<IntelTarg
     .select({ id: operations.id, name: operations.name })
     .from(operationTargetLinks)
     .innerJoin(operations, eq(operations.id, operationTargetLinks.operationId))
-    .where(and(eq(operationTargetLinks.targetId, targetId), isNull(operations.deletedAt)));
+    .where(
+      and(
+        eq(operationTargetLinks.targetId, targetId),
+        isNull(operations.deletedAt)
+      )
+    );
 
   const linkedSheetRows = await db
-    .select({ id: runningSheets.id, title: runningSheets.title, operationId: runningSheets.operationId })
+    .select({
+      id: runningSheets.id,
+      title: runningSheets.title,
+      operationId: runningSheets.operationId,
+    })
     .from(runningSheets)
-    .where(and(eq(runningSheets.targetId, targetId), isNull(runningSheets.deletedAt)));
+    .where(
+      and(eq(runningSheets.targetId, targetId), isNull(runningSheets.deletedAt))
+    );
 
   const opNames: Record<number, string> = {};
   for (const op of opLinks) opNames[op.id] = op.name;
 
-  const extraOpIds = Array.from(new Set(linkedSheetRows.map(s => s.operationId).filter(id => !opNames[id])));
+  const extraOpIds = Array.from(
+    new Set(linkedSheetRows.map(s => s.operationId).filter(id => !opNames[id]))
+  );
   if (extraOpIds.length) {
     const extraOps = await db
       .select({ id: operations.id, name: operations.name })
@@ -4255,14 +6305,28 @@ export async function getIntelTargetProfile(targetId: number): Promise<IntelTarg
 
   let observationCount = 0;
   for (const sheet of linkedSheetRows) {
-    const cnt = await db.select({ c: sql<number>`count(*)` }).from(sheetRows).where(eq(sheetRows.sheetId, sheet.id));
+    const cnt = await db
+      .select({ c: sql<number>`count(*)` })
+      .from(sheetRows)
+      .where(eq(sheetRows.sheetId, sheet.id));
     observationCount += Number(cnt[0]?.c ?? 0);
   }
 
   const allEntities = await getAllIntelligenceEntities();
   const targetLabel = target.tgt ?? target.name;
-  const { assocPersons, assocVehicles, assocLocations } = await buildTargetOperationalAssociations(targetId, targetLabel, target.name, allEntities);
+  const { assocPersons, assocVehicles, assocLocations } =
+    await buildTargetOperationalAssociations(
+      targetId,
+      targetLabel,
+      target.name,
+      allEntities
+    );
   await populateAssocPhotos(assocPersons, assocVehicles, assocLocations);
+  markPreviousEntities(
+    assocVehicles,
+    assocLocations,
+    await getPreviousEntityMatchers()
+  );
 
   return {
     targetId,
@@ -4291,18 +6355,33 @@ export async function getIntelTargetProfile(targetId: number): Promise<IntelTarg
   };
 }
 
-export async function getIntelOperationProfile(operationId: number): Promise<IntelOperationProfile | null> {
+export async function getIntelOperationProfile(
+  operationId: number
+): Promise<IntelOperationProfile | null> {
   const db = await getDb();
   if (!db) return null;
 
-  const opRows = await db.select().from(operations).where(and(eq(operations.id, operationId), isNull(operations.deletedAt)));
+  const opRows = await db
+    .select()
+    .from(operations)
+    .where(and(eq(operations.id, operationId), isNull(operations.deletedAt)));
   if (!opRows.length) return null;
   const op = opRows[0];
 
   const sheets = await db
-    .select({ id: runningSheets.id, title: runningSheets.title, targetId: runningSheets.targetId, targetName: runningSheets.targetName })
+    .select({
+      id: runningSheets.id,
+      title: runningSheets.title,
+      targetId: runningSheets.targetId,
+      targetName: runningSheets.targetName,
+    })
     .from(runningSheets)
-    .where(and(eq(runningSheets.operationId, operationId), isNull(runningSheets.deletedAt)));
+    .where(
+      and(
+        eq(runningSheets.operationId, operationId),
+        isNull(runningSheets.deletedAt)
+      )
+    );
 
   const targetLinks = await db
     .select({ targetId: operationTargetLinks.targetId })
@@ -4311,29 +6390,37 @@ export async function getIntelOperationProfile(operationId: number): Promise<Int
 
   const allEntities = await getAllIntelligenceEntities();
 
-  const targetProfiles = (await Promise.all(
-    targetLinks.map(async ({ targetId }) => {
-      const target = await getTargetById(targetId);
-      if (!target) return null;
-      const targetLabel = target.tgt ?? target.name;
-      const targetSheets = sheets.filter(s => s.targetId === targetId);
-      const { assocPersons, assocVehicles, assocLocations } = await buildTargetOperationalAssociations(targetId, targetLabel, target.name, allEntities);
-      return {
-        targetId,
-        name: target.name,
-        tgt: target.tgt,
-        hbf: target.hbf,
-        v1f: target.v1f,
-        v2f: target.v2f,
-        dep: target.dep,
-        arr: target.arr,
-        linkedSheets: targetSheets.map(s => ({ id: s.id, title: s.title })),
-        assocPersons,
-        assocVehicles,
-        assocLocations,
-      };
-    })
-  )).filter(Boolean) as IntelOperationProfile["targets"];
+  const targetProfiles = (
+    await Promise.all(
+      targetLinks.map(async ({ targetId }) => {
+        const target = await getTargetById(targetId);
+        if (!target) return null;
+        const targetLabel = target.tgt ?? target.name;
+        const targetSheets = sheets.filter(s => s.targetId === targetId);
+        const { assocPersons, assocVehicles, assocLocations } =
+          await buildTargetOperationalAssociations(
+            targetId,
+            targetLabel,
+            target.name,
+            allEntities
+          );
+        return {
+          targetId,
+          name: target.name,
+          tgt: target.tgt,
+          hbf: target.hbf,
+          v1f: target.v1f,
+          v2f: target.v2f,
+          dep: target.dep,
+          arr: target.arr,
+          linkedSheets: targetSheets.map(s => ({ id: s.id, title: s.title })),
+          assocPersons,
+          assocVehicles,
+          assocLocations,
+        };
+      })
+    )
+  ).filter(Boolean) as IntelOperationProfile["targets"];
 
   // Batch-fetch photos for every target and every associated vehicle/
   // associate/location shown across this operation's targets, then slot
@@ -4342,19 +6429,35 @@ export async function getIntelOperationProfile(operationId: number): Promise<Int
   const personKeys = new Set<string>();
   const locationKeys = new Set<string>();
   for (const t of targetProfiles) {
-    for (const v of t.assocVehicles) vehicleKeys.add(normalizeEntityLabel(v.label));
-    for (const p of t.assocPersons) if (p.type !== "target") personKeys.add(normalizeEntityLabel(p.label));
-    for (const l of t.assocLocations) locationKeys.add(normalizeEntityLabel(l.label));
+    for (const v of t.assocVehicles)
+      vehicleKeys.add(normalizeEntityLabel(v.label));
+    for (const p of t.assocPersons)
+      if (p.type !== "target") personKeys.add(normalizeEntityLabel(p.label));
+    for (const l of t.assocLocations)
+      locationKeys.add(normalizeEntityLabel(l.label));
   }
-  const { targetPhotos, entityPhotos } = await getAttachmentsForOperationEntities(
-    targetProfiles.map(t => t.targetId),
-    { vehicle: Array.from(vehicleKeys), associate: Array.from(personKeys), location: Array.from(locationKeys) }
-  );
+  const { targetPhotos, entityPhotos } =
+    await getAttachmentsForOperationEntities(
+      targetProfiles.map(t => t.targetId),
+      {
+        vehicle: Array.from(vehicleKeys),
+        associate: Array.from(personKeys),
+        location: Array.from(locationKeys),
+      }
+    );
+  const previousMatchers = await getPreviousEntityMatchers();
   for (const t of targetProfiles) {
     t.photos = targetPhotos.get(t.targetId) ?? [];
-    for (const p of t.assocPersons) p.photos = entityPhotos.get(`associate::${normalizeEntityLabel(p.label)}`) ?? [];
-    for (const v of t.assocVehicles) v.photos = entityPhotos.get(`vehicle::${normalizeEntityLabel(v.label)}`) ?? [];
-    for (const l of t.assocLocations) l.photos = entityPhotos.get(`location::${normalizeEntityLabel(l.label)}`) ?? [];
+    for (const p of t.assocPersons)
+      p.photos =
+        entityPhotos.get(`associate::${normalizeEntityLabel(p.label)}`) ?? [];
+    for (const v of t.assocVehicles)
+      v.photos =
+        entityPhotos.get(`vehicle::${normalizeEntityLabel(v.label)}`) ?? [];
+    for (const l of t.assocLocations)
+      l.photos =
+        entityPhotos.get(`location::${normalizeEntityLabel(l.label)}`) ?? [];
+    markPreviousEntities(t.assocVehicles, t.assocLocations, previousMatchers);
   }
 
   return {
@@ -4383,37 +6486,55 @@ export async function getLinkedOperationsForEntity(
   const entity = allEntities.find(e => {
     if (e.shortForm.toLowerCase() !== labelLower) return false;
     if (category === "vehicle") return e.type === "vehicle";
-    if (category === "associate") return (e.type === "person" || e.type === "business") && !e.isTarget;
+    if (category === "associate")
+      return (e.type === "person" || e.type === "business") && !e.isTarget;
     return (e.type === "address" || e.type === "business") && !e.isTarget;
   });
   if (!entity) return [];
 
   const opMap = new Map<number, { id: number; name: string }>();
   for (const occ of entity.occurrences) {
-    if (!opMap.has(occ.operationId)) opMap.set(occ.operationId, { id: occ.operationId, name: occ.operationName });
+    if (!opMap.has(occ.operationId))
+      opMap.set(occ.operationId, {
+        id: occ.operationId,
+        name: occ.operationName,
+      });
   }
-  return Array.from(opMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+  return Array.from(opMap.values()).sort((a, b) =>
+    a.name.localeCompare(b.name)
+  );
 }
 
-export async function getIntelAssociateProfile(label: string): Promise<IntelAssociateProfile | null> {
+export async function getIntelAssociateProfile(
+  label: string
+): Promise<IntelAssociateProfile | null> {
   const allEntities = await getAllIntelligenceEntities();
   const db = await getDb();
   if (!db) return null;
 
   const entity = allEntities.find(
-    e => e.shortForm.toLowerCase() === label.toLowerCase() &&
-    (e.type === "person" || e.type === "business") &&
-    !e.isTarget
+    e =>
+      e.shortForm.toLowerCase() === label.toLowerCase() &&
+      (e.type === "person" || e.type === "business") &&
+      !e.isTarget
   );
   if (!entity) return null;
 
   const observationOccs = entity.occurrences.filter(o => o.rowId > 0);
   const assocRowIds = new Set(observationOccs.map(o => o.rowId));
 
-  const sheetMap = new Map<number, { id: number; title: string; operationId: number; operationName: string }>();
+  const sheetMap = new Map<
+    number,
+    { id: number; title: string; operationId: number; operationName: string }
+  >();
   for (const occ of observationOccs) {
     if (!sheetMap.has(occ.sheetId)) {
-      sheetMap.set(occ.sheetId, { id: occ.sheetId, title: occ.sheetTitle, operationId: occ.operationId, operationName: occ.operationName });
+      sheetMap.set(occ.sheetId, {
+        id: occ.sheetId,
+        title: occ.sheetTitle,
+        operationId: occ.operationId,
+        operationName: occ.operationName,
+      });
     }
   }
 
@@ -4428,16 +6549,35 @@ export async function getIntelAssociateProfile(label: string): Promise<IntelAsso
     const targetSheets = await db
       .select({ id: runningSheets.id, operationId: runningSheets.operationId })
       .from(runningSheets)
-      .where(and(eq(runningSheets.targetId, target.id), isNull(runningSheets.deletedAt)));
+      .where(
+        and(
+          eq(runningSheets.targetId, target.id),
+          isNull(runningSheets.deletedAt)
+        )
+      );
 
     for (const sheet of targetSheets) {
-      const rows = await db.select({ id: sheetRows.id }).from(sheetRows).where(eq(sheetRows.sheetId, sheet.id));
+      const rows = await db
+        .select({ id: sheetRows.id })
+        .from(sheetRows)
+        .where(eq(sheetRows.sheetId, sheet.id));
       const hasOverlap = rows.some(r => assocRowIds.has(r.id));
       if (hasOverlap) {
-        const opRows = await db.select({ name: operations.name }).from(operations).where(eq(operations.id, sheet.operationId));
-        const alreadyLinked = linkedTargets.some(lt => lt.targetId === target.id && lt.operationId === sheet.operationId);
+        const opRows = await db
+          .select({ name: operations.name })
+          .from(operations)
+          .where(eq(operations.id, sheet.operationId));
+        const alreadyLinked = linkedTargets.some(
+          lt =>
+            lt.targetId === target.id && lt.operationId === sheet.operationId
+        );
         if (!alreadyLinked) {
-          linkedTargets.push({ targetId: target.id, name: target.name, operationId: sheet.operationId, operationName: opRows[0]?.name ?? "Unknown" });
+          linkedTargets.push({
+            targetId: target.id,
+            name: target.name,
+            operationId: sheet.operationId,
+            operationName: opRows[0]?.name ?? "Unknown",
+          });
         }
         break;
       }
@@ -4449,23 +6589,40 @@ export async function getIntelAssociateProfile(label: string): Promise<IntelAsso
 
   for (const other of allEntities) {
     if (other.shortForm.toLowerCase() === label.toLowerCase()) continue;
-    const overlappingOccs = other.occurrences.filter(o => o.rowId > 0 && assocRowIds.has(o.rowId));
+    const overlappingOccs = other.occurrences.filter(
+      o => o.rowId > 0 && assocRowIds.has(o.rowId)
+    );
     if (!overlappingOccs.length) continue;
     const key = `${other.type}::${other.shortForm.toLowerCase()}`;
     const profileEntity: IntelProfileEntity = {
-      id: key, label: other.shortForm,
-      type: other.isTarget ? "target" : (other.type as IntelProfileEntity["type"]),
+      id: key,
+      label: other.shortForm,
+      type: other.isTarget
+        ? "target"
+        : (other.type as IntelProfileEntity["type"]),
       sheetIds: Array.from(new Set(overlappingOccs.map(o => o.sheetId))),
-      operationIds: Array.from(new Set(overlappingOccs.map(o => o.operationId))),
+      operationIds: Array.from(
+        new Set(overlappingOccs.map(o => o.operationId))
+      ),
       rowCount: new Set(overlappingOccs.map(o => o.rowId)).size,
     };
     if (other.type === "vehicle") assocVehiclesMap.set(key, profileEntity);
-    else if (other.type === "address" || other.type === "business") assocLocationsMap.set(key, profileEntity);
+    else if (other.type === "address" || other.type === "business")
+      assocLocationsMap.set(key, profileEntity);
   }
 
-  const assocVehicles = Array.from(assocVehiclesMap.values()).sort((a, b) => a.label.localeCompare(b.label));
-  const assocLocations = Array.from(assocLocationsMap.values()).sort((a, b) => a.label.localeCompare(b.label));
+  const assocVehicles = Array.from(assocVehiclesMap.values()).sort((a, b) =>
+    a.label.localeCompare(b.label)
+  );
+  const assocLocations = Array.from(assocLocationsMap.values()).sort((a, b) =>
+    a.label.localeCompare(b.label)
+  );
   await populateAssocPhotos([], assocVehicles, assocLocations);
+  markPreviousEntities(
+    assocVehicles,
+    assocLocations,
+    await getPreviousEntityMatchers()
+  );
 
   return {
     label: entity.shortForm,
@@ -4477,12 +6634,17 @@ export async function getIntelAssociateProfile(label: string): Promise<IntelAsso
   };
 }
 
-export async function getIntelVehicleProfile(label: string): Promise<IntelVehicleProfile | null> {
+export async function getIntelVehicleProfile(
+  label: string
+): Promise<IntelVehicleProfile | null> {
   const allEntities = await getAllIntelligenceEntities();
   const db = await getDb();
   if (!db) return null;
 
-  const entity = allEntities.find(e => e.shortForm.toLowerCase() === label.toLowerCase() && e.type === "vehicle");
+  const entity = allEntities.find(
+    e =>
+      e.shortForm.toLowerCase() === label.toLowerCase() && e.type === "vehicle"
+  );
   if (!entity) return null;
 
   const observationOccs = entity.occurrences.filter(o => o.rowId > 0);
@@ -4490,7 +6652,12 @@ export async function getIntelVehicleProfile(label: string): Promise<IntelVehicl
   const labelLower = label.toLowerCase();
 
   const allTargets = await db
-    .select({ id: targets.id, name: targets.name, v1f: targets.v1f, v2f: targets.v2f })
+    .select({
+      id: targets.id,
+      name: targets.name,
+      v1f: targets.v1f,
+      v2f: targets.v2f,
+    })
     .from(targets)
     .where(isNull(targets.deletedAt));
 
@@ -4499,7 +6666,10 @@ export async function getIntelVehicleProfile(label: string): Promise<IntelVehicl
   // 2. Row-level co-occurrence: isTarget entities that share observation rows with this vehicle
   let linkedTarget: IntelVehicleProfile["linkedTarget"] = null;
   for (const t of allTargets) {
-    if ((t.v1f && t.v1f.toLowerCase().includes(labelLower)) || (t.v2f && t.v2f.toLowerCase().includes(labelLower))) {
+    if (
+      (t.v1f && t.v1f.toLowerCase().includes(labelLower)) ||
+      (t.v2f && t.v2f.toLowerCase().includes(labelLower))
+    ) {
       linkedTarget = { targetId: t.id, name: t.name };
       break;
     }
@@ -4508,7 +6678,9 @@ export async function getIntelVehicleProfile(label: string): Promise<IntelVehicl
     // Check row-level co-occurrence with target entities
     for (const other of allEntities) {
       if (!other.isTarget || !other.targetId) continue;
-      const overlappingOccs = other.occurrences.filter(o => o.rowId > 0 && assocRowIds.has(o.rowId));
+      const overlappingOccs = other.occurrences.filter(
+        o => o.rowId > 0 && assocRowIds.has(o.rowId)
+      );
       if (overlappingOccs.length > 0) {
         linkedTarget = { targetId: other.targetId, name: other.shortForm };
         break;
@@ -4517,11 +6689,23 @@ export async function getIntelVehicleProfile(label: string): Promise<IntelVehicl
   }
 
   const opMap = new Map<number, { id: number; name: string }>();
-  const sheetMap = new Map<number, { id: number; title: string; operationId: number; operationName: string }>();
+  const sheetMap = new Map<
+    number,
+    { id: number; title: string; operationId: number; operationName: string }
+  >();
   for (const occ of entity.occurrences) {
-    if (!opMap.has(occ.operationId)) opMap.set(occ.operationId, { id: occ.operationId, name: occ.operationName });
+    if (!opMap.has(occ.operationId))
+      opMap.set(occ.operationId, {
+        id: occ.operationId,
+        name: occ.operationName,
+      });
     if (occ.rowId > 0 && !sheetMap.has(occ.sheetId)) {
-      sheetMap.set(occ.sheetId, { id: occ.sheetId, title: occ.sheetTitle, operationId: occ.operationId, operationName: occ.operationName });
+      sheetMap.set(occ.sheetId, {
+        id: occ.sheetId,
+        title: occ.sheetTitle,
+        operationId: occ.operationId,
+        operationName: occ.operationName,
+      });
     }
   }
 
@@ -4530,26 +6714,44 @@ export async function getIntelVehicleProfile(label: string): Promise<IntelVehicl
 
   for (const other of allEntities) {
     if (other.shortForm.toLowerCase() === labelLower) continue;
-    const overlappingOccs = other.occurrences.filter(o => o.rowId > 0 && assocRowIds.has(o.rowId));
+    const overlappingOccs = other.occurrences.filter(
+      o => o.rowId > 0 && assocRowIds.has(o.rowId)
+    );
     if (!overlappingOccs.length) continue;
     const key = `${other.type}::${other.shortForm.toLowerCase()}`;
     const profileEntity: IntelProfileEntity = {
-      id: key, label: other.shortForm,
-      type: other.isTarget ? "target" : (other.type as IntelProfileEntity["type"]),
+      id: key,
+      label: other.shortForm,
+      type: other.isTarget
+        ? "target"
+        : (other.type as IntelProfileEntity["type"]),
       sheetIds: Array.from(new Set(overlappingOccs.map(o => o.sheetId))),
-      operationIds: Array.from(new Set(overlappingOccs.map(o => o.operationId))),
+      operationIds: Array.from(
+        new Set(overlappingOccs.map(o => o.operationId))
+      ),
       rowCount: new Set(overlappingOccs.map(o => o.rowId)).size,
     };
-    if (other.type === "person" || other.isTarget) assocPersonsMap.set(key, profileEntity);
-    else if (other.type === "address" || other.type === "business") assocLocationsMap.set(key, profileEntity);
+    if (other.type === "person" || other.isTarget)
+      assocPersonsMap.set(key, profileEntity);
+    else if (other.type === "address" || other.type === "business")
+      assocLocationsMap.set(key, profileEntity);
   }
 
   // Find the first observation text that contains the full vehicle description
-  const firstObservation = entity.occurrences.find(o => o.fullDescription)?.fullDescription ?? null;
+  const firstObservation =
+    entity.occurrences.find(o => o.fullDescription)?.fullDescription ?? null;
 
-  const assocPersons = Array.from(assocPersonsMap.values()).sort((a, b) => a.label.localeCompare(b.label));
-  const assocLocations = Array.from(assocLocationsMap.values()).sort((a, b) => a.label.localeCompare(b.label));
+  const assocPersons = Array.from(assocPersonsMap.values()).sort((a, b) =>
+    a.label.localeCompare(b.label)
+  );
+  const assocLocations = Array.from(assocLocationsMap.values()).sort((a, b) =>
+    a.label.localeCompare(b.label)
+  );
   await populateAssocPhotos(assocPersons, [], assocLocations);
+  const previousMatchers = await getPreviousEntityMatchers();
+  markPreviousEntities([], assocLocations, previousMatchers);
+  const selfRego = extractRegoUpper(entity.shortForm);
+  const isPrevious = !!selfRego && previousMatchers.vehicleRegos.has(selfRego);
 
   return {
     label: entity.shortForm,
@@ -4559,16 +6761,21 @@ export async function getIntelVehicleProfile(label: string): Promise<IntelVehicl
     linkedSheets: Array.from(sheetMap.values()),
     assocPersons,
     assocLocations,
+    isPrevious,
   };
 }
 
-export async function getIntelLocationProfile(label: string): Promise<IntelLocationProfile | null> {
+export async function getIntelLocationProfile(
+  label: string
+): Promise<IntelLocationProfile | null> {
   const allEntities = await getAllIntelligenceEntities();
   const db = await getDb();
   if (!db) return null;
 
   const entity = allEntities.find(
-    e => e.shortForm.toLowerCase() === label.toLowerCase() && (e.type === "address" || e.type === "business")
+    e =>
+      e.shortForm.toLowerCase() === label.toLowerCase() &&
+      (e.type === "address" || e.type === "business")
   );
   if (!entity) return null;
 
@@ -4577,14 +6784,23 @@ export async function getIntelLocationProfile(label: string): Promise<IntelLocat
   const labelLower = label.toLowerCase();
 
   const allTargets = await db
-    .select({ id: targets.id, name: targets.name, hbf: targets.hbf, dep: targets.dep, arr: targets.arr })
+    .select({
+      id: targets.id,
+      name: targets.name,
+      hbf: targets.hbf,
+      dep: targets.dep,
+      arr: targets.arr,
+    })
     .from(targets)
     .where(isNull(targets.deletedAt));
 
   // Build linkedTargets from TWO sources:
   // 1. Target card fields (hbf/dep/arr) that mention this location
   // 2. Row-level co-occurrence: isTarget entities that share observation rows with this location
-  const linkedTargetsMap = new Map<number, { targetId: number; name: string }>();
+  const linkedTargetsMap = new Map<
+    number,
+    { targetId: number; name: string }
+  >();
   for (const t of allTargets) {
     if (
       (t.hbf && t.hbf.toLowerCase().includes(labelLower)) ||
@@ -4597,19 +6813,38 @@ export async function getIntelLocationProfile(label: string): Promise<IntelLocat
   // Also check row-level co-occurrence with target entities
   for (const other of allEntities) {
     if (!other.isTarget || !other.targetId) continue;
-    const overlappingOccs = other.occurrences.filter(o => o.rowId > 0 && assocRowIds.has(o.rowId));
+    const overlappingOccs = other.occurrences.filter(
+      o => o.rowId > 0 && assocRowIds.has(o.rowId)
+    );
     if (overlappingOccs.length > 0 && !linkedTargetsMap.has(other.targetId)) {
-      linkedTargetsMap.set(other.targetId, { targetId: other.targetId, name: other.shortForm });
+      linkedTargetsMap.set(other.targetId, {
+        targetId: other.targetId,
+        name: other.shortForm,
+      });
     }
   }
-  const linkedTargets: IntelLocationProfile["linkedTargets"] = Array.from(linkedTargetsMap.values());
+  const linkedTargets: IntelLocationProfile["linkedTargets"] = Array.from(
+    linkedTargetsMap.values()
+  );
 
   const opMap = new Map<number, { id: number; name: string }>();
-  const sheetMap = new Map<number, { id: number; title: string; operationId: number; operationName: string }>();
+  const sheetMap = new Map<
+    number,
+    { id: number; title: string; operationId: number; operationName: string }
+  >();
   for (const occ of entity.occurrences) {
-    if (!opMap.has(occ.operationId)) opMap.set(occ.operationId, { id: occ.operationId, name: occ.operationName });
+    if (!opMap.has(occ.operationId))
+      opMap.set(occ.operationId, {
+        id: occ.operationId,
+        name: occ.operationName,
+      });
     if (occ.rowId > 0 && !sheetMap.has(occ.sheetId)) {
-      sheetMap.set(occ.sheetId, { id: occ.sheetId, title: occ.sheetTitle, operationId: occ.operationId, operationName: occ.operationName });
+      sheetMap.set(occ.sheetId, {
+        id: occ.sheetId,
+        title: occ.sheetTitle,
+        operationId: occ.operationId,
+        operationName: occ.operationName,
+      });
     }
   }
 
@@ -4618,23 +6853,40 @@ export async function getIntelLocationProfile(label: string): Promise<IntelLocat
 
   for (const other of allEntities) {
     if (other.shortForm.toLowerCase() === labelLower) continue;
-    const overlappingOccs = other.occurrences.filter(o => o.rowId > 0 && assocRowIds.has(o.rowId));
+    const overlappingOccs = other.occurrences.filter(
+      o => o.rowId > 0 && assocRowIds.has(o.rowId)
+    );
     if (!overlappingOccs.length) continue;
     const key = `${other.type}::${other.shortForm.toLowerCase()}`;
     const profileEntity: IntelProfileEntity = {
-      id: key, label: other.shortForm,
-      type: other.isTarget ? "target" : (other.type as IntelProfileEntity["type"]),
+      id: key,
+      label: other.shortForm,
+      type: other.isTarget
+        ? "target"
+        : (other.type as IntelProfileEntity["type"]),
       sheetIds: Array.from(new Set(overlappingOccs.map(o => o.sheetId))),
-      operationIds: Array.from(new Set(overlappingOccs.map(o => o.operationId))),
+      operationIds: Array.from(
+        new Set(overlappingOccs.map(o => o.operationId))
+      ),
       rowCount: new Set(overlappingOccs.map(o => o.rowId)).size,
     };
-    if (other.type === "person" || other.isTarget) assocPersonsMap.set(key, profileEntity);
+    if (other.type === "person" || other.isTarget)
+      assocPersonsMap.set(key, profileEntity);
     else if (other.type === "vehicle") assocVehiclesMap.set(key, profileEntity);
   }
 
-  const assocPersons = Array.from(assocPersonsMap.values()).sort((a, b) => a.label.localeCompare(b.label));
-  const assocVehicles = Array.from(assocVehiclesMap.values()).sort((a, b) => a.label.localeCompare(b.label));
+  const assocPersons = Array.from(assocPersonsMap.values()).sort((a, b) =>
+    a.label.localeCompare(b.label)
+  );
+  const assocVehicles = Array.from(assocVehiclesMap.values()).sort((a, b) =>
+    a.label.localeCompare(b.label)
+  );
   await populateAssocPhotos(assocPersons, assocVehicles, []);
+  const previousMatchers = await getPreviousEntityMatchers();
+  markPreviousEntities(assocVehicles, [], previousMatchers);
+  const isPrevious = previousMatchers.addressCores.has(
+    addressCoreLower(entity.shortForm)
+  );
 
   return {
     label: entity.shortForm,
@@ -4643,6 +6895,7 @@ export async function getIntelLocationProfile(label: string): Promise<IntelLocat
     linkedSheets: Array.from(sheetMap.values()),
     assocPersons,
     assocVehicles,
+    isPrevious,
   };
 }
 
@@ -4686,14 +6939,22 @@ export async function getIntelMappingLocations(
   const filteredEntities = allEntities.filter(e => {
     if (!filterByOp && !filterByTarget) return true;
     const opIds = e.occurrences.map(o => o.operationId).filter(id => id > 0);
-    const tgtMatch = filterByTarget && e.isTarget && e.targetId != null && targetIds!.includes(e.targetId);
+    const tgtMatch =
+      filterByTarget &&
+      e.isTarget &&
+      e.targetId != null &&
+      targetIds!.includes(e.targetId);
     const opMatch = filterByOp && opIds.some(id => operationIds!.includes(id));
     return tgtMatch || opMatch || (!filterByTarget && opMatch);
   });
 
   // Build a set of target entities that pass the filter
-  const filteredTargetEntities = filteredEntities.filter(e => e.isTarget && e.targetId != null);
-  const filteredTargetIds = new Set(filteredTargetEntities.map(e => e.targetId!));
+  const filteredTargetEntities = filteredEntities.filter(
+    e => e.isTarget && e.targetId != null
+  );
+  const filteredTargetIds = new Set(
+    filteredTargetEntities.map(e => e.targetId!)
+  );
 
   // Load full target card details for filtered targets
   const db = await getDb();
@@ -4733,7 +6994,10 @@ export async function getIntelMappingLocations(
       operationName: operations.name,
     })
     .from(targets)
-    .innerJoin(operationTargetLinks, eq(operationTargetLinks.targetId, targets.id))
+    .innerJoin(
+      operationTargetLinks,
+      eq(operationTargetLinks.targetId, targets.id)
+    )
     .innerJoin(operations, eq(operationTargetLinks.operationId, operations.id))
     .where(isNull(targets.deletedAt));
 
@@ -4751,9 +7015,10 @@ export async function getIntelMappingLocations(
   // Only keep targets that pass the filter.
   // If filteredTargetIds is empty (no targets linked to this operation), skip target card rendering
   // but still allow observation-based intel (addresses, vehicles, persons) to show.
-  const relevantTargets = filteredTargetIds.size === 0
-    ? []
-    : allTargetData.filter(t => filteredTargetIds.has(t.id));
+  const relevantTargets =
+    filteredTargetIds.size === 0
+      ? []
+      : allTargetData.filter(t => filteredTargetIds.has(t.id));
 
   // Build location map: label (lowercase) -> IntelMapLocation
   const locationMap = new Map<string, IntelMapLocation>();
@@ -4775,9 +7040,9 @@ export async function getIntelMappingLocations(
 
   // Step 1: Register target card addresses as target_address type
   for (const t of relevantTargets) {
-    const addrFields = [
-      t.hbf?.trim() || t.hb?.trim() || null,
-    ].filter(Boolean) as string[];
+    const addrFields = [t.hbf?.trim() || t.hb?.trim() || null].filter(
+      Boolean
+    ) as string[];
     for (const addr of addrFields) {
       const loc = ensureLocation(addr);
       loc.type = "target_address";
@@ -4826,7 +7091,10 @@ export async function getIntelMappingLocations(
         if (co.isTarget) {
           // Add to linkedTargets if not already there
           const tData = relevantTargets.find(t => t.id === co.targetId);
-          if (tData && !loc.linkedTargets.find(lt => lt.targetId === co.targetId)) {
+          if (
+            tData &&
+            !loc.linkedTargets.find(lt => lt.targetId === co.targetId)
+          ) {
             // Do NOT upgrade type here — only target card addresses are "target_address"
             // Observation locations stay purple even if a target co-occurs in the same row
             loc.linkedTargets.push({
@@ -4856,15 +7124,18 @@ export async function getIntelMappingLocations(
   // Step 3: Compute link counts and return
   const result: IntelMapLocation[] = [];
   for (const loc of Array.from(locationMap.values())) {
-    loc.linkCount = loc.linkedTargets.length + loc.assocPersons.length + loc.assocVehicles.length;
+    loc.linkCount =
+      loc.linkedTargets.length +
+      loc.assocPersons.length +
+      loc.assocVehicles.length;
     result.push(loc);
   }
 
   // Sort: target_address entries first (so they geocode before observations and win proximity merge),
   // then alphabetically within each type
   return result.sort((a, b) => {
-    if (a.type === 'target_address' && b.type !== 'target_address') return -1;
-    if (a.type !== 'target_address' && b.type === 'target_address') return 1;
+    if (a.type === "target_address" && b.type !== "target_address") return -1;
+    if (a.type !== "target_address" && b.type === "target_address") return 1;
     return a.label.localeCompare(b.label);
   });
 }
@@ -4890,7 +7161,9 @@ export interface UserLocationRow {
  * Visibility is NOT filtered by operationIds — any sharing user is visible to
  * any viewer regardless of which operations either party has selected.
  */
-export async function getUserLocations(_callerOpIds: number[]): Promise<UserLocationRow[]> {
+export async function getUserLocations(
+  _callerOpIds: number[]
+): Promise<UserLocationRow[]> {
   const db = await getDb();
   if (!db) return [];
   const expiryMs = Date.now() - 90_000; // 90 seconds ago
@@ -4916,9 +7189,13 @@ export async function getUserLocations(_callerOpIds: number[]): Promise<UserLoca
       )
     );
 
-  return rows.map((r) => {
+  return rows.map(r => {
     let opIds: number[] = [];
-    try { opIds = JSON.parse(r.operationIds || "[]"); } catch { opIds = []; }
+    try {
+      opIds = JSON.parse(r.operationIds || "[]");
+    } catch {
+      opIds = [];
+    }
     return { ...r, operationIds: opIds };
   });
 }
@@ -4935,7 +7212,7 @@ export async function upsertUserLocation(
   sharingEnabled: boolean,
   speed: number | null,
   heading: number | null,
-  accuracy: number | null,
+  accuracy: number | null
 ): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -4943,9 +7220,29 @@ export async function upsertUserLocation(
   const opIdsJson = JSON.stringify(operationIds);
   await db
     .insert(userLocations)
-    .values({ userId, deviceId, lat, lng, speed, heading, accuracy, operationIds: opIdsJson, sharingEnabled, updatedAt: now })
+    .values({
+      userId,
+      deviceId,
+      lat,
+      lng,
+      speed,
+      heading,
+      accuracy,
+      operationIds: opIdsJson,
+      sharingEnabled,
+      updatedAt: now,
+    })
     .onDuplicateKeyUpdate({
-      set: { lat, lng, speed, heading, accuracy, operationIds: opIdsJson, sharingEnabled, updatedAt: now },
+      set: {
+        lat,
+        lng,
+        speed,
+        heading,
+        accuracy,
+        operationIds: opIdsJson,
+        sharingEnabled,
+        updatedAt: now,
+      },
     });
 
   // Auto-cleanup: remove stale rows for this user that are not sharing and older than 2 hours.
@@ -4957,7 +7254,7 @@ export async function upsertUserLocation(
       and(
         eq(userLocations.userId, userId),
         eq(userLocations.sharingEnabled, false),
-        lt(userLocations.updatedAt, twoHoursAgo),
+        lt(userLocations.updatedAt, twoHoursAgo)
       )
     );
 }
@@ -4965,32 +7262,55 @@ export async function upsertUserLocation(
 /**
  * Disables location sharing for a user (sets sharingEnabled=false).
  */
-export async function clearUserLocation(userId: number, deviceId: string): Promise<void> {
+export async function clearUserLocation(
+  userId: number,
+  deviceId: string
+): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db
     .update(userLocations)
     .set({ sharingEnabled: false, updatedAt: Date.now() })
-    .where(and(eq(userLocations.userId, userId), eq(userLocations.deviceId, deviceId)));
+    .where(
+      and(
+        eq(userLocations.userId, userId),
+        eq(userLocations.deviceId, deviceId)
+      )
+    );
 }
 
 /**
  * Returns the current location/sharing state for a single user.
  */
-export async function getUserLocationState(userId: number, deviceId: string): Promise<{
+export async function getUserLocationState(
+  userId: number,
+  deviceId: string
+): Promise<{
   sharingEnabled: boolean;
   operationIds: number[];
 } | null> {
   const db = await getDb();
   if (!db) return null;
   const rows = await db
-    .select({ sharingEnabled: userLocations.sharingEnabled, operationIds: userLocations.operationIds })
+    .select({
+      sharingEnabled: userLocations.sharingEnabled,
+      operationIds: userLocations.operationIds,
+    })
     .from(userLocations)
-    .where(and(eq(userLocations.userId, userId), eq(userLocations.deviceId, deviceId)))
+    .where(
+      and(
+        eq(userLocations.userId, userId),
+        eq(userLocations.deviceId, deviceId)
+      )
+    )
     .limit(1);
   if (!rows.length) return null;
   let opIds: number[] = [];
-  try { opIds = JSON.parse(rows[0].operationIds || "[]"); } catch { opIds = []; }
+  try {
+    opIds = JSON.parse(rows[0].operationIds || "[]");
+  } catch {
+    opIds = [];
+  }
   return { sharingEnabled: rows[0].sharingEnabled, operationIds: opIds };
 }
 
@@ -5008,8 +7328,8 @@ export interface CustomMarkerRow {
   markerIcon: string;
   markerColour: string;
   note: string | null;
-  assocPersons: string[];   // parsed from JSON
-  assocVehicles: string[];  // parsed from JSON
+  assocPersons: string[]; // parsed from JSON
+  assocVehicles: string[]; // parsed from JSON
   rotation: number;
   linkedIntelLabel: string | null;
   deletedAt: number | null;
@@ -5021,12 +7341,30 @@ export interface CustomMarkerRow {
 function parseMarkerRow(row: CustomMapMarker): CustomMarkerRow {
   let persons: string[] = [];
   let vehicles: string[] = [];
-  try { persons = JSON.parse(row.assocPersons || "[]"); } catch { persons = []; }
-  try { vehicles = JSON.parse(row.assocVehicles || "[]"); } catch { vehicles = []; }
-  return { ...row, assocPersons: persons, assocVehicles: vehicles, rotation: row.rotation ?? 0, linkedIntelLabel: row.linkedIntelLabel ?? null, deletedAt: row.deletedAt ?? null, deletedByCIN: row.deletedByCIN ?? null };
+  try {
+    persons = JSON.parse(row.assocPersons || "[]");
+  } catch {
+    persons = [];
+  }
+  try {
+    vehicles = JSON.parse(row.assocVehicles || "[]");
+  } catch {
+    vehicles = [];
+  }
+  return {
+    ...row,
+    assocPersons: persons,
+    assocVehicles: vehicles,
+    rotation: row.rotation ?? 0,
+    linkedIntelLabel: row.linkedIntelLabel ?? null,
+    deletedAt: row.deletedAt ?? null,
+    deletedByCIN: row.deletedByCIN ?? null,
+  };
 }
 
-export async function getCustomMarkers(operationIds?: number[]): Promise<CustomMarkerRow[]> {
+export async function getCustomMarkers(
+  operationIds?: number[]
+): Promise<CustomMarkerRow[]> {
   const db = await getDb();
   if (!db) return [];
   let rows: CustomMapMarker[];
@@ -5037,15 +7375,21 @@ export async function getCustomMarkers(operationIds?: number[]): Promise<CustomM
     // Only include markers explicitly assigned to the selected operations.
     // Markers with no operation (null) are excluded when a specific op filter is active
     // — they only appear in the all-ops view (no filter selected).
-    rows = await db.select().from(customMapMarkers)
-      .where(and(
-        inArray(customMapMarkers.operationId, operationIds),
-        isNull(customMapMarkers.deletedAt)
-      ))
+    rows = await db
+      .select()
+      .from(customMapMarkers)
+      .where(
+        and(
+          inArray(customMapMarkers.operationId, operationIds),
+          isNull(customMapMarkers.deletedAt)
+        )
+      )
       .orderBy(desc(customMapMarkers.createdAt));
   } else {
     // operationIds is undefined = all-ops view, return all markers
-    rows = await db.select().from(customMapMarkers)
+    rows = await db
+      .select()
+      .from(customMapMarkers)
       .where(isNull(customMapMarkers.deletedAt))
       .orderBy(desc(customMapMarkers.createdAt));
   }
@@ -5087,19 +7431,22 @@ export async function createCustomMarker(data: {
   return (result as any).insertId as number;
 }
 
-export async function updateCustomMarker(id: number, data: {
-  label?: string | null;
-  address?: string | null;
-  lat?: number;
-  lng?: number;
-  markerIcon?: string;
-  markerColour?: string;
-  note?: string | null;
-  operationId?: number | null;
-  targetId?: number | null;
-  assocPersons?: string[];
-  assocVehicles?: string[];
-}): Promise<void> {
+export async function updateCustomMarker(
+  id: number,
+  data: {
+    label?: string | null;
+    address?: string | null;
+    lat?: number;
+    lng?: number;
+    markerIcon?: string;
+    markerColour?: string;
+    note?: string | null;
+    operationId?: number | null;
+    targetId?: number | null;
+    assocPersons?: string[];
+    assocVehicles?: string[];
+  }
+): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const update: Partial<InsertCustomMapMarker> = {};
@@ -5112,25 +7459,41 @@ export async function updateCustomMarker(id: number, data: {
   if (data.note !== undefined) update.note = data.note;
   if (data.operationId !== undefined) update.operationId = data.operationId;
   if (data.targetId !== undefined) update.targetId = data.targetId;
-  if (data.assocPersons !== undefined) update.assocPersons = JSON.stringify(data.assocPersons);
-  if (data.assocVehicles !== undefined) update.assocVehicles = JSON.stringify(data.assocVehicles);
-  if ((data as any).rotation !== undefined) (update as any).rotation = (data as any).rotation;
-  if ((data as any).linkedIntelLabel !== undefined) (update as any).linkedIntelLabel = (data as any).linkedIntelLabel;
+  if (data.assocPersons !== undefined)
+    update.assocPersons = JSON.stringify(data.assocPersons);
+  if (data.assocVehicles !== undefined)
+    update.assocVehicles = JSON.stringify(data.assocVehicles);
+  if ((data as any).rotation !== undefined)
+    (update as any).rotation = (data as any).rotation;
+  if ((data as any).linkedIntelLabel !== undefined)
+    (update as any).linkedIntelLabel = (data as any).linkedIntelLabel;
   if (Object.keys(update).length > 0) {
-    await db.update(customMapMarkers).set(update).where(eq(customMapMarkers.id, id));
+    await db
+      .update(customMapMarkers)
+      .set(update)
+      .where(eq(customMapMarkers.id, id));
   }
 }
 
-export async function softDeleteCustomMarker(id: number, cin: string): Promise<void> {
+export async function softDeleteCustomMarker(
+  id: number,
+  cin: string
+): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  await db.update(customMapMarkers).set({ deletedAt: Date.now(), deletedByCIN: cin }).where(eq(customMapMarkers.id, id));
+  await db
+    .update(customMapMarkers)
+    .set({ deletedAt: Date.now(), deletedByCIN: cin })
+    .where(eq(customMapMarkers.id, id));
 }
 
 export async function reinstateCustomMarker(id: number): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  await db.update(customMapMarkers).set({ deletedAt: null, deletedByCIN: null }).where(eq(customMapMarkers.id, id));
+  await db
+    .update(customMapMarkers)
+    .set({ deletedAt: null, deletedByCIN: null })
+    .where(eq(customMapMarkers.id, id));
 }
 
 export async function hardDeleteCustomMarker(id: number): Promise<void> {
@@ -5144,11 +7507,11 @@ export async function hardDeleteCustomMarker(id: number): Promise<void> {
 const AU_STATES_BACKFILL = "WA|NSW|VIC|QLD|SA|TAS|NT|ACT";
 const GOOGLE_ADDRESS_RE_BACKFILL = new RegExp(
   `((?:[^,\\d\\n][^,\\n]*,\\s*)?)` +
-  `(\\d{1,5}[A-Za-z]?(?:\\/\\d{1,5}[A-Za-z]?)?)\\s+` +
-  `([A-Za-z][\\w\\s]{2,50}?)` +
-  `,\\s*([A-Za-z][\\w\\s]{1,40}?\\s+(?:${AU_STATES_BACKFILL}))` +
-  `(?:\\s+(\\d{4}))?` +
-  `(?:,\\s*Australia)?`,
+    `(\\d{1,5}[A-Za-z]?(?:\\/\\d{1,5}[A-Za-z]?)?)\\s+` +
+    `([A-Za-z][\\w\\s]{2,50}?)` +
+    `,\\s*([A-Za-z][\\w\\s]{1,40}?\\s+(?:${AU_STATES_BACKFILL}))` +
+    `(?:\\s+(\\d{4}))?` +
+    `(?:,\\s*Australia)?`,
   "gi"
 );
 
@@ -5156,7 +7519,16 @@ function convertGoogleAddressesServer(text: string): string {
   if (!text) return text;
   return text.replace(
     GOOGLE_ADDRESS_RE_BACKFILL,
-    (fullMatch: string, businessPrefix: string, streetNum: string, streetName: string, suburbState: string, _postcode: string, offset: number, str: string) => {
+    (
+      fullMatch: string,
+      businessPrefix: string,
+      streetNum: string,
+      streetName: string,
+      suburbState: string,
+      _postcode: string,
+      offset: number,
+      str: string
+    ) => {
       const afterMatch = str.slice(offset + fullMatch.length).trimStart();
       if (afterMatch.startsWith("(")) return fullMatch;
       const bracketCode = `${streetNum} ${streetName.trim()}`.toUpperCase();
@@ -5166,7 +7538,10 @@ function convertGoogleAddressesServer(text: string): string {
   );
 }
 
-export async function backfillGoogleAddressesInObservations(): Promise<{ scanned: number; updated: number }> {
+export async function backfillGoogleAddressesInObservations(): Promise<{
+  scanned: number;
+  updated: number;
+}> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -5174,14 +7549,19 @@ export async function backfillGoogleAddressesInObservations(): Promise<{ scanned
   const rows = await db
     .select({ id: sheetRows.id, observation: sheetRows.observation })
     .from(sheetRows)
-    .where(sql`${sheetRows.observation} IS NOT NULL AND ${sheetRows.observation} != ''`);
+    .where(
+      sql`${sheetRows.observation} IS NOT NULL AND ${sheetRows.observation} != ''`
+    );
 
   let updated = 0;
   for (const row of rows) {
     if (!row.observation) continue;
     const converted = convertGoogleAddressesServer(row.observation);
     if (converted !== row.observation) {
-      await db.update(sheetRows).set({ observation: converted }).where(eq(sheetRows.id, row.id));
+      await db
+        .update(sheetRows)
+        .set({ observation: converted })
+        .where(eq(sheetRows.id, row.id));
       updated++;
     }
   }
@@ -5190,7 +7570,6 @@ export async function backfillGoogleAddressesInObservations(): Promise<{ scanned
 }
 
 // ─── RS Mapping Waypoints ─────────────────────────────────────────────────────
-
 
 export interface RsWaypointRow {
   rowId: number;
@@ -5219,7 +7598,7 @@ export interface RsWaypointRow {
    * - 'continued_via' — the NEXT row is a "continued via:" row; viaStreets holds the parsed streets
    * - 'coos'          — the NEXT row is a COOS/OOS row; draw dashed line
    */
-  segmentType: 'normal' | 'continued_via' | 'coos';
+  segmentType: "normal" | "continued_via" | "coos";
   /**
    * Ordered list of street names/intersections extracted from the following
    * "continued via:" row. Empty when segmentType !== 'continued_via'.
@@ -5248,7 +7627,8 @@ export interface RsWaypointRow {
  * words so only the actual street names remain.
  */
 // Australian street type suffixes used to identify genuine street names
-const STREET_TYPE_RE = /\b(street|st|road|rd|avenue|ave|drive|dr|highway|hwy|freeway|fwy|parade|pde|terrace|tce|place|pl|court|ct|crescent|cres|boulevard|blvd|way|lane|ln|close|cl|circuit|cct|grove|gr|rise|row|walk|track|trk|path|loop|mews|quay|esplanade|esp)\b/i;
+const STREET_TYPE_RE =
+  /\b(street|st|road|rd|avenue|ave|drive|dr|highway|hwy|freeway|fwy|parade|pde|terrace|tce|place|pl|court|ct|crescent|cres|boulevard|blvd|way|lane|ln|close|cl|circuit|cct|grove|gr|rise|row|walk|track|trk|path|loop|mews|quay|esplanade|esp)\b/i;
 
 function parseViaStreets(obs: string): string[] {
   // If the observation ends with "continued via:" (street list is in the NEXT row),
@@ -5257,17 +7637,19 @@ function parseViaStreets(obs: string): string[] {
 
   // Extract only the part AFTER "continued via:" prefix (may appear mid-text)
   const match = obs.match(/continued\s+via[;:]\s*([\s\S]*)$/i);
-  const body = match ? match[1].trim() : obs.replace(/^continued\s+via[;:]/i, "").trim();
+  const body = match
+    ? match[1].trim()
+    : obs.replace(/^continued\s+via[;:]/i, "").trim();
   if (!body) return [];
 
   // Split on common separators: →, ->, newline, comma, semicolon
   const parts = body
     .split(/\s*(?:→|->|\n|,|;)\s*/i)
-    .map((p) => {
+    .map(p => {
       // Strip bracketed short-forms like (CV) (OOS) etc.
       return p.replace(/\([^)]*\)/g, "").trim();
     })
-    .filter((p) => {
+    .filter(p => {
       if (p.length < 3) return false;
       // Only keep parts that look like street names (contain a street-type suffix)
       return STREET_TYPE_RE.test(p);
@@ -5283,7 +7665,9 @@ function parseViaStreets(obs: string): string[] {
 function extractSuburb(address: string): string | null {
   // Try to match suburb from common Australian address formats
   // "1 Smith St, FREMANTLE WA 6160" → "FREMANTLE WA"
-  const m = address.match(/,\s*([A-Z][A-Za-z\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\s*\d{0,4})/);
+  const m = address.match(
+    /,\s*([A-Z][A-Za-z\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\s*\d{0,4})/
+  );
   if (m) return m[1].trim();
   // Fallback: last word-group after a comma
   const parts = address.split(",");
@@ -5291,7 +7675,9 @@ function extractSuburb(address: string): string | null {
   return null;
 }
 
-export async function getRsMappingWaypoints(sheetId: number): Promise<RsWaypointRow[]> {
+export async function getRsMappingWaypoints(
+  sheetId: number
+): Promise<RsWaypointRow[]> {
   const db = await getDb();
   if (!db) return [];
 
@@ -5312,7 +7698,7 @@ export async function getRsMappingWaypoints(sheetId: number): Promise<RsWaypoint
     .from(rsMappingWaypoints)
     .where(eq(rsMappingWaypoints.sheetId, sheetId));
 
-  const overrideMap = new Map(overrides.map((o) => [o.rowId, o]));
+  const overrideMap = new Map(overrides.map(o => [o.rowId, o]));
 
   // ── First pass: collect all address-bearing rows ──────────────────────────
   // Strategy:
@@ -5322,14 +7708,15 @@ export async function getRsMappingWaypoints(sheetId: number): Promise<RsWaypoint
   //     in the sheet, so return visits get the correct full address for geocoding.
 
   interface RawWaypoint {
-    row: typeof rows[number];
+    row: (typeof rows)[number];
     address: string;
     addressFull: string;
   }
 
   // Regex to detect a bare street address at the start of an observation or after a keyword
   // Matches: "50 Kings Park Road", "cnr Smith St and Jones Ave", "146 Marine Parade, Cottesloe"
-  const BARE_ADDR_RE = /(?:^|(?:arrived?\s+at|departed?|at|to|from|outside|near|opposite|behind|beside|in\s+front\s+of|parked\s+(?:at|in|on|outside))\s+)((?:cnr\s+(?:of\s+)?|corner\s+of\s+|lot\s+\d+\s+|\d{1,5}[A-Za-z]?\/\d{1,5}\s+|\d{1,5}[A-Za-z]?\s+)[A-Za-z][\w\s,&'-]{3,80}?(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Highway|Hwy|Freeway|Fwy|Terrace|Tce|Parade|Pde|Circuit|Cct|Grove|Gr|Lane|Ln|Place|Pl|Court|Ct|Close|Cl|Crescent|Cres|Boulevard|Blvd|Way|Loop|Rise|Mews|Esplanade|Esp|Quay)(?:\s*,\s*[A-Za-z][\w\s]+)?)/i;
+  const BARE_ADDR_RE =
+    /(?:^|(?:arrived?\s+at|departed?|at|to|from|outside|near|opposite|behind|beside|in\s+front\s+of|parked\s+(?:at|in|on|outside))\s+)((?:cnr\s+(?:of\s+)?|corner\s+of\s+|lot\s+\d+\s+|\d{1,5}[A-Za-z]?\/\d{1,5}\s+|\d{1,5}[A-Za-z]?\s+)[A-Za-z][\w\s,&'-]{3,80}?(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Highway|Hwy|Freeway|Fwy|Terrace|Tce|Parade|Pde|Circuit|Cct|Grove|Gr|Lane|Ln|Place|Pl|Court|Ct|Close|Cl|Crescent|Cres|Boulevard|Blvd|Way|Loop|Rise|Mews|Esplanade|Esp|Quay)(?:\s*,\s*[A-Za-z][\w\s]+)?)/i;
 
   // Build a normalised-address → full-address lookup from bracketed entries seen so far
   // Key: normalised street number + street name (lowercase, no punctuation)
@@ -5337,7 +7724,11 @@ export async function getRsMappingWaypoints(sheetId: number): Promise<RsWaypoint
   const knownAddressMap = new Map<string, string>(); // normKey → addressFull
 
   const normaliseAddrKey = (addr: string): string =>
-    addr.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+    addr
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
 
   // Expand common street-type abbreviations to their full form so that
   // "50 Kings Park Rd" and "50 Kings Park Road" produce the same key.
@@ -5367,7 +7758,9 @@ export async function getRsMappingWaypoints(sheetId: number): Promise<RsWaypoint
   const addrMatchKey = (addr: string): string => {
     const expanded = expandStreetTypes(addr);
     // Split at first comma OR at a state code word boundary (raw string, before stripping)
-    const base = expanded.split(/,|\s+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\b/i)[0].trim();
+    const base = expanded
+      .split(/,|\s+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\b/i)[0]
+      .trim();
     return normaliseAddrKey(base);
   };
 
@@ -5377,7 +7770,7 @@ export async function getRsMappingWaypoints(sheetId: number): Promise<RsWaypoint
   for (const row of rows) {
     if (!row.observation) continue;
     const entities = extractEntitiesFromText(row.observation);
-    const addrEntity = entities.find((e) => e.type === "address");
+    const addrEntity = entities.find(e => e.type === "address");
     if (addrEntity) {
       // Bracketed address found — use it and register in knownAddressMap
       // Register by display shortForm key (e.g. "4 glyde street")
@@ -5390,7 +7783,11 @@ export async function getRsMappingWaypoints(sheetId: number): Promise<RsWaypoint
       if (rawKey && rawKey !== displayKey && !knownAddressMap.has(rawKey)) {
         knownAddressMap.set(rawKey, addrEntity.shortForm);
       }
-      addressRows.push({ row, address: addrEntity.shortForm, addressFull: addrEntity.shortForm });
+      addressRows.push({
+        row,
+        address: addrEntity.shortForm,
+        addressFull: addrEntity.shortForm,
+      });
       rowIdsWithBracketed.add(row.id);
     }
   }
@@ -5414,7 +7811,10 @@ export async function getRsMappingWaypoints(sheetId: number): Promise<RsWaypoint
 
   // Sort addressRows back into chronological order (same as rows array)
   const rowOrderMap = new Map(rows.map((r, i) => [r.id, i]));
-  addressRows.sort((a, b) => (rowOrderMap.get(a.row.id) ?? 0) - (rowOrderMap.get(b.row.id) ?? 0));
+  addressRows.sort(
+    (a, b) =>
+      (rowOrderMap.get(a.row.id) ?? 0) - (rowOrderMap.get(b.row.id) ?? 0)
+  );
 
   // ── Build a rowId → index map for the sorted full row list ───────────────
   const rowIndexMap = new Map(rows.map((r, i) => [r.id, i]));
@@ -5427,14 +7827,16 @@ export async function getRsMappingWaypoints(sheetId: number): Promise<RsWaypoint
     const override = overrideMap.get(row.id);
 
     // Determine what comes between this waypoint and the next in the full row list
-    let segmentType: RsWaypointRow['segmentType'] = 'normal';
+    let segmentType: RsWaypointRow["segmentType"] = "normal";
     let viaStreets: string[] = [];
     const suburbContext = extractSuburb(addressFull || address);
 
     // Look at rows that fall between this address row and the next address row
     const thisRowIdx = rowIndexMap.get(row.id) ?? -1;
     const nextWpRow = addressRows[wi + 1];
-    const nextRowIdx = nextWpRow ? (rowIndexMap.get(nextWpRow.row.id) ?? rows.length) : rows.length;
+    const nextRowIdx = nextWpRow
+      ? (rowIndexMap.get(nextWpRow.row.id) ?? rows.length)
+      : rows.length;
 
     // Scan the rows between the two waypoints
     for (let ri = thisRowIdx + 1; ri < nextRowIdx; ri++) {
@@ -5443,7 +7845,7 @@ export async function getRsMappingWaypoints(sheetId: number): Promise<RsWaypoint
       const obs = between.observation.trim();
 
       if (/continued\s+via[;:]/i.test(obs)) {
-        segmentType = 'continued_via';
+        segmentType = "continued_via";
         // Try to parse streets from the same row first
         viaStreets = parseViaStreets(obs);
         // If no streets found inline, check if the observation ends with "continued via:"
@@ -5454,28 +7856,35 @@ export async function getRsMappingWaypoints(sheetId: number): Promise<RsWaypoint
             const nextObs = nextRow.observation.trim();
             // The next row should look like a street list (no bracketed address entity)
             // and not be another continued_via or coos row
-            const hasAddress = extractEntitiesFromText(nextObs).some((e) => e.type === 'address');
-            const isAnotherKeyword = /continued\s+via[;:]|continued\s+out\s+of\s+sight|\bcoos\b/i.test(nextObs);
+            const hasAddress = extractEntitiesFromText(nextObs).some(
+              e => e.type === "address"
+            );
+            const isAnotherKeyword =
+              /continued\s+via[;:]|continued\s+out\s+of\s+sight|\bcoos\b/i.test(
+                nextObs
+              );
             if (!hasAddress && !isAnotherKeyword) {
               // Parse the next row as the street list.
               // Format: "Street Name, SUBURB,\nStreet Name,\n...\nStreet Name, SUBURB, whereat;"
               // Each line/comma-segment may be a street name or a suburb name.
               // We only want parts that contain a street-type suffix.
               const streetBody = nextObs
-                .replace(/[,;]?\s*whereat[;:,.]?.*$/i, '') // strip trailing "whereat"
+                .replace(/[,;]?\s*whereat[;:,.]?.*$/i, "") // strip trailing "whereat"
                 .trim();
               viaStreets = streetBody
                 .split(/\s*(?:→|->|,|;|\n)\s*/i)
-                .map((p) => p.replace(/\([^)]*\)/g, '').trim())
-                .filter((p) => {
+                .map(p => p.replace(/\([^)]*\)/g, "").trim())
+                .filter(p => {
                   if (p.length < 3) return false;
                   // Only keep parts that look like street names
                   return STREET_TYPE_RE.test(p);
                 })
-                .map((p) => {
+                .map(p => {
                   // Strip trailing suburb/state info (e.g. "Marine Parade, COTTESLOE" -> "Marine Parade")
                   // Remove anything after the street type word
-                  const m = p.match(/^(.+?\b(?:street|st|road|rd|avenue|ave|drive|dr|highway|hwy|freeway|fwy|parade|pde|terrace|tce|place|pl|court|ct|crescent|cres|boulevard|blvd|way|lane|ln|close|cl|circuit|cct|grove|gr|rise|row|walk|track|trk|path|loop|mews|quay|esplanade|esp))\b/i);
+                  const m = p.match(
+                    /^(.+?\b(?:street|st|road|rd|avenue|ave|drive|dr|highway|hwy|freeway|fwy|parade|pde|terrace|tce|place|pl|court|ct|crescent|cres|boulevard|blvd|way|lane|ln|close|cl|circuit|cct|grove|gr|rise|row|walk|track|trk|path|loop|mews|quay|esplanade|esp))\b/i
+                  );
                   return m ? m[1].trim() : p.trim();
                 });
             }
@@ -5485,7 +7894,7 @@ export async function getRsMappingWaypoints(sheetId: number): Promise<RsWaypoint
       }
       // COOS / OOS patterns (out of sight)
       if (/continued\s+out\s+of\s+sight|\bcoos\b|\boos\b/i.test(obs)) {
-        segmentType = 'coos';
+        segmentType = "coos";
         // don't break — a continued_via later in the gap would override
       }
     }
@@ -5580,7 +7989,12 @@ export interface IncompleteSheetReport {
   operationName: string;
   operationStatus: string;
   /** Parsed sheetCins array */
-  teamCins: { cin: string; isTeamLeader?: boolean; isAuthor?: boolean; isCertifier?: boolean }[];
+  teamCins: {
+    cin: string;
+    isTeamLeader?: boolean;
+    isAuthor?: boolean;
+    isCertifier?: boolean;
+  }[];
   /** Teams present on this sheet (derived from users table) */
   teams: string[];
   /** True when members span more than one distinct team */
@@ -5599,7 +8013,9 @@ export interface IncompleteSheetReport {
  * for the Reports page. Enriches each sheet with team membership data from
  * the users table so the "Team Blended" logic can be applied client-side.
  */
-export async function getIncompleteRunningSheets(): Promise<IncompleteSheetReport[]> {
+export async function getIncompleteRunningSheets(): Promise<
+  IncompleteSheetReport[]
+> {
   const db = await getDb();
   if (!db) return [];
 
@@ -5611,8 +8027,8 @@ export async function getIncompleteRunningSheets(): Promise<IncompleteSheetRepor
 
   if (sheets.length === 0) return [];
 
-  const opIds = Array.from(new Set(sheets.map((s) => s.operationId)));
-  const sheetIds = sheets.map((s) => s.id);
+  const opIds = Array.from(new Set(sheets.map(s => s.operationId)));
+  const sheetIds = sheets.map(s => s.id);
 
   const [ops, govRecords, allUsers] = await Promise.all([
     db.select().from(operations).where(inArray(operations.id, opIds)),
@@ -5627,59 +8043,99 @@ export async function getIncompleteRunningSheets(): Promise<IncompleteSheetRepor
   }
 
   // Compute certification status per sheet
-  const allRowMembers = sheetIds.length > 0
-    ? await db.select().from(rowMembers).where(
-        inArray(rowMembers.rowId,
-          (await db.select({ id: sheetRows.id }).from(sheetRows).where(inArray(sheetRows.sheetId, sheetIds))).map(r => r.id)
-        )
-      )
-    : [];
+  const allRowMembers =
+    sheetIds.length > 0
+      ? await db
+          .select()
+          .from(rowMembers)
+          .where(
+            inArray(
+              rowMembers.rowId,
+              (
+                await db
+                  .select({ id: sheetRows.id })
+                  .from(sheetRows)
+                  .where(inArray(sheetRows.sheetId, sheetIds))
+              ).map(r => r.id)
+            )
+          )
+      : [];
 
-  const allRows = sheetIds.length > 0
-    ? await db.select().from(sheetRows).where(inArray(sheetRows.sheetId, sheetIds))
-    : [];
+  const allRows =
+    sheetIds.length > 0
+      ? await db
+          .select()
+          .from(sheetRows)
+          .where(inArray(sheetRows.sheetId, sheetIds))
+      : [];
 
   const allRowIds = allRows.map(r => r.id);
-  const allCerts = allRowIds.length > 0
-    ? await db.select().from(certifications).where(
-        and(inArray(certifications.rowId, allRowIds), eq(certifications.isActive, true))
-      )
-    : [];
+  const allCerts =
+    allRowIds.length > 0
+      ? await db
+          .select()
+          .from(certifications)
+          .where(
+            and(
+              inArray(certifications.rowId, allRowIds),
+              eq(certifications.isActive, true)
+            )
+          )
+      : [];
 
   const results: IncompleteSheetReport[] = [];
 
   for (const sheet of sheets) {
-    const op = ops.find((o) => o.id === sheet.operationId);
+    const op = ops.find(o => o.id === sheet.operationId);
     if (!op) continue;
 
     // Parse sheetCins
-    let teamCins: { cin: string; isTeamLeader?: boolean; isAuthor?: boolean; isCertifier?: boolean }[] = [];
-    try { teamCins = JSON.parse(sheet.sheetCins ?? "[]"); } catch { teamCins = []; }
+    let teamCins: {
+      cin: string;
+      isTeamLeader?: boolean;
+      isAuthor?: boolean;
+      isCertifier?: boolean;
+    }[] = [];
+    try {
+      teamCins = JSON.parse(sheet.sheetCins ?? "[]");
+    } catch {
+      teamCins = [];
+    }
 
     const teamLeaderCin = teamCins.find(c => c.isTeamLeader)?.cin ?? null;
     const authorCin = teamCins.find(c => c.isAuthor)?.cin ?? null;
     // Certifier: first CIN that is neither TL nor Author (or TL if no one else)
-    const certifierCin = teamCins.find(c => !c.isTeamLeader && !c.isAuthor)?.cin ?? teamLeaderCin;
+    const certifierCin =
+      teamCins.find(c => !c.isTeamLeader && !c.isAuthor)?.cin ?? teamLeaderCin;
 
     // Derive teams present on this sheet
-    const teamsOnSheet = Array.from(new Set(
-      teamCins.map(c => cinTeamMap.get(c.cin)).filter((t): t is string => !!t)
-    ));
+    const teamsOnSheet = Array.from(
+      new Set(
+        teamCins.map(c => cinTeamMap.get(c.cin)).filter((t): t is string => !!t)
+      )
+    );
     const isTeamBlended = teamsOnSheet.length > 1;
 
     // Compute uncertified row count
     const sheetRowObjs = allRows.filter(r => r.sheetId === sheet.id);
     const sheetRowIds = sheetRowObjs.map(r => r.id);
-    const sheetMembers = allRowMembers.filter(m => sheetRowIds.includes(m.rowId) && m.memberName !== "__SPACE__");
-    const certRowMemberIds = new Set(allCerts.filter(c => sheetRowIds.includes(c.rowId)).map(c => c.memberId));
+    const sheetMembers = allRowMembers.filter(
+      m => sheetRowIds.includes(m.rowId) && m.memberName !== "__SPACE__"
+    );
+    const certRowMemberIds = new Set(
+      allCerts.filter(c => sheetRowIds.includes(c.rowId)).map(c => c.memberId)
+    );
     const uncertifiedRowCount = sheetRowObjs.filter(row => {
       const rowMems = sheetMembers.filter(m => m.rowId === row.id);
-      return rowMems.length > 0 && rowMems.some(m => !certRowMemberIds.has(m.id));
+      return (
+        rowMems.length > 0 && rowMems.some(m => !certRowMemberIds.has(m.id))
+      );
     }).length;
 
-    const allSigned = sheetRowObjs.length === 0 || (
-      sheetMembers.length > 0 && sheetMembers.every(m => certRowMemberIds.has(m.id))
-    );
+    const allSigned =
+      sheetRowObjs.length === 0 ||
+      (sheetMembers.length > 0 &&
+        sheetMembers.every(m => certRowMemberIds.has(m.id)));
 
     // Governance percent
     const govRec = govRecords.find(g => g.sheetId === sheet.id) ?? null;
@@ -5688,7 +8144,8 @@ export async function getIncompleteRunningSheets(): Promise<IncompleteSheetRepor
     const isClosed = !!sheet.closedAt;
 
     // Only include sheets that are incomplete (not closed OR governance < 100 OR uncertified rows)
-    const isIncomplete = !isClosed || uncertifiedRowCount > 0 || govPercent < 100;
+    const isIncomplete =
+      !isClosed || uncertifiedRowCount > 0 || govPercent < 100;
     if (!isIncomplete) continue;
 
     results.push({
@@ -5726,7 +8183,9 @@ export interface OutstandingTodoUser {
  * Returns all users ranked by total outstanding to-do actions
  * (uncertified rows they are a member of + governance items they own as TL/Author).
  */
-export async function getOutstandingTodosByUser(): Promise<OutstandingTodoUser[]> {
+export async function getOutstandingTodosByUser(): Promise<
+  OutstandingTodoUser[]
+> {
   const db = await getDb();
   if (!db) return [];
 
@@ -5740,11 +8199,18 @@ export async function getOutstandingTodosByUser(): Promise<OutstandingTodoUser[]
 
     // Uncertified rows for this CIN
     const outstanding = await getOutstandingSheetsForCin(cin);
-    const uncertifiedCount = outstanding.reduce((sum, s) => sum + s.uncertifiedRowCount, 0);
+    const uncertifiedCount = outstanding.reduce(
+      (sum, s) => sum + s.uncertifiedRowCount,
+      0
+    );
 
     // Governance items for this CIN (TL + Author)
     const govTodo = await getGovernanceTodoForCin(cin);
-    const governanceCount = govTodo.reduce((sum, s) => sum + s.outstanding.filter(o => o !== "Ready to close").length, 0);
+    const governanceCount = govTodo.reduce(
+      (sum, s) =>
+        sum + s.outstanding.filter(o => o !== "Ready to close").length,
+      0
+    );
 
     const totalCount = uncertifiedCount + governanceCount;
     if (totalCount === 0) continue;
@@ -5789,11 +8255,16 @@ export async function getSidebarOrder(userId: number): Promise<string[]> {
   try {
     const parsed = JSON.parse(rows[0].orderedKeys);
     if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-  } catch { /* fall through */ }
+  } catch {
+    /* fall through */
+  }
   return DEFAULT_SIDEBAR_ORDER;
 }
 
-export async function setSidebarOrder(userId: number, orderedKeys: string[]): Promise<void> {
+export async function setSidebarOrder(
+  userId: number,
+  orderedKeys: string[]
+): Promise<void> {
   const db = await getDb();
   if (!db) return;
   const json = JSON.stringify(orderedKeys);
@@ -5813,13 +8284,23 @@ export async function setSidebarOrder(userId: number, orderedKeys: string[]): Pr
 }
 
 export const DEFAULT_TILE_ORDER = [
-  "operations", "administration",          // row 1 — large (2)
-  "todo", "governance", "intelligence", "targetRegistry",  // row 2 — medium (4)
-  "mapping", "calendar", "shortcuts", "userManagement",    // row 3 — medium (4)
-  "operationManager", "images",                             // overflow — medium
+  "operations",
+  "administration", // row 1 — large (2)
+  "todo",
+  "governance",
+  "intelligence",
+  "targetRegistry", // row 2 — medium (4)
+  "mapping",
+  "calendar",
+  "shortcuts",
+  "userManagement", // row 3 — medium (4)
+  "operationManager",
+  "images", // overflow — medium
 ];
 
-export async function getHomePrefs(userId: number): Promise<{ mode: string; tileOrder: string[] }> {
+export async function getHomePrefs(
+  userId: number
+): Promise<{ mode: string; tileOrder: string[] }> {
   const db = await getDb();
   if (!db) return { mode: "folder", tileOrder: DEFAULT_TILE_ORDER };
   const rows = await db
@@ -5827,13 +8308,16 @@ export async function getHomePrefs(userId: number): Promise<{ mode: string; tile
     .from(userSidebarOrder)
     .where(eq(userSidebarOrder.userId, userId))
     .limit(1);
-  if (rows.length === 0) return { mode: "folder", tileOrder: DEFAULT_TILE_ORDER };
+  if (rows.length === 0)
+    return { mode: "folder", tileOrder: DEFAULT_TILE_ORDER };
   const row = rows[0];
   let tileOrder = DEFAULT_TILE_ORDER;
   try {
     const parsed = JSON.parse(row.tileOrder ?? "");
     if (Array.isArray(parsed) && parsed.length >= 10) tileOrder = parsed;
-  } catch { /* use default */ }
+  } catch {
+    /* use default */
+  }
   return { mode: row.homeScreenMode ?? "folder", tileOrder };
 }
 
@@ -5844,21 +8328,30 @@ export async function setHomePrefs(
   const db = await getDb();
   if (!db) return;
   const existing = await db
-    .select({ id: userSidebarOrder.id, orderedKeys: userSidebarOrder.orderedKeys })
+    .select({
+      id: userSidebarOrder.id,
+      orderedKeys: userSidebarOrder.orderedKeys,
+    })
     .from(userSidebarOrder)
     .where(eq(userSidebarOrder.userId, userId))
     .limit(1);
   const patch: Record<string, string> = {};
   if (updates.mode !== undefined) patch.homeScreenMode = updates.mode;
-  if (updates.tileOrder !== undefined) patch.tileOrder = JSON.stringify(updates.tileOrder);
+  if (updates.tileOrder !== undefined)
+    patch.tileOrder = JSON.stringify(updates.tileOrder);
   if (existing.length > 0) {
-    await db.update(userSidebarOrder).set(patch).where(eq(userSidebarOrder.userId, userId));
+    await db
+      .update(userSidebarOrder)
+      .set(patch)
+      .where(eq(userSidebarOrder.userId, userId));
   } else {
     await db.insert(userSidebarOrder).values({
       userId,
       orderedKeys: JSON.stringify(DEFAULT_SIDEBAR_ORDER),
       homeScreenMode: updates.mode ?? "folder",
-      tileOrder: updates.tileOrder ? JSON.stringify(updates.tileOrder) : JSON.stringify(DEFAULT_TILE_ORDER),
+      tileOrder: updates.tileOrder
+        ? JSON.stringify(updates.tileOrder)
+        : JSON.stringify(DEFAULT_TILE_ORDER),
     });
   }
 }
@@ -5889,9 +8382,13 @@ export async function saveOpManagerPriorityBoard(
 ) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.delete(opManagerPriorityRows).where(eq(opManagerPriorityRows.weekStart, weekStart));
+  await db
+    .delete(opManagerPriorityRows)
+    .where(eq(opManagerPriorityRows.weekStart, weekStart));
   if (rows.length === 0) return [];
-  await db.insert(opManagerPriorityRows).values(rows.map((r) => ({ ...r, weekStart })));
+  await db
+    .insert(opManagerPriorityRows)
+    .values(rows.map(r => ({ ...r, weekStart })));
   return getOpManagerPriorityBoard(weekStart);
 }
 
@@ -5908,7 +8405,11 @@ export async function saveOpManagerTaskingCell(
   weekStart: string,
   dayIndex: number,
   teamRow: string,
-  data: { shiftTime?: string | null; primaryTask?: string | null; secondaryTask?: string | null }
+  data: {
+    shiftTime?: string | null;
+    primaryTask?: string | null;
+    secondaryTask?: string | null;
+  }
 ) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -5929,7 +8430,9 @@ export async function saveOpManagerTaskingCell(
       .set(data)
       .where(eq(opManagerTaskingCells.id, existing[0].id));
   } else {
-    await db.insert(opManagerTaskingCells).values({ weekStart, dayIndex, teamRow, ...data });
+    await db
+      .insert(opManagerTaskingCells)
+      .values({ weekStart, dayIndex, teamRow, ...data });
   }
 }
 
@@ -5959,58 +8462,81 @@ export async function saveOpManagerSupervisorContacts(
     .delete(opManagerSupervisorContacts)
     .where(eq(opManagerSupervisorContacts.weekStart, weekStart));
   if (contacts.length === 0) return [];
-  await db.insert(opManagerSupervisorContacts).values(contacts.map((c) => ({ ...c, weekStart })));
+  await db
+    .insert(opManagerSupervisorContacts)
+    .values(contacts.map(c => ({ ...c, weekStart })));
   return getOpManagerSupervisorContacts(weekStart);
 }
-
 
 // ─── Op Manager All Weeks (folder list) ───────────────────────────────────────
 export async function listAllOpManagerWeeks() {
   const db = await getDb();
   if (!db) return [];
-  const [taskingRows, contactRows, priorityRows, postedRows] = await Promise.all([
-    db.selectDistinct({ weekStart: opManagerTaskingCells.weekStart }).from(opManagerTaskingCells),
-    db.selectDistinct({ weekStart: opManagerSupervisorContacts.weekStart }).from(opManagerSupervisorContacts),
-    db.selectDistinct({ weekStart: opManagerPriorityRows.weekStart }).from(opManagerPriorityRows),
-    db.select().from(opManagerPostedWeeks),
-  ]);
-  const postedMap = new Map(postedRows.map((p) => [p.weekStart, p.postedAt]));
+  const [taskingRows, contactRows, priorityRows, postedRows] =
+    await Promise.all([
+      db
+        .selectDistinct({ weekStart: opManagerTaskingCells.weekStart })
+        .from(opManagerTaskingCells),
+      db
+        .selectDistinct({ weekStart: opManagerSupervisorContacts.weekStart })
+        .from(opManagerSupervisorContacts),
+      db
+        .selectDistinct({ weekStart: opManagerPriorityRows.weekStart })
+        .from(opManagerPriorityRows),
+      db.select().from(opManagerPostedWeeks),
+    ]);
+  const postedMap = new Map(postedRows.map(p => [p.weekStart, p.postedAt]));
   const allWeekStarts = new Set([
-    ...taskingRows.map((r) => r.weekStart),
-    ...contactRows.map((r) => r.weekStart),
-    ...priorityRows.map((r) => r.weekStart),
-    ...postedRows.map((r) => r.weekStart),
+    ...taskingRows.map(r => r.weekStart),
+    ...contactRows.map(r => r.weekStart),
+    ...priorityRows.map(r => r.weekStart),
+    ...postedRows.map(r => r.weekStart),
   ]);
   return Array.from(allWeekStarts)
     .sort((a, b) => b.localeCompare(a))
-    .map((weekStart) => ({
+    .map(weekStart => ({
       weekStart,
       posted: postedMap.has(weekStart),
       postedAt: postedMap.get(weekStart) ?? null,
     }));
 }
 
-export async function copyOpManagerWeek(fromWeekStart: string, toWeekStart: string) {
+export async function copyOpManagerWeek(
+  fromWeekStart: string,
+  toWeekStart: string
+) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const contacts = await getOpManagerSupervisorContacts(fromWeekStart);
   if (contacts.length > 0) {
-    await db.delete(opManagerSupervisorContacts).where(eq(opManagerSupervisorContacts.weekStart, toWeekStart));
+    await db
+      .delete(opManagerSupervisorContacts)
+      .where(eq(opManagerSupervisorContacts.weekStart, toWeekStart));
     await db.insert(opManagerSupervisorContacts).values(
-      contacts.map(({ id: _id, weekStart: _ws, ...rest }) => ({ ...rest, weekStart: toWeekStart }))
+      contacts.map(({ id: _id, weekStart: _ws, ...rest }) => ({
+        ...rest,
+        weekStart: toWeekStart,
+      }))
     );
   }
   const priority = await getOpManagerPriorityBoard(fromWeekStart);
   if (priority.length > 0) {
-    await db.delete(opManagerPriorityRows).where(eq(opManagerPriorityRows.weekStart, toWeekStart));
+    await db
+      .delete(opManagerPriorityRows)
+      .where(eq(opManagerPriorityRows.weekStart, toWeekStart));
     await db.insert(opManagerPriorityRows).values(
-      priority.map(({ id: _id, weekStart: _ws, ...rest }) => ({ ...rest, weekStart: toWeekStart }))
+      priority.map(({ id: _id, weekStart: _ws, ...rest }) => ({
+        ...rest,
+        weekStart: toWeekStart,
+      }))
     );
   }
   // Copy task names only — shiftTime always comes from auto-population
   const tasking = await getOpManagerTaskingCalendar(fromWeekStart);
   if (tasking.length > 0) {
-    await db.delete(opManagerTaskingCells).where(eq(opManagerTaskingCells.weekStart, toWeekStart));
+    await db
+      .delete(opManagerTaskingCells)
+      .where(eq(opManagerTaskingCells.weekStart, toWeekStart));
     await db.insert(opManagerTaskingCells).values(
       tasking.map(({ id: _id, weekStart: _ws, shiftTime: _st, ...rest }) => ({
         ...rest,
@@ -6026,7 +8552,10 @@ export async function copyOpManagerWeek(fromWeekStart: string, toWeekStart: stri
 export async function getPostedWeeks() {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(opManagerPostedWeeks).orderBy(opManagerPostedWeeks.weekStart);
+  return db
+    .select()
+    .from(opManagerPostedWeeks)
+    .orderBy(opManagerPostedWeeks.weekStart);
 }
 
 export async function isWeekPosted(weekStart: string) {
@@ -6135,7 +8664,9 @@ export async function getNotificationsForUser(userId: number, limit = 50) {
     .limit(limit);
 }
 
-export async function getUnreadNotificationCount(userId: number): Promise<number> {
+export async function getUnreadNotificationCount(
+  userId: number
+): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
   const rows = await db
@@ -6178,7 +8709,9 @@ export async function deleteReadNotificationsForUser(userId: number) {
   if (!db) return;
   await db
     .delete(notifications)
-    .where(and(eq(notifications.userId, userId), isNotNull(notifications.readAt)));
+    .where(
+      and(eq(notifications.userId, userId), isNotNull(notifications.readAt))
+    );
 }
 
 const NOTIFICATION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
@@ -6191,7 +8724,12 @@ export async function purgeExpiredNotifications() {
   if (!db) return;
   await db
     .delete(notifications)
-    .where(lt(notifications.createdAt, new Date(Date.now() - NOTIFICATION_MAX_AGE_MS)));
+    .where(
+      lt(
+        notifications.createdAt,
+        new Date(Date.now() - NOTIFICATION_MAX_AGE_MS)
+      )
+    );
 }
 
 // ─── Witness List ───────────────────────────────────────────────────────────
@@ -6221,20 +8759,30 @@ export async function computeWitnessListData(
   operationName: string,
   certifierCin: string
 ): Promise<WitnessListData> {
-  const sheets = await Promise.all(sheetIds.map((id) => getRunningSheetById(id)));
-  const validSheets = sheets.filter(Boolean) as NonNullable<Awaited<ReturnType<typeof getRunningSheetById>>>[];
+  const sheets = await Promise.all(sheetIds.map(id => getRunningSheetById(id)));
+  const validSheets = sheets.filter(Boolean) as NonNullable<
+    Awaited<ReturnType<typeof getRunningSheetById>>
+  >[];
 
   // Sort sheets by date (YYYYMMDD prefix or createdAt)
-  const getSheetDate = (sheet: NonNullable<Awaited<ReturnType<typeof getRunningSheetById>>>) => {
+  const getSheetDate = (
+    sheet: NonNullable<Awaited<ReturnType<typeof getRunningSheetById>>>
+  ) => {
     const m = sheet.title.match(/^(\d{4})(\d{2})(\d{2})/);
     if (m) return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-    const d = new Date(sheet.createdAt instanceof Date ? sheet.createdAt.getTime() : sheet.createdAt);
+    const d = new Date(
+      sheet.createdAt instanceof Date
+        ? sheet.createdAt.getTime()
+        : sheet.createdAt
+    );
     return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
   };
   validSheets.sort((a, b) => getSheetDate(a) - getSheetDate(b));
 
   // Helper to classify rows for a sheet
-  const classifyRows = async (sheet: NonNullable<Awaited<ReturnType<typeof getRunningSheetById>>>) => {
+  const classifyRows = async (
+    sheet: NonNullable<Awaited<ReturnType<typeof getRunningSheetById>>>
+  ) => {
     const rows = await getRowsBySheetId(sheet.id);
     const sortedRows = [...rows];
     const excludedRowIds = new Set<number>();
@@ -6243,7 +8791,10 @@ export async function computeWitnessListData(
       const row = sortedRows[i];
       const obs = (row.observation ?? "").trim();
       // Surveillance commenced/ceased
-      if (/^surveillance commenced/i.test(obs) || /^surveillance ceased/i.test(obs)) {
+      if (
+        /^surveillance commenced/i.test(obs) ||
+        /^surveillance ceased/i.test(obs)
+      ) {
         excludedRowIds.add(row.id);
         continue;
       }
@@ -6257,7 +8808,7 @@ export async function computeWitnessListData(
       }
     }
 
-    const rowIds = rows.map((r) => r.id);
+    const rowIds = rows.map(r => r.id);
     const members = rowIds.length > 0 ? await getMembersByRowIds(rowIds) : [];
     return { excludedRowIds, members };
   };
@@ -6271,7 +8822,11 @@ export async function computeWitnessListData(
   for (const sheet of validSheets) {
     const sheetDate = getSheetDate(sheet);
     let roster: { cin: string }[] = [];
-    try { roster = sheet.sheetCins ? JSON.parse(sheet.sheetCins) : []; } catch { roster = []; }
+    try {
+      roster = sheet.sheetCins ? JSON.parse(sheet.sheetCins) : [];
+    } catch {
+      roster = [];
+    }
 
     const { excludedRowIds, members } = await classifyRows(sheet);
 
@@ -6282,8 +8837,8 @@ export async function computeWitnessListData(
     for (const entry of roster) {
       const cinUpper = entry.cin.toUpperCase();
       const cinRowIds = members
-        .filter((m) => m.memberName.toUpperCase() === cinUpper)
-        .map((m) => m.rowId);
+        .filter(m => m.memberName.toUpperCase() === cinUpper)
+        .map(m => m.rowId);
 
       if (cinRowIds.length === 0) {
         // On roster but no rows — treat as secondary (on duty, no observations)
@@ -6291,7 +8846,7 @@ export async function computeWitnessListData(
         continue;
       }
 
-      const hasQualifyingRow = cinRowIds.some((id) => !excludedRowIds.has(id));
+      const hasQualifyingRow = cinRowIds.some(id => !excludedRowIds.has(id));
       if (hasQualifyingRow) {
         primarySet.add(cinUpper);
       } else {
@@ -6300,11 +8855,11 @@ export async function computeWitnessListData(
     }
 
     // A CIN that is primary on ANY sheet is overall primary
-    Array.from(primarySet).forEach((cin) => {
+    Array.from(primarySet).forEach(cin => {
       overallPrimarySet.add(cin);
       overallSecondarySet.delete(cin); // remove from secondary if they were added there
     });
-    Array.from(secondarySet).forEach((cin) => {
+    Array.from(secondarySet).forEach(cin => {
       if (!overallPrimarySet.has(cin)) {
         overallSecondarySet.add(cin);
       }

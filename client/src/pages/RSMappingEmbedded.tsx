@@ -16,6 +16,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { trpcClient } from "@/lib/trpc";
+import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 import { MapView } from "@/components/Map";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -1111,6 +1112,7 @@ export default function RSMappingEmbedded() {
     <tbody>${tableRows}</tbody>
   </table>
 </div>
+${buildExportPreviewCloseBar()}
 </body></html>`;
 
     setPdfExporting(false);

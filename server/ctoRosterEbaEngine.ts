@@ -31,6 +31,8 @@ export interface ShiftRecord {
   shiftDate: string; // "YYYY-MM-DD"
   shiftCode: string;
   shiftTime?: string | null;
+  /** Per-shift duration override in hours (currently only set on "dep" shifts). */
+  shiftDurationHours?: number | null;
 }
 
 export interface EbaFinding {
@@ -80,8 +82,16 @@ function isWorkedShift(code: string): boolean {
  * Compute the shift interval using the effective (underlying) code.
  * This ensures doc/aoc/adoc use their Day/Afternoon/Admin durations.
  */
-function computeEffectiveInterval(code: string, chipTime?: string | null) {
-  return computeShiftInterval(effectiveCode(code), chipTime);
+function computeEffectiveInterval(
+  code: string,
+  chipTime?: string | null,
+  durationOverrideHours?: number | null
+) {
+  return computeShiftInterval(
+    effectiveCode(code),
+    chipTime,
+    durationOverrideHours
+  );
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -97,11 +107,23 @@ function dayOfWeek(dateStr: string): number {
   return new Date(y, m - 1, d).getDay(); // 0=Sun,1=Mon,...,5=Fri,6=Sat
 }
 
+// Formats a Date's *local* calendar components as "YYYY-MM-DD". Deliberately
+// not `.toISOString().slice(0, 10)` — that converts to UTC first, which is
+// off by one day from the intended local date whenever local midnight falls
+// on a different UTC calendar day (true for the whole day in Australia/Perth,
+// the timezone this server is forced to run in).
+function toLocalDateString(dt: Date): string {
+  const yy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
 function addDays(dateStr: string, n: number): string {
   const [y, m, d] = dateStr.split("-").map(Number);
   const dt = new Date(y, m - 1, d);
   dt.setDate(dt.getDate() + n);
-  return dt.toISOString().slice(0, 10);
+  return toLocalDateString(dt);
 }
 
 function diffHours(a: Date, b: Date): number {
@@ -150,7 +172,7 @@ export function runEbaChecks(
   const activeRules = rules.filter(r => r.isActive);
 
   // Today's date string "YYYY-MM-DD" — findings with all dates in the past are suppressed
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = toLocalDateString(new Date());
 
   // Group shifts by member
   const byMember = new Map<number, ShiftRecord[]>();
@@ -226,7 +248,11 @@ function checkMaxContinuousHours(
     // Skip rest days (r, l, o)
     if (!isWorkedShift(s.shiftCode)) continue;
     // Use effective interval (doc→d, aoc→a, adoc→ad)
-    const interval = computeEffectiveInterval(s.shiftCode, s.shiftTime);
+    const interval = computeEffectiveInterval(
+      s.shiftCode,
+      s.shiftTime,
+      s.shiftDurationHours
+    );
     if (interval.durationHours > limit) {
       findings.push({
         ruleKey: rule.ruleKey,
@@ -261,7 +287,11 @@ function checkMaxHours7Day(
     );
     const totalHours = window.reduce((sum, s) => {
       // Use effective interval so doc/aoc/adoc contribute their underlying hours
-      const iv = computeEffectiveInterval(s.shiftCode, s.shiftTime);
+      const iv = computeEffectiveInterval(
+        s.shiftCode,
+        s.shiftTime,
+        s.shiftDurationHours
+      );
       return sum + iv.durationHours;
     }, 0);
     if (totalHours > limit) {
@@ -299,7 +329,11 @@ function checkMaxConsecutiveShifts(
   let runDates: string[] = [];
 
   for (const s of working) {
-    const iv = computeEffectiveInterval(s.shiftCode, s.shiftTime);
+    const iv = computeEffectiveInterval(
+      s.shiftCode,
+      s.shiftTime,
+      s.shiftDurationHours
+    );
     if (iv.durationHours >= 10) {
       run10++;
       runDates.push(s.shiftDate);
@@ -361,7 +395,11 @@ function checkMaxConsecutiveDays(
       run = 0;
       continue;
     }
-    const iv = computeEffectiveInterval(s.shiftCode, s.shiftTime);
+    const iv = computeEffectiveInterval(
+      s.shiftCode,
+      s.shiftTime,
+      s.shiftDurationHours
+    );
     const isLongEnough = iv.durationHours > 6;
 
     if (isLongEnough) {
@@ -401,8 +439,16 @@ function checkMinRest(
     const next = working[i + 1];
 
     // Use effective intervals (doc→d, aoc→a, adoc→ad)
-    const currIv = computeEffectiveInterval(curr.shiftCode, curr.shiftTime);
-    const nextIv = computeEffectiveInterval(next.shiftCode, next.shiftTime);
+    const currIv = computeEffectiveInterval(
+      curr.shiftCode,
+      curr.shiftTime,
+      curr.shiftDurationHours
+    );
+    const nextIv = computeEffectiveInterval(
+      next.shiftCode,
+      next.shiftTime,
+      next.shiftDurationHours
+    );
 
     const currRange = shiftToDateRange(curr.shiftDate, currIv);
     const nextRange = shiftToDateRange(next.shiftDate, nextIv);
@@ -543,7 +589,11 @@ function checkMinShiftLength(
   // This rule catches any manually-entered custom time that results in <8h
   for (const s of shifts) {
     if (!isWorkedShift(s.shiftCode)) continue;
-    const iv = computeEffectiveInterval(s.shiftCode, s.shiftTime);
+    const iv = computeEffectiveInterval(
+      s.shiftCode,
+      s.shiftTime,
+      s.shiftDurationHours
+    );
     if (iv.durationHours < minHours) {
       findings.push({
         ruleKey: rule.ruleKey,
@@ -614,7 +664,11 @@ function checkTrainingConsecutiveDays(
       run = 0;
       continue;
     }
-    const iv = computeEffectiveInterval(s.shiftCode, s.shiftTime);
+    const iv = computeEffectiveInterval(
+      s.shiftCode,
+      s.shiftTime,
+      s.shiftDurationHours
+    );
     if (iv.durationHours >= 6) {
       if (run === 0) runStart = s.shiftDate;
       run++;
@@ -638,7 +692,12 @@ function checkTrainingConsecutiveDays(
   return findings;
 }
 
-/** Operational rule: on-call weekend sequence must be adoc(Fri)→o(Sat)→o(Sun)→doc(Mon) */
+/**
+ * Operational rule: on-call weekend sequence is usually adoc(Fri)→o(Sat)→o(Sun)→doc(Mon).
+ * A manually-assigned different shift type on any of those days (leave, training,
+ * another on-call variant, etc.) is a deliberate override of the usual pattern, not
+ * a rostering error — so this only flags a day that has no shift recorded at all.
+ */
 function checkOnCallSequence(
   rule: CtoRosterEbaRule,
   shifts: ShiftRecord[]
@@ -659,31 +718,26 @@ function checkOnCallSequence(
     const sun = addDays(fri.shiftDate, 2);
     const mon = addDays(fri.shiftDate, 3);
 
-    const friShift = byDate.get(fri.shiftDate);
     const satShift = byDate.get(sat);
     const sunShift = byDate.get(sun);
     const monShift = byDate.get(mon);
 
     const issues: string[] = [];
+    // Only the specific day(s) missing a shift — not the whole block — so
+    // callers can point a "this day has an issue" marker at the right cell.
+    const missingDates: string[] = [];
 
-    // Friday must be adoc (Admin on-call)
-    if (friShift?.shiftCode !== "adoc") {
-      issues.push(
-        `Friday should be adoc (got ${friShift?.shiftCode ?? "none"})`
-      );
+    if (!satShift) {
+      issues.push("Saturday has no shift recorded (expected o)");
+      missingDates.push(sat);
     }
-    if (!satShift || satShift.shiftCode !== "o") {
-      issues.push(
-        `Saturday should be o (got ${satShift?.shiftCode ?? "none"})`
-      );
+    if (!sunShift) {
+      issues.push("Sunday has no shift recorded (expected o)");
+      missingDates.push(sun);
     }
-    if (!sunShift || sunShift.shiftCode !== "o") {
-      issues.push(`Sunday should be o (got ${sunShift?.shiftCode ?? "none"})`);
-    }
-    if (!monShift || monShift.shiftCode !== "doc") {
-      issues.push(
-        `Monday should be doc (got ${monShift?.shiftCode ?? "none"})`
-      );
+    if (!monShift) {
+      issues.push("Monday has no shift recorded (expected doc)");
+      missingDates.push(mon);
     }
 
     if (issues.length > 0) {
@@ -693,7 +747,7 @@ function checkOnCallSequence(
         eaReference: rule.eaReference,
         memberId: fri.memberId,
         memberName: fri.memberName,
-        dates: [fri.shiftDate, mon],
+        dates: missingDates,
         detail: `${fri.memberName}: On-call sequence broken for week of ${fri.shiftDate}: ${issues.join("; ")}.`,
         severity: "warning",
       });

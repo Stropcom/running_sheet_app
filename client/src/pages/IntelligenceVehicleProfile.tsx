@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, FileDown, User, Car, FileText } from "lucide-react";
 import { formatIntelVehicle } from "@/lib/addressFormat";
+import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 import { EntityPhotosSection } from "@/components/EntityPhotosSection";
 import { buildPhotoGridHtml, buildEntityListWithPhotosHtml, type RowAttachmentLike } from "@/lib/attachmentBanner";
 import { IntelEntityWithPhotos, type IntelAssocEntity } from "@/components/IntelEntityChip";
@@ -20,6 +21,7 @@ interface IntelVehicleProfile {
   linkedSheets: Array<{ id: number; title: string; operationId: number; operationName: string }>;
   assocPersons: IntelProfileEntity[];
   assocLocations: IntelProfileEntity[];
+  isPrevious?: boolean;
 }
 
 function SectionHeading({ label, count }: { label: string; count: number }) {
@@ -53,6 +55,7 @@ function buildVehicleProfileHtml(profile: IntelVehicleProfile, photos: ProfilePh
   <div class="brand-label">RunLog Intelligence Profile — Vehicle</div>
   <div class="entity-name">${esc(displayLabel)}</div>
   ${profile.linkedTarget ? `<div style="font-size:11px;opacity:0.75;margin-top:4px">Registered to: ${esc(profile.linkedTarget.name)}</div>` : ""}
+  ${profile.isPrevious ? `<div style="display:inline-block;margin-top:6px;padding:2px 8px;border-radius:3px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;background:rgba(255,255,255,0.15);color:#fff">Previous</div>` : ""}
   <div class="gen-time">Generated: ${generatedAt}</div>
 </div>
 <div class="stats-row">
@@ -69,7 +72,9 @@ function buildVehicleProfileHtml(profile: IntelVehicleProfile, photos: ProfilePh
     ${profile.assocLocations.length ? `<div class="sub-title">Locations</div>${buildEntityListWithPhotosHtml(profile.assocLocations)}` : ""}
   </div>` : ""}
   <div class="footer"><span>RunLog — Vehicle Intelligence Profile</span><span>SENSITIVE — FOR OFFICIAL USE ONLY — ${generatedAt}</span></div>
-</div></body></html>`;
+</div>
+${buildExportPreviewCloseBar()}
+</body></html>`;
 }
 
 export default function IntelligenceVehicleProfile() {
@@ -114,6 +119,11 @@ export default function IntelligenceVehicleProfile() {
                     <h1 className="text-2xl font-bold tracking-tight">{formatIntelVehicle(profile.label, profile.firstObservation ?? undefined)}</h1>
                     {profile.linkedTarget && (
                       <p className="text-sm opacity-75 mt-1">Registered to: {profile.linkedTarget.name}</p>
+                    )}
+                    {profile.isPrevious && (
+                      <span className="inline-block mt-2 px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-white/15 text-white">
+                        Previous
+                      </span>
                     )}
                   </div>
                   <Button variant="outline" size="sm" onClick={exportPdf} className="bg-white/10 border-white/30 text-white hover:bg-white/20 shrink-0">

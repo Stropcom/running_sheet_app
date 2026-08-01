@@ -25,7 +25,7 @@ import { extractEntitiesFromText } from "./db";
 
 // ─── Helper: extract only address entities ───────────────────────────────────
 function extractAddresses(text: string) {
-  return extractEntitiesFromText(text).filter((e) => e.type === "address");
+  return extractEntitiesFromText(text).filter(e => e.type === "address");
 }
 
 // ─── 1. extractEntitiesFromText — address label recovery ─────────────────────
@@ -60,8 +60,7 @@ describe("extractEntitiesFromText — address label recovery", () => {
   });
 
   it("recovers address with unit number (3/12 format)", () => {
-    const obs =
-      "Subject entered 3/12 Smith St, Fremantle WA (3/12 SMITH ST).";
+    const obs = "Subject entered 3/12 Smith St, Fremantle WA (3/12 SMITH ST).";
     const addrs = extractAddresses(obs);
     expect(addrs).toHaveLength(1);
     expect(addrs[0].shortForm).toContain("Smith");
@@ -84,8 +83,8 @@ describe("extractEntitiesFromText — address label recovery", () => {
     const obs =
       "Bruce REID (REID) arrived at 110 Broome Street, Cottesloe WA (110 BROOME ST).";
     const entities = extractEntitiesFromText(obs);
-    const persons = entities.filter((e) => e.type === "person");
-    const addrs = entities.filter((e) => e.type === "address");
+    const persons = entities.filter(e => e.type === "person");
+    const addrs = entities.filter(e => e.type === "address");
     // Person should still be extracted
     expect(persons.length).toBeGreaterThanOrEqual(1);
     expect(persons[0].rawShortForm).toBe("REID");
@@ -107,10 +106,65 @@ describe("extractEntitiesFromText — address label recovery", () => {
 
   it("handles address with business name prefix", () => {
     const obs =
-      "Target entered Ocean Beach Hotel, 1 Marine Tce, Cottesloe WA (OCEAN BEACH HOTEL).";
+      "Target entered Ocean Beach Hotel, 1 Marine Terrace, Cottesloe WA (Ocean Beach Hotel).";
     const entities = extractEntitiesFromText(obs);
-    // Should be classified as business or address
-    expect(entities.length).toBeGreaterThanOrEqual(1);
+    const addrs = entities.filter(e => e.type === "address");
+    expect(addrs).toHaveLength(1);
+    // Business name must be restored as a prefix on the display label,
+    // not dropped in favour of just the street portion.
+    expect(addrs[0].shortForm).toBe(
+      "Ocean Beach Hotel, 1 Marine Terrace, COTTESLOE"
+    );
+    expect(addrs[0].rawShortForm).toBe("Ocean Beach Hotel");
+  });
+
+  it("recovers business location display name with narrative text before the business name", () => {
+    // The bracket short form is the business name itself for business
+    // locations (per the RS convention), not a street code.
+    const obs =
+      "IOs observed the subject enter Bicton Tavern, 1 Point Walter Road, BICTON WA (Bicton Tavern) and speak with staff.";
+    const addrs = extractAddresses(obs);
+    expect(addrs).toHaveLength(1);
+    expect(addrs[0].shortForm).toBe(
+      "Bicton Tavern, 1 Point Walter Road, BICTON"
+    );
+    expect(addrs[0].rawShortForm).toBe("Bicton Tavern");
+  });
+
+  it("recovers a short single-word business name without misclassifying it as a vehicle rego", () => {
+    const obs =
+      "Subject was observed at Oushk, 61A Carrington Street, PALMYRA WA (Oushk) for approximately 20 minutes.";
+    const addrs = extractAddresses(obs);
+    expect(addrs).toHaveLength(1);
+    expect(addrs[0].shortForm).toBe("Oushk, 61A Carrington Street, PALMYRA");
+    expect(addrs[0].rawShortForm).toBe("Oushk");
+  });
+
+  it("recovers business name when narrative between two entities precedes it", () => {
+    const obs =
+      "Vehicle 1FAB007, REID driver and sole occupant, arrived at Pharmacy 777, 143 Canning Highway, SOUTH PERTH WA (Pharmacy 777) and entered the store.";
+    const addrs = extractAddresses(obs);
+    expect(addrs).toHaveLength(1);
+    expect(addrs[0].shortForm).toBe(
+      "Pharmacy 777, 143 Canning Highway, SOUTH PERTH"
+    );
+    expect(addrs[0].rawShortForm).toBe("Pharmacy 777");
+  });
+
+  it("does not prepend an unrelated business name for plain (non-business) addresses", () => {
+    const obs =
+      "Subject departed 27 Olding Way, MELVILLE WA (27 Olding Way) at 1400 hours.";
+    const addrs = extractAddresses(obs);
+    expect(addrs).toHaveLength(1);
+    expect(addrs[0].shortForm).toBe("27 Olding Way, MELVILLE");
+  });
+
+  it("title-cases a unit-letter-suffixed street number correctly (61a → 61A)", () => {
+    const obs =
+      "Subject departed 61A Carrington Street, PALMYRA WA (61A Carrington Street) at 1400 hours.";
+    const addrs = extractAddresses(obs);
+    expect(addrs).toHaveLength(1);
+    expect(addrs[0].shortForm).toBe("61A Carrington Street, PALMYRA");
   });
 
   it("handles multiple addresses in one observation", () => {
@@ -118,7 +172,7 @@ describe("extractEntitiesFromText — address label recovery", () => {
       "Vehicle departed 4 Glyde St, East Fremantle WA (4 GLYDE ST) and arrived at 110 Broome Street, Cottesloe WA (110 BROOME ST).";
     const addrs = extractAddresses(obs);
     expect(addrs).toHaveLength(2);
-    const labels = addrs.map((a) => a.shortForm);
+    const labels = addrs.map(a => a.shortForm);
     expect(labels).toContain("4 Glyde St, EAST FREMANTLE");
     expect(labels).toContain("110 Broome Street, COTTESLOE");
   });
@@ -170,7 +224,9 @@ function formatIntelAddress(shortForm: string): string {
   const parts = text.split(",");
   if (parts.length >= 2) {
     const lastPart = parts[parts.length - 1].trim();
-    const stateMatch = lastPart.match(/^(.*?)\s+(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)$/i);
+    const stateMatch = lastPart.match(
+      /^(.*?)\s+(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)$/i
+    );
     if (stateMatch) {
       const suburb = stateMatch[1].trim();
       parts[parts.length - 1] = " " + suburb.toUpperCase();
@@ -186,12 +242,23 @@ function formatIntelAddress(shortForm: string): string {
   if (finalParts.length >= 1) {
     const streetSegment = finalParts[0].trim();
     const nonDigitChars = streetSegment.replace(/[\d\s/]/g, "");
-    if (nonDigitChars.length > 0 && nonDigitChars === nonDigitChars.toUpperCase() && /[A-Z]{2}/.test(nonDigitChars)) {
-      finalParts[0] = " " + streetSegment.replace(/\b(\w+)/g, (w) => {
-        if (/^\d+$/.test(w)) return w;
-        if (/^(WA|NSW|VIC|QLD|SA|TAS|NT|ACT|HWY|RD|ST|AVE|DR|CT|PL|CL|CRES|BLVD|FWY|LN|TCE|PDE|CCT|GR|CNR)$/i.test(w)) return w.toUpperCase();
-        return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
-      });
+    if (
+      nonDigitChars.length > 0 &&
+      nonDigitChars === nonDigitChars.toUpperCase() &&
+      /[A-Z]{2}/.test(nonDigitChars)
+    ) {
+      finalParts[0] =
+        " " +
+        streetSegment.replace(/\b(\w+)/g, w => {
+          if (/^\d+$/.test(w)) return w;
+          if (
+            /^(WA|NSW|VIC|QLD|SA|TAS|NT|ACT|HWY|RD|ST|AVE|DR|CT|PL|CL|CRES|BLVD|FWY|LN|TCE|PDE|CCT|GR|CNR)$/i.test(
+              w
+            )
+          )
+            return w.toUpperCase();
+          return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+        });
       text = finalParts.join(",").trim();
     }
   }
@@ -201,31 +268,45 @@ function formatIntelAddress(shortForm: string): string {
 
 describe("formatIntelAddress — display formatting", () => {
   it("formats standard address correctly", () => {
-    expect(formatIntelAddress("1 Smith Street, Melville WA")).toBe("1 Smith Street, MELVILLE");
+    expect(formatIntelAddress("1 Smith Street, Melville WA")).toBe(
+      "1 Smith Street, MELVILLE"
+    );
   });
 
   it("title-cases all-caps street segment (safety net for old entities)", () => {
-    expect(formatIntelAddress("4 GLYDE ST, EAST FREMANTLE")).toBe("4 Glyde ST, EAST FREMANTLE");
+    expect(formatIntelAddress("4 GLYDE ST, EAST FREMANTLE")).toBe(
+      "4 Glyde ST, EAST FREMANTLE"
+    );
   });
 
   it("strips state abbreviation from suburb+state", () => {
-    expect(formatIntelAddress("146 Marine Parade, Cottesloe WA")).toBe("146 Marine Parade, COTTESLOE");
+    expect(formatIntelAddress("146 Marine Parade, Cottesloe WA")).toBe(
+      "146 Marine Parade, COTTESLOE"
+    );
   });
 
   it("strips postcode", () => {
-    expect(formatIntelAddress("131 Lakey St, Southern River WA 6110")).toBe("131 Lakey St, SOUTHERN RIVER");
+    expect(formatIntelAddress("131 Lakey St, Southern River WA 6110")).toBe(
+      "131 Lakey St, SOUTHERN RIVER"
+    );
   });
 
   it("strips ', Australia' suffix", () => {
-    expect(formatIntelAddress("131 Lakey St, Southern River WA 6110, Australia")).toBe("131 Lakey St, SOUTHERN RIVER");
+    expect(
+      formatIntelAddress("131 Lakey St, Southern River WA 6110, Australia")
+    ).toBe("131 Lakey St, SOUTHERN RIVER");
   });
 
   it("strips trailing bracket code", () => {
-    expect(formatIntelAddress("4 Glyde St, East Fremantle WA (4 GLYDE ST)")).toBe("4 Glyde St, EAST FREMANTLE");
+    expect(
+      formatIntelAddress("4 Glyde St, East Fremantle WA (4 GLYDE ST)")
+    ).toBe("4 Glyde St, EAST FREMANTLE");
   });
 
   it("handles intersection address", () => {
-    expect(formatIntelAddress("Kent St & Queens Park Rd, Wilson WA")).toBe("Kent St & Queens Park Rd, WILSON");
+    expect(formatIntelAddress("Kent St & Queens Park Rd, Wilson WA")).toBe(
+      "Kent St & Queens Park Rd, WILSON"
+    );
   });
 
   it("returns business name as-is when no address info", () => {
@@ -233,11 +314,15 @@ describe("formatIntelAddress — display formatting", () => {
   });
 
   it("handles multi-word suburb", () => {
-    expect(formatIntelAddress("187 Mill Point Road, South Perth WA")).toBe("187 Mill Point Road, SOUTH PERTH");
+    expect(formatIntelAddress("187 Mill Point Road, South Perth WA")).toBe(
+      "187 Mill Point Road, SOUTH PERTH"
+    );
   });
 
   it("handles already-correctly-formatted address (idempotent)", () => {
-    expect(formatIntelAddress("4 Glyde St, EAST FREMANTLE")).toBe("4 Glyde St, EAST FREMANTLE");
+    expect(formatIntelAddress("4 Glyde St, EAST FREMANTLE")).toBe(
+      "4 Glyde St, EAST FREMANTLE"
+    );
   });
 
   it("does not title-case suburb (suburb stays CAPS)", () => {

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -40,13 +40,17 @@ import {
   Car,
   Home,
   Hash,
+  AlertTriangle,
+  Merge,
 } from "lucide-react";
 import { ViewToggle } from "@/components/ViewToggle";
 import { useViewMode } from "@/contexts/ViewModeContext";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
 import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
+import { EntityAutocompleteInput } from "@/components/EntityAutocompleteInput";
 import { extractShortVehicle, extractShortTarget, extractShortAddress } from "@/lib/addressFormat";
+import { TargetMergeDialog, type ExistingTargetLike } from "@/components/TargetMergeDialog";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -204,6 +208,35 @@ function TargetCard({
   const [dirty, setDirty] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  // Re-sync editable fields when the underlying record actually changes on
+  // the server (e.g. a duplicate-target merge updates it while this card
+  // is already mounted, since it's keyed by id and doesn't remount) — the
+  // useState initializers above only run once, so without this the card
+  // keeps showing whatever was true when it first mounted. Skipped while
+  // the user has unsaved local edits so an in-progress edit isn't clobbered
+  // by a background refetch.
+  useEffect(() => {
+    if (dirty) return;
+    setName(target.name);
+    setTgt(target.tgt ?? "");
+    setHbf(target.hbf ?? "");
+    setHb(target.hb ?? "");
+    setV1f(target.v1f ?? "");
+    setV1(target.v1 ?? "");
+    setDep(target.dep ?? "");
+    setArr(target.arr ?? "");
+    const parsedVehicles = parseExtraVehicles(target.extraVehicles);
+    setExtraVehicles(
+      parsedVehicles.length > 0
+        ? parsedVehicles
+        : target.v2f || target.v2
+          ? [{ full: target.v2f ?? "", short: target.v2 ?? "" }]
+          : []
+    );
+    setWildFields(parseWildFields(target.wildFields));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target.updatedAt?.getTime()]);
+
   const mark = (fn: () => void) => { fn(); setDirty(true); };
 
   const addVehicle = () => { setExtraVehicles(v => [...v, { full: "", short: "" }]); setDirty(true); };
@@ -319,9 +352,10 @@ function TargetCard({
 
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Full Name, Born</label>
-            <Input
+            <EntityAutocompleteInput
+              entityType="person"
               value={name}
-              onChange={e => { setName(e.target.value); setDirty(true); }}
+              onChange={v => { setName(v); setDirty(true); }}
               onBlur={(e) => {
                 const short = extractShortTarget(e.target.value);
                 if (short && !tgt) mark(() => setTgt(short));
@@ -358,9 +392,10 @@ function TargetCard({
           {/* Vehicle 1 Full (V1F) */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle 1 Full (V1F)</label>
-            <Input
+            <EntityAutocompleteInput
+              entityType="vehicle"
               value={v1f}
-              onChange={e => mark(() => setV1f(e.target.value))}
+              onChange={v => mark(() => setV1f(v))}
               onBlur={(e) => {
                 const short = extractShortVehicle(e.target.value);
                 if (short && !v1) mark(() => setV1(short));
@@ -389,9 +424,10 @@ function TargetCard({
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle {num} Full (V{num}F)</label>
-                  <Input
+                  <EntityAutocompleteInput
+                    entityType="vehicle"
                     value={ev.full}
-                    onChange={e => updateVehicle(i, 'full', e.target.value)}
+                    onChange={v => updateVehicle(i, 'full', v)}
                     onBlur={(e) => {
                       const short = extractShortVehicle(e.target.value);
                       if (short && !ev.short) updateVehicle(i, 'short', short);
@@ -598,19 +634,34 @@ function AddTargetDialog({
   const [extraVehicles, setExtraVehicles] = useState<ExtraVehicle[]>([]);
   const [wildFields, setWildFields] = useState<WildField[]>([]);
   const [saving, setSaving] = useState(false);
+  const utils = trpc.useUtils();
+
+  // ── Possible-duplicate detection (fires on Save, not while typing) ──
+  // A name that fuzzy-matches an existing target offers a merge instead of
+  // silently creating a lookalike duplicate record.
+  const [dupMatch, setDupMatch] = useState<{ id: number; name: string; reason: string } | null>(null);
+  const [existingFull, setExistingFull] = useState<ExistingTargetLike | null>(null);
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [checkingDup, setCheckingDup] = useState(false);
+
+  const resetAndClose = () => {
+    setForm(EMPTY_FORM);
+    setExtraVehicles([]);
+    setWildFields([]);
+    setDupMatch(null);
+    setExistingFull(null);
+    setMergeOpen(false);
+    onClose();
+  };
 
   const setField = (field: keyof TargetForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(f => ({ ...f, [field]: e.target.value }));
 
-  const handleSave = async () => {
-    if (!form.name.trim()) { toast.error("Target name is required."); return; }
+  const saveAsNew = async () => {
     setSaving(true);
     try {
       await onSave({ ...form, extraVehicles, wildFields });
-      setForm(EMPTY_FORM);
-      setExtraVehicles([]);
-      setWildFields([]);
-      onClose();
+      resetAndClose();
     } catch (err: any) {
       toast.error(err?.message ?? "Failed to save target.");
     } finally {
@@ -618,8 +669,36 @@ function AddTargetDialog({
     }
   };
 
+  const handleSave = async () => {
+    if (!form.name.trim()) { toast.error("Target name is required."); return; }
+    setCheckingDup(true);
+    try {
+      const match = await utils.target.registry.findPossibleDuplicate.fetch({ name: form.name });
+      if (match) {
+        setDupMatch(match);
+      } else {
+        await saveAsNew();
+      }
+    } catch {
+      // If the duplicate check itself fails, don't block the save.
+      await saveAsNew();
+    } finally {
+      setCheckingDup(false);
+    }
+  };
+
+  const handleMergeInstead = async () => {
+    if (!dupMatch) return;
+    const full = await utils.target.getById.fetch({ id: dupMatch.id });
+    if (!full) { toast.error("Couldn't load the existing target."); return; }
+    setExistingFull(full);
+    setDupMatch(null);
+    setMergeOpen(true);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
+    <>
+    <Dialog open={open && !mergeOpen} onOpenChange={v => { if (!v) resetAndClose(); }}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Add Target to Registry</DialogTitle>
@@ -627,9 +706,10 @@ function AddTargetDialog({
         <div className="flex flex-col gap-3 py-2">
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Full Name, Born *</label>
-            <Input
+            <EntityAutocompleteInput
+              entityType="person"
               value={form.name}
-              onChange={setField("name")}
+              onChange={v => setForm(f => ({ ...f, name: v }))}
               onBlur={(e) => {
                 const short = extractShortTarget(e.target.value);
                 if (short) setForm(f => ({ ...f, tgt: f.tgt || short }));
@@ -668,9 +748,10 @@ function AddTargetDialog({
           {/* Vehicle 1 Full (V1F) */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle 1 Full (V1F)</label>
-            <Input
+            <EntityAutocompleteInput
+              entityType="vehicle"
               value={form.v1f}
-              onChange={setField("v1f")}
+              onChange={v => setForm(f => ({ ...f, v1f: v }))}
               onBlur={(e) => {
                 const short = extractShortVehicle(e.target.value);
                 if (short) setForm(f => ({ ...f, v1: f.v1 || short }));
@@ -693,9 +774,10 @@ function AddTargetDialog({
                   <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5"><Car className="w-3 h-3" /> Vehicle {num}</span>
                   <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => setExtraVehicles(v => v.filter((_, idx) => idx !== i))}><X className="w-3 h-3" /></Button>
                 </div>
-                <Input
+                <EntityAutocompleteInput
+                  entityType="vehicle"
                   value={ev.full}
-                  onChange={e => setExtraVehicles(v => v.map((item, idx) => idx === i ? { ...item, full: e.target.value } : item))}
+                  onChange={v => setExtraVehicles(list => list.map((item, idx) => idx === i ? { ...item, full: v } : item))}
                   onBlur={(e) => {
                     const short = extractShortVehicle(e.target.value);
                     if (short) setExtraVehicles(v => v.map((item, idx) => idx === i ? { ...item, short: item.short || short } : item));
@@ -736,13 +818,58 @@ function AddTargetDialog({
           ))}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button onClick={handleSave} disabled={saving}>
-            {saving ? "Saving…" : "Save Target"}
+          <Button variant="outline" onClick={resetAndClose} disabled={saving || checkingDup}>Cancel</Button>
+          <Button onClick={handleSave} disabled={saving || checkingDup}>
+            {checkingDup ? "Checking…" : saving ? "Saving…" : "Save Target"}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    {/* Possible duplicate — asks before either creating a lookalike or merging */}
+    <AlertDialog open={dupMatch !== null} onOpenChange={v => { if (!v) setDupMatch(null); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+            Possible duplicate target
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            "{form.name}" looks like it may be the same person as an existing target, <strong>{dupMatch?.name}</strong> ({dupMatch?.reason}). Is this the same person?
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter className="flex flex-col sm:flex-col gap-2">
+          <Button onClick={handleMergeInstead} className="w-full">
+            <Merge className="w-4 h-4 mr-1.5" /> Yes — merge details
+          </Button>
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => { setDupMatch(null); saveAsNew(); }}
+          >
+            No, different person — create new
+          </Button>
+          <AlertDialogCancel onClick={() => setDupMatch(null)} className="w-full mt-0">
+            Cancel
+          </AlertDialogCancel>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    {/* Field-level merge into the existing target */}
+    {existingFull && (
+      <TargetMergeDialog
+        open={mergeOpen}
+        onOpenChange={v => { setMergeOpen(v); if (!v) setExistingFull(null); }}
+        existing={existingFull}
+        incoming={{ ...form, extraVehicles, wildFields }}
+        onMerged={() => {
+          utils.target.registry.list.invalidate();
+          resetAndClose();
+        }}
+      />
+    )}
+    </>
   );
 }
 
@@ -758,7 +885,13 @@ export default function TargetRegistryPage() {
   const [sortBy, setSortBy] = useState<"alpha" | "recent" | "operation">("alpha");
   const [showCreate, setShowCreate] = useState(false);
   const [linkTarget, setLinkTarget] = useState<RegistryTarget | null>(null);
-  const [selectedTileTarget, setSelectedTileTarget] = useState<RegistryTarget | null>(null);
+  // Store just the id, not a snapshot of the target object — deriving it
+  // live from `targets` below means the tile dialog always reflects the
+  // latest data (e.g. right after a merge), instead of freezing whatever
+  // was true at the moment the tile was clicked.
+  const [selectedTileTargetId, setSelectedTileTargetId] = useState<number | null>(null);
+  const selectedTileTarget =
+    (targets?.find(t => t.id === selectedTileTargetId) as RegistryTarget | undefined) ?? null;
 
   const createMutation = trpc.target.registry.create.useMutation({
     onSuccess: () => { utils.target.registry.list.invalidate(); toast.success("Target added to registry."); },
@@ -898,7 +1031,7 @@ export default function TargetRegistryPage() {
               <div
                 key={t.id}
                 className="group flex flex-col gap-3 p-5 rounded-xl border border-border bg-card hover:bg-accent/20 hover:border-primary/30 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 cursor-pointer"
-                onClick={() => setSelectedTileTarget(t as RegistryTarget)}
+                onClick={() => setSelectedTileTargetId(t.id)}
               >
                 {/* Header */}
                 <div className="flex items-start justify-between gap-2">
@@ -967,7 +1100,7 @@ export default function TargetRegistryPage() {
 
       {/* Tile view — target detail dialog */}
       {selectedTileTarget && (
-        <Dialog open={!!selectedTileTarget} onOpenChange={(open) => { if (!open) setSelectedTileTarget(null); }}>
+        <Dialog open={!!selectedTileTarget} onOpenChange={(open) => { if (!open) setSelectedTileTargetId(null); }}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
@@ -977,8 +1110,8 @@ export default function TargetRegistryPage() {
             </DialogHeader>
             <TargetCard
               target={selectedTileTarget}
-              onDeleted={() => { setSelectedTileTarget(null); utils.target.registry.list.invalidate(); }}
-              onLinkOps={() => { setSelectedTileTarget(null); setLinkTarget(selectedTileTarget); }}
+              onDeleted={() => { setSelectedTileTargetId(null); utils.target.registry.list.invalidate(); }}
+              onLinkOps={() => { setLinkTarget(selectedTileTarget); setSelectedTileTargetId(null); }}
               defaultExpanded
             />
           </DialogContent>

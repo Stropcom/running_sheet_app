@@ -20,6 +20,7 @@ import {
 import { useLocation } from "wouter";
 import { format } from "date-fns";
 import { downloadBase64File } from "@/lib/downloadFile";
+import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 
 function formatDateShort(ts: number) {
   return format(new Date(ts), "d MMM yyyy");
@@ -164,6 +165,7 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
     <span>SENSITIVE — FOR OFFICIAL USE ONLY — ${generatedAt}</span>
   </div>
 </div>
+${buildExportPreviewCloseBar()}
 </body></html>`;
 }
 

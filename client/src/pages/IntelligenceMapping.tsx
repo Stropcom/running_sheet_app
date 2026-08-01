@@ -979,18 +979,6 @@ export default function IntelligenceMapping() {
       ? panelWidthProfile
       : panelWidthNormal;
 
-  // Draggable side-tab vertical position (percentage from top, 0-100)
-  const [rightTabTop, setRightTabTop] = useState<number>(() => {
-    try {
-      const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
-      if (s) return JSON.parse(s).rightTabTop ?? 50;
-    } catch {
-      /* ignore */
-    }
-    return 50;
-  });
-  const rightTabDraggingRef = useRef(false);
-
   // Draggable pill bar vertical position (percentage from top, 5-95)
   const [pillBarTop, setPillBarTop] = useState<number>(() => {
     try {
@@ -1267,6 +1255,11 @@ export default function IntelligenceMapping() {
   const [mapReady, setMapReady] = useState(false);
   const mapRef = useRef<google.maps.Map | null>(null);
   const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
+  // Direct img element refs for live rotation/icon updates without stale
+  // `.content.querySelector` lookups — mirrors customMarkerImgRefs below,
+  // keyed by the intel pin's location label (same key markersRef entries
+  // are found by via `.title`).
+  const intelPinImgRefs = useRef<Map<string, HTMLImageElement>>(new Map());
   // Key: "userId_deviceId" for per-device pins
   const liveMarkersRef = useRef<
     Map<string, google.maps.marker.AdvancedMarkerElement>
@@ -1294,7 +1287,6 @@ export default function IntelligenceMapping() {
           collapsedTeams: Array.from(collapsedTeams),
           rsQeExpanded,
           mapDarkMode,
-          rightTabTop,
           pillBarTop,
           panelWidthNormal,
           panelWidthProfile,
@@ -1314,7 +1306,6 @@ export default function IntelligenceMapping() {
     collapsedTeams,
     rsQeExpanded,
     mapDarkMode,
-    rightTabTop,
     pillBarTop,
     panelWidthNormal,
     panelWidthProfile,
@@ -1733,6 +1724,7 @@ export default function IntelligenceMapping() {
       m.map = null;
     }
     markersRef.current = [];
+    intelPinImgRefs.current.clear();
     if (geocodeTimerRef.current) {
       clearTimeout(geocodeTimerRef.current);
       geocodeTimerRef.current = null;
@@ -1741,16 +1733,38 @@ export default function IntelligenceMapping() {
 
   const createPinElement = useCallback((loc: IntelMapLocation) => {
     const isTarget = loc.type === "target_address";
-    const colour = isTarget ? "red" : ("purple" as "red" | "purple");
     const count = loc.linkCount;
+
+    // Read any saved appearance override (icon/colour/rotation) — same
+    // localStorage key the popup's rotation slider and Edit dialog write
+    // to — so a customization set once actually survives the pin being
+    // recreated (map data refresh, filter changes, etc.) instead of only
+    // taking visible effect until the next redraw.
+    let icon: MarkerIcon = "house_filled";
+    let colour: MarkerColour = isTarget ? "red" : "purple";
+    let rotation = 0;
+    try {
+      const stored = localStorage.getItem(`runlog_intel_appearance_${loc.label}`);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.icon) icon = parsed.icon;
+        if (parsed.colour) colour = parsed.colour;
+        if (typeof parsed.rotation === "number") rotation = parsed.rotation;
+      }
+    } catch {
+      /* ignore */
+    }
 
     const el = document.createElement("div");
     el.style.cssText = `position:relative;display:inline-flex;flex-direction:column;align-items:center;cursor:pointer;`;
 
     const img = document.createElement("img");
-    img.src = getMarkerDataUrl("house_filled", colour);
-    img.style.cssText = `width:40px;height:40px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4));display:block;`;
+    img.src = getMarkerDataUrl(icon, colour);
+    img.style.cssText = `width:40px;height:40px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4));display:block;transform:rotate(${rotation}deg);`;
     el.appendChild(img);
+    // Direct img ref for live rotation/icon updates — avoids stale
+    // `.content.querySelector` lookups (see intelPinImgRefs declaration).
+    intelPinImgRefs.current.set(loc.label, img);
 
     if (count > 0) {
       const badge = document.createElement("div");
@@ -2787,16 +2801,26 @@ export default function IntelligenceMapping() {
       ) as HTMLElement | null;
       if (previewImg) previewImg.style.transform = `rotate(${rotation}deg)`;
       if (degLabel) degLabel.textContent = `${rotation}°`;
-      // Update the actual map marker element
-      const markerEntry = markersRef.current.find(
-        (m: any) => m.title === label
-      );
-      if (markerEntry?.content instanceof HTMLElement) {
-        const img = markerEntry.content.querySelector(
-          "img"
-        ) as HTMLImageElement | null;
-        if (img)
-          img.style.transform = `rotate(${rotation}deg) drop-shadow(0 2px 4px rgba(0,0,0,0.4))`;
+      // Update the actual map marker element — direct img ref first (avoids
+      // stale `.content.querySelector` lookups after a marker gets
+      // recreated), falling back to querySelector if the ref isn't set.
+      // Note: `filter:drop-shadow(...)` is applied once at creation time
+      // via the img's base cssText — it must not be mixed into `transform`
+      // here, drop-shadow() isn't a valid transform function and doing so
+      // makes the browser silently reject the whole transform value.
+      const directImg = intelPinImgRefs.current.get(label);
+      if (directImg) {
+        directImg.style.transform = `rotate(${rotation}deg)`;
+      } else {
+        const markerEntry = markersRef.current.find(
+          (m: any) => m.title === label
+        );
+        if (markerEntry?.content instanceof HTMLElement) {
+          const img = markerEntry.content.querySelector(
+            "img"
+          ) as HTMLImageElement | null;
+          if (img) img.style.transform = `rotate(${rotation}deg)`;
+        }
       }
       // Persist to localStorage immediately
       try {
@@ -3126,7 +3150,12 @@ export default function IntelligenceMapping() {
   };
 
   return (
-    <DashboardLayout>
+    <DashboardLayout
+      rightPaneToggle={{
+        isOpen: rsActionsPaneOpen,
+        onToggle: () => setRsActionsPaneOpen(o => !o),
+      }}
+    >
     <div
       className="relative flex w-full overflow-hidden"
       style={{ height: "calc(100vh - 0px)" }}
@@ -3322,7 +3351,7 @@ export default function IntelligenceMapping() {
                 <input
                   type="text"
                   value={addrSearch}
-                  placeholder="Search address…"
+                  placeholder="Search address or business…"
                   className="flex-1 px-2 text-sm outline-none bg-transparent text-gray-800 placeholder-gray-400"
                   style={{ height: "40px" }}
                   onChange={e => {
@@ -3338,11 +3367,14 @@ export default function IntelligenceMapping() {
                     addrSearchDebounceRef.current = setTimeout(() => {
                       if (!autocompleteServiceRef.current) return;
                       const mapCentre = mapRef.current?.getCenter();
+                      // No `types` restriction — Google Places only allows one
+                      // type-category filter at a time (or none), and omitting
+                      // it is the only way to get both street addresses and
+                      // business/establishment results in the same search.
                       const addrRequest: google.maps.places.AutocompletionRequest =
                         {
                           input: val,
                           componentRestrictions: { country: "au" },
-                          types: ["address"],
                         };
                       if (mapCentre) {
                         addrRequest.locationBias = new google.maps.Circle({
@@ -3460,81 +3492,9 @@ export default function IntelligenceMapping() {
           </div>
         </div>
 
-        {/* RS Actions pane toggle tab — right edge, draggable */}
-        {!rsActionsPaneOpen && (
-          <button
-            onClick={e => {
-              if (rightTabDraggingRef.current) {
-                rightTabDraggingRef.current = false;
-                return;
-              }
-              e.stopPropagation();
-              setRsActionsPaneOpen(true);
-            }}
-            className="absolute right-0 z-10 flex items-center justify-center bg-card border-2 border-r-0 border-border shadow-lg hover:bg-accent active:scale-95 transition-colors cursor-grab active:cursor-grabbing select-none touch-none"
-            style={{
-              top: `${rightTabTop}%`,
-              transform: "translateY(-50%)",
-              width: "40px",
-              height: "112px",
-              borderRadius: "12px 0 0 12px",
-            }}
-            title="Open Map Settings (drag to reposition)"
-            onMouseDown={e => {
-              e.stopPropagation();
-              const startY = e.clientY;
-              const startTop = rightTabTop;
-              const parentH =
-                e.currentTarget.parentElement?.clientHeight ??
-                window.innerHeight;
-              let moved = false;
-              const onMove = (me: MouseEvent) => {
-                const delta = me.clientY - startY;
-                if (Math.abs(delta) > 3) moved = true;
-                const newPct = Math.max(
-                  5,
-                  Math.min(95, startTop + (delta / parentH) * 100)
-                );
-                setRightTabTop(newPct);
-              };
-              const onUp = () => {
-                if (moved) rightTabDraggingRef.current = true;
-                document.removeEventListener("mousemove", onMove);
-                document.removeEventListener("mouseup", onUp);
-              };
-              document.addEventListener("mousemove", onMove);
-              document.addEventListener("mouseup", onUp);
-            }}
-            onTouchStart={e => {
-              e.stopPropagation();
-              const touch = e.touches[0];
-              const startY = touch.clientY;
-              const startTop = rightTabTop;
-              const parentH =
-                e.currentTarget.parentElement?.clientHeight ??
-                window.innerHeight;
-              let moved = false;
-              const onMove = (te: TouchEvent) => {
-                const delta = te.touches[0].clientY - startY;
-                if (Math.abs(delta) > 3) moved = true;
-                const newPct = Math.max(
-                  5,
-                  Math.min(95, startTop + (delta / parentH) * 100)
-                );
-                setRightTabTop(newPct);
-              };
-              const onEnd = () => {
-                if (moved) rightTabDraggingRef.current = true;
-                document.removeEventListener("touchmove", onMove);
-                document.removeEventListener("touchend", onEnd);
-              };
-              document.addEventListener("touchmove", onMove, { passive: true });
-              document.addEventListener("touchend", onEnd);
-            }}
-          >
-            <ChevronLeft className="h-5 w-5 text-muted-foreground" />
-          </button>
-        )}
+        {/* RS Actions pane is now opened via the header folder-expander icon
+            (DashboardLayout's rightPaneToggle prop) instead of a draggable
+            side tab — see the DashboardLayout invocation below. */}
 
         {/* ── Draggable Floating Pill Bar (all devices) ──
              Tap-hold the drag handle to reposition vertically. Position persisted to localStorage. */}
@@ -3627,8 +3587,9 @@ export default function IntelligenceMapping() {
             {/* Home pill (all devices) — solid filled chip (not translucent) so
                 it stays legible over busy satellite imagery, matching the
                 other opaque on-map markers (e.g. the pink custom marker pin).
-                Lighter -500 shade instead of -700 for a softer look, -700
-                border keeps the pill defined against light terrain. */}
+                -400 fill / -600 border (one step softer than the previous
+                -500/-700) keeps it defined against terrain without reading
+                as heavy; all four pills share this same fixed w-20 size. */}
             <button
               onClick={e => {
                 if (pillBarIsDraggingRef.current) {
@@ -3637,7 +3598,7 @@ export default function IntelligenceMapping() {
                 }
                 setLocation("/");
               }}
-              className="flex flex-col items-center justify-center gap-1 px-5 py-2.5 rounded-2xl shadow-lg border transition-all w-20 text-white border-slate-700 bg-slate-500 hover:bg-slate-400 active:scale-95"
+              className="flex flex-col items-center justify-center gap-1 px-5 py-2.5 rounded-2xl shadow-lg border transition-all w-20 text-white border-slate-600 bg-slate-400 hover:bg-slate-300 active:scale-95"
               title="Home"
             >
               <Home className="h-5 w-5 flex-shrink-0" />
@@ -3664,9 +3625,9 @@ export default function IntelligenceMapping() {
                     }
                     if (activeSheet) setLocation(`/sheet/${rsSelectedSheetId}`);
                   }}
-                  className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all min-w-[80px] px-5 py-2.5 ${
+                  className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all w-20 px-5 py-2.5 ${
                     activeSheet
-                      ? "text-white border-blue-700 bg-blue-500 hover:bg-blue-400 active:scale-95 cursor-pointer"
+                      ? "text-white border-blue-600 bg-blue-400 hover:bg-blue-300 active:scale-95 cursor-pointer"
                       : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"
                   }`}
                   title={
@@ -3696,9 +3657,9 @@ export default function IntelligenceMapping() {
                     }
                     if (hasSheet) setMapQeOpen(true);
                   }}
-                  className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all min-w-[80px] px-5 py-2.5 ${
+                  className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all w-20 px-5 py-2.5 ${
                     hasSheet
-                      ? "text-white border-emerald-700 bg-emerald-500 hover:bg-emerald-400 active:scale-95 cursor-pointer"
+                      ? "text-white border-emerald-600 bg-emerald-400 hover:bg-emerald-300 active:scale-95 cursor-pointer"
                       : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"
                   }`}
                   title={
@@ -3722,7 +3683,7 @@ export default function IntelligenceMapping() {
                 }
                 setLocation("/intelligence");
               }}
-              className="flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all w-20 px-5 py-2.5 text-white border-violet-700 bg-violet-500 hover:bg-violet-400 active:scale-95"
+              className="flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all w-20 px-5 py-2.5 text-white border-violet-600 bg-violet-400 hover:bg-violet-300 active:scale-95"
               title="Intel Profiles"
             >
               <FolderSearch className="h-5 w-5 flex-shrink-0" />
@@ -4120,27 +4081,6 @@ export default function IntelligenceMapping() {
                 </div>
               )}
 
-              {/* Sheet link — shown below RS dropdown when sheet selected */}
-              {rsSelectedSheetId !== null &&
-                rsSheetsData &&
-                (() => {
-                  const sheet = (rsSheetsData as any[]).find(
-                    (s: any) => s.id === rsSelectedSheetId
-                  );
-                  return sheet ? (
-                    <button
-                      onClick={() => setLocation(`/sheet/${rsSelectedSheetId}`)}
-                      className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-primary/40 bg-primary/10 hover:bg-primary/20 active:scale-[0.98] transition-all min-w-0"
-                    >
-                      <MapIcon className="h-3.5 w-3.5 text-primary flex-shrink-0" />
-                      <span className="text-xs font-semibold text-primary truncate flex-1 text-left">
-                        {sheet.title || `Sheet #${sheet.id}`}
-                      </span>
-                      <ExternalLink className="h-3 w-3 text-primary/60 flex-shrink-0" />
-                    </button>
-                  ) : null;
-                })()}
-
               {/* RS Quick Entry moved to bottom tab bar — use the indigo RS Entry pill instead */}
             </div>
             {/* end RS Selection */}
@@ -4177,21 +4117,6 @@ export default function IntelligenceMapping() {
                         <ExternalLink className="h-3 w-3 text-blue-500/60 flex-shrink-0" />
                       </button>
                     )}
-                    {rsTargetData && (
-                      <button
-                        onClick={() => {
-                          setPaneTargetProfileId(rsTargetData.id);
-                          setPaneOperationProfileId(null);
-                        }}
-                        className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-violet-500/40 bg-violet-500/10 hover:bg-violet-500/20 active:scale-[0.98] transition-all min-w-0"
-                      >
-                        <User className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />
-                        <span className="text-xs font-semibold text-violet-500 truncate flex-1 text-left">
-                          {rsTargetData.tgt ?? rsTargetData.name}
-                        </span>
-                        <ExternalLink className="h-3 w-3 text-violet-500/60 flex-shrink-0" />
-                      </button>
-                    )}
                   </div>
                 );
               })()}
@@ -4220,14 +4145,12 @@ export default function IntelligenceMapping() {
                 }
                 return (
                   <button
-                    onClick={() =>
-                      setLocation(`/images/${opId}/${rsSelectedSheetId}`)
-                    }
+                    onClick={() => setLocation(`/images/${opId}`)}
                     className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-pink-500/40 bg-pink-500/10 hover:bg-pink-500/20 active:scale-[0.98] transition-all min-w-0"
                   >
                     <ImageIcon className="h-3.5 w-3.5 text-pink-500 flex-shrink-0" />
                     <span className="text-xs font-semibold text-pink-500 truncate flex-1 text-left">
-                      RS images
+                      Operation Images
                     </span>
                     <ExternalLink className="h-3 w-3 text-pink-500/60 flex-shrink-0" />
                   </button>
@@ -5250,21 +5173,23 @@ export default function IntelligenceMapping() {
                   } catch {
                     /* ignore */
                   }
-                  // Update the actual map marker element immediately
-                  const markerEntry = markersRef.current.find(
-                    (m: any) => m.title === editingIntelLabel
-                  );
-                  if (markerEntry?.content instanceof HTMLElement) {
-                    const img = markerEntry.content.querySelector(
-                      "img"
-                    ) as HTMLImageElement | null;
-                    if (img) {
-                      img.src = getMarkerDataUrl(
-                        intelEditIcon,
-                        intelEditColour
+                  // Update the actual map marker element immediately —
+                  // direct img ref first, querySelector fallback (see
+                  // intelPinImgRefs declaration).
+                  const directImg = intelPinImgRefs.current.get(editingIntelLabel);
+                  const img =
+                    directImg ??
+                    (() => {
+                      const markerEntry = markersRef.current.find(
+                        (m: any) => m.title === editingIntelLabel
                       );
-                      img.style.transform = `rotate(${intelEditRotation}deg)`;
-                    }
+                      return markerEntry?.content instanceof HTMLElement
+                        ? (markerEntry.content.querySelector("img") as HTMLImageElement | null)
+                        : null;
+                    })();
+                  if (img) {
+                    img.src = getMarkerDataUrl(intelEditIcon, intelEditColour);
+                    img.style.transform = `rotate(${intelEditRotation}deg)`;
                   }
                   setEditingIntelLabel(null);
                   toast.success("Marker appearance saved");

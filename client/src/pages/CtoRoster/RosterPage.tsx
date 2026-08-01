@@ -51,6 +51,7 @@ import {
   ClipboardPaste,
   Scissors,
   Repeat,
+  AlertTriangle,
 } from "lucide-react";
 import {
   SHIFT_CODES,
@@ -148,6 +149,7 @@ type ShiftData = {
   shiftTime?: string | null;
   comment?: string | null;
   isActing?: boolean;
+  shiftDurationHours?: number | null;
 };
 type Secondment = {
   id: number;
@@ -196,6 +198,17 @@ function getEffectiveCountableMembers(
   });
 }
 
+interface EbaFinding {
+  ruleKey: string;
+  ruleTitle: string;
+  eaReference: string | null;
+  memberId: number;
+  memberName: string;
+  dates: string[];
+  detail: string;
+  severity: "warning" | "error";
+}
+
 const MONTHS = [
   "May 2026",
   "Jun 2026",
@@ -228,11 +241,13 @@ function ShiftEditSheet({
   currentComment,
   currentIsActing,
   currentShiftTime,
+  currentShiftDurationHours,
   isAdmin,
   onClose,
   onSaveShift,
   onSaveAnnotation,
   onCopyShift,
+  issues,
 }: {
   open: boolean;
   memberName: string;
@@ -241,11 +256,19 @@ function ShiftEditSheet({
   currentComment: string;
   currentIsActing: boolean;
   currentShiftTime?: string | null;
+  /** Deployment shift duration override (8 or 9), if one is set. */
+  currentShiftDurationHours?: number | null;
   isAdmin: boolean;
   onClose: () => void;
-  onSaveShift: (code: string, shiftTime?: string | null) => void;
+  onSaveShift: (
+    code: string,
+    shiftTime?: string | null,
+    shiftDurationHours?: number | null
+  ) => void;
   onSaveAnnotation: (comment: string | null, isActing: boolean) => void;
   onCopyShift?: () => void;
+  /** Live EA compliance findings involving this member/date, if any. */
+  issues?: EbaFinding[];
 }) {
   const isMobile = useIsMobile();
   const [comment, setComment] = useState(currentComment);
@@ -257,15 +280,27 @@ function ShiftEditSheet({
   const [shiftTime, setShiftTime] = useState<string>(
     currentShiftTime ?? defaultTime(currentCode)
   );
+  // Deployment shift duration (8hr/9hr) — defaults to 9hr, the standard length
+  const [durationHours, setDurationHours] = useState<number>(
+    currentShiftDurationHours ?? 9
+  );
   useEffect(() => {
     if (open) {
       setComment(currentComment);
       setIsActing(currentIsActing);
       setPendingCode(currentCode);
       setShiftTime(currentShiftTime ?? defaultTime(currentCode));
+      setDurationHours(currentShiftDurationHours ?? 9);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, currentComment, currentIsActing, currentCode, currentShiftTime]);
+  }, [
+    open,
+    currentComment,
+    currentIsActing,
+    currentCode,
+    currentShiftTime,
+    currentShiftDurationHours,
+  ]);
   const label =
     SHIFT_LABELS[currentCode as keyof typeof SHIFT_LABELS] ?? currentCode;
   const time =
@@ -275,22 +310,45 @@ function ShiftEditSheet({
 
   const inner = (
     <div>
-      {currentCode && (
-        <div className="flex items-center gap-2 mb-4">
-          <div
-            className={cn(
-              "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium",
-              shiftClass(currentCode)
-            )}
-          >
-            <span className="font-bold uppercase">{currentCode}</span>
-            <span className="opacity-60">·</span>
-            <span>
-              {label}
-              {time ? ` · ${time}` : ""}
+      {issues && issues.length > 0 && (
+        <div className="rounded-xl border border-red-500/40 bg-red-500/5 p-3.5 mb-4 space-y-2">
+          <div className="flex items-center gap-1.5 text-red-600 dark:text-red-400">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            <span className="text-xs font-semibold uppercase tracking-wide">
+              EA Compliance Issue{issues.length !== 1 ? "s" : ""}
             </span>
           </div>
-          {isAdmin && onCopyShift && (
+          {issues.map((f, i) => (
+            <div key={i} className="text-xs text-foreground">
+              <span className="font-semibold">{f.ruleTitle}</span>
+              {f.eaReference && (
+                <span className="ml-1.5 font-mono text-muted-foreground">
+                  {f.eaReference}
+                </span>
+              )}
+              <p className="text-muted-foreground mt-0.5">{f.detail}</p>
+            </div>
+          ))}
+        </div>
+      )}
+      {(currentCode || pendingCode === "dep") && (
+        <div className="flex items-center gap-2 mb-4 flex-wrap">
+          {currentCode && (
+            <div
+              className={cn(
+                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium",
+                shiftClass(currentCode)
+              )}
+            >
+              <span className="font-bold uppercase">{currentCode}</span>
+              <span className="opacity-60">·</span>
+              <span>
+                {label}
+                {time ? ` · ${time}` : ""}
+              </span>
+            </div>
+          )}
+          {currentCode && isAdmin && onCopyShift && (
             <button
               onClick={() => {
                 onCopyShift();
@@ -302,6 +360,25 @@ function ShiftEditSheet({
               <Copy className="h-3.5 w-3.5" />
               Copy
             </button>
+          )}
+          {isAdmin && pendingCode === "dep" && (
+            <div className="flex items-center gap-1 rounded-lg border border-border p-0.5">
+              {[8, 9].map(h => (
+                <button
+                  key={h}
+                  onClick={() => setDurationHours(h)}
+                  className={cn(
+                    "px-2.5 py-1 rounded-md text-xs font-semibold transition-colors",
+                    durationHours === h
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:bg-muted"
+                  )}
+                  title={`Count this Deployment shift as ${h} hours in EA compliance calculations`}
+                >
+                  {h}hr
+                </button>
+              ))}
+            </div>
           )}
         </div>
       )}
@@ -420,7 +497,11 @@ function ShiftEditSheet({
                 className="flex-1"
                 size="sm"
                 onClick={() => {
-                  onSaveShift(pendingCode, shiftTime || null);
+                  onSaveShift(
+                    pendingCode,
+                    shiftTime || null,
+                    pendingCode === "dep" ? durationHours : null
+                  );
                   onClose();
                 }}
               >
@@ -430,7 +511,7 @@ function ShiftEditSheet({
             {currentCode && (
               <button
                 onClick={() => {
-                  onSaveShift("", null);
+                  onSaveShift("", null, null);
                   onClose();
                 }}
                 className="flex-1 text-xs text-muted-foreground py-2 rounded-lg hover:bg-destructive/10 hover:text-destructive transition-colors font-medium border border-border/50"
@@ -517,7 +598,8 @@ function BulkApplySheet({
     code: ShiftCode | null,
     isActing: boolean,
     actingOnly: boolean,
-    shiftTime: string | null
+    shiftTime: string | null,
+    shiftDurationHours: number | null
   ) => void;
 }) {
   const isMobile = useIsMobile();
@@ -527,12 +609,15 @@ function BulkApplySheet({
   const defaultTime = (code: string) =>
     SHIFT_TIMES[code as keyof typeof SHIFT_TIMES] ?? "";
   const [shiftTime, setShiftTime] = useState<string>(defaultTime("d"));
+  // Deployment shift duration (8hr/9hr) — defaults to 9hr, the standard length
+  const [durationHours, setDurationHours] = useState<number>(9);
   useEffect(() => {
     if (open) {
       setSelectedCode("d");
       setIsActing(false);
       setActingOnly(false);
       setShiftTime(defaultTime("d"));
+      setDurationHours(9);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -619,6 +704,31 @@ function BulkApplySheet({
               );
             })}
           </div>
+          {/* Deployment shift duration — feeds EA compliance hour calculations */}
+          {selectedCode === "dep" && (
+            <div className="flex items-center gap-2 mb-4">
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide whitespace-nowrap">
+                Duration
+              </Label>
+              <div className="flex items-center gap-1 rounded-lg border border-border p-0.5">
+                {[8, 9].map(h => (
+                  <button
+                    key={h}
+                    onClick={() => setDurationHours(h)}
+                    className={cn(
+                      "px-2.5 py-1 rounded-md text-xs font-semibold transition-colors",
+                      durationHours === h
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:bg-muted"
+                    )}
+                    title={`Count these Deployment shifts as ${h} hours in EA compliance calculations`}
+                  >
+                    {h}hr
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {/* Time picker */}
           {SHIFT_TIMES[selectedCode as keyof typeof SHIFT_TIMES] !==
             undefined && (
@@ -655,7 +765,8 @@ function BulkApplySheet({
               actingOnly ? null : selectedCode,
               isActing,
               actingOnly,
-              actingOnly ? null : shiftTime || null
+              actingOnly ? null : shiftTime || null,
+              !actingOnly && selectedCode === "dep" ? durationHours : null
             )
           }
         >
@@ -1378,6 +1489,7 @@ export default function RosterPage() {
     currentComment: string;
     currentIsActing: boolean;
     currentShiftTime: string | null;
+    currentShiftDurationHours: number | null;
   } | null>(null);
 
   // Copy/paste clipboard
@@ -1402,6 +1514,29 @@ export default function RosterPage() {
       { staleTime: 60_000 }
     );
   const { data: secondmentsData } = trpc.ctoRoster.secondments.list.useQuery();
+
+  // Live EA compliance findings, recomputed from current shift data — used to
+  // mark affected cells with a red dot and show detail in the edit sheet.
+  const ebaQuery = trpc.ctoRoster.eba.liveFindings.useQuery(undefined, {
+    enabled: isAdmin,
+    staleTime: 30_000,
+  });
+  const issuesByCell = useMemo(() => {
+    const map = new Map<string, EbaFinding[]>();
+    for (const f of ebaQuery.data?.findings ?? []) {
+      for (const d of f.dates) {
+        const key = `${f.memberId}-${d}`;
+        const existing = map.get(key);
+        if (existing) existing.push(f);
+        else map.set(key, [f]);
+      }
+    }
+    return map;
+  }, [ebaQuery.data]);
+  const issueCells = useMemo(
+    () => new Set(issuesByCell.keys()),
+    [issuesByCell]
+  );
 
   // One secondment at a time per member (enforced server-side), so this is
   // a straight memberId -> secondment lookup.
@@ -1457,11 +1592,15 @@ export default function RosterPage() {
         );
       toast.error(`Failed to update: ${e.message}`);
     },
-    onSettled: () => utils.ctoRoster.roster.getRange.invalidate(),
+    onSettled: () => {
+      utils.ctoRoster.roster.getRange.invalidate();
+      utils.ctoRoster.eba.liveFindings.invalidate();
+    },
   });
   const bulkUpdate = trpc.ctoRoster.roster.bulkUpdate.useMutation({
     onSuccess: data => {
       utils.ctoRoster.roster.getRange.invalidate();
+      utils.ctoRoster.eba.liveFindings.invalidate();
       setSelectedCells(new Map());
       setBulkSheetOpen(false);
       setBulkMode(false);
@@ -1472,6 +1611,7 @@ export default function RosterPage() {
   const bulkCopy = trpc.ctoRoster.roster.bulkCopy.useMutation({
     onSuccess: data => {
       utils.ctoRoster.roster.getRange.invalidate();
+      utils.ctoRoster.eba.liveFindings.invalidate();
       setBulkCopyOpen(false);
       toast.success(`Copied ${data.count} shifts`);
     },
@@ -1480,6 +1620,7 @@ export default function RosterPage() {
   const repeatCycle = trpc.ctoRoster.roster.repeatCycle.useMutation({
     onSuccess: data => {
       utils.ctoRoster.roster.getRange.invalidate();
+      utils.ctoRoster.eba.liveFindings.invalidate();
       setRepeatCycleResult(data);
       toast.success(
         data.membersUpdated > 0
@@ -1630,6 +1771,7 @@ export default function RosterPage() {
         currentComment: shift?.comment ?? "",
         currentIsActing: shift?.isActing ?? false,
         currentShiftTime: shift?.shiftTime ?? null,
+        currentShiftDurationHours: shift?.shiftDurationHours ?? null,
       });
     },
     [bulkMode, bulkCopyMode, copiedBlock, handlePasteBlock]
@@ -1740,7 +1882,8 @@ export default function RosterPage() {
       code: ShiftCode | null,
       isActing: boolean,
       actingOnly: boolean,
-      shiftTime: string | null
+      shiftTime: string | null,
+      shiftDurationHours: number | null
     ) => {
       if (selectedCells.size === 0) return;
       if (actingOnly) {
@@ -1772,6 +1915,7 @@ export default function RosterPage() {
           shiftCode: code as ShiftCode,
           isActing,
           shiftTime,
+          shiftDurationHours,
         });
       }
     },
@@ -2293,6 +2437,7 @@ export default function RosterPage() {
                         onCopyCell={handleCopyCell}
                         onPasteCell={handlePasteCell}
                         secondmentWindow={secondmentByMemberId.get(member.id)}
+                        issueCells={issueCells}
                       />
                     ))}
 
@@ -2320,6 +2465,7 @@ export default function RosterPage() {
                         onPasteCell={handlePasteCell}
                         rowMode="acting"
                         secondmentWindow={secondmentByMemberId.get(member.id)}
+                        issueCells={issueCells}
                       />
                     ))}
 
@@ -2622,6 +2768,7 @@ export default function RosterPage() {
                             secondmentWindow={secondmentByMemberId.get(
                               member.id
                             )}
+                            issueCells={issueCells}
                           />
                         ))}
                         {isAdmin && activeDragId !== null && (
@@ -2660,6 +2807,7 @@ export default function RosterPage() {
                           onPasteCell={handlePasteCell}
                           rowMode="acting"
                           secondmentWindow={secondmentByMemberId.get(member.id)}
+                          issueCells={issueCells}
                         />
                       ))}
 
@@ -2822,14 +2970,16 @@ export default function RosterPage() {
             currentComment={editSheet.currentComment}
             currentIsActing={editSheet.currentIsActing}
             currentShiftTime={editSheet.currentShiftTime}
+            currentShiftDurationHours={editSheet.currentShiftDurationHours}
             isAdmin={isAdmin}
             onClose={() => setEditSheet(null)}
-            onSaveShift={(code, shiftTime) => {
+            onSaveShift={(code, shiftTime, shiftDurationHours) => {
               updateShift.mutate({
                 memberId: editSheet.memberId,
                 shiftDate: editSheet.date,
                 shiftCode: code as ShiftCode,
                 shiftTime: shiftTime ?? null,
+                shiftDurationHours: shiftDurationHours ?? null,
                 memberName: editSheet.memberName,
               });
             }}
@@ -2848,6 +2998,7 @@ export default function RosterPage() {
                 ?.get(editSheet.date);
               handleCopyCell(shift);
             }}
+            issues={issuesByCell.get(`${editSheet.memberId}-${editSheet.date}`)}
           />
         )}
 
@@ -2958,6 +3109,7 @@ function MemberRow({
   onPasteCell,
   rowMode = "home",
   secondmentWindow,
+  issueCells,
 }: {
   member: Member;
   allDates: Date[];
@@ -2995,6 +3147,8 @@ function MemberRow({
   /** "acting" = this is a secondment row rendered in the destination team, not the member's home team. */
   rowMode?: "home" | "acting";
   secondmentWindow?: { startDate: string; endDate: string } | null;
+  /** Cell keys ("memberId-date") with a live EA compliance finding. */
+  issueCells?: Set<string>;
 }) {
   return (
     <div style={{ display: "flex", gap: "3px", marginBottom: "3px" }}>
@@ -3056,6 +3210,7 @@ function MemberRow({
         const cellKey = `${member.id}-${ds}`;
         const isSelected = selectedCells.has(cellKey);
         const hasComment = !!shift?.comment;
+        const hasIssue = !!issueCells?.has(cellKey);
         const isActing = shift?.isActing ?? false;
         const label = SHIFT_LABELS[code as keyof typeof SHIFT_LABELS];
         const time =
@@ -3122,8 +3277,18 @@ function MemberRow({
                 {time ? ` · ${time}` : ""}
               </span>
             )}
-            {hasComment && !isSelected && (
-              <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-white/80 shadow-sm" />
+            {(hasComment || hasIssue) && !isSelected && (
+              <span className="absolute top-1 right-1 flex items-center gap-0.5">
+                {hasIssue && (
+                  <span
+                    className="w-1.5 h-1.5 rounded-full bg-red-500 ring-1 ring-white/80 shadow-sm"
+                    title="EA compliance issue"
+                  />
+                )}
+                {hasComment && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-white/80 shadow-sm" />
+                )}
+              </span>
             )}
             {isActing && !isSelected && (
               <span className="absolute top-1 left-1">
@@ -3171,6 +3336,7 @@ function SortableMemberRow({
   onCopyCell,
   onPasteCell,
   secondmentWindow,
+  issueCells,
 }: {
   member: Member;
   allDates: Date[];
@@ -3208,6 +3374,8 @@ function SortableMemberRow({
   onPasteCell: (memberId: number, date: string) => void;
   /** This member's own secondment, if any — their home-team cells blank out during it. */
   secondmentWindow?: { startDate: string; endDate: string } | null;
+  /** Cell keys ("memberId-date") with a live EA compliance finding. */
+  issueCells?: Set<string>;
 }) {
   const {
     attributes,
@@ -3294,6 +3462,7 @@ function SortableMemberRow({
         const cellKey = `${member.id}-${ds}`;
         const isSelected = selectedCells.has(cellKey);
         const hasComment = !!shift?.comment;
+        const hasIssue = !!issueCells?.has(cellKey);
         const isActing = shift?.isActing ?? false;
         const label = SHIFT_LABELS[code as keyof typeof SHIFT_LABELS];
         const time =
@@ -3361,8 +3530,18 @@ function SortableMemberRow({
                 {time ? ` · ${time}` : ""}
               </span>
             )}
-            {hasComment && !isSelected && (
-              <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-white/80 shadow-sm" />
+            {(hasComment || hasIssue) && !isSelected && (
+              <span className="absolute top-1 right-1 flex items-center gap-0.5">
+                {hasIssue && (
+                  <span
+                    className="w-1.5 h-1.5 rounded-full bg-red-500 ring-1 ring-white/80 shadow-sm"
+                    title="EA compliance issue"
+                  />
+                )}
+                {hasComment && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-white/80 shadow-sm" />
+                )}
+              </span>
             )}
             {isActing && !isSelected && (
               <span className="absolute top-1 left-1">

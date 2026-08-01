@@ -681,15 +681,21 @@ function checkOnCallSequence(
     const monShift = byDate.get(mon);
 
     const issues: string[] = [];
+    // Only the specific day(s) missing a shift — not the whole block — so
+    // callers can point a "this day has an issue" marker at the right cell.
+    const missingDates: string[] = [];
 
     if (!satShift) {
       issues.push("Saturday has no shift recorded (expected o)");
+      missingDates.push(sat);
     }
     if (!sunShift) {
       issues.push("Sunday has no shift recorded (expected o)");
+      missingDates.push(sun);
     }
     if (!monShift) {
       issues.push("Monday has no shift recorded (expected doc)");
+      missingDates.push(mon);
     }
 
     if (issues.length > 0) {
@@ -699,7 +705,7 @@ function checkOnCallSequence(
         eaReference: rule.eaReference,
         memberId: fri.memberId,
         memberName: fri.memberName,
-        dates: [fri.shiftDate, mon],
+        dates: missingDates,
         detail: `${fri.memberName}: On-call sequence broken for week of ${fri.shiftDate}: ${issues.join("; ")}.`,
         severity: "warning",
       });

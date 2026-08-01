@@ -5676,6 +5676,13 @@ export const appRouter = router({
             input.endDate
           );
         }),
+
+      // Live findings against the main roster, for the red-dot overlay on the
+      // roster grid — recomputed from current shift data on every call, so a
+      // finding disappears as soon as its underlying shifts are fixed.
+      liveFindings: adminProcedure.query(async () =>
+        runCtoRosterEbaCheck("main")
+      ),
     }),
 
     // Team coverage minimums shown on the roster "Outlook" projection view.

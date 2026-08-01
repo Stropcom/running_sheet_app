@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -34,7 +34,9 @@ import {
   FolderOpen,
   CalendarPlus,
   FileText,
+  AlertTriangle,
 } from "lucide-react";
+import { ON_DUTY_CODES } from "@shared/ctoRosterShiftUtils";
 import {
   DndContext,
   closestCenter,
@@ -62,12 +64,24 @@ import { Label } from "@/components/ui/label";
 // ─── Constants ────────────────────────────────────────────────────────────────
 const TEAM_ROWS = ["surv1", "surv2", "ptt", "cap"] as const;
 type TeamRow = (typeof TEAM_ROWS)[number];
+// Matches the CTO Roster's team names exactly (Team 1/Team 2/PTT/Capability)
+// so tasking coverage can look up roster minimums by name with no mapping
+// table needed — see the roster coverage check below.
 const TEAM_LABELS: Record<TeamRow, string> = {
   surv1: "Team 1",
   surv2: "Team 2",
   ptt: "PTT",
-  cap: "Cap. Support",
+  cap: "Capability",
 };
+// Fallback minimums (mirrors CTO Roster Outlook's TEAM_MINIMUMS/DEFAULT_MIN)
+// — overridden by the admin-configured cto_roster_outlook_settings row.
+const TASKING_TEAM_MIN_FALLBACK: Record<string, number> = {
+  "Team 1": 5,
+  "Team 2": 5,
+  PTT: 2,
+  Capability: 1,
+};
+const TASKING_DEFAULT_MIN_FALLBACK = 3;
 // Colours matching map/team tags (from IntelligenceMapping TEAM_COLOURS)
 const TEAM_COLOURS: Record<
   TeamRow,
@@ -113,6 +127,12 @@ function getMondayOfWeek(date: Date): string {
 function addWeeks(weekStart: string, n: number): string {
   const d = new Date(weekStart + "T00:00:00Z");
   d.setUTCDate(d.getUTCDate() + 7 * n);
+  return d.toISOString().slice(0, 10);
+}
+
+function addDaysUTC(dateStr: string, n: number): string {
+  const d = new Date(dateStr + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
 }
 
@@ -263,6 +283,26 @@ export default function OperationManagerPage() {
     staleTime: 10_000,
   });
 
+  // ── Roster coverage (for the tasking-vs-minimum-numbers check) ──────────────
+  const rosterTeamsQuery = trpc.ctoRoster.teams.list.useQuery(undefined, {
+    staleTime: 60_000,
+  });
+  const rosterMembersQuery = trpc.ctoRoster.members.list.useQuery(undefined, {
+    staleTime: 60_000,
+  });
+  const rosterSecondmentsQuery = trpc.ctoRoster.secondments.list.useQuery(
+    undefined,
+    { staleTime: 60_000 }
+  );
+  const outlookSettingsQuery = trpc.ctoRoster.outlookSettings.get.useQuery(
+    undefined,
+    { staleTime: 60_000 }
+  );
+  const rosterShiftsQuery = trpc.ctoRoster.roster.getRange.useQuery(
+    { startDate: weekStart, endDate: addDaysUTC(weekStart, 6) },
+    { staleTime: 5_000 }
+  );
+
   // ── Mutations ─────────────────────────────────────────────────────────────────
   const savePriorityMut = trpc.opManager.savePriorityBoard.useMutation();
   const saveTaskingCellMut = trpc.opManager.saveTaskingCell.useMutation();
@@ -322,6 +362,91 @@ export default function OperationManagerPage() {
     }
     setTaskingGrid(grid);
   }, [taskingQuery.data, weekStart]);
+
+  // ── Roster coverage check ────────────────────────────────────────────────────
+  // For every tasking cell with a task set, work out whether the team actually
+  // has enough people rostered on for that day (same on-duty/minimum logic as
+  // the Roster Outlook page) and flag it if not.
+  const secondmentByMemberId = useMemo(() => {
+    const map = new Map<
+      number,
+      { destinationTeamId: number; startDate: string; endDate: string }
+    >();
+    for (const s of rosterSecondmentsQuery.data ?? []) {
+      map.set(s.memberId, {
+        destinationTeamId: s.destinationTeamId,
+        startDate: s.startDate,
+        endDate: s.endDate,
+      });
+    }
+    return map;
+  }, [rosterSecondmentsQuery.data]);
+
+  const rosterShiftMap = useMemo(() => {
+    const map = new Map<number, Map<string, string>>();
+    for (const s of rosterShiftsQuery.data ?? []) {
+      if (!map.has(s.memberId)) map.set(s.memberId, new Map());
+      map.get(s.memberId)!.set(s.shiftDate, s.shiftCode);
+    }
+    return map;
+  }, [rosterShiftsQuery.data]);
+
+  const taskingCoverage = useMemo(() => {
+    const coverage: Record<
+      string,
+      { onDuty: number; min: number; short: boolean }
+    > = {};
+    const teams = rosterTeamsQuery.data;
+    const members = rosterMembersQuery.data;
+    if (!teams || !members) return coverage;
+
+    for (const teamRow of TEAM_ROWS) {
+      const teamName = TEAM_LABELS[teamRow];
+      const team = teams.find(t => t.name === teamName);
+      const min =
+        outlookSettingsQuery.data?.teamMinimums[teamName] ??
+        TASKING_TEAM_MIN_FALLBACK[teamName] ??
+        TASKING_DEFAULT_MIN_FALLBACK;
+
+      DAYS.forEach((_, dayIndex) => {
+        const key = `${teamRow}-${dayIndex}`;
+        const cell = taskingGrid[key];
+        const hasTask = !!(cell?.primaryTask || cell?.secondaryTask);
+        if (!hasTask || !team) {
+          coverage[key] = { onDuty: 0, min, short: false };
+          return;
+        }
+        const dateStr = addDaysUTC(weekStart, dayIndex);
+        const onDuty = members.filter(m => {
+          if (m.excludedFromCounts) return false;
+          const sec = secondmentByMemberId.get(m.id);
+          const onSecondmentToday =
+            !!sec && dateStr >= sec.startDate && dateStr <= sec.endDate;
+          const effectiveTeamId = onSecondmentToday
+            ? sec!.destinationTeamId
+            : m.teamId;
+          if (effectiveTeamId !== team.id) return false;
+          const code = rosterShiftMap.get(m.id)?.get(dateStr) ?? "";
+          return ON_DUTY_CODES.has(code);
+        }).length;
+        coverage[key] = { onDuty, min, short: onDuty < min };
+      });
+    }
+    return coverage;
+  }, [
+    taskingGrid,
+    weekStart,
+    rosterTeamsQuery.data,
+    rosterMembersQuery.data,
+    secondmentByMemberId,
+    rosterShiftMap,
+    outlookSettingsQuery.data,
+  ]);
+
+  const taskingIssueCount = useMemo(
+    () => Object.values(taskingCoverage).filter(c => c.short).length,
+    [taskingCoverage]
+  );
 
   useEffect(() => {
     if (!contactsQuery.data) return;
@@ -668,7 +793,10 @@ export default function OperationManagerPage() {
                 }
               }}
             />
-            <Label htmlFor="notify-all" className="font-semibold cursor-pointer">
+            <Label
+              htmlFor="notify-all"
+              className="font-semibold cursor-pointer"
+            >
               Select All
             </Label>
           </div>
@@ -1063,6 +1191,7 @@ export default function OperationManagerPage() {
               <FullViewTasking
                 taskingGrid={taskingGrid}
                 weekStart={weekStart}
+                taskingCoverage={taskingCoverage}
               />
             </div>
           )}
@@ -1227,10 +1356,22 @@ export default function OperationManagerPage() {
 
             {/* ── Tasking ───────────────────────────────────────────────────── */}
             <TabsContent value="tasking" className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-base font-semibold">
-                  Weekly Tasking Calendar
-                </h2>
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base font-semibold">
+                    Weekly Tasking Calendar
+                  </h2>
+                  {taskingIssueCount > 0 && (
+                    <Badge
+                      variant="outline"
+                      className="gap-1 text-amber-600 border-amber-500/40 bg-amber-500/5"
+                    >
+                      <AlertTriangle className="h-3 w-3" />
+                      {taskingIssueCount} tasking issue
+                      {taskingIssueCount !== 1 ? "s" : ""}
+                    </Badge>
+                  )}
+                </div>
                 <Button
                   size="sm"
                   onClick={saveAllTaskingCells}
@@ -1266,11 +1407,23 @@ export default function OperationManagerPage() {
                         {DAYS.map((day, dayIndex) => {
                           const key = `${teamRow}-${dayIndex}`;
                           const cell = taskingGrid[key] ?? {};
+                          const cov = taskingCoverage[key];
                           return (
                             <div key={dayIndex} className="px-3 py-2.5">
-                              <p className="text-[11px] font-semibold text-muted-foreground mb-1.5">
-                                {day}
-                              </p>
+                              <div className="flex items-center justify-between gap-2 mb-1.5">
+                                <p className="text-[11px] font-semibold text-muted-foreground">
+                                  {day}
+                                </p>
+                                {cov?.short && (
+                                  <span
+                                    className="flex items-center gap-1 text-[10px] font-semibold text-amber-600"
+                                    title={`Only ${cov.onDuty} of ${cov.min} minimum rostered`}
+                                  >
+                                    <AlertTriangle className="h-3 w-3" />
+                                    {cov.onDuty}/{cov.min}
+                                  </span>
+                                )}
+                              </div>
                               <TaskingCellEditor
                                 cell={cell}
                                 onChange={patch =>
@@ -1335,6 +1488,7 @@ export default function OperationManagerPage() {
                               {DAYS.map((_, dayIndex) => {
                                 const key = `${teamRowEdit}-${dayIndex}`;
                                 const cell = taskingGrid[key] ?? {};
+                                const cov = taskingCoverage[key];
                                 return (
                                   <td
                                     key={dayIndex}
@@ -1344,6 +1498,15 @@ export default function OperationManagerPage() {
                                       width: `${100 / 7}%`,
                                     }}
                                   >
+                                    {cov?.short && (
+                                      <span
+                                        className="flex items-center gap-1 text-[10px] font-semibold text-amber-600 mb-1"
+                                        title={`Only ${cov.onDuty} of ${cov.min} minimum rostered`}
+                                      >
+                                        <AlertTriangle className="h-3 w-3" />
+                                        {cov.onDuty}/{cov.min}
+                                      </span>
+                                    )}
                                     <TaskingCellEditor
                                       cell={cell}
                                       onChange={patch =>
@@ -1441,7 +1604,12 @@ function PageHeader({
   return (
     <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border px-4 py-3 flex items-center gap-3">
       <div className="flex-1 flex items-center justify-center gap-1 min-w-0">
-        <Button variant="ghost" size="icon" onClick={onBack} className="shrink-0">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onBack}
+          className="shrink-0"
+        >
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <Button
@@ -2100,16 +2268,31 @@ function FullViewContacts(_props: {
 
 function FullViewTasking({
   taskingGrid,
+  taskingCoverage,
 }: {
   taskingGrid: Record<string, TaskingCell>;
   weekStart: string;
+  taskingCoverage: Record<
+    string,
+    { onDuty: number; min: number; short: boolean }
+  >;
 }) {
+  const issueCount = Object.values(taskingCoverage).filter(c => c.short).length;
   return (
     <section className="space-y-3">
-      <div className="px-1">
+      <div className="px-1 flex items-center gap-2">
         <h2 className="text-sm font-bold tracking-widest uppercase text-muted-foreground">
           Weekly Tasking Calendar
         </h2>
+        {issueCount > 0 && (
+          <Badge
+            variant="outline"
+            className="gap-1 text-amber-600 border-amber-500/40 bg-amber-500/5"
+          >
+            <AlertTriangle className="h-3 w-3" />
+            {issueCount} tasking issue{issueCount !== 1 ? "s" : ""}
+          </Badge>
+        )}
       </div>
       {TEAM_ROWS.map(teamRow => {
         const tc = TEAM_COLOURS[teamRow];
@@ -2184,6 +2367,16 @@ function FullViewTasking({
                           {secondary}
                         </p>
                       )}
+                      {taskingCoverage[key]?.short && (
+                        <span
+                          className="flex items-center gap-1 text-[10px] font-semibold text-amber-600 mt-1"
+                          title={`Only ${taskingCoverage[key].onDuty} of ${taskingCoverage[key].min} minimum rostered`}
+                        >
+                          <AlertTriangle className="h-3 w-3" />
+                          {taskingCoverage[key].onDuty}/
+                          {taskingCoverage[key].min} rostered
+                        </span>
+                      )}
                     </div>
                   </div>
                 );
@@ -2254,6 +2447,16 @@ function FullViewTasking({
                             <p className="mt-0.5 text-xs leading-snug text-muted-foreground break-words">
                               {secondary}
                             </p>
+                          )}
+                          {taskingCoverage[key]?.short && (
+                            <span
+                              className="flex items-center gap-1 text-[10px] font-semibold text-amber-600 mt-1"
+                              title={`Only ${taskingCoverage[key].onDuty} of ${taskingCoverage[key].min} minimum rostered`}
+                            >
+                              <AlertTriangle className="h-3 w-3" />
+                              {taskingCoverage[key].onDuty}/
+                              {taskingCoverage[key].min}
+                            </span>
                           )}
                         </td>
                       );

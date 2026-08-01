@@ -2662,7 +2662,7 @@ export function extractEntitiesFromText(text: string): Array<{
     const STREET_TYPES =
       /\b(st|street|rd|road|ave|avenue|dr|drive|way|ct|court|pl|place|cl|close|cres|crescent|blvd|boulevard|hwy|highway|fwy|freeway|ln|lane|tce|terrace|pde|parade|cct|circuit|gr|grove|rise|loop|link|walk|track|row|mews|quay|esplanade|promenade)\b/i;
     const addressInFull =
-      /\b\d{1,5}\s+\w[\w\s]*(street|road|ave|avenue|drive|way|court|place|close|crescent|boulevard|highway|freeway|lane|terrace|parade|circuit)\b/i.test(
+      /\b\d{1,5}[A-Za-z]?\s+\w[\w\s]*(street|road|ave|avenue|drive|way|court|place|close|crescent|boulevard|highway|freeway|lane|terrace|parade|circuit)\b/i.test(
         fullDescription
       ) ||
       STREET_TYPES.test(shortForm) ||
@@ -2821,6 +2821,10 @@ export function extractEntitiesFromText(text: string): Array<{
       //  - All other words become Title Case
       const titleCaseStreetWord = (w: string): string => {
         if (/^\d+$/.test(w)) return w; // digits unchanged
+        // Unit-letter-suffixed street numbers (e.g. "61a" → "61A") keep the
+        // digits and uppercase the trailing letter.
+        if (/^\d+[A-Za-z]$/.test(w))
+          return w.slice(0, -1) + w.slice(-1).toUpperCase();
         if (/^(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)$/i.test(w)) return w.toUpperCase(); // state codes
         // Street type abbreviations → Title Case (e.g. ST→St, RD→Rd, AVE→Ave)
         if (
@@ -2890,6 +2894,36 @@ export function extractEntitiesFromText(text: string): Array<{
         // Fallback: title-case the shortForm itself (it's all-caps abbreviated)
         // e.g. "4 GLYDE ST" → "4 Glyde St"
         displayName = shortForm.replace(/\b(\w+)/g, titleCaseStreetWord);
+      }
+
+      // Business location recovery: for business addresses the bracket short
+      // form is the business name itself (e.g. "Bicton Tavern, 1 Point Walter
+      // Road, BICTON WA (Bicton Tavern)"), not a street code, so the regex
+      // above only recovers the street+suburb portion. Narrative text before
+      // the address (e.g. "IOs observed the subject enter Bicton Tavern, ...")
+      // has no reliable delimiter marking where the business name starts, so
+      // rather than trying to parse it out, check whether the text
+      // immediately before the recovered address — after stripping the
+      // separating comma — ends with the (already known) shortForm at a word
+      // boundary. If so, restore it as a prefix so the Intelligence display
+      // reads "Bicton Tavern, 1 Point Walter Road, BICTON" instead of
+      // dropping the business name.
+      const addrStartIdx = fullDescription.lastIndexOf(
+        addrMatch ? addrMatch[0] : ""
+      );
+      if (addrStartIdx > 0) {
+        const beforeAddr = fullDescription
+          .slice(0, addrStartIdx)
+          .replace(/,\s*$/, "");
+        if (beforeAddr.toLowerCase().endsWith(shortForm.toLowerCase())) {
+          const nameStart = beforeAddr.length - shortForm.length;
+          const boundaryOk =
+            nameStart === 0 || /\s/.test(beforeAddr[nameStart - 1]);
+          if (boundaryOk) {
+            const matchedName = beforeAddr.slice(nameStart);
+            displayName = `${matchedName}, ${displayName.trim()}`;
+          }
+        }
       }
     } else if (type === "vehicle") {
       // For vehicle entities: build a clean display name as "REGO colour make/model".

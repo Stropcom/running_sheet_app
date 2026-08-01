@@ -3351,7 +3351,7 @@ export default function IntelligenceMapping() {
                 <input
                   type="text"
                   value={addrSearch}
-                  placeholder="Search address…"
+                  placeholder="Search address or business…"
                   className="flex-1 px-2 text-sm outline-none bg-transparent text-gray-800 placeholder-gray-400"
                   style={{ height: "40px" }}
                   onChange={e => {
@@ -3367,11 +3367,14 @@ export default function IntelligenceMapping() {
                     addrSearchDebounceRef.current = setTimeout(() => {
                       if (!autocompleteServiceRef.current) return;
                       const mapCentre = mapRef.current?.getCenter();
+                      // No `types` restriction — Google Places only allows one
+                      // type-category filter at a time (or none), and omitting
+                      // it is the only way to get both street addresses and
+                      // business/establishment results in the same search.
                       const addrRequest: google.maps.places.AutocompletionRequest =
                         {
                           input: val,
                           componentRestrictions: { country: "au" },
-                          types: ["address"],
                         };
                       if (mapCentre) {
                         addrRequest.locationBias = new google.maps.Circle({

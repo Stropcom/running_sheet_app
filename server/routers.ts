@@ -3065,6 +3065,21 @@ export const appRouter = router({
           ...input,
           ...cinUpdate,
         } as Parameters<typeof upsertGovernanceRecord>[0]);
+
+        // Keep the RS Summary tab's own complete/reopen state in sync with
+        // this checkbox, and vice versa (see summary.complete/summary.reopen
+        // below) — the two are meant to always agree.
+        if (input.toggledField === "summaryNotification") {
+          const existingSummary = await getSheetSummary(input.sheetId);
+          if (input.toggledValue) {
+            if (!existingSummary)
+              await upsertSheetSummary({ sheetId: input.sheetId });
+            if (!existingSummary?.completedAt)
+              await completeSheetSummary(input.sheetId, userCIN);
+          } else if (existingSummary?.completedAt) {
+            await reopenSheetSummary(input.sheetId, userCIN);
+          }
+        }
         return record;
       }),
   }),
@@ -3216,6 +3231,14 @@ export const appRouter = router({
 
         const cin = ctx.user.cin ?? ctx.user.name ?? "Unknown";
         const record = await completeSheetSummary(input.sheetId, cin);
+        // Keep Governance's "Summary complete" checkbox in sync — see the
+        // reverse cascade in governance.update.
+        await upsertGovernanceRecord({
+          sheetId: input.sheetId,
+          summaryNotification: true,
+          isurvCIN: cin,
+          isurvName: ctx.user.name ?? cin,
+        });
         await createAuditLog({
           sheetId: input.sheetId,
           userId: ctx.user.id,
@@ -3243,6 +3266,14 @@ export const appRouter = router({
         }
         const cin = ctx.user.cin ?? ctx.user.name ?? "Unknown";
         const record = await reopenSheetSummary(input.sheetId, cin);
+        // Keep Governance's "Summary complete" checkbox in sync — see the
+        // reverse cascade in governance.update.
+        await upsertGovernanceRecord({
+          sheetId: input.sheetId,
+          summaryNotification: false,
+          isurvCIN: null,
+          isurvName: null,
+        });
         await createAuditLog({
           sheetId: input.sheetId,
           userId: ctx.user.id,

@@ -824,7 +824,7 @@ export default function SheetSummaryPage() {
     <DashboardLayout>
       <div className="max-w-3xl mx-auto px-4 py-6">
         <button
-          onClick={() => navigate(`/sheet/${sheetId}`)}
+          onClick={() => navigate(`/sheet/${sheetId}`, { replace: true })}
           className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-5"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
@@ -835,7 +835,7 @@ export default function SheetSummaryPage() {
         <div className="flex gap-1 mb-5 border-b border-border">
           <button
             className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-            onClick={() => navigate(`/sheet/${sheetId}`)}
+            onClick={() => navigate(`/sheet/${sheetId}`, { replace: true })}
           >
             <FileText className="w-4 h-4" />
             Running Sheet
@@ -846,7 +846,9 @@ export default function SheetSummaryPage() {
           </button>
           <button
             className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-            onClick={() => navigate(`/governance/${sheetId}`)}
+            onClick={() =>
+              navigate(`/governance/${sheetId}`, { replace: true })
+            }
           >
             <ClipboardCheck className="w-4 h-4" />
             Governance

@@ -3331,14 +3331,16 @@ export default function SheetDetail() {
           </button>
           <button
             className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-            onClick={() => navigate(`/summary/${sheetId}`)}
+            onClick={() => navigate(`/summary/${sheetId}`, { replace: true })}
           >
             <NotebookText className="w-4 h-4" />
             Summary
           </button>
           <button
             className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-            onClick={() => navigate(`/governance/${sheetId}`)}
+            onClick={() =>
+              navigate(`/governance/${sheetId}`, { replace: true })
+            }
           >
             <ClipboardCheck className="w-4 h-4" />
             Governance

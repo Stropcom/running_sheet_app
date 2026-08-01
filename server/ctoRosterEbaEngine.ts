@@ -97,11 +97,23 @@ function dayOfWeek(dateStr: string): number {
   return new Date(y, m - 1, d).getDay(); // 0=Sun,1=Mon,...,5=Fri,6=Sat
 }
 
+// Formats a Date's *local* calendar components as "YYYY-MM-DD". Deliberately
+// not `.toISOString().slice(0, 10)` — that converts to UTC first, which is
+// off by one day from the intended local date whenever local midnight falls
+// on a different UTC calendar day (true for the whole day in Australia/Perth,
+// the timezone this server is forced to run in).
+function toLocalDateString(dt: Date): string {
+  const yy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
 function addDays(dateStr: string, n: number): string {
   const [y, m, d] = dateStr.split("-").map(Number);
   const dt = new Date(y, m - 1, d);
   dt.setDate(dt.getDate() + n);
-  return dt.toISOString().slice(0, 10);
+  return toLocalDateString(dt);
 }
 
 function diffHours(a: Date, b: Date): number {
@@ -150,7 +162,7 @@ export function runEbaChecks(
   const activeRules = rules.filter(r => r.isActive);
 
   // Today's date string "YYYY-MM-DD" — findings with all dates in the past are suppressed
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = toLocalDateString(new Date());
 
   // Group shifts by member
   const byMember = new Map<number, ShiftRecord[]>();

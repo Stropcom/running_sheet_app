@@ -148,7 +148,7 @@ export function MergeEntitiesButton() {
         onClick={() => setPickerOpen(true)}
         className="gap-1.5"
       >
-        <GitMerge className="w-3.5 h-3.5" /> Merge Entities
+        <GitMerge className="w-3.5 h-3.5" /> Merge
       </Button>
 
       <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>

@@ -437,28 +437,36 @@ function exportSummaryToPDF(params: {
 
   const section = (title: string, bodyHtml: string) =>
     bodyHtml
-      ? `<div class="section"><div class="section-title">${esc(title)}</div>${bodyHtml}</div>`
+      ? `<div class="section"><div class="section-title">${esc(title)}</div><div class="section-body">${bodyHtml}</div></div>`
+      : "";
+
+  // The Summary table already carries its own border/header — kept as a
+  // plain flat title bar (the original section style) rather than the card
+  // treatment the other sections get, so it stays exactly as it was.
+  const plainSection = (title: string, bodyHtml: string) =>
+    bodyHtml
+      ? `<div class="plain-section"><div class="plain-section-title">${esc(title)}</div>${bodyHtml}</div>`
       : "";
 
   const vehiclesHtml = vehicles.length
-    ? `<div class="ops-list">${vehicles.map(v => `<span class="op-badge">${esc(v.label)}</span>`).join("")}</div>`
+    ? `<div class="chip-list">${vehicles.map(v => `<span class="chip">${esc(v.label)}</span>`).join("")}</div>`
     : `<p class="muted-note">No vehicles found in the Target Registry or running sheet text.</p>`;
 
   const specialProjectsHtml = specialProjects.length
-    ? `<ul class="plain-list">${specialProjects
+    ? `<div class="chip-list">${specialProjects
         .map(
           p =>
-            `<li><strong>${esc(p.key)}</strong>${p.detail.trim() ? ` — ${esc(p.detail)}` : ""}</li>`
+            `<span class="chip"><strong>${esc(p.key)}</strong>${p.detail.trim() ? `<span class="chip-detail"> — ${esc(p.detail)}</span>` : ""}</span>`
         )
-        .join("")}</ul>`
+        .join("")}</div>`
     : `<p class="muted-note">None recorded.</p>`;
 
   const objectivesHtml = objectives.length
-    ? `<ul class="plain-list">${objectives.map(o => `<li>${esc(o)}</li>`).join("")}</ul>`
+    ? `<ol class="numbered-list">${objectives.map(o => `<li>${esc(o)}</li>`).join("")}</ol>`
     : `<p class="muted-note">None recorded.</p>`;
 
   const criticalDecisionsHtml = criticalDecisions.length
-    ? `<ul class="plain-list">${criticalDecisions.map(d => `<li>${esc(d)}</li>`).join("")}</ul>`
+    ? `<ol class="numbered-list">${criticalDecisions.map(d => `<li>${esc(d)}</li>`).join("")}</ol>`
     : `<p class="muted-note">None recorded.</p>`;
 
   const summaryHtml = entries.length
@@ -503,28 +511,39 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 .status-pill{display:inline-flex;align-items:center;gap:4px;padding:4px 11px;border-radius:9999px;font-size:9px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;margin-top:14px}
 .status-complete{background:rgba(134,239,172,0.18);color:#86efac;border:1px solid rgba(134,239,172,0.4)}
 .status-open{background:rgba(255,255,255,0.12);color:rgba(255,255,255,0.75);border:1px solid rgba(255,255,255,0.28)}
-.content { padding:20px 32px; border:1.5px solid ${BLUE_DARK}; border-top:none; }
-.section { margin-bottom:18px; }
-.section-title { font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${BLUE_DARK} !important; padding:6px 10px; background:${BLUE_LIGHT} !important; border-left:3px solid ${BLUE_MID}; margin-bottom:10px; }
-.detail-grid { display:grid; grid-template-columns:140px 1fr; gap:6px 12px; font-size:10.5px; }
+.page-frame { width:100%; border-collapse:collapse; }
+.page-frame td { padding:0; border:none; }
+tfoot { display:table-footer-group; }
+.content { padding:20px 32px 8px; }
+.section { margin-bottom:14px; border:1px solid ${GREY_BORDER}; border-radius:8px; overflow:hidden; break-inside:avoid; page-break-inside:avoid; }
+.section-title { font-size:10px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${BLUE_DARK} !important; padding:7px 14px; background:${BLUE_LIGHT} !important; border-bottom:1px solid ${GREY_BORDER}; }
+.section-body { padding:12px 14px; }
+.plain-section { margin-bottom:18px; }
+.plain-section-title { font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${BLUE_DARK} !important; padding:6px 10px; background:${BLUE_LIGHT} !important; border-left:3px solid ${BLUE_MID}; margin-bottom:10px; }
+.detail-grid { display:grid; grid-template-columns:130px 1fr; gap:0; font-size:10.5px; }
+.detail-grid > div { padding:4px 6px; }
+.detail-grid > div:nth-child(4n+1), .detail-grid > div:nth-child(4n+2) { background:#f8fafc; }
 .detail-label { color:#64748b; font-weight:600; }
 .detail-value { color:${GREY_TEXT}; }
-.ops-list { display:flex; flex-wrap:wrap; gap:6px; }
-.op-badge { background:${BLUE_LIGHT} !important; color:${BLUE_DARK} !important; border:1px solid ${BLUE_MID}; border-radius:6px; padding:3px 10px; font-size:10px; font-weight:600; }
-.plain-list { list-style:disc; padding-left:18px; }
-.plain-list li { margin-bottom:5px; font-size:10.5px; }
+.chip-list { display:flex; flex-wrap:wrap; gap:6px; }
+.chip { background:${BLUE_LIGHT} !important; color:${BLUE_DARK} !important; border:1px solid ${BLUE_MID}; border-radius:6px; padding:4px 10px; font-size:10px; font-weight:600; }
+.chip-detail { font-weight:400; color:#475569; }
+.numbered-list { list-style:none; counter-reset:item; }
+.numbered-list li { counter-increment:item; display:flex; align-items:flex-start; gap:8px; margin-bottom:7px; font-size:10.5px; }
+.numbered-list li:last-child { margin-bottom:0; }
+.numbered-list li::before { content:counter(item); flex-shrink:0; width:16px; height:16px; border-radius:50%; background:${BLUE_LIGHT} !important; color:${BLUE_DARK} !important; font-size:9px; font-weight:700; display:flex; align-items:center; justify-content:center; margin-top:1px; }
 .muted-note { font-size:10px; color:#94a3b8; font-style:italic; }
 .summary-table { width:100%; border-collapse:collapse; border:1.5px solid ${BLUE_DARK}; }
 .summary-table th { background:${BLUE_LIGHT} !important; color:${BLUE_DARK} !important; font-weight:700; font-size:9.5px; text-transform:uppercase; letter-spacing:0.04em; text-align:left; padding:6px 8px; border-bottom:2px solid ${BLUE_DARK}; border-right:1px solid #c7d5ee; }
 .summary-table th:last-child, .summary-table td:last-child { border-right:none; }
 .summary-table td { vertical-align:top; font-size:10.5px; padding:6px 8px; border-bottom:1px solid ${GREY_BORDER}; border-right:1px solid ${GREY_BORDER}; }
 .summary-table tbody tr:last-child td { border-bottom:none; }
-.footer-note { margin-top:28px; padding-top:12px; border-top:1px solid ${GREY_BORDER}; font-size:9px; color:#94a3b8; }
+.footer-note { margin:14px 32px 0; padding:12px 0; border-top:1px solid ${GREY_BORDER}; font-size:9px; color:#94a3b8; }
 .footer-band { background:${BLUE_DARK} !important; color:#fff !important; padding:8px 32px; display:grid; grid-template-columns:1fr 1fr 1fr; align-items:center; font-size:9px; font-weight:700; letter-spacing:0.04em; }
 .footer-band span:first-child { text-align:left; }
 .footer-band span:last-child { text-align:right; color:rgba(255,255,255,0.85); text-transform:uppercase; }
 .footer-protected { text-align:center; font-weight:800; letter-spacing:0.14em; color:#f87171; text-transform:uppercase; }
-@media print { * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; } .cover-header { background:${BLUE_DARK} !important; } .section-title { background:${BLUE_LIGHT} !important; } .op-badge { background:${BLUE_LIGHT} !important; } .summary-table th { background:${BLUE_LIGHT} !important; } .footer-band { background:${BLUE_DARK} !important; } }
+@media print { * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; } .cover-header { background:${BLUE_DARK} !important; } .section-title { background:${BLUE_LIGHT} !important; } .plain-section-title { background:${BLUE_LIGHT} !important; } .chip { background:${BLUE_LIGHT} !important; } .numbered-list li::before { background:${BLUE_LIGHT} !important; } .summary-table th { background:${BLUE_LIGHT} !important; } .footer-band { background:${BLUE_DARK} !important; } }
 </style></head><body>
 <div class="cover-header">
   <div class="brand-row"><div class="brand-dot"></div><span class="brand-label">RunLog</span></div>
@@ -533,6 +552,15 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
   <div class="sheet-name">${esc(sheetTitle)}</div>
   ${statusPillHtml}
 </div>
+<table class="page-frame">
+<tfoot><tr><td>
+  <div class="footer-band">
+    <span></span>
+    <span class="footer-protected">Protected</span>
+    <span>RunLog</span>
+  </div>
+</td></tr></tfoot>
+<tbody><tr><td>
 <div class="content">
   ${section(
     "Deployment",
@@ -561,17 +589,14 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
   ${section("Special Projects", specialProjectsHtml)}
   ${section("Objectives", objectivesHtml)}
   ${section("Critical Decisions", criticalDecisionsHtml)}
-  ${section("Summary", summaryHtml)}
+  ${plainSection("Summary", summaryHtml)}
   ${section("Issues", form.issues.trim() ? `<p>${esc(form.issues)}</p>` : "")}
   <div class="footer-note">
     <span>Generated: ${generatedAt}</span>
   </div>
 </div>
-<div class="footer-band">
-  <span></span>
-  <span class="footer-protected">Protected</span>
-  <span>RunLog</span>
-</div>
+</td></tr></tbody>
+</table>
 ${buildExportPreviewCloseBar()}
 </body></html>`;
 

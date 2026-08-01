@@ -17,7 +17,9 @@
  *   l    – 24 h full day (no start time)
  *   c    – 8 h, fixed 07:00
  *   r    – 0 h (rest day, not a working shift)
- *   dep  – 9 h, from chip time (treated same as day shift)
+ *   dep  – 9 h by default, from chip time (treated same as day shift) —
+ *          the only code with a per-shift duration override (8h/9h,
+ *          set on the shift record and passed in as durationOverrideHours)
  */
 
 export interface ShiftInterval {
@@ -77,20 +79,31 @@ const ON_CALL_CODES = new Set(["o", "doc", "adoc", "aoc"]);
  * Compute the interval for a single shift.
  * @param code  Shift code (e.g. "d", "aoc")
  * @param chipTime  Optional override time string "HH:MM" from the shift chip
+ * @param durationOverrideHours  Optional per-shift duration override (e.g. the
+ *   8hr/9hr choice on a Deployment shift), used instead of the code's default.
  */
-export function computeShiftInterval(code: string, chipTime?: string | null): ShiftInterval {
+export function computeShiftInterval(
+  code: string,
+  chipTime?: string | null,
+  durationOverrideHours?: number | null
+): ShiftInterval {
   const c = code.toLowerCase();
   const isOnCall = ON_CALL_CODES.has(c);
 
   if (c === "r" || c === "o") {
-    return { startMin: 0, durationHours: 0, isOnCall: c === "o", missingRequiredTime: false };
+    return {
+      startMin: 0,
+      durationHours: 0,
+      isOnCall: c === "o",
+      missingRequiredTime: false,
+    };
   }
 
   const chipMin = parseTime(chipTime);
   const defaultMin = DEFAULT_START_MIN[c] ?? null;
   const missingRequiredTime = false; // chip time is optional; defaults apply
   const startMin = chipMin ?? defaultMin ?? 0;
-  const durationHours = BASE_DURATION_HOURS[c] ?? 8;
+  const durationHours = durationOverrideHours ?? BASE_DURATION_HOURS[c] ?? 8;
 
   return { startMin, durationHours, isOnCall, missingRequiredTime };
 }
@@ -99,7 +112,10 @@ export function computeShiftInterval(code: string, chipTime?: string | null): Sh
  * Given a shift date (YYYY-MM-DD) and interval, return the UTC-equivalent
  * start and end as Date objects (treating the date as local midnight).
  */
-export function shiftToDateRange(shiftDate: string, interval: ShiftInterval): { start: Date; end: Date } {
+export function shiftToDateRange(
+  shiftDate: string,
+  interval: ShiftInterval
+): { start: Date; end: Date } {
   const [y, mo, d] = shiftDate.split("-").map(Number);
   const base = new Date(y, mo - 1, d, 0, 0, 0, 0);
   const start = new Date(base.getTime() + interval.startMin * 60_000);

@@ -149,6 +149,7 @@ type ShiftData = {
   shiftTime?: string | null;
   comment?: string | null;
   isActing?: boolean;
+  shiftDurationHours?: number | null;
 };
 type Secondment = {
   id: number;
@@ -240,6 +241,7 @@ function ShiftEditSheet({
   currentComment,
   currentIsActing,
   currentShiftTime,
+  currentShiftDurationHours,
   isAdmin,
   onClose,
   onSaveShift,
@@ -254,9 +256,15 @@ function ShiftEditSheet({
   currentComment: string;
   currentIsActing: boolean;
   currentShiftTime?: string | null;
+  /** Deployment shift duration override (8 or 9), if one is set. */
+  currentShiftDurationHours?: number | null;
   isAdmin: boolean;
   onClose: () => void;
-  onSaveShift: (code: string, shiftTime?: string | null) => void;
+  onSaveShift: (
+    code: string,
+    shiftTime?: string | null,
+    shiftDurationHours?: number | null
+  ) => void;
   onSaveAnnotation: (comment: string | null, isActing: boolean) => void;
   onCopyShift?: () => void;
   /** Live EA compliance findings involving this member/date, if any. */
@@ -272,15 +280,27 @@ function ShiftEditSheet({
   const [shiftTime, setShiftTime] = useState<string>(
     currentShiftTime ?? defaultTime(currentCode)
   );
+  // Deployment shift duration (8hr/9hr) — defaults to 9hr, the standard length
+  const [durationHours, setDurationHours] = useState<number>(
+    currentShiftDurationHours ?? 9
+  );
   useEffect(() => {
     if (open) {
       setComment(currentComment);
       setIsActing(currentIsActing);
       setPendingCode(currentCode);
       setShiftTime(currentShiftTime ?? defaultTime(currentCode));
+      setDurationHours(currentShiftDurationHours ?? 9);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, currentComment, currentIsActing, currentCode, currentShiftTime]);
+  }, [
+    open,
+    currentComment,
+    currentIsActing,
+    currentCode,
+    currentShiftTime,
+    currentShiftDurationHours,
+  ]);
   const label =
     SHIFT_LABELS[currentCode as keyof typeof SHIFT_LABELS] ?? currentCode;
   const time =
@@ -311,22 +331,24 @@ function ShiftEditSheet({
           ))}
         </div>
       )}
-      {currentCode && (
-        <div className="flex items-center gap-2 mb-4">
-          <div
-            className={cn(
-              "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium",
-              shiftClass(currentCode)
-            )}
-          >
-            <span className="font-bold uppercase">{currentCode}</span>
-            <span className="opacity-60">·</span>
-            <span>
-              {label}
-              {time ? ` · ${time}` : ""}
-            </span>
-          </div>
-          {isAdmin && onCopyShift && (
+      {(currentCode || pendingCode === "dep") && (
+        <div className="flex items-center gap-2 mb-4 flex-wrap">
+          {currentCode && (
+            <div
+              className={cn(
+                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium",
+                shiftClass(currentCode)
+              )}
+            >
+              <span className="font-bold uppercase">{currentCode}</span>
+              <span className="opacity-60">·</span>
+              <span>
+                {label}
+                {time ? ` · ${time}` : ""}
+              </span>
+            </div>
+          )}
+          {currentCode && isAdmin && onCopyShift && (
             <button
               onClick={() => {
                 onCopyShift();
@@ -338,6 +360,25 @@ function ShiftEditSheet({
               <Copy className="h-3.5 w-3.5" />
               Copy
             </button>
+          )}
+          {isAdmin && pendingCode === "dep" && (
+            <div className="flex items-center gap-1 rounded-lg border border-border p-0.5">
+              {[8, 9].map(h => (
+                <button
+                  key={h}
+                  onClick={() => setDurationHours(h)}
+                  className={cn(
+                    "px-2.5 py-1 rounded-md text-xs font-semibold transition-colors",
+                    durationHours === h
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:bg-muted"
+                  )}
+                  title={`Count this Deployment shift as ${h} hours in EA compliance calculations`}
+                >
+                  {h}hr
+                </button>
+              ))}
+            </div>
           )}
         </div>
       )}
@@ -456,7 +497,11 @@ function ShiftEditSheet({
                 className="flex-1"
                 size="sm"
                 onClick={() => {
-                  onSaveShift(pendingCode, shiftTime || null);
+                  onSaveShift(
+                    pendingCode,
+                    shiftTime || null,
+                    pendingCode === "dep" ? durationHours : null
+                  );
                   onClose();
                 }}
               >
@@ -466,7 +511,7 @@ function ShiftEditSheet({
             {currentCode && (
               <button
                 onClick={() => {
-                  onSaveShift("", null);
+                  onSaveShift("", null, null);
                   onClose();
                 }}
                 className="flex-1 text-xs text-muted-foreground py-2 rounded-lg hover:bg-destructive/10 hover:text-destructive transition-colors font-medium border border-border/50"
@@ -553,7 +598,8 @@ function BulkApplySheet({
     code: ShiftCode | null,
     isActing: boolean,
     actingOnly: boolean,
-    shiftTime: string | null
+    shiftTime: string | null,
+    shiftDurationHours: number | null
   ) => void;
 }) {
   const isMobile = useIsMobile();
@@ -563,12 +609,15 @@ function BulkApplySheet({
   const defaultTime = (code: string) =>
     SHIFT_TIMES[code as keyof typeof SHIFT_TIMES] ?? "";
   const [shiftTime, setShiftTime] = useState<string>(defaultTime("d"));
+  // Deployment shift duration (8hr/9hr) — defaults to 9hr, the standard length
+  const [durationHours, setDurationHours] = useState<number>(9);
   useEffect(() => {
     if (open) {
       setSelectedCode("d");
       setIsActing(false);
       setActingOnly(false);
       setShiftTime(defaultTime("d"));
+      setDurationHours(9);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -655,6 +704,31 @@ function BulkApplySheet({
               );
             })}
           </div>
+          {/* Deployment shift duration — feeds EA compliance hour calculations */}
+          {selectedCode === "dep" && (
+            <div className="flex items-center gap-2 mb-4">
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide whitespace-nowrap">
+                Duration
+              </Label>
+              <div className="flex items-center gap-1 rounded-lg border border-border p-0.5">
+                {[8, 9].map(h => (
+                  <button
+                    key={h}
+                    onClick={() => setDurationHours(h)}
+                    className={cn(
+                      "px-2.5 py-1 rounded-md text-xs font-semibold transition-colors",
+                      durationHours === h
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:bg-muted"
+                    )}
+                    title={`Count these Deployment shifts as ${h} hours in EA compliance calculations`}
+                  >
+                    {h}hr
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {/* Time picker */}
           {SHIFT_TIMES[selectedCode as keyof typeof SHIFT_TIMES] !==
             undefined && (
@@ -691,7 +765,8 @@ function BulkApplySheet({
               actingOnly ? null : selectedCode,
               isActing,
               actingOnly,
-              actingOnly ? null : shiftTime || null
+              actingOnly ? null : shiftTime || null,
+              !actingOnly && selectedCode === "dep" ? durationHours : null
             )
           }
         >
@@ -1414,6 +1489,7 @@ export default function RosterPage() {
     currentComment: string;
     currentIsActing: boolean;
     currentShiftTime: string | null;
+    currentShiftDurationHours: number | null;
   } | null>(null);
 
   // Copy/paste clipboard
@@ -1695,6 +1771,7 @@ export default function RosterPage() {
         currentComment: shift?.comment ?? "",
         currentIsActing: shift?.isActing ?? false,
         currentShiftTime: shift?.shiftTime ?? null,
+        currentShiftDurationHours: shift?.shiftDurationHours ?? null,
       });
     },
     [bulkMode, bulkCopyMode, copiedBlock, handlePasteBlock]
@@ -1805,7 +1882,8 @@ export default function RosterPage() {
       code: ShiftCode | null,
       isActing: boolean,
       actingOnly: boolean,
-      shiftTime: string | null
+      shiftTime: string | null,
+      shiftDurationHours: number | null
     ) => {
       if (selectedCells.size === 0) return;
       if (actingOnly) {
@@ -1837,6 +1915,7 @@ export default function RosterPage() {
           shiftCode: code as ShiftCode,
           isActing,
           shiftTime,
+          shiftDurationHours,
         });
       }
     },
@@ -2891,14 +2970,16 @@ export default function RosterPage() {
             currentComment={editSheet.currentComment}
             currentIsActing={editSheet.currentIsActing}
             currentShiftTime={editSheet.currentShiftTime}
+            currentShiftDurationHours={editSheet.currentShiftDurationHours}
             isAdmin={isAdmin}
             onClose={() => setEditSheet(null)}
-            onSaveShift={(code, shiftTime) => {
+            onSaveShift={(code, shiftTime, shiftDurationHours) => {
               updateShift.mutate({
                 memberId: editSheet.memberId,
                 shiftDate: editSheet.date,
                 shiftCode: code as ShiftCode,
                 shiftTime: shiftTime ?? null,
+                shiftDurationHours: shiftDurationHours ?? null,
                 memberName: editSheet.memberName,
               });
             }}

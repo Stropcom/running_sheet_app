@@ -1086,6 +1086,8 @@ export const ctoRosterShifts = mysqlTable(
     shiftCode: varchar("shiftCode", { length: 8 }).notNull(),
     /** Optional custom start time override, e.g. "07:00" */
     shiftTime: varchar("shiftTime", { length: 8 }),
+    /** Optional shift length override in hours (currently only offered for "dep" — Deployment — which defaults to 9h). Feeds the EA compliance engine's hour-based rules. */
+    shiftDurationHours: int("shiftDurationHours"),
     comment: text("comment"),
     isActing: boolean("isActing").default(false).notNull(),
     updatedBy: int("updatedBy"), // FK → users.id

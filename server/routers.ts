@@ -4916,6 +4916,8 @@ export const appRouter = router({
             isActing: z.boolean().optional(),
             memberName: z.string().optional(),
             shiftTime: z.string().nullable().optional(),
+            /** 8/9hr override, currently only offered on "dep" (Deployment) shifts */
+            shiftDurationHours: z.number().nullable().optional(),
           })
         )
         .mutation(async ({ ctx, input }) => {
@@ -4929,7 +4931,9 @@ export const appRouter = router({
             (oldShift?.shiftCode ?? "") !== input.shiftCode ||
             (oldShift?.shiftTime ?? null) !== (input.shiftTime ?? null) ||
             (oldShift?.isActing ?? false) !== (input.isActing ?? false) ||
-            (oldShift?.comment ?? null) !== (input.comment ?? null);
+            (oldShift?.comment ?? null) !== (input.comment ?? null) ||
+            (oldShift?.shiftDurationHours ?? null) !==
+              (input.shiftDurationHours ?? null);
           await upsertCtoRosterShift(
             input.memberId,
             input.shiftDate,
@@ -4937,7 +4941,8 @@ export const appRouter = router({
             ctx.user.id,
             input.comment,
             input.isActing,
-            input.shiftTime
+            input.shiftTime,
+            input.shiftDurationHours
           );
           writeCtoRosterAudit({
             userId: ctx.user.id,
@@ -4952,6 +4957,7 @@ export const appRouter = router({
                   shiftTime: oldShift.shiftTime,
                   isActing: oldShift.isActing,
                   comment: oldShift.comment,
+                  shiftDurationHours: oldShift.shiftDurationHours,
                 })
               : null,
             newValue: JSON.stringify({
@@ -4959,6 +4965,7 @@ export const appRouter = router({
               shiftTime: input.shiftTime ?? null,
               isActing: input.isActing ?? false,
               comment: input.comment ?? null,
+              shiftDurationHours: input.shiftDurationHours ?? null,
             }),
           });
           if (changed) {
@@ -5000,6 +5007,8 @@ export const appRouter = router({
             ]),
             isActing: z.boolean().optional(),
             shiftTime: z.string().nullable().optional(),
+            /** 8/9hr override, currently only offered on "dep" (Deployment) shifts */
+            shiftDurationHours: z.number().nullable().optional(),
           })
         )
         .mutation(async ({ ctx, input }) => {
@@ -5015,7 +5024,9 @@ export const appRouter = router({
             return (
               (old?.shiftCode ?? "") !== input.shiftCode ||
               (old?.shiftTime ?? null) !== (input.shiftTime ?? null) ||
-              (old?.isActing ?? false) !== (input.isActing ?? false)
+              (old?.isActing ?? false) !== (input.isActing ?? false) ||
+              (old?.shiftDurationHours ?? null) !==
+                (input.shiftDurationHours ?? null)
             );
           });
           await bulkUpdateCtoRosterShifts(
@@ -5026,6 +5037,7 @@ export const appRouter = router({
               updatedBy: ctx.user.id,
               isActing: input.isActing,
               shiftTime: input.shiftTime,
+              shiftDurationHours: input.shiftDurationHours,
             }))
           );
           writeCtoRosterAudit({

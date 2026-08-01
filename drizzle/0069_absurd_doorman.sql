@@ -1,0 +1,1 @@
+ALTER TABLE `cto_roster_shifts` ADD `shiftDurationHours` int;

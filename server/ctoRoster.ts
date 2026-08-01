@@ -490,7 +490,11 @@ export async function upsertRosterShiftNotification(
     await updateNotificationContent(existing.id, {
       title,
       body: buildCountBody(count, startDate, endDate),
-      meta: JSON.stringify({ count, startDate, endDate } satisfies RosterNotifMeta),
+      meta: JSON.stringify({
+        count,
+        startDate,
+        endDate,
+      } satisfies RosterNotifMeta),
     });
     return;
   }
@@ -502,7 +506,11 @@ export async function upsertRosterShiftNotification(
   const meta: RosterNotifMeta =
     params.kind === "generic"
       ? { generic: true }
-      : { count: params.count, startDate: params.startDate, endDate: params.endDate };
+      : {
+          count: params.count,
+          startDate: params.startDate,
+          endDate: params.endDate,
+        };
   await createNotificationsForUsers([user.id], {
     title,
     body,
@@ -556,7 +564,8 @@ export async function upsertCtoRosterShift(
   updatedBy?: number,
   comment?: string | null,
   isActing?: boolean,
-  shiftTime?: string | null
+  shiftTime?: string | null,
+  shiftDurationHours?: number | null
 ): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
@@ -564,6 +573,8 @@ export async function upsertCtoRosterShift(
   if (comment !== undefined) updateSet.comment = comment;
   if (isActing !== undefined) updateSet.isActing = isActing;
   if (shiftTime !== undefined) updateSet.shiftTime = shiftTime;
+  if (shiftDurationHours !== undefined)
+    updateSet.shiftDurationHours = shiftDurationHours;
   await db
     .insert(ctoRosterShifts)
     .values({
@@ -574,6 +585,7 @@ export async function upsertCtoRosterShift(
       comment: comment ?? null,
       isActing: isActing ?? false,
       shiftTime: shiftTime ?? null,
+      shiftDurationHours: shiftDurationHours ?? null,
     })
     .onDuplicateKeyUpdate({ set: updateSet });
 }
@@ -586,6 +598,7 @@ export async function bulkUpdateCtoRosterShifts(
     updatedBy?: number;
     isActing?: boolean;
     shiftTime?: string | null;
+    shiftDurationHours?: number | null;
   }[]
 ): Promise<void> {
   const db = await getDb();
@@ -597,6 +610,8 @@ export async function bulkUpdateCtoRosterShifts(
     };
     if (row.isActing !== undefined) baseUpd.isActing = row.isActing;
     if (row.shiftTime !== undefined) baseUpd.shiftTime = row.shiftTime;
+    if (row.shiftDurationHours !== undefined)
+      baseUpd.shiftDurationHours = row.shiftDurationHours;
     const insertVals: Record<string, unknown> = {
       memberId: row.memberId,
       shiftDate: row.shiftDate,
@@ -605,6 +620,8 @@ export async function bulkUpdateCtoRosterShifts(
     };
     if (row.isActing !== undefined) insertVals.isActing = row.isActing;
     if (row.shiftTime !== undefined) insertVals.shiftTime = row.shiftTime;
+    if (row.shiftDurationHours !== undefined)
+      insertVals.shiftDurationHours = row.shiftDurationHours;
     await db
       .insert(ctoRosterShifts)
       .values(insertVals as typeof ctoRosterShifts.$inferInsert)
@@ -1893,6 +1910,7 @@ export async function runCtoRosterEbaCheck(
     shiftDate: string;
     shiftCode: string;
     shiftTime: string | null;
+    shiftDurationHours?: number | null;
   }[];
   let memberMap = new Map<number, string>();
 
@@ -1908,6 +1926,7 @@ export async function runCtoRosterEbaCheck(
         shiftDate: ctoRosterShifts.shiftDate,
         shiftCode: ctoRosterShifts.shiftCode,
         shiftTime: ctoRosterShifts.shiftTime,
+        shiftDurationHours: ctoRosterShifts.shiftDurationHours,
       })
       .from(ctoRosterShifts)
       .where(conditions.length ? and(...conditions) : undefined);
@@ -1954,6 +1973,7 @@ export async function runCtoRosterEbaCheck(
     shiftDate: s.shiftDate,
     shiftCode: s.shiftCode,
     shiftTime: s.shiftTime,
+    shiftDurationHours: s.shiftDurationHours ?? null,
   }));
 
   const findings = runEbaChecks(shiftRecords, rules);
@@ -2086,7 +2106,10 @@ export interface RepeatCtoRosterCycleResult {
   cycleLengthDays: number;
   daysFilledForSource: number;
   membersUpdated: number;
-  changedByMember: Map<number, { count: number; startDate: string; endDate: string }>;
+  changedByMember: Map<
+    number,
+    { count: number; startDate: string; endDate: string }
+  >;
 }
 
 export interface CtoRosterCyclePreviewDay {

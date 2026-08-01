@@ -650,7 +650,12 @@ function checkTrainingConsecutiveDays(
   return findings;
 }
 
-/** Operational rule: on-call weekend sequence must be adoc(Fri)→o(Sat)→o(Sun)→doc(Mon) */
+/**
+ * Operational rule: on-call weekend sequence is usually adoc(Fri)→o(Sat)→o(Sun)→doc(Mon).
+ * A manually-assigned different shift type on any of those days (leave, training,
+ * another on-call variant, etc.) is a deliberate override of the usual pattern, not
+ * a rostering error — so this only flags a day that has no shift recorded at all.
+ */
 function checkOnCallSequence(
   rule: CtoRosterEbaRule,
   shifts: ShiftRecord[]
@@ -671,31 +676,20 @@ function checkOnCallSequence(
     const sun = addDays(fri.shiftDate, 2);
     const mon = addDays(fri.shiftDate, 3);
 
-    const friShift = byDate.get(fri.shiftDate);
     const satShift = byDate.get(sat);
     const sunShift = byDate.get(sun);
     const monShift = byDate.get(mon);
 
     const issues: string[] = [];
 
-    // Friday must be adoc (Admin on-call)
-    if (friShift?.shiftCode !== "adoc") {
-      issues.push(
-        `Friday should be adoc (got ${friShift?.shiftCode ?? "none"})`
-      );
+    if (!satShift) {
+      issues.push("Saturday has no shift recorded (expected o)");
     }
-    if (!satShift || satShift.shiftCode !== "o") {
-      issues.push(
-        `Saturday should be o (got ${satShift?.shiftCode ?? "none"})`
-      );
+    if (!sunShift) {
+      issues.push("Sunday has no shift recorded (expected o)");
     }
-    if (!sunShift || sunShift.shiftCode !== "o") {
-      issues.push(`Sunday should be o (got ${sunShift?.shiftCode ?? "none"})`);
-    }
-    if (!monShift || monShift.shiftCode !== "doc") {
-      issues.push(
-        `Monday should be doc (got ${monShift?.shiftCode ?? "none"})`
-      );
+    if (!monShift) {
+      issues.push("Monday has no shift recorded (expected doc)");
     }
 
     if (issues.length > 0) {

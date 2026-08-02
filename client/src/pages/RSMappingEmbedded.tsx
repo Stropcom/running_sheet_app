@@ -46,6 +46,13 @@ import {
   type MarkerIcon,
 } from "@/lib/markerSvgs";
 
+// Escapes user-entered text (address/comment/observation/titles) before it's
+// interpolated into an HTML string destined for innerHTML/setContent/
+// document.write — those are raw HTML sinks, so unescaped text would let
+// anyone who can edit a row inject markup/script into another user's browser.
+const esc = (s: string | null | undefined) =>
+  (s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 interface WaypointRow {
@@ -370,11 +377,11 @@ export default function RSMappingEmbedded() {
     const dateLabel = wpYmd && wpYmd !== sheetStartYmd ? rsmFormatPerthDateLabel(wpYmd) : null;
 
     const commentHtml = wp.comment
-      ? `<div style="margin-top:6px;padding:6px 8px;background:#fef9c3;border-left:3px solid #ca8a04;border-radius:0 4px 4px 0;font-size:11px;color:#78350f;">${wp.comment}</div>`
+      ? `<div style="margin-top:6px;padding:6px 8px;background:#fef9c3;border-left:3px solid #ca8a04;border-radius:0 4px 4px 0;font-size:11px;color:#78350f;">${esc(wp.comment)}</div>`
       : "";
 
     const obsSnippet = wp.observation
-      ? `<div style="margin-top:4px;font-size:11px;color:#555;line-height:1.4;max-height:60px;overflow:hidden;">${wp.observation.substring(0, 180)}${wp.observation.length > 180 ? "…" : ""}</div>`
+      ? `<div style="margin-top:4px;font-size:11px;color:#555;line-height:1.4;max-height:60px;overflow:hidden;">${esc(wp.observation.substring(0, 180))}${wp.observation.length > 180 ? "…" : ""}</div>`
       : "";
 
     const dateHtml = dateLabel
@@ -387,7 +394,7 @@ export default function RSMappingEmbedded() {
           <span style="background:${badgeColor};color:#fff;border-radius:4px;font-size:9px;font-weight:700;padding:2px 6px;letter-spacing:0.07em;">${badgeLabel}</span>
           <span style="font-size:11px;color:#888;">${formatTime(wp.time)}</span>${dateHtml}
         </div>
-        <strong style="font-size:13px;color:#111;display:block;margin-bottom:2px;">${wp.address}</strong>
+        <strong style="font-size:13px;color:#111;display:block;margin-bottom:2px;">${esc(wp.address)}</strong>
         ${obsSnippet}
         ${commentHtml}
         <div style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:6px;">
@@ -401,7 +408,7 @@ export default function RSMappingEmbedded() {
           </button>
         </div>
         <div style="margin-top:6px;">
-          <button onclick="window.__rsmAddComment(${wp.rowId},${sheetId},'${encodeURIComponent(wp.comment ?? '')}')"
+          <button onclick="window.__rsmAddComment(${wp.rowId},${sheetId},'${encodeURIComponent(wp.comment ?? "").replace(/'/g, "%27")}')"
              style="display:flex;align-items:center;justify-content:center;gap:4px;padding:7px 10px;background:#7c3aed;color:#fff;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:600;width:100%;">
             💬 Add Comment
           </button>
@@ -855,7 +862,7 @@ export default function RSMappingEmbedded() {
       const lat = wp.lat;
       const lng = wp.lng;
       const time = wp.time ?? "—";
-      const address = wp.address;
+      const address = esc(wp.address);
       const index = wp.index;
       const total = placed.length;
       const isFirst = index === 1;
@@ -1028,12 +1035,12 @@ export default function RSMappingEmbedded() {
       letter: i < 26 ? LETTERS[i] : "",  // map letter label
       time: wp.time ?? "—",
       date: (() => { const y = exportDateMap.get(wp.rowId); return y && y !== exportSheetStartYmd ? rsmFormatPerthDateLabel(y) : ""; })(),
-      address: wp.address,
-      observation: wp.observation ?? "",
+      address: esc(wp.address),
+      observation: esc(wp.observation ?? ""),
     }));
 
-    const sheetTitle = (sheetsData as any[] | undefined)?.find((s: any) => s.id === selectedSheetId)?.title ?? "Running Sheet";
-    const opName = (operations as any[] | undefined)?.find((o: any) => o.id === selectedOpId)?.name ?? "";
+    const sheetTitle = esc((sheetsData as any[] | undefined)?.find((s: any) => s.id === selectedSheetId)?.title ?? "Running Sheet");
+    const opName = esc((operations as any[] | undefined)?.find((o: any) => o.id === selectedOpId)?.name ?? "");
     const generatedAt = new Date().toLocaleString("en-AU", { dateStyle: "long", timeStyle: "short" });
 
     const tableRows = rows.map((r) => `

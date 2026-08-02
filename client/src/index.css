@@ -49,7 +49,7 @@
   --popover: oklch(0.16 0.012 250);
   --popover-foreground: oklch(0.93 0.01 250);
 
-  --primary: oklch(0.7 0.075 195);
+  --primary: oklch(0.72 0.14 220);
   --primary-foreground: oklch(0.1 0.01 250);
 
   --secondary: oklch(0.2 0.015 250);
@@ -66,17 +66,17 @@
 
   --border: oklch(0.24 0.015 250);
   --input: oklch(0.22 0.015 250);
-  --ring: oklch(0.7 0.075 195);
+  --ring: oklch(0.72 0.14 220);
 
   /* Sidebar */
   --sidebar: oklch(0.1 0.01 250);
   --sidebar-foreground: oklch(0.85 0.01 250);
-  --sidebar-primary: oklch(0.7 0.075 195);
+  --sidebar-primary: oklch(0.72 0.14 220);
   --sidebar-primary-foreground: oklch(0.1 0.01 250);
   --sidebar-accent: oklch(0.18 0.015 250);
   --sidebar-accent-foreground: oklch(0.93 0.01 250);
   --sidebar-border: oklch(0.2 0.012 250);
-  --sidebar-ring: oklch(0.7 0.075 195);
+  --sidebar-ring: oklch(0.72 0.14 220);
 
   /* Custom tokens */
   --locked-bg: oklch(0.14 0.018 160);
@@ -93,7 +93,7 @@
   --card-foreground: oklch(0.93 0.01 250);
   --popover: oklch(0.16 0.012 250);
   --popover-foreground: oklch(0.93 0.01 250);
-  --primary: oklch(0.7 0.075 195);
+  --primary: oklch(0.72 0.14 220);
   --primary-foreground: oklch(0.1 0.01 250);
   --secondary: oklch(0.2 0.015 250);
   --secondary-foreground: oklch(0.85 0.01 250);
@@ -105,15 +105,15 @@
   --destructive-foreground: oklch(0.98 0 0);
   --border: oklch(0.24 0.015 250);
   --input: oklch(0.22 0.015 250);
-  --ring: oklch(0.7 0.075 195);
+  --ring: oklch(0.72 0.14 220);
   --sidebar: oklch(0.1 0.01 250);
   --sidebar-foreground: oklch(0.85 0.01 250);
-  --sidebar-primary: oklch(0.7 0.075 195);
+  --sidebar-primary: oklch(0.72 0.14 220);
   --sidebar-primary-foreground: oklch(0.1 0.01 250);
   --sidebar-accent: oklch(0.18 0.015 250);
   --sidebar-accent-foreground: oklch(0.93 0.01 250);
   --sidebar-border: oklch(0.2 0.012 250);
-  --sidebar-ring: oklch(0.7 0.075 195);
+  --sidebar-ring: oklch(0.72 0.14 220);
   --locked-bg: oklch(0.14 0.018 160);
   --locked-border: oklch(0.3 0.08 160);
   --certified-color: oklch(0.72 0.18 160);
@@ -128,7 +128,7 @@
   --card-foreground: oklch(0.15 0.015 250);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.15 0.015 250);
-  --primary: oklch(0.53 0.085 195);
+  --primary: oklch(0.5 0.16 220);
   --primary-foreground: oklch(0.98 0 0);
   --secondary: oklch(0.93 0.008 250);
   --secondary-foreground: oklch(0.2 0.015 250);
@@ -140,15 +140,15 @@
   --destructive-foreground: oklch(0.98 0 0);
   --border: oklch(0.88 0.01 250);
   --input: oklch(0.92 0.008 250);
-  --ring: oklch(0.53 0.085 195);
+  --ring: oklch(0.5 0.16 220);
   --sidebar: oklch(0.95 0.008 250);
   --sidebar-foreground: oklch(0.2 0.015 250);
-  --sidebar-primary: oklch(0.53 0.085 195);
+  --sidebar-primary: oklch(0.5 0.16 220);
   --sidebar-primary-foreground: oklch(0.98 0 0);
   --sidebar-accent: oklch(0.9 0.01 250);
   --sidebar-accent-foreground: oklch(0.15 0.015 250);
   --sidebar-border: oklch(0.86 0.01 250);
-  --sidebar-ring: oklch(0.53 0.085 195);
+  --sidebar-ring: oklch(0.5 0.16 220);
   --locked-bg: oklch(0.92 0.025 160);
   --locked-border: oklch(0.55 0.12 160);
   --certified-color: oklch(0.42 0.16 160);
@@ -156,13 +156,38 @@
 }
 
 /* ── Selectable accent palettes ───────────────────────────────────────────────
-   "sage" (the default, defined above) needs no override block. Each other
-   palette overrides just the accent-driven variables — --primary/--ring and
-   the matching sidebar tokens — for both dark and light mode, applied via a
-   data-palette attribute on <html> (see AppearanceApplier in App.tsx). All
-   share the same lightness levels as the default so contrast is unaffected;
-   only hue/chroma differ, keeping every option calm and muted rather than
-   bold or saturated. */
+   "blue" (the original app accent, and the default, defined above) needs no
+   override block. Each other palette overrides just the accent-driven
+   variables — --primary/--ring and the matching sidebar tokens — for both
+   dark and light mode, applied via a data-palette attribute on <html> (see
+   AppearanceApplier in App.tsx). All share the same lightness levels as the
+   default so contrast is unaffected; only hue/chroma differ. */
+.dark[data-palette="sage"] {
+  --primary: oklch(0.7 0.075 195);
+  --ring: oklch(0.7 0.075 195);
+  --sidebar-primary: oklch(0.7 0.075 195);
+  --sidebar-ring: oklch(0.7 0.075 195);
+}
+:root:not(.dark)[data-palette="sage"] {
+  --primary: oklch(0.53 0.085 195);
+  --ring: oklch(0.53 0.085 195);
+  --sidebar-primary: oklch(0.53 0.085 195);
+  --sidebar-ring: oklch(0.53 0.085 195);
+}
+
+.dark[data-palette="pink"] {
+  --primary: oklch(0.7 0.08 10);
+  --ring: oklch(0.7 0.08 10);
+  --sidebar-primary: oklch(0.7 0.08 10);
+  --sidebar-ring: oklch(0.7 0.08 10);
+}
+:root:not(.dark)[data-palette="pink"] {
+  --primary: oklch(0.53 0.1 10);
+  --ring: oklch(0.53 0.1 10);
+  --sidebar-primary: oklch(0.53 0.1 10);
+  --sidebar-ring: oklch(0.53 0.1 10);
+}
+
 .dark[data-palette="dusty-blue"] {
   --primary: oklch(0.7 0.06 235);
   --ring: oklch(0.7 0.06 235);

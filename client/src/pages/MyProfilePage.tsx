@@ -37,10 +37,12 @@ const ROLE_LABELS: Record<string, { label: string; color: string; badge: string 
 // (light-mode and dark-mode variants, since the picker should preview
 // whichever mode the user is currently in).
 const PALETTE_SWATCHES: Record<string, { light: string; dark: string }> = {
+  blue: { light: "oklch(0.5 0.16 220)", dark: "oklch(0.72 0.14 220)" },
   sage: { light: "oklch(0.53 0.085 195)", dark: "oklch(0.7 0.075 195)" },
   "dusty-blue": { light: "oklch(0.53 0.075 235)", dark: "oklch(0.7 0.06 235)" },
   lavender: { light: "oklch(0.53 0.07 300)", dark: "oklch(0.7 0.06 300)" },
   sand: { light: "oklch(0.53 0.09 55)", dark: "oklch(0.7 0.05 55)" },
+  pink: { light: "oklch(0.53 0.1 10)", dark: "oklch(0.7 0.08 10)" },
   slate: { light: "oklch(0.53 0.035 250)", dark: "oklch(0.7 0.02 250)" },
 };
 
@@ -353,7 +355,7 @@ export default function MyProfilePage() {
             </div>
 
             <p className="text-xs text-muted-foreground mt-5 mb-3">Choose your accent colour.</p>
-            <div className="flex flex-wrap gap-3">
+            <div className="grid grid-cols-4 sm:grid-cols-7 gap-3">
               {COLOR_PALETTES.map((p) => {
                 const swatch = PALETTE_SWATCHES[p.id][theme === "dark" ? "dark" : "light"];
                 const selected = colorPalette === p.id;
@@ -361,14 +363,14 @@ export default function MyProfilePage() {
                   <button
                     key={p.id}
                     onClick={() => handleSelectPalette(p.id)}
-                    className={`flex flex-col items-center gap-1.5 rounded-lg border px-3 py-2.5 text-xs font-medium transition-all ${
+                    className={`flex flex-col items-center justify-center gap-1.5 min-h-[76px] rounded-lg border px-2 py-2.5 text-xs font-medium text-center transition-all ${
                       selected
                         ? "border-primary bg-primary/10 text-primary"
                         : "border-border text-muted-foreground hover:border-border/80 hover:text-foreground"
                     }`}
                   >
                     <span
-                      className="w-6 h-6 rounded-full border border-border/50"
+                      className="w-6 h-6 rounded-full border border-border/50 shrink-0"
                       style={{ backgroundColor: swatch }}
                     />
                     {p.label}

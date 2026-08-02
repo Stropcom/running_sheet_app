@@ -139,6 +139,7 @@ import {
   setSheetTarget,
   deepSearchOperations,
   getAllIntelligenceEntities,
+  getIntelligenceHeatMapLocations,
   extractEntitiesFromText,
   checkPossibleDuplicates,
   markEntitiesNotDuplicate,
@@ -2599,6 +2600,29 @@ export const appRouter = router({
     getEntities: protectedProcedure.query(async () => {
       return getAllIntelligenceEntities();
     }),
+
+    /** Heat Map: location visit counts + coordinates for one Operation,
+     * optionally narrowed to one Target, over a When window. */
+    getHeatMapLocations: protectedProcedure
+      .input(
+        z.object({
+          operationId: z.number(),
+          targetId: z.number().nullable().optional(),
+          when: z.discriminatedUnion("mode", [
+            z.object({ mode: z.literal("sheet"), sheetId: z.number() }),
+            z.object({ mode: z.literal("last7") }),
+            z.object({ mode: z.literal("last30") }),
+            z.object({
+              mode: z.literal("custom"),
+              startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+              endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+            }),
+          ]),
+        })
+      )
+      .query(async ({ input }) => {
+        return getIntelligenceHeatMapLocations(input);
+      }),
 
     /** Association graph — nodes and weighted edges from entity co-occurrence */
     getAssociationGraph: protectedProcedure

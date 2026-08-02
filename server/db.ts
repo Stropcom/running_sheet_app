@@ -16,6 +16,7 @@ import { drizzle } from "drizzle-orm/mysql2";
 import { createPool as createPromisePool } from "mysql2/promise";
 import { vaultEncrypt, vaultDecrypt } from "./wipcVault";
 import { cosineSimilarity } from "./faceRecognition";
+import { makeRequest, type GeocodingResult } from "./_core/map";
 import {
   auditLogs,
   certifications,
@@ -61,6 +62,7 @@ import {
   WipcOfficerProfile,
   userLocations,
   customMapMarkers,
+  intelligenceGeocodeCache,
   CustomMapMarker,
   InsertCustomMapMarker,
   rsMappingWaypoints,
@@ -3251,6 +3253,200 @@ export async function getSheetEntityChips(
   return Array.from(byKey.values())
     .sort((a, b) => TYPE_ORDER[a.type] - TYPE_ORDER[b.type])
     .slice(0, 24);
+}
+
+// ─── Intelligence Heat Map ──────────────────────────────────────────────────
+// Aggregates address/business entities extracted from a scoped set of running
+// sheet rows (one Operation, optionally one Target, and a time window) into
+// per-location visit counts + coordinates for the Heat Map view.
+
+/** Perth-anchored (+08:00, no DST) YYYY-MM-DD for "today". */
+function perthTodayISO(): string {
+  return toPerthDateISO(new Date());
+}
+
+/** YYYY-MM-DD (Perth-anchored) for a JS Date — used to fall back to the
+ * running sheet's creation date when a row has no explicit rowDate. */
+function toPerthDateISO(d: Date): string {
+  return new Date(d.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/** Add (or subtract) days to a YYYY-MM-DD string, Perth-anchored — same
+ * anchoring approach as getRowsBySheetId's day-offset math above. */
+function addDaysISO(dateISO: string, days: number): string {
+  const d = new Date(dateISO + "T00:00:00+08:00");
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+export type IntelligenceHeatMapWhen =
+  | { mode: "sheet"; sheetId: number }
+  | { mode: "last7" }
+  | { mode: "last30" }
+  | { mode: "custom"; startDate: string; endDate: string }; // YYYY-MM-DD, inclusive
+
+export interface IntelligenceHeatMapLocation {
+  label: string;
+  count: number;
+  lat: number;
+  lng: number;
+}
+
+export async function getIntelligenceHeatMapLocations(params: {
+  operationId: number;
+  targetId?: number | null;
+  when: IntelligenceHeatMapWhen;
+}): Promise<IntelligenceHeatMapLocation[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  // ── Resolve the scoped set of sheets (Operation, optionally + Target) ──────
+  let sheetIds: number[];
+  const sheetCreatedAt = new Map<number, Date>();
+
+  if (params.when.mode === "sheet") {
+    const sheet = await db
+      .select({ id: runningSheets.id, createdAt: runningSheets.createdAt })
+      .from(runningSheets)
+      .where(
+        and(
+          eq(runningSheets.id, params.when.sheetId),
+          eq(runningSheets.operationId, params.operationId),
+          isNull(runningSheets.deletedAt)
+        )
+      )
+      .limit(1);
+    if (!sheet.length) return [];
+    sheetIds = [sheet[0].id];
+    sheetCreatedAt.set(sheet[0].id, sheet[0].createdAt);
+  } else {
+    const conditions = [
+      eq(runningSheets.operationId, params.operationId),
+      isNull(runningSheets.deletedAt),
+    ];
+    if (params.targetId)
+      conditions.push(eq(runningSheets.targetId, params.targetId));
+    const sheets = await db
+      .select({ id: runningSheets.id, createdAt: runningSheets.createdAt })
+      .from(runningSheets)
+      .where(and(...conditions));
+    if (!sheets.length) return [];
+    sheetIds = sheets.map(s => s.id);
+    for (const s of sheets) sheetCreatedAt.set(s.id, s.createdAt);
+  }
+
+  const rows = await db
+    .select({
+      id: sheetRows.id,
+      sheetId: sheetRows.sheetId,
+      observation: sheetRows.observation,
+      rowDate: sheetRows.rowDate,
+      dayOffset: sheetRows.dayOffset,
+    })
+    .from(sheetRows)
+    .where(inArray(sheetRows.sheetId, sheetIds));
+
+  // ── "When": Running Sheet mode takes every row in that sheet as-is (a
+  // sheet can span multiple days); the other three modes resolve a concrete
+  // date window and keep only rows whose date falls inside it. Priority for
+  // a row's date matches getRowsBySheetId above: explicit rowDate first,
+  // else the sheet's creation date shifted by dayOffset. (Unlike
+  // getRowsBySheetId, this skips the third-tier timeMinutes-rollover
+  // inference — that's a per-sheet sequential scan meant for single-sheet
+  // rendering, disproportionately expensive to replicate across every sheet
+  // in scope here, and only matters for legacy rows predating rowDate.)
+  let scopedRows = rows;
+  if (params.when.mode !== "sheet") {
+    let startISO: string;
+    let endISO: string;
+    if (params.when.mode === "custom") {
+      startISO = params.when.startDate;
+      endISO = params.when.endDate;
+    } else {
+      endISO = perthTodayISO();
+      startISO = addDaysISO(endISO, params.when.mode === "last7" ? -6 : -29);
+    }
+    scopedRows = rows.filter(r => {
+      const resolvedDate =
+        r.rowDate ??
+        addDaysISO(
+          toPerthDateISO(sheetCreatedAt.get(r.sheetId) ?? new Date()),
+          r.dayOffset
+        );
+      return resolvedDate >= startISO && resolvedDate <= endISO;
+    });
+  }
+
+  // ── Extract address/business entities from the scoped rows, grouped by
+  // the same normalized key used to dedup entities elsewhere ──────────────
+  const grouped = new Map<string, { label: string; count: number }>();
+  for (const row of scopedRows) {
+    if (!row.observation) continue;
+    const extracted = extractEntitiesFromText(row.observation);
+    for (const e of extracted) {
+      if (e.type !== "address" && e.type !== "business") continue;
+      const key = normalizeEntityLabel(e.shortForm);
+      const existing = grouped.get(key);
+      if (existing) {
+        existing.count++;
+        if (e.shortForm.length > existing.label.length)
+          existing.label = e.shortForm;
+      } else {
+        grouped.set(key, { label: e.shortForm, count: 1 });
+      }
+    }
+  }
+
+  const results = await Promise.all(
+    Array.from(grouped.entries()).map(async ([key, { label, count }]) => {
+      const coords = await resolveLatLng(key, label);
+      if (!coords) return null;
+      return { label, count, lat: coords.lat, lng: coords.lng };
+    })
+  );
+
+  return results
+    .filter((r): r is IntelligenceHeatMapLocation => r !== null)
+    .sort((a, b) => b.count - a.count);
+}
+
+/** Cache-first geocoding for intel addresses — geocodes once via Google's
+ * Geocoding API and persists the result, so re-opening the Heat Map doesn't
+ * re-geocode the same addresses every time. */
+export async function resolveLatLng(
+  addressKey: string,
+  rawAddress: string
+): Promise<{ lat: number; lng: number } | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const cached = await db
+    .select({
+      lat: intelligenceGeocodeCache.lat,
+      lng: intelligenceGeocodeCache.lng,
+    })
+    .from(intelligenceGeocodeCache)
+    .where(eq(intelligenceGeocodeCache.addressKey, addressKey))
+    .limit(1);
+  if (cached.length) return cached[0];
+
+  try {
+    const result = await makeRequest<GeocodingResult>(
+      "/maps/api/geocode/json",
+      { address: rawAddress + ", Western Australia, Australia", region: "au" }
+    );
+    if (result.status !== "OK" || !result.results.length) return null;
+    const loc = result.results[0].geometry.location;
+    await db
+      .insert(intelligenceGeocodeCache)
+      .values({ addressKey, lat: loc.lat, lng: loc.lng })
+      .onDuplicateKeyUpdate({
+        set: { lat: loc.lat, lng: loc.lng, resolvedAt: new Date() },
+      });
+    return { lat: loc.lat, lng: loc.lng };
+  } catch {
+    return null;
+  }
 }
 
 export async function getAllIntelligenceEntities(): Promise<

@@ -505,6 +505,13 @@
       "when": 1785642858083,
       "tag": "0071_smart_apocalypse",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "5",
+      "when": 1785660988205,
+      "tag": "0072_lean_kinsey_walden",
+      "breakpoints": true
     }
   ]
 }

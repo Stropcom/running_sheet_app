@@ -337,6 +337,31 @@ export type EntityDedupDecision = typeof entityDedupDecisions.$inferSelect;
 export type InsertEntityDedupDecision =
   typeof entityDedupDecisions.$inferInsert;
 
+// ─── Intelligence Geocode Cache ─────────────────────────────────────────────
+// Caches lat/lng for addresses extracted from observation text, keyed by the
+// same normalized label used to group/dedup intel entities elsewhere
+// (normalizeEntityLabel). Populated lazily by the Heat Map — geocoded once,
+// reused after, instead of re-geocoding the same address on every view.
+export const intelligenceGeocodeCache = mysqlTable(
+  "intelligence_geocode_cache",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    addressKey: varchar("addressKey", { length: 512 }).notNull(),
+    lat: double("lat").notNull(),
+    lng: double("lng").notNull(),
+    resolvedAt: timestamp("resolvedAt").defaultNow().notNull(),
+  },
+  table => ({
+    addressKeyIdx: uniqueIndex("intelligence_geocode_cache_key_idx").on(
+      table.addressKey
+    ),
+  })
+);
+export type IntelligenceGeocodeCache =
+  typeof intelligenceGeocodeCache.$inferSelect;
+export type InsertIntelligenceGeocodeCache =
+  typeof intelligenceGeocodeCache.$inferInsert;
+
 // ─── Targets ────────────────────────────────────────────────────────────────
 // One row per target in the global registry. Targets are independent of
 // operations — they are linked via the operation_target_links join table.

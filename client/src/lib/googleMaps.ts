@@ -29,8 +29,8 @@ const FORGE_BASE_URL =
   "https://forge.butterfly-effect.dev";
 const MAPS_PROXY_URL = `${FORGE_BASE_URL}/v1/maps/proxy`;
 const MAPS_SCRIPT_SRC = DIRECT_GOOGLE_MAPS_KEY
-  ? `https://maps.googleapis.com/maps/api/js?key=${DIRECT_GOOGLE_MAPS_KEY}&v=weekly&libraries=marker,places,geocoding,geometry,routes`
-  : `${MAPS_PROXY_URL}/maps/api/js?key=${API_KEY}&v=weekly&libraries=marker,places,geocoding,geometry,routes`;
+  ? `https://maps.googleapis.com/maps/api/js?key=${DIRECT_GOOGLE_MAPS_KEY}&v=weekly&libraries=marker,places,geocoding,geometry,routes,visualization`
+  : `${MAPS_PROXY_URL}/maps/api/js?key=${API_KEY}&v=weekly&libraries=marker,places,geocoding,geometry,routes,visualization`;
 
 let loadPromise: Promise<void> | null = null;
 

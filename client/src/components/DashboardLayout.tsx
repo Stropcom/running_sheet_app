@@ -643,13 +643,13 @@ const MAX_WIDTH = 400;
 
 const ROLE_CONFIG = {
   admin: {
-    label: "Full Access + User Management",
+    label: "Admin",
     icon: Crown,
     color: "text-blue-400",
     badge: "border-blue-400/30 bg-blue-400/10 text-blue-400",
   },
   member: {
-    label: "Full Access",
+    label: "Member",
     icon: ShieldCheck,
     color: "text-emerald-400",
     badge: "border-emerald-400/30 bg-emerald-400/10 text-emerald-400",

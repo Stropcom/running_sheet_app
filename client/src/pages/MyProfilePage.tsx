@@ -18,18 +18,29 @@ import {
   Sun,
   Moon,
   Phone,
-  ImageIcon,
-  Trash2,
-  Upload,
 } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useTheme } from "@/contexts/ThemeContext";
+import { COLOR_PALETTES, DEFAULT_COLOR_PALETTE } from "@shared/const";
 
 const ROLE_LABELS: Record<string, { label: string; color: string; badge: string }> = {
-  admin:    { label: "Full Access + User Management", color: "text-amber-400", badge: "border-amber-400/30 text-amber-400 bg-amber-400/10" },
-  member:   { label: "Full Access",                   color: "text-emerald-400", badge: "border-emerald-400/30 text-emerald-400 bg-emerald-400/10" },
-  observer: { label: "Observer",                      color: "text-sky-400",    badge: "border-sky-400/30 text-sky-400 bg-sky-400/10"         },
+  admin:    { label: "Admin",    color: "text-amber-400",   badge: "border-amber-400/30 text-amber-400 bg-amber-400/10" },
+  member:   { label: "Member",   color: "text-emerald-400", badge: "border-emerald-400/30 text-emerald-400 bg-emerald-400/10" },
+  observer: { label: "Observer", color: "text-sky-400",     badge: "border-sky-400/30 text-sky-400 bg-sky-400/10"         },
+};
+
+// Representative swatch colours for each palette, matching index.css exactly
+// (light-mode and dark-mode variants, since the picker should preview
+// whichever mode the user is currently in).
+const PALETTE_SWATCHES: Record<string, { light: string; dark: string }> = {
+  blue: { light: "oklch(0.5 0.16 220)", dark: "oklch(0.72 0.14 220)" },
+  sage: { light: "oklch(0.53 0.085 195)", dark: "oklch(0.7 0.075 195)" },
+  "dusty-blue": { light: "oklch(0.53 0.075 235)", dark: "oklch(0.7 0.06 235)" },
+  lavender: { light: "oklch(0.53 0.07 300)", dark: "oklch(0.7 0.06 300)" },
+  sand: { light: "oklch(0.53 0.09 55)", dark: "oklch(0.7 0.05 55)" },
+  pink: { light: "oklch(0.53 0.1 10)", dark: "oklch(0.7 0.08 10)" },
+  slate: { light: "oklch(0.53 0.035 250)", dark: "oklch(0.7 0.02 250)" },
 };
 
 function InfoRow({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value?: string | null }) {
@@ -146,87 +157,25 @@ export default function MyProfilePage() {
   const roleConf = ROLE_LABELS[(profile?.role as string) ?? "observer"];
   const { theme, toggleTheme } = useTheme();
 
-  // ── Wallpaper ─────────────────────────────────────────────────────────────
-  const wallpaperInputRef = useRef<HTMLInputElement>(null);
-  const [wallpaperPreview, setWallpaperPreview] = useState<string | null>(null);
-  // persistedWallpaperUrl holds the URL returned by the server after a successful upload;
-  // it acts as a stable fallback so the image doesn't vanish while profile.me refetches.
-  const [persistedWallpaperUrl, setPersistedWallpaperUrl] = useState<string | null>(null);
-  const [wallpaperOpacity, setWallpaperOpacity] = useState<number>(40);
+  // ── Accent colour palette ────────────────────────────────────────────────
+  const [colorPalette, setColorPalette] = useState<string>(DEFAULT_COLOR_PALETTE);
 
   useEffect(() => {
     if (profile) {
-      const p = profile as { wallpaperOpacity?: number | null; wallpaperUrl?: string | null };
-      setWallpaperOpacity(p.wallpaperOpacity ?? 40);
-      // Apply persisted wallpaper on load — also sync persistedWallpaperUrl
-      if (p.wallpaperUrl) {
-        setPersistedWallpaperUrl(p.wallpaperUrl);
-        document.documentElement.style.setProperty("--wallpaper-url", `url(${p.wallpaperUrl})`);
-        document.documentElement.style.setProperty("--wallpaper-opacity", String((100 - (p.wallpaperOpacity ?? 40)) / 100));
-      } else {
-        // Profile explicitly has no wallpaper — only clear if we haven't just uploaded one
-        if (!persistedWallpaperUrl) {
-          document.documentElement.style.removeProperty("--wallpaper-url");
-          document.documentElement.style.removeProperty("--wallpaper-opacity");
-        }
-      }
+      const p = profile as { colorPalette?: string | null };
+      setColorPalette(p.colorPalette ?? DEFAULT_COLOR_PALETTE);
     }
-  }, [profile]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [profile]);
 
-  const uploadWallpaperMutation = trpc.profile.uploadWallpaper.useMutation({
-    onSuccess: (data) => {
-      toast.success("Wallpaper updated.");
-      // Store the returned URL immediately so currentWallpaper stays non-null
-      // even while profile.me is refetching
-      setPersistedWallpaperUrl(data.url);
-      setWallpaperPreview(null);
-      document.documentElement.style.setProperty("--wallpaper-url", `url(${data.url})`);
-      document.documentElement.style.setProperty("--wallpaper-opacity", String((100 - data.opacity) / 100));
-      utils.profile.me.invalidate();
-    },
-    onError: (err) => {
-      // Upload failed — clear the local preview so stale data-URL doesn't persist
-      setWallpaperPreview(null);
-      toast.error(`Wallpaper upload failed: ${err.message}`);
-    },
-  });
-
-  const clearWallpaperMutation = trpc.profile.clearWallpaper.useMutation({
-    onSuccess: () => {
-      toast.success("Wallpaper removed.");
-      setPersistedWallpaperUrl(null);
-      setWallpaperPreview(null);
-      document.documentElement.style.removeProperty("--wallpaper-url");
-      document.documentElement.style.removeProperty("--wallpaper-opacity");
-      utils.profile.me.invalidate();
-    },
+  const updateColorPaletteMutation = trpc.profile.updateColorPalette.useMutation({
     onError: (err) => toast.error(err.message),
   });
 
-  const updateOpacityMutation = trpc.profile.updateWallpaperOpacity.useMutation({
-    onSuccess: () => {
-      utils.profile.me.invalidate();
-      document.documentElement.style.setProperty("--wallpaper-opacity", String((100 - wallpaperOpacity) / 100));
-    },
-  });
-
-  const handleWallpaperFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { toast.error("Image must be under 5 MB."); return; }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
-      setWallpaperPreview(dataUrl);
-      const base64 = dataUrl.split(",")[1];
-      uploadWallpaperMutation.mutate({ dataBase64: base64, mimeType: file.type, opacity: wallpaperOpacity });
-    };
-    reader.readAsDataURL(file);
-    e.target.value = "";
+  const handleSelectPalette = (id: string) => {
+    setColorPalette(id);
+    document.documentElement.dataset.palette = id;
+    updateColorPaletteMutation.mutate({ palette: id });
   };
-
-  // Priority: local preview (data-URL during upload) → server-returned URL (after upload, before refetch) → profile DB value
-  const currentWallpaper = wallpaperPreview ?? persistedWallpaperUrl ?? (profile as { wallpaperUrl?: string | null } | undefined)?.wallpaperUrl ?? null;
 
   return (
     <DashboardLayout>
@@ -319,88 +268,33 @@ export default function MyProfilePage() {
                 Dark
               </button>
             </div>
+
+            <p className="text-xs text-muted-foreground mt-5 mb-3">Choose your accent colour.</p>
+            <div className="grid grid-cols-4 sm:grid-cols-7 gap-3">
+              {COLOR_PALETTES.map((p) => {
+                const swatch = PALETTE_SWATCHES[p.id][theme === "dark" ? "dark" : "light"];
+                const selected = colorPalette === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => handleSelectPalette(p.id)}
+                    className={`flex flex-col items-center justify-center gap-1.5 min-h-[76px] rounded-lg border px-2 py-2.5 text-xs font-medium text-center transition-all ${
+                      selected
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border text-muted-foreground hover:border-border/80 hover:text-foreground"
+                    }`}
+                  >
+                    <span
+                      className="w-6 h-6 rounded-full border border-border/50 shrink-0"
+                      style={{ backgroundColor: swatch }}
+                    />
+                    {p.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
-
-        {/* Wallpaper Card */}
-        <div className="rounded-xl border border-border bg-card p-6 mb-6 shadow-sm">
-          <h2 className="text-sm font-semibold text-foreground mb-1 flex items-center gap-2">
-            <ImageIcon className="w-4 h-4 text-primary" />
-            Background Wallpaper
-          </h2>
-          <p className="text-xs text-muted-foreground mb-4">Set a custom background image for all pages. Max 5 MB (JPEG, PNG, WebP).</p>
-
-          {/* Preview */}
-          {currentWallpaper ? (
-            <div className="relative w-full h-28 rounded-lg overflow-hidden mb-4 border border-border">
-              <img src={currentWallpaper} alt="Wallpaper preview" className="w-full h-full object-cover" />
-              <div className="absolute inset-0 bg-black" style={{ opacity: (100 - wallpaperOpacity) / 100 }} />
-              <span className="absolute bottom-2 left-2 text-[10px] text-white/80 bg-black/40 rounded px-1.5 py-0.5">Preview</span>
-            </div>
-          ) : (
-            <div className="w-full h-28 rounded-lg border-2 border-dashed border-border flex items-center justify-center mb-4 bg-muted/20">
-              <span className="text-xs text-muted-foreground">No wallpaper set</span>
-            </div>
-          )}
-
-          {/* Opacity slider — only shown when a wallpaper is active */}
-          {currentWallpaper && (
-            <div className="mb-4">
-              <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium block mb-2">
-                Overlay darkness — {100 - wallpaperOpacity}%
-              </label>
-              <input
-                type="range" min={0} max={100} step={5}
-                value={100 - wallpaperOpacity}
-                onChange={(e) => {
-                  const darkness = Number(e.target.value);
-                  const newOpacity = 100 - darkness;
-                  setWallpaperOpacity(newOpacity);
-                  document.documentElement.style.setProperty("--wallpaper-opacity", String(darkness / 100));
-                }}
-                onMouseUp={() => updateOpacityMutation.mutate({ opacity: wallpaperOpacity })}
-                onTouchEnd={() => updateOpacityMutation.mutate({ opacity: wallpaperOpacity })}
-                className="w-full accent-primary"
-              />
-              <div className="flex justify-between text-[10px] text-muted-foreground mt-0.5">
-                <span>Transparent</span><span>Dark</span>
-              </div>
-            </div>
-          )}
-
-          {/* Buttons */}
-          <div className="flex gap-2">
-            <input
-              ref={wallpaperInputRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif"
-              className="hidden"
-              onChange={handleWallpaperFile}
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              className="flex-1 gap-1.5"
-              onClick={() => wallpaperInputRef.current?.click()}
-              disabled={uploadWallpaperMutation.isPending}
-            >
-              <Upload className="w-3.5 h-3.5" />
-              {uploadWallpaperMutation.isPending ? "Uploading…" : currentWallpaper ? "Change Wallpaper" : "Upload Wallpaper"}
-            </Button>
-            {currentWallpaper && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10"
-                onClick={() => clearWallpaperMutation.mutate()}
-                disabled={clearWallpaperMutation.isPending}
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                Remove
-              </Button>
-            )}
-          </div>
-        </div>
 
         {/* Change Password Card */}
         <div className="rounded-xl border border-border bg-card p-6 shadow-sm">

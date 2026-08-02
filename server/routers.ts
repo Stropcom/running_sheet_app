@@ -1,10 +1,10 @@
 import bcrypt from "bcryptjs";
 import { format } from "date-fns";
-import { storagePut, storageGetBytes } from "./storage";
+import { storageGetBytes } from "./storage";
 import { detectAndEmbedFaces, cosineSimilarity } from "./faceRecognition";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { COOKIE_NAME, SESSION_EXPIRY_MS } from "@shared/const";
+import { COOKIE_NAME, SESSION_EXPIRY_MS, COLOR_PALETTES } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import {
   processAttachmentUpload,
@@ -223,9 +223,6 @@ import {
   getSidebarOrder,
   setSidebarOrder,
   DEFAULT_SIDEBAR_ORDER,
-  getHomePrefs,
-  setHomePrefs,
-  DEFAULT_TILE_ORDER,
   createRowAttachment,
   getAttachmentsByRowIds,
   getAttachmentById,
@@ -401,51 +398,16 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    uploadWallpaper: protectedProcedure
+    updateColorPalette: protectedProcedure
       .input(
         z.object({
-          // base64-encoded image data
-          dataBase64: z.string().min(1),
-          mimeType: z
-            .string()
-            .regex(
-              /^image\/(jpeg|png|webp|gif)$/,
-              "Only JPEG, PNG, WebP or GIF images are allowed."
-            ),
-          opacity: z.number().int().min(0).max(100).default(40),
+          palette: z.enum(
+            COLOR_PALETTES.map(p => p.id) as [string, ...string[]]
+          ),
         })
       )
       .mutation(async ({ input, ctx }) => {
-        const buffer = Buffer.from(input.dataBase64, "base64");
-        // Limit to 5 MB
-        if (buffer.byteLength > 5 * 1024 * 1024) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Wallpaper image must be under 5 MB.",
-          });
-        }
-        const ext = input.mimeType.split("/")[1];
-        const key = `wallpapers/user-${ctx.user.id}-${Date.now()}.${ext}`;
-        const { url } = await storagePut(key, buffer, input.mimeType);
-        await updateUser(ctx.user.id, {
-          wallpaperUrl: url,
-          wallpaperOpacity: input.opacity,
-        });
-        return { url, opacity: input.opacity };
-      }),
-
-    clearWallpaper: protectedProcedure.mutation(async ({ ctx }) => {
-      await updateUser(ctx.user.id, {
-        wallpaperUrl: null,
-        wallpaperOpacity: 40,
-      });
-      return { success: true };
-    }),
-
-    updateWallpaperOpacity: protectedProcedure
-      .input(z.object({ opacity: z.number().int().min(0).max(100) }))
-      .mutation(async ({ input, ctx }) => {
-        await updateUser(ctx.user.id, { wallpaperOpacity: input.opacity });
+        await updateUser(ctx.user.id, { colorPalette: input.palette });
         return { success: true };
       }),
   }),
@@ -4512,21 +4474,6 @@ export const appRouter = router({
       .input(z.object({ orderedKeys: z.array(z.string()) }))
       .mutation(async ({ input, ctx }) => {
         await setSidebarOrder(ctx.user.id, input.orderedKeys);
-        return { ok: true };
-      }),
-    getHomePrefs: protectedProcedure.query(async ({ ctx }) => {
-      const prefs = await getHomePrefs(ctx.user.id);
-      return { ...prefs, defaultTileOrder: DEFAULT_TILE_ORDER };
-    }),
-    setHomePrefs: protectedProcedure
-      .input(
-        z.object({
-          mode: z.enum(["folder", "tile"]).optional(),
-          tileOrder: z.array(z.string()).optional(),
-        })
-      )
-      .mutation(async ({ input, ctx }) => {
-        await setHomePrefs(ctx.user.id, input);
         return { ok: true };
       }),
   }),

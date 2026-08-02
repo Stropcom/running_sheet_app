@@ -1,5 +1,6 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
+import { APP_VERSION } from "@shared/const";
 import {
   DndContext,
   pointerWithin,
@@ -26,6 +27,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  SIDEBAR_COOKIE_NAME,
   Sidebar,
   SidebarContent,
   SidebarFooter,
@@ -75,12 +77,11 @@ import {
   UserCog,
   BarChart3,
   GripVertical,
-  LayoutGrid,
-  List,
   Image,
   Link2,
   FileEdit,
   Binoculars,
+  RefreshCw,
 } from "lucide-react";
 import React, {
   CSSProperties,
@@ -95,6 +96,7 @@ import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { NotificationBell } from "./NotificationBell";
 import { Button } from "./ui/button";
+import { PullToRefresh, useRefreshAction } from "./PullToRefresh";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useSectionColor } from "@/contexts/SectionColorContext";
 
@@ -104,6 +106,20 @@ import { useSectionColor } from "@/contexts/SectionColorContext";
 // This module-level value survives that remount so the sidebar stays scrolled
 // to wherever the user left it (e.g. deep in an expanded Op Manager folder).
 let lastSidebarScrollTop = 0;
+
+// SidebarProvider persists its open/collapsed state to a cookie on every
+// toggle, but only reads it back if we pass it in as `defaultOpen` — and
+// since a fresh <SidebarProvider> is mounted on every navigation (see
+// above), leaving that unset means the sidebar snaps back open on every
+// click. Reading the cookie synchronously here keeps a manually-closed
+// sidebar closed until the toggle is clicked again.
+function getInitialSidebarOpen(): boolean {
+  if (typeof document === "undefined") return true;
+  const match = document.cookie.match(
+    new RegExp(`(?:^|; )${SIDEBAR_COOKIE_NAME}=([^;]*)`)
+  );
+  return match ? match[1] === "true" : true;
+}
 
 // ─── SortableNavItem ─────────────────────────────────────────────────────────
 type SortableNavItemProps = {
@@ -642,13 +658,13 @@ const MAX_WIDTH = 400;
 
 const ROLE_CONFIG = {
   admin: {
-    label: "Full Access + User Management",
+    label: "Admin",
     icon: Crown,
     color: "text-blue-400",
     badge: "border-blue-400/30 bg-blue-400/10 text-blue-400",
   },
   member: {
-    label: "Full Access",
+    label: "Member",
     icon: ShieldCheck,
     color: "text-emerald-400",
     badge: "border-emerald-400/30 bg-emerald-400/10 text-emerald-400",
@@ -723,6 +739,7 @@ export default function DashboardLayout({
 
   return (
     <SidebarProvider
+      defaultOpen={getInitialSidebarOpen()}
       style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
     >
       <DashboardLayoutContent
@@ -749,6 +766,7 @@ function DashboardLayoutContent({
   const [location, setLocation] = useLocation();
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === "collapsed";
+  const { refresh, refreshing } = useRefreshAction();
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const sidebarScrollRef = useRef<HTMLDivElement>(null);
@@ -879,33 +897,7 @@ function DashboardLayoutContent({
     setActiveRsId(readActiveRsId());
   }, [location, readActiveRsId]);
 
-  // ── Home screen mode toggle ──────────────────────────────────────────────
-  const [homeMode, setHomeMode] = useState<"folder" | "tile">("folder");
-  const { data: homePrefsData } = trpc.sidebar.getHomePrefs.useQuery(
-    undefined,
-    { staleTime: Infinity }
-  );
   const dashboardUtils = trpc.useUtils();
-  const setHomePrefsMutation = trpc.sidebar.setHomePrefs.useMutation({
-    onSuccess: () => dashboardUtils.sidebar.getHomePrefs.invalidate(),
-  });
-
-  useEffect(() => {
-    if (homePrefsData?.mode) {
-      setHomeMode(homePrefsData.mode as "folder" | "tile");
-    }
-  }, [homePrefsData]);
-
-  function toggleHomeMode() {
-    const newMode = homeMode === "folder" ? "tile" : "folder";
-    setHomeMode(newMode);
-    setHomePrefsMutation.mutate({ mode: newMode });
-    if (newMode === "tile") {
-      setLocation("/tile-home");
-    } else {
-      setLocation("/");
-    }
-  }
 
   // ── Sidebar drag-to-reorder ──────────────────────────────────────────────
   const DEFAULT_NAV_ORDER = [
@@ -1031,46 +1023,45 @@ function DashboardLayoutContent({
             <div className="flex items-center gap-3 px-2 w-full">
               <button
                 onClick={toggleSidebar}
-                className="h-8 w-8 flex items-center justify-center hover:bg-sidebar-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
+                className={`flex items-center justify-center hover:bg-sidebar-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0 ${
+                  isCollapsed ? "h-8 w-8" : "h-10 w-10"
+                }`}
                 aria-label="Toggle navigation"
               >
-                <PanelLeft className="h-4 w-4 text-sidebar-foreground/60" />
+                <PanelLeft
+                  className={
+                    isCollapsed
+                      ? "h-4 w-4 text-sidebar-foreground/60"
+                      : "h-5 w-5 text-sidebar-foreground/60"
+                  }
+                />
               </button>
               {!isCollapsed && (
                 <div className="flex items-center gap-2 min-w-0 flex-1">
                   <ShieldCheck className="w-5 h-5 text-sidebar-primary shrink-0" />
                   <span className="font-semibold text-sidebar-foreground tracking-tight truncate text-sm">
-                    Running Sheet
+                    RunLog
                   </span>
                 </div>
+              )}
+              {!isCollapsed && (
+                <button
+                  onClick={() => void refresh()}
+                  disabled={refreshing}
+                  className="h-8 w-8 flex items-center justify-center hover:bg-sidebar-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0 disabled:opacity-50"
+                  aria-label="Refresh"
+                  title="Refresh"
+                >
+                  <RefreshCw
+                    className={`h-4 w-4 text-sidebar-foreground/60 ${refreshing ? "animate-spin" : ""}`}
+                  />
+                </button>
               )}
               {!isCollapsed && (
                 <NotificationBell
                   className="hover:bg-sidebar-accent"
                   iconClassName="h-4 w-4 text-sidebar-foreground/60"
                 />
-              )}
-              {!isCollapsed && (
-                <button
-                  onClick={toggleHomeMode}
-                  className="h-8 w-8 flex items-center justify-center hover:bg-sidebar-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0 ml-auto"
-                  title={
-                    homeMode === "folder"
-                      ? "Switch to Dashboard"
-                      : "Switch to Folders"
-                  }
-                  aria-label={
-                    homeMode === "folder"
-                      ? "Switch to Dashboard"
-                      : "Switch to Folders"
-                  }
-                >
-                  {homeMode === "folder" ? (
-                    <LayoutGrid className="h-4 w-4 text-sidebar-foreground/60" />
-                  ) : (
-                    <List className="h-4 w-4 text-sidebar-foreground/60" />
-                  )}
-                </button>
               )}
             </div>
           </SidebarHeader>
@@ -1327,109 +1318,125 @@ function DashboardLayoutContent({
 
           {/* Footer */}
           <SidebarFooter className="p-3 border-t border-sidebar-border">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-sidebar-accent transition-colors w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                  <Avatar className="h-8 w-8 border border-sidebar-border shrink-0">
-                    <AvatarFallback className="text-xs font-semibold bg-sidebar-primary/20 text-sidebar-primary">
-                      {user?.name?.charAt(0).toUpperCase() ?? "?"}
-                    </AvatarFallback>
-                  </Avatar>
-                  {!isCollapsed && (
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-sidebar-foreground truncate leading-none">
-                        {user?.name ?? "—"}
-                      </p>
-                      <div className="flex items-center gap-1 mt-1.5">
-                        {(() => {
-                          const roleConf =
-                            ROLE_CONFIG[
-                              (user?.role as keyof typeof ROLE_CONFIG) ??
-                                "observer"
-                            ];
-                          const RoleIcon = roleConf?.icon ?? Eye;
-                          return (
-                            <>
-                              <RoleIcon
-                                className={`w-3 h-3 ${roleConf?.color}`}
-                              />
-                              <span className={`text-xs ${roleConf?.color}`}>
-                                {roleConf?.label}
-                              </span>
-                            </>
-                          );
-                        })()}
+            <div className="flex items-center gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-sidebar-accent transition-colors flex-1 min-w-0 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    <Avatar className="h-8 w-8 border border-sidebar-border shrink-0">
+                      <AvatarFallback className="text-xs font-semibold bg-sidebar-primary/20 text-sidebar-primary">
+                        {user?.name?.charAt(0).toUpperCase() ?? "?"}
+                      </AvatarFallback>
+                    </Avatar>
+                    {!isCollapsed && (
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-sidebar-foreground truncate leading-none">
+                          {user?.name ?? "—"}
+                        </p>
+                        <div className="flex items-center gap-1 mt-1.5">
+                          {(() => {
+                            const roleConf =
+                              ROLE_CONFIG[
+                                (user?.role as keyof typeof ROLE_CONFIG) ??
+                                  "observer"
+                              ];
+                            const RoleIcon = roleConf?.icon ?? Eye;
+                            return (
+                              <>
+                                <RoleIcon
+                                  className={`w-3 h-3 ${roleConf?.color}`}
+                                />
+                                <span
+                                  className={`text-xs ${roleConf?.color}`}
+                                >
+                                  {roleConf?.label}
+                                </span>
+
+                              </>
+                            );
+                          })()}
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
-                <div className="px-2 py-1.5">
-                  <p className="text-sm font-medium">{user?.name}</p>
-                  <p className="text-xs text-muted-foreground font-mono">
-                    {(user as any)?.cin
-                      ? `CIN: ${(user as any).cin}`
-                      : ((user as any)?.username ?? "")}
-                  </p>
-                  {(user as any)?.unit && (
-                    <p className="text-xs text-muted-foreground">
-                      {(user as any).unit}
+                    )}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52">
+                  <div className="px-2 py-1.5">
+                    <p className="text-sm font-medium">{user?.name}</p>
+                    <p className="text-xs text-muted-foreground font-mono">
+                      {(user as any)?.cin
+                        ? `CIN: ${(user as any).cin}`
+                        : ((user as any)?.username ?? "")}
                     </p>
-                  )}
-                  {(() => {
-                    const roleConf =
-                      ROLE_CONFIG[
-                        (user?.role as keyof typeof ROLE_CONFIG) ?? "observer"
-                      ];
-                    const RoleIcon = roleConf?.icon ?? Eye;
-                    return (
-                      <Badge
-                        variant="outline"
-                        className={`mt-1.5 text-xs gap-1 ${roleConf?.badge}`}
-                      >
-                        <RoleIcon className="w-3 h-3" />
-                        {roleConf?.label}
-                      </Badge>
-                    );
-                  })()}
-                </div>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => setLocation("/profile")}
-                  className="cursor-pointer"
-                >
-                  <UserCircle className="mr-2 h-4 w-4" />
-                  My Profile
-                </DropdownMenuItem>
-                {toggleTheme && (
+                    {(user as any)?.unit && (
+                      <p className="text-xs text-muted-foreground">
+                        {(user as any).unit}
+                      </p>
+                    )}
+                    {(() => {
+                      const roleConf =
+                        ROLE_CONFIG[
+                          (user?.role as keyof typeof ROLE_CONFIG) ??
+                            "observer"
+                        ];
+                      const RoleIcon = roleConf?.icon ?? Eye;
+                      return (
+                        <Badge
+                          variant="outline"
+                          className={`mt-1.5 text-xs gap-1 ${roleConf?.badge}`}
+                        >
+                          <RoleIcon className="w-3 h-3" />
+                          {roleConf?.label}
+                        </Badge>
+                      );
+                    })()}
+                  </div>
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem
-                    onClick={toggleTheme}
+                    onClick={() => setLocation("/profile")}
                     className="cursor-pointer"
                   >
-                    {theme === "dark" ? (
-                      <>
-                        <Sun className="mr-2 h-4 w-4" />
-                        Switch to Light Mode
-                      </>
-                    ) : (
-                      <>
-                        <Moon className="mr-2 h-4 w-4" />
-                        Switch to Dark Mode
-                      </>
-                    )}
+                    <UserCircle className="mr-2 h-4 w-4" />
+                    My Profile
                   </DropdownMenuItem>
-                )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={logout}
-                  className="cursor-pointer text-destructive focus:text-destructive"
-                >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Sign out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  {toggleTheme && (
+                    <DropdownMenuItem
+                      onClick={toggleTheme}
+                      className="cursor-pointer"
+                    >
+                      {theme === "dark" ? (
+                        <>
+                          <Sun className="mr-2 h-4 w-4" />
+                          Switch to Light Mode
+                        </>
+                      ) : (
+                        <>
+                          <Moon className="mr-2 h-4 w-4" />
+                          Switch to Dark Mode
+                        </>
+                      )}
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={logout}
+                    className="cursor-pointer text-destructive focus:text-destructive"
+                  >
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Sign out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              {!isCollapsed && (
+                <div className="text-right shrink-0 pr-1">
+                  <p className="text-[10px] uppercase tracking-wider text-sidebar-foreground/40 leading-none">
+                    Version
+                  </p>
+                  <p className="text-xs font-mono text-sidebar-foreground/60 leading-none mt-1">
+                    {APP_VERSION}
+                  </p>
+                </div>
+              )}
+            </div>
           </SidebarFooter>
         </Sidebar>
 
@@ -1457,7 +1464,7 @@ function DashboardLayoutContent({
                 <PanelLeft className="h-6 w-6" />
               </button>
               <span className="text-base font-semibold text-foreground">
-                Running Sheet
+                RunLog
               </span>
             </div>
             <div className="flex items-center gap-2">
@@ -1557,7 +1564,11 @@ function DashboardLayoutContent({
             )}
           </div>
         )}
-        <main className="flex-1 min-h-screen bg-background/90">{children}</main>
+        <main className="flex-1 min-h-screen bg-background/90">
+          <PullToRefresh disabled={location === "/intelligence/mapping"}>
+            {children}
+          </PullToRefresh>
+        </main>
       </SidebarInset>
 
       {/* ── Shortcuts Reference Panel ─────────────────────────────────────── */}

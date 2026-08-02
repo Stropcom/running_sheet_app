@@ -155,6 +155,91 @@
   --uncertified-color: oklch(0.48 0.02 250);
 }
 
+/* ── Selectable accent palettes ───────────────────────────────────────────────
+   "blue" (the original app accent, and the default, defined above) needs no
+   override block. Each other palette overrides just the accent-driven
+   variables — --primary/--ring and the matching sidebar tokens — for both
+   dark and light mode, applied via a data-palette attribute on <html> (see
+   AppearanceApplier in App.tsx). All share the same lightness levels as the
+   default so contrast is unaffected; only hue/chroma differ. */
+.dark[data-palette="sage"] {
+  --primary: oklch(0.7 0.075 195);
+  --ring: oklch(0.7 0.075 195);
+  --sidebar-primary: oklch(0.7 0.075 195);
+  --sidebar-ring: oklch(0.7 0.075 195);
+}
+:root:not(.dark)[data-palette="sage"] {
+  --primary: oklch(0.53 0.085 195);
+  --ring: oklch(0.53 0.085 195);
+  --sidebar-primary: oklch(0.53 0.085 195);
+  --sidebar-ring: oklch(0.53 0.085 195);
+}
+
+.dark[data-palette="pink"] {
+  --primary: oklch(0.7 0.08 10);
+  --ring: oklch(0.7 0.08 10);
+  --sidebar-primary: oklch(0.7 0.08 10);
+  --sidebar-ring: oklch(0.7 0.08 10);
+}
+:root:not(.dark)[data-palette="pink"] {
+  --primary: oklch(0.53 0.1 10);
+  --ring: oklch(0.53 0.1 10);
+  --sidebar-primary: oklch(0.53 0.1 10);
+  --sidebar-ring: oklch(0.53 0.1 10);
+}
+
+.dark[data-palette="dusty-blue"] {
+  --primary: oklch(0.7 0.06 235);
+  --ring: oklch(0.7 0.06 235);
+  --sidebar-primary: oklch(0.7 0.06 235);
+  --sidebar-ring: oklch(0.7 0.06 235);
+}
+:root:not(.dark)[data-palette="dusty-blue"] {
+  --primary: oklch(0.53 0.075 235);
+  --ring: oklch(0.53 0.075 235);
+  --sidebar-primary: oklch(0.53 0.075 235);
+  --sidebar-ring: oklch(0.53 0.075 235);
+}
+
+.dark[data-palette="lavender"] {
+  --primary: oklch(0.7 0.06 300);
+  --ring: oklch(0.7 0.06 300);
+  --sidebar-primary: oklch(0.7 0.06 300);
+  --sidebar-ring: oklch(0.7 0.06 300);
+}
+:root:not(.dark)[data-palette="lavender"] {
+  --primary: oklch(0.53 0.07 300);
+  --ring: oklch(0.53 0.07 300);
+  --sidebar-primary: oklch(0.53 0.07 300);
+  --sidebar-ring: oklch(0.53 0.07 300);
+}
+
+.dark[data-palette="sand"] {
+  --primary: oklch(0.7 0.05 55);
+  --ring: oklch(0.7 0.05 55);
+  --sidebar-primary: oklch(0.7 0.05 55);
+  --sidebar-ring: oklch(0.7 0.05 55);
+}
+:root:not(.dark)[data-palette="sand"] {
+  --primary: oklch(0.53 0.09 55);
+  --ring: oklch(0.53 0.09 55);
+  --sidebar-primary: oklch(0.53 0.09 55);
+  --sidebar-ring: oklch(0.53 0.09 55);
+}
+
+.dark[data-palette="slate"] {
+  --primary: oklch(0.7 0.02 250);
+  --ring: oklch(0.7 0.02 250);
+  --sidebar-primary: oklch(0.7 0.02 250);
+  --sidebar-ring: oklch(0.7 0.02 250);
+}
+:root:not(.dark)[data-palette="slate"] {
+  --primary: oklch(0.53 0.035 250);
+  --ring: oklch(0.53 0.035 250);
+  --sidebar-primary: oklch(0.53 0.035 250);
+  --sidebar-ring: oklch(0.53 0.035 250);
+}
+
 /* ── CTO Roster: shift code colour palette ────────────────────────────────── */
 /* Ported from roster_app — each shift code gets a maximally distinct,
    accessible background + foreground. Same across light/dark themes. */
@@ -272,27 +357,6 @@
   }
   body {
     @apply bg-background text-foreground font-sans antialiased;
-  }
-  /* Wallpaper support — applied via JS CSS variable when user sets a wallpaper */
-  body::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    z-index: -1;
-    background-image: var(--wallpaper-url, none);
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
-    pointer-events: none;
-  }
-  body::after {
-    content: "";
-    position: fixed;
-    inset: 0;
-    z-index: -1;
-    background: black;
-    opacity: var(--wallpaper-opacity, 0);
-    pointer-events: none;
   }
   .flex {
     min-width: 0;

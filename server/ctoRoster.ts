@@ -674,7 +674,9 @@ export async function bulkCopyCtoRosterShifts(
       const changed =
         (old?.shiftCode ?? "") !== s.shiftCode ||
         (old?.comment ?? null) !== (s.comment ?? null) ||
-        (old?.isActing ?? false) !== (s.isActing ?? false);
+        (old?.isActing ?? false) !== (s.isActing ?? false) ||
+        (old?.shiftTime ?? null) !== (s.shiftTime ?? null) ||
+        (old?.shiftDurationHours ?? null) !== (s.shiftDurationHours ?? null);
       if (changed) {
         changedByMember.set(targetId, (changedByMember.get(targetId) ?? 0) + 1);
       }
@@ -686,6 +688,8 @@ export async function bulkCopyCtoRosterShifts(
           shiftCode: s.shiftCode,
           comment: s.comment,
           isActing: s.isActing ?? false,
+          shiftTime: s.shiftTime,
+          shiftDurationHours: s.shiftDurationHours,
           updatedBy,
         })
         .onDuplicateKeyUpdate({
@@ -693,6 +697,8 @@ export async function bulkCopyCtoRosterShifts(
             shiftCode: s.shiftCode,
             comment: s.comment,
             isActing: s.isActing ?? false,
+            shiftTime: s.shiftTime,
+            shiftDurationHours: s.shiftDurationHours,
             updatedBy,
           },
         });

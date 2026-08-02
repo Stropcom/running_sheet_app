@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { trpc } from "@/lib/trpc";
+import { trpc, trpcClient } from "@/lib/trpc";
 import { MapView } from "@/components/Map";
 import {
   Select,
@@ -8,7 +8,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Flame, MapPin } from "lucide-react";
+import { Flame, MapPin, Download } from "lucide-react";
+import { toast } from "sonner";
+import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 
 // Cool → hot, six stops — used for both the map's heat gradient and the
 // Top Locations intensity dots, so the two stay visually consistent.
@@ -25,6 +27,150 @@ type WhenMode = "sheet" | "last7" | "last30" | "custom";
 
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+// ─── PDF export ─────────────────────────────────────────────────────────────
+// Same visual language as the Running Sheet Summary / Intelligence Profile
+// exports: dark-blue cover-header banner, light-blue section headers,
+// PROTECTED page marking — see SheetSummary.tsx's exportSummaryToPDF for the
+// shared convention this mirrors.
+function exportHeatMapToPDF(params: {
+  operationName: string;
+  targetName: string | null;
+  whenLabel: string;
+  locations: { label: string; count: number; colour: string }[];
+  mapImageDataUrl: string | null;
+}): boolean {
+  const { operationName, targetName, whenLabel, locations, mapImageDataUrl } =
+    params;
+  const esc = (s: string | null | undefined) =>
+    (s ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+
+  const BLUE_DARK = "#1e3a8a";
+  const BLUE_MID = "#93c5fd";
+  const BLUE_LIGHT = "#dbeafe";
+  const GREY_TEXT = "#1e293b";
+  const GREY_BORDER = "#e2e8f0";
+
+  const detailRow = (label: string, value: string) =>
+    value.trim()
+      ? `<div class="detail-label">${esc(label)}</div><div class="detail-value">${esc(value)}</div>`
+      : "";
+
+  const section = (title: string, bodyHtml: string) =>
+    bodyHtml
+      ? `<div class="section"><div class="section-title">${esc(title)}</div><div class="section-body">${bodyHtml}</div></div>`
+      : "";
+
+  const plainSection = (title: string, bodyHtml: string) =>
+    bodyHtml
+      ? `<div class="plain-section"><div class="plain-section-title">${esc(title)}</div>${bodyHtml}</div>`
+      : "";
+
+  const mapHtml = mapImageDataUrl
+    ? `<img src="${mapImageDataUrl}" style="width:100%;border-radius:6px;display:block" />`
+    : `<p class="muted-note">No geocoded locations to plot for this selection.</p>`;
+
+  const locationsHtml = locations.length
+    ? `<table class="summary-table">
+        <thead><tr><th style="width:28px"></th><th>Location</th><th style="width:90px">Observations</th></tr></thead>
+        <tbody>${locations
+          .map(
+            l =>
+              `<tr><td><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${l.colour}"></span></td><td>${esc(l.label)}</td><td>${l.count}</td></tr>`
+          )
+          .join("")}</tbody>
+      </table>`
+    : `<p class="muted-note">No locations found for this selection.</p>`;
+
+  const generatedAt = new Date().toLocaleString("en-AU", {
+    dateStyle: "long",
+    timeStyle: "short",
+  });
+
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>RunLog Intelligence Heat Map — ${esc(operationName)}</title>
+<style>
+* { box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+@page{ margin:20mm 15mm; @top-center{content:'PROTECTED';font-family:'Roboto',sans-serif;font-size:12px;font-weight:700;color:#dc2626;letter-spacing:0.08em} @bottom-center{content:"Page " counter(page) " of " counter(pages);font-family:'Roboto',sans-serif;font-size:11px;font-weight:700;color:${BLUE_DARK};letter-spacing:0.04em} }
+body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.6; color:${GREY_TEXT}; background:#fff; }
+.cover-header { background:${BLUE_DARK} !important; color:#fff !important; padding:26px 32px 22px; text-align:center; }
+.brand-row { display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:14px; opacity:0.85; }
+.brand-dot { width:10px; height:10px; border-radius:50%; background:${BLUE_MID}; }
+.brand-label { font-size:10px; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; color:${BLUE_MID}; }
+.main-title { font-size:26px; font-weight:800; letter-spacing:0.04em; text-transform:uppercase; line-height:1.2; }
+.op-date-line { font-size:16px; font-weight:600; margin-top:8px; }
+.sheet-name { font-size:11px; opacity:0.65; margin-top:6px; }
+.page-frame { width:100%; border-collapse:collapse; }
+.page-frame td { padding:0; border:none; }
+tfoot { display:table-footer-group; }
+.content { padding:20px 32px 8px; }
+.section { margin-bottom:14px; border:1px solid ${GREY_BORDER}; border-radius:8px; overflow:hidden; break-inside:avoid; page-break-inside:avoid; }
+.section-title { font-size:10px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${BLUE_DARK} !important; padding:7px 14px; background:${BLUE_LIGHT} !important; border-bottom:1px solid ${GREY_BORDER}; }
+.section-body { padding:12px 14px; }
+.plain-section { margin-bottom:18px; }
+.plain-section-title { font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${BLUE_DARK} !important; padding:6px 10px; background:${BLUE_LIGHT} !important; border-left:3px solid ${BLUE_MID}; margin-bottom:10px; }
+.detail-grid { display:grid; grid-template-columns:130px 1fr; gap:0; font-size:10.5px; }
+.detail-grid > div { padding:4px 6px; }
+.detail-grid > div:nth-child(4n+1), .detail-grid > div:nth-child(4n+2) { background:#f8fafc; }
+.detail-label { color:#64748b; font-weight:600; }
+.detail-value { color:${GREY_TEXT}; }
+.muted-note { font-size:10px; color:#94a3b8; font-style:italic; }
+.summary-table { width:100%; border-collapse:collapse; border:1.5px solid ${BLUE_DARK}; }
+.summary-table th { background:${BLUE_LIGHT} !important; color:${BLUE_DARK} !important; font-weight:700; font-size:9.5px; text-transform:uppercase; letter-spacing:0.04em; text-align:left; padding:6px 8px; border-bottom:2px solid ${BLUE_DARK}; border-right:1px solid #c7d5ee; }
+.summary-table th:last-child, .summary-table td:last-child { border-right:none; }
+.summary-table td { vertical-align:top; font-size:10.5px; padding:6px 8px; border-bottom:1px solid ${GREY_BORDER}; border-right:1px solid ${GREY_BORDER}; }
+.summary-table tbody tr:last-child td { border-bottom:none; }
+.footer-note { margin:14px 32px 0; padding:12px 0; border-top:1px solid ${GREY_BORDER}; font-size:9px; color:#94a3b8; }
+.footer-band { background:${BLUE_DARK} !important; color:#fff !important; padding:8px 32px; display:grid; grid-template-columns:1fr 1fr 1fr; align-items:center; font-size:9px; font-weight:700; letter-spacing:0.04em; }
+.footer-band span:first-child { text-align:left; }
+.footer-band span:last-child { text-align:right; color:rgba(255,255,255,0.85); text-transform:uppercase; }
+.footer-protected { text-align:center; font-weight:800; letter-spacing:0.14em; color:#f87171; text-transform:uppercase; }
+@media print { * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; } .cover-header { background:${BLUE_DARK} !important; } .section-title { background:${BLUE_LIGHT} !important; } .plain-section-title { background:${BLUE_LIGHT} !important; } .summary-table th { background:${BLUE_LIGHT} !important; } .footer-band { background:${BLUE_DARK} !important; } }
+</style></head><body>
+<div class="cover-header">
+  <div class="brand-row"><div class="brand-dot"></div><span class="brand-label">RunLog</span></div>
+  <div class="main-title">Intelligence Heat Map</div>
+  <div class="op-date-line">${esc(operationName)}</div>
+  <div class="sheet-name">${targetName ? `${esc(`Target: ${targetName}`)} &middot; ` : ""}${esc(whenLabel)}</div>
+</div>
+<table class="page-frame">
+<tfoot><tr><td>
+  <div class="footer-band">
+    <span></span>
+    <span class="footer-protected">Protected</span>
+    <span>RunLog</span>
+  </div>
+</td></tr></tfoot>
+<tbody><tr><td>
+<div class="content">
+  ${section(
+    "Filters",
+    `<div class="detail-grid">
+      ${detailRow("Operation", operationName)}
+      ${detailRow("Target", targetName ?? "All Targets")}
+      ${detailRow("When", whenLabel)}
+    </div>`
+  )}
+  ${section("Map", mapHtml)}
+  ${plainSection("Top Locations", locationsHtml)}
+  <div class="footer-note">
+    <span>Generated: ${generatedAt}</span>
+  </div>
+</div>
+</td></tr></tbody>
+</table>
+${buildExportPreviewCloseBar()}
+</body></html>`;
+
+  const win = window.open("", "_blank");
+  if (!win) return false;
+  win.document.write(html);
+  win.document.close();
+  return true;
 }
 
 export default function IntelligenceHeatMap() {
@@ -88,15 +234,21 @@ export default function IntelligenceHeatMap() {
 
   const mapRef = useRef<google.maps.Map | null>(null);
   const circlesRef = useRef<google.maps.Circle[]>([]);
+  const dotsRef = useRef<google.maps.Marker[]>([]);
 
   // Google removed the visualization library's HeatmapLayer from the Maps
   // JavaScript API (gone as of v3.65, with deck.gl as their suggested
   // replacement) — this app doesn't pull in third-party map libraries, so
   // density is instead approximated with overlapping, weighted, semi-
-  // transparent circles: same HEAT_RAMP colour, radius scaled by count.
+  // transparent circles: same HEAT_RAMP colour, radius scaled by count. A
+  // small fixed-size dot marks the exact geocoded point at the centre of
+  // each circle, since the circle's own radius grows with count and would
+  // otherwise obscure exactly where the address sits.
   useEffect(() => {
     circlesRef.current.forEach(c => c.setMap(null));
     circlesRef.current = [];
+    dotsRef.current.forEach(d => d.setMap(null));
+    dotsRef.current = [];
     if (!mapRef.current || !window.google?.maps) return;
     if (!locations || locations.length === 0) return;
 
@@ -119,133 +271,220 @@ export default function IntelligenceHeatMap() {
         clickable: false,
       });
       circlesRef.current.push(circle);
+
+      const dot = new google.maps.Marker({
+        position: { lat: l.lat, lng: l.lng },
+        map: mapRef.current,
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 4,
+          fillColor: "#ffffff",
+          fillOpacity: 1,
+          strokeColor: color,
+          strokeWeight: 2,
+        },
+        clickable: false,
+        zIndex: 999,
+      });
+      dotsRef.current.push(dot);
+
       bounds.extend({ lat: l.lat, lng: l.lng });
     }
     mapRef.current.fitBounds(bounds, 48);
   }, [locations, maxCount]);
 
+  const [exporting, setExporting] = useState(false);
+
+  const handleExportPdf = async () => {
+    if (operationId == null) return;
+    setExporting(true);
+    try {
+      let mapImageDataUrl: string | null = null;
+      if (locations && locations.length > 0) {
+        toast.info("Capturing map…");
+        const waypoints = locations.map((l, i) => ({
+          lat: l.lat,
+          lng: l.lng,
+          index: i,
+          colour: colourFor(l.count),
+        }));
+        const result = await trpcClient.rsMapping.getStaticMapImage.query({
+          waypoints,
+          size: "1000x650",
+        });
+        mapImageDataUrl = result.dataUrl;
+      }
+
+      const operationName =
+        (operations ?? []).find((op: any) => op.id === operationId)?.name ??
+        "—";
+      const targetName =
+        targetId != null
+          ? ((targets ?? []).find((t: any) => t.id === targetId)?.name ?? null)
+          : null;
+      const whenLabel =
+        whenMode === "sheet"
+          ? `Running Sheet — ${(sheets ?? []).find((s: any) => s.id === sheetId)?.title ?? ""}`
+          : whenMode === "last7"
+            ? "Last 7 Days"
+            : whenMode === "last30"
+              ? "Last 30 Days"
+              : `${customFrom} to ${customTo}`;
+
+      const ok = exportHeatMapToPDF({
+        operationName,
+        targetName,
+        whenLabel,
+        locations: (locations ?? []).map(l => ({
+          label: l.label,
+          count: l.count,
+          colour: colourFor(l.count),
+        })),
+        mapImageDataUrl,
+      });
+      if (!ok) {
+        toast.error("Pop-up blocked. Please allow pop-ups and try again.");
+      }
+    } catch {
+      toast.error("Failed to export heat map.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
       {/* ── Filters ── */}
-      <div className="flex flex-wrap items-center gap-3 px-1 pb-3">
-        <div className="flex flex-col gap-1">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Operation
-          </span>
-          <Select
-            value={operationId != null ? String(operationId) : undefined}
-            onValueChange={v => setOperationId(Number(v))}
-          >
-            <SelectTrigger className="w-48 h-9 text-xs">
-              <SelectValue placeholder="Select an operation…" />
-            </SelectTrigger>
-            <SelectContent>
-              {(operations ?? []).map((op: any) => (
-                <SelectItem key={op.id} value={String(op.id)}>
-                  {op.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Target
-          </span>
-          <Select
-            value={targetId != null ? String(targetId) : "all"}
-            onValueChange={v => setTargetId(v === "all" ? null : Number(v))}
-            disabled={operationId == null}
-          >
-            <SelectTrigger className="w-48 h-9 text-xs">
-              <SelectValue placeholder="All Targets" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Targets</SelectItem>
-              {(targets ?? []).map((t: any) => (
-                <SelectItem key={t.id} value={String(t.id)}>
-                  {t.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            When
-          </span>
-          <div className="flex gap-1.5 flex-wrap">
-            {(
-              [
-                { value: "sheet", label: "Running Sheet" },
-                { value: "last7", label: "Last 7 Days" },
-                { value: "last30", label: "Last 30 Days" },
-                { value: "custom", label: "Custom…" },
-              ] as const
-            ).map(opt => (
-              <button
-                key={opt.value}
-                onClick={() => setWhenMode(opt.value)}
-                disabled={operationId == null}
-                className={`px-3 h-9 rounded-lg text-xs font-medium border transition-colors disabled:opacity-40 ${
-                  whenMode === opt.value
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-muted/40 text-muted-foreground border-border/60 hover:bg-muted/70"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {whenMode === "sheet" && operationId != null && (
+      <div className="flex flex-wrap items-start justify-between gap-3 px-1 pb-3">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="flex flex-col gap-1">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Sheet
+              Operation
             </span>
             <Select
-              value={sheetId != null ? String(sheetId) : undefined}
-              onValueChange={v => setSheetId(Number(v))}
+              value={operationId != null ? String(operationId) : undefined}
+              onValueChange={v => setOperationId(Number(v))}
             >
               <SelectTrigger className="w-48 h-9 text-xs">
-                <SelectValue placeholder="Select a sheet…" />
+                <SelectValue placeholder="Select an operation…" />
               </SelectTrigger>
               <SelectContent>
-                {(sheets ?? []).map((s: any) => (
-                  <SelectItem key={s.id} value={String(s.id)}>
-                    {s.title}
+                {(operations ?? []).map((op: any) => (
+                  <SelectItem key={op.id} value={String(op.id)}>
+                    {op.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
-        )}
 
-        {whenMode === "custom" && (
           <div className="flex flex-col gap-1">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Date range
+              Target
             </span>
-            <div className="flex gap-2 items-center h-9">
-              <input
-                type="date"
-                value={customFrom}
-                onChange={e => setCustomFrom(e.target.value)}
-                className="border border-border/60 rounded-md px-2 h-9 text-xs bg-background text-foreground"
-              />
-              <span className="text-xs text-muted-foreground">to</span>
-              <input
-                type="date"
-                value={customTo}
-                onChange={e => setCustomTo(e.target.value)}
-                className="border border-border/60 rounded-md px-2 h-9 text-xs bg-background text-foreground"
-              />
+            <Select
+              value={targetId != null ? String(targetId) : "all"}
+              onValueChange={v => setTargetId(v === "all" ? null : Number(v))}
+              disabled={operationId == null}
+            >
+              <SelectTrigger className="w-48 h-9 text-xs">
+                <SelectValue placeholder="All Targets" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Targets</SelectItem>
+                {(targets ?? []).map((t: any) => (
+                  <SelectItem key={t.id} value={String(t.id)}>
+                    {t.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              When
+            </span>
+            <div className="flex gap-1.5 flex-wrap">
+              {(
+                [
+                  { value: "last7", label: "Last 7 Days" },
+                  { value: "last30", label: "Last 30 Days" },
+                  { value: "custom", label: "Custom…" },
+                  { value: "sheet", label: "Running Sheet" },
+                ] as const
+              ).map(opt => (
+                <button
+                  key={opt.value}
+                  onClick={() => setWhenMode(opt.value)}
+                  disabled={operationId == null}
+                  className={`px-3 h-9 rounded-lg text-xs font-medium border transition-colors disabled:opacity-40 ${
+                    whenMode === opt.value
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-muted/40 text-muted-foreground border-border/60 hover:bg-muted/70"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
             </div>
           </div>
-        )}
+
+          {whenMode === "sheet" && operationId != null && (
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Sheet
+              </span>
+              <Select
+                value={sheetId != null ? String(sheetId) : undefined}
+                onValueChange={v => setSheetId(Number(v))}
+              >
+                <SelectTrigger className="w-48 h-9 text-xs">
+                  <SelectValue placeholder="Select a sheet…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(sheets ?? []).map((s: any) => (
+                    <SelectItem key={s.id} value={String(s.id)}>
+                      {s.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {whenMode === "custom" && (
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Date range
+              </span>
+              <div className="flex gap-2 items-center h-9">
+                <input
+                  type="date"
+                  value={customFrom}
+                  onChange={e => setCustomFrom(e.target.value)}
+                  className="border border-border/60 rounded-md px-2 h-9 text-xs bg-background text-foreground"
+                />
+                <span className="text-xs text-muted-foreground">to</span>
+                <input
+                  type="date"
+                  value={customTo}
+                  onChange={e => setCustomTo(e.target.value)}
+                  className="border border-border/60 rounded-md px-2 h-9 text-xs bg-background text-foreground"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        <button
+          onClick={handleExportPdf}
+          disabled={operationId == null || exporting}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border bg-card text-sm font-medium text-foreground hover:bg-muted/50 transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <Download className="w-4 h-4" />
+          {exporting ? "Exporting…" : "Export PDF"}
+        </button>
       </div>
 
       {/* ── Map + Top Locations ── */}

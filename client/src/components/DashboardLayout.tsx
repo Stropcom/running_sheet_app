@@ -26,6 +26,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  SIDEBAR_COOKIE_NAME,
   Sidebar,
   SidebarContent,
   SidebarFooter,
@@ -79,6 +80,7 @@ import {
   Link2,
   FileEdit,
   Binoculars,
+  RefreshCw,
 } from "lucide-react";
 import React, {
   CSSProperties,
@@ -93,7 +95,7 @@ import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { NotificationBell } from "./NotificationBell";
 import { Button } from "./ui/button";
-import { PullToRefresh } from "./PullToRefresh";
+import { PullToRefresh, useRefreshAction } from "./PullToRefresh";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useSectionColor } from "@/contexts/SectionColorContext";
 
@@ -103,6 +105,20 @@ import { useSectionColor } from "@/contexts/SectionColorContext";
 // This module-level value survives that remount so the sidebar stays scrolled
 // to wherever the user left it (e.g. deep in an expanded Op Manager folder).
 let lastSidebarScrollTop = 0;
+
+// SidebarProvider persists its open/collapsed state to a cookie on every
+// toggle, but only reads it back if we pass it in as `defaultOpen` — and
+// since a fresh <SidebarProvider> is mounted on every navigation (see
+// above), leaving that unset means the sidebar snaps back open on every
+// click. Reading the cookie synchronously here keeps a manually-closed
+// sidebar closed until the toggle is clicked again.
+function getInitialSidebarOpen(): boolean {
+  if (typeof document === "undefined") return true;
+  const match = document.cookie.match(
+    new RegExp(`(?:^|; )${SIDEBAR_COOKIE_NAME}=([^;]*)`)
+  );
+  return match ? match[1] === "true" : true;
+}
 
 // ─── SortableNavItem ─────────────────────────────────────────────────────────
 type SortableNavItemProps = {
@@ -722,6 +738,7 @@ export default function DashboardLayout({
 
   return (
     <SidebarProvider
+      defaultOpen={getInitialSidebarOpen()}
       style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
     >
       <DashboardLayoutContent
@@ -748,6 +765,7 @@ function DashboardLayoutContent({
   const [location, setLocation] = useLocation();
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === "collapsed";
+  const { refresh, refreshing } = useRefreshAction();
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const sidebarScrollRef = useRef<HTMLDivElement>(null);
@@ -1004,10 +1022,18 @@ function DashboardLayoutContent({
             <div className="flex items-center gap-3 px-2 w-full">
               <button
                 onClick={toggleSidebar}
-                className="h-8 w-8 flex items-center justify-center hover:bg-sidebar-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
+                className={`flex items-center justify-center hover:bg-sidebar-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0 ${
+                  isCollapsed ? "h-8 w-8" : "h-10 w-10"
+                }`}
                 aria-label="Toggle navigation"
               >
-                <PanelLeft className="h-4 w-4 text-sidebar-foreground/60" />
+                <PanelLeft
+                  className={
+                    isCollapsed
+                      ? "h-4 w-4 text-sidebar-foreground/60"
+                      : "h-5 w-5 text-sidebar-foreground/60"
+                  }
+                />
               </button>
               {!isCollapsed && (
                 <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -1016,6 +1042,19 @@ function DashboardLayoutContent({
                     Running Sheet
                   </span>
                 </div>
+              )}
+              {!isCollapsed && (
+                <button
+                  onClick={() => void refresh()}
+                  disabled={refreshing}
+                  className="h-8 w-8 flex items-center justify-center hover:bg-sidebar-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0 disabled:opacity-50"
+                  aria-label="Refresh"
+                  title="Refresh"
+                >
+                  <RefreshCw
+                    className={`h-4 w-4 text-sidebar-foreground/60 ${refreshing ? "animate-spin" : ""}`}
+                  />
+                </button>
               )}
               {!isCollapsed && (
                 <NotificationBell

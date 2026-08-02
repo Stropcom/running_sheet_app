@@ -18,6 +18,34 @@ const MAX_PULL = 100; // px cap on visual pull distance (rubber-band limit)
 const PULL_RESISTANCE = 0.5; // fraction of raw finger movement applied to the indicator
 const MIN_REFRESH_MS = 500; // keep the spinner up at least this long so it doesn't just flash
 
+/** Shared refresh logic behind both the touch pull gesture and the desktop
+ * refresh button: invalidates all active tRPC queries and kicks off an
+ * offline-draft sync so the current view re-fetches fresh data. */
+export function useRefreshAction() {
+  const queryClient = useQueryClient();
+  const { triggerSync } = useOffline();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const refresh = useCallback(async () => {
+    setRefreshing(true);
+    const started = Date.now();
+    try {
+      await Promise.all([
+        triggerSync().catch(() => {}),
+        queryClient.invalidateQueries().catch(() => {}),
+      ]);
+    } finally {
+      const elapsed = Date.now() - started;
+      if (elapsed < MIN_REFRESH_MS) {
+        await new Promise(r => setTimeout(r, MIN_REFRESH_MS - elapsed));
+      }
+      setRefreshing(false);
+    }
+  }, [queryClient, triggerSync]);
+
+  return { refresh, refreshing };
+}
+
 interface Props {
   children: React.ReactNode;
   /** Disable the gesture — e.g. on the full-screen map, where a downward drag
@@ -26,10 +54,8 @@ interface Props {
 }
 
 export function PullToRefresh({ children, disabled }: Props) {
-  const queryClient = useQueryClient();
-  const { triggerSync } = useOffline();
+  const { refresh, refreshing } = useRefreshAction();
   const [pullDistance, setPullDistance] = useState(0);
-  const [refreshing, setRefreshing] = useState(false);
   const [isTouchViewport, setIsTouchViewport] = useState(false);
   const startYRef = useRef<number | null>(null);
   const draggingRef = useRef(false);
@@ -45,22 +71,9 @@ export function PullToRefresh({ children, disabled }: Props) {
   }, []);
 
   const doRefresh = useCallback(async () => {
-    setRefreshing(true);
-    const started = Date.now();
-    try {
-      await Promise.all([
-        triggerSync().catch(() => {}),
-        queryClient.invalidateQueries().catch(() => {}),
-      ]);
-    } finally {
-      const elapsed = Date.now() - started;
-      if (elapsed < MIN_REFRESH_MS) {
-        await new Promise(r => setTimeout(r, MIN_REFRESH_MS - elapsed));
-      }
-      setRefreshing(false);
-      setPullDistance(0);
-    }
-  }, [queryClient, triggerSync]);
+    await refresh();
+    setPullDistance(0);
+  }, [refresh]);
 
   useEffect(() => {
     if (!isTouchViewport || disabled) return;

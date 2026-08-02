@@ -3339,26 +3339,25 @@ export async function getIntelligenceHeatMapLocations(params: {
     .select({
       id: sheetRows.id,
       sheetId: sheetRows.sheetId,
-      observation: sheetRows.observation,
       rowDate: sheetRows.rowDate,
       dayOffset: sheetRows.dayOffset,
     })
     .from(sheetRows)
     .where(inArray(sheetRows.sheetId, sheetIds));
+  const rowById = new Map(rows.map(r => [r.id, r]));
+  const sheetIdSet = new Set(sheetIds);
 
-  // ── "When": Running Sheet mode takes every row in that sheet as-is (a
-  // sheet can span multiple days); the other three modes resolve a concrete
-  // date window and keep only rows whose date falls inside it. Priority for
-  // a row's date matches getRowsBySheetId above: explicit rowDate first,
-  // else the sheet's creation date shifted by dayOffset. (Unlike
-  // getRowsBySheetId, this skips the third-tier timeMinutes-rollover
-  // inference — that's a per-sheet sequential scan meant for single-sheet
-  // rendering, disproportionately expensive to replicate across every sheet
-  // in scope here, and only matters for legacy rows predating rowDate.)
-  let scopedRows = rows;
+  // ── Resolve the date window ("sheet" mode takes every row in that sheet
+  // as-is; the other three modes resolve a concrete range). Date priority
+  // matches getRowsBySheetId above: explicit rowDate first, else the sheet's
+  // creation date shifted by dayOffset. (Unlike getRowsBySheetId, this skips
+  // the third-tier timeMinutes-rollover inference — that's a per-sheet
+  // sequential scan meant for single-sheet rendering, disproportionately
+  // expensive to replicate across every sheet in scope here, and only
+  // matters for legacy rows predating rowDate.)
+  let startISO = "";
+  let endISO = "";
   if (params.when.mode !== "sheet") {
-    let startISO: string;
-    let endISO: string;
     if (params.when.mode === "custom") {
       startISO = params.when.startDate;
       endISO = params.when.endDate;
@@ -3366,34 +3365,35 @@ export async function getIntelligenceHeatMapLocations(params: {
       endISO = perthTodayISO();
       startISO = addDaysISO(endISO, params.when.mode === "last7" ? -6 : -29);
     }
-    scopedRows = rows.filter(r => {
-      const resolvedDate =
-        r.rowDate ??
-        addDaysISO(
-          toPerthDateISO(sheetCreatedAt.get(r.sheetId) ?? new Date()),
-          r.dayOffset
-        );
-      return resolvedDate >= startISO && resolvedDate <= endISO;
-    });
   }
 
-  // ── Extract address/business entities from the scoped rows, grouped by
-  // the same normalized key used to dedup entities elsewhere ──────────────
+  // ── Reuse the same entity extraction/dedup pipeline as the Locations tab
+  // (bracket-introduction + bare-re-mention two-pass recognition, plus
+  // confirmed entity-alias merges) instead of a standalone per-row regex
+  // pass — an address is often bracket-introduced once and then referenced
+  // in plain prose on later rows ("returned to 54 Terrace Road"), which a
+  // bracket-only pass undercounts to a single visit.
+  const allEntities = await getAllIntelligenceEntities();
+
   const grouped = new Map<string, { label: string; count: number }>();
-  for (const row of scopedRows) {
-    if (!row.observation) continue;
-    const extracted = extractEntitiesFromText(row.observation);
-    for (const e of extracted) {
-      if (e.type !== "address" && e.type !== "business") continue;
-      const key = normalizeEntityLabel(e.shortForm);
-      const existing = grouped.get(key);
-      if (existing) {
-        existing.count++;
-        if (e.shortForm.length > existing.label.length)
-          existing.label = e.shortForm;
-      } else {
-        grouped.set(key, { label: e.shortForm, count: 1 });
+  for (const entity of allEntities) {
+    if (entity.type !== "address" && entity.type !== "business") continue;
+    for (const occ of entity.occurrences) {
+      if (!sheetIdSet.has(occ.sheetId)) continue;
+      if (params.when.mode !== "sheet") {
+        const row = rowById.get(occ.rowId);
+        const resolvedDate =
+          row?.rowDate ??
+          addDaysISO(
+            toPerthDateISO(sheetCreatedAt.get(occ.sheetId) ?? new Date()),
+            row?.dayOffset ?? 0
+          );
+        if (resolvedDate < startISO || resolvedDate > endISO) continue;
       }
+      const key = normalizeEntityLabel(entity.shortForm);
+      const existing = grouped.get(key);
+      if (existing) existing.count++;
+      else grouped.set(key, { label: entity.shortForm, count: 1 });
     }
   }
 
@@ -4018,11 +4018,19 @@ export async function getAllIntelligenceEntities(): Promise<
         if (bracketedShortForms.has(entry.shortForm.toLowerCase())) continue;
         if (bracketedShortForms.has(entry.rawShortForm.toLowerCase())) continue;
 
-        // For person entities, search by BOTH the displayName ("G HOTA") AND the raw
-        // bracketed token ("HOTA") — because subsequent rows use the short alias.
-        // For other types, only search by shortForm.
+        // For person, address, and business entities, search by BOTH the
+        // enriched displayName ("G HOTA" / "54 Terrace Road, PERTH") AND the
+        // raw bracketed token ("HOTA" / "54 Terrace Road") — subsequent rows
+        // routinely use the short form (e.g. re-visits that don't repeat the
+        // suburb every time: "returned to 54 Terrace Road"), and searching
+        // only the full enriched form would miss those, undercounting visits.
         const searchTerms: string[] = [entry.shortForm];
-        if (entry.type === "person" && entry.rawShortForm !== entry.shortForm) {
+        if (
+          (entry.type === "person" ||
+            entry.type === "address" ||
+            entry.type === "business") &&
+          entry.rawShortForm !== entry.shortForm
+        ) {
           searchTerms.push(entry.rawShortForm);
         }
 

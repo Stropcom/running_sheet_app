@@ -95,6 +95,7 @@ import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { NotificationBell } from "./NotificationBell";
 import { Button } from "./ui/button";
+import { PullToRefresh } from "./PullToRefresh";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useSectionColor } from "@/contexts/SectionColorContext";
 
@@ -1557,7 +1558,11 @@ function DashboardLayoutContent({
             )}
           </div>
         )}
-        <main className="flex-1 min-h-screen bg-background/90">{children}</main>
+        <main className="flex-1 min-h-screen bg-background/90">
+          <PullToRefresh disabled={location === "/intelligence/mapping"}>
+            {children}
+          </PullToRefresh>
+        </main>
       </SidebarInset>
 
       {/* ── Shortcuts Reference Panel ─────────────────────────────────────── */}

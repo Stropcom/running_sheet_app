@@ -36,8 +36,6 @@ export const users = mysqlTable("users", {
   // Forces a password change on next login (e.g. admin-issued temporary
   // password). Enforced server-side in _core/trpc.ts, not just client UI.
   mustChangePassword: boolean("mustChangePassword").default(false).notNull(),
-  wallpaperUrl: varchar("wallpaperUrl", { length: 512 }),
-  wallpaperOpacity: int("wallpaperOpacity").default(40), // 0-100, overlay darkness
   // Selectable accent colour palette — see shared/const.ts COLOR_PALETTES.
   // Null falls back to the default palette client-side.
   colorPalette: varchar("colorPalette", { length: 32 }),
@@ -882,12 +880,6 @@ export const userSidebarOrder = mysqlTable("user_sidebar_order", {
   userId: int("userId").notNull().unique(),
   /** JSON array of nav item keys in user-defined order, e.g. ["operations","todo","governance",...] */
   orderedKeys: text("orderedKeys").notNull(),
-  /** 'folder' (default) or 'tile' */
-  homeScreenMode: varchar("homeScreenMode", { length: 16 })
-    .default("folder")
-    .notNull(),
-  /** JSON array of 10 tile keys in display order (row1=[0,1], row2=[2,3,4,5], row3=[6,7,8,9]) */
-  tileOrder: text("tileOrder"),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 export type UserSidebarOrder = typeof userSidebarOrder.$inferSelect;

@@ -40,7 +40,6 @@ import IntelligenceMapping from "@/pages/IntelligenceMapping";
 import RSMapping from "@/pages/RSMapping";
 import DraftSheetPage from "@/pages/DraftSheetPage";
 import ReportsPage from "@/pages/ReportsPage";
-import TileHomeScreen from "@/pages/TileHomeScreen";
 import ImagesPage from "@/pages/ImagesPage";
 import OperationManagerPage from "@/pages/OperationManagerPage";
 import CtoRosterPage from "@/pages/CtoRoster/RosterPage";
@@ -59,9 +58,9 @@ import { SectionColorProvider } from "@/contexts/SectionColorContext";
 import { useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 
-/** Reads the logged-in user's wallpaper and accent-palette settings from
- * auth.me and applies them globally (CSS variables + a data-palette
- * attribute) so they persist across all pages. */
+/** Reads the logged-in user's accent-palette setting from auth.me and
+ * applies it globally (a data-palette attribute) so it persists across
+ * all pages. */
 function AppearanceApplier() {
   const { data: user } = trpc.auth.me.useQuery(undefined, {
     retry: false,
@@ -70,25 +69,7 @@ function AppearanceApplier() {
 
   useEffect(() => {
     if (!user) return;
-    const u = user as {
-      wallpaperUrl?: string | null;
-      wallpaperOpacity?: number | null;
-      colorPalette?: string | null;
-    };
-    if (u.wallpaperUrl) {
-      document.documentElement.style.setProperty(
-        "--wallpaper-url",
-        `url(${u.wallpaperUrl})`
-      );
-      const opacity = u.wallpaperOpacity ?? 40;
-      document.documentElement.style.setProperty(
-        "--wallpaper-opacity",
-        String((100 - opacity) / 100)
-      );
-    } else {
-      document.documentElement.style.removeProperty("--wallpaper-url");
-      document.documentElement.style.removeProperty("--wallpaper-opacity");
-    }
+    const u = user as { colorPalette?: string | null };
     document.documentElement.dataset.palette =
       u.colorPalette ?? DEFAULT_COLOR_PALETTE;
   }, [user]);
@@ -181,7 +162,6 @@ function Router() {
       <Route path="/draft" component={DraftHubPage} />
       <Route path="/draft/sheet/:localId" component={DraftSheetPage} />
       <Route path="/reports" component={ReportsPage} />
-      <Route path="/tile-home" component={TileHomeScreen} />
       <Route path="/audit" component={AuditLogPage} />
       <Route path="/admin" component={AdminPage} />
       <Route path="/404" component={NotFound} />
@@ -196,7 +176,7 @@ function App() {
       <ThemeProvider defaultTheme="light" switchable>
         <TooltipProvider>
           <SectionColorProvider>
-            {/* Apply wallpaper + accent palette globally on every page */}
+            {/* Apply accent palette globally on every page */}
             <AppearanceApplier />
             <Toaster />
             <DraftModeBanner />

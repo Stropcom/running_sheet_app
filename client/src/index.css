@@ -358,27 +358,6 @@
   body {
     @apply bg-background text-foreground font-sans antialiased;
   }
-  /* Wallpaper support — applied via JS CSS variable when user sets a wallpaper */
-  body::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    z-index: -1;
-    background-image: var(--wallpaper-url, none);
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
-    pointer-events: none;
-  }
-  body::after {
-    content: "";
-    position: fixed;
-    inset: 0;
-    z-index: -1;
-    background: black;
-    opacity: var(--wallpaper-opacity, 0);
-    pointer-events: none;
-  }
   .flex {
     min-width: 0;
     min-height: 0;

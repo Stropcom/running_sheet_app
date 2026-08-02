@@ -75,8 +75,6 @@ import {
   UserCog,
   BarChart3,
   GripVertical,
-  LayoutGrid,
-  List,
   Image,
   Link2,
   FileEdit,
@@ -880,33 +878,7 @@ function DashboardLayoutContent({
     setActiveRsId(readActiveRsId());
   }, [location, readActiveRsId]);
 
-  // ── Home screen mode toggle ──────────────────────────────────────────────
-  const [homeMode, setHomeMode] = useState<"folder" | "tile">("folder");
-  const { data: homePrefsData } = trpc.sidebar.getHomePrefs.useQuery(
-    undefined,
-    { staleTime: Infinity }
-  );
   const dashboardUtils = trpc.useUtils();
-  const setHomePrefsMutation = trpc.sidebar.setHomePrefs.useMutation({
-    onSuccess: () => dashboardUtils.sidebar.getHomePrefs.invalidate(),
-  });
-
-  useEffect(() => {
-    if (homePrefsData?.mode) {
-      setHomeMode(homePrefsData.mode as "folder" | "tile");
-    }
-  }, [homePrefsData]);
-
-  function toggleHomeMode() {
-    const newMode = homeMode === "folder" ? "tile" : "folder";
-    setHomeMode(newMode);
-    setHomePrefsMutation.mutate({ mode: newMode });
-    if (newMode === "tile") {
-      setLocation("/tile-home");
-    } else {
-      setLocation("/");
-    }
-  }
 
   // ── Sidebar drag-to-reorder ──────────────────────────────────────────────
   const DEFAULT_NAV_ORDER = [
@@ -1050,28 +1022,6 @@ function DashboardLayoutContent({
                   className="hover:bg-sidebar-accent"
                   iconClassName="h-4 w-4 text-sidebar-foreground/60"
                 />
-              )}
-              {!isCollapsed && (
-                <button
-                  onClick={toggleHomeMode}
-                  className="h-8 w-8 flex items-center justify-center hover:bg-sidebar-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0 ml-auto"
-                  title={
-                    homeMode === "folder"
-                      ? "Switch to Dashboard"
-                      : "Switch to Folders"
-                  }
-                  aria-label={
-                    homeMode === "folder"
-                      ? "Switch to Dashboard"
-                      : "Switch to Folders"
-                  }
-                >
-                  {homeMode === "folder" ? (
-                    <LayoutGrid className="h-4 w-4 text-sidebar-foreground/60" />
-                  ) : (
-                    <List className="h-4 w-4 text-sidebar-foreground/60" />
-                  )}
-                </button>
               )}
             </div>
           </SidebarHeader>

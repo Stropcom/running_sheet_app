@@ -4,7 +4,7 @@ import { storagePut, storageGetBytes } from "./storage";
 import { detectAndEmbedFaces, cosineSimilarity } from "./faceRecognition";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { COOKIE_NAME, SESSION_EXPIRY_MS } from "@shared/const";
+import { COOKIE_NAME, SESSION_EXPIRY_MS, COLOR_PALETTES } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import {
   processAttachmentUpload,
@@ -446,6 +446,19 @@ export const appRouter = router({
       .input(z.object({ opacity: z.number().int().min(0).max(100) }))
       .mutation(async ({ input, ctx }) => {
         await updateUser(ctx.user.id, { wallpaperOpacity: input.opacity });
+        return { success: true };
+      }),
+
+    updateColorPalette: protectedProcedure
+      .input(
+        z.object({
+          palette: z.enum(
+            COLOR_PALETTES.map(p => p.id) as [string, ...string[]]
+          ),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        await updateUser(ctx.user.id, { colorPalette: input.palette });
         return { success: true };
       }),
   }),

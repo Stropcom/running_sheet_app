@@ -38,6 +38,9 @@ export const users = mysqlTable("users", {
   mustChangePassword: boolean("mustChangePassword").default(false).notNull(),
   wallpaperUrl: varchar("wallpaperUrl", { length: 512 }),
   wallpaperOpacity: int("wallpaperOpacity").default(40), // 0-100, overlay darkness
+  // Selectable accent colour palette — see shared/const.ts COLOR_PALETTES.
+  // Null falls back to the default palette client-side.
+  colorPalette: varchar("colorPalette", { length: 32 }),
   // Opt-out for CTO Roster shift-change notifications specifically (not a
   // global notification kill switch) — added while the roster is still
   // being actively tested/edited, so people aren't spammed by every change.

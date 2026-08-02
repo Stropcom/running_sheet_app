@@ -25,11 +25,23 @@ import {
 import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { useTheme } from "@/contexts/ThemeContext";
+import { COLOR_PALETTES, DEFAULT_COLOR_PALETTE } from "@shared/const";
 
 const ROLE_LABELS: Record<string, { label: string; color: string; badge: string }> = {
-  admin:    { label: "Full Access + User Management", color: "text-amber-400", badge: "border-amber-400/30 text-amber-400 bg-amber-400/10" },
-  member:   { label: "Full Access",                   color: "text-emerald-400", badge: "border-emerald-400/30 text-emerald-400 bg-emerald-400/10" },
-  observer: { label: "Observer",                      color: "text-sky-400",    badge: "border-sky-400/30 text-sky-400 bg-sky-400/10"         },
+  admin:    { label: "Admin",    color: "text-amber-400",   badge: "border-amber-400/30 text-amber-400 bg-amber-400/10" },
+  member:   { label: "Member",   color: "text-emerald-400", badge: "border-emerald-400/30 text-emerald-400 bg-emerald-400/10" },
+  observer: { label: "Observer", color: "text-sky-400",     badge: "border-sky-400/30 text-sky-400 bg-sky-400/10"         },
+};
+
+// Representative swatch colours for each palette, matching index.css exactly
+// (light-mode and dark-mode variants, since the picker should preview
+// whichever mode the user is currently in).
+const PALETTE_SWATCHES: Record<string, { light: string; dark: string }> = {
+  sage: { light: "oklch(0.53 0.085 195)", dark: "oklch(0.7 0.075 195)" },
+  "dusty-blue": { light: "oklch(0.53 0.075 235)", dark: "oklch(0.7 0.06 235)" },
+  lavender: { light: "oklch(0.53 0.07 300)", dark: "oklch(0.7 0.06 300)" },
+  sand: { light: "oklch(0.53 0.09 55)", dark: "oklch(0.7 0.05 55)" },
+  slate: { light: "oklch(0.53 0.035 250)", dark: "oklch(0.7 0.02 250)" },
 };
 
 function InfoRow({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value?: string | null }) {
@@ -145,6 +157,26 @@ export default function MyProfilePage() {
 
   const roleConf = ROLE_LABELS[(profile?.role as string) ?? "observer"];
   const { theme, toggleTheme } = useTheme();
+
+  // ── Accent colour palette ────────────────────────────────────────────────
+  const [colorPalette, setColorPalette] = useState<string>(DEFAULT_COLOR_PALETTE);
+
+  useEffect(() => {
+    if (profile) {
+      const p = profile as { colorPalette?: string | null };
+      setColorPalette(p.colorPalette ?? DEFAULT_COLOR_PALETTE);
+    }
+  }, [profile]);
+
+  const updateColorPaletteMutation = trpc.profile.updateColorPalette.useMutation({
+    onError: (err) => toast.error(err.message),
+  });
+
+  const handleSelectPalette = (id: string) => {
+    setColorPalette(id);
+    document.documentElement.dataset.palette = id;
+    updateColorPaletteMutation.mutate({ palette: id });
+  };
 
   // ── Wallpaper ─────────────────────────────────────────────────────────────
   const wallpaperInputRef = useRef<HTMLInputElement>(null);
@@ -318,6 +350,31 @@ export default function MyProfilePage() {
                 <Moon className="w-4 h-4" />
                 Dark
               </button>
+            </div>
+
+            <p className="text-xs text-muted-foreground mt-5 mb-3">Choose your accent colour.</p>
+            <div className="flex flex-wrap gap-3">
+              {COLOR_PALETTES.map((p) => {
+                const swatch = PALETTE_SWATCHES[p.id][theme === "dark" ? "dark" : "light"];
+                const selected = colorPalette === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => handleSelectPalette(p.id)}
+                    className={`flex flex-col items-center gap-1.5 rounded-lg border px-3 py-2.5 text-xs font-medium transition-all ${
+                      selected
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border text-muted-foreground hover:border-border/80 hover:text-foreground"
+                    }`}
+                  >
+                    <span
+                      className="w-6 h-6 rounded-full border border-border/50"
+                      style={{ backgroundColor: swatch }}
+                    />
+                    {p.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}

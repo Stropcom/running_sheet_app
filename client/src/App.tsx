@@ -1,4 +1,5 @@
 import { Toaster } from "@/components/ui/sonner";
+import { DEFAULT_COLOR_PALETTE } from "@shared/const";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
@@ -58,9 +59,10 @@ import { SectionColorProvider } from "@/contexts/SectionColorContext";
 import { useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 
-/** Reads the logged-in user's wallpaper settings from auth.me and applies
- * the CSS variables globally so the background persists across all pages. */
-function WallpaperApplier() {
+/** Reads the logged-in user's wallpaper and accent-palette settings from
+ * auth.me and applies them globally (CSS variables + a data-palette
+ * attribute) so they persist across all pages. */
+function AppearanceApplier() {
   const { data: user } = trpc.auth.me.useQuery(undefined, {
     retry: false,
     refetchOnWindowFocus: false,
@@ -71,6 +73,7 @@ function WallpaperApplier() {
     const u = user as {
       wallpaperUrl?: string | null;
       wallpaperOpacity?: number | null;
+      colorPalette?: string | null;
     };
     if (u.wallpaperUrl) {
       document.documentElement.style.setProperty(
@@ -86,6 +89,8 @@ function WallpaperApplier() {
       document.documentElement.style.removeProperty("--wallpaper-url");
       document.documentElement.style.removeProperty("--wallpaper-opacity");
     }
+    document.documentElement.dataset.palette =
+      u.colorPalette ?? DEFAULT_COLOR_PALETTE;
   }, [user]);
 
   return null;
@@ -191,8 +196,8 @@ function App() {
       <ThemeProvider defaultTheme="light" switchable>
         <TooltipProvider>
           <SectionColorProvider>
-            {/* Apply wallpaper CSS variables globally on every page */}
-            <WallpaperApplier />
+            {/* Apply wallpaper + accent palette globally on every page */}
+            <AppearanceApplier />
             <Toaster />
             <DraftModeBanner />
             <Router />

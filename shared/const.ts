@@ -2,5 +2,18 @@ export const COOKIE_NAME = "app_session_id";
 export const ONE_YEAR_MS = 1000 * 60 * 60 * 24 * 365; // kept for reference
 export const SESSION_EXPIRY_MS = 1000 * 60 * 60 * 12; // 12 hours
 export const AXIOS_TIMEOUT_MS = 30_000;
-export const UNAUTHED_ERR_MSG = 'Please login (10001)';
-export const NOT_ADMIN_ERR_MSG = 'You do not have required permission (10002)';
+export const UNAUTHED_ERR_MSG = "Please login (10001)";
+export const NOT_ADMIN_ERR_MSG = "You do not have required permission (10002)";
+
+// Calm, muted accent colour options for the "Appearance" settings — each
+// name maps to a `data-palette` value applied to <html> (see index.css for
+// the actual colour definitions, in both light and dark variants).
+export const COLOR_PALETTES = [
+  { id: "sage", label: "Sage" },
+  { id: "dusty-blue", label: "Dusty Blue" },
+  { id: "lavender", label: "Lavender" },
+  { id: "sand", label: "Sand" },
+  { id: "slate", label: "Slate" },
+] as const;
+export type ColorPalette = (typeof COLOR_PALETTES)[number]["id"];
+export const DEFAULT_COLOR_PALETTE: ColorPalette = "sage";

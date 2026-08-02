@@ -3279,6 +3279,45 @@ function addDaysISO(dateISO: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+// A row only marks a genuine sighting of the target at a location if it
+// actually narrates presence/activity there — arriving, departing, parking,
+// being observed doing something. Officers phrase this many different ways
+// ("travelled on X and parked in the vicinity of Y", "reversed from the
+// driveway onto X and continued via:", "travelled through the car park and
+// continued via:"), so this is deliberately a loose, wide keyword net —
+// every verb stem wildcarded to catch arrive/arrived/arriving-style tense
+// variants — rather than a small set of exact phrases. False positives (an
+// address mentioned in a row that isn't really a visit) are a lesser
+// evidentiary risk than false negatives (a real visit silently dropped from
+// the count). "continued via" is included even though it reads as a
+// departure, not an arrival — an address mentioned in the same row as
+// "continued via" is the point they just left, i.e. still part of the same
+// visit, not a new one.
+const OBSERVATION_SIGNAL_RE =
+  /\b(arriv\w*|depart\w*|left|enter\w*|exit\w*|park\w*|observ\w*|seen|saw|see|met|meet\w*|attend\w*|pull\w*\s+(?:into|up)|stopp?\w*|wait\w*|remain\w*|stationary|revers\w*\s+from\s+the\s+driveway|continu\w*\s+via|vicinity\s+of|driveway\s+of|driv(?:e|es|ing|ove)\s+(?:into|through)|travell?\w*\s+through)\b/i;
+
+/** Rows that only mark surveillance team activity or a travelled-via street
+ * list, not a sighting of the target — same classification the Court
+ * Statement generator already uses (server/routers.ts statement.previewData)
+ * to exclude these from CIN eligibility, reused here for the same reason:
+ * they aren't real observations of the target at a location. */
+function isNonObservationRow(
+  observation: string,
+  previousObservation: string | null
+): boolean {
+  const obs = observation.trim();
+  if (/^surveillance commenced/i.test(obs) || /^surveillance ceased/i.test(obs))
+    return true;
+  const endsInWhereat = /whereat[;:]?\s*$/i.test(obs);
+  if (
+    endsInWhereat &&
+    previousObservation &&
+    /continued via[;:]/i.test(previousObservation)
+  )
+    return true;
+  return false;
+}
+
 export type IntelligenceHeatMapWhen =
   | { mode: "sheet"; sheetId: number }
   | { mode: "last7" }
@@ -3334,18 +3373,45 @@ export async function getIntelligenceHeatMapLocations(params: {
     sheetIds = sheets.map(s => s.id);
     for (const s of sheets) sheetCreatedAt.set(s.id, s.createdAt);
   }
+  const sheetIdSet = new Set(sheetIds);
 
+  // Full per-sheet row order (observation text + a stable sort key) — needed
+  // both for the Surveillance/Travelled Via "previous row" check and for
+  // collapsing consecutive same-address mentions into one visit below.
   const rows = await db
     .select({
       id: sheetRows.id,
       sheetId: sheetRows.sheetId,
       rowDate: sheetRows.rowDate,
       dayOffset: sheetRows.dayOffset,
+      observation: sheetRows.observation,
+      timeMinutes: sheetRows.timeMinutes,
+      rowNumber: sheetRows.rowNumber,
     })
     .from(sheetRows)
-    .where(inArray(sheetRows.sheetId, sheetIds));
+    .where(inArray(sheetRows.sheetId, sheetIds))
+    .orderBy(sheetRows.sheetId, sheetRows.timeMinutes, sheetRows.rowNumber);
   const rowById = new Map(rows.map(r => [r.id, r]));
-  const sheetIdSet = new Set(sheetIds);
+
+  const rowsBySheetOrdered = new Map<number, typeof rows>();
+  for (const row of rows) {
+    if (!rowsBySheetOrdered.has(row.sheetId))
+      rowsBySheetOrdered.set(row.sheetId, []);
+    rowsBySheetOrdered.get(row.sheetId)!.push(row);
+  }
+  const previousObservationByRowId = new Map<number, string | null>();
+  for (const sheetRowList of Array.from(rowsBySheetOrdered.values())) {
+    for (let i = 0; i < sheetRowList.length; i++) {
+      previousObservationByRowId.set(
+        sheetRowList[i].id,
+        i > 0 ? (sheetRowList[i - 1].observation ?? null) : null
+      );
+    }
+  }
+  const rowOrderIndex = new Map<number, number>();
+  for (const sheetRowList of Array.from(rowsBySheetOrdered.values())) {
+    sheetRowList.forEach((r, i) => rowOrderIndex.set(r.id, i));
+  }
 
   // ── Resolve the date window ("sheet" mode takes every row in that sheet
   // as-is; the other three modes resolve a concrete range). Date priority
@@ -3375,25 +3441,82 @@ export async function getIntelligenceHeatMapLocations(params: {
   // bracket-only pass undercounts to a single visit.
   const allEntities = await getAllIntelligenceEntities();
 
-  const grouped = new Map<string, { label: string; count: number }>();
+  // A "mention" of an address isn't the same as a "visit" — a target's home
+  // address sitting on their target card, a Surveillance Commenced/Ceased
+  // marker, a Travelled Via street list, or an address mentioned without any
+  // narration of the target's presence there all inflate the raw mention
+  // count without representing a real sighting. Collect only the qualifying
+  // mentions first, keyed by sheet + row order, then collapse below.
+  type QualifyingMention = {
+    entityKey: string;
+    label: string;
+    sheetId: number;
+    order: number;
+  };
+  const qualifying: QualifyingMention[] = [];
+
   for (const entity of allEntities) {
     if (entity.type !== "address" && entity.type !== "business") continue;
     for (const occ of entity.occurrences) {
+      // rowId 0 marks a synthetic occurrence built from the target's own
+      // registry card (e.g. Home Base), not an actual running sheet row —
+      // never a real sighting.
+      if (occ.rowId === 0) continue;
       if (!sheetIdSet.has(occ.sheetId)) continue;
+
+      const row = rowById.get(occ.rowId);
+      if (!row?.observation) continue;
+      if (
+        isNonObservationRow(
+          row.observation,
+          previousObservationByRowId.get(occ.rowId) ?? null
+        )
+      )
+        continue;
+      if (!OBSERVATION_SIGNAL_RE.test(row.observation)) continue;
+
       if (params.when.mode !== "sheet") {
-        const row = rowById.get(occ.rowId);
         const resolvedDate =
-          row?.rowDate ??
+          row.rowDate ??
           addDaysISO(
             toPerthDateISO(sheetCreatedAt.get(occ.sheetId) ?? new Date()),
-            row?.dayOffset ?? 0
+            row.dayOffset
           );
         if (resolvedDate < startISO || resolvedDate > endISO) continue;
       }
-      const key = normalizeEntityLabel(entity.shortForm);
-      const existing = grouped.get(key);
+
+      qualifying.push({
+        entityKey: normalizeEntityLabel(entity.shortForm),
+        label: entity.shortForm,
+        sheetId: occ.sheetId,
+        order: rowOrderIndex.get(occ.rowId) ?? 0,
+      });
+    }
+  }
+
+  // ── Collapse consecutive mentions of the same address into one visit ──────
+  // "Arrived at X" followed by "departed X" (or "…and continued via:") is one
+  // visit, not two — a new visit only counts once a *different* address
+  // appears in between, or the sheet changes. Walk each sheet's qualifying
+  // mentions in row order and count address transitions, not raw mentions.
+  const grouped = new Map<string, { label: string; count: number }>();
+  const qualifyingBySheet = new Map<number, QualifyingMention[]>();
+  for (const m of qualifying) {
+    if (!qualifyingBySheet.has(m.sheetId)) qualifyingBySheet.set(m.sheetId, []);
+    qualifyingBySheet.get(m.sheetId)!.push(m);
+  }
+  for (const mentions of Array.from(qualifyingBySheet.values())) {
+    mentions.sort((a, b) => a.order - b.order);
+    let lastEntityKey: string | null = null;
+    for (const m of mentions) {
+      if (m.entityKey === lastEntityKey) {
+        lastEntityKey = m.entityKey;
+        continue; // still the same visit
+      }
+      lastEntityKey = m.entityKey;
+      const existing = grouped.get(m.entityKey);
       if (existing) existing.count++;
-      else grouped.set(key, { label: entity.shortForm, count: 1 });
+      else grouped.set(m.entityKey, { label: m.label, count: 1 });
     }
   }
 

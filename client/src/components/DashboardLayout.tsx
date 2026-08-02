@@ -82,6 +82,8 @@ import {
   FileEdit,
   Binoculars,
   RefreshCw,
+  TrendingUp,
+  CalendarClock,
 } from "lucide-react";
 import React, {
   CSSProperties,
@@ -847,6 +849,9 @@ function DashboardLayoutContent({
   const [courtExpanded, setCourtExpanded] = useState(() =>
     location.startsWith("/court")
   );
+  const [reportsExpanded, setReportsExpanded] = useState(() =>
+    location.startsWith("/reports")
+  );
   const [todoExpanded, setTodoExpanded] = useState(
     () =>
       location === "/todo" ||
@@ -1124,7 +1129,7 @@ function DashboardLayoutContent({
                         location === "/operation-management" ||
                         location === "/recycle-bin" ||
                         location === "/help" ||
-                        location === "/reports"
+                        location.startsWith("/reports")
                   }
                   onClick={() => setAdminFolderExpanded(v => !v)}
                   tooltip="Administration"
@@ -1156,14 +1161,54 @@ function DashboardLayoutContent({
 
                 {adminFolderExpanded && !isCollapsed && (
                   <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
-                    {/* Reports */}
+                    {/* Reports (expandable sub-folder) */}
                     <button
-                      onClick={() => setLocation("/reports")}
-                      className={subItemClass(location === "/reports")}
+                      onClick={() => setReportsExpanded(v => !v)}
+                      className={subItemClass(location.startsWith("/reports"))}
                     >
                       <BarChart3 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                      Reports
+                      <span className="flex-1">Reports</span>
+                      {reportsExpanded ? (
+                        <ChevronDown className="h-3 w-3 text-sidebar-foreground/40" />
+                      ) : (
+                        <ChevronRight className="h-3 w-3 text-sidebar-foreground/40" />
+                      )}
                     </button>
+                    {reportsExpanded && (
+                      <div className="ml-4 border-l border-sidebar-border/40 pl-3 flex flex-col gap-0.5 mb-0.5">
+                        <button
+                          onClick={() =>
+                            setLocation("/reports/outstanding-actions")
+                          }
+                          className={subItemClass(
+                            location === "/reports/outstanding-actions"
+                          )}
+                        >
+                          <ClipboardCheck className="h-3.5 w-3.5 shrink-0" />
+                          Outstanding Actions
+                        </button>
+                        <button
+                          onClick={() =>
+                            setLocation("/reports/weekly-activity")
+                          }
+                          className={subItemClass(
+                            location === "/reports/weekly-activity"
+                          )}
+                        >
+                          <TrendingUp className="h-3.5 w-3.5 shrink-0" />
+                          Weekly Activity Report
+                        </button>
+                        <button
+                          onClick={() => setLocation("/reports/weekly-tasking")}
+                          className={subItemClass(
+                            location === "/reports/weekly-tasking"
+                          )}
+                        >
+                          <CalendarClock className="h-3.5 w-3.5 shrink-0" />
+                          Weekly Tasking Report
+                        </button>
+                      </div>
+                    )}
 
                     {/* Court (expandable sub-folder) */}
                     <button

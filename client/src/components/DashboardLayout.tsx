@@ -1,5 +1,6 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
+import { APP_VERSION } from "@shared/const";
 import {
   DndContext,
   pointerWithin,
@@ -1039,7 +1040,7 @@ function DashboardLayoutContent({
                 <div className="flex items-center gap-2 min-w-0 flex-1">
                   <ShieldCheck className="w-5 h-5 text-sidebar-primary shrink-0" />
                   <span className="font-semibold text-sidebar-foreground tracking-tight truncate text-sm">
-                    Running Sheet
+                    RunLog
                   </span>
                 </div>
               )}
@@ -1317,109 +1318,125 @@ function DashboardLayoutContent({
 
           {/* Footer */}
           <SidebarFooter className="p-3 border-t border-sidebar-border">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-sidebar-accent transition-colors w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                  <Avatar className="h-8 w-8 border border-sidebar-border shrink-0">
-                    <AvatarFallback className="text-xs font-semibold bg-sidebar-primary/20 text-sidebar-primary">
-                      {user?.name?.charAt(0).toUpperCase() ?? "?"}
-                    </AvatarFallback>
-                  </Avatar>
-                  {!isCollapsed && (
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-sidebar-foreground truncate leading-none">
-                        {user?.name ?? "—"}
-                      </p>
-                      <div className="flex items-center gap-1 mt-1.5">
-                        {(() => {
-                          const roleConf =
-                            ROLE_CONFIG[
-                              (user?.role as keyof typeof ROLE_CONFIG) ??
-                                "observer"
-                            ];
-                          const RoleIcon = roleConf?.icon ?? Eye;
-                          return (
-                            <>
-                              <RoleIcon
-                                className={`w-3 h-3 ${roleConf?.color}`}
-                              />
-                              <span className={`text-xs ${roleConf?.color}`}>
-                                {roleConf?.label}
-                              </span>
-                            </>
-                          );
-                        })()}
+            <div className="flex items-center gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-sidebar-accent transition-colors flex-1 min-w-0 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    <Avatar className="h-8 w-8 border border-sidebar-border shrink-0">
+                      <AvatarFallback className="text-xs font-semibold bg-sidebar-primary/20 text-sidebar-primary">
+                        {user?.name?.charAt(0).toUpperCase() ?? "?"}
+                      </AvatarFallback>
+                    </Avatar>
+                    {!isCollapsed && (
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-sidebar-foreground truncate leading-none">
+                          {user?.name ?? "—"}
+                        </p>
+                        <div className="flex items-center gap-1 mt-1.5">
+                          {(() => {
+                            const roleConf =
+                              ROLE_CONFIG[
+                                (user?.role as keyof typeof ROLE_CONFIG) ??
+                                  "observer"
+                              ];
+                            const RoleIcon = roleConf?.icon ?? Eye;
+                            return (
+                              <>
+                                <RoleIcon
+                                  className={`w-3 h-3 ${roleConf?.color}`}
+                                />
+                                <span
+                                  className={`text-xs ${roleConf?.color}`}
+                                >
+                                  {roleConf?.label}
+                                </span>
+
+                              </>
+                            );
+                          })()}
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
-                <div className="px-2 py-1.5">
-                  <p className="text-sm font-medium">{user?.name}</p>
-                  <p className="text-xs text-muted-foreground font-mono">
-                    {(user as any)?.cin
-                      ? `CIN: ${(user as any).cin}`
-                      : ((user as any)?.username ?? "")}
-                  </p>
-                  {(user as any)?.unit && (
-                    <p className="text-xs text-muted-foreground">
-                      {(user as any).unit}
+                    )}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52">
+                  <div className="px-2 py-1.5">
+                    <p className="text-sm font-medium">{user?.name}</p>
+                    <p className="text-xs text-muted-foreground font-mono">
+                      {(user as any)?.cin
+                        ? `CIN: ${(user as any).cin}`
+                        : ((user as any)?.username ?? "")}
                     </p>
-                  )}
-                  {(() => {
-                    const roleConf =
-                      ROLE_CONFIG[
-                        (user?.role as keyof typeof ROLE_CONFIG) ?? "observer"
-                      ];
-                    const RoleIcon = roleConf?.icon ?? Eye;
-                    return (
-                      <Badge
-                        variant="outline"
-                        className={`mt-1.5 text-xs gap-1 ${roleConf?.badge}`}
-                      >
-                        <RoleIcon className="w-3 h-3" />
-                        {roleConf?.label}
-                      </Badge>
-                    );
-                  })()}
-                </div>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => setLocation("/profile")}
-                  className="cursor-pointer"
-                >
-                  <UserCircle className="mr-2 h-4 w-4" />
-                  My Profile
-                </DropdownMenuItem>
-                {toggleTheme && (
+                    {(user as any)?.unit && (
+                      <p className="text-xs text-muted-foreground">
+                        {(user as any).unit}
+                      </p>
+                    )}
+                    {(() => {
+                      const roleConf =
+                        ROLE_CONFIG[
+                          (user?.role as keyof typeof ROLE_CONFIG) ??
+                            "observer"
+                        ];
+                      const RoleIcon = roleConf?.icon ?? Eye;
+                      return (
+                        <Badge
+                          variant="outline"
+                          className={`mt-1.5 text-xs gap-1 ${roleConf?.badge}`}
+                        >
+                          <RoleIcon className="w-3 h-3" />
+                          {roleConf?.label}
+                        </Badge>
+                      );
+                    })()}
+                  </div>
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem
-                    onClick={toggleTheme}
+                    onClick={() => setLocation("/profile")}
                     className="cursor-pointer"
                   >
-                    {theme === "dark" ? (
-                      <>
-                        <Sun className="mr-2 h-4 w-4" />
-                        Switch to Light Mode
-                      </>
-                    ) : (
-                      <>
-                        <Moon className="mr-2 h-4 w-4" />
-                        Switch to Dark Mode
-                      </>
-                    )}
+                    <UserCircle className="mr-2 h-4 w-4" />
+                    My Profile
                   </DropdownMenuItem>
-                )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={logout}
-                  className="cursor-pointer text-destructive focus:text-destructive"
-                >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Sign out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  {toggleTheme && (
+                    <DropdownMenuItem
+                      onClick={toggleTheme}
+                      className="cursor-pointer"
+                    >
+                      {theme === "dark" ? (
+                        <>
+                          <Sun className="mr-2 h-4 w-4" />
+                          Switch to Light Mode
+                        </>
+                      ) : (
+                        <>
+                          <Moon className="mr-2 h-4 w-4" />
+                          Switch to Dark Mode
+                        </>
+                      )}
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={logout}
+                    className="cursor-pointer text-destructive focus:text-destructive"
+                  >
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Sign out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              {!isCollapsed && (
+                <div className="text-right shrink-0 pr-1">
+                  <p className="text-[10px] uppercase tracking-wider text-sidebar-foreground/40 leading-none">
+                    Version
+                  </p>
+                  <p className="text-xs font-mono text-sidebar-foreground/60 leading-none mt-1">
+                    {APP_VERSION}
+                  </p>
+                </div>
+              )}
+            </div>
           </SidebarFooter>
         </Sidebar>
 
@@ -1447,7 +1464,7 @@ function DashboardLayoutContent({
                 <PanelLeft className="h-6 w-6" />
               </button>
               <span className="text-base font-semibold text-foreground">
-                Running Sheet
+                RunLog
               </span>
             </div>
             <div className="flex items-center gap-2">

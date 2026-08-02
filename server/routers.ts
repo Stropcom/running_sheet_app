@@ -5861,13 +5861,19 @@ export const appRouter = router({
           const roadName = boldMatches.find(m => m.length > 2 && !isJunk(m));
           if (roadName) return expandRoadAbbreviation(roadName);
 
+          // The final step is often a pure arrival note with no road name at
+          // all, e.g. "Destination will be on the left" — that's navigation
+          // narration, not a street, and must never be extracted as one.
+          const plain = stripHtml(htmlInstructions);
+          if (/\bwill be on the (left|right)\b/i.test(plain)) return null;
+
           // Fallback: plain text, take everything after the last preposition.
           // Still subject to the same junk filter — otherwise a step whose only
           // bold segment was a filtered-out route/highway number (e.g. "Merge
           // onto National Highway 94") falls through here and slips the numbered
-          // highway back in via the unfiltered plain text.
-          const plain = stripHtml(htmlInstructions);
-          const ontoMatch = plain.match(/(?:onto|on|toward)\s+(.+)$/i);
+          // highway back in via the unfiltered plain text. \b word boundaries
+          // stop "on" from matching mid-word (e.g. the "on" ending "Destination").
+          const ontoMatch = plain.match(/\b(?:onto|on|toward)\s+(.+)$/i);
           if (ontoMatch) {
             const candidate = ontoMatch[1].replace(/\s*\/.*$/, "").trim();
             if (candidate.length > 2 && !isJunk(candidate))

@@ -87,38 +87,42 @@ export default function IntelligenceHeatMap() {
   };
 
   const mapRef = useRef<google.maps.Map | null>(null);
-  const heatmapRef = useRef<google.maps.visualization.HeatmapLayer | null>(
-    null
-  );
+  const circlesRef = useRef<google.maps.Circle[]>([]);
 
+  // Google removed the visualization library's HeatmapLayer from the Maps
+  // JavaScript API (gone as of v3.65, with deck.gl as their suggested
+  // replacement) — this app doesn't pull in third-party map libraries, so
+  // density is instead approximated with overlapping, weighted, semi-
+  // transparent circles: same HEAT_RAMP colour, radius scaled by count.
   useEffect(() => {
-    if (!mapRef.current || !window.google?.maps?.visualization) return;
-    heatmapRef.current?.setMap(null);
+    circlesRef.current.forEach(c => c.setMap(null));
+    circlesRef.current = [];
+    if (!mapRef.current || !window.google?.maps) return;
     if (!locations || locations.length === 0) return;
 
-    const points = locations.map(l => ({
-      location: new google.maps.LatLng(l.lat, l.lng),
-      weight: l.count,
-    }));
-    heatmapRef.current = new google.maps.visualization.HeatmapLayer({
-      data: points,
-      map: mapRef.current,
-      radius: 40,
-      gradient: [
-        "rgba(47,111,237,0)",
-        "rgba(47,111,237,1)",
-        "rgba(31,182,201,1)",
-        "rgba(123,193,66,1)",
-        "rgba(242,194,48,1)",
-        "rgba(240,134,44,1)",
-        "rgba(221,58,58,1)",
-      ],
-    });
-
+    const RADIUS_MIN_M = 120;
+    const RADIUS_MAX_M = 550;
     const bounds = new google.maps.LatLngBounds();
-    points.forEach(p => bounds.extend(p.location));
+    for (const l of locations) {
+      const color = colourFor(l.count);
+      const radius =
+        RADIUS_MIN_M + (l.count / maxCount) * (RADIUS_MAX_M - RADIUS_MIN_M);
+      const circle = new google.maps.Circle({
+        center: { lat: l.lat, lng: l.lng },
+        radius,
+        map: mapRef.current,
+        fillColor: color,
+        fillOpacity: 0.45,
+        strokeColor: color,
+        strokeOpacity: 0.85,
+        strokeWeight: 1,
+        clickable: false,
+      });
+      circlesRef.current.push(circle);
+      bounds.extend({ lat: l.lat, lng: l.lng });
+    }
     mapRef.current.fitBounds(bounds, 48);
-  }, [locations]);
+  }, [locations, maxCount]);
 
   return (
     <div className="flex flex-col h-full">

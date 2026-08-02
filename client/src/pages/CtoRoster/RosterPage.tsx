@@ -1470,6 +1470,8 @@ export default function RosterPage() {
       shiftCode: string;
       comment: string;
       isActing: boolean;
+      shiftTime: string | null;
+      shiftDurationHours: number | null;
     }[];
     memberIds: number[]; // ordered unique member IDs in the block
     dates: string[]; // ordered unique dates in the block
@@ -1719,6 +1721,8 @@ export default function RosterPage() {
           shiftCode: cell.shiftCode as ShiftCode,
           comment: cell.comment || null,
           isActing: cell.isActing,
+          shiftTime: cell.shiftTime,
+          shiftDurationHours: cell.shiftDurationHours,
         });
         pasted++;
       }
@@ -1940,6 +1944,9 @@ export default function RosterPage() {
       shiftCode: shiftMap.get(c.memberId)?.get(c.date)?.shiftCode ?? "",
       comment: shiftMap.get(c.memberId)?.get(c.date)?.comment ?? "",
       isActing: shiftMap.get(c.memberId)?.get(c.date)?.isActing ?? false,
+      shiftTime: shiftMap.get(c.memberId)?.get(c.date)?.shiftTime ?? null,
+      shiftDurationHours:
+        shiftMap.get(c.memberId)?.get(c.date)?.shiftDurationHours ?? null,
     }));
     setCopiedBlock({ cells: enriched, memberIds, dates });
     setBulkCopyMode(false);

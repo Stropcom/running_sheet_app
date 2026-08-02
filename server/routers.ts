@@ -4383,6 +4383,7 @@ export const appRouter = router({
               index: z.number(),
               colour: z.string().optional(),
               label: z.string().optional(), // single-char label override (A-Z)
+              size: z.enum(["tiny", "small", "mid"]).optional(), // Static Maps marker size — omit for the default full-size pin
             })
           ),
           center: z.object({ lat: z.number(), lng: z.number() }).optional(),
@@ -4433,9 +4434,10 @@ export const appRouter = router({
         // exactly one character; otherwise the marker is drawn unlabelled.
         for (const wp of input.waypoints) {
           const colour = wp.colour ? wp.colour.replace("#", "0x") : "0x6366f1";
+          const sizePart = wp.size ? `size:${wp.size}|` : "";
           const labelPart =
             wp.label && wp.label.length === 1 ? `label:${wp.label}|` : "";
-          const markerSpec = `color:${colour}|${labelPart}${wp.lat},${wp.lng}`;
+          const markerSpec = `${sizePart}color:${colour}|${labelPart}${wp.lat},${wp.lng}`;
           url.searchParams.append("markers", markerSpec);
         }
 

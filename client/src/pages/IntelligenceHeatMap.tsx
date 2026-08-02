@@ -55,19 +55,9 @@ function exportHeatMapToPDF(params: {
   const GREY_TEXT = "#1e293b";
   const GREY_BORDER = "#e2e8f0";
 
-  const detailRow = (label: string, value: string) =>
-    value.trim()
-      ? `<div class="detail-label">${esc(label)}</div><div class="detail-value">${esc(value)}</div>`
-      : "";
-
   const section = (title: string, bodyHtml: string) =>
     bodyHtml
       ? `<div class="section"><div class="section-title">${esc(title)}</div><div class="section-body">${bodyHtml}</div></div>`
-      : "";
-
-  const plainSection = (title: string, bodyHtml: string) =>
-    bodyHtml
-      ? `<div class="plain-section"><div class="plain-section-title">${esc(title)}</div>${bodyHtml}</div>`
       : "";
 
   const mapHtml = mapImageDataUrl
@@ -95,41 +85,36 @@ function exportHeatMapToPDF(params: {
 <html><head><meta charset="utf-8"><title>RunLog Intelligence Heat Map — ${esc(operationName)}</title>
 <style>
 * { box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-@page{ margin:20mm 15mm; @top-center{content:'PROTECTED';font-family:'Roboto',sans-serif;font-size:12px;font-weight:700;color:#dc2626;letter-spacing:0.08em} @bottom-center{content:"Page " counter(page) " of " counter(pages);font-family:'Roboto',sans-serif;font-size:11px;font-weight:700;color:${BLUE_DARK};letter-spacing:0.04em} }
+@page{ size:A4 landscape; margin:14mm 16mm; @top-center{content:'PROTECTED';font-family:'Roboto',sans-serif;font-size:12px;font-weight:700;color:#dc2626;letter-spacing:0.08em} @bottom-center{content:"Page " counter(page) " of " counter(pages);font-family:'Roboto',sans-serif;font-size:11px;font-weight:700;color:${BLUE_DARK};letter-spacing:0.04em} }
 body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.6; color:${GREY_TEXT}; background:#fff; }
-.cover-header { background:${BLUE_DARK} !important; color:#fff !important; padding:26px 32px 22px; text-align:center; }
-.brand-row { display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:14px; opacity:0.85; }
-.brand-dot { width:10px; height:10px; border-radius:50%; background:${BLUE_MID}; }
-.brand-label { font-size:10px; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; color:${BLUE_MID}; }
-.main-title { font-size:26px; font-weight:800; letter-spacing:0.04em; text-transform:uppercase; line-height:1.2; }
-.op-date-line { font-size:16px; font-weight:600; margin-top:8px; }
-.sheet-name { font-size:11px; opacity:0.65; margin-top:6px; }
+.cover-header { background:${BLUE_DARK} !important; color:#fff !important; padding:16px 28px 14px; text-align:center; }
+.brand-row { display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:8px; opacity:0.85; }
+.brand-dot { width:9px; height:9px; border-radius:50%; background:${BLUE_MID}; }
+.brand-label { font-size:9.5px; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; color:${BLUE_MID}; }
+.main-title { font-size:20px; font-weight:800; letter-spacing:0.04em; text-transform:uppercase; line-height:1.2; }
+.op-date-line { font-size:13px; font-weight:600; margin-top:5px; }
+.sheet-name { font-size:10.5px; opacity:0.65; margin-top:4px; }
 .page-frame { width:100%; border-collapse:collapse; }
 .page-frame td { padding:0; border:none; }
 tfoot { display:table-footer-group; }
-.content { padding:20px 32px 8px; }
+.content { padding:16px 28px 6px; }
+.two-col { display:grid; grid-template-columns:1.55fr 1fr; gap:16px; align-items:stretch; }
+.two-col .section { margin-bottom:0; display:flex; flex-direction:column; }
+.two-col .section-body { flex:1; display:flex; flex-direction:column; }
 .section { margin-bottom:14px; border:1px solid ${GREY_BORDER}; border-radius:8px; overflow:hidden; break-inside:avoid; page-break-inside:avoid; }
 .section-title { font-size:10px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${BLUE_DARK} !important; padding:7px 14px; background:${BLUE_LIGHT} !important; border-bottom:1px solid ${GREY_BORDER}; }
-.section-body { padding:12px 14px; }
-.plain-section { margin-bottom:18px; }
-.plain-section-title { font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${BLUE_DARK} !important; padding:6px 10px; background:${BLUE_LIGHT} !important; border-left:3px solid ${BLUE_MID}; margin-bottom:10px; }
-.detail-grid { display:grid; grid-template-columns:130px 1fr; gap:0; font-size:10.5px; }
-.detail-grid > div { padding:4px 6px; }
-.detail-grid > div:nth-child(4n+1), .detail-grid > div:nth-child(4n+2) { background:#f8fafc; }
-.detail-label { color:#64748b; font-weight:600; }
-.detail-value { color:${GREY_TEXT}; }
+.section-body { padding:10px 12px; }
 .muted-note { font-size:10px; color:#94a3b8; font-style:italic; }
-.summary-table { width:100%; border-collapse:collapse; border:1.5px solid ${BLUE_DARK}; }
-.summary-table th { background:${BLUE_LIGHT} !important; color:${BLUE_DARK} !important; font-weight:700; font-size:9.5px; text-transform:uppercase; letter-spacing:0.04em; text-align:left; padding:6px 8px; border-bottom:2px solid ${BLUE_DARK}; border-right:1px solid #c7d5ee; }
-.summary-table th:last-child, .summary-table td:last-child { border-right:none; }
-.summary-table td { vertical-align:top; font-size:10.5px; padding:6px 8px; border-bottom:1px solid ${GREY_BORDER}; border-right:1px solid ${GREY_BORDER}; }
+.summary-table { width:100%; border-collapse:collapse; border:1px solid ${GREY_BORDER}; }
+.summary-table th { background:${BLUE_LIGHT} !important; color:${BLUE_DARK} !important; font-weight:700; font-size:9.5px; text-transform:uppercase; letter-spacing:0.04em; text-align:left; padding:5px 8px; border-bottom:2px solid ${BLUE_DARK}; }
+.summary-table td { vertical-align:middle; font-size:10.5px; padding:5px 8px; border-bottom:1px solid ${GREY_BORDER}; }
 .summary-table tbody tr:last-child td { border-bottom:none; }
-.footer-note { margin:14px 32px 0; padding:12px 0; border-top:1px solid ${GREY_BORDER}; font-size:9px; color:#94a3b8; }
-.footer-band { background:${BLUE_DARK} !important; color:#fff !important; padding:8px 32px; display:grid; grid-template-columns:1fr 1fr 1fr; align-items:center; font-size:9px; font-weight:700; letter-spacing:0.04em; }
+.footer-note { margin:12px 28px 0; padding:10px 0; border-top:1px solid ${GREY_BORDER}; font-size:9px; color:#94a3b8; }
+.footer-band { background:${BLUE_DARK} !important; color:#fff !important; padding:7px 28px; display:grid; grid-template-columns:1fr 1fr 1fr; align-items:center; font-size:9px; font-weight:700; letter-spacing:0.04em; }
 .footer-band span:first-child { text-align:left; }
 .footer-band span:last-child { text-align:right; color:rgba(255,255,255,0.85); text-transform:uppercase; }
 .footer-protected { text-align:center; font-weight:800; letter-spacing:0.14em; color:#f87171; text-transform:uppercase; }
-@media print { * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; } .cover-header { background:${BLUE_DARK} !important; } .section-title { background:${BLUE_LIGHT} !important; } .plain-section-title { background:${BLUE_LIGHT} !important; } .summary-table th { background:${BLUE_LIGHT} !important; } .footer-band { background:${BLUE_DARK} !important; } }
+@media print { * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; } .cover-header { background:${BLUE_DARK} !important; } .section-title { background:${BLUE_LIGHT} !important; } .summary-table th { background:${BLUE_LIGHT} !important; } .footer-band { background:${BLUE_DARK} !important; } }
 </style></head><body>
 <div class="cover-header">
   <div class="brand-row"><div class="brand-dot"></div><span class="brand-label">RunLog</span></div>
@@ -147,16 +132,10 @@ tfoot { display:table-footer-group; }
 </td></tr></tfoot>
 <tbody><tr><td>
 <div class="content">
-  ${section(
-    "Filters",
-    `<div class="detail-grid">
-      ${detailRow("Operation", operationName)}
-      ${detailRow("Target", targetName ?? "All Targets")}
-      ${detailRow("When", whenLabel)}
-    </div>`
-  )}
-  ${section("Map", mapHtml)}
-  ${plainSection("Top Locations", locationsHtml)}
+  <div class="two-col">
+    ${section("Map", mapHtml)}
+    ${section("Top Locations", locationsHtml)}
+  </div>
   <div class="footer-note">
     <span>Generated: ${generatedAt}</span>
   </div>
@@ -302,17 +281,25 @@ export default function IntelligenceHeatMap() {
       let mapImageDataUrl: string | null = null;
       if (locations && locations.length > 0) {
         toast.info("Capturing map…");
-        const waypoints = locations.map((l, i) => ({
-          lat: l.lat,
-          lng: l.lng,
-          index: i,
-          colour: colourFor(l.count),
-        }));
-        const result = await trpcClient.rsMapping.getStaticMapImage.query({
-          waypoints,
-          size: "1000x650",
-        });
-        mapImageDataUrl = result.dataUrl;
+        try {
+          const waypoints = locations.map((l, i) => ({
+            lat: l.lat,
+            lng: l.lng,
+            index: i,
+            colour: colourFor(l.count),
+            size: "small" as const,
+          }));
+          const result = await trpcClient.rsMapping.getStaticMapImage.query({
+            waypoints,
+            size: "720x540",
+          });
+          mapImageDataUrl = result.dataUrl;
+        } catch {
+          // A failed map snapshot shouldn't block exporting the Top
+          // Locations table — the document falls back to a muted note in
+          // the Map section instead of erroring out entirely.
+          toast.error("Couldn't capture the map image — exporting without it.");
+        }
       }
 
       const operationName =

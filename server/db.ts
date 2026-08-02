@@ -87,6 +87,14 @@ let _db: ReturnType<typeof drizzle> | null = null;
 let _pool: Awaited<ReturnType<typeof createPromisePool>> | null = null;
 let _lastConnectAttempt = 0;
 const RECONNECT_COOLDOWN_MS = 5000; // don't retry more than once per 5s
+// Caches the in-flight connection attempt so concurrent getDb() callers (e.g.
+// several queries fired via Promise.all on a cold start, before any pool
+// exists yet) await the same attempt instead of each independently hitting
+// the cooldown check below and silently getting null — which previously
+// meant only the first of several concurrent queries actually ran, and the
+// rest quietly returned empty results with no error.
+let _connectingPromise: Promise<ReturnType<typeof drizzle> | null> | null =
+  null;
 
 // Managed hosts (e.g. TiDB Cloud) require TLS; a local dev database normally
 // isn't configured for it. Only force SSL for non-local hosts so local
@@ -152,13 +160,17 @@ export async function getDb() {
     }
   }
   if (!_db && process.env.DATABASE_URL) {
+    if (_connectingPromise) return _connectingPromise;
     const now = Date.now();
     if (now - _lastConnectAttempt < RECONNECT_COOLDOWN_MS) {
       // Too soon to retry — return null to avoid hammering the DB
       return null;
     }
     _lastConnectAttempt = now;
-    _db = await createDbPool(3);
+    _connectingPromise = createDbPool(3).finally(() => {
+      _connectingPromise = null;
+    });
+    _db = await _connectingPromise;
   }
   return _db;
 }
@@ -3570,6 +3582,351 @@ export async function resolveLatLng(
   } catch {
     return null;
   }
+}
+
+// ─── Weekly Activity Report ─────────────────────────────────────────────────
+// "What the unit did this week" — operations coverage, newly-gathered
+// intelligence, target visit activity, and governance completed, all for a
+// given Monday-start week. Reuses the same entity pipeline and observed-
+// visit logic as the Heat Map (see getIntelligenceHeatMapLocations above)
+// rather than re-deriving anything.
+
+export interface WeeklyActivityOperation {
+  operationId: number;
+  operationName: string;
+  sheetsCount: number;
+  rowsCount: number;
+  officers: string[];
+}
+
+export interface WeeklyActivityNewIntel {
+  operationId: number;
+  operationName: string;
+  newImages: number;
+  newLocations: string[];
+  newVehicles: string[];
+}
+
+export interface WeeklyActivityTarget {
+  targetId: number;
+  targetName: string;
+  operationName: string;
+  locations: { label: string; count: number }[];
+}
+
+export interface WeeklyActivityReport {
+  weekStart: string;
+  weekEnd: string;
+  operations: WeeklyActivityOperation[];
+  newIntelligence: WeeklyActivityNewIntel[];
+  targetActivity: WeeklyActivityTarget[];
+  governanceCompleted: number;
+}
+
+/** weekStart is a Monday, YYYY-MM-DD (Perth-anchored). */
+export async function getWeeklyActivityReport(
+  weekStart: string
+): Promise<WeeklyActivityReport> {
+  const db = await getDb();
+  const weekEnd = addDaysISO(weekStart, 6);
+  const empty: WeeklyActivityReport = {
+    weekStart,
+    weekEnd,
+    operations: [],
+    newIntelligence: [],
+    targetActivity: [],
+    governanceCompleted: 0,
+  };
+  if (!db) return empty;
+
+  const sheets = await db
+    .select()
+    .from(runningSheets)
+    .where(isNull(runningSheets.deletedAt));
+  if (!sheets.length) return empty;
+  const sheetById = new Map(sheets.map(s => [s.id, s]));
+  const opIds = Array.from(new Set(sheets.map(s => s.operationId)));
+
+  const [ops, targetRows, rows, govRecords] = await Promise.all([
+    db.select().from(operations).where(inArray(operations.id, opIds)),
+    db.select().from(targets).where(inArray(targets.operationId, opIds)),
+    db
+      .select()
+      .from(sheetRows)
+      .where(
+        inArray(
+          sheetRows.sheetId,
+          sheets.map(s => s.id)
+        )
+      ),
+    getGovernanceRecordsBySheetIds(sheets.map(s => s.id)),
+  ]);
+  const opById = new Map(ops.map(o => [o.id, o]));
+  const targetById = new Map(targetRows.map(t => [t.id, t]));
+
+  function resolveRowDate(row: (typeof rows)[number]): string {
+    if (row.rowDate) return row.rowDate;
+    const sheet = sheetById.get(row.sheetId);
+    return addDaysISO(
+      toPerthDateISO(sheet?.createdAt ?? new Date()),
+      row.dayOffset
+    );
+  }
+  const rowById = new Map(rows.map(r => [r.id, r]));
+  const rowsInWeek = rows.filter(r => {
+    const d = resolveRowDate(r);
+    return d >= weekStart && d <= weekEnd;
+  });
+
+  // ── Operations & coverage ──────────────────────────────────────────────
+  const opStats = new Map<
+    number,
+    { sheetIds: Set<number>; rowsCount: number; officers: Set<string> }
+  >();
+  for (const r of rowsInWeek) {
+    const sheet = sheetById.get(r.sheetId);
+    if (!sheet) continue;
+    if (!opStats.has(sheet.operationId))
+      opStats.set(sheet.operationId, {
+        sheetIds: new Set(),
+        rowsCount: 0,
+        officers: new Set(),
+      });
+    const stat = opStats.get(sheet.operationId)!;
+    stat.sheetIds.add(sheet.id);
+    stat.rowsCount++;
+  }
+  for (const stat of Array.from(opStats.values())) {
+    for (const sid of Array.from(stat.sheetIds)) {
+      const sheet = sheetById.get(sid);
+      if (!sheet?.sheetCins) continue;
+      try {
+        const cins: { cin: string }[] = JSON.parse(sheet.sheetCins);
+        for (const c of cins) if (c.cin) stat.officers.add(c.cin);
+      } catch {
+        // malformed roster JSON — skip officers for this sheet
+      }
+    }
+  }
+  const operationsSummary: WeeklyActivityOperation[] = Array.from(
+    opStats.entries()
+  )
+    .map(([opId, stat]) => ({
+      operationId: opId,
+      operationName: opById.get(opId)?.name ?? "—",
+      sheetsCount: stat.sheetIds.size,
+      rowsCount: stat.rowsCount,
+      officers: Array.from(stat.officers).sort(),
+    }))
+    .sort((a, b) => a.operationName.localeCompare(b.operationName));
+
+  // ── New intelligence — images uploaded this week, plus locations/vehicles
+  // whose *first-ever* occurrence (all time, not just this week) falls
+  // inside the week, i.e. genuinely new discoveries rather than repeat
+  // mentions of something already known ──────────────────────────────────
+  const attachments = await db
+    .select({
+      id: rowAttachments.id,
+      operationId: rowAttachments.operationId,
+      createdAt: rowAttachments.createdAt,
+    })
+    .from(rowAttachments)
+    .where(
+      and(
+        inArray(rowAttachments.operationId, opIds),
+        isNull(rowAttachments.deletedAt)
+      )
+    );
+  const newImagesByOp = new Map<number, number>();
+  for (const a of attachments) {
+    const d = toPerthDateISO(a.createdAt);
+    if (d < weekStart || d > weekEnd) continue;
+    newImagesByOp.set(
+      a.operationId,
+      (newImagesByOp.get(a.operationId) ?? 0) + 1
+    );
+  }
+
+  const allEntities = await getAllIntelligenceEntities();
+  const newLocationsByOp = new Map<number, Set<string>>();
+  const newVehiclesByOp = new Map<number, Set<string>>();
+  for (const entity of allEntities) {
+    if (
+      entity.type !== "address" &&
+      entity.type !== "business" &&
+      entity.type !== "vehicle"
+    )
+      continue;
+    let earliestDate: string | null = null;
+    const opsSeenThisWeek = new Set<number>();
+    for (const occ of entity.occurrences) {
+      if (occ.rowId === 0) continue; // target-card entry, not a real sighting
+      const row = rowById.get(occ.rowId);
+      const d = row ? resolveRowDate(row) : null;
+      if (!d) continue;
+      if (earliestDate === null || d < earliestDate) earliestDate = d;
+      if (d >= weekStart && d <= weekEnd) opsSeenThisWeek.add(occ.operationId);
+    }
+    if (
+      earliestDate === null ||
+      earliestDate < weekStart ||
+      earliestDate > weekEnd
+    )
+      continue; // not newly discovered this week
+    const targetMap =
+      entity.type === "vehicle" ? newVehiclesByOp : newLocationsByOp;
+    for (const opId of Array.from(opsSeenThisWeek)) {
+      if (!targetMap.has(opId)) targetMap.set(opId, new Set());
+      targetMap.get(opId)!.add(entity.shortForm);
+    }
+  }
+
+  const intelOpIds = new Set([
+    ...Array.from(newImagesByOp.keys()),
+    ...Array.from(newLocationsByOp.keys()),
+    ...Array.from(newVehiclesByOp.keys()),
+  ]);
+  const newIntelligence: WeeklyActivityNewIntel[] = Array.from(intelOpIds)
+    .map(opId => ({
+      operationId: opId,
+      operationName: opById.get(opId)?.name ?? "—",
+      newImages: newImagesByOp.get(opId) ?? 0,
+      newLocations: Array.from(newLocationsByOp.get(opId) ?? []).sort(),
+      newVehicles: Array.from(newVehiclesByOp.get(opId) ?? []).sort(),
+    }))
+    .sort((a, b) => a.operationName.localeCompare(b.operationName));
+
+  // ── Target visit activity — same qualifying-mention + session-collapse
+  // rules as the Heat Map (skip target-card entries, Surveillance
+  // Commenced/Ceased and Travelled Via rows, require an observation-signal
+  // keyword, collapse consecutive same-address mentions into one visit) —
+  // grouped by each sheet's assigned target rather than geocoded. ─────────
+  const previousObservationByRowId = new Map<number, string | null>();
+  const rowOrderIndex = new Map<number, number>();
+  {
+    const bySheet = new Map<number, typeof rows>();
+    for (const r of rows) {
+      if (!bySheet.has(r.sheetId)) bySheet.set(r.sheetId, []);
+      bySheet.get(r.sheetId)!.push(r);
+    }
+    for (const list of Array.from(bySheet.values())) {
+      list.sort(
+        (a, b) =>
+          (a.timeMinutes ?? 0) - (b.timeMinutes ?? 0) ||
+          a.rowNumber - b.rowNumber
+      );
+      list.forEach((r, i) => {
+        previousObservationByRowId.set(
+          r.id,
+          i > 0 ? (list[i - 1].observation ?? null) : null
+        );
+        rowOrderIndex.set(r.id, i);
+      });
+    }
+  }
+
+  type QualifyingMention = {
+    entityKey: string;
+    label: string;
+    targetId: number;
+    order: number;
+  };
+  const qualifying: QualifyingMention[] = [];
+  for (const entity of allEntities) {
+    if (entity.type !== "address" && entity.type !== "business") continue;
+    for (const occ of entity.occurrences) {
+      if (occ.rowId === 0) continue;
+      const row = rowById.get(occ.rowId);
+      if (!row?.observation) continue;
+      const d = resolveRowDate(row);
+      if (d < weekStart || d > weekEnd) continue;
+      const sheet = sheetById.get(row.sheetId);
+      if (!sheet?.targetId) continue; // no target assigned — not attributable
+      if (
+        isNonObservationRow(
+          row.observation,
+          previousObservationByRowId.get(occ.rowId) ?? null
+        )
+      )
+        continue;
+      if (!OBSERVATION_SIGNAL_RE.test(row.observation)) continue;
+      qualifying.push({
+        entityKey: normalizeEntityLabel(entity.shortForm),
+        label: entity.shortForm,
+        targetId: sheet.targetId,
+        order: rowOrderIndex.get(occ.rowId) ?? 0,
+      });
+    }
+  }
+  const visitCounts = new Map<
+    number,
+    Map<string, { label: string; count: number }>
+  >();
+  const qualifyingByTarget = new Map<number, QualifyingMention[]>();
+  for (const m of qualifying) {
+    if (!qualifyingByTarget.has(m.targetId))
+      qualifyingByTarget.set(m.targetId, []);
+    qualifyingByTarget.get(m.targetId)!.push(m);
+  }
+  for (const [targetId, mentions] of Array.from(qualifyingByTarget.entries())) {
+    mentions.sort((a, b) => a.order - b.order);
+    let lastEntityKey: string | null = null;
+    const grouped = new Map<string, { label: string; count: number }>();
+    for (const m of mentions) {
+      if (m.entityKey === lastEntityKey) continue;
+      lastEntityKey = m.entityKey;
+      const existing = grouped.get(m.entityKey);
+      if (existing) existing.count++;
+      else grouped.set(m.entityKey, { label: m.label, count: 1 });
+    }
+    visitCounts.set(targetId, grouped);
+  }
+  const targetActivity: WeeklyActivityTarget[] = Array.from(
+    visitCounts.entries()
+  )
+    .map(([targetId, locMap]) => {
+      const target = targetById.get(targetId);
+      return {
+        targetId,
+        targetName: target?.name ?? "—",
+        operationName: opById.get(target?.operationId ?? -1)?.name ?? "—",
+        locations: Array.from(locMap.values()).sort(
+          (a, b) => b.count - a.count
+        ),
+      };
+    })
+    .sort((a, b) => a.targetName.localeCompare(b.targetName));
+
+  // ── Governance completed — sheets whose record hit 100% and were last
+  // touched within the week. There's no per-checkbox completion timestamp,
+  // only the record's own updatedAt, so this is an approximation: a sheet
+  // completed earlier and merely re-saved this week would also count. ────
+  const govFields = [
+    "isurv",
+    "sentToIO",
+    "savedAsWord",
+    "savedAsPdf",
+    "uploadedToPromis",
+    "linked",
+    "savedInOpFolder",
+    "imageryTaken",
+    "coverPage",
+  ] as const;
+  let governanceCompleted = 0;
+  for (const g of govRecords) {
+    const d = toPerthDateISO(g.updatedAt);
+    if (d < weekStart || d > weekEnd) continue;
+    if (govFields.every(f => g[f])) governanceCompleted++;
+  }
+
+  return {
+    weekStart,
+    weekEnd,
+    operations: operationsSummary,
+    newIntelligence,
+    targetActivity,
+    governanceCompleted,
+  };
 }
 
 export async function getAllIntelligenceEntities(): Promise<

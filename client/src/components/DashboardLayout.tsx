@@ -1196,7 +1196,7 @@ function DashboardLayoutContent({
                           )}
                         >
                           <TrendingUp className="h-3.5 w-3.5 shrink-0" />
-                          Weekly Activity Report
+                          Weekly Activity
                         </button>
                         <button
                           onClick={() => setLocation("/reports/weekly-tasking")}
@@ -1205,7 +1205,7 @@ function DashboardLayoutContent({
                           )}
                         >
                           <CalendarClock className="h-3.5 w-3.5 shrink-0" />
-                          Weekly Tasking Report
+                          Weekly Tasking
                         </button>
                       </div>
                     )}

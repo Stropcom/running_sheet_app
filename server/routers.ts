@@ -81,6 +81,7 @@ import {
   deleteCtoRosterTeam,
   reorderCtoRosterTeams,
   upsertRosterShiftNotification,
+  getWeeklyTaskingReport,
 } from "./ctoRoster";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { sdk } from "./_core/sdk";
@@ -221,6 +222,7 @@ import {
   upsertRsMappingWaypoint,
   getIncompleteRunningSheets,
   getOutstandingTodosByUser,
+  getWeeklyActivityReport,
   getSidebarOrder,
   setSidebarOrder,
   DEFAULT_SIDEBAR_ORDER,
@@ -4520,6 +4522,20 @@ export const appRouter = router({
     outstandingTodos: protectedProcedure.query(async () => {
       return getOutstandingTodosByUser();
     }),
+
+    /** Weekly Activity Report — what the unit did in a given Monday-start week. */
+    weeklyActivity: protectedProcedure
+      .input(z.object({ weekStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }))
+      .query(async ({ input }) => {
+        return getWeeklyActivityReport(input.weekStart);
+      }),
+
+    /** Weekly Tasking Report — what the unit can do in a given Monday-start week. */
+    weeklyTasking: protectedProcedure
+      .input(z.object({ weekStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }))
+      .query(async ({ input }) => {
+        return getWeeklyTaskingReport(input.weekStart);
+      }),
   }),
 
   // ─── Operation Manager ─────────────────────────────────────────────────────

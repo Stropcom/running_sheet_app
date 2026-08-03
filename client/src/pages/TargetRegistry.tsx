@@ -26,7 +26,6 @@ import { toast } from "sonner";
 import {
   Search,
   Plus,
-  Pencil,
   Trash2,
   Link2,
   ChevronRight,
@@ -245,23 +244,6 @@ function TargetCard({
     setExtraVehicles(v => v.map((item, idx) => idx === i ? { ...item, [field]: val } : item));
     setDirty(true);
   };
-  const addWildField = () => {
-    const nextNum = wildFields.length + 1;
-    setWildFields(v => [...v, { label: `#${nextNum}`, value: "" }]);
-    setDirty(true);
-  };
-  const removeWildField = (i: number) => {
-    setWildFields(v => {
-      const next = v.filter((_, idx) => idx !== i).map((f, idx) => ({ ...f, label: `#${idx + 1}` }));
-      return next;
-    });
-    setDirty(true);
-  };
-  const updateWildField = (i: number, val: string) => {
-    setWildFields(v => v.map((item, idx) => idx === i ? { ...item, value: val } : item));
-    setDirty(true);
-  };
-
   const update = trpc.target.registry.update.useMutation({
     onSuccess: () => {
       utils.target.registry.list.invalidate();
@@ -279,30 +261,6 @@ function TargetCard({
       onDeleted();
       toast.success("Target deleted");
     },
-    onError: (e: { message: string }) => toast.error(e.message),
-  });
-
-  // Per-target shortcuts
-  const { data: targetShortcutList, refetch: refetchShortcuts } = trpc.targetShortcuts.list.useQuery(
-    { targetId: target.id },
-    { enabled: expanded }
-  );
-  const [newScTrigger, setNewScTrigger] = useState("");
-  const [newScExpansion, setNewScExpansion] = useState("");
-  const [editingScId, setEditingScId] = useState<number | null>(null);
-  const [editScTrigger, setEditScTrigger] = useState("");
-  const [editScExpansion, setEditScExpansion] = useState("");
-
-  const createSc = trpc.targetShortcuts.create.useMutation({
-    onSuccess: () => { refetchShortcuts(); setNewScTrigger(""); setNewScExpansion(""); toast.success("Shortcut added"); },
-    onError: (e: { message: string }) => toast.error(e.message),
-  });
-  const updateSc = trpc.targetShortcuts.update.useMutation({
-    onSuccess: () => { refetchShortcuts(); setEditingScId(null); toast.success("Shortcut updated"); },
-    onError: (e: { message: string }) => toast.error(e.message),
-  });
-  const deleteSc = trpc.targetShortcuts.delete.useMutation({
-    onSuccess: () => { refetchShortcuts(); toast.success("Shortcut deleted"); },
     onError: (e: { message: string }) => toast.error(e.message),
   });
 
@@ -446,24 +404,6 @@ function TargetCard({
             <Plus className="w-3.5 h-3.5" /> Add Vehicle
           </Button>
 
-          {/* ── Wild fields (#1, #2, …) — between vehicles and dep/arr ── */}
-          {wildFields.map((wf, i) => (
-            <div key={i} className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-amber-500 uppercase tracking-wide flex items-center gap-1.5">
-                  <Hash className="w-3 h-3" /> Wild Field {wf.label}
-                </span>
-                <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => removeWildField(i)}>
-                  <X className="w-3 h-3" />
-                </Button>
-              </div>
-              <Input value={wf.value} onChange={e => updateWildField(i, e.target.value)} placeholder={`${wf.label} value…`} />
-            </div>
-          ))}
-          <Button size="sm" variant="outline" className="gap-1.5 self-start border-amber-500/40 text-amber-500 hover:bg-amber-500/10" onClick={addWildField}>
-            <Hash className="w-3.5 h-3.5" /> Add Wild Field
-          </Button>
-
           {/* ── Depart / Arrive ── */}
           {([
             { label: "Depart (DEP)", val: dep, set: (v: string) => mark(() => setDep(v)) },
@@ -501,93 +441,6 @@ function TargetCard({
               <Save className="w-3.5 h-3.5" />
               {update.isPending ? "Saving…" : "Save"}
             </Button>
-          </div>
-
-          {/* ── Per-target shortcuts ── */}
-          <div className="mt-4 pt-4 border-t border-border/50 flex flex-col gap-3">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Target Shortcuts</p>
-            {/* Existing shortcuts */}
-            {(targetShortcutList ?? []).map((sc) =>
-              editingScId === sc.id ? (
-                <div key={sc.id} className="flex flex-col gap-2 rounded-lg border border-primary/40 bg-primary/5 p-3">
-                  <div className="flex gap-2">
-                    <Input
-                      className="w-28 font-mono text-sm"
-                      placeholder="trigger"
-                      value={editScTrigger}
-                      onChange={e => setEditScTrigger(e.target.value)}
-                    />
-                    <Input
-                      className="flex-1 text-sm"
-                      placeholder="expansion text"
-                      value={editScExpansion}
-                      onChange={e => setEditScExpansion(e.target.value)}
-                    />
-                  </div>
-                  <div className="flex gap-2 justify-end">
-                    <Button size="sm" variant="ghost" onClick={() => setEditingScId(null)}>Cancel</Button>
-                    <Button
-                      size="sm"
-                      onClick={() => updateSc.mutate({ id: sc.id, trigger: editScTrigger, expansion: editScExpansion })}
-                      disabled={updateSc.isPending || !editScTrigger || !editScExpansion}
-                    >
-                      Save
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div key={sc.id} className="flex items-start gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
-                  <span className="font-mono text-xs font-bold text-primary bg-primary/10 rounded px-1.5 py-0.5 shrink-0 mt-0.5">{sc.trigger}</span>
-                  <span className="flex-1 text-sm text-foreground/80 break-words">{sc.expansion}</span>
-                  <div className="flex gap-1 shrink-0">
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-6 w-6"
-                      onClick={() => { setEditingScId(sc.id); setEditScTrigger(sc.trigger); setEditScExpansion(sc.expansion); }}
-                    >
-                      <Pencil className="w-3 h-3" />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-6 w-6 text-destructive hover:text-destructive"
-                      onClick={() => deleteSc.mutate({ id: sc.id })}
-                      disabled={deleteSc.isPending}
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </Button>
-                  </div>
-                </div>
-              )
-            )}
-            {/* Add new shortcut */}
-            <div className="flex flex-col gap-2">
-              <div className="flex gap-2">
-                <Input
-                  className="w-28 font-mono text-sm"
-                  placeholder="trigger"
-                  value={newScTrigger}
-                  onChange={e => setNewScTrigger(e.target.value)}
-                />
-                <Input
-                  className="flex-1 text-sm"
-                  placeholder="expansion text"
-                  value={newScExpansion}
-                  onChange={e => setNewScExpansion(e.target.value)}
-                />
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                className="self-start gap-1.5"
-                onClick={() => createSc.mutate({ targetId: target.id, trigger: newScTrigger, expansion: newScExpansion })}
-                disabled={createSc.isPending || !newScTrigger.trim() || !newScExpansion.trim()}
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Add Shortcut
-              </Button>
-            </div>
           </div>
         </div>
       )}

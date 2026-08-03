@@ -17,6 +17,14 @@ interface IntelAssociateProfile {
   linkedTargets: Array<{ targetId: number; name: string; operationId: number; operationName: string }>;
   linkedSheets: Array<{ id: number; title: string; operationId: number; operationName: string }>;
   assocLocations: IntelProfileEntity[]; assocVehicles: IntelProfileEntity[];
+  registryAssociateId?: number | null;
+  firstNames?: string | null;
+  surname?: string | null;
+  bornDate?: string | null;
+  hbf?: string | null;
+  hb?: string | null;
+  v1f?: string | null;
+  v1?: string | null;
 }
 
 function SectionHeading({ label, count }: { label: string; count: number }) {
@@ -57,6 +65,10 @@ function buildAssociateProfileHtml(profile: IntelAssociateProfile, photos: Profi
 </div>
 <div class="content">
   ${photos.length ? `<div style="margin-bottom:16px"><div class="section-title">Photos (${photos.length})</div>${buildPhotoGridHtml(photos)}</div>` : ""}
+  ${profile.registryAssociateId ? `<div style="margin-bottom:16px"><div class="section-title">Registered Details</div>
+    ${profile.hbf ? `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}"><strong>Home Address</strong> — ${esc(profile.hbf)}</p>` : ""}
+    ${profile.v1f ? `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}"><strong>Vehicle</strong> — ${esc(profile.v1f)}</p>` : ""}
+  </div>` : ""}
   ${profile.linkedTargets.length ? `<div style="margin-bottom:16px"><div class="section-title">Linked Targets</div>${profile.linkedTargets.map(t => `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}"><strong>${esc(t.name)}</strong> <span style="color:#64748b">— ${esc(t.operationName)}</span></p>`).join("")}</div>` : ""}
   ${profile.linkedSheets.length ? `<div style="margin-bottom:16px"><div class="section-title">Running Sheets</div>${profile.linkedSheets.map(s => `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}">${esc(s.title)} <span style="color:#64748b">— ${esc(s.operationName)}</span></p>`).join("")}</div>` : ""}
   ${profile.assocVehicles.length || profile.assocLocations.length ? `<div style="margin-bottom:16px"><div class="section-title">Associations</div>
@@ -105,9 +117,16 @@ export default function IntelligenceAssociateProfile() {
               <div className="bg-gradient-to-r from-blue-900 to-blue-800 px-6 py-5 text-white">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 border border-white/30 mb-3">
-                      <User className="w-3 h-3" /> Associate
-                    </span>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 border border-white/30">
+                        <User className="w-3 h-3" /> Associate
+                      </span>
+                      {profile.registryAssociateId && (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 border border-emerald-300/40 text-emerald-100">
+                          Registered
+                        </span>
+                      )}
+                    </div>
                     <h1 className="text-2xl font-bold tracking-tight">{profile.label}</h1>
                   </div>
                   <Button variant="outline" size="sm" onClick={exportPdf} className="bg-white/10 border-white/30 text-white hover:bg-white/20 shrink-0">
@@ -130,6 +149,26 @@ export default function IntelligenceAssociateProfile() {
             </div>
 
             <EntityPhotosSection category="associate" entityLabel={profile.label} />
+
+            {profile.registryAssociateId && (profile.hbf || profile.v1f) && (
+              <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
+                <SectionHeading label="Registered Details" count={[profile.hbf, profile.v1f].filter(Boolean).length} />
+                <div className="space-y-2">
+                  {profile.hbf && (
+                    <div className="px-3 py-2 rounded-lg border border-border/60 bg-muted/20">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide mb-0.5">Home Address</p>
+                      <p className="text-sm text-foreground">{profile.hbf}</p>
+                    </div>
+                  )}
+                  {profile.v1f && (
+                    <div className="px-3 py-2 rounded-lg border border-border/60 bg-muted/20">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide mb-0.5">Vehicle</p>
+                      <p className="text-sm text-foreground">{profile.v1f}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {profile.linkedTargets.length > 0 && (
               <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">

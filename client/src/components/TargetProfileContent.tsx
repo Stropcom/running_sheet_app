@@ -3,7 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
-import { FileDown, User, Folder, FileText } from "lucide-react";
+import { FileDown, User, Folder, FileText, Users } from "lucide-react";
 import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 import { EntityPhotosSection } from "@/components/EntityPhotosSection";
@@ -38,7 +38,12 @@ function SectionHeading({ label, count }: { label: string; count: number }) {
 function buildTargetProfileHtml(
   profile: NonNullable<ReturnType<typeof useTargetProfile>["data"]>,
   photos: ProfilePhoto[],
-  fieldHistory: { fieldName: string; previousValue: string; supersededAt: number; supersededByCIN: string | null }[] = []
+  fieldHistory: {
+    fieldName: string;
+    previousValue: string;
+    supersededAt: number;
+    supersededByCIN: string | null;
+  }[] = []
 ) {
   const esc = (s: string | null | undefined) =>
     (s ?? "")
@@ -176,6 +181,23 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
       : ""
   }
 
+  ${
+    profile.registryAssociates.length
+      ? `
+  <div class="section">
+    <div class="section-title">Registered Associates</div>
+    <div style="border:1px solid ${GREY_BORDER};border-radius:6px;overflow:hidden">
+      ${profile.registryAssociates
+        .map(
+          a =>
+            `<div class="sheet-item"><div class="sheet-dot"></div><span style="flex:1">${esc(a.name)}</span><span style="color:#64748b">${esc(a.hbf ?? "")}</span></div>`
+        )
+        .join("")}
+    </div>
+  </div>`
+      : ""
+  }
+
   <div class="section">
     <div class="section-title">Running Sheets</div>
     <div style="border:1px solid ${GREY_BORDER};border-radius:6px;overflow:hidden">
@@ -268,10 +290,11 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
     { enabled: targetId > 0 }
   );
   const photos = (photosData ?? []) as ProfilePhoto[];
-  const { data: fieldHistoryData } = trpc.target.registry.getFieldHistory.useQuery(
-    { targetId },
-    { enabled: targetId > 0 }
-  );
+  const { data: fieldHistoryData } =
+    trpc.target.registry.getFieldHistory.useQuery(
+      { targetId },
+      { enabled: targetId > 0 }
+    );
   const fieldHistory = fieldHistoryData ?? [];
   const historyFor = (field: string) =>
     fieldHistory.filter(h => h.fieldName === field);
@@ -494,6 +517,45 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
               </div>
             )}
           </div>
+
+          {/* Registered Associates — recorded directly on this target in the
+              Target Registry, a guaranteed link rather than inferred from
+              observation-text co-occurrence. */}
+          {profile.registryAssociates.length > 0 && (
+            <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
+              <div className="flex items-center gap-2 mb-3">
+                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  Registered Associates
+                </p>
+                <span className="text-xs text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">
+                  {profile.registryAssociates.length}
+                </span>
+              </div>
+              <div className="flex flex-col gap-2">
+                {profile.registryAssociates.map(a => (
+                  <button
+                    key={a.id}
+                    onClick={() =>
+                      navigate(
+                        `/intelligence/associate/${encodeURIComponent(a.name)}`
+                      )
+                    }
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border/60 bg-muted/20 hover:bg-accent/10 transition-colors text-left"
+                  >
+                    <Users className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                    <span className="text-xs font-medium text-foreground flex-1 truncate">
+                      {a.name}
+                    </span>
+                    {a.hbf && (
+                      <span className="text-xs text-muted-foreground shrink-0 truncate max-w-[160px]">
+                        {a.hbf}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Operational Associations */}
           {(profile.assocPersons.length > 0 ||

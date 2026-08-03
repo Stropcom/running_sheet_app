@@ -3255,6 +3255,13 @@ export interface IntelligenceEntity {
   lowConfidence?: boolean;
   /** Labels of entities merged into this one via a confirmed duplicate decision. */
   aliasLabels?: string[];
+  /** True when this entity comes from a formal registry associate record (not just observation text) */
+  isAssociate?: boolean;
+  /** For associate entities: the numeric DB id of the associate record */
+  associateId?: number | null;
+  /** For associate entities: the parent target this associate belongs to */
+  associateOfTargetId?: number | null;
+  associateOfTargetName?: string | null;
   occurrences: Array<{
     sheetId: number;
     sheetTitle: string;
@@ -4209,6 +4216,11 @@ export async function getAllIntelligenceEntities(): Promise<
       tgtAliasToFullName.set(t.tgt.trim().toUpperCase(), t.targetName);
     }
   }
+  // Same idea for registry associates: maps their bracket surname (e.g.
+  // "P.HILL") to the associate's own entity key, so a bare mention of that
+  // bracket elsewhere in observation text redirects into this associate's
+  // entity instead of spawning a lookalike duplicate.
+  const associateAliasToKey = new Map<string, string>();
 
   const entityMap = new Map<string, IntelligenceEntity>();
 
@@ -4348,6 +4360,189 @@ export async function getAllIntelligenceEntities(): Promise<
     }
   }
 
+  // ── 2b. Add registry associates as person entities (isAssociate = true) ────
+  // Mirrors the target-card block above: an associate recorded on a target in
+  // the Target Registry is a confirmed intelligence entity in its own right —
+  // it must show up in the Associates tab (and its address/vehicle in
+  // Locations/Vehicles) even if it has never been mentioned in observation
+  // text yet, same as a target card.
+  const targetRowsByTargetId = new Map<number, typeof targetRows>();
+  for (const t of targetRows) {
+    if (!targetRowsByTargetId.has(t.targetId))
+      targetRowsByTargetId.set(t.targetId, []);
+    targetRowsByTargetId.get(t.targetId)!.push(t);
+  }
+
+  const associateRows = await db
+    .select({
+      id: associates.id,
+      targetId: associates.targetId,
+      name: associates.name,
+      tgt: associates.tgt,
+      hbf: associates.hbf,
+      hb: associates.hb,
+      v1f: associates.v1f,
+      v1: associates.v1,
+      extraVehicles: associates.extraVehicles,
+      extraAddresses: associates.extraAddresses,
+    })
+    .from(associates)
+    .where(isNull(associates.deletedAt));
+
+  for (const a of associateRows) {
+    const parentRows = targetRowsByTargetId.get(a.targetId) ?? [];
+    const parentName = parentRows[0]?.targetName ?? null;
+    const assocKey = `associate::${a.id}`;
+
+    if (a.tgt && a.tgt.trim()) {
+      associateAliasToKey.set(a.tgt.trim().toUpperCase(), assocKey);
+    }
+
+    if (!entityMap.has(assocKey)) {
+      entityMap.set(assocKey, {
+        shortForm: a.name,
+        type: "person",
+        isAssociate: true,
+        associateId: a.id,
+        associateOfTargetId: a.targetId,
+        associateOfTargetName: parentName,
+        occurrences: [],
+      });
+    }
+
+    // Occurrences piggyback on the parent target's linked sheets (or a
+    // "(no sheet linked)" placeholder), same pattern as the target card.
+    for (const t of parentRows) {
+      const linkedSheets = targetSheetMap.get(t.targetId) ?? [];
+      const sheetEntries =
+        linkedSheets.length > 0
+          ? linkedSheets
+          : [{ sheetId: 0, sheetTitle: "(no sheet linked)" }];
+      for (const sheet of sheetEntries) {
+        entityMap.get(assocKey)!.occurrences.push({
+          sheetId: sheet.sheetId,
+          sheetTitle: sheet.sheetTitle,
+          operationId: t.operationId ?? 0,
+          operationName: t.operationName ?? "(Registry)",
+          rowId: 0,
+          observationSnippet: `Associate card — ${a.name} (associate of ${parentName ?? "target"})`,
+          timeMinutes: null,
+          fullDescription: `Associate: ${a.name}${a.tgt ? `, TGT: ${a.tgt}` : ""} (of target: ${parentName ?? "unknown"}, operation: ${t.operationName ?? "Registry"})`,
+        });
+      }
+    }
+
+    // Address/vehicle fields, same field-registration logic as target cards.
+    const assocLocationFields: Array<{
+      label: string;
+      value: string | null;
+      type: IntelligenceEntity["type"];
+    }> = [
+      {
+        label: "HBF",
+        value: a.hbf?.trim() || a.hb?.trim() || null,
+        type: "address",
+      },
+      {
+        label: "V1F",
+        value: a.v1f?.trim() || a.v1?.trim() || null,
+        type: "vehicle",
+      },
+    ];
+    if (a.extraVehicles) {
+      try {
+        const extras: Array<{ full?: string; short?: string }> = JSON.parse(
+          a.extraVehicles
+        );
+        extras.forEach((ev, idx) => {
+          const vehicleValue = ev.full?.trim() || ev.short?.trim() || null;
+          if (vehicleValue) {
+            assocLocationFields.push({
+              label: `V${idx + 2}F`,
+              value: vehicleValue,
+              type: "vehicle",
+            });
+          }
+        });
+      } catch {
+        /* malformed JSON — skip */
+      }
+    }
+    if (a.extraAddresses) {
+      try {
+        const extras: Array<{ full?: string; short?: string }> = JSON.parse(
+          a.extraAddresses
+        );
+        extras.forEach((ea, idx) => {
+          const addrValue = ea.full?.trim() || ea.short?.trim() || null;
+          if (addrValue) {
+            assocLocationFields.push({
+              label: `Address ${idx + 2}`,
+              value: addrValue,
+              type: "address",
+            });
+          }
+        });
+      } catch {
+        /* malformed JSON — skip */
+      }
+    }
+
+    for (const field of assocLocationFields) {
+      if (!field.value || field.value.trim() === "") continue;
+      let shortForm = field.value.trim();
+      if (field.type === "vehicle") {
+        shortForm = shortForm.replace(/\s*\([^)]{1,40}\)\s*$/, "").trim();
+      }
+      if (!shortForm) continue;
+      const normKey =
+        field.type === "vehicle"
+          ? vehicleRegoKey(shortForm)
+          : shortForm.toLowerCase().replace(/\s+/g, " ").trim();
+      const key = `${field.type}::${normKey}`;
+      if (!entityMap.has(key)) {
+        entityMap.set(key, { shortForm, type: field.type, occurrences: [] });
+      } else {
+        const existing = entityMap.get(key)!;
+        const shouldUpgrade =
+          field.type === "vehicle"
+            ? preferVehicleShortForm(existing.shortForm, shortForm, normKey)
+            : shortForm.length > existing.shortForm.length;
+        if (shouldUpgrade) existing.shortForm = shortForm;
+      }
+      for (const t of parentRows.length > 0 ? parentRows : [null]) {
+        const linkedSheets = t ? (targetSheetMap.get(t.targetId) ?? []) : [];
+        const sheetEntries =
+          linkedSheets.length > 0
+            ? linkedSheets
+            : [{ sheetId: 0, sheetTitle: "(no sheet linked)" }];
+        for (const sheet of sheetEntries) {
+          const alreadyAdded = entityMap
+            .get(key)!
+            .occurrences.some(
+              o =>
+                o.sheetId === sheet.sheetId &&
+                o.rowId === 0 &&
+                o.observationSnippet ===
+                  `Associate card — ${a.name} [${field.label}]`
+            );
+          if (!alreadyAdded) {
+            entityMap.get(key)!.occurrences.push({
+              sheetId: sheet.sheetId,
+              sheetTitle: sheet.sheetTitle,
+              operationId: t?.operationId ?? 0,
+              operationName: t?.operationName ?? "(Registry)",
+              rowId: 0,
+              observationSnippet: `Associate card — ${a.name} [${field.label}]`,
+              timeMinutes: null,
+              fullDescription: `${field.label}: ${shortForm} (from associate: ${a.name}, of target: ${parentName ?? "unknown"})`,
+            });
+          }
+        }
+      }
+    }
+  }
+
   // ── 3. Extract from observation rows ──────────────────────────────────────
   //
   // Two-pass approach:
@@ -4430,6 +4625,28 @@ export async function getAllIntelligenceEntities(): Promise<
           });
           return; // skip adding as a separate entity
         }
+      }
+      // Same idea, but for a registry associate's bracket surname (e.g. "P.HILL").
+      const canonicalAssocKey =
+        associateAliasToKey.get(e.shortForm.toUpperCase()) ??
+        (e.rawShortForm
+          ? associateAliasToKey.get(e.rawShortForm.toUpperCase())
+          : undefined);
+      if (canonicalAssocKey && entityMap.has(canonicalAssocKey)) {
+        const snippet =
+          row.observation.slice(0, 80) +
+          (row.observation.length > 80 ? "…" : "");
+        entityMap.get(canonicalAssocKey)!.occurrences.push({
+          sheetId: row.sheetId,
+          sheetTitle: row.sheetTitle,
+          operationId: row.operationId,
+          operationName: row.operationName,
+          rowId: row.rowId,
+          observationSnippet: snippet,
+          timeMinutes: row.timeMinutes ?? null,
+          fullDescription: e.fullDescription,
+        });
+        return; // skip adding as a separate entity
       }
     }
     // Vehicles key on registration alone (see vehicleRegoKey above) so a bare
@@ -6787,6 +7004,17 @@ export interface IntelTargetProfile {
   assocPersons: IntelProfileEntity[];
   assocVehicles: IntelProfileEntity[];
   assocLocations: IntelProfileEntity[];
+  /** Associates recorded directly on this target in the Target Registry — a
+   * guaranteed link (not inferred from observation-text co-occurrence). */
+  registryAssociates: Array<{
+    id: number;
+    name: string;
+    tgt: string | null;
+    hbf: string | null;
+    hb: string | null;
+    v1f: string | null;
+    v1: string | null;
+  }>;
 }
 
 export interface IntelOperationProfile {
@@ -6835,6 +7063,16 @@ export interface IntelAssociateProfile {
   }>;
   assocLocations: IntelProfileEntity[];
   assocVehicles: IntelProfileEntity[];
+  /** Present when this associate has a formal Target Registry record — its
+   * own structured identity/address/vehicle, not just text-mined mentions. */
+  registryAssociateId?: number | null;
+  firstNames?: string | null;
+  surname?: string | null;
+  bornDate?: string | null;
+  hbf?: string | null;
+  hb?: string | null;
+  v1f?: string | null;
+  v1?: string | null;
 }
 
 export interface IntelVehicleProfile {
@@ -7144,6 +7382,8 @@ export async function getIntelTargetProfile(
     await getPreviousEntityMatchers()
   );
 
+  const registryAssociateRows = await getAssociatesForTarget(targetId);
+
   return {
     targetId,
     name: target.name,
@@ -7168,6 +7408,15 @@ export async function getIntelTargetProfile(
     assocPersons,
     assocVehicles,
     assocLocations,
+    registryAssociates: registryAssociateRows.map(a => ({
+      id: a.id,
+      name: a.name,
+      tgt: a.tgt,
+      hbf: a.hbf,
+      hb: a.hb,
+      v1f: a.v1f,
+      v1: a.v1,
+    })),
   };
 }
 
@@ -7361,6 +7610,42 @@ export async function getIntelAssociateProfile(
 
   const linkedTargets: IntelAssociateProfile["linkedTargets"] = [];
 
+  // Guaranteed link: a registry associate always belongs to exactly one
+  // target, regardless of whether they've been mentioned in that target's
+  // observation text yet — this must show up even with zero row overlap.
+  if (entity.isAssociate && entity.associateOfTargetId) {
+    const parentOpLinks = await db
+      .select({ id: operations.id, name: operations.name })
+      .from(operationTargetLinks)
+      .innerJoin(
+        operations,
+        eq(operations.id, operationTargetLinks.operationId)
+      )
+      .where(
+        and(
+          eq(operationTargetLinks.targetId, entity.associateOfTargetId),
+          isNull(operations.deletedAt)
+        )
+      );
+    if (parentOpLinks.length > 0) {
+      for (const op of parentOpLinks) {
+        linkedTargets.push({
+          targetId: entity.associateOfTargetId,
+          name: entity.associateOfTargetName ?? "Unknown",
+          operationId: op.id,
+          operationName: op.name,
+        });
+      }
+    } else {
+      linkedTargets.push({
+        targetId: entity.associateOfTargetId,
+        name: entity.associateOfTargetName ?? "Unknown",
+        operationId: 0,
+        operationName: "(Registry)",
+      });
+    }
+  }
+
   for (const target of allTargets) {
     const targetSheets = await db
       .select({ id: runningSheets.id, operationId: runningSheets.operationId })
@@ -7440,6 +7725,12 @@ export async function getIntelAssociateProfile(
     await getPreviousEntityMatchers()
   );
 
+  // Surface the associate's own structured identity/address/vehicle if this
+  // is a formal registry record, not just a text-mined mention.
+  const registryAssociate = entity.isAssociate
+    ? await getAssociateById(entity.associateId ?? -1)
+    : undefined;
+
   return {
     label: entity.shortForm,
     type: entity.type as "person" | "business",
@@ -7447,6 +7738,14 @@ export async function getIntelAssociateProfile(
     linkedSheets: Array.from(sheetMap.values()),
     assocLocations,
     assocVehicles,
+    registryAssociateId: registryAssociate?.id ?? null,
+    firstNames: registryAssociate?.firstNames ?? null,
+    surname: registryAssociate?.surname ?? null,
+    bornDate: registryAssociate?.bornDate ?? null,
+    hbf: registryAssociate?.hbf ?? null,
+    hb: registryAssociate?.hb ?? null,
+    v1f: registryAssociate?.v1f ?? null,
+    v1: registryAssociate?.v1 ?? null,
   };
 }
 

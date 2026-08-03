@@ -174,9 +174,9 @@ function getDefaultShift(
   dayIndex: number,
   weekStart: string
 ): string {
-  // PTT: 0600-1400 Mon-Fri, RDO Sat-Sun
+  // PTT: 0700-1500 Mon-Fri, RDO Sat-Sun
   if (teamRow === "ptt") {
-    return dayIndex <= 4 ? "0600-1400" : "RDO";
+    return dayIndex <= 4 ? "0700-1500" : "RDO";
   }
   // Cap. Support: 0700-1500 Mon-Fri, RDO Sat-Sun
   if (teamRow === "cap") {
@@ -672,42 +672,21 @@ export default function OperationManagerPage() {
           sortOrder: i,
         })),
       });
-      // Copy tasking cells — swap Team 1 (surv1) and Team 2 (surv2) shifts for the new week
+      // Copy tasking cells — carry forward only the shift-time pattern for
+      // next week (surv1/surv2 rotate day/afternoon, ptt/cap stay fixed).
+      // Operations/tasking assignments are never carried forward — each
+      // week's tasking is set fresh.
       const taskingMutations = TEAM_ROWS.flatMap(teamRow =>
-        DAYS.map((_, dayIndex) => {
-          // For surv1/surv2, use the opposite team's cell from this week (shift swap)
-          const sourceTeamRow: TeamRow =
-            teamRow === "surv1"
-              ? "surv2"
-              : teamRow === "surv2"
-                ? "surv1"
-                : teamRow;
-          const key = `${sourceTeamRow}-${dayIndex}`;
-          const cell = taskingGrid[key] ?? {};
-          // For surv1/surv2 shift, use auto-populated default for next week instead of copying verbatim
-          const autoShift =
-            teamRow === "surv1" || teamRow === "surv2"
-              ? getDefaultShift(teamRow, dayIndex, nextWeekStart)
-              : cell.shiftTime === "Custom"
-                ? (cell.customTime ?? null)
-                : (cell.shiftTime ?? null);
-          const primaryTask =
-            cell.primaryTask === "Other"
-              ? (cell.primaryOther ?? null)
-              : (cell.primaryTask ?? null);
-          const secondaryTask =
-            cell.secondaryTask === "Other"
-              ? (cell.secondaryOther ?? null)
-              : (cell.secondaryTask ?? null);
-          return saveTaskingCellMut.mutateAsync({
+        DAYS.map((_, dayIndex) =>
+          saveTaskingCellMut.mutateAsync({
             weekStart: nextWeekStart,
             dayIndex,
             teamRow,
-            shiftTime: autoShift,
-            primaryTask,
-            secondaryTask,
-          });
-        })
+            shiftTime: getDefaultShift(teamRow, dayIndex, nextWeekStart),
+            primaryTask: null,
+            secondaryTask: null,
+          })
+        )
       );
       await Promise.all(taskingMutations);
       // Copy contacts

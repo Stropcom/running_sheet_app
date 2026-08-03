@@ -103,6 +103,10 @@ import { format } from "date-fns";
 import { WifiOff, RefreshCw, ChevronDown } from "lucide-react";
 import { useOffline } from "@/contexts/OfflineContext";
 import {
+  AddTargetDialog,
+  type RegistryCreatePayload,
+} from "@/components/AddTargetDialog";
+import {
   saveCachedSheet,
   getCachedSheet,
   addPendingRowToCachedSheet,
@@ -2830,13 +2834,12 @@ export default function SheetDetail() {
   const [editSheetOpen, setEditSheetOpen] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editTargetName, setEditTargetName] = useState("");
-  const [editTargetMode, setEditTargetMode] = useState<"none" | "new" | "link">(
-    "none"
-  );
-  const [editNewTargetName, setEditNewTargetName] = useState("");
+  const [editTargetMode, setEditTargetMode] = useState<"none" | "link">("none");
   const [editSelectedTargetId, setEditSelectedTargetId] = useState<
     number | null
   >(null);
+  const [editCreateTargetDialogOpen, setEditCreateTargetDialogOpen] =
+    useState(false);
 
   // Target selector
   const { data: operationTargets } = trpc.target.list.useQuery(
@@ -2936,6 +2939,18 @@ export default function SheetDetail() {
     onError: e => toast.error(e.message),
   });
 
+  // New Target from within the "Edit Sheet" dialog — same structured Add
+  // Target dialog as everywhere else, linked straight to the sheet's operation.
+  const createTargetForEditSheet = trpc.target.registry.create.useMutation({
+    onSuccess: () => {
+      utils.target.listAll.invalidate();
+      if (sheet?.operationId) {
+        utils.target.list.invalidate({ operationId: sheet.operationId });
+      }
+    },
+    onError: (e: { message: string }) => toast.error(e.message),
+  });
+
   const deleteSheet = trpc.sheet.delete.useMutation({
     onSuccess: () => {
       setEditSheetOpen(false);
@@ -2982,7 +2997,6 @@ export default function SheetDetail() {
     setEditTitle(sheet?.title ?? "");
     setEditTargetName(sheet?.targetName ?? "");
     setEditTargetMode("none");
-    setEditNewTargetName("");
     setEditTargetSearch("");
     setEditSelectedTargetId(sheet?.targetId ?? null);
     setEditSheetOpen(true);
@@ -4402,7 +4416,6 @@ export default function SheetDetail() {
                       } else {
                         setEditSelectedTargetId(t.id);
                         setEditTargetMode("link");
-                        setEditNewTargetName("");
                       }
                     }}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-colors w-full ${
@@ -4420,30 +4433,6 @@ export default function SheetDetail() {
                     )}
                   </button>
                 ))}
-
-                {/* New Target inline input */}
-                {editTargetMode === "new" && (
-                  <div className="flex gap-2 items-center">
-                    <Input
-                      placeholder="Full name, born (e.g. John SMITH, born 1 Jan 1980)"
-                      value={editNewTargetName}
-                      onChange={e => setEditNewTargetName(e.target.value)}
-                      autoFocus
-                      className="flex-1"
-                    />
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => {
-                        setEditTargetMode("none");
-                        setEditNewTargetName("");
-                      }}
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </Button>
-                  </div>
-                )}
 
                 {/* Link Existing search panel */}
                 {editTargetMode === "link" && editSelectedTargetId === null && (
@@ -4556,38 +4545,34 @@ export default function SheetDetail() {
                   )}
 
                 {/* Action buttons */}
-                {editTargetMode !== "new" &&
-                  !(
-                    editTargetMode === "link" && editSelectedTargetId === null
-                  ) && (
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="gap-2"
-                        onClick={() => {
-                          setEditTargetMode("new");
-                          setEditSelectedTargetId(null);
-                        }}
-                      >
-                        <Plus className="w-3.5 h-3.5" /> New Target
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="gap-2"
-                        onClick={() => {
-                          setEditTargetMode("link");
-                          setEditSelectedTargetId(null);
-                          setEditTargetSearch("");
-                        }}
-                      >
-                        <Search className="w-3.5 h-3.5" /> Link Existing
-                      </Button>
-                    </div>
-                  )}
+                {!(
+                  editTargetMode === "link" && editSelectedTargetId === null
+                ) && (
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="gap-2"
+                      onClick={() => setEditCreateTargetDialogOpen(true)}
+                    >
+                      <Plus className="w-3.5 h-3.5" /> New Target
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="gap-2"
+                      onClick={() => {
+                        setEditTargetMode("link");
+                        setEditSelectedTargetId(null);
+                        setEditTargetSearch("");
+                      }}
+                    >
+                      <Search className="w-3.5 h-3.5" /> Link Existing
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -4636,10 +4621,6 @@ export default function SheetDetail() {
                 updateSheet.mutate({
                   id: sheetId,
                   title: editTitle.trim(),
-                  targetName:
-                    editTargetMode === "new"
-                      ? editNewTargetName.trim() || null
-                      : null,
                 });
               }}
               disabled={!editTitle.trim() || updateSheet.isPending}
@@ -4649,6 +4630,20 @@ export default function SheetDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* New Target — same structured Add Target dialog used everywhere else */}
+      <AddTargetDialog
+        open={editCreateTargetDialogOpen}
+        onClose={() => setEditCreateTargetDialogOpen(false)}
+        onSave={async (payload: RegistryCreatePayload) => {
+          const result = await createTargetForEditSheet.mutateAsync({
+            ...payload,
+            linkToOperationId: sheet?.operationId,
+          });
+          setEditSelectedTargetId(result.id);
+          setEditTargetMode("link");
+        }}
+      />
 
       {/* Edit Roster Dialog */}
       <Dialog open={editRosterOpen} onOpenChange={setEditRosterOpen}>

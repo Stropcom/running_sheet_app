@@ -722,7 +722,6 @@ export const appRouter = router({
           operationId: z.number(),
           title: z.string().min(1),
           targetId: z.number().optional().nullable(),
-          targetName: z.string().optional().nullable(),
           sheetCins: z
             .array(
               z.object({
@@ -737,23 +736,16 @@ export const appRouter = router({
       )
       .mutation(async ({ input, ctx }) => {
         await guardActiveOperation(input.operationId);
-        // Resolve target: create new if name provided, or use existing targetId
-        let resolvedTargetId = input.targetId ?? null;
-        if (!resolvedTargetId && input.targetName?.trim()) {
-          const newTarget = await createRegistryTarget({
-            name: input.targetName.trim(),
-            createdBy: ctx.user.id,
-          });
-          await linkTargetToOperation(newTarget.id, input.operationId);
-          resolvedTargetId = newTarget.id;
-        } else if (resolvedTargetId) {
-          // Existing target selected — ensure operation link exists
-          await linkTargetToOperation(resolvedTargetId, input.operationId);
+        // A target is always created (with full structured detail) via the
+        // Add Target dialog before this runs — here we only ever link an
+        // already-real target, never create one from a bare name.
+        if (input.targetId) {
+          await linkTargetToOperation(input.targetId, input.operationId);
         }
         const id = await createRunningSheet({
           operationId: input.operationId,
           title: input.title,
-          targetId: resolvedTargetId,
+          targetId: input.targetId ?? null,
           targetName: null,
           sheetCins: input.sheetCins ? JSON.stringify(input.sheetCins) : null,
           createdBy: ctx.user.id,
@@ -775,7 +767,6 @@ export const appRouter = router({
         z.object({
           id: z.number(),
           title: z.string().min(1).optional(),
-          targetName: z.string().optional().nullable(),
           sheetCins: z
             .array(
               z.object({
@@ -790,7 +781,7 @@ export const appRouter = router({
       )
       .mutation(async ({ input, ctx }) => {
         await guardActiveSheet(input.id);
-        const { id, sheetCins, targetName, ...rest } = input;
+        const { id, sheetCins, ...rest } = input;
         const data: Record<string, unknown> = { ...rest };
         // Validate roster CINs against registered users
         if (sheetCins && sheetCins.length > 0) {
@@ -809,21 +800,6 @@ export const appRouter = router({
           }
         }
         if (sheetCins !== undefined) data.sheetCins = JSON.stringify(sheetCins);
-        // If a new target name is provided, create a real registry target and link it to the sheet's operation
-        if (targetName?.trim()) {
-          const sheet = await getRunningSheetById(id);
-          if (sheet?.operationId) {
-            const newTarget = await createRegistryTarget({
-              name: targetName.trim(),
-              createdBy: ctx.user.id,
-            });
-            await linkTargetToOperation(newTarget.id, sheet.operationId);
-            data.targetId = newTarget.id;
-          }
-          data.targetName = null;
-        } else if (targetName === null) {
-          data.targetName = null;
-        }
         await updateRunningSheet(id, data);
         await createAuditLog({
           sheetId: id,

@@ -524,9 +524,10 @@ function TargetPanel({ operationId, autoExpandId, fromSheetId }: { operationId: 
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [linkSearch, setLinkSearch] = useState("");
 
-  const create = trpc.target.create.useMutation({
+  const create = trpc.target.registry.create.useMutation({
     onSuccess: () => {
       utils.target.list.invalidate({ operationId });
+      utils.target.listAll.invalidate();
       toast.success("Target added");
     },
     onError: (e: { message: string }) => toast.error(e.message),
@@ -584,7 +585,7 @@ function TargetPanel({ operationId, autoExpandId, fromSheetId }: { operationId: 
         open={addDialogOpen}
         onClose={() => setAddDialogOpen(false)}
         onSave={async (payload: RegistryCreatePayload) => {
-          await create.mutateAsync({ operationId, ...payload });
+          await create.mutateAsync({ ...payload, linkToOperationId: operationId });
         }}
       />
 
@@ -923,8 +924,8 @@ export default function OperationDetail() {
   const [createOpen, setCreateOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newTargetId, setNewTargetId] = useState<number | null>(null);
-  const [newTargetName, setNewTargetName] = useState("");
-  const [targetMode, setTargetMode] = useState<"none" | "new" | "link">("none");
+  const [targetMode, setTargetMode] = useState<"none" | "link">("none");
+  const [createTargetDialogOpen, setCreateTargetDialogOpen] = useState(false);
   const [cinList, setCinList] = useState<CinEntry[]>([]);
   const [cinInput, setCinInput] = useState("");
   const [deleteId, setDeleteId] = useState<number | null>(null);
@@ -991,6 +992,16 @@ export default function OperationDetail() {
       navigate(`/sheet/${data.id}`);
     },
     onError: (e) => toast.error(e.message),
+  });
+
+  // New Target from within the "New Running Sheet" dialog — same structured
+  // Add Target dialog as everywhere else, linked straight to this operation.
+  const createTargetForSheet = trpc.target.registry.create.useMutation({
+    onSuccess: () => {
+      utils.target.list.invalidate({ operationId });
+      utils.target.listAll.invalidate();
+    },
+    onError: (e: { message: string }) => toast.error(e.message),
   });
 
   const updateOperation = trpc.operation.update.useMutation({
@@ -1071,7 +1082,6 @@ export default function OperationDetail() {
       operationId,
       title: newTitle.trim(),
       targetId: targetMode === "link" ? (newTargetId ?? undefined) : undefined,
-      targetName: targetMode === "new" ? (newTargetName.trim() || undefined) : undefined,
       sheetCins: cinList.length > 0 ? cinList : undefined,
     });
   };
@@ -1080,7 +1090,6 @@ export default function OperationDetail() {
     if (!open) {
       setNewTitle("");
       setNewTargetId(null);
-      setNewTargetName("");
       setTargetMode("none");
       setTargetSearch("");
       setCinList([]);
@@ -1478,7 +1487,7 @@ export default function OperationDetail() {
                     type="button"
                     onClick={() => {
                       if (newTargetId === t.id) { setNewTargetId(null); setTargetMode("none"); }
-                      else { setNewTargetId(t.id); setTargetMode("link"); setNewTargetName(""); }
+                      else { setNewTargetId(t.id); setTargetMode("link"); }
                     }}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-colors w-full ${
                       newTargetId === t.id
@@ -1491,22 +1500,6 @@ export default function OperationDetail() {
                     {newTargetId === t.id && <CheckCircle2 className="w-4 h-4 shrink-0" />}
                   </button>
                 ))}
-
-                {/* New Target inline input */}
-                {targetMode === "new" && (
-                  <div className="flex gap-2 items-center">
-                    <Input
-                      placeholder="Full name, born (e.g. John SMITH, born 1 Jan 1980)"
-                      value={newTargetName}
-                      onChange={(e) => setNewTargetName(e.target.value)}
-                      autoFocus
-                      className="flex-1"
-                    />
-                    <Button type="button" size="sm" variant="ghost" onClick={() => { setTargetMode("none"); setNewTargetName(""); }}>
-                      <X className="w-3.5 h-3.5" />
-                    </Button>
-                  </div>
-                )}
 
                 {/* Link Existing search panel */}
                 {targetMode === "link" && newTargetId === null && (
@@ -1564,9 +1557,9 @@ export default function OperationDetail() {
                 )}
 
                 {/* Action buttons */}
-                {targetMode !== "new" && !(targetMode === "link" && newTargetId === null) && (
+                {!(targetMode === "link" && newTargetId === null) && (
                   <div className="flex gap-2">
-                    <Button type="button" size="sm" variant="outline" className="gap-2" onClick={() => { setTargetMode("new"); setNewTargetId(null); }}>
+                    <Button type="button" size="sm" variant="outline" className="gap-2" onClick={() => setCreateTargetDialogOpen(true)}>
                       <Plus className="w-3.5 h-3.5" /> New Target
                     </Button>
                     <Button type="button" size="sm" variant="outline" className="gap-2" onClick={() => { setTargetMode("link"); setNewTargetId(null); setTargetSearch(""); }}>
@@ -1693,6 +1686,20 @@ export default function OperationDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* New Target — same structured Add Target dialog used everywhere else */}
+      <AddTargetDialog
+        open={createTargetDialogOpen}
+        onClose={() => setCreateTargetDialogOpen(false)}
+        onSave={async (payload: RegistryCreatePayload) => {
+          const result = await createTargetForSheet.mutateAsync({
+            ...payload,
+            linkToOperationId: operationId,
+          });
+          setNewTargetId(result.id);
+          setTargetMode("link");
+        }}
+      />
 
       {/* Delete Confirmation */}
       <AlertDialog open={deleteId !== null} onOpenChange={(o) => !o && setDeleteId(null)}>

@@ -64,7 +64,12 @@ import {
   TargetVehicleFields,
   EMPTY_ADDRESS_PARTS,
   EMPTY_VEHICLE_PARTS,
+  parseExtraVehicles,
+  parseExtraAddresses,
+  type ExtraVehicle,
+  type ExtraAddress,
 } from "@/components/TargetStructuredFields";
+import { AddTargetDialog, type RegistryCreatePayload } from "@/components/AddTargetDialog";
 import {
   composeTargetName,
   composeAddress,
@@ -81,46 +86,6 @@ import { format } from "date-fns";
 import { toast } from "sonner";
 
 type CinEntry = { cin: string; hasImages: boolean; isTeamLeader?: boolean; isAuthor?: boolean };
-
-type ExtraVehicle = StructuredVehicleParts & { vehicleType: string; full: string; short: string };
-type ExtraAddress = StructuredAddressParts & { label: string; full: string; short: string };
-function parseExtraVehicles(json: string | null | undefined): ExtraVehicle[] {
-  if (!json) return [];
-  try {
-    const arr = JSON.parse(json) as Partial<ExtraVehicle>[];
-    return arr.map(v => ({
-      registration: v.registration ?? "",
-      state: v.state ?? "WA",
-      colour: v.colour ?? "",
-      make: v.make ?? "",
-      model: v.model ?? "",
-      vehicleType: v.vehicleType ?? "",
-      full: v.full ?? "",
-      short: v.short ?? "",
-    }));
-  } catch {
-    return [];
-  }
-}
-function parseExtraAddresses(json: string | null | undefined): ExtraAddress[] {
-  if (!json) return [];
-  try {
-    const arr = JSON.parse(json) as Partial<ExtraAddress>[];
-    return arr.map(a => ({
-      label: a.label ?? "",
-      unitNo: a.unitNo ?? "",
-      houseNo: a.houseNo ?? "",
-      streetName: a.streetName ?? "",
-      streetType: a.streetType ?? "",
-      suburb: a.suburb ?? "",
-      state: a.state ?? "WA",
-      full: a.full ?? "",
-      short: a.short ?? "",
-    }));
-  } catch {
-    return [];
-  }
-}
 
 /** Single target card — shows name + structured identity/address/vehicle fields, inline edit, delete */
 function TargetCard({
@@ -555,15 +520,13 @@ function TargetPanel({ operationId, autoExpandId, fromSheetId }: { operationId: 
   const utils = trpc.useUtils();
   const { data: targets, isLoading } = trpc.target.list.useQuery({ operationId });
   const { data: allTargets } = trpc.target.listAll.useQuery();
-  const [newName, setNewName] = useState("");
-  const [mode, setMode] = useState<"idle" | "new" | "link">("idle");
+  const [mode, setMode] = useState<"idle" | "link">("idle");
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [linkSearch, setLinkSearch] = useState("");
 
   const create = trpc.target.create.useMutation({
     onSuccess: () => {
       utils.target.list.invalidate({ operationId });
-      setNewName("");
-      setMode("idle");
       toast.success("Target added");
     },
     onError: (e: { message: string }) => toast.error(e.message),
@@ -617,24 +580,13 @@ function TargetPanel({ operationId, autoExpandId, fromSheetId }: { operationId: 
       )}
 
       {/* Add / Link target forms */}
-      {mode === "new" && (
-        <div className="flex gap-2 mt-1">
-          <Input
-            autoFocus
-            placeholder="Full name, born (e.g. John SMITH, born 1 Jan 1980)"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && newName.trim()) create.mutate({ operationId, name: newName.trim() });
-              if (e.key === "Escape") setMode("idle");
-            }}
-          />
-          <Button size="sm" onClick={() => newName.trim() && create.mutate({ operationId, name: newName.trim() })} disabled={!newName.trim() || create.isPending}>
-            {create.isPending ? "Adding…" : "Add"}
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => setMode("idle")}>Cancel</Button>
-        </div>
-      )}
+      <AddTargetDialog
+        open={addDialogOpen}
+        onClose={() => setAddDialogOpen(false)}
+        onSave={async (payload: RegistryCreatePayload) => {
+          await create.mutateAsync({ operationId, ...payload });
+        }}
+      />
 
       {mode === "link" && (
         <div className="rounded-xl border border-border bg-card p-3 flex flex-col gap-2 mt-1">
@@ -682,7 +634,7 @@ function TargetPanel({ operationId, autoExpandId, fromSheetId }: { operationId: 
 
       {mode === "idle" && (
         <div className="flex gap-2">
-          <Button size="sm" variant="outline" className="gap-2" onClick={() => setMode("new")}>
+          <Button size="sm" variant="outline" className="gap-2" onClick={() => setAddDialogOpen(true)}>
             <Plus className="w-3.5 h-3.5" />
             New Target
           </Button>

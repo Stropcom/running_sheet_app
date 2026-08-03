@@ -36,6 +36,65 @@ import {
   type StructuredVehicleParts,
 } from "@/lib/addressFormat";
 
+// ─── Repeatable extra address/vehicle entries ──────────────────────────────
+// Shared shape for a target/associate's "+Add Address" / "+Add Vehicle"
+// entries — each carries its own structured parts plus the composed
+// full/short strings, same convention as the primary address/vehicle.
+
+export type ExtraVehicle = StructuredVehicleParts & {
+  vehicleType: string;
+  full: string;
+  short: string;
+};
+export type ExtraAddress = StructuredAddressParts & {
+  label: string;
+  full: string;
+  short: string;
+};
+
+export function parseExtraVehicles(
+  json: string | null | undefined
+): ExtraVehicle[] {
+  if (!json) return [];
+  try {
+    const arr = JSON.parse(json) as Partial<ExtraVehicle>[];
+    return arr.map(v => ({
+      registration: v.registration ?? "",
+      state: v.state ?? "WA",
+      colour: v.colour ?? "",
+      make: v.make ?? "",
+      model: v.model ?? "",
+      vehicleType: v.vehicleType ?? "",
+      full: v.full ?? "",
+      short: v.short ?? "",
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export function parseExtraAddresses(
+  json: string | null | undefined
+): ExtraAddress[] {
+  if (!json) return [];
+  try {
+    const arr = JSON.parse(json) as Partial<ExtraAddress>[];
+    return arr.map(a => ({
+      label: a.label ?? "",
+      unitNo: a.unitNo ?? "",
+      houseNo: a.houseNo ?? "",
+      streetName: a.streetName ?? "",
+      streetType: a.streetType ?? "",
+      suburb: a.suburb ?? "",
+      state: a.state ?? "WA",
+      full: a.full ?? "",
+      short: a.short ?? "",
+    }));
+  } catch {
+    return [];
+  }
+}
+
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
     <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">

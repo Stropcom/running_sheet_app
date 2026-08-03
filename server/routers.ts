@@ -2309,17 +2309,17 @@ export const appRouter = router({
         z.object({
           operationId: z.number(),
           name: z.string().min(1).max(255),
-          tgt: z.string().optional(),
-          hb: z.string().optional(),
-          v1: z.string().optional(),
-          v2: z.string().optional(),
-          hbf: z.string().optional(),
-          v1f: z.string().optional(),
-          v2f: z.string().optional(),
-          dep: z.string().optional(),
-          arr: z.string().optional(),
-          extraVehicles: z.string().optional(), // JSON array of {full,short,...structured}
-          wildFields: z.string().optional(), // JSON array of {label,value}
+          tgt: z.string().optional().nullable(),
+          hb: z.string().optional().nullable(),
+          v1: z.string().optional().nullable(),
+          v2: z.string().optional().nullable(),
+          hbf: z.string().optional().nullable(),
+          v1f: z.string().optional().nullable(),
+          v2f: z.string().optional().nullable(),
+          dep: z.string().optional().nullable(),
+          arr: z.string().optional().nullable(),
+          extraVehicles: z.string().optional().nullable(), // JSON array of {full,short,...structured}
+          wildFields: z.string().optional().nullable(), // JSON array of {label,value}
           ...structuredTargetFieldsSchema,
         })
       )

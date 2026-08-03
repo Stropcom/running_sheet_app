@@ -351,6 +351,26 @@ export function TargetVehicleFields({
           />
         </div>
         <div className="flex flex-col gap-1.5">
+          <FieldLabel>Make</FieldLabel>
+          <Input
+            value={value.make}
+            disabled={disabled}
+            onChange={e => onChange({ ...value, make: e.target.value })}
+            placeholder="Ford"
+          />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="flex flex-col gap-1.5">
+          <FieldLabel>Model</FieldLabel>
+          <Input
+            value={value.model}
+            disabled={disabled}
+            onChange={e => onChange({ ...value, model: e.target.value })}
+            placeholder="Escape"
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
           <FieldLabel>Type</FieldLabel>
           <Select
             value={value.vehicleType || undefined}
@@ -368,26 +388,6 @@ export function TargetVehicleFields({
               ))}
             </SelectContent>
           </Select>
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="flex flex-col gap-1.5">
-          <FieldLabel>Make</FieldLabel>
-          <Input
-            value={value.make}
-            disabled={disabled}
-            onChange={e => onChange({ ...value, make: e.target.value })}
-            placeholder="Ford"
-          />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <FieldLabel>Model</FieldLabel>
-          <Input
-            value={value.model}
-            disabled={disabled}
-            onChange={e => onChange({ ...value, model: e.target.value })}
-            placeholder="Escape"
-          />
         </div>
       </div>
       <Preview text={full} />

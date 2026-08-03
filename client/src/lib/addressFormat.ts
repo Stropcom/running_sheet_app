@@ -787,13 +787,16 @@ export interface StructuredVehicleParts {
 
 /**
  * Compose a Vehicle Full (V1F) + short Vehicle (V1) form from structured
- * vehicle fields, matching the "[colour] [make] [model], bearing [state]
- * registration [rego] (Vehicle [rego])" convention used throughout the app.
- * Vehicle Type is deliberately not part of this text — it's a separate
- * filter/search attribute, kept out so this convention (and everything that
- * pattern-matches against it) doesn't change.
+ * vehicle fields, matching the "[colour] [make] [model] [type], bearing
+ * [state] registration [rego] (Vehicle [rego])" convention used throughout
+ * the app — the same description (minus the bracket) is what the
+ * Intelligence folder displays as "[rego] [colour] [make] [model] [type]".
+ * Type is appended last and only when filled, so a vehicle added before
+ * Type existed (or without it set) still composes correctly.
  */
-export function composeVehicle(parts: StructuredVehicleParts): {
+export function composeVehicle(
+  parts: StructuredVehicleParts & { vehicleType?: string }
+): {
   full: string;
   short: string;
 } {
@@ -802,9 +805,12 @@ export function composeVehicle(parts: StructuredVehicleParts): {
   const colour = parts.colour.trim();
   const make = parts.make.trim();
   const model = parts.model.trim();
+  const vehicleType = (parts.vehicleType ?? "").trim();
   if (!registration || !colour || !make || !model)
     return { full: "", short: "" };
-  const description = `${colour} ${make} ${model}`;
+  const description = [colour, make, model, vehicleType]
+    .filter(Boolean)
+    .join(" ");
   const short = `Vehicle ${registration}`;
   const full = `${description}, bearing ${state} registration ${registration} (${short})`;
   return { full, short };

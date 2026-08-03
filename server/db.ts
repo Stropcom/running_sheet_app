@@ -2722,11 +2722,13 @@ export function extractEntitiesFromText(text: string): Array<{
     const VEHICLE_BODY =
       /\b(vehicle|car|truck|van|ute|sedan|hatchback|suv|wagon|coupe|convertible|roadster|pickup|4wd|4x4|cab|dual cab|single cab|tray|flatbed|panel van|people mover|minivan|bus|minibus|motorcycle|motorbike|bike|scooter|quad|atv|boat|trailer|caravan|motorhome|rv|bearing|registration|rego|reg|plate|plated)\b/i;
     // A shortForm that looks like an all-caps person name (letters/spaces/
-    // hyphens/apostrophes only, no digits) should never be classified as a
-    // vehicle just because "vehicle" or a make appears somewhere in the same
-    // clause — see the guard on the VEHICLE_BODY/MAKES branch below.
+    // hyphens/apostrophes/periods only, no digits) should never be classified
+    // as a vehicle just because "vehicle" or a make appears somewhere in the
+    // same clause — see the guard on the VEHICLE_BODY/MAKES branch below.
+    // Periods are allowed for the "P.HILL" initial-plus-surname convention
+    // officers use to disambiguate family members sharing a surname.
     const shortFormLooksLikeName =
-      /^[A-Z][A-Z\s'-]{1,40}$/.test(shortForm) && !/\d/.test(shortForm);
+      /^[A-Z][A-Z\s'.-]{1,40}$/.test(shortForm) && !/\d/.test(shortForm);
 
     // ── Confidence scoring ────────────────────────────────────────────────────
     let confidence: "high" | "medium" | "low" = "low";
@@ -2775,9 +2777,11 @@ export function extractEntitiesFromText(text: string): Array<{
       type = "vehicle";
       confidence = "medium";
     }
-    // Person: shortForm is all-caps word(s) with no digits, no street number pattern
+    // Person: shortForm is all-caps word(s) with no digits, no street number
+    // pattern — periods allowed for "P.HILL" initial-plus-surname short forms
+    // (see shortFormLooksLikeName above).
     else if (
-      /^[A-Z][A-Z\s'-]{1,40}$/.test(shortForm) &&
+      /^[A-Z][A-Z\s'.-]{1,40}$/.test(shortForm) &&
       !/\d/.test(shortForm) &&
       !STREET_TYPES.test(shortForm)
     ) {
@@ -3074,6 +3078,15 @@ export function extractEntitiesFromText(text: string): Array<{
         "these",
         "those",
       ]);
+      // "P.HILL"-style short forms (one or more initials + period + surname,
+      // used to disambiguate family members sharing a surname) never appear
+      // verbatim in the full name ("Peter HILL" has no "P.HILL" substring),
+      // so recognise them separately: the candidate's last word must match
+      // the surname and its first word must start with the first initial.
+      const initialSurnameMatch = shortForm.match(
+        /^((?:[A-Z]\.)+)([A-Z]{2,})$/
+      );
+
       const words = fullDescription.trim().split(/\s+/);
       // Try last 4, 3, 2 words in order — use the longest that contains shortForm
       // AND where every word looks like a name word (not a common English word)
@@ -3086,10 +3099,16 @@ export function extractEntitiesFromText(text: string): Array<{
         // None of the candidate words should be a common non-name word
         const candidateWords = candidate.toLowerCase().split(/\s+/);
         const hasNonNameWord = candidateWords.some(w => NON_NAME_WORDS.has(w));
-        // shortForm must be contained within the candidate (case-insensitive)
-        const shortInCandidate = candidate
-          .toUpperCase()
-          .includes(shortForm.toUpperCase());
+        // shortForm must be contained within the candidate (case-insensitive),
+        // or — for "P.HILL" style short forms — the candidate's surname and
+        // first initial must match.
+        const candidateWordsUpper = candidate.toUpperCase().split(/\s+/);
+        const shortInCandidate =
+          candidate.toUpperCase().includes(shortForm.toUpperCase()) ||
+          (initialSurnameMatch !== null &&
+            candidateWordsUpper[candidateWordsUpper.length - 1] ===
+              initialSurnameMatch[2] &&
+            candidateWordsUpper[0].startsWith(initialSurnameMatch[1][0]));
         if (looksLikeName && !hasNonNameWord && shortInCandidate) {
           bestName = candidate;
           break;

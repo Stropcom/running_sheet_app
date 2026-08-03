@@ -54,6 +54,11 @@ import {
   TargetMergeDialog,
   type ExistingTargetLike,
 } from "@/components/TargetMergeDialog";
+import {
+  PossibleDuplicateAlert,
+  type DuplicateWarning,
+} from "@/components/PossibleDuplicateAlert";
+import { runDuplicateChecks } from "@/lib/duplicateCheck";
 
 // Referenced only for the merge dialog's incoming.wildFields shape — Wild
 // Fields is deprecated app-wide, this dialog never collects one, but the
@@ -125,6 +130,17 @@ export function AddTargetDialog({
   const [mergeOpen, setMergeOpen] = useState(false);
   const [checkingDup, setCheckingDup] = useState(false);
 
+  // ── Secondary duplicate check (name-as-person/address/vehicle), only run
+  // once the target-vs-target check above has cleared — catches e.g. this
+  // "new" target actually being a known associate, or its address/vehicle
+  // matching one already recorded elsewhere. Warn-only: unlike the
+  // target-vs-target case there's no record to merge into, so the officer
+  // just confirms and moves on.
+  const [warnQueue, setWarnQueue] = useState<DuplicateWarning[]>([]);
+  const [warnIndex, setWarnIndex] = useState(0);
+  const notDuplicateMutation =
+    trpc.intelligence.markEntitiesNotDuplicate.useMutation();
+
   const resetAndClose = () => {
     setIdentity(EMPTY_NAME_PARTS);
     setAddress(EMPTY_ADDRESS_PARTS);
@@ -136,6 +152,8 @@ export function AddTargetDialog({
     setDupMatch(null);
     setExistingFull(null);
     setMergeOpen(false);
+    setWarnQueue([]);
+    setWarnIndex(0);
     onClose();
   };
 
@@ -190,6 +208,30 @@ export function AddTargetDialog({
 
   const composedName = composeTargetName(identity).name;
 
+  const runSecondaryChecks = async () => {
+    const { full: hbf } = composeAddress(address);
+    const { full: v1f } = composeVehicle(vehicle);
+    const warnings = await runDuplicateChecks(utils, [
+      { kind: "person", label: composedName },
+      { kind: "address", label: hbf },
+      { kind: "vehicle", label: v1f },
+      ...extraAddresses.map(ea => ({
+        kind: "address" as const,
+        label: composeAddress(ea).full,
+      })),
+      ...extraVehicles.map(ev => ({
+        kind: "vehicle" as const,
+        label: composeVehicle(ev).full,
+      })),
+    ]);
+    if (warnings.length > 0) {
+      setWarnQueue(warnings);
+      setWarnIndex(0);
+    } else {
+      await saveAsNew();
+    }
+  };
+
   const handleSave = async () => {
     if (!composedName) {
       toast.error("Enter both First Name/s and Surname.");
@@ -203,7 +245,7 @@ export function AddTargetDialog({
       if (match) {
         setDupMatch(match);
       } else {
-        await saveAsNew();
+        await runSecondaryChecks();
       }
     } catch {
       // If the duplicate check itself fails, don't block the save.
@@ -211,6 +253,30 @@ export function AddTargetDialog({
     } finally {
       setCheckingDup(false);
     }
+  };
+
+  const handleWarnContinue = async () => {
+    const current = warnQueue[warnIndex];
+    if (current) {
+      notDuplicateMutation.mutate({
+        type: current.kind === "target" ? "person" : current.kind,
+        labelA: current.candidateLabel,
+        labelB: current.existingLabel,
+      });
+    }
+    const next = warnIndex + 1;
+    if (next < warnQueue.length) {
+      setWarnIndex(next);
+    } else {
+      setWarnQueue([]);
+      setWarnIndex(0);
+      await saveAsNew();
+    }
+  };
+
+  const handleWarnReview = () => {
+    setWarnQueue([]);
+    setWarnIndex(0);
   };
 
   const handleMergeInstead = async () => {
@@ -436,7 +502,7 @@ export function AddTargetDialog({
               className="w-full"
               onClick={() => {
                 setDupMatch(null);
-                saveAsNew();
+                runSecondaryChecks();
               }}
             >
               No, different person — create new
@@ -450,6 +516,13 @@ export function AddTargetDialog({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Secondary duplicate checks — address/vehicle/name-as-person */}
+      <PossibleDuplicateAlert
+        warning={warnQueue[warnIndex] ?? null}
+        onContinue={handleWarnContinue}
+        onReview={handleWarnReview}
+      />
 
       {/* Field-level merge into the existing target */}
       {existingFull && (

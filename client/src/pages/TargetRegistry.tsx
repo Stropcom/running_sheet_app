@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -67,6 +67,11 @@ import {
   type StructuredAddressParts,
   type StructuredVehicleParts,
 } from "@/lib/addressFormat";
+import {
+  PossibleDuplicateAlert,
+  type DuplicateWarning,
+} from "@/components/PossibleDuplicateAlert";
+import { runDuplicateChecks } from "@/lib/duplicateCheck";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -630,6 +635,15 @@ function AssociateCard({
   const [dirty, setDirty] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  // ── Possible-duplicate warning (new associates only) — checks name/address/
+  // vehicle against every existing target, associate and text-mined entity.
+  // Warn-only: an associate's registry profile isn't merged into anything,
+  // the officer just confirms it's genuinely a new person before saving.
+  const [warnQueue, setWarnQueue] = useState<DuplicateWarning[]>([]);
+  const [warnIndex, setWarnIndex] = useState(0);
+  const notDuplicateMutation =
+    trpc.intelligence.markEntitiesNotDuplicate.useMutation();
+
   const mark = (fn: () => void) => { fn(); setDirty(true); };
   const addAddress = () => { setExtraAddresses(v => [...v, { ...EMPTY_ADDRESS_PARTS, label: "", full: "", short: "" }]); setDirty(true); };
   const removeAddress = (i: number) => { setExtraAddresses(v => v.filter((_, idx) => idx !== i)); setDirty(true); };
@@ -699,16 +713,67 @@ function AssociateCard({
     };
   };
 
-  const handleSave = () => {
+  const createNow = (payload: ReturnType<typeof buildPayload>) => {
+    createMut.mutate({ targetId, ...payload });
+  };
+
+  const warnPayload = useRef<ReturnType<typeof buildPayload> | null>(null);
+
+  const handleWarnContinue = () => {
+    const current = warnQueue[warnIndex];
+    if (current) {
+      notDuplicateMutation.mutate({
+        type: current.kind === "target" ? "person" : current.kind,
+        labelA: current.candidateLabel,
+        labelB: current.existingLabel,
+      });
+    }
+    const next = warnIndex + 1;
+    if (next < warnQueue.length) {
+      setWarnIndex(next);
+    } else {
+      const payload = warnPayload.current;
+      setWarnQueue([]);
+      setWarnIndex(0);
+      if (payload) createNow(payload);
+    }
+  };
+
+  const handleWarnReview = () => {
+    setWarnQueue([]);
+    setWarnIndex(0);
+  };
+
+  const handleSave = async () => {
     const payload = buildPayload();
     if (!payload.name) {
       toast.error("Enter both First Name/s and Surname.");
       return;
     }
-    if (isNew) {
-      createMut.mutate({ targetId, ...payload });
-    } else {
+    if (!isNew) {
       updateMut.mutate({ id: associate.id, ...payload });
+      return;
+    }
+    const warnings = await runDuplicateChecks(utils, [
+      { kind: "target", label: payload.name },
+      { kind: "person", label: payload.name },
+      { kind: "address", label: payload.hbf ?? "" },
+      { kind: "vehicle", label: payload.v1f ?? "" },
+      ...extraAddresses.map(ea => ({
+        kind: "address" as const,
+        label: composeAddress(ea).full,
+      })),
+      ...extraVehicles.map(ev => ({
+        kind: "vehicle" as const,
+        label: composeVehicle(ev).full,
+      })),
+    ]);
+    if (warnings.length > 0) {
+      warnPayload.current = payload;
+      setWarnQueue(warnings);
+      setWarnIndex(0);
+    } else {
+      createNow(payload);
     }
   };
 
@@ -823,6 +888,12 @@ function AssociateCard({
           </AlertDialogContent>
         </AlertDialog>
       )}
+
+      <PossibleDuplicateAlert
+        warning={warnQueue[warnIndex] ?? null}
+        onContinue={handleWarnContinue}
+        onReview={handleWarnReview}
+      />
     </div>
   );
 }

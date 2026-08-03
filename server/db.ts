@@ -44,6 +44,8 @@ import {
   InsertTarget,
   targetFieldHistory,
   InsertTargetFieldHistory,
+  associates,
+  InsertAssociate,
   users,
   governanceRecords,
   GovernanceRecord,
@@ -1895,7 +1897,23 @@ export async function getTargetsByOperation(operationId: number) {
       dep: targets.dep,
       arr: targets.arr,
       extraVehicles: targets.extraVehicles,
+      extraAddresses: targets.extraAddresses,
       wildFields: targets.wildFields,
+      firstNames: targets.firstNames,
+      surname: targets.surname,
+      bornDate: targets.bornDate,
+      addrUnitNo: targets.addrUnitNo,
+      addrHouseNo: targets.addrHouseNo,
+      addrStreetName: targets.addrStreetName,
+      addrStreetType: targets.addrStreetType,
+      addrSuburb: targets.addrSuburb,
+      addrState: targets.addrState,
+      vehRegistration: targets.vehRegistration,
+      vehState: targets.vehState,
+      vehColour: targets.vehColour,
+      vehMake: targets.vehMake,
+      vehModel: targets.vehModel,
+      vehType: targets.vehType,
       operationId: targets.operationId,
       createdBy: targets.createdBy,
       createdAt: targets.createdAt,
@@ -1964,6 +1982,22 @@ export async function updateTarget(
       | "arr"
       | "extraVehicles"
       | "wildFields"
+      | "firstNames"
+      | "surname"
+      | "bornDate"
+      | "addrUnitNo"
+      | "addrHouseNo"
+      | "addrStreetName"
+      | "addrStreetType"
+      | "addrSuburb"
+      | "addrState"
+      | "vehRegistration"
+      | "vehState"
+      | "vehColour"
+      | "vehMake"
+      | "vehModel"
+      | "vehType"
+      | "extraAddresses"
     >
   >
 ) {
@@ -2153,6 +2187,85 @@ export async function deleteTarget(id: number) {
     .delete(operationTargetLinks)
     .where(eq(operationTargetLinks.targetId, id));
   await db.delete(targets).where(eq(targets.id, id));
+}
+
+// ─── Associates ─────────────────────────────────────────────────────────────
+// A person linked to a target as a known associate — structured the same
+// way as a target (own name/address/vehicle), always belongs to exactly one
+// target. See drizzle/schema.ts for the full field list.
+
+export async function getAssociatesForTarget(targetId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(associates)
+    .where(and(eq(associates.targetId, targetId), isNull(associates.deletedAt)))
+    .orderBy(associates.name);
+}
+
+export async function getAssociateById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const [result] = await db
+    .select()
+    .from(associates)
+    .where(eq(associates.id, id))
+    .limit(1);
+  return result;
+}
+
+export async function createAssociate(data: InsertAssociate) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const [result] = await db.insert(associates).values(data);
+  return { id: (result as any).insertId as number };
+}
+
+export async function updateAssociate(
+  id: number,
+  data: Partial<
+    Pick<
+      InsertAssociate,
+      | "name"
+      | "tgt"
+      | "firstNames"
+      | "surname"
+      | "bornDate"
+      | "hbf"
+      | "hb"
+      | "addrUnitNo"
+      | "addrHouseNo"
+      | "addrStreetName"
+      | "addrStreetType"
+      | "addrSuburb"
+      | "addrState"
+      | "v1f"
+      | "v1"
+      | "vehRegistration"
+      | "vehState"
+      | "vehColour"
+      | "vehMake"
+      | "vehModel"
+      | "vehType"
+      | "extraAddresses"
+      | "extraVehicles"
+    >
+  >
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(associates).set(data).where(eq(associates.id, id));
+  return { id };
+}
+
+export async function softDeleteAssociate(id: number, cin: string) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db
+    .update(associates)
+    .set({ deletedAt: Date.now(), deletedByCIN: cin })
+    .where(eq(associates.id, id));
 }
 
 export async function setSheetTarget(sheetId: number, targetId: number | null) {

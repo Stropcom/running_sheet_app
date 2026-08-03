@@ -181,6 +181,11 @@ import {
   getTargetShortcutsForSheet,
   getAllTargetsForRegistry,
   createRegistryTarget,
+  getAssociatesForTarget,
+  getAssociateById,
+  createAssociate,
+  updateAssociate,
+  softDeleteAssociate,
   linkTargetToOperation,
   unlinkTargetFromOperation,
   ensureTargetFullyLinked,
@@ -330,6 +335,30 @@ async function guardActiveSheet(sheetId: number) {
     throw new TRPCError({ code: "NOT_FOUND", message: "Sheet not found." });
   await guardActiveOperation(sheet.operationId);
 }
+
+// Structured input fields shared by target.create/update and
+// target.registry.create/update (and the associate.* router) — the raw
+// controlled parts a Target/Associate's name/tgt, hbf/hb, v1f/v1 are
+// composed from client-side, kept here so re-editing later starts from the
+// same structured values instead of just the composed strings.
+const structuredTargetFieldsSchema = {
+  firstNames: z.string().optional().nullable(),
+  surname: z.string().optional().nullable(),
+  bornDate: z.string().optional().nullable(), // ISO yyyy-mm-dd
+  addrUnitNo: z.string().optional().nullable(),
+  addrHouseNo: z.string().optional().nullable(),
+  addrStreetName: z.string().optional().nullable(),
+  addrStreetType: z.string().optional().nullable(),
+  addrSuburb: z.string().optional().nullable(),
+  addrState: z.string().optional().nullable(),
+  vehRegistration: z.string().optional().nullable(),
+  vehState: z.string().optional().nullable(),
+  vehColour: z.string().optional().nullable(),
+  vehMake: z.string().optional().nullable(),
+  vehModel: z.string().optional().nullable(),
+  vehType: z.string().optional().nullable(),
+  extraAddresses: z.string().optional().nullable(), // JSON array of {label?,unitNo,houseNo,streetName,streetType,suburb,state,full,short}
+};
 
 // ─── App Router ───────────────────────────────────────────────────────────────
 
@@ -2289,8 +2318,9 @@ export const appRouter = router({
           v2f: z.string().optional(),
           dep: z.string().optional(),
           arr: z.string().optional(),
-          extraVehicles: z.string().optional(), // JSON array of {full,short}
+          extraVehicles: z.string().optional(), // JSON array of {full,short,...structured}
           wildFields: z.string().optional(), // JSON array of {label,value}
+          ...structuredTargetFieldsSchema,
         })
       )
       .mutation(async ({ ctx, input }) => {
@@ -2303,17 +2333,18 @@ export const appRouter = router({
         z.object({
           id: z.number(),
           name: z.string().min(1).max(255).optional(),
-          tgt: z.string().optional(),
-          hb: z.string().optional(),
-          v1: z.string().optional(),
-          v2: z.string().optional(),
-          hbf: z.string().optional(),
-          v1f: z.string().optional(),
-          v2f: z.string().optional(),
-          dep: z.string().optional(),
-          arr: z.string().optional(),
+          tgt: z.string().optional().nullable(),
+          hb: z.string().optional().nullable(),
+          v1: z.string().optional().nullable(),
+          v2: z.string().optional().nullable(),
+          hbf: z.string().optional().nullable(),
+          v1f: z.string().optional().nullable(),
+          v2f: z.string().optional().nullable(),
+          dep: z.string().optional().nullable(),
+          arr: z.string().optional().nullable(),
           extraVehicles: z.string().optional().nullable(),
           wildFields: z.string().optional().nullable(),
+          ...structuredTargetFieldsSchema,
         })
       )
       .mutation(async ({ input }) => {
@@ -2378,6 +2409,7 @@ export const appRouter = router({
             extraVehicles: z.string().optional().nullable(),
             wildFields: z.string().optional().nullable(),
             linkToOperationId: z.number().optional().nullable(),
+            ...structuredTargetFieldsSchema,
           })
         )
         .mutation(async ({ input, ctx }) => {
@@ -2409,6 +2441,7 @@ export const appRouter = router({
             arr: z.string().optional().nullable(),
             extraVehicles: z.string().optional().nullable(),
             wildFields: z.string().optional().nullable(),
+            ...structuredTargetFieldsSchema,
           })
         )
         .mutation(async ({ input }) => {
@@ -2512,6 +2545,75 @@ export const appRouter = router({
         }),
     }),
   }),
+
+  // ─── Associates ──────────────────────────────────────────────────────────────
+  // A person linked to a target as a known associate — structured the same
+  // way as a target (own name/address/vehicle), via the same controlled
+  // Name → Address → Vehicle process.
+
+  associate: router({
+    /** List associates for a target */
+    listForTarget: protectedProcedure
+      .input(z.object({ targetId: z.number() }))
+      .query(async ({ input }) => {
+        return getAssociatesForTarget(input.targetId);
+      }),
+
+    /** Get a single associate by id */
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        return (await getAssociateById(input.id)) ?? null;
+      }),
+
+    /** Create a new associate of a target */
+    create: protectedProcedure
+      .input(
+        z.object({
+          targetId: z.number(),
+          name: z.string().min(1).max(255),
+          tgt: z.string().optional().nullable(),
+          hbf: z.string().optional().nullable(),
+          hb: z.string().optional().nullable(),
+          v1f: z.string().optional().nullable(),
+          v1: z.string().optional().nullable(),
+          extraVehicles: z.string().optional().nullable(),
+          ...structuredTargetFieldsSchema,
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        return createAssociate({ ...input, createdBy: ctx.user.id });
+      }),
+
+    /** Update an associate */
+    update: protectedProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          name: z.string().min(1).max(255).optional(),
+          tgt: z.string().optional().nullable(),
+          hbf: z.string().optional().nullable(),
+          hb: z.string().optional().nullable(),
+          v1f: z.string().optional().nullable(),
+          v1: z.string().optional().nullable(),
+          extraVehicles: z.string().optional().nullable(),
+          ...structuredTargetFieldsSchema,
+        })
+      )
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        return updateAssociate(id, data);
+      }),
+
+    /** Delete (soft) an associate */
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await softDeleteAssociate(input.id, ctx.user.cin ?? "Unknown");
+        return { success: true };
+      }),
+  }),
+
   // ─── Shortcuts ───────────────────────────────────────────────────────────────
 
   shortcuts: router({

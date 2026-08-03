@@ -24,6 +24,12 @@
  *     short-form, do not double-convert.
  */
 
+import {
+  parse as parseDate,
+  isValid as isValidDate,
+  format as formatDate,
+} from "date-fns";
+
 const AU_STATES = "WA|NSW|VIC|QLD|SA|TAS|NT|ACT";
 
 /**
@@ -147,6 +153,32 @@ const STREET_TYPE_MAP: Record<string, string> = {
   pwy: "Parkway",
   parkway: "Parkway",
 };
+
+/** Full-word street type options for a dropdown (Street, Road, Avenue, …), deduped and sorted. */
+export const STREET_TYPE_OPTIONS: string[] = Array.from(
+  new Set(Object.values(STREET_TYPE_MAP))
+).sort();
+
+/** Australian states/territories for a dropdown — WA first as the app default. */
+export const AU_STATE_OPTIONS = [
+  "WA",
+  "NSW",
+  "VIC",
+  "QLD",
+  "SA",
+  "TAS",
+  "NT",
+  "ACT",
+] as const;
+
+/** Vehicle type options for a dropdown. */
+export const VEHICLE_TYPE_OPTIONS = [
+  "Utility",
+  "Sedan",
+  "SUV",
+  "Truck",
+  "Motorbike",
+] as const;
 
 /**
  * Expand street type abbreviations in a street name string.
@@ -636,4 +668,144 @@ export function expandIntelVehicleToFullForm(introLabel: string): string {
   // avoids misfiring on a plain description with no recognised rego.
   if (!/[A-Za-z]/.test(rego) || !/\d/.test(rego)) return trimmed;
   return `${description}, bearing WA registration ${rego} (Vehicle ${rego})`;
+}
+
+// ─── Structured input composition ──────────────────────────────────────────
+// Instead of trusting an officer to hand-type a Target/Address/Vehicle in
+// the exact running-sheet convention, the Target Registry collects each
+// part as its own controlled field and these functions build the same
+// composed strings (name/tgt, hbf/hb, v1f/v1) the rest of the app already
+// expects — same output, guaranteed well-formed input.
+
+/**
+ * Parse a dd/mm/yyyy string into a real Date, rejecting anything that isn't
+ * an actual calendar date (e.g. "31/02/2020" is shape-valid but not real).
+ */
+export function parseDdMmYyyyDate(input: string): Date | null {
+  const trimmed = input.trim();
+  if (!/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(trimmed)) return null;
+  const parsed = parseDate(trimmed, "d/M/yyyy", new Date());
+  if (!isValidDate(parsed)) return null;
+  const [d, m, y] = trimmed.split("/").map(Number);
+  if (
+    parsed.getDate() !== d ||
+    parsed.getMonth() !== m - 1 ||
+    parsed.getFullYear() !== y
+  )
+    return null;
+  return parsed;
+}
+
+/** "9/9/1966" → "9 September 1966" (the spelled-out form used in TGT text). Empty string if not a valid date. */
+export function formatBornDate(input: string): string {
+  const d = parseDdMmYyyyDate(input);
+  return d ? formatDate(d, "d MMMM yyyy") : "";
+}
+
+/** dd/mm/yyyy (form input) → yyyy-mm-dd (stored). Empty string if not a valid date. */
+export function ddMmYyyyToIso(input: string): string {
+  const d = parseDdMmYyyyDate(input);
+  return d ? formatDate(d, "yyyy-MM-dd") : "";
+}
+
+/** yyyy-mm-dd (stored) → dd/mm/yyyy (form input). Empty string if blank/invalid. */
+export function isoToDdMmYyyy(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = parseDate(iso, "yyyy-MM-dd", new Date());
+  return isValidDate(d) ? formatDate(d, "dd/MM/yyyy") : "";
+}
+
+export interface StructuredNameParts {
+  firstNames: string;
+  surname: string;
+  bornDate: string; // dd/mm/yyyy, optional
+}
+
+/**
+ * Compose a target/associate's "Full Name, Born (SURNAME)" + short TGT form
+ * from structured identity fields. Returns empty strings until both first
+ * name(s) and surname are present — DOB is optional (a target may be added
+ * before it's known).
+ */
+export function composeTargetName(parts: StructuredNameParts): {
+  name: string;
+  tgt: string;
+} {
+  const firstNames = parts.firstNames.trim();
+  const surname = parts.surname.trim().toUpperCase();
+  if (!firstNames || !surname) return { name: "", tgt: "" };
+  const bornText = formatBornDate(parts.bornDate);
+  const bornSuffix = bornText ? `, born ${bornText}` : "";
+  return {
+    name: `${firstNames} ${surname}${bornSuffix} (${surname})`,
+    tgt: surname,
+  };
+}
+
+export interface StructuredAddressParts {
+  unitNo: string;
+  houseNo: string;
+  streetName: string;
+  streetType: string;
+  suburb: string;
+  state: string;
+}
+
+/**
+ * Compose a Home Address Full (HBF) + short Home (HB) form from structured
+ * address fields, using the same convention convertGoogleAddresses() builds
+ * from a Google Places pick. Returns empty strings until house number,
+ * street name + type, and suburb are all present — unit number and state
+ * (defaults to WA) are the only optional parts.
+ */
+export function composeAddress(parts: StructuredAddressParts): {
+  full: string;
+  short: string;
+} {
+  const unitNo = parts.unitNo.trim();
+  const houseNo = parts.houseNo.trim();
+  const streetName = parts.streetName.trim();
+  const streetType = parts.streetType.trim();
+  const suburb = parts.suburb.trim();
+  const state = (parts.state.trim() || "WA").toUpperCase();
+  if (!houseNo || !streetName || !streetType || !suburb)
+    return { full: "", short: "" };
+  const streetFull = toTitleCase(`${streetName} ${streetType}`);
+  const numberPart = unitNo ? `${unitNo}/${houseNo}` : houseNo;
+  const short = `${numberPart} ${streetFull}`;
+  const full = `${short}, ${suburb.toUpperCase()} ${state} (${short})`;
+  return { full, short };
+}
+
+export interface StructuredVehicleParts {
+  registration: string;
+  state: string;
+  colour: string;
+  make: string;
+  model: string;
+}
+
+/**
+ * Compose a Vehicle Full (V1F) + short Vehicle (V1) form from structured
+ * vehicle fields, matching the "[colour] [make] [model], bearing [state]
+ * registration [rego] (Vehicle [rego])" convention used throughout the app.
+ * Vehicle Type is deliberately not part of this text — it's a separate
+ * filter/search attribute, kept out so this convention (and everything that
+ * pattern-matches against it) doesn't change.
+ */
+export function composeVehicle(parts: StructuredVehicleParts): {
+  full: string;
+  short: string;
+} {
+  const registration = parts.registration.trim().toUpperCase();
+  const state = (parts.state.trim() || "WA").toUpperCase();
+  const colour = parts.colour.trim();
+  const make = parts.make.trim();
+  const model = parts.model.trim();
+  if (!registration || !colour || !make || !model)
+    return { full: "", short: "" };
+  const description = `${colour} ${make} ${model}`;
+  const short = `Vehicle ${registration}`;
+  const full = `${description}, bearing ${state} registration ${registration} (${short})`;
+  return { full, short };
 }

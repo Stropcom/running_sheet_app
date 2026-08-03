@@ -45,6 +45,7 @@ import {
   LockKeyhole,
   LayoutGrid,
   Car,
+  Home,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -57,8 +58,23 @@ import {
 } from "@/components/ui/select";
 import { useState, useEffect } from "react";
 import { CopyMoveSheetDialog } from "@/components/CopyMoveSheetDialog";
-import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
-import { extractShortVehicle, extractShortTarget, extractShortAddress } from "@/lib/addressFormat";
+import {
+  TargetIdentityFields,
+  TargetAddressFields,
+  TargetVehicleFields,
+  EMPTY_ADDRESS_PARTS,
+  EMPTY_VEHICLE_PARTS,
+} from "@/components/TargetStructuredFields";
+import {
+  composeTargetName,
+  composeAddress,
+  composeVehicle,
+  isoToDdMmYyyy,
+  ddMmYyyyToIso,
+  type StructuredNameParts,
+  type StructuredAddressParts,
+  type StructuredVehicleParts,
+} from "@/lib/addressFormat";
 import { CopyPlus } from "lucide-react";
 import { useLocation, useParams, useSearch } from "wouter";
 import { format } from "date-fns";
@@ -66,18 +82,47 @@ import { toast } from "sonner";
 
 type CinEntry = { cin: string; hasImages: boolean; isTeamLeader?: boolean; isAuthor?: boolean };
 
-type ExtraVehicle = { full: string; short: string };
-type WildField = { label: string; value: string };
+type ExtraVehicle = StructuredVehicleParts & { vehicleType: string; full: string; short: string };
+type ExtraAddress = StructuredAddressParts & { label: string; full: string; short: string };
 function parseExtraVehicles(json: string | null | undefined): ExtraVehicle[] {
   if (!json) return [];
-  try { return JSON.parse(json) as ExtraVehicle[]; } catch { return []; }
+  try {
+    const arr = JSON.parse(json) as Partial<ExtraVehicle>[];
+    return arr.map(v => ({
+      registration: v.registration ?? "",
+      state: v.state ?? "WA",
+      colour: v.colour ?? "",
+      make: v.make ?? "",
+      model: v.model ?? "",
+      vehicleType: v.vehicleType ?? "",
+      full: v.full ?? "",
+      short: v.short ?? "",
+    }));
+  } catch {
+    return [];
+  }
 }
-function parseWildFields(json: string | null | undefined): WildField[] {
+function parseExtraAddresses(json: string | null | undefined): ExtraAddress[] {
   if (!json) return [];
-  try { return JSON.parse(json) as WildField[]; } catch { return []; }
+  try {
+    const arr = JSON.parse(json) as Partial<ExtraAddress>[];
+    return arr.map(a => ({
+      label: a.label ?? "",
+      unitNo: a.unitNo ?? "",
+      houseNo: a.houseNo ?? "",
+      streetName: a.streetName ?? "",
+      streetType: a.streetType ?? "",
+      suburb: a.suburb ?? "",
+      state: a.state ?? "WA",
+      full: a.full ?? "",
+      short: a.short ?? "",
+    }));
+  } catch {
+    return [];
+  }
 }
 
-/** Single target card — shows name + 5 type fields, inline edit, delete */
+/** Single target card — shows name + structured identity/address/vehicle fields, inline edit, delete */
 function TargetCard({
   target,
   operationId,
@@ -85,7 +130,36 @@ function TargetCard({
   initialExpanded,
   fromSheetId,
 }: {
-  target: { id: number; name: string; tgt: string | null; hbf: string | null; hb: string | null; v1f: string | null; v1: string | null; v2f: string | null; v2: string | null; dep: string | null; arr: string | null; extraVehicles?: string | null; wildFields?: string | null };
+  target: {
+    id: number;
+    name: string;
+    tgt: string | null;
+    hbf: string | null;
+    hb: string | null;
+    v1f: string | null;
+    v1: string | null;
+    v2f: string | null;
+    v2: string | null;
+    dep: string | null;
+    arr: string | null;
+    extraVehicles?: string | null;
+    extraAddresses?: string | null;
+    firstNames?: string | null;
+    surname?: string | null;
+    bornDate?: string | null;
+    addrUnitNo?: string | null;
+    addrHouseNo?: string | null;
+    addrStreetName?: string | null;
+    addrStreetType?: string | null;
+    addrSuburb?: string | null;
+    addrState?: string | null;
+    vehRegistration?: string | null;
+    vehState?: string | null;
+    vehColour?: string | null;
+    vehMake?: string | null;
+    vehModel?: string | null;
+    vehType?: string | null;
+  };
   operationId: number;
   onDeleted: () => void;
   initialExpanded?: boolean;
@@ -94,39 +168,98 @@ function TargetCard({
   const utils = trpc.useUtils();
   const [, navigate] = useLocation();
   const [expanded, setExpanded] = useState(initialExpanded ?? false);
-  const [name, setName] = useState(target.name);
-  const [tgt, setTgt] = useState(target.tgt ?? "");
-  const [hbf, setHbf] = useState(target.hbf ?? "");
-  const [hb, setHb] = useState(target.hb ?? "");
-  const [v1f, setV1f] = useState(target.v1f ?? "");
-  const [v1, setV1] = useState(target.v1 ?? "");
+  const [identity, setIdentity] = useState<StructuredNameParts>({
+    firstNames: target.firstNames ?? "",
+    surname: target.surname ?? "",
+    bornDate: isoToDdMmYyyy(target.bornDate),
+  });
+  const [address, setAddress] = useState<StructuredAddressParts>({
+    unitNo: target.addrUnitNo ?? "",
+    houseNo: target.addrHouseNo ?? "",
+    streetName: target.addrStreetName ?? "",
+    streetType: target.addrStreetType ?? "",
+    suburb: target.addrSuburb ?? "",
+    state: target.addrState ?? "WA",
+  });
+  const [vehicle, setVehicle] = useState<StructuredVehicleParts & { vehicleType: string }>({
+    registration: target.vehRegistration ?? "",
+    state: target.vehState ?? "WA",
+    colour: target.vehColour ?? "",
+    make: target.vehMake ?? "",
+    model: target.vehModel ?? "",
+    vehicleType: target.vehType ?? "",
+  });
   const [dep, setDep] = useState(target.dep ?? "");
   const [arr, setArr] = useState(target.arr ?? "");
-  // Dynamic extra vehicles (V2+)
-  const [extraVehicles, setExtraVehicles] = useState<ExtraVehicle[]>(() => {
-    const parsed = parseExtraVehicles(target.extraVehicles);
-    if (parsed.length > 0) return parsed;
-    if (target.v2f || target.v2) return [{ full: target.v2f ?? "", short: target.v2 ?? "" }];
-    return [];
-  });
-  // Wild fields (#1, #2, …)
-  const [wildFields, setWildFields] = useState<WildField[]>(() => parseWildFields(target.wildFields));
+  const [extraAddresses, setExtraAddresses] = useState<ExtraAddress[]>(() =>
+    parseExtraAddresses(target.extraAddresses)
+  );
+  const [extraVehicles, setExtraVehicles] = useState<ExtraVehicle[]>(() =>
+    parseExtraVehicles(target.extraVehicles)
+  );
   const [dirty, setDirty] = useState(false);
 
-  const addVehicle = () => { setExtraVehicles(v => [...v, { full: "", short: "" }]); setDirty(true); };
-  const removeVehicle = (i: number) => { setExtraVehicles(v => v.filter((_, idx) => idx !== i)); setDirty(true); };
-  const updateVehicle = (i: number, field: 'full' | 'short', val: string) => {
-    setExtraVehicles(v => v.map((item, idx) => idx === i ? { ...item, [field]: val } : item));
+  const addAddress = () => {
+    setExtraAddresses(v => [...v, { ...EMPTY_ADDRESS_PARTS, label: "", full: "", short: "" }]);
     setDirty(true);
   };
-  const addWildField = () => { setWildFields(v => [...v, { label: `#${v.length + 1}`, value: "" }]); setDirty(true); };
-  const removeWildField = (i: number) => {
-    setWildFields(v => v.filter((_, idx) => idx !== i).map((f, idx) => ({ ...f, label: `#${idx + 1}` })));
+  const removeAddress = (i: number) => {
+    setExtraAddresses(v => v.filter((_, idx) => idx !== i));
     setDirty(true);
   };
-  const updateWildField = (i: number, val: string) => {
-    setWildFields(v => v.map((item, idx) => idx === i ? { ...item, value: val } : item));
+  const updateAddress = (i: number, patch: Partial<ExtraAddress>) => {
+    setExtraAddresses(v => v.map((item, idx) => idx === i ? { ...item, ...patch } : item));
     setDirty(true);
+  };
+  const addVehicle = () => {
+    setExtraVehicles(v => [...v, { ...EMPTY_VEHICLE_PARTS, full: "", short: "" }]);
+    setDirty(true);
+  };
+  const removeVehicle = (i: number) => {
+    setExtraVehicles(v => v.filter((_, idx) => idx !== i));
+    setDirty(true);
+  };
+  const updateVehicle = (i: number, patch: Partial<ExtraVehicle>) => {
+    setExtraVehicles(v => v.map((item, idx) => idx === i ? { ...item, ...patch } : item));
+    setDirty(true);
+  };
+
+  const handleSave = () => {
+    const { name, tgt } = composeTargetName(identity);
+    if (!name) {
+      toast.error("Enter both First Name/s and Surname.");
+      return;
+    }
+    const { full: hbf, short: hb } = composeAddress(address);
+    const { full: v1f, short: v1 } = composeVehicle(vehicle);
+    update.mutate({
+      id: target.id,
+      name,
+      tgt: tgt || null,
+      hbf: hbf || null,
+      hb: hb || null,
+      v1f: v1f || null,
+      v1: v1 || null,
+      dep: dep || null,
+      arr: arr || null,
+      extraAddresses: JSON.stringify(extraAddresses.map(ea => ({ ...ea, ...composeAddress(ea) }))),
+      extraVehicles: JSON.stringify(extraVehicles.map(ev => ({ ...ev, ...composeVehicle(ev) }))),
+      firstNames: identity.firstNames || null,
+      surname: identity.surname || null,
+      bornDate: ddMmYyyyToIso(identity.bornDate) || null,
+      addrUnitNo: address.unitNo || null,
+      addrHouseNo: address.houseNo || null,
+      addrStreetName: address.streetName || null,
+      addrStreetType: address.streetType || null,
+      addrSuburb: address.suburb || null,
+      addrState: address.state || null,
+      vehRegistration: vehicle.registration || null,
+      vehState: vehicle.state || null,
+      vehColour: vehicle.colour || null,
+      vehMake: vehicle.make || null,
+      vehModel: vehicle.model || null,
+      vehType: vehicle.vehicleType || null,
+    });
   };
 
   const update = trpc.target.update.useMutation({
@@ -193,115 +326,70 @@ function TargetCard({
       {/* Expanded fields */}
       {expanded && (
         <div className="px-4 pb-4 pt-1 flex flex-col gap-3 border-t border-border/50">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Full Name, Born</label>
-            <Input
-              value={name}
-              onChange={(e) => { setName(e.target.value); setDirty(true); }}
-              onBlur={(e) => {
-                const short = extractShortTarget(e.target.value);
-                if (short && !tgt) mark(() => setTgt(short));
-              }}
-            />
-          </div>
-          {/* Target (TGT) */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Target (TGT)</label>
-            <Input value={tgt} onChange={(e) => mark(() => setTgt(e.target.value))} />
-          </div>
+          <TargetIdentityFields
+            value={identity}
+            onChange={v => mark(() => setIdentity(v))}
+          />
 
-          {/* Home Address Full (HBF) — with Google Places autocomplete */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Home Address Full (HBF)</label>
-            <AddressAutocompleteInput
-              value={hbf}
-              onChange={(v) => mark(() => setHbf(v))}
-              onShortAddress={(short) => { if (!hb) mark(() => setHb(short)); }}
-              onBlur={(e) => {
-                const short = extractShortAddress(e.target.value);
-                if (short && !hb) mark(() => setHb(short));
-              }}
-              placeholder="Search or type address…"
+          <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
+            <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
+              <Home className="w-3 h-3" /> Home Address
+            </p>
+            <TargetAddressFields
+              value={address}
+              onChange={v => mark(() => setAddress(v))}
             />
           </div>
 
-          {/* Home (HB) */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Home (HB)</label>
-            <Input value={hb} onChange={(e) => mark(() => setHb(e.target.value))} />
-          </div>
-
-          {/* Vehicle 1 Full (V1F) */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle 1 Full (V1F)</label>
-            <Input
-              value={v1f}
-              onChange={(e) => mark(() => setV1f(e.target.value))}
-              onBlur={(e) => {
-                const short = extractShortVehicle(e.target.value);
-                if (short && !v1) mark(() => setV1(short));
-              }}
+          <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
+            <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
+              <Car className="w-3 h-3" /> Vehicle 1
+            </p>
+            <TargetVehicleFields
+              value={vehicle}
+              onChange={v => mark(() => setVehicle(v))}
             />
           </div>
 
-          {/* Vehicle (V1) */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle (V1)</label>
-            <Input value={v1} onChange={(e) => mark(() => setV1(e.target.value))} />
-          </div>
-
-          {/* ── Dynamic extra vehicles (V2, V3, …) ── */}
-          {extraVehicles.map((ev, i) => {
-            const num = i + 2;
-            return (
-              <div key={i} className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
-                    <Car className="w-3 h-3" /> Vehicle {num}
-                  </span>
-                  <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => removeVehicle(i)}>
-                    <X className="w-3 h-3" />
-                  </Button>
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle {num} Full (V{num}F)</label>
-                  <Input
-                    value={ev.full}
-                    onChange={e => updateVehicle(i, 'full', e.target.value)}
-                    onBlur={(e) => {
-                      const short = extractShortVehicle(e.target.value);
-                      if (short && !ev.short) updateVehicle(i, 'short', short);
-                    }}
-                    placeholder="Full description…"
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle {num} (V{num})</label>
-                  <Input value={ev.short} onChange={e => updateVehicle(i, 'short', e.target.value)} placeholder="Short (e.g. rego)…" />
-                </div>
-              </div>
-            );
-          })}
-          <Button size="sm" variant="outline" className="gap-1.5 self-start" onClick={addVehicle}>
-            <Plus className="w-3.5 h-3.5" /> Add Vehicle
-          </Button>
-
-          {/* ── Wild fields (#1, #2, …) ── */}
-          {wildFields.map((wf, i) => (
-            <div key={i} className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 flex flex-col gap-2">
+          {/* ── Dynamic extra addresses ── */}
+          {extraAddresses.map((ea, i) => (
+            <div key={i} className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-amber-500 uppercase tracking-wide flex items-center gap-1.5">
-                  <Hash className="w-3 h-3" /> Wild Field {wf.label}
+                <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
+                  <Home className="w-3 h-3" /> Additional Address {i + 2}
                 </span>
-                <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => removeWildField(i)}>
+                <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => removeAddress(i)}>
                   <X className="w-3 h-3" />
                 </Button>
               </div>
-              <Input value={wf.value} onChange={e => updateWildField(i, e.target.value)} placeholder={`${wf.label} value…`} />
+              <TargetAddressFields
+                value={ea}
+                onChange={v => updateAddress(i, v)}
+                label={ea.label}
+                onLabelChange={v => updateAddress(i, { label: v })}
+              />
             </div>
           ))}
-          <Button size="sm" variant="outline" className="gap-1.5 self-start border-amber-500/40 text-amber-500 hover:bg-amber-500/10" onClick={addWildField}>
-            <Hash className="w-3.5 h-3.5" /> Add Wild Field
+          <Button size="sm" variant="outline" className="gap-1.5 self-start" onClick={addAddress}>
+            <Plus className="w-3.5 h-3.5" /> Add Address
+          </Button>
+
+          {/* ── Dynamic extra vehicles (V2, V3, …) ── */}
+          {extraVehicles.map((ev, i) => (
+            <div key={i} className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
+                  <Car className="w-3 h-3" /> Vehicle {i + 2}
+                </span>
+                <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => removeVehicle(i)}>
+                  <X className="w-3 h-3" />
+                </Button>
+              </div>
+              <TargetVehicleFields value={ev} onChange={v => updateVehicle(i, v)} />
+            </div>
+          ))}
+          <Button size="sm" variant="outline" className="gap-1.5 self-start" onClick={addVehicle}>
+            <Plus className="w-3.5 h-3.5" /> Add Vehicle
           </Button>
 
           {/* ── Depart / Arrive ── */}
@@ -341,11 +429,7 @@ function TargetCard({
             )}
             <Button
               size="sm" className="gap-2"
-              onClick={() => update.mutate({
-                id: target.id, name, tgt, hbf, hb, v1f, v1, dep, arr,
-                extraVehicles: JSON.stringify(extraVehicles),
-                wildFields: JSON.stringify(wildFields),
-              })}
+              onClick={handleSave}
               disabled={update.isPending || !dirty}
             >
               <Save className="w-3.5 h-3.5" />

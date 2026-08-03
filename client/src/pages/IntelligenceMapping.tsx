@@ -3156,10 +3156,7 @@ export default function IntelligenceMapping() {
         onToggle: () => setRsActionsPaneOpen(o => !o),
       }}
     >
-    <div
-      className="relative flex w-full overflow-hidden"
-      style={{ height: "calc(100vh - 0px)" }}
-    >
+    <div className="relative flex w-full h-full overflow-hidden">
       {/* ── Map Area ── */}
       <div className="flex-1 relative" onClick={handleMapAreaClick}>
         {/* Loading overlay */}
@@ -3708,7 +3705,7 @@ export default function IntelligenceMapping() {
            z-index above the overlays' z-20 (nothing paints over it either),
            giving it the same "full vision" the left pane already has. */}
       <div
-        className={`relative flex flex-col border-l-2 border-border bg-card shadow-2xl flex-shrink-0 ${
+        className={`relative flex h-full flex-col border-l-2 border-border bg-card shadow-2xl flex-shrink-0 ${
           rsActionsPaneOpen ? "z-30" : ""
         } ${
           paneResizeDraggingRef.current ? "" : "transition-all duration-200"

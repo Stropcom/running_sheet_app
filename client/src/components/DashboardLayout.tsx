@@ -1609,7 +1609,14 @@ function DashboardLayoutContent({
             )}
           </div>
         )}
-        <main className="flex-1 min-h-screen bg-background/90">
+        {/* min-h-0 (not min-h-screen): this sits below the mobile header bar
+            in the same flex column, so a 100vh floor here always overflows
+            the actual viewport by the header's height — that's what caused
+            the whole page to scroll slightly, hiding the Map page's fixed
+            top/bottom overlays. flex-1 alone already fills the remaining
+            space for short pages; min-h-0 just lets it shrink correctly
+            instead of forcing more height than is actually available. */}
+        <main className="flex-1 min-h-0 bg-background/90">
           <PullToRefresh disabled={location === "/intelligence/mapping"}>
             {children}
           </PullToRefresh>

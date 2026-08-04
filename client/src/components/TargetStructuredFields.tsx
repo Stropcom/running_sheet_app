@@ -28,6 +28,7 @@ import {
   composeTargetName,
   composeVehicle,
   parseDdMmYyyyDate,
+  formatDdMmYyyyInput,
   STREET_TYPE_OPTIONS,
   AU_STATE_OPTIONS,
   VEHICLE_TYPE_OPTIONS,
@@ -135,7 +136,7 @@ export function TargetIdentityFields({
             value={value.firstNames}
             disabled={disabled}
             onChange={e => onChange({ ...value, firstNames: e.target.value })}
-            placeholder="Benjamin"
+            placeholder="Paul"
           />
         </div>
         <div className="flex flex-col gap-1.5">
@@ -146,7 +147,7 @@ export function TargetIdentityFields({
             onChange={e =>
               onChange({ ...value, surname: e.target.value.toUpperCase() })
             }
-            placeholder="KING"
+            placeholder="HOGAN"
             className="uppercase"
           />
         </div>
@@ -156,7 +157,12 @@ export function TargetIdentityFields({
         <Input
           value={value.bornDate}
           disabled={disabled}
-          onChange={e => onChange({ ...value, bornDate: e.target.value })}
+          onChange={e =>
+            onChange({
+              ...value,
+              bornDate: formatDdMmYyyyInput(e.target.value),
+            })
+          }
           placeholder="dd/mm/yyyy"
           inputMode="numeric"
           className={bornInvalid ? "border-destructive" : ""}
@@ -218,7 +224,7 @@ export function TargetAddressFields({
             value={value.houseNo}
             disabled={disabled}
             onChange={e => onChange({ ...value, houseNo: e.target.value })}
-            placeholder="131"
+            placeholder="42"
           />
         </div>
       </div>
@@ -229,7 +235,7 @@ export function TargetAddressFields({
             value={value.streetName}
             disabled={disabled}
             onChange={e => onChange({ ...value, streetName: e.target.value })}
-            placeholder="Lakey"
+            placeholder="Wallaby"
           />
         </div>
         <div className="flex flex-col gap-1.5">
@@ -261,7 +267,7 @@ export function TargetAddressFields({
             onChange={e =>
               onChange({ ...value, suburb: e.target.value.toUpperCase() })
             }
-            placeholder="SOUTHERN RIVER"
+            placeholder="SYDNEY"
             className="uppercase"
           />
         </div>
@@ -316,7 +322,7 @@ export function TargetVehicleFields({
                 registration: e.target.value.toUpperCase(),
               })
             }
-            placeholder="1ABC123"
+            placeholder="1FAT004"
             className="uppercase"
           />
         </div>
@@ -347,7 +353,7 @@ export function TargetVehicleFields({
             value={value.colour}
             disabled={disabled}
             onChange={e => onChange({ ...value, colour: e.target.value })}
-            placeholder="grey"
+            placeholder="red"
           />
         </div>
         <div className="flex flex-col gap-1.5">
@@ -356,7 +362,7 @@ export function TargetVehicleFields({
             value={value.make}
             disabled={disabled}
             onChange={e => onChange({ ...value, make: e.target.value })}
-            placeholder="Ford"
+            placeholder="Holden"
           />
         </div>
       </div>
@@ -367,7 +373,7 @@ export function TargetVehicleFields({
             value={value.model}
             disabled={disabled}
             onChange={e => onChange({ ...value, model: e.target.value })}
-            placeholder="Escape"
+            placeholder="Monaro"
           />
         </div>
         <div className="flex flex-col gap-1.5">

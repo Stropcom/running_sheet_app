@@ -178,6 +178,10 @@ export const VEHICLE_TYPE_OPTIONS = [
   "SUV",
   "Truck",
   "Motorbike",
+  "4WD",
+  "coupe",
+  "station sedan",
+  "hatch",
 ] as const;
 
 /**
@@ -713,6 +717,24 @@ export function isoToDdMmYyyy(iso: string | null | undefined): string {
   if (!iso) return "";
   const d = parseDate(iso, "yyyy-MM-dd", new Date());
   return isValidDate(d) ? formatDate(d, "dd/MM/yyyy") : "";
+}
+
+/**
+ * Auto-inserts the "/" separators as an officer types digits into a Born
+ * date field, so "1" "2" "0" "3" "1" "9" "8" "0" reads back as
+ * "12/03/1980" without them typing the slashes themselves — reformats from
+ * the raw digits on every keystroke, so backspacing naturally removes a
+ * separator too rather than getting stuck on it.
+ */
+export function formatDdMmYyyyInput(raw: string): string {
+  const digits = raw.replace(/\D/g, "").slice(0, 8);
+  const day = digits.slice(0, 2);
+  const month = digits.slice(2, 4);
+  const year = digits.slice(4, 8);
+  let result = day;
+  if (month) result += "/" + month;
+  if (year) result += "/" + year;
+  return result;
 }
 
 export interface StructuredNameParts {

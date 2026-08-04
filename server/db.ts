@@ -3324,6 +3324,23 @@ export function vehicleRegoKey(text: string): string {
   return (m ? m[0] : text).toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+/**
+ * Extracts the trailing "(<short form>)" bracket content from a composed
+ * HBF-style address string (e.g. "6 Shearman Street, ATTADALE WA (6
+ * Shearman Street)" -> "6 shearman street") — the same short text an
+ * observation row's own "(ShortForm)" bracket would contain for the same
+ * address. Registry address fields must key on this, not the full
+ * street/suburb/state description, or a registry-sourced address entity can
+ * never match (and therefore never get corroborated by) a text-mined
+ * mention of the same real-world address. Falls back to the whole
+ * (normalized) string when there's no trailing bracket, e.g. legacy
+ * free-text data entered before the structured address fields existed.
+ */
+export function addressBracketKey(text: string): string {
+  const m = text.match(/\(([^()]{1,120})\)\s*$/);
+  return (m ? m[1] : text).toLowerCase().replace(/\s+/g, " ").trim();
+}
+
 /** Same "type::normalizedShortForm" key scheme getAllIntelligenceEntities uses internally. */
 export function computeEntityKey(type: DedupType, shortForm: string): string {
   const norm =
@@ -4348,11 +4365,16 @@ export async function getAllIntelligenceEntities(): Promise<
       }
       if (!shortForm) continue;
       // Normalise whitespace so minor spacing differences don't create duplicate keys.
-      // Vehicles key on registration alone (see vehicleRegoKey above).
+      // Vehicles key on registration alone (see vehicleRegoKey above); addresses
+      // key on the HBF's own trailing bracket short form (see addressBracketKey
+      // above) so a registry HBF and a text-mined mention of the same address
+      // collapse into one entity instead of two.
       const normKey =
         field.type === "vehicle"
           ? vehicleRegoKey(shortForm)
-          : shortForm.toLowerCase().replace(/\s+/g, " ").trim();
+          : field.type === "address"
+            ? addressBracketKey(shortForm)
+            : shortForm.toLowerCase().replace(/\s+/g, " ").trim();
       const key = `${field.type}::${normKey}`;
       if (!entityMap.has(key)) {
         entityMap.set(key, { shortForm, type: field.type, occurrences: [] });
@@ -4532,7 +4554,9 @@ export async function getAllIntelligenceEntities(): Promise<
       const normKey =
         field.type === "vehicle"
           ? vehicleRegoKey(shortForm)
-          : shortForm.toLowerCase().replace(/\s+/g, " ").trim();
+          : field.type === "address"
+            ? addressBracketKey(shortForm)
+            : shortForm.toLowerCase().replace(/\s+/g, " ").trim();
       const key = `${field.type}::${normKey}`;
       if (!entityMap.has(key)) {
         entityMap.set(key, { shortForm, type: field.type, occurrences: [] });

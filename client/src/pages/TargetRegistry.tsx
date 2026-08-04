@@ -72,6 +72,7 @@ import {
   type DuplicateWarning,
 } from "@/components/PossibleDuplicateAlert";
 import { runDuplicateChecks } from "@/lib/duplicateCheck";
+import { IndicesBadge } from "@/components/IndicesBadge";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -110,6 +111,7 @@ type RegistryTarget = {
   createdAt: Date;
   updatedAt: Date;
   linkedOperations: Array<{ operationId: number; operationName: string | null }>;
+  isIndicesOnly?: boolean;
 };
 
 // ─── Link to Operation Dialog ─────────────────────────────────────────────────
@@ -388,6 +390,7 @@ function TargetCard({
       >
         <Target className="w-4 h-4 text-primary shrink-0" />
         <span className="flex-1 font-semibold text-sm text-foreground truncate">{target.name}</span>
+        {target.isIndicesOnly && <IndicesBadge />}
         {/* Linked operations badges */}
         {target.linkedOperations.length > 0 && (
           <div className="hidden sm:flex flex-wrap gap-1 mr-2">
@@ -578,6 +581,7 @@ type AssociateRecord = {
   vehType: string | null;
   extraAddresses: string | null;
   extraVehicles: string | null;
+  isIndicesOnly?: boolean;
 };
 
 function AssociateCard({
@@ -788,6 +792,7 @@ function AssociateCard({
       >
         <Users className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
         <span className="flex-1 text-sm font-medium truncate">{displayName}</span>
+        {associate?.isIndicesOnly && <IndicesBadge />}
         <ChevronRight className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${expanded ? "rotate-90" : ""}`} />
       </div>
       {expanded && (
@@ -1103,7 +1108,10 @@ export default function TargetRegistryPage() {
                 </div>
 
                 {/* Name */}
-                <p className="font-semibold text-foreground leading-tight line-clamp-2">{t.name}</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="font-semibold text-foreground leading-tight line-clamp-2">{t.name}</p>
+                  {t.isIndicesOnly && <IndicesBadge />}
+                </div>
 
                 {/* Key details */}
                 <div className="flex flex-col gap-1 mt-auto">

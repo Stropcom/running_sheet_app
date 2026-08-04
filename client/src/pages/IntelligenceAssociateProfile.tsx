@@ -8,6 +8,7 @@ import { EntityPhotosSection } from "@/components/EntityPhotosSection";
 import { buildPhotoGridHtml, buildEntityListWithPhotosHtml, type RowAttachmentLike } from "@/lib/attachmentBanner";
 import { IntelEntityWithPhotos, type IntelAssocEntity } from "@/components/IntelEntityChip";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
+import { IndicesBadge } from "@/components/IndicesBadge";
 
 type ProfilePhoto = RowAttachmentLike & { id: number; url: string };
 
@@ -17,6 +18,7 @@ interface IntelAssociateProfile {
   linkedTargets: Array<{ targetId: number; name: string; operationId: number; operationName: string }>;
   linkedSheets: Array<{ id: number; title: string; operationId: number; operationName: string }>;
   assocLocations: IntelProfileEntity[]; assocVehicles: IntelProfileEntity[];
+  isIndicesOnly: boolean;
   registryAssociateId?: number | null;
   firstNames?: string | null;
   surname?: string | null;
@@ -45,7 +47,7 @@ function buildAssociateProfileHtml(profile: IntelAssociateProfile, photos: Profi
 <style>* { box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; } body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.6; color:${GREY_TEXT}; background:#fff; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 .cover-header { background:${BLUE_DARK} !important; color:#fff !important; padding:28px 32px 22px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 .brand-label { font-size:10px; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; color:${BLUE_MID} !important; margin-bottom:14px; }
-.entity-name { font-size:22px; font-weight:700; } .gen-time { font-size:9px; opacity:0.6; margin-top:12px; }
+.entity-name { font-size:22px; font-weight:700; } .indices-tag { display:inline-block; margin-left:10px; padding:2px 8px; border-radius:999px; font-size:10px; font-weight:700; letter-spacing:0.05em; vertical-align:middle; background:rgba(129,140,248,0.25) !important; border:1px solid rgba(199,210,254,0.5); color:#e0e7ff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; } .gen-time { font-size:9px; opacity:0.6; margin-top:12px; }
 .stats-row { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; padding:16px 32px; background:${BLUE_LIGHT} !important; border-bottom:2px solid ${BLUE_MID}; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 .stat-box { text-align:center; } .stat-num { font-size:20px; font-weight:700; color:${BLUE_DARK} !important; } .stat-label { font-size:9px; text-transform:uppercase; letter-spacing:0.08em; color:#64748b; }
 .content { padding:20px 32px; } .section-title { font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${BLUE_DARK} !important; padding:6px 10px; background:${BLUE_LIGHT} !important; border-left:3px solid ${BLUE_MID}; margin-bottom:10px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
@@ -55,7 +57,7 @@ function buildAssociateProfileHtml(profile: IntelAssociateProfile, photos: Profi
 </style></head><body>
 <div class="cover-header">
   <div class="brand-label">RunLog Intelligence Profile — Associate</div>
-  <div class="entity-name">${esc(profile.label)}</div>
+  <div class="entity-name">${esc(profile.label)}${profile.isIndicesOnly ? `<span class="indices-tag">INDICES</span>` : ""}</div>
   <div class="gen-time">Generated: ${generatedAt}</div>
 </div>
 <div class="stats-row">
@@ -121,10 +123,8 @@ export default function IntelligenceAssociateProfile() {
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 border border-white/30">
                         <User className="w-3 h-3" /> Associate
                       </span>
-                      {profile.registryAssociateId && (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 border border-emerald-300/40 text-emerald-100">
-                          Registered
-                        </span>
+                      {profile.isIndicesOnly && (
+                        <IndicesBadge variant="on-dark" size="header" />
                       )}
                     </div>
                     <h1 className="text-2xl font-bold tracking-tight">{profile.label}</h1>

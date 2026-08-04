@@ -182,6 +182,7 @@ import {
   getAllTargetsForRegistry,
   createRegistryTarget,
   getAssociatesForTarget,
+  getAssociatesForTargetWithIndices,
   getAssociateById,
   createAssociate,
   updateAssociate,
@@ -2532,7 +2533,7 @@ export const appRouter = router({
     listForTarget: protectedProcedure
       .input(z.object({ targetId: z.number() }))
       .query(async ({ input }) => {
-        return getAssociatesForTarget(input.targetId);
+        return getAssociatesForTargetWithIndices(input.targetId);
       }),
 
     /** Get a single associate by id */

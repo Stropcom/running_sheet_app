@@ -40,6 +40,7 @@ import { ViewToggle } from "@/components/ViewToggle";
 import { useViewMode } from "@/contexts/ViewModeContext";
 import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
 import { MergeEntitiesButton } from "@/components/MergeEntitiesButton";
+import { IndicesBadge } from "@/components/IndicesBadge";
 import IntelligenceHeatMap from "@/pages/IntelligenceHeatMap";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -65,6 +66,7 @@ interface Entity {
   tgtAlias?: string | null;
   targetId?: number | null;
   lowConfidence?: boolean;
+  isIndicesOnly?: boolean;
   occurrences: Occurrence[];
 }
 
@@ -1423,11 +1425,14 @@ export default function IntelligencePage() {
                       </div>
                       <div className="flex-1">
                         <p className="font-mono text-sm font-semibold text-foreground line-clamp-2">{displayShortForm}</p>
-                        {entity.tgtAlias && (
-                          <span className="inline-flex items-center mt-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
-                            TGT: {entity.tgtAlias}
-                          </span>
-                        )}
+                        <div className="flex flex-wrap items-center gap-1 mt-1">
+                          {entity.tgtAlias && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                              TGT: {entity.tgtAlias}
+                            </span>
+                          )}
+                          {entity.isIndicesOnly && <IndicesBadge />}
+                        </div>
                       </div>
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-[10px] text-muted-foreground truncate">
@@ -1492,6 +1497,7 @@ export default function IntelligencePage() {
                                 ?
                               </span>
                             )}
+                            {entity.isIndicesOnly && <IndicesBadge />}
                           </div>
                         </div>
                         <div className="text-right shrink-0">

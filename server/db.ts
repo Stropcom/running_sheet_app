@@ -2204,6 +2204,23 @@ export async function getAssociatesForTarget(targetId: number) {
     .orderBy(associates.name);
 }
 
+/** Same as getAssociatesForTarget, plus each row's "Indices" (not yet
+ * corroborated by a real running-sheet observation) status — for display in
+ * the Target Registry's Associates list. */
+export async function getAssociatesForTargetWithIndices(targetId: number) {
+  const rows = await getAssociatesForTarget(targetId);
+  const allEntities = await getAllIntelligenceEntities();
+  const indicesByAssociateId = new Map(
+    allEntities
+      .filter(e => e.isAssociate && e.associateId != null)
+      .map(e => [e.associateId as number, e.isIndicesOnly ?? false])
+  );
+  return rows.map(a => ({
+    ...a,
+    isIndicesOnly: indicesByAssociateId.get(a.id) ?? false,
+  }));
+}
+
 export async function getAssociateById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
@@ -2324,9 +2341,17 @@ export async function getAllTargetsForRegistry() {
       .push({ operationId: l.operationId, operationName: l.operationName });
   }
 
+  const allEntities = await getAllIntelligenceEntities();
+  const indicesByTargetId = new Map(
+    allEntities
+      .filter(e => e.isTarget && e.targetId != null)
+      .map(e => [e.targetId as number, e.isIndicesOnly ?? false])
+  );
+
   return allTargets.map(t => ({
     ...t,
     linkedOperations: linkMap.get(t.id) ?? [],
+    isIndicesOnly: indicesByTargetId.get(t.id) ?? false,
   }));
 }
 
@@ -3262,6 +3287,15 @@ export interface IntelligenceEntity {
   /** For associate entities: the parent target this associate belongs to */
   associateOfTargetId?: number | null;
   associateOfTargetName?: string | null;
+  /**
+   * True when every occurrence of this entity is synthetic (rowId 0) — i.e.
+   * it exists only because it was typed into the Target Registry (or another
+   * non-running-sheet source), and has never actually been mentioned in a
+   * real observation row yet. Drives the "Indices" badge: the moment a real
+   * (rowId > 0) occurrence appears, this flips to false permanently, since
+   * the information is now corroborated by a running sheet.
+   */
+  isIndicesOnly?: boolean;
   occurrences: Array<{
     sheetId: number;
     sheetTitle: string;
@@ -5035,7 +5069,16 @@ export async function getAllIntelligenceEntities(): Promise<
     mergedMap.set(k, entity);
   }
 
-  return Array.from(mergedMap.values());
+  // "Indices" flag — computed last, once every occurrence (registry-injected
+  // and text-mined alike) has been assembled and merged above.
+  const finalEntities = Array.from(mergedMap.values());
+  for (const entity of finalEntities) {
+    entity.isIndicesOnly =
+      entity.occurrences.length > 0 &&
+      entity.occurrences.every(o => o.rowId === 0);
+  }
+
+  return finalEntities;
 }
 
 // ─── Entity Deduplication ───────────────────────────────────────────────────
@@ -7004,6 +7047,10 @@ export interface IntelTargetProfile {
   assocPersons: IntelProfileEntity[];
   assocVehicles: IntelProfileEntity[];
   assocLocations: IntelProfileEntity[];
+  /** True until this target has appeared in at least one real running-sheet
+   * observation — i.e. everything known about them so far came from the
+   * Target Registry (or another non-RS source), not from the field. */
+  isIndicesOnly: boolean;
   /** Associates recorded directly on this target in the Target Registry — a
    * guaranteed link (not inferred from observation-text co-occurrence). */
   registryAssociates: Array<{
@@ -7014,6 +7061,7 @@ export interface IntelTargetProfile {
     hb: string | null;
     v1f: string | null;
     v1: string | null;
+    isIndicesOnly: boolean;
   }>;
 }
 
@@ -7043,6 +7091,7 @@ export interface IntelOperationProfile {
     assocVehicles: IntelProfileEntity[];
     assocLocations: IntelProfileEntity[];
     photos: OperationEntityPhoto[];
+    isIndicesOnly: boolean;
   }>;
 }
 
@@ -7063,6 +7112,10 @@ export interface IntelAssociateProfile {
   }>;
   assocLocations: IntelProfileEntity[];
   assocVehicles: IntelProfileEntity[];
+  /** True until this associate has appeared in at least one real running-sheet
+   * observation — i.e. everything known about them so far came from the
+   * Target Registry (or another non-RS source), not from the field. */
+  isIndicesOnly: boolean;
   /** Present when this associate has a formal Target Registry record — its
    * own structured identity/address/vehicle, not just text-mined mentions. */
   registryAssociateId?: number | null;
@@ -7090,6 +7143,9 @@ export interface IntelVehicleProfile {
   assocLocations: IntelProfileEntity[];
   /** True when this vehicle itself matches a value superseded by a target-merge. */
   isPrevious?: boolean;
+  /** True until this vehicle has appeared in at least one real running-sheet
+   * observation — i.e. it's only known from a Target/Associate registry field. */
+  isIndicesOnly: boolean;
 }
 
 export interface IntelLocationProfile {
@@ -7106,6 +7162,9 @@ export interface IntelLocationProfile {
   assocVehicles: IntelProfileEntity[];
   /** True when this location itself matches a value superseded by a target-merge. */
   isPrevious?: boolean;
+  /** True until this location has appeared in at least one real running-sheet
+   * observation — i.e. it's only known from a Target/Associate registry field. */
+  isIndicesOnly: boolean;
 }
 
 // A target's registered name is often followed by descriptive detail
@@ -7383,6 +7442,14 @@ export async function getIntelTargetProfile(
   );
 
   const registryAssociateRows = await getAssociatesForTarget(targetId);
+  const targetEntity = allEntities.find(
+    e => e.isTarget && e.targetId === targetId
+  );
+  const associateEntityById = new Map(
+    allEntities
+      .filter(e => e.isAssociate && e.associateId != null)
+      .map(e => [e.associateId as number, e])
+  );
 
   return {
     targetId,
@@ -7408,6 +7475,7 @@ export async function getIntelTargetProfile(
     assocPersons,
     assocVehicles,
     assocLocations,
+    isIndicesOnly: targetEntity?.isIndicesOnly ?? false,
     registryAssociates: registryAssociateRows.map(a => ({
       id: a.id,
       name: a.name,
@@ -7416,6 +7484,7 @@ export async function getIntelTargetProfile(
       hb: a.hb,
       v1f: a.v1f,
       v1: a.v1,
+      isIndicesOnly: associateEntityById.get(a.id)?.isIndicesOnly ?? false,
     })),
   };
 }
@@ -7469,6 +7538,9 @@ export async function getIntelOperationProfile(
             target.name,
             allEntities
           );
+        const targetEntity = allEntities.find(
+          e => e.isTarget && e.targetId === targetId
+        );
         return {
           targetId,
           name: target.name,
@@ -7482,6 +7554,7 @@ export async function getIntelOperationProfile(
           assocPersons,
           assocVehicles,
           assocLocations,
+          isIndicesOnly: targetEntity?.isIndicesOnly ?? false,
         };
       })
     )
@@ -7738,6 +7811,7 @@ export async function getIntelAssociateProfile(
     linkedSheets: Array.from(sheetMap.values()),
     assocLocations,
     assocVehicles,
+    isIndicesOnly: entity.isIndicesOnly ?? false,
     registryAssociateId: registryAssociate?.id ?? null,
     firstNames: registryAssociate?.firstNames ?? null,
     surname: registryAssociate?.surname ?? null,
@@ -7877,6 +7951,7 @@ export async function getIntelVehicleProfile(
     assocPersons,
     assocLocations,
     isPrevious,
+    isIndicesOnly: entity.isIndicesOnly ?? false,
   };
 }
 
@@ -8011,6 +8086,7 @@ export async function getIntelLocationProfile(
     assocPersons,
     assocVehicles,
     isPrevious,
+    isIndicesOnly: entity.isIndicesOnly ?? false,
   };
 }
 

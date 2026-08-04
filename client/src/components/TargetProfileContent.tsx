@@ -16,6 +16,7 @@ import {
   IntelEntityWithPhotos,
   type IntelAssocEntity,
 } from "@/components/IntelEntityChip";
+import { IndicesBadge } from "@/components/IndicesBadge";
 
 type ProfilePhoto = RowAttachmentLike & { id: number; url: string };
 
@@ -95,6 +96,8 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 .brand-label { font-size:10px; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; color:${BLUE_MID}; }
 .entity-type-badge { display:inline-flex; align-items:center; gap:6px; background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); border-radius:9999px; padding:4px 14px; font-size:10px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; margin-bottom:10px; }
 .entity-name { font-size:22px; font-weight:700; letter-spacing:-0.01em; line-height:1.2; }
+.indices-tag { display:inline-block; margin-left:10px; padding:2px 8px; border-radius:999px; font-size:10px; font-weight:700; letter-spacing:0.05em; vertical-align:middle; background:rgba(129,140,248,0.25) !important; border:1px solid rgba(199,210,254,0.5); color:#e0e7ff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+.indices-tag-light { display:inline-block; margin-left:6px; padding:1px 6px; border-radius:999px; font-size:9px; font-weight:700; letter-spacing:0.03em; vertical-align:middle; background:#e0e7ff !important; border:1px solid #c7d2fe; color:#4338ca !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 .entity-sub { font-size:12px; opacity:0.75; margin-top:4px; }
 .gen-time { font-size:9px; opacity:0.6; margin-top:12px; }
 .stats-row { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; padding:16px 32px; background:${BLUE_LIGHT} !important; border-bottom:2px solid ${BLUE_MID}; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
@@ -118,7 +121,7 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 <div class="cover-header">
   <div class="brand-row"><div class="brand-dot"></div><span class="brand-label">RunLog Intelligence Profile</span></div>
   <div class="entity-type-badge">&#128100; Person — Target</div>
-  <div class="entity-name">${esc(profile.name)}</div>
+  <div class="entity-name">${esc(profile.name)}${profile.isIndicesOnly ? `<span class="indices-tag">INDICES</span>` : ""}</div>
   ${profile.tgt ? `<div class="entity-sub">TGT Alias: ${esc(profile.tgt)}</div>` : ""}
   ${prevHtml("name", "dark")}
   ${prevHtml("tgt", "dark")}
@@ -190,7 +193,7 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
       ${profile.registryAssociates
         .map(
           a =>
-            `<div class="sheet-item"><div class="sheet-dot"></div><span style="flex:1">${esc(a.name)}</span><span style="color:#64748b">${esc(a.hbf ?? "")}</span></div>`
+            `<div class="sheet-item"><div class="sheet-dot"></div><span style="flex:1">${esc(a.name)}${a.isIndicesOnly ? `<span class="indices-tag-light">INDICES</span>` : ""}</span><span style="color:#64748b">${esc(a.hbf ?? "")}</span></div>`
         )
         .join("")}
     </div>
@@ -332,9 +335,14 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
             <div className="bg-gradient-to-r from-blue-900 to-blue-800 px-6 py-5 text-white">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 border border-white/30 mb-3">
-                    <User className="w-3 h-3" /> Person — Target
-                  </span>
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 border border-white/30">
+                      <User className="w-3 h-3" /> Person — Target
+                    </span>
+                    {profile.isIndicesOnly && (
+                      <IndicesBadge variant="on-dark" size="header" />
+                    )}
+                  </div>
                   <h1 className="text-2xl font-bold tracking-tight">
                     {profile.name}
                   </h1>
@@ -546,6 +554,7 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
                     <span className="text-xs font-medium text-foreground flex-1 truncate">
                       {a.name}
                     </span>
+                    {a.isIndicesOnly && <IndicesBadge />}
                     {a.hbf && (
                       <span className="text-xs text-muted-foreground shrink-0 truncate max-w-[160px]">
                         {a.hbf}

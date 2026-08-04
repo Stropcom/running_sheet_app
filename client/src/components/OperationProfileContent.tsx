@@ -9,6 +9,7 @@ import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 import { buildPhotoGridHtml, buildEntityListWithPhotosHtml, type RowAttachmentLike } from "@/lib/attachmentBanner";
 import { IntelEntityWithPhotos, IntelPhotoStrip, type IntelAssocEntity } from "@/components/IntelEntityChip";
+import { IndicesBadge } from "@/components/IndicesBadge";
 
 // ─── Types (mirrors server IntelOperationProfile) ──────────────────────────
 type ProfilePhoto = RowAttachmentLike & { id: number; url: string };
@@ -19,6 +20,7 @@ interface OperationTarget {
   linkedSheets: Array<{ id: number; title: string }>;
   assocPersons: IntelProfileEntity[]; assocVehicles: IntelProfileEntity[]; assocLocations: IntelProfileEntity[];
   photos: ProfilePhoto[];
+  isIndicesOnly: boolean;
 }
 interface IntelOperationProfile {
   operationId: number; operationName: string;
@@ -37,7 +39,7 @@ function buildOperationProfileHtml(profile: IntelOperationProfile) {
   const targetsHtml = profile.targets.map(t => `
     <div style="margin-bottom:20px;border:1px solid ${GREY_BORDER};border-radius:8px;overflow:hidden">
       <div style="background:${BLUE_LIGHT};padding:8px 14px;border-bottom:1px solid ${GREY_BORDER}">
-        <strong style="font-size:12px;color:${BLUE_DARK}">${esc(t.name)}</strong>${t.tgt ? ` <span style="font-size:10px;color:#64748b;margin-left:8px">TGT: ${esc(t.tgt)}</span>` : ""}
+        <strong style="font-size:12px;color:${BLUE_DARK}">${esc(t.name)}</strong>${t.tgt ? ` <span style="font-size:10px;color:#64748b;margin-left:8px">TGT: ${esc(t.tgt)}</span>` : ""}${t.isIndicesOnly ? ` <span style="display:inline-block;margin-left:8px;padding:1px 7px;border-radius:999px;font-size:9px;font-weight:700;letter-spacing:0.04em;background:#e0e7ff;border:1px solid #c7d2fe;color:#4338ca">INDICES</span>` : ""}
       </div>
       <div style="padding:10px 14px">
         ${t.photos.length ? `<p style="font-size:10px;color:#64748b;margin-bottom:4px;font-weight:600">Photos (${t.photos.length}):</p>${buildPhotoGridHtml(t.photos, 95)}` : ""}
@@ -180,7 +182,10 @@ export function OperationProfileContent({ operationId }: { operationId: number }
                       <User className="w-3.5 h-3.5" />
                     </span>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-foreground truncate">{target.name}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm font-semibold text-foreground truncate">{target.name}</p>
+                        {target.isIndicesOnly && <IndicesBadge />}
+                      </div>
                       <p className="text-xs text-muted-foreground">
                         {target.linkedSheets.length} sheet{target.linkedSheets.length !== 1 ? "s" : ""} · {totalAssoc} association{totalAssoc !== 1 ? "s" : ""}
                       </p>

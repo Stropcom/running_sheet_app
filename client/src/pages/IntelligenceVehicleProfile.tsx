@@ -9,6 +9,7 @@ import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 import { EntityPhotosSection } from "@/components/EntityPhotosSection";
 import { buildPhotoGridHtml, buildEntityListWithPhotosHtml, type RowAttachmentLike } from "@/lib/attachmentBanner";
 import { IntelEntityWithPhotos, type IntelAssocEntity } from "@/components/IntelEntityChip";
+import { IndicesBadge } from "@/components/IndicesBadge";
 
 type ProfilePhoto = RowAttachmentLike & { id: number; url: string };
 
@@ -22,6 +23,7 @@ interface IntelVehicleProfile {
   assocPersons: IntelProfileEntity[];
   assocLocations: IntelProfileEntity[];
   isPrevious?: boolean;
+  isIndicesOnly: boolean;
 }
 
 function SectionHeading({ label, count }: { label: string; count: number }) {
@@ -53,7 +55,7 @@ function buildVehicleProfileHtml(profile: IntelVehicleProfile, photos: ProfilePh
 </style></head><body>
 <div class="cover-header">
   <div class="brand-label">RunLog Intelligence Profile — Vehicle</div>
-  <div class="entity-name">${esc(displayLabel)}</div>
+  <div class="entity-name">${esc(displayLabel)}${profile.isIndicesOnly ? `<span style="display:inline-block;margin-left:10px;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:0.05em;vertical-align:middle;background:rgba(129,140,248,0.25);border:1px solid rgba(199,210,254,0.5);color:#e0e7ff">INDICES</span>` : ""}</div>
   ${profile.linkedTarget ? `<div style="font-size:11px;opacity:0.75;margin-top:4px">Registered to: ${esc(profile.linkedTarget.name)}</div>` : ""}
   ${profile.isPrevious ? `<div style="display:inline-block;margin-top:6px;padding:2px 8px;border-radius:3px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;background:rgba(255,255,255,0.15);color:#fff">Previous</div>` : ""}
   <div class="gen-time">Generated: ${generatedAt}</div>
@@ -113,9 +115,14 @@ export default function IntelligenceVehicleProfile() {
               <div className="bg-gradient-to-r from-amber-900 to-amber-800 px-6 py-5 text-white">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 border border-white/30 mb-3">
-                      <Car className="w-3 h-3" /> Vehicle
-                    </span>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 border border-white/30">
+                        <Car className="w-3 h-3" /> Vehicle
+                      </span>
+                      {profile.isIndicesOnly && (
+                        <IndicesBadge variant="on-dark" size="header" />
+                      )}
+                    </div>
                     <h1 className="text-2xl font-bold tracking-tight">{formatIntelVehicle(profile.label, profile.firstObservation ?? undefined)}</h1>
                     {profile.linkedTarget && (
                       <p className="text-sm opacity-75 mt-1">Registered to: {profile.linkedTarget.name}</p>

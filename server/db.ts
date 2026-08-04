@@ -370,10 +370,21 @@ export async function updateOperation(
 export async function softDeleteOperation(id: number, cin: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  const now = Date.now();
   await db
     .update(operations)
-    .set({ deletedAt: Date.now(), deletedByCIN: cin })
+    .set({ deletedAt: now, deletedByCIN: cin })
     .where(eq(operations.id, id));
+  // Every attachment always has an operationId, so this one update covers
+  // both row-captured and manually-uploaded photos — they now go to the
+  // Recycle Bin (and auto-purge after 7 days) alongside their operation
+  // instead of quietly surviving it.
+  await db
+    .update(rowAttachments)
+    .set({ deletedAt: now, deletedByCIN: cin })
+    .where(
+      and(eq(rowAttachments.operationId, id), isNull(rowAttachments.deletedAt))
+    );
 }
 
 export async function deleteOperation(id: number) {
@@ -450,6 +461,17 @@ export async function deleteOperation(id: number) {
     .where(eq(operationTargetLinks.operationId, id));
   // Delete custom map markers linked to this operation (hard delete — operation is gone)
   await db.delete(customMapMarkers).where(eq(customMapMarkers.operationId, id));
+  // Every attachment always has an operationId (row-captured or manually
+  // uploaded), so this is the actual ownership boundary for photos — sweep
+  // up anything deleteRunningSheet's row-scoped pass above didn't reach
+  // (manual uploads, or a row that was already gone).
+  const remainingAttachments = await db
+    .select({ id: rowAttachments.id })
+    .from(rowAttachments)
+    .where(eq(rowAttachments.operationId, id));
+  for (const a of remainingAttachments) {
+    await deleteRowAttachment(a.id);
+  }
   await db.delete(operations).where(eq(operations.id, id));
 }
 
@@ -550,10 +572,32 @@ export async function updateRunningSheet(
 export async function softDeleteSheet(id: number, cin: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  const now = Date.now();
   await db
     .update(runningSheets)
-    .set({ deletedAt: Date.now(), deletedByCIN: cin })
+    .set({ deletedAt: now, deletedByCIN: cin })
     .where(eq(runningSheets.id, id));
+  // Photos captured against one of this sheet's rows go to the Recycle Bin
+  // with it. Manually-uploaded photos live at the operation level and are
+  // untouched here — they only go when the whole operation does.
+  const rows = await db
+    .select({ id: sheetRows.id })
+    .from(sheetRows)
+    .where(eq(sheetRows.sheetId, id));
+  if (rows.length > 0) {
+    await db
+      .update(rowAttachments)
+      .set({ deletedAt: now, deletedByCIN: cin })
+      .where(
+        and(
+          inArray(
+            rowAttachments.rowId,
+            rows.map(r => r.id)
+          ),
+          isNull(rowAttachments.deletedAt)
+        )
+      );
+  }
 }
 
 export async function deleteRunningSheet(id: number) {
@@ -567,6 +611,16 @@ export async function deleteRunningSheet(id: number) {
     .where(eq(sheetRows.sheetId, id));
   if (rows.length > 0) {
     const rowIds = rows.map(r => r.id);
+    // Photos captured against one of this sheet's rows — permanently gone
+    // with it. Manually-uploaded (rowId null) photos live at the operation
+    // level and are handled by deleteOperation instead.
+    const rowLinkedAttachments = await db
+      .select({ id: rowAttachments.id })
+      .from(rowAttachments)
+      .where(inArray(rowAttachments.rowId, rowIds));
+    for (const a of rowLinkedAttachments) {
+      await deleteRowAttachment(a.id);
+    }
     // Delete certifications and row_members for these rows
     await db
       .delete(certifications)
@@ -2186,6 +2240,17 @@ export async function deleteTarget(id: number) {
   await db
     .delete(operationTargetLinks)
     .where(eq(operationTargetLinks.targetId, id));
+  // Drop the "tagged to this target" links — the underlying photos stay
+  // (they still belong to their own operation), just untagged from a
+  // target that no longer exists.
+  await db
+    .delete(attachmentEntityLinks)
+    .where(
+      and(
+        eq(attachmentEntityLinks.category, "target"),
+        eq(attachmentEntityLinks.targetId, id)
+      )
+    );
   await db.delete(targets).where(eq(targets.id, id));
 }
 
@@ -6902,22 +6967,25 @@ export async function getRecycleBinItems(): Promise<RecycleBinItem[]> {
     });
   }
 
-  // Deleted photo attachments
+  // Deleted photo attachments — left-joined through sheetRows/runningSheets
+  // (present only for row-captured photos) and directly through
+  // rowAttachments.operationId (always set, row-captured or manually
+  // uploaded) for the operation name, so a manually-uploaded photo with no
+  // rowId still surfaces here instead of silently vanishing from the list.
   const deletedAttachments = await db
     .select({
       id: rowAttachments.id,
       deletedAt: rowAttachments.deletedAt,
       deletedByCIN: rowAttachments.deletedByCIN,
-      sheetId: sheetRows.sheetId,
       sheetTitle: runningSheets.title,
       rowTime: sheetRows.time,
-      operationId: runningSheets.operationId,
+      operationId: rowAttachments.operationId,
       operationName: operations.name,
     })
     .from(rowAttachments)
-    .innerJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
-    .innerJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
-    .leftJoin(operations, eq(runningSheets.operationId, operations.id))
+    .leftJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
+    .leftJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
+    .leftJoin(operations, eq(rowAttachments.operationId, operations.id))
     .where(
       and(
         isNotNull(rowAttachments.deletedAt),
@@ -6928,7 +6996,7 @@ export async function getRecycleBinItems(): Promise<RecycleBinItem[]> {
     items.push({
       id: a.id,
       type: "attachment",
-      label: `Photo — ${a.sheetTitle}`,
+      label: a.sheetTitle ? `Photo — ${a.sheetTitle}` : "Photo — manual upload",
       sublabel: a.rowTime
         ? `${a.operationName ?? ""} · ${a.rowTime}`
         : (a.operationName ?? undefined),
@@ -7024,6 +7092,52 @@ export async function purgeExpiredRecycleBinItems() {
   for (const a of expiredAttachments) {
     await deleteRowAttachment(a.id);
   }
+}
+
+/**
+ * Photos left behind by operations/sheets deleted before deleteOperation/
+ * deleteRunningSheet/softDeleteOperation/softDeleteSheet cascaded to
+ * attachments (a gap that existed until this was added) — still
+ * `deletedAt IS NULL` (so still "live" everywhere: Intelligence photo
+ * lookups, EntityPhotosSection, etc.) even though their owning operation is
+ * gone. Every attachment always has an operationId, so an attachment is
+ * orphaned exactly when that operation no longer exists or is itself
+ * soft-deleted.
+ */
+export async function getOrphanedAttachments() {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({
+      id: rowAttachments.id,
+      key: rowAttachments.key,
+      mimeType: rowAttachments.mimeType,
+      isManualUpload: rowAttachments.isManualUpload,
+      createdAt: rowAttachments.createdAt,
+      operationId: rowAttachments.operationId,
+      operationName: operations.name,
+      operationDeletedAt: operations.deletedAt,
+    })
+    .from(rowAttachments)
+    .leftJoin(operations, eq(rowAttachments.operationId, operations.id))
+    .where(
+      and(
+        isNull(rowAttachments.deletedAt),
+        or(isNull(operations.id), isNotNull(operations.deletedAt))
+      )
+    );
+}
+
+/** Permanently purges every currently-orphaned attachment (see
+ * getOrphanedAttachments) — bypasses the normal 7-day Recycle Bin grace
+ * period, since these were already deleted (their operation is gone) and
+ * simply never got cleaned up. Admin-only, see adminUtils.purgeOrphanedAttachments. */
+export async function purgeOrphanedAttachments(): Promise<number> {
+  const orphans = await getOrphanedAttachments();
+  for (const a of orphans) {
+    await deleteRowAttachment(a.id);
+  }
+  return orphans.length;
 }
 
 // ─── Intelligence Profile Queries ─────────────────────────────────────────────

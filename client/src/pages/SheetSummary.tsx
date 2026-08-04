@@ -32,6 +32,7 @@ import { format } from "date-fns";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
 import { EntityAutocompleteInput } from "@/components/EntityAutocompleteInput";
+import { useOffline } from "@/contexts/OfflineContext";
 
 // ─── Field definitions ─────────────────────────────────────────────────────
 
@@ -670,6 +671,7 @@ export default function SheetSummaryPage() {
   const [, navigate] = useLocation();
   const utils = trpc.useUtils();
   const { user } = useAuth();
+  const { isOnline } = useOffline();
 
   const { data: sheet } = trpc.sheet.get.useQuery(
     { id: sheetId },
@@ -701,16 +703,19 @@ export default function SheetSummaryPage() {
   );
   const canComplete = user?.role === "admin" || isTeamLeader;
 
+  // Poll while online — mirrors SheetDetail.tsx's row.list/entityChips
+  // polling, so a Summary left open picks up rows another officer is still
+  // adding on the Running Sheet instead of only refreshing on page load.
   const { data: record, isLoading } = trpc.summary.getBySheet.useQuery(
     { sheetId },
-    { enabled: !!sheetId }
+    { enabled: !!sheetId, refetchInterval: isOnline ? 10000 : false }
   );
   const isComplete = !!record?.completedAt;
   const isLocked = sheetIsClosed || isComplete;
 
   const { data: vehicles } = trpc.summary.getVehicles.useQuery(
     { sheetId },
-    { enabled: !!sheetId }
+    { enabled: !!sheetId, refetchInterval: isOnline ? 10000 : false }
   );
 
   const { data: ioSupportHistory } = trpc.summary.getSupportHistory.useQuery(
@@ -724,7 +729,7 @@ export default function SheetSummaryPage() {
 
   const { data: entries } = trpc.summary.getEntries.useQuery(
     { sheetId },
-    { enabled: !!sheetId }
+    { enabled: !!sheetId, refetchInterval: isOnline ? 10000 : false }
   );
 
   const updateMutation = trpc.summary.update.useMutation({

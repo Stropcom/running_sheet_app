@@ -14,7 +14,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Trash2, RotateCcw, FolderOpen, FileText, User, MapPin, Calendar, Camera } from "lucide-react";
+import { Trash2, RotateCcw, FolderOpen, FileText, User, MapPin, Calendar, Camera, AlertTriangle } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { ViewToggle } from "@/components/ViewToggle";
 import { useViewMode } from "@/contexts/ViewModeContext";
@@ -123,6 +123,25 @@ export default function RecycleBin() {
     setDeleting(null);
   }
 
+  // ── Orphaned photos — attachments left behind by an operation/sheet that
+  // was deleted before cascade-deleting attachments was wired up. Bypasses
+  // the normal 7-day grace period since these were already "deleted" along
+  // with their (now gone) operation. ─────────────────────────────────────
+  const { data: orphanedAttachments, isLoading: orphansLoading } =
+    trpc.adminUtils.getOrphanedAttachments.useQuery(undefined, {
+      enabled: isAdmin,
+    });
+  const purgeOrphansMutation = trpc.adminUtils.purgeOrphanedAttachments.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Purged ${data.purged} orphaned photo${data.purged === 1 ? "" : "s"}.`);
+      utils.adminUtils.getOrphanedAttachments.invalidate();
+    },
+    onError: (err) => {
+      toast.error(err.message ?? "Failed to purge orphaned photos.");
+    },
+  });
+  const [confirmPurgeOrphans, setConfirmPurgeOrphans] = useState(false);
+
   return (
     <DashboardLayout>
       <div className="max-w-3xl mx-auto py-8 px-4">
@@ -139,6 +158,35 @@ export default function RecycleBin() {
             <span> Admins can also <strong>permanently delete</strong> items immediately.</span>
           )}
         </p>
+
+        {/* Orphaned photos — admin only */}
+        {isAdmin && !orphansLoading && orphanedAttachments && orphanedAttachments.length > 0 && (
+          <div className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50/60 dark:bg-amber-950/20 px-4 py-3 mb-6">
+            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+                {orphanedAttachments.length} orphaned photo{orphanedAttachments.length !== 1 ? "s" : ""} found
+              </p>
+              <p className="text-xs text-amber-700/90 dark:text-amber-400/80 mt-0.5">
+                Left behind by an operation deleted before its photos were deleted with it — not visible anywhere in the app, but still taking up storage. Safe to purge permanently now.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 border-amber-400 text-amber-800 hover:bg-amber-100 shrink-0"
+              disabled={purgeOrphansMutation.isPending}
+              onClick={() => setConfirmPurgeOrphans(true)}
+            >
+              {purgeOrphansMutation.isPending ? (
+                <Spinner className="w-3.5 h-3.5" />
+              ) : (
+                <Trash2 className="w-3.5 h-3.5" />
+              )}
+              Purge All
+            </Button>
+          </div>
+        )}
 
         {isLoading && (
           <div className="flex justify-center py-16">
@@ -305,6 +353,32 @@ export default function RecycleBin() {
               onClick={handleHardDelete}
             >
               Permanently Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Purge orphaned photos confirmation dialog */}
+      <AlertDialog open={confirmPurgeOrphans} onOpenChange={setConfirmPurgeOrphans}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Purge all orphaned photos?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {orphanedAttachments?.length ?? 0} photo{(orphanedAttachments?.length ?? 0) !== 1 ? "s" : ""} whose
+              operation no longer exists will be <strong>permanently deleted</strong>. This does not affect any
+              photo still linked to a live operation, sheet, or target. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700 text-white"
+              onClick={() => {
+                setConfirmPurgeOrphans(false);
+                purgeOrphansMutation.mutate();
+              }}
+            >
+              Purge All
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

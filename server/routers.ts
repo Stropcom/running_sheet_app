@@ -224,6 +224,8 @@ import {
   reinstateCustomMarker,
   hardDeleteCustomMarker,
   backfillGoogleAddressesInObservations,
+  getOrphanedAttachments,
+  purgeOrphanedAttachments,
   getRsMappingWaypoints,
   upsertRsMappingWaypoint,
   getIncompleteRunningSheets,
@@ -6123,6 +6125,20 @@ export const appRouter = router({
     backfillGoogleAddresses: adminProcedure.mutation(async () => {
       const result = await backfillGoogleAddressesInObservations();
       return result;
+    }),
+
+    /** Photos whose owning operation is gone (soft-deleted or hard-deleted)
+     * but that never got cleaned up themselves — see getOrphanedAttachments. */
+    getOrphanedAttachments: adminProcedure.query(async () => {
+      return getOrphanedAttachments();
+    }),
+
+    /** Permanently purges every currently-orphaned attachment. Bypasses the
+     * normal 7-day Recycle Bin grace period since these were already
+     * deleted along with their operation, just never actually removed. */
+    purgeOrphanedAttachments: adminProcedure.mutation(async () => {
+      const count = await purgeOrphanedAttachments();
+      return { purged: count };
     }),
   }),
 });

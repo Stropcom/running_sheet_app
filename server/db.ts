@@ -6326,18 +6326,18 @@ function buildSummaryEntryFields(row: {
 
 /**
  * Returns the Summary tab's per-row entry list, first append-only syncing in
- * any RS rows that don't have an entry yet. Existing entries (including ones
- * the supervisor has edited or soft-deleted) are never touched or regenerated.
+ * any RS row with real observation text that doesn't have an entry yet.
+ * Existing entries (including ones the supervisor has edited or soft-deleted)
+ * are never touched or regenerated.
  *
- * "Travelled Via" rows — a row containing "continued via:" (the street/road
- * list, whether inline or on its own) and, where present, the paired row
- * immediately after it ending in "whereat" (the same convention used to
- * exclude these from Court Statements, see routers.ts's
- * statement.previewData) — are skipped when first creating a line for a row.
- * That check is never re-applied to a line that already exists: if an edit
- * later makes a row's text happen to match the pattern, the existing line is
- * still kept and just updated normally — a line only disappears here if its
- * row is genuinely gone (deleted or blanked).
+ * Every content row gets a line here, including "Travelled Via" rows
+ * ("continued via: …" route narratives, typically part of a departure —
+ * see the "d"/"ar" shortcut expansions in ensureDefaultShortcuts). Court
+ * Statements deliberately exclude those (routers.ts's statement.previewData)
+ * since a witness statement doesn't need turn-by-turn route detail, but the
+ * Summary's whole purpose is a comprehensive log of the sheet, not a curated
+ * narrative — skipping them here just silently dropped every departure
+ * observation that happened to include a route.
  *
  * While the summary is marked complete, none of this runs at all — no new
  * lines are added and no existing ones are refreshed, even if RS rows keep
@@ -6353,23 +6353,11 @@ export async function getSheetSummaryEntries(
   const isComplete = !!summary?.completedAt;
 
   const allRows = await getRowsBySheetId(sheetId);
-  // Rows with real content — used for sort order and for deciding whether an
-  // existing line's row is still genuinely there, regardless of Travelled
-  // Via classification (that classification only ever gates new inserts).
+  // Rows with real content — used both for deciding which rows need a new
+  // line and for sort order / for deciding whether an existing line's row
+  // is still genuinely there.
   const contentRows = allRows.filter(r => (r.observation ?? "").trim());
   const contentRowById = new Map(contentRows.map(r => [r.id, r]));
-
-  const travelledViaRowIds = new Set<number>();
-  for (let i = 0; i < allRows.length; i++) {
-    const obs = (allRows[i].observation ?? "").toLowerCase();
-    if (obs.includes("continued via:")) {
-      travelledViaRowIds.add(allRows[i].id);
-      const next = allRows[i + 1];
-      if (next && /whereat$/i.test((next.observation ?? "").trim())) {
-        travelledViaRowIds.add(next.id);
-      }
-    }
-  }
 
   const existing = await db
     .select()
@@ -6380,9 +6368,7 @@ export async function getSheetSummaryEntries(
 
   if (!isComplete) {
     const existingRowIds = new Set(existing.map(e => e.rowId));
-    const missing = contentRows.filter(
-      r => !travelledViaRowIds.has(r.id) && !existingRowIds.has(r.id)
-    );
+    const missing = contentRows.filter(r => !existingRowIds.has(r.id));
     if (missing.length > 0) {
       await db.insert(sheetSummaryEntries).values(
         missing.map(r => {

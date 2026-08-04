@@ -1183,7 +1183,8 @@ export default function OperationDetail() {
               onClick={() => setCreateOpen(true)}
             >
               <Plus className="w-4 h-4" />
-              New Running Sheet
+              <span className="hidden sm:inline">New Running Sheet</span>
+              <span className="sm:hidden">Add</span>
             </Button>
           </div>
         </div>

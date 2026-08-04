@@ -168,7 +168,8 @@ export default function Home() {
               title={!isOnline ? "Cannot create operations while offline" : undefined}
             >
               <Plus className="w-4 h-4" />
-              New Operation
+              <span className="hidden sm:inline">New Operation</span>
+              <span className="sm:hidden">Add</span>
             </Button>
           </div>
         </div>

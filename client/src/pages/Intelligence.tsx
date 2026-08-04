@@ -33,19 +33,20 @@ import {
   Folder,
   FileText,
   LayoutGrid,
-  Route,
   Camera,
+  Flame,
 } from "lucide-react";
-import RSMappingEmbedded from "@/pages/RSMappingEmbedded";
 import { ViewToggle } from "@/components/ViewToggle";
 import { useViewMode } from "@/contexts/ViewModeContext";
 import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
 import { MergeEntitiesButton } from "@/components/MergeEntitiesButton";
+import { IndicesBadge } from "@/components/IndicesBadge";
+import IntelligenceHeatMap from "@/pages/IntelligenceHeatMap";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type EntityType = "person" | "vehicle" | "address" | "business" | "unknown";
-type TabView = "operations" | "targets" | "associates" | "vehicle" | "locations" | "all" | "rs-mapping";
+type TabView = "operations" | "targets" | "associates" | "vehicle" | "locations" | "all" | "heatmap";
 
 interface Occurrence {
   sheetId: number;
@@ -65,6 +66,7 @@ interface Entity {
   tgtAlias?: string | null;
   targetId?: number | null;
   lowConfidence?: boolean;
+  isIndicesOnly?: boolean;
   occurrences: Occurrence[];
 }
 
@@ -1021,7 +1023,7 @@ const TAB_OPTIONS: Array<{ value: TabView; label: string; icon: React.ReactNode 
   { value: "associates", label: "Associates", icon: <User className="w-3.5 h-3.5" /> },
   { value: "vehicle",    label: "Vehicles",   icon: <Car className="w-3.5 h-3.5" /> },
   { value: "locations",  label: "Locations",  icon: <MapPin className="w-3.5 h-3.5" /> },
-  { value: "rs-mapping", label: "RS Intel Map",  icon: <Route className="w-3.5 h-3.5" /> },
+  { value: "heatmap",    label: "Heat Map",    icon: <Flame className="w-3.5 h-3.5" /> },
 ];
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
@@ -1274,8 +1276,8 @@ export default function IntelligencePage() {
           </div>
         )}
 
-        {/* Search bar + sort control (shown for entity tabs, not operations) */}
-        {activeTab !== "operations" && (
+        {/* Search bar + sort control (shown for entity tabs, not operations/heatmap) */}
+        {activeTab !== "operations" && activeTab !== "heatmap" && (
           <div className="space-y-2 mb-5">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -1312,11 +1314,18 @@ export default function IntelligencePage() {
         )}
 
         {/* Loading */}
-        {isLoading && (
+        {isLoading && activeTab !== "heatmap" && (
           <div className="space-y-3">
             {[...Array(6)].map((_, i) => (
               <Skeleton key={i} className="h-14 w-full rounded-xl" />
             ))}
+          </div>
+        )}
+
+        {/* Heat Map tab content */}
+        {activeTab === "heatmap" && (
+          <div className="-mx-4 -mb-4 flex-1" style={{ height: "calc(100vh - 260px)" }}>
+            <IntelligenceHeatMap />
           </div>
         )}
 
@@ -1369,15 +1378,8 @@ export default function IntelligencePage() {
           </div>
         )}
 
-        {/* Intelligence Mapping tab content */}
-        {activeTab === "rs-mapping" && (
-          <div className="-mx-4 -mb-4 flex-1" style={{ height: "calc(100vh - 220px)" }}>
-            <RSMappingEmbedded />
-          </div>
-        )}
-
         {/* Entity type tab content */}
-        {!isLoading && activeTab !== "operations" && activeTab !== "rs-mapping" && (
+        {!isLoading && activeTab !== "operations" && activeTab !== "heatmap" && (
           <>
             {filteredByTab.length === 0 ? (
               <div className="text-center py-16 text-muted-foreground">
@@ -1423,11 +1425,14 @@ export default function IntelligencePage() {
                       </div>
                       <div className="flex-1">
                         <p className="font-mono text-sm font-semibold text-foreground line-clamp-2">{displayShortForm}</p>
-                        {entity.tgtAlias && (
-                          <span className="inline-flex items-center mt-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
-                            TGT: {entity.tgtAlias}
-                          </span>
-                        )}
+                        <div className="flex flex-wrap items-center gap-1 mt-1">
+                          {entity.tgtAlias && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                              TGT: {entity.tgtAlias}
+                            </span>
+                          )}
+                          {entity.isIndicesOnly && <IndicesBadge />}
+                        </div>
                       </div>
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-[10px] text-muted-foreground truncate">
@@ -1492,6 +1497,7 @@ export default function IntelligencePage() {
                                 ?
                               </span>
                             )}
+                            {entity.isIndicesOnly && <IndicesBadge />}
                           </div>
                         </div>
                         <div className="text-right shrink-0">

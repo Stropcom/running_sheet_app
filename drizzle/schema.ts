@@ -337,6 +337,31 @@ export type EntityDedupDecision = typeof entityDedupDecisions.$inferSelect;
 export type InsertEntityDedupDecision =
   typeof entityDedupDecisions.$inferInsert;
 
+// ─── Intelligence Geocode Cache ─────────────────────────────────────────────
+// Caches lat/lng for addresses extracted from observation text, keyed by the
+// same normalized label used to group/dedup intel entities elsewhere
+// (normalizeEntityLabel). Populated lazily by the Heat Map — geocoded once,
+// reused after, instead of re-geocoding the same address on every view.
+export const intelligenceGeocodeCache = mysqlTable(
+  "intelligence_geocode_cache",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    addressKey: varchar("addressKey", { length: 512 }).notNull(),
+    lat: double("lat").notNull(),
+    lng: double("lng").notNull(),
+    resolvedAt: timestamp("resolvedAt").defaultNow().notNull(),
+  },
+  table => ({
+    addressKeyIdx: uniqueIndex("intelligence_geocode_cache_key_idx").on(
+      table.addressKey
+    ),
+  })
+);
+export type IntelligenceGeocodeCache =
+  typeof intelligenceGeocodeCache.$inferSelect;
+export type InsertIntelligenceGeocodeCache =
+  typeof intelligenceGeocodeCache.$inferInsert;
+
 // ─── Targets ────────────────────────────────────────────────────────────────
 // One row per target in the global registry. Targets are independent of
 // operations — they are linked via the operation_target_links join table.
@@ -355,10 +380,37 @@ export const targets = mysqlTable("targets", {
   v2: text("v2"), // Vehicle 2 (short) (legacy — migrated into extraVehicles)
   // Dynamic extra vehicles beyond V1: JSON array of {full: string, short: string}
   extraVehicles: text("extraVehicles"),
-  // Numbered wild fields: JSON array of {label: string, value: string} e.g. [{label:"#1",value:"..."},{label:"#2",value:"..."}]
+  // Numbered wild fields: JSON array of {label: string, value: string} e.g. [{label:"#1",value:"..."},{label:"#2",value:"..."}] — deprecated, no longer editable, kept for legacy rows only.
   wildFields: text("wildFields"),
   dep: text("dep"), // Depart address/location
   arr: text("arr"), // Arrive address/location
+
+  // ── Structured input (controlled fields the app composes name/tgt/hbf/hb/v1f/v1
+  // from, instead of trusting free text) ──
+  firstNames: varchar("firstNames", { length: 255 }),
+  surname: varchar("surname", { length: 255 }), // stored uppercase
+  bornDate: date("bornDate", { mode: "string" }), // YYYY-MM-DD
+
+  // Primary/home address structured parts — compose into hbf/hb
+  addrUnitNo: varchar("addrUnitNo", { length: 32 }),
+  addrHouseNo: varchar("addrHouseNo", { length: 32 }),
+  addrStreetName: varchar("addrStreetName", { length: 255 }),
+  addrStreetType: varchar("addrStreetType", { length: 32 }),
+  addrSuburb: varchar("addrSuburb", { length: 255 }), // stored uppercase
+  addrState: varchar("addrState", { length: 3 }),
+
+  // Primary/V1 vehicle structured parts — compose into v1f/v1
+  vehRegistration: varchar("vehRegistration", { length: 32 }),
+  vehState: varchar("vehState", { length: 3 }),
+  vehColour: varchar("vehColour", { length: 64 }),
+  vehMake: varchar("vehMake", { length: 64 }),
+  vehModel: varchar("vehModel", { length: 64 }),
+  vehType: varchar("vehType", { length: 32 }), // Utility | Sedan | SUV | Truck | Motorbike — filter/search attribute only, not part of the composed v1f text
+
+  // Extra addresses beyond the primary home address: JSON array of
+  // {label?, unitNo, houseNo, streetName, streetType, suburb, state, full, short}
+  extraAddresses: text("extraAddresses"),
+
   createdBy: int("createdBy").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -369,6 +421,56 @@ export const targets = mysqlTable("targets", {
 
 export type Target = typeof targets.$inferSelect;
 export type InsertTarget = typeof targets.$inferInsert;
+
+// ─── Associates ─────────────────────────────────────────────────────────────
+// A person linked to a target as a known associate. Structured the same way
+// as a target (own name/address/vehicle, same composition conventions) since
+// officers go through the same controlled Name → Address → Vehicle process
+// to add one — but an associate always belongs to exactly one target (no
+// many-to-many relationship graph yet, see AssociationMap for the separate,
+// purely-inferred co-occurrence graph mined from observation text).
+
+export const associates = mysqlTable("associates", {
+  id: int("id").autoincrement().primaryKey(),
+  targetId: int("targetId").notNull(),
+
+  firstNames: varchar("firstNames", { length: 255 }),
+  surname: varchar("surname", { length: 255 }),
+  bornDate: date("bornDate", { mode: "string" }),
+  name: varchar("name", { length: 255 }).notNull(), // composed "Full Name, Born (SURNAME)"
+  tgt: text("tgt"), // composed short form — bracket content, e.g. "SURNAME"
+
+  addrUnitNo: varchar("addrUnitNo", { length: 32 }),
+  addrHouseNo: varchar("addrHouseNo", { length: 32 }),
+  addrStreetName: varchar("addrStreetName", { length: 255 }),
+  addrStreetType: varchar("addrStreetType", { length: 32 }),
+  addrSuburb: varchar("addrSuburb", { length: 255 }),
+  addrState: varchar("addrState", { length: 3 }),
+  hbf: text("hbf"), // composed Home Address Full
+  hb: text("hb"), // composed Home (short)
+
+  vehRegistration: varchar("vehRegistration", { length: 32 }),
+  vehState: varchar("vehState", { length: 3 }),
+  vehColour: varchar("vehColour", { length: 64 }),
+  vehMake: varchar("vehMake", { length: 64 }),
+  vehModel: varchar("vehModel", { length: 64 }),
+  vehType: varchar("vehType", { length: 32 }),
+  v1f: text("v1f"), // composed Vehicle 1 Full
+  v1: text("v1"), // composed Vehicle 1 (short)
+
+  // Same shapes as targets.extraVehicles / targets.extraAddresses
+  extraVehicles: text("extraVehicles"),
+  extraAddresses: text("extraAddresses"),
+
+  createdBy: int("createdBy").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  deletedAt: bigint("deletedAt", { mode: "number" }),
+  deletedByCIN: varchar("deletedByCIN", { length: 64 }),
+});
+
+export type Associate = typeof associates.$inferSelect;
+export type InsertAssociate = typeof associates.$inferInsert;
 
 // ─── Target Field History ────────────────────────────────────────────────────
 // When adding a new target whose name matches an existing one, the officer

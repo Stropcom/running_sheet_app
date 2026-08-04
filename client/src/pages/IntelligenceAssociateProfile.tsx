@@ -8,6 +8,7 @@ import { EntityPhotosSection } from "@/components/EntityPhotosSection";
 import { buildPhotoGridHtml, buildEntityListWithPhotosHtml, type RowAttachmentLike } from "@/lib/attachmentBanner";
 import { IntelEntityWithPhotos, type IntelAssocEntity } from "@/components/IntelEntityChip";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
+import { IndicesBadge } from "@/components/IndicesBadge";
 
 type ProfilePhoto = RowAttachmentLike & { id: number; url: string };
 
@@ -17,6 +18,15 @@ interface IntelAssociateProfile {
   linkedTargets: Array<{ targetId: number; name: string; operationId: number; operationName: string }>;
   linkedSheets: Array<{ id: number; title: string; operationId: number; operationName: string }>;
   assocLocations: IntelProfileEntity[]; assocVehicles: IntelProfileEntity[];
+  isIndicesOnly: boolean;
+  registryAssociateId?: number | null;
+  firstNames?: string | null;
+  surname?: string | null;
+  bornDate?: string | null;
+  hbf?: string | null;
+  hb?: string | null;
+  v1f?: string | null;
+  v1?: string | null;
 }
 
 function SectionHeading({ label, count }: { label: string; count: number }) {
@@ -37,7 +47,7 @@ function buildAssociateProfileHtml(profile: IntelAssociateProfile, photos: Profi
 <style>* { box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; } body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.6; color:${GREY_TEXT}; background:#fff; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 .cover-header { background:${BLUE_DARK} !important; color:#fff !important; padding:28px 32px 22px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 .brand-label { font-size:10px; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; color:${BLUE_MID} !important; margin-bottom:14px; }
-.entity-name { font-size:22px; font-weight:700; } .gen-time { font-size:9px; opacity:0.6; margin-top:12px; }
+.entity-name { font-size:22px; font-weight:700; } .indices-tag { display:inline-block; margin-left:10px; padding:2px 8px; border-radius:999px; font-size:10px; font-weight:700; letter-spacing:0.05em; vertical-align:middle; background:rgba(129,140,248,0.25) !important; border:1px solid rgba(199,210,254,0.5); color:#e0e7ff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; } .gen-time { font-size:9px; opacity:0.6; margin-top:12px; }
 .stats-row { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; padding:16px 32px; background:${BLUE_LIGHT} !important; border-bottom:2px solid ${BLUE_MID}; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 .stat-box { text-align:center; } .stat-num { font-size:20px; font-weight:700; color:${BLUE_DARK} !important; } .stat-label { font-size:9px; text-transform:uppercase; letter-spacing:0.08em; color:#64748b; }
 .content { padding:20px 32px; } .section-title { font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${BLUE_DARK} !important; padding:6px 10px; background:${BLUE_LIGHT} !important; border-left:3px solid ${BLUE_MID}; margin-bottom:10px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
@@ -47,7 +57,7 @@ function buildAssociateProfileHtml(profile: IntelAssociateProfile, photos: Profi
 </style></head><body>
 <div class="cover-header">
   <div class="brand-label">RunLog Intelligence Profile — Associate</div>
-  <div class="entity-name">${esc(profile.label)}</div>
+  <div class="entity-name">${esc(profile.label)}${profile.isIndicesOnly ? `<span class="indices-tag">INDICES</span>` : ""}</div>
   <div class="gen-time">Generated: ${generatedAt}</div>
 </div>
 <div class="stats-row">
@@ -57,6 +67,10 @@ function buildAssociateProfileHtml(profile: IntelAssociateProfile, photos: Profi
 </div>
 <div class="content">
   ${photos.length ? `<div style="margin-bottom:16px"><div class="section-title">Photos (${photos.length})</div>${buildPhotoGridHtml(photos)}</div>` : ""}
+  ${profile.registryAssociateId ? `<div style="margin-bottom:16px"><div class="section-title">Registered Details</div>
+    ${profile.hbf ? `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}"><strong>Home Address</strong> — ${esc(profile.hbf)}</p>` : ""}
+    ${profile.v1f ? `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}"><strong>Vehicle</strong> — ${esc(profile.v1f)}</p>` : ""}
+  </div>` : ""}
   ${profile.linkedTargets.length ? `<div style="margin-bottom:16px"><div class="section-title">Linked Targets</div>${profile.linkedTargets.map(t => `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}"><strong>${esc(t.name)}</strong> <span style="color:#64748b">— ${esc(t.operationName)}</span></p>`).join("")}</div>` : ""}
   ${profile.linkedSheets.length ? `<div style="margin-bottom:16px"><div class="section-title">Running Sheets</div>${profile.linkedSheets.map(s => `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}">${esc(s.title)} <span style="color:#64748b">— ${esc(s.operationName)}</span></p>`).join("")}</div>` : ""}
   ${profile.assocVehicles.length || profile.assocLocations.length ? `<div style="margin-bottom:16px"><div class="section-title">Associations</div>
@@ -105,9 +119,14 @@ export default function IntelligenceAssociateProfile() {
               <div className="bg-gradient-to-r from-blue-900 to-blue-800 px-6 py-5 text-white">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 border border-white/30 mb-3">
-                      <User className="w-3 h-3" /> Associate
-                    </span>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 border border-white/30">
+                        <User className="w-3 h-3" /> Associate
+                      </span>
+                      {profile.isIndicesOnly && (
+                        <IndicesBadge variant="on-dark" size="header" />
+                      )}
+                    </div>
                     <h1 className="text-2xl font-bold tracking-tight">{profile.label}</h1>
                   </div>
                   <Button variant="outline" size="sm" onClick={exportPdf} className="bg-white/10 border-white/30 text-white hover:bg-white/20 shrink-0">
@@ -130,6 +149,26 @@ export default function IntelligenceAssociateProfile() {
             </div>
 
             <EntityPhotosSection category="associate" entityLabel={profile.label} />
+
+            {profile.registryAssociateId && (profile.hbf || profile.v1f) && (
+              <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
+                <SectionHeading label="Registered Details" count={[profile.hbf, profile.v1f].filter(Boolean).length} />
+                <div className="space-y-2">
+                  {profile.hbf && (
+                    <div className="px-3 py-2 rounded-lg border border-border/60 bg-muted/20">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide mb-0.5">Home Address</p>
+                      <p className="text-sm text-foreground">{profile.hbf}</p>
+                    </div>
+                  )}
+                  {profile.v1f && (
+                    <div className="px-3 py-2 rounded-lg border border-border/60 bg-muted/20">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide mb-0.5">Vehicle</p>
+                      <p className="text-sm text-foreground">{profile.v1f}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {profile.linkedTargets.length > 0 && (
               <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">

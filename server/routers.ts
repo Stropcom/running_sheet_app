@@ -81,6 +81,7 @@ import {
   deleteCtoRosterTeam,
   reorderCtoRosterTeams,
   upsertRosterShiftNotification,
+  getWeeklyTaskingReport,
 } from "./ctoRoster";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { sdk } from "./_core/sdk";
@@ -139,6 +140,7 @@ import {
   setSheetTarget,
   deepSearchOperations,
   getAllIntelligenceEntities,
+  getIntelligenceHeatMapLocations,
   extractEntitiesFromText,
   checkPossibleDuplicates,
   markEntitiesNotDuplicate,
@@ -179,6 +181,12 @@ import {
   getTargetShortcutsForSheet,
   getAllTargetsForRegistry,
   createRegistryTarget,
+  getAssociatesForTarget,
+  getAssociatesForTargetWithIndices,
+  getAssociateById,
+  createAssociate,
+  updateAssociate,
+  softDeleteAssociate,
   linkTargetToOperation,
   unlinkTargetFromOperation,
   ensureTargetFullyLinked,
@@ -216,10 +224,13 @@ import {
   reinstateCustomMarker,
   hardDeleteCustomMarker,
   backfillGoogleAddressesInObservations,
+  getOrphanedAttachments,
+  purgeOrphanedAttachments,
   getRsMappingWaypoints,
   upsertRsMappingWaypoint,
   getIncompleteRunningSheets,
   getOutstandingTodosByUser,
+  getWeeklyActivityReport,
   getSidebarOrder,
   setSidebarOrder,
   DEFAULT_SIDEBAR_ORDER,
@@ -327,6 +338,30 @@ async function guardActiveSheet(sheetId: number) {
     throw new TRPCError({ code: "NOT_FOUND", message: "Sheet not found." });
   await guardActiveOperation(sheet.operationId);
 }
+
+// Structured input fields shared by target.create/update and
+// target.registry.create/update (and the associate.* router) — the raw
+// controlled parts a Target/Associate's name/tgt, hbf/hb, v1f/v1 are
+// composed from client-side, kept here so re-editing later starts from the
+// same structured values instead of just the composed strings.
+const structuredTargetFieldsSchema = {
+  firstNames: z.string().optional().nullable(),
+  surname: z.string().optional().nullable(),
+  bornDate: z.string().optional().nullable(), // ISO yyyy-mm-dd
+  addrUnitNo: z.string().optional().nullable(),
+  addrHouseNo: z.string().optional().nullable(),
+  addrStreetName: z.string().optional().nullable(),
+  addrStreetType: z.string().optional().nullable(),
+  addrSuburb: z.string().optional().nullable(),
+  addrState: z.string().optional().nullable(),
+  vehRegistration: z.string().optional().nullable(),
+  vehState: z.string().optional().nullable(),
+  vehColour: z.string().optional().nullable(),
+  vehMake: z.string().optional().nullable(),
+  vehModel: z.string().optional().nullable(),
+  vehType: z.string().optional().nullable(),
+  extraAddresses: z.string().optional().nullable(), // JSON array of {label?,unitNo,houseNo,streetName,streetType,suburb,state,full,short}
+};
 
 // ─── App Router ───────────────────────────────────────────────────────────────
 
@@ -690,7 +725,6 @@ export const appRouter = router({
           operationId: z.number(),
           title: z.string().min(1),
           targetId: z.number().optional().nullable(),
-          targetName: z.string().optional().nullable(),
           sheetCins: z
             .array(
               z.object({
@@ -705,23 +739,16 @@ export const appRouter = router({
       )
       .mutation(async ({ input, ctx }) => {
         await guardActiveOperation(input.operationId);
-        // Resolve target: create new if name provided, or use existing targetId
-        let resolvedTargetId = input.targetId ?? null;
-        if (!resolvedTargetId && input.targetName?.trim()) {
-          const newTarget = await createRegistryTarget({
-            name: input.targetName.trim(),
-            createdBy: ctx.user.id,
-          });
-          await linkTargetToOperation(newTarget.id, input.operationId);
-          resolvedTargetId = newTarget.id;
-        } else if (resolvedTargetId) {
-          // Existing target selected — ensure operation link exists
-          await linkTargetToOperation(resolvedTargetId, input.operationId);
+        // A target is always created (with full structured detail) via the
+        // Add Target dialog before this runs — here we only ever link an
+        // already-real target, never create one from a bare name.
+        if (input.targetId) {
+          await linkTargetToOperation(input.targetId, input.operationId);
         }
         const id = await createRunningSheet({
           operationId: input.operationId,
           title: input.title,
-          targetId: resolvedTargetId,
+          targetId: input.targetId ?? null,
           targetName: null,
           sheetCins: input.sheetCins ? JSON.stringify(input.sheetCins) : null,
           createdBy: ctx.user.id,
@@ -743,7 +770,6 @@ export const appRouter = router({
         z.object({
           id: z.number(),
           title: z.string().min(1).optional(),
-          targetName: z.string().optional().nullable(),
           sheetCins: z
             .array(
               z.object({
@@ -758,7 +784,7 @@ export const appRouter = router({
       )
       .mutation(async ({ input, ctx }) => {
         await guardActiveSheet(input.id);
-        const { id, sheetCins, targetName, ...rest } = input;
+        const { id, sheetCins, ...rest } = input;
         const data: Record<string, unknown> = { ...rest };
         // Validate roster CINs against registered users
         if (sheetCins && sheetCins.length > 0) {
@@ -777,21 +803,6 @@ export const appRouter = router({
           }
         }
         if (sheetCins !== undefined) data.sheetCins = JSON.stringify(sheetCins);
-        // If a new target name is provided, create a real registry target and link it to the sheet's operation
-        if (targetName?.trim()) {
-          const sheet = await getRunningSheetById(id);
-          if (sheet?.operationId) {
-            const newTarget = await createRegistryTarget({
-              name: targetName.trim(),
-              createdBy: ctx.user.id,
-            });
-            await linkTargetToOperation(newTarget.id, sheet.operationId);
-            data.targetId = newTarget.id;
-          }
-          data.targetName = null;
-        } else if (targetName === null) {
-          data.targetName = null;
-        }
         await updateRunningSheet(id, data);
         await createAuditLog({
           sheetId: id,
@@ -2277,17 +2288,18 @@ export const appRouter = router({
         z.object({
           operationId: z.number(),
           name: z.string().min(1).max(255),
-          tgt: z.string().optional(),
-          hb: z.string().optional(),
-          v1: z.string().optional(),
-          v2: z.string().optional(),
-          hbf: z.string().optional(),
-          v1f: z.string().optional(),
-          v2f: z.string().optional(),
-          dep: z.string().optional(),
-          arr: z.string().optional(),
-          extraVehicles: z.string().optional(), // JSON array of {full,short}
-          wildFields: z.string().optional(), // JSON array of {label,value}
+          tgt: z.string().optional().nullable(),
+          hb: z.string().optional().nullable(),
+          v1: z.string().optional().nullable(),
+          v2: z.string().optional().nullable(),
+          hbf: z.string().optional().nullable(),
+          v1f: z.string().optional().nullable(),
+          v2f: z.string().optional().nullable(),
+          dep: z.string().optional().nullable(),
+          arr: z.string().optional().nullable(),
+          extraVehicles: z.string().optional().nullable(), // JSON array of {full,short,...structured}
+          wildFields: z.string().optional().nullable(), // JSON array of {label,value}
+          ...structuredTargetFieldsSchema,
         })
       )
       .mutation(async ({ ctx, input }) => {
@@ -2300,17 +2312,18 @@ export const appRouter = router({
         z.object({
           id: z.number(),
           name: z.string().min(1).max(255).optional(),
-          tgt: z.string().optional(),
-          hb: z.string().optional(),
-          v1: z.string().optional(),
-          v2: z.string().optional(),
-          hbf: z.string().optional(),
-          v1f: z.string().optional(),
-          v2f: z.string().optional(),
-          dep: z.string().optional(),
-          arr: z.string().optional(),
+          tgt: z.string().optional().nullable(),
+          hb: z.string().optional().nullable(),
+          v1: z.string().optional().nullable(),
+          v2: z.string().optional().nullable(),
+          hbf: z.string().optional().nullable(),
+          v1f: z.string().optional().nullable(),
+          v2f: z.string().optional().nullable(),
+          dep: z.string().optional().nullable(),
+          arr: z.string().optional().nullable(),
           extraVehicles: z.string().optional().nullable(),
           wildFields: z.string().optional().nullable(),
+          ...structuredTargetFieldsSchema,
         })
       )
       .mutation(async ({ input }) => {
@@ -2375,6 +2388,7 @@ export const appRouter = router({
             extraVehicles: z.string().optional().nullable(),
             wildFields: z.string().optional().nullable(),
             linkToOperationId: z.number().optional().nullable(),
+            ...structuredTargetFieldsSchema,
           })
         )
         .mutation(async ({ input, ctx }) => {
@@ -2406,6 +2420,7 @@ export const appRouter = router({
             arr: z.string().optional().nullable(),
             extraVehicles: z.string().optional().nullable(),
             wildFields: z.string().optional().nullable(),
+            ...structuredTargetFieldsSchema,
           })
         )
         .mutation(async ({ input }) => {
@@ -2509,6 +2524,75 @@ export const appRouter = router({
         }),
     }),
   }),
+
+  // ─── Associates ──────────────────────────────────────────────────────────────
+  // A person linked to a target as a known associate — structured the same
+  // way as a target (own name/address/vehicle), via the same controlled
+  // Name → Address → Vehicle process.
+
+  associate: router({
+    /** List associates for a target */
+    listForTarget: protectedProcedure
+      .input(z.object({ targetId: z.number() }))
+      .query(async ({ input }) => {
+        return getAssociatesForTargetWithIndices(input.targetId);
+      }),
+
+    /** Get a single associate by id */
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        return (await getAssociateById(input.id)) ?? null;
+      }),
+
+    /** Create a new associate of a target */
+    create: protectedProcedure
+      .input(
+        z.object({
+          targetId: z.number(),
+          name: z.string().min(1).max(255),
+          tgt: z.string().optional().nullable(),
+          hbf: z.string().optional().nullable(),
+          hb: z.string().optional().nullable(),
+          v1f: z.string().optional().nullable(),
+          v1: z.string().optional().nullable(),
+          extraVehicles: z.string().optional().nullable(),
+          ...structuredTargetFieldsSchema,
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        return createAssociate({ ...input, createdBy: ctx.user.id });
+      }),
+
+    /** Update an associate */
+    update: protectedProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          name: z.string().min(1).max(255).optional(),
+          tgt: z.string().optional().nullable(),
+          hbf: z.string().optional().nullable(),
+          hb: z.string().optional().nullable(),
+          v1f: z.string().optional().nullable(),
+          v1: z.string().optional().nullable(),
+          extraVehicles: z.string().optional().nullable(),
+          ...structuredTargetFieldsSchema,
+        })
+      )
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        return updateAssociate(id, data);
+      }),
+
+    /** Delete (soft) an associate */
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await softDeleteAssociate(input.id, ctx.user.cin ?? "Unknown");
+        return { success: true };
+      }),
+  }),
+
   // ─── Shortcuts ───────────────────────────────────────────────────────────────
 
   shortcuts: router({
@@ -2599,6 +2683,29 @@ export const appRouter = router({
     getEntities: protectedProcedure.query(async () => {
       return getAllIntelligenceEntities();
     }),
+
+    /** Heat Map: location visit counts + coordinates for one Operation,
+     * optionally narrowed to one Target, over a When window. */
+    getHeatMapLocations: protectedProcedure
+      .input(
+        z.object({
+          operationId: z.number(),
+          targetId: z.number().nullable().optional(),
+          when: z.discriminatedUnion("mode", [
+            z.object({ mode: z.literal("sheet"), sheetId: z.number() }),
+            z.object({ mode: z.literal("last7") }),
+            z.object({ mode: z.literal("last30") }),
+            z.object({
+              mode: z.literal("custom"),
+              startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+              endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+            }),
+          ]),
+        })
+      )
+      .query(async ({ input }) => {
+        return getIntelligenceHeatMapLocations(input);
+      }),
 
     /** Association graph — nodes and weighted edges from entity co-occurrence */
     getAssociationGraph: protectedProcedure
@@ -4359,6 +4466,7 @@ export const appRouter = router({
               index: z.number(),
               colour: z.string().optional(),
               label: z.string().optional(), // single-char label override (A-Z)
+              size: z.enum(["tiny", "small", "mid"]).optional(), // Static Maps marker size — omit for the default full-size pin
             })
           ),
           center: z.object({ lat: z.number(), lng: z.number() }).optional(),
@@ -4409,9 +4517,10 @@ export const appRouter = router({
         // exactly one character; otherwise the marker is drawn unlabelled.
         for (const wp of input.waypoints) {
           const colour = wp.colour ? wp.colour.replace("#", "0x") : "0x6366f1";
+          const sizePart = wp.size ? `size:${wp.size}|` : "";
           const labelPart =
             wp.label && wp.label.length === 1 ? `label:${wp.label}|` : "";
-          const markerSpec = `color:${colour}|${labelPart}${wp.lat},${wp.lng}`;
+          const markerSpec = `${sizePart}color:${colour}|${labelPart}${wp.lat},${wp.lng}`;
           url.searchParams.append("markers", markerSpec);
         }
 
@@ -4494,6 +4603,20 @@ export const appRouter = router({
     outstandingTodos: protectedProcedure.query(async () => {
       return getOutstandingTodosByUser();
     }),
+
+    /** Weekly Activity Report — what the unit did in a given Monday-start week. */
+    weeklyActivity: protectedProcedure
+      .input(z.object({ weekStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }))
+      .query(async ({ input }) => {
+        return getWeeklyActivityReport(input.weekStart);
+      }),
+
+    /** Weekly Tasking Report — what the unit can do in a given Monday-start week. */
+    weeklyTasking: protectedProcedure
+      .input(z.object({ weekStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }))
+      .query(async ({ input }) => {
+        return getWeeklyTaskingReport(input.weekStart);
+      }),
   }),
 
   // ─── Operation Manager ─────────────────────────────────────────────────────
@@ -5835,13 +5958,19 @@ export const appRouter = router({
           const roadName = boldMatches.find(m => m.length > 2 && !isJunk(m));
           if (roadName) return expandRoadAbbreviation(roadName);
 
+          // The final step is often a pure arrival note with no road name at
+          // all, e.g. "Destination will be on the left" — that's navigation
+          // narration, not a street, and must never be extracted as one.
+          const plain = stripHtml(htmlInstructions);
+          if (/\bwill be on the (left|right)\b/i.test(plain)) return null;
+
           // Fallback: plain text, take everything after the last preposition.
           // Still subject to the same junk filter — otherwise a step whose only
           // bold segment was a filtered-out route/highway number (e.g. "Merge
           // onto National Highway 94") falls through here and slips the numbered
-          // highway back in via the unfiltered plain text.
-          const plain = stripHtml(htmlInstructions);
-          const ontoMatch = plain.match(/(?:onto|on|toward)\s+(.+)$/i);
+          // highway back in via the unfiltered plain text. \b word boundaries
+          // stop "on" from matching mid-word (e.g. the "on" ending "Destination").
+          const ontoMatch = plain.match(/\b(?:onto|on|toward)\s+(.+)$/i);
           if (ontoMatch) {
             const candidate = ontoMatch[1].replace(/\s*\/.*$/, "").trim();
             if (candidate.length > 2 && !isJunk(candidate))
@@ -5996,6 +6125,20 @@ export const appRouter = router({
     backfillGoogleAddresses: adminProcedure.mutation(async () => {
       const result = await backfillGoogleAddressesInObservations();
       return result;
+    }),
+
+    /** Photos whose owning operation is gone (soft-deleted or hard-deleted)
+     * but that never got cleaned up themselves — see getOrphanedAttachments. */
+    getOrphanedAttachments: adminProcedure.query(async () => {
+      return getOrphanedAttachments();
+    }),
+
+    /** Permanently purges every currently-orphaned attachment. Bypasses the
+     * normal 7-day Recycle Bin grace period since these were already
+     * deleted along with their operation, just never actually removed. */
+    purgeOrphanedAttachments: adminProcedure.mutation(async () => {
+      const count = await purgeOrphanedAttachments();
+      return { purged: count };
     }),
   }),
 });

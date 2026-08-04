@@ -103,7 +103,7 @@ function getSectionKey(location: string): string {
   if (location.startsWith("/intelligence")) return "intelligence";
   if (location.startsWith("/target-registry")) return "targetRegistry";
   if (location.startsWith("/operation-manager")) return "operationManager";
-  if (location.startsWith("/court") || location === "/audit" || location === "/draft" || location === "/operation-management" || location === "/recycle-bin" || location === "/help" || location === "/reports") return "administration";
+  if (location.startsWith("/court") || location === "/audit" || location === "/draft" || location === "/operation-management" || location === "/recycle-bin" || location === "/help" || location.startsWith("/reports")) return "administration";
   if (location === "/profile" || location === "/admin") return "userManagement";
   return "operations";
 }

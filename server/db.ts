@@ -16,6 +16,8 @@ import { drizzle } from "drizzle-orm/mysql2";
 import { createPool as createPromisePool } from "mysql2/promise";
 import { vaultEncrypt, vaultDecrypt } from "./wipcVault";
 import { cosineSimilarity } from "./faceRecognition";
+import { makeRequest, type GeocodingResult } from "./_core/map";
+import { formatIntelAddress, formatIntelVehicle } from "@shared/addressFormat";
 import {
   auditLogs,
   certifications,
@@ -43,6 +45,8 @@ import {
   InsertTarget,
   targetFieldHistory,
   InsertTargetFieldHistory,
+  associates,
+  InsertAssociate,
   users,
   governanceRecords,
   GovernanceRecord,
@@ -61,6 +65,7 @@ import {
   WipcOfficerProfile,
   userLocations,
   customMapMarkers,
+  intelligenceGeocodeCache,
   CustomMapMarker,
   InsertCustomMapMarker,
   rsMappingWaypoints,
@@ -85,6 +90,14 @@ let _db: ReturnType<typeof drizzle> | null = null;
 let _pool: Awaited<ReturnType<typeof createPromisePool>> | null = null;
 let _lastConnectAttempt = 0;
 const RECONNECT_COOLDOWN_MS = 5000; // don't retry more than once per 5s
+// Caches the in-flight connection attempt so concurrent getDb() callers (e.g.
+// several queries fired via Promise.all on a cold start, before any pool
+// exists yet) await the same attempt instead of each independently hitting
+// the cooldown check below and silently getting null — which previously
+// meant only the first of several concurrent queries actually ran, and the
+// rest quietly returned empty results with no error.
+let _connectingPromise: Promise<ReturnType<typeof drizzle> | null> | null =
+  null;
 
 // Managed hosts (e.g. TiDB Cloud) require TLS; a local dev database normally
 // isn't configured for it. Only force SSL for non-local hosts so local
@@ -150,13 +163,17 @@ export async function getDb() {
     }
   }
   if (!_db && process.env.DATABASE_URL) {
+    if (_connectingPromise) return _connectingPromise;
     const now = Date.now();
     if (now - _lastConnectAttempt < RECONNECT_COOLDOWN_MS) {
       // Too soon to retry — return null to avoid hammering the DB
       return null;
     }
     _lastConnectAttempt = now;
-    _db = await createDbPool(3);
+    _connectingPromise = createDbPool(3).finally(() => {
+      _connectingPromise = null;
+    });
+    _db = await _connectingPromise;
   }
   return _db;
 }
@@ -354,10 +371,21 @@ export async function updateOperation(
 export async function softDeleteOperation(id: number, cin: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  const now = Date.now();
   await db
     .update(operations)
-    .set({ deletedAt: Date.now(), deletedByCIN: cin })
+    .set({ deletedAt: now, deletedByCIN: cin })
     .where(eq(operations.id, id));
+  // Every attachment always has an operationId, so this one update covers
+  // both row-captured and manually-uploaded photos — they now go to the
+  // Recycle Bin (and auto-purge after 7 days) alongside their operation
+  // instead of quietly surviving it.
+  await db
+    .update(rowAttachments)
+    .set({ deletedAt: now, deletedByCIN: cin })
+    .where(
+      and(eq(rowAttachments.operationId, id), isNull(rowAttachments.deletedAt))
+    );
 }
 
 export async function deleteOperation(id: number) {
@@ -434,6 +462,17 @@ export async function deleteOperation(id: number) {
     .where(eq(operationTargetLinks.operationId, id));
   // Delete custom map markers linked to this operation (hard delete — operation is gone)
   await db.delete(customMapMarkers).where(eq(customMapMarkers.operationId, id));
+  // Every attachment always has an operationId (row-captured or manually
+  // uploaded), so this is the actual ownership boundary for photos — sweep
+  // up anything deleteRunningSheet's row-scoped pass above didn't reach
+  // (manual uploads, or a row that was already gone).
+  const remainingAttachments = await db
+    .select({ id: rowAttachments.id })
+    .from(rowAttachments)
+    .where(eq(rowAttachments.operationId, id));
+  for (const a of remainingAttachments) {
+    await deleteRowAttachment(a.id);
+  }
   await db.delete(operations).where(eq(operations.id, id));
 }
 
@@ -534,10 +573,32 @@ export async function updateRunningSheet(
 export async function softDeleteSheet(id: number, cin: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  const now = Date.now();
   await db
     .update(runningSheets)
-    .set({ deletedAt: Date.now(), deletedByCIN: cin })
+    .set({ deletedAt: now, deletedByCIN: cin })
     .where(eq(runningSheets.id, id));
+  // Photos captured against one of this sheet's rows go to the Recycle Bin
+  // with it. Manually-uploaded photos live at the operation level and are
+  // untouched here — they only go when the whole operation does.
+  const rows = await db
+    .select({ id: sheetRows.id })
+    .from(sheetRows)
+    .where(eq(sheetRows.sheetId, id));
+  if (rows.length > 0) {
+    await db
+      .update(rowAttachments)
+      .set({ deletedAt: now, deletedByCIN: cin })
+      .where(
+        and(
+          inArray(
+            rowAttachments.rowId,
+            rows.map(r => r.id)
+          ),
+          isNull(rowAttachments.deletedAt)
+        )
+      );
+  }
 }
 
 export async function deleteRunningSheet(id: number) {
@@ -551,6 +612,16 @@ export async function deleteRunningSheet(id: number) {
     .where(eq(sheetRows.sheetId, id));
   if (rows.length > 0) {
     const rowIds = rows.map(r => r.id);
+    // Photos captured against one of this sheet's rows — permanently gone
+    // with it. Manually-uploaded (rowId null) photos live at the operation
+    // level and are handled by deleteOperation instead.
+    const rowLinkedAttachments = await db
+      .select({ id: rowAttachments.id })
+      .from(rowAttachments)
+      .where(inArray(rowAttachments.rowId, rowIds));
+    for (const a of rowLinkedAttachments) {
+      await deleteRowAttachment(a.id);
+    }
     // Delete certifications and row_members for these rows
     await db
       .delete(certifications)
@@ -1881,7 +1952,23 @@ export async function getTargetsByOperation(operationId: number) {
       dep: targets.dep,
       arr: targets.arr,
       extraVehicles: targets.extraVehicles,
+      extraAddresses: targets.extraAddresses,
       wildFields: targets.wildFields,
+      firstNames: targets.firstNames,
+      surname: targets.surname,
+      bornDate: targets.bornDate,
+      addrUnitNo: targets.addrUnitNo,
+      addrHouseNo: targets.addrHouseNo,
+      addrStreetName: targets.addrStreetName,
+      addrStreetType: targets.addrStreetType,
+      addrSuburb: targets.addrSuburb,
+      addrState: targets.addrState,
+      vehRegistration: targets.vehRegistration,
+      vehState: targets.vehState,
+      vehColour: targets.vehColour,
+      vehMake: targets.vehMake,
+      vehModel: targets.vehModel,
+      vehType: targets.vehType,
       operationId: targets.operationId,
       createdBy: targets.createdBy,
       createdAt: targets.createdAt,
@@ -1950,6 +2037,22 @@ export async function updateTarget(
       | "arr"
       | "extraVehicles"
       | "wildFields"
+      | "firstNames"
+      | "surname"
+      | "bornDate"
+      | "addrUnitNo"
+      | "addrHouseNo"
+      | "addrStreetName"
+      | "addrStreetType"
+      | "addrSuburb"
+      | "addrState"
+      | "vehRegistration"
+      | "vehState"
+      | "vehColour"
+      | "vehMake"
+      | "vehModel"
+      | "vehType"
+      | "extraAddresses"
     >
   >
 ) {
@@ -2138,7 +2241,114 @@ export async function deleteTarget(id: number) {
   await db
     .delete(operationTargetLinks)
     .where(eq(operationTargetLinks.targetId, id));
+  // Drop the "tagged to this target" links — the underlying photos stay
+  // (they still belong to their own operation), just untagged from a
+  // target that no longer exists.
+  await db
+    .delete(attachmentEntityLinks)
+    .where(
+      and(
+        eq(attachmentEntityLinks.category, "target"),
+        eq(attachmentEntityLinks.targetId, id)
+      )
+    );
   await db.delete(targets).where(eq(targets.id, id));
+}
+
+// ─── Associates ─────────────────────────────────────────────────────────────
+// A person linked to a target as a known associate — structured the same
+// way as a target (own name/address/vehicle), always belongs to exactly one
+// target. See drizzle/schema.ts for the full field list.
+
+export async function getAssociatesForTarget(targetId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(associates)
+    .where(and(eq(associates.targetId, targetId), isNull(associates.deletedAt)))
+    .orderBy(associates.name);
+}
+
+/** Same as getAssociatesForTarget, plus each row's "Indices" (not yet
+ * corroborated by a real running-sheet observation) status — for display in
+ * the Target Registry's Associates list. */
+export async function getAssociatesForTargetWithIndices(targetId: number) {
+  const rows = await getAssociatesForTarget(targetId);
+  const allEntities = await getAllIntelligenceEntities();
+  const indicesByAssociateId = new Map(
+    allEntities
+      .filter(e => e.isAssociate && e.associateId != null)
+      .map(e => [e.associateId as number, e.isIndicesOnly ?? false])
+  );
+  return rows.map(a => ({
+    ...a,
+    isIndicesOnly: indicesByAssociateId.get(a.id) ?? false,
+  }));
+}
+
+export async function getAssociateById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const [result] = await db
+    .select()
+    .from(associates)
+    .where(eq(associates.id, id))
+    .limit(1);
+  return result;
+}
+
+export async function createAssociate(data: InsertAssociate) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const [result] = await db.insert(associates).values(data);
+  return { id: (result as any).insertId as number };
+}
+
+export async function updateAssociate(
+  id: number,
+  data: Partial<
+    Pick<
+      InsertAssociate,
+      | "name"
+      | "tgt"
+      | "firstNames"
+      | "surname"
+      | "bornDate"
+      | "hbf"
+      | "hb"
+      | "addrUnitNo"
+      | "addrHouseNo"
+      | "addrStreetName"
+      | "addrStreetType"
+      | "addrSuburb"
+      | "addrState"
+      | "v1f"
+      | "v1"
+      | "vehRegistration"
+      | "vehState"
+      | "vehColour"
+      | "vehMake"
+      | "vehModel"
+      | "vehType"
+      | "extraAddresses"
+      | "extraVehicles"
+    >
+  >
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(associates).set(data).where(eq(associates.id, id));
+  return { id };
+}
+
+export async function softDeleteAssociate(id: number, cin: string) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db
+    .update(associates)
+    .set({ deletedAt: Date.now(), deletedByCIN: cin })
+    .where(eq(associates.id, id));
 }
 
 export async function setSheetTarget(sheetId: number, targetId: number | null) {
@@ -2197,9 +2407,17 @@ export async function getAllTargetsForRegistry() {
       .push({ operationId: l.operationId, operationName: l.operationName });
   }
 
+  const allEntities = await getAllIntelligenceEntities();
+  const indicesByTargetId = new Map(
+    allEntities
+      .filter(e => e.isTarget && e.targetId != null)
+      .map(e => [e.targetId as number, e.isIndicesOnly ?? false])
+  );
+
   return allTargets.map(t => ({
     ...t,
     linkedOperations: linkMap.get(t.id) ?? [],
+    isIndicesOnly: indicesByTargetId.get(t.id) ?? false,
   }));
 }
 
@@ -2708,11 +2926,13 @@ export function extractEntitiesFromText(text: string): Array<{
     const VEHICLE_BODY =
       /\b(vehicle|car|truck|van|ute|sedan|hatchback|suv|wagon|coupe|convertible|roadster|pickup|4wd|4x4|cab|dual cab|single cab|tray|flatbed|panel van|people mover|minivan|bus|minibus|motorcycle|motorbike|bike|scooter|quad|atv|boat|trailer|caravan|motorhome|rv|bearing|registration|rego|reg|plate|plated)\b/i;
     // A shortForm that looks like an all-caps person name (letters/spaces/
-    // hyphens/apostrophes only, no digits) should never be classified as a
-    // vehicle just because "vehicle" or a make appears somewhere in the same
-    // clause — see the guard on the VEHICLE_BODY/MAKES branch below.
+    // hyphens/apostrophes/periods only, no digits) should never be classified
+    // as a vehicle just because "vehicle" or a make appears somewhere in the
+    // same clause — see the guard on the VEHICLE_BODY/MAKES branch below.
+    // Periods are allowed for the "P.HILL" initial-plus-surname convention
+    // officers use to disambiguate family members sharing a surname.
     const shortFormLooksLikeName =
-      /^[A-Z][A-Z\s'-]{1,40}$/.test(shortForm) && !/\d/.test(shortForm);
+      /^[A-Z][A-Z\s'.-]{1,40}$/.test(shortForm) && !/\d/.test(shortForm);
 
     // ── Confidence scoring ────────────────────────────────────────────────────
     let confidence: "high" | "medium" | "low" = "low";
@@ -2761,9 +2981,11 @@ export function extractEntitiesFromText(text: string): Array<{
       type = "vehicle";
       confidence = "medium";
     }
-    // Person: shortForm is all-caps word(s) with no digits, no street number pattern
+    // Person: shortForm is all-caps word(s) with no digits, no street number
+    // pattern — periods allowed for "P.HILL" initial-plus-surname short forms
+    // (see shortFormLooksLikeName above).
     else if (
-      /^[A-Z][A-Z\s'-]{1,40}$/.test(shortForm) &&
+      /^[A-Z][A-Z\s'.-]{1,40}$/.test(shortForm) &&
       !/\d/.test(shortForm) &&
       !STREET_TYPES.test(shortForm)
     ) {
@@ -3060,6 +3282,15 @@ export function extractEntitiesFromText(text: string): Array<{
         "these",
         "those",
       ]);
+      // "P.HILL"-style short forms (one or more initials + period + surname,
+      // used to disambiguate family members sharing a surname) never appear
+      // verbatim in the full name ("Peter HILL" has no "P.HILL" substring),
+      // so recognise them separately: the candidate's last word must match
+      // the surname and its first word must start with the first initial.
+      const initialSurnameMatch = shortForm.match(
+        /^((?:[A-Z]\.)+)([A-Z]{2,})$/
+      );
+
       const words = fullDescription.trim().split(/\s+/);
       // Try last 4, 3, 2 words in order — use the longest that contains shortForm
       // AND where every word looks like a name word (not a common English word)
@@ -3072,10 +3303,16 @@ export function extractEntitiesFromText(text: string): Array<{
         // None of the candidate words should be a common non-name word
         const candidateWords = candidate.toLowerCase().split(/\s+/);
         const hasNonNameWord = candidateWords.some(w => NON_NAME_WORDS.has(w));
-        // shortForm must be contained within the candidate (case-insensitive)
-        const shortInCandidate = candidate
-          .toUpperCase()
-          .includes(shortForm.toUpperCase());
+        // shortForm must be contained within the candidate (case-insensitive),
+        // or — for "P.HILL" style short forms — the candidate's surname and
+        // first initial must match.
+        const candidateWordsUpper = candidate.toUpperCase().split(/\s+/);
+        const shortInCandidate =
+          candidate.toUpperCase().includes(shortForm.toUpperCase()) ||
+          (initialSurnameMatch !== null &&
+            candidateWordsUpper[candidateWordsUpper.length - 1] ===
+              initialSurnameMatch[2] &&
+            candidateWordsUpper[0].startsWith(initialSurnameMatch[1][0]));
         if (looksLikeName && !hasNonNameWord && shortInCandidate) {
           bestName = candidate;
           break;
@@ -3109,6 +3346,22 @@ export interface IntelligenceEntity {
   lowConfidence?: boolean;
   /** Labels of entities merged into this one via a confirmed duplicate decision. */
   aliasLabels?: string[];
+  /** True when this entity comes from a formal registry associate record (not just observation text) */
+  isAssociate?: boolean;
+  /** For associate entities: the numeric DB id of the associate record */
+  associateId?: number | null;
+  /** For associate entities: the parent target this associate belongs to */
+  associateOfTargetId?: number | null;
+  associateOfTargetName?: string | null;
+  /**
+   * True when every occurrence of this entity is synthetic (rowId 0) — i.e.
+   * it exists only because it was typed into the Target Registry (or another
+   * non-running-sheet source), and has never actually been mentioned in a
+   * real observation row yet. Drives the "Indices" badge: the moment a real
+   * (rowId > 0) occurrence appears, this flips to false permanently, since
+   * the information is now corroborated by a running sheet.
+   */
+  isIndicesOnly?: boolean;
   occurrences: Array<{
     sheetId: number;
     sheetTitle: string;
@@ -3135,6 +3388,23 @@ export interface IntelligenceEntity {
 export function vehicleRegoKey(text: string): string {
   const m = text.match(/\b\d[A-Za-z]{2,3}\d{3}\b/);
   return (m ? m[0] : text).toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Extracts the trailing "(<short form>)" bracket content from a composed
+ * HBF-style address string (e.g. "6 Shearman Street, ATTADALE WA (6
+ * Shearman Street)" -> "6 shearman street") — the same short text an
+ * observation row's own "(ShortForm)" bracket would contain for the same
+ * address. Registry address fields must key on this, not the full
+ * street/suburb/state description, or a registry-sourced address entity can
+ * never match (and therefore never get corroborated by) a text-mined
+ * mention of the same real-world address. Falls back to the whole
+ * (normalized) string when there's no trailing bracket, e.g. legacy
+ * free-text data entered before the structured address fields existed.
+ */
+export function addressBracketKey(text: string): string {
+  const m = text.match(/\(([^()]{1,120})\)\s*$/);
+  return (m ? m[1] : text).toLowerCase().replace(/\s+/g, " ").trim();
 }
 
 /** Same "type::normalizedShortForm" key scheme getAllIntelligenceEntities uses internally. */
@@ -3251,6 +3521,668 @@ export async function getSheetEntityChips(
   return Array.from(byKey.values())
     .sort((a, b) => TYPE_ORDER[a.type] - TYPE_ORDER[b.type])
     .slice(0, 24);
+}
+
+// ─── Intelligence Heat Map ──────────────────────────────────────────────────
+// Aggregates address/business entities extracted from a scoped set of running
+// sheet rows (one Operation, optionally one Target, and a time window) into
+// per-location visit counts + coordinates for the Heat Map view.
+
+/** Perth-anchored (+08:00, no DST) YYYY-MM-DD for "today". */
+function perthTodayISO(): string {
+  return toPerthDateISO(new Date());
+}
+
+/** YYYY-MM-DD (Perth-anchored) for a JS Date — used to fall back to the
+ * running sheet's creation date when a row has no explicit rowDate. */
+function toPerthDateISO(d: Date): string {
+  return new Date(d.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/** Add (or subtract) days to a YYYY-MM-DD string, Perth-anchored — same
+ * anchoring approach as getRowsBySheetId's day-offset math above. */
+function addDaysISO(dateISO: string, days: number): string {
+  const d = new Date(dateISO + "T00:00:00+08:00");
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+// A row only marks a genuine sighting of the target at a location if it
+// actually narrates presence/activity there — arriving, departing, parking,
+// being observed doing something. Officers phrase this many different ways
+// ("travelled on X and parked in the vicinity of Y", "reversed from the
+// driveway onto X and continued via:", "travelled through the car park and
+// continued via:"), so this is deliberately a loose, wide keyword net —
+// every verb stem wildcarded to catch arrive/arrived/arriving-style tense
+// variants — rather than a small set of exact phrases. False positives (an
+// address mentioned in a row that isn't really a visit) are a lesser
+// evidentiary risk than false negatives (a real visit silently dropped from
+// the count). "continued via" is included even though it reads as a
+// departure, not an arrival — an address mentioned in the same row as
+// "continued via" is the point they just left, i.e. still part of the same
+// visit, not a new one.
+const OBSERVATION_SIGNAL_RE =
+  /\b(arriv\w*|depart\w*|left|enter\w*|exit\w*|park\w*|observ\w*|seen|saw|see|met|meet\w*|attend\w*|pull\w*\s+(?:into|up)|stopp?\w*|wait\w*|remain\w*|stationary|revers\w*\s+from\s+the\s+driveway|continu\w*\s+via|vicinity\s+of|driveway\s+of|driv(?:e|es|ing|ove)\s+(?:into|through)|travell?\w*\s+through)\b/i;
+
+/** Rows that only mark surveillance team activity or a travelled-via street
+ * list, not a sighting of the target — same classification the Court
+ * Statement generator already uses (server/routers.ts statement.previewData)
+ * to exclude these from CIN eligibility, reused here for the same reason:
+ * they aren't real observations of the target at a location. */
+function isNonObservationRow(
+  observation: string,
+  previousObservation: string | null
+): boolean {
+  const obs = observation.trim();
+  if (/^surveillance commenced/i.test(obs) || /^surveillance ceased/i.test(obs))
+    return true;
+  const endsInWhereat = /whereat[;:]?\s*$/i.test(obs);
+  if (
+    endsInWhereat &&
+    previousObservation &&
+    /continued via[;:]/i.test(previousObservation)
+  )
+    return true;
+  return false;
+}
+
+export type IntelligenceHeatMapWhen =
+  | { mode: "sheet"; sheetId: number }
+  | { mode: "last7" }
+  | { mode: "last30" }
+  | { mode: "custom"; startDate: string; endDate: string }; // YYYY-MM-DD, inclusive
+
+export interface IntelligenceHeatMapLocation {
+  label: string;
+  count: number;
+  lat: number;
+  lng: number;
+}
+
+export async function getIntelligenceHeatMapLocations(params: {
+  operationId: number;
+  targetId?: number | null;
+  when: IntelligenceHeatMapWhen;
+}): Promise<IntelligenceHeatMapLocation[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  // ── Resolve the scoped set of sheets (Operation, optionally + Target) ──────
+  let sheetIds: number[];
+  const sheetCreatedAt = new Map<number, Date>();
+
+  if (params.when.mode === "sheet") {
+    const sheet = await db
+      .select({ id: runningSheets.id, createdAt: runningSheets.createdAt })
+      .from(runningSheets)
+      .where(
+        and(
+          eq(runningSheets.id, params.when.sheetId),
+          eq(runningSheets.operationId, params.operationId),
+          isNull(runningSheets.deletedAt)
+        )
+      )
+      .limit(1);
+    if (!sheet.length) return [];
+    sheetIds = [sheet[0].id];
+    sheetCreatedAt.set(sheet[0].id, sheet[0].createdAt);
+  } else {
+    const conditions = [
+      eq(runningSheets.operationId, params.operationId),
+      isNull(runningSheets.deletedAt),
+    ];
+    if (params.targetId)
+      conditions.push(eq(runningSheets.targetId, params.targetId));
+    const sheets = await db
+      .select({ id: runningSheets.id, createdAt: runningSheets.createdAt })
+      .from(runningSheets)
+      .where(and(...conditions));
+    if (!sheets.length) return [];
+    sheetIds = sheets.map(s => s.id);
+    for (const s of sheets) sheetCreatedAt.set(s.id, s.createdAt);
+  }
+  const sheetIdSet = new Set(sheetIds);
+
+  // Full per-sheet row order (observation text + a stable sort key) — needed
+  // both for the Surveillance/Travelled Via "previous row" check and for
+  // collapsing consecutive same-address mentions into one visit below.
+  const rows = await db
+    .select({
+      id: sheetRows.id,
+      sheetId: sheetRows.sheetId,
+      rowDate: sheetRows.rowDate,
+      dayOffset: sheetRows.dayOffset,
+      observation: sheetRows.observation,
+      timeMinutes: sheetRows.timeMinutes,
+      rowNumber: sheetRows.rowNumber,
+    })
+    .from(sheetRows)
+    .where(inArray(sheetRows.sheetId, sheetIds))
+    .orderBy(sheetRows.sheetId, sheetRows.timeMinutes, sheetRows.rowNumber);
+  const rowById = new Map(rows.map(r => [r.id, r]));
+
+  const rowsBySheetOrdered = new Map<number, typeof rows>();
+  for (const row of rows) {
+    if (!rowsBySheetOrdered.has(row.sheetId))
+      rowsBySheetOrdered.set(row.sheetId, []);
+    rowsBySheetOrdered.get(row.sheetId)!.push(row);
+  }
+  const previousObservationByRowId = new Map<number, string | null>();
+  for (const sheetRowList of Array.from(rowsBySheetOrdered.values())) {
+    for (let i = 0; i < sheetRowList.length; i++) {
+      previousObservationByRowId.set(
+        sheetRowList[i].id,
+        i > 0 ? (sheetRowList[i - 1].observation ?? null) : null
+      );
+    }
+  }
+  const rowOrderIndex = new Map<number, number>();
+  for (const sheetRowList of Array.from(rowsBySheetOrdered.values())) {
+    sheetRowList.forEach((r, i) => rowOrderIndex.set(r.id, i));
+  }
+
+  // ── Resolve the date window ("sheet" mode takes every row in that sheet
+  // as-is; the other three modes resolve a concrete range). Date priority
+  // matches getRowsBySheetId above: explicit rowDate first, else the sheet's
+  // creation date shifted by dayOffset. (Unlike getRowsBySheetId, this skips
+  // the third-tier timeMinutes-rollover inference — that's a per-sheet
+  // sequential scan meant for single-sheet rendering, disproportionately
+  // expensive to replicate across every sheet in scope here, and only
+  // matters for legacy rows predating rowDate.)
+  let startISO = "";
+  let endISO = "";
+  if (params.when.mode !== "sheet") {
+    if (params.when.mode === "custom") {
+      startISO = params.when.startDate;
+      endISO = params.when.endDate;
+    } else {
+      endISO = perthTodayISO();
+      startISO = addDaysISO(endISO, params.when.mode === "last7" ? -6 : -29);
+    }
+  }
+
+  // ── Reuse the same entity extraction/dedup pipeline as the Locations tab
+  // (bracket-introduction + bare-re-mention two-pass recognition, plus
+  // confirmed entity-alias merges) instead of a standalone per-row regex
+  // pass — an address is often bracket-introduced once and then referenced
+  // in plain prose on later rows ("returned to 54 Terrace Road"), which a
+  // bracket-only pass undercounts to a single visit.
+  const allEntities = await getAllIntelligenceEntities();
+
+  // A "mention" of an address isn't the same as a "visit" — a target's home
+  // address sitting on their target card, a Surveillance Commenced/Ceased
+  // marker, a Travelled Via street list, or an address mentioned without any
+  // narration of the target's presence there all inflate the raw mention
+  // count without representing a real sighting. Collect only the qualifying
+  // mentions first, keyed by sheet + row order, then collapse below.
+  type QualifyingMention = {
+    entityKey: string;
+    label: string;
+    sheetId: number;
+    order: number;
+  };
+  const qualifying: QualifyingMention[] = [];
+
+  for (const entity of allEntities) {
+    if (entity.type !== "address" && entity.type !== "business") continue;
+    for (const occ of entity.occurrences) {
+      // rowId 0 marks a synthetic occurrence built from the target's own
+      // registry card (e.g. Home Base), not an actual running sheet row —
+      // never a real sighting.
+      if (occ.rowId === 0) continue;
+      if (!sheetIdSet.has(occ.sheetId)) continue;
+
+      const row = rowById.get(occ.rowId);
+      if (!row?.observation) continue;
+      if (
+        isNonObservationRow(
+          row.observation,
+          previousObservationByRowId.get(occ.rowId) ?? null
+        )
+      )
+        continue;
+      if (!OBSERVATION_SIGNAL_RE.test(row.observation)) continue;
+
+      if (params.when.mode !== "sheet") {
+        const resolvedDate =
+          row.rowDate ??
+          addDaysISO(
+            toPerthDateISO(sheetCreatedAt.get(occ.sheetId) ?? new Date()),
+            row.dayOffset
+          );
+        if (resolvedDate < startISO || resolvedDate > endISO) continue;
+      }
+
+      qualifying.push({
+        entityKey: normalizeEntityLabel(entity.shortForm),
+        label: entity.shortForm,
+        sheetId: occ.sheetId,
+        order: rowOrderIndex.get(occ.rowId) ?? 0,
+      });
+    }
+  }
+
+  // ── Collapse consecutive mentions of the same address into one visit ──────
+  // "Arrived at X" followed by "departed X" (or "…and continued via:") is one
+  // visit, not two — a new visit only counts once a *different* address
+  // appears in between, or the sheet changes. Walk each sheet's qualifying
+  // mentions in row order and count address transitions, not raw mentions.
+  const grouped = new Map<string, { label: string; count: number }>();
+  const qualifyingBySheet = new Map<number, QualifyingMention[]>();
+  for (const m of qualifying) {
+    if (!qualifyingBySheet.has(m.sheetId)) qualifyingBySheet.set(m.sheetId, []);
+    qualifyingBySheet.get(m.sheetId)!.push(m);
+  }
+  for (const mentions of Array.from(qualifyingBySheet.values())) {
+    mentions.sort((a, b) => a.order - b.order);
+    let lastEntityKey: string | null = null;
+    for (const m of mentions) {
+      if (m.entityKey === lastEntityKey) {
+        lastEntityKey = m.entityKey;
+        continue; // still the same visit
+      }
+      lastEntityKey = m.entityKey;
+      const existing = grouped.get(m.entityKey);
+      if (existing) existing.count++;
+      else grouped.set(m.entityKey, { label: m.label, count: 1 });
+    }
+  }
+
+  const results = await Promise.all(
+    Array.from(grouped.entries()).map(async ([key, { label, count }]) => {
+      const coords = await resolveLatLng(key, label);
+      if (!coords) return null;
+      return { label, count, lat: coords.lat, lng: coords.lng };
+    })
+  );
+
+  return results
+    .filter((r): r is IntelligenceHeatMapLocation => r !== null)
+    .sort((a, b) => b.count - a.count);
+}
+
+/** Cache-first geocoding for intel addresses — geocodes once via Google's
+ * Geocoding API and persists the result, so re-opening the Heat Map doesn't
+ * re-geocode the same addresses every time. */
+export async function resolveLatLng(
+  addressKey: string,
+  rawAddress: string
+): Promise<{ lat: number; lng: number } | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const cached = await db
+    .select({
+      lat: intelligenceGeocodeCache.lat,
+      lng: intelligenceGeocodeCache.lng,
+    })
+    .from(intelligenceGeocodeCache)
+    .where(eq(intelligenceGeocodeCache.addressKey, addressKey))
+    .limit(1);
+  if (cached.length) return cached[0];
+
+  try {
+    const result = await makeRequest<GeocodingResult>(
+      "/maps/api/geocode/json",
+      { address: rawAddress + ", Western Australia, Australia", region: "au" }
+    );
+    if (result.status !== "OK" || !result.results.length) return null;
+    const loc = result.results[0].geometry.location;
+    await db
+      .insert(intelligenceGeocodeCache)
+      .values({ addressKey, lat: loc.lat, lng: loc.lng })
+      .onDuplicateKeyUpdate({
+        set: { lat: loc.lat, lng: loc.lng, resolvedAt: new Date() },
+      });
+    return { lat: loc.lat, lng: loc.lng };
+  } catch {
+    return null;
+  }
+}
+
+// ─── Weekly Activity Report ─────────────────────────────────────────────────
+// "What the unit did this week" — operations coverage, newly-gathered
+// intelligence, target visit activity, and governance completed, all for a
+// given Monday-start week. Reuses the same entity pipeline and observed-
+// visit logic as the Heat Map (see getIntelligenceHeatMapLocations above)
+// rather than re-deriving anything.
+
+export interface WeeklyActivityOperation {
+  operationId: number;
+  operationName: string;
+  sheetsCount: number;
+  rowsCount: number;
+  officers: string[];
+}
+
+export interface WeeklyActivityNewIntel {
+  operationId: number;
+  operationName: string;
+  newImages: number;
+  newLocations: string[];
+  newVehicles: string[];
+}
+
+export interface WeeklyActivityTarget {
+  targetId: number;
+  targetName: string;
+  operationName: string;
+  locations: { label: string; count: number }[];
+}
+
+export interface WeeklyActivityReport {
+  weekStart: string;
+  weekEnd: string;
+  operations: WeeklyActivityOperation[];
+  newIntelligence: WeeklyActivityNewIntel[];
+  targetActivity: WeeklyActivityTarget[];
+  governanceCompleted: number;
+}
+
+/** weekStart is a Monday, YYYY-MM-DD (Perth-anchored). */
+export async function getWeeklyActivityReport(
+  weekStart: string
+): Promise<WeeklyActivityReport> {
+  const db = await getDb();
+  const weekEnd = addDaysISO(weekStart, 6);
+  const empty: WeeklyActivityReport = {
+    weekStart,
+    weekEnd,
+    operations: [],
+    newIntelligence: [],
+    targetActivity: [],
+    governanceCompleted: 0,
+  };
+  if (!db) return empty;
+
+  const sheets = await db
+    .select()
+    .from(runningSheets)
+    .where(isNull(runningSheets.deletedAt));
+  if (!sheets.length) return empty;
+  const sheetById = new Map(sheets.map(s => [s.id, s]));
+  const opIds = Array.from(new Set(sheets.map(s => s.operationId)));
+
+  const [ops, targetRows, rows, govRecords] = await Promise.all([
+    db.select().from(operations).where(inArray(operations.id, opIds)),
+    db.select().from(targets).where(inArray(targets.operationId, opIds)),
+    db
+      .select()
+      .from(sheetRows)
+      .where(
+        inArray(
+          sheetRows.sheetId,
+          sheets.map(s => s.id)
+        )
+      ),
+    getGovernanceRecordsBySheetIds(sheets.map(s => s.id)),
+  ]);
+  const opById = new Map(ops.map(o => [o.id, o]));
+  const targetById = new Map(targetRows.map(t => [t.id, t]));
+
+  function resolveRowDate(row: (typeof rows)[number]): string {
+    if (row.rowDate) return row.rowDate;
+    const sheet = sheetById.get(row.sheetId);
+    return addDaysISO(
+      toPerthDateISO(sheet?.createdAt ?? new Date()),
+      row.dayOffset
+    );
+  }
+  const rowById = new Map(rows.map(r => [r.id, r]));
+  const rowsInWeek = rows.filter(r => {
+    const d = resolveRowDate(r);
+    return d >= weekStart && d <= weekEnd;
+  });
+
+  // ── Operations & coverage ──────────────────────────────────────────────
+  const opStats = new Map<
+    number,
+    { sheetIds: Set<number>; rowsCount: number; officers: Set<string> }
+  >();
+  for (const r of rowsInWeek) {
+    const sheet = sheetById.get(r.sheetId);
+    if (!sheet) continue;
+    if (!opStats.has(sheet.operationId))
+      opStats.set(sheet.operationId, {
+        sheetIds: new Set(),
+        rowsCount: 0,
+        officers: new Set(),
+      });
+    const stat = opStats.get(sheet.operationId)!;
+    stat.sheetIds.add(sheet.id);
+    stat.rowsCount++;
+  }
+  for (const stat of Array.from(opStats.values())) {
+    for (const sid of Array.from(stat.sheetIds)) {
+      const sheet = sheetById.get(sid);
+      if (!sheet?.sheetCins) continue;
+      try {
+        const cins: { cin: string }[] = JSON.parse(sheet.sheetCins);
+        for (const c of cins) if (c.cin) stat.officers.add(c.cin);
+      } catch {
+        // malformed roster JSON — skip officers for this sheet
+      }
+    }
+  }
+  const operationsSummary: WeeklyActivityOperation[] = Array.from(
+    opStats.entries()
+  )
+    .map(([opId, stat]) => ({
+      operationId: opId,
+      operationName: opById.get(opId)?.name ?? "—",
+      sheetsCount: stat.sheetIds.size,
+      rowsCount: stat.rowsCount,
+      officers: Array.from(stat.officers).sort(),
+    }))
+    .sort((a, b) => a.operationName.localeCompare(b.operationName));
+
+  // ── New intelligence — images uploaded this week, plus locations/vehicles
+  // whose *first-ever* occurrence (all time, not just this week) falls
+  // inside the week, i.e. genuinely new discoveries rather than repeat
+  // mentions of something already known ──────────────────────────────────
+  const attachments = await db
+    .select({
+      id: rowAttachments.id,
+      operationId: rowAttachments.operationId,
+      createdAt: rowAttachments.createdAt,
+    })
+    .from(rowAttachments)
+    .where(
+      and(
+        inArray(rowAttachments.operationId, opIds),
+        isNull(rowAttachments.deletedAt)
+      )
+    );
+  const newImagesByOp = new Map<number, number>();
+  for (const a of attachments) {
+    const d = toPerthDateISO(a.createdAt);
+    if (d < weekStart || d > weekEnd) continue;
+    newImagesByOp.set(
+      a.operationId,
+      (newImagesByOp.get(a.operationId) ?? 0) + 1
+    );
+  }
+
+  const allEntities = await getAllIntelligenceEntities();
+  const newLocationsByOp = new Map<number, Set<string>>();
+  const newVehiclesByOp = new Map<number, Set<string>>();
+  for (const entity of allEntities) {
+    if (
+      entity.type !== "address" &&
+      entity.type !== "business" &&
+      entity.type !== "vehicle"
+    )
+      continue;
+    let earliestDate: string | null = null;
+    const opsSeenThisWeek = new Set<number>();
+    for (const occ of entity.occurrences) {
+      if (occ.rowId === 0) continue; // target-card entry, not a real sighting
+      const row = rowById.get(occ.rowId);
+      const d = row ? resolveRowDate(row) : null;
+      if (!d) continue;
+      if (earliestDate === null || d < earliestDate) earliestDate = d;
+      if (d >= weekStart && d <= weekEnd) opsSeenThisWeek.add(occ.operationId);
+    }
+    if (
+      earliestDate === null ||
+      earliestDate < weekStart ||
+      earliestDate > weekEnd
+    )
+      continue; // not newly discovered this week
+    const targetMap =
+      entity.type === "vehicle" ? newVehiclesByOp : newLocationsByOp;
+    for (const opId of Array.from(opsSeenThisWeek)) {
+      if (!targetMap.has(opId)) targetMap.set(opId, new Set());
+      targetMap.get(opId)!.add(entity.shortForm);
+    }
+  }
+
+  const intelOpIds = new Set([
+    ...Array.from(newImagesByOp.keys()),
+    ...Array.from(newLocationsByOp.keys()),
+    ...Array.from(newVehiclesByOp.keys()),
+  ]);
+  const newIntelligence: WeeklyActivityNewIntel[] = Array.from(intelOpIds)
+    .map(opId => ({
+      operationId: opId,
+      operationName: opById.get(opId)?.name ?? "—",
+      newImages: newImagesByOp.get(opId) ?? 0,
+      newLocations: Array.from(newLocationsByOp.get(opId) ?? []).sort(),
+      newVehicles: Array.from(newVehiclesByOp.get(opId) ?? []).sort(),
+    }))
+    .sort((a, b) => a.operationName.localeCompare(b.operationName));
+
+  // ── Target visit activity — same qualifying-mention + session-collapse
+  // rules as the Heat Map (skip target-card entries, Surveillance
+  // Commenced/Ceased and Travelled Via rows, require an observation-signal
+  // keyword, collapse consecutive same-address mentions into one visit) —
+  // grouped by each sheet's assigned target rather than geocoded. ─────────
+  const previousObservationByRowId = new Map<number, string | null>();
+  const rowOrderIndex = new Map<number, number>();
+  {
+    const bySheet = new Map<number, typeof rows>();
+    for (const r of rows) {
+      if (!bySheet.has(r.sheetId)) bySheet.set(r.sheetId, []);
+      bySheet.get(r.sheetId)!.push(r);
+    }
+    for (const list of Array.from(bySheet.values())) {
+      list.sort(
+        (a, b) =>
+          (a.timeMinutes ?? 0) - (b.timeMinutes ?? 0) ||
+          a.rowNumber - b.rowNumber
+      );
+      list.forEach((r, i) => {
+        previousObservationByRowId.set(
+          r.id,
+          i > 0 ? (list[i - 1].observation ?? null) : null
+        );
+        rowOrderIndex.set(r.id, i);
+      });
+    }
+  }
+
+  type QualifyingMention = {
+    entityKey: string;
+    label: string;
+    targetId: number;
+    order: number;
+  };
+  const qualifying: QualifyingMention[] = [];
+  for (const entity of allEntities) {
+    if (entity.type !== "address" && entity.type !== "business") continue;
+    for (const occ of entity.occurrences) {
+      if (occ.rowId === 0) continue;
+      const row = rowById.get(occ.rowId);
+      if (!row?.observation) continue;
+      const d = resolveRowDate(row);
+      if (d < weekStart || d > weekEnd) continue;
+      const sheet = sheetById.get(row.sheetId);
+      if (!sheet?.targetId) continue; // no target assigned — not attributable
+      if (
+        isNonObservationRow(
+          row.observation,
+          previousObservationByRowId.get(occ.rowId) ?? null
+        )
+      )
+        continue;
+      if (!OBSERVATION_SIGNAL_RE.test(row.observation)) continue;
+      qualifying.push({
+        entityKey: normalizeEntityLabel(entity.shortForm),
+        label: entity.shortForm,
+        targetId: sheet.targetId,
+        order: rowOrderIndex.get(occ.rowId) ?? 0,
+      });
+    }
+  }
+  const visitCounts = new Map<
+    number,
+    Map<string, { label: string; count: number }>
+  >();
+  const qualifyingByTarget = new Map<number, QualifyingMention[]>();
+  for (const m of qualifying) {
+    if (!qualifyingByTarget.has(m.targetId))
+      qualifyingByTarget.set(m.targetId, []);
+    qualifyingByTarget.get(m.targetId)!.push(m);
+  }
+  for (const [targetId, mentions] of Array.from(qualifyingByTarget.entries())) {
+    mentions.sort((a, b) => a.order - b.order);
+    let lastEntityKey: string | null = null;
+    const grouped = new Map<string, { label: string; count: number }>();
+    for (const m of mentions) {
+      if (m.entityKey === lastEntityKey) continue;
+      lastEntityKey = m.entityKey;
+      const existing = grouped.get(m.entityKey);
+      if (existing) existing.count++;
+      else grouped.set(m.entityKey, { label: m.label, count: 1 });
+    }
+    visitCounts.set(targetId, grouped);
+  }
+  const targetActivity: WeeklyActivityTarget[] = Array.from(
+    visitCounts.entries()
+  )
+    .map(([targetId, locMap]) => {
+      const target = targetById.get(targetId);
+      return {
+        targetId,
+        targetName: target?.name ?? "—",
+        operationName: opById.get(target?.operationId ?? -1)?.name ?? "—",
+        locations: Array.from(locMap.values()).sort(
+          (a, b) => b.count - a.count
+        ),
+      };
+    })
+    .sort((a, b) => a.targetName.localeCompare(b.targetName));
+
+  // ── Governance completed — sheets whose record hit 100% and were last
+  // touched within the week. There's no per-checkbox completion timestamp,
+  // only the record's own updatedAt, so this is an approximation: a sheet
+  // completed earlier and merely re-saved this week would also count. ────
+  const govFields = [
+    "isurv",
+    "sentToIO",
+    "savedAsWord",
+    "savedAsPdf",
+    "uploadedToPromis",
+    "linked",
+    "savedInOpFolder",
+    "imageryTaken",
+    "coverPage",
+  ] as const;
+  let governanceCompleted = 0;
+  for (const g of govRecords) {
+    const d = toPerthDateISO(g.updatedAt);
+    if (d < weekStart || d > weekEnd) continue;
+    if (govFields.every(f => g[f])) governanceCompleted++;
+  }
+
+  return {
+    weekStart,
+    weekEnd,
+    operations: operationsSummary,
+    newIntelligence,
+    targetActivity,
+    governanceCompleted,
+  };
 }
 
 export async function getAllIntelligenceEntities(): Promise<
@@ -3401,6 +4333,11 @@ export async function getAllIntelligenceEntities(): Promise<
       tgtAliasToFullName.set(t.tgt.trim().toUpperCase(), t.targetName);
     }
   }
+  // Same idea for registry associates: maps their bracket surname (e.g.
+  // "P.HILL") to the associate's own entity key, so a bare mention of that
+  // bracket elsewhere in observation text redirects into this associate's
+  // entity instead of spawning a lookalike duplicate.
+  const associateAliasToKey = new Map<string, string>();
 
   const entityMap = new Map<string, IntelligenceEntity>();
 
@@ -3494,11 +4431,16 @@ export async function getAllIntelligenceEntities(): Promise<
       }
       if (!shortForm) continue;
       // Normalise whitespace so minor spacing differences don't create duplicate keys.
-      // Vehicles key on registration alone (see vehicleRegoKey above).
+      // Vehicles key on registration alone (see vehicleRegoKey above); addresses
+      // key on the HBF's own trailing bracket short form (see addressBracketKey
+      // above) so a registry HBF and a text-mined mention of the same address
+      // collapse into one entity instead of two.
       const normKey =
         field.type === "vehicle"
           ? vehicleRegoKey(shortForm)
-          : shortForm.toLowerCase().replace(/\s+/g, " ").trim();
+          : field.type === "address"
+            ? addressBracketKey(shortForm)
+            : shortForm.toLowerCase().replace(/\s+/g, " ").trim();
       const key = `${field.type}::${normKey}`;
       if (!entityMap.has(key)) {
         entityMap.set(key, { shortForm, type: field.type, occurrences: [] });
@@ -3536,6 +4478,191 @@ export async function getAllIntelligenceEntities(): Promise<
           });
         }
         void occKey; // suppress unused variable warning
+      }
+    }
+  }
+
+  // ── 2b. Add registry associates as person entities (isAssociate = true) ────
+  // Mirrors the target-card block above: an associate recorded on a target in
+  // the Target Registry is a confirmed intelligence entity in its own right —
+  // it must show up in the Associates tab (and its address/vehicle in
+  // Locations/Vehicles) even if it has never been mentioned in observation
+  // text yet, same as a target card.
+  const targetRowsByTargetId = new Map<number, typeof targetRows>();
+  for (const t of targetRows) {
+    if (!targetRowsByTargetId.has(t.targetId))
+      targetRowsByTargetId.set(t.targetId, []);
+    targetRowsByTargetId.get(t.targetId)!.push(t);
+  }
+
+  const associateRows = await db
+    .select({
+      id: associates.id,
+      targetId: associates.targetId,
+      name: associates.name,
+      tgt: associates.tgt,
+      hbf: associates.hbf,
+      hb: associates.hb,
+      v1f: associates.v1f,
+      v1: associates.v1,
+      extraVehicles: associates.extraVehicles,
+      extraAddresses: associates.extraAddresses,
+    })
+    .from(associates)
+    .where(isNull(associates.deletedAt));
+
+  for (const a of associateRows) {
+    const parentRows = targetRowsByTargetId.get(a.targetId) ?? [];
+    const parentName = parentRows[0]?.targetName ?? null;
+    const assocKey = `associate::${a.id}`;
+
+    if (a.tgt && a.tgt.trim()) {
+      associateAliasToKey.set(a.tgt.trim().toUpperCase(), assocKey);
+    }
+
+    if (!entityMap.has(assocKey)) {
+      entityMap.set(assocKey, {
+        shortForm: a.name,
+        type: "person",
+        isAssociate: true,
+        associateId: a.id,
+        associateOfTargetId: a.targetId,
+        associateOfTargetName: parentName,
+        occurrences: [],
+      });
+    }
+
+    // Occurrences piggyback on the parent target's linked sheets (or a
+    // "(no sheet linked)" placeholder), same pattern as the target card.
+    for (const t of parentRows) {
+      const linkedSheets = targetSheetMap.get(t.targetId) ?? [];
+      const sheetEntries =
+        linkedSheets.length > 0
+          ? linkedSheets
+          : [{ sheetId: 0, sheetTitle: "(no sheet linked)" }];
+      for (const sheet of sheetEntries) {
+        entityMap.get(assocKey)!.occurrences.push({
+          sheetId: sheet.sheetId,
+          sheetTitle: sheet.sheetTitle,
+          operationId: t.operationId ?? 0,
+          operationName: t.operationName ?? "(Registry)",
+          rowId: 0,
+          observationSnippet: `Associate card — ${a.name} (associate of ${parentName ?? "target"})`,
+          timeMinutes: null,
+          fullDescription: `Associate: ${a.name}${a.tgt ? `, TGT: ${a.tgt}` : ""} (of target: ${parentName ?? "unknown"}, operation: ${t.operationName ?? "Registry"})`,
+        });
+      }
+    }
+
+    // Address/vehicle fields, same field-registration logic as target cards.
+    const assocLocationFields: Array<{
+      label: string;
+      value: string | null;
+      type: IntelligenceEntity["type"];
+    }> = [
+      {
+        label: "HBF",
+        value: a.hbf?.trim() || a.hb?.trim() || null,
+        type: "address",
+      },
+      {
+        label: "V1F",
+        value: a.v1f?.trim() || a.v1?.trim() || null,
+        type: "vehicle",
+      },
+    ];
+    if (a.extraVehicles) {
+      try {
+        const extras: Array<{ full?: string; short?: string }> = JSON.parse(
+          a.extraVehicles
+        );
+        extras.forEach((ev, idx) => {
+          const vehicleValue = ev.full?.trim() || ev.short?.trim() || null;
+          if (vehicleValue) {
+            assocLocationFields.push({
+              label: `V${idx + 2}F`,
+              value: vehicleValue,
+              type: "vehicle",
+            });
+          }
+        });
+      } catch {
+        /* malformed JSON — skip */
+      }
+    }
+    if (a.extraAddresses) {
+      try {
+        const extras: Array<{ full?: string; short?: string }> = JSON.parse(
+          a.extraAddresses
+        );
+        extras.forEach((ea, idx) => {
+          const addrValue = ea.full?.trim() || ea.short?.trim() || null;
+          if (addrValue) {
+            assocLocationFields.push({
+              label: `Address ${idx + 2}`,
+              value: addrValue,
+              type: "address",
+            });
+          }
+        });
+      } catch {
+        /* malformed JSON — skip */
+      }
+    }
+
+    for (const field of assocLocationFields) {
+      if (!field.value || field.value.trim() === "") continue;
+      let shortForm = field.value.trim();
+      if (field.type === "vehicle") {
+        shortForm = shortForm.replace(/\s*\([^)]{1,40}\)\s*$/, "").trim();
+      }
+      if (!shortForm) continue;
+      const normKey =
+        field.type === "vehicle"
+          ? vehicleRegoKey(shortForm)
+          : field.type === "address"
+            ? addressBracketKey(shortForm)
+            : shortForm.toLowerCase().replace(/\s+/g, " ").trim();
+      const key = `${field.type}::${normKey}`;
+      if (!entityMap.has(key)) {
+        entityMap.set(key, { shortForm, type: field.type, occurrences: [] });
+      } else {
+        const existing = entityMap.get(key)!;
+        const shouldUpgrade =
+          field.type === "vehicle"
+            ? preferVehicleShortForm(existing.shortForm, shortForm, normKey)
+            : shortForm.length > existing.shortForm.length;
+        if (shouldUpgrade) existing.shortForm = shortForm;
+      }
+      for (const t of parentRows.length > 0 ? parentRows : [null]) {
+        const linkedSheets = t ? (targetSheetMap.get(t.targetId) ?? []) : [];
+        const sheetEntries =
+          linkedSheets.length > 0
+            ? linkedSheets
+            : [{ sheetId: 0, sheetTitle: "(no sheet linked)" }];
+        for (const sheet of sheetEntries) {
+          const alreadyAdded = entityMap
+            .get(key)!
+            .occurrences.some(
+              o =>
+                o.sheetId === sheet.sheetId &&
+                o.rowId === 0 &&
+                o.observationSnippet ===
+                  `Associate card — ${a.name} [${field.label}]`
+            );
+          if (!alreadyAdded) {
+            entityMap.get(key)!.occurrences.push({
+              sheetId: sheet.sheetId,
+              sheetTitle: sheet.sheetTitle,
+              operationId: t?.operationId ?? 0,
+              operationName: t?.operationName ?? "(Registry)",
+              rowId: 0,
+              observationSnippet: `Associate card — ${a.name} [${field.label}]`,
+              timeMinutes: null,
+              fullDescription: `${field.label}: ${shortForm} (from associate: ${a.name}, of target: ${parentName ?? "unknown"})`,
+            });
+          }
+        }
       }
     }
   }
@@ -3622,6 +4749,28 @@ export async function getAllIntelligenceEntities(): Promise<
           });
           return; // skip adding as a separate entity
         }
+      }
+      // Same idea, but for a registry associate's bracket surname (e.g. "P.HILL").
+      const canonicalAssocKey =
+        associateAliasToKey.get(e.shortForm.toUpperCase()) ??
+        (e.rawShortForm
+          ? associateAliasToKey.get(e.rawShortForm.toUpperCase())
+          : undefined);
+      if (canonicalAssocKey && entityMap.has(canonicalAssocKey)) {
+        const snippet =
+          row.observation.slice(0, 80) +
+          (row.observation.length > 80 ? "…" : "");
+        entityMap.get(canonicalAssocKey)!.occurrences.push({
+          sheetId: row.sheetId,
+          sheetTitle: row.sheetTitle,
+          operationId: row.operationId,
+          operationName: row.operationName,
+          rowId: row.rowId,
+          observationSnippet: snippet,
+          timeMinutes: row.timeMinutes ?? null,
+          fullDescription: e.fullDescription,
+        });
+        return; // skip adding as a separate entity
       }
     }
     // Vehicles key on registration alone (see vehicleRegoKey above) so a bare
@@ -3822,11 +4971,19 @@ export async function getAllIntelligenceEntities(): Promise<
         if (bracketedShortForms.has(entry.shortForm.toLowerCase())) continue;
         if (bracketedShortForms.has(entry.rawShortForm.toLowerCase())) continue;
 
-        // For person entities, search by BOTH the displayName ("G HOTA") AND the raw
-        // bracketed token ("HOTA") — because subsequent rows use the short alias.
-        // For other types, only search by shortForm.
+        // For person, address, and business entities, search by BOTH the
+        // enriched displayName ("G HOTA" / "54 Terrace Road, PERTH") AND the
+        // raw bracketed token ("HOTA" / "54 Terrace Road") — subsequent rows
+        // routinely use the short form (e.g. re-visits that don't repeat the
+        // suburb every time: "returned to 54 Terrace Road"), and searching
+        // only the full enriched form would miss those, undercounting visits.
         const searchTerms: string[] = [entry.shortForm];
-        if (entry.type === "person" && entry.rawShortForm !== entry.shortForm) {
+        if (
+          (entry.type === "person" ||
+            entry.type === "address" ||
+            entry.type === "business") &&
+          entry.rawShortForm !== entry.shortForm
+        ) {
           searchTerms.push(entry.rawShortForm);
         }
 
@@ -4002,7 +5159,16 @@ export async function getAllIntelligenceEntities(): Promise<
     mergedMap.set(k, entity);
   }
 
-  return Array.from(mergedMap.values());
+  // "Indices" flag — computed last, once every occurrence (registry-injected
+  // and text-mined alike) has been assembled and merged above.
+  const finalEntities = Array.from(mergedMap.values());
+  for (const entity of finalEntities) {
+    entity.isIndicesOnly =
+      entity.occurrences.length > 0 &&
+      entity.occurrences.every(o => o.rowId === 0);
+  }
+
+  return finalEntities;
 }
 
 // ─── Entity Deduplication ───────────────────────────────────────────────────
@@ -5085,9 +6251,9 @@ export function computeSheetSummaryVehicles(
 
   if (target) {
     const v1 = target.v1f?.trim() || target.v1?.trim();
-    if (v1) add("target:v1", v1);
+    if (v1) add("target:v1", formatIntelVehicle(v1));
     const v2 = target.v2f?.trim() || target.v2?.trim();
-    if (v2) add("target:v2", v2);
+    if (v2) add("target:v2", formatIntelVehicle(v2));
     if (target.extraVehicles) {
       try {
         const extras: Array<{ full?: string; short?: string }> = JSON.parse(
@@ -5095,7 +6261,7 @@ export function computeSheetSummaryVehicles(
         );
         extras.forEach((ev, idx) => {
           const label = ev.full?.trim() || ev.short?.trim();
-          if (label) add(`target:extra${idx}`, label);
+          if (label) add(`target:extra${idx}`, formatIntelVehicle(label));
         });
       } catch {
         // ignore malformed JSON
@@ -5122,20 +6288,111 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** Strips the trailing "(ShortForm)" bracket for location/address entity mentions — the shortform duplicates what's already stated in the surrounding text. */
-function stripLocationBrackets(
-  text: string,
-  entities: ReturnType<typeof extractEntitiesFromText>
+/**
+ * A small fixed set of officer-facing shorthand the Summary tab writes back
+ * out — not the full `shortcuts` table (that also has phrases like
+ * "Surveillance commenced in the vicinity of" that stay spelled out in a
+ * Summary), just the specific abbreviations investigators expect to read:
+ * driver/sole occupant, front passenger, parked/unattended, continued out
+ * of sight. Case-insensitive, whole-phrase match.
+ */
+const SUMMARY_ABBREVIATIONS: Array<[RegExp, string]> = [
+  [/\bdriver and sole occupant\b/gi, "DSO"],
+  [/\bfront passenger\b/gi, "FP"],
+  [/\bparked and unattended\b/gi, "PU"],
+  [/\bcontinued out of sight\b/gi, "COOS"],
+];
+
+/**
+ * Rewrites one RS row's observation text into the shorthand style
+ * investigators actually write Summaries in — not a verbatim copy, and not
+ * an attempt at general rewriting (that would need real language
+ * understanding, which this app's Golden Rule rules out at runtime; text
+ * that doesn't match one of these specific, deterministic patterns is left
+ * exactly as written). Rules, applied in order:
+ *
+ *  1. Every bracket-introduced address/vehicle mention becomes its
+ *     Intelligence short form (formatIntelAddress/formatIntelVehicle —
+ *     the same functions the Intelligence folder itself uses), e.g.
+ *     "44 Elvira Street, PALMYRA WA (44 Elvira Street)" -> "44 Elvira
+ *     Street, PALMYRA", "...bearing WA registration 1FAT004 (Vehicle
+ *     1FAT004)" -> "1FAT004 ...".
+ *  2. A bare "Vehicle <rego>" mention (already introduced earlier in the
+ *     sheet, so it shows up here without its own bracket) drops the word
+ *     "Vehicle" — just the rego.
+ *  3. The sheet's own target — by TGT alias, whether bracket-introduced or
+ *     a bare re-mention — becomes "TGT".
+ *  4. DSO / FP / PU / COOS (see SUMMARY_ABBREVIATIONS above).
+ *  5. "departed ... continued via:" — the from-address in between is
+ *     dropped (it was just stated, or is the previous line's location) —
+ *     becomes "departed, travelled to:".
+ *  6. "PHOTOGRAPH/S TAKEN" is dropped entirely — investigators reading a
+ *     Summary don't need this noted, it's implicit in the photo count.
+ */
+function buildSummaryAbbreviatedText(
+  observation: string,
+  tgtAlias: string | null
 ): string {
-  let result = text;
-  for (const e of entities) {
-    if (e.type !== "address" || !e.shortForm) continue;
-    result = result.replace(
-      new RegExp(`\\s*\\(${escapeRegExp(e.shortForm)}\\)`, "g"),
-      ""
+  let text = observation;
+
+  // 1. Bracket-introduced address/vehicle mentions -> Intelligence short form.
+  const entities = extractEntitiesFromText(text);
+  const typeByRawShortForm = new Map(
+    entities.map(e => [e.rawShortForm.trim().toUpperCase(), e.type])
+  );
+  const bracketPattern = /([^()]{3,120}?)\s*\(([^()]{1,80})\)/g;
+  let rebuilt = "";
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = bracketPattern.exec(text)) !== null) {
+    const [full, , bracketContent] = match;
+    const type = typeByRawShortForm.get(bracketContent.trim().toUpperCase());
+    let replacement = full;
+    if (type === "address") {
+      replacement = formatIntelAddress(full);
+    } else if (type === "vehicle") {
+      replacement = formatIntelVehicle(bracketContent.trim(), text);
+    }
+    rebuilt += text.slice(lastIndex, match.index) + replacement;
+    lastIndex = match.index + full.length;
+  }
+  rebuilt += text.slice(lastIndex);
+  text = rebuilt;
+
+  // 2. Bare "Vehicle <rego>" (already introduced earlier in the sheet) -> just the rego.
+  text = text.replace(/\bVehicle\s+([A-Z0-9]{4,8})\b/gi, "$1");
+
+  // 3. The sheet's own target's alias -> "TGT".
+  if (tgtAlias && tgtAlias.trim()) {
+    text = text.replace(
+      new RegExp(`\\b${escapeRegExp(tgtAlias.trim())}\\b`, "g"),
+      "TGT"
     );
   }
-  return result;
+
+  // 4. Fixed abbreviations.
+  for (const [pattern, replacement] of SUMMARY_ABBREVIATIONS) {
+    text = text.replace(pattern, replacement);
+  }
+
+  // 5. "departed ... continued via:" -> "departed, travelled to:" — the
+  // from-address in between (bracket-introduced or bare) is dropped, along
+  // with any comma immediately preceding "departed" in the source sentence.
+  text = text.replace(
+    /,?\s*\bdeparted\b\s*(?:and\s+)?.*?,?\s*(?:and\s+)?continued via:/gi,
+    " departed, travelled to:"
+  );
+
+  // 6. Drop "PHOTOGRAPH/S TAKEN" entirely.
+  text = text.replace(/\s*PHOTOGRAPH\/?S?\s+TAKEN\.?/gi, "");
+
+  // Cleanup: collapse stray whitespace/punctuation left by the removals above.
+  text = text
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([,.;:])/g, "$1")
+    .trim();
+
+  return text;
 }
 
 /**
@@ -5145,34 +6402,37 @@ function stripLocationBrackets(
  * distinct Time / Address / Observation table columns without the address
  * being duplicated inside the observation text.
  */
-function buildSummaryEntryFields(row: {
-  time: string | null;
-  observation: string | null;
-}): { text: string; location: string | null } {
+function buildSummaryEntryFields(
+  row: {
+    time: string | null;
+    observation: string | null;
+  },
+  tgtAlias: string | null
+): { text: string; location: string | null } {
   const raw = row.observation ?? "";
   const entities = extractEntitiesFromText(raw);
   const location = entities.find(e => e.type === "address");
 
   return {
-    text: stripLocationBrackets(raw, entities),
+    text: buildSummaryAbbreviatedText(raw, tgtAlias),
     location: location ? location.shortForm || location.fullDescription : null,
   };
 }
 
 /**
  * Returns the Summary tab's per-row entry list, first append-only syncing in
- * any RS rows that don't have an entry yet. Existing entries (including ones
- * the supervisor has edited or soft-deleted) are never touched or regenerated.
+ * any RS row with real observation text that doesn't have an entry yet.
+ * Existing entries (including ones the supervisor has edited or soft-deleted)
+ * are never touched or regenerated.
  *
- * "Travelled Via" rows — a row containing "continued via:" (the street/road
- * list, whether inline or on its own) and, where present, the paired row
- * immediately after it ending in "whereat" (the same convention used to
- * exclude these from Court Statements, see routers.ts's
- * statement.previewData) — are skipped when first creating a line for a row.
- * That check is never re-applied to a line that already exists: if an edit
- * later makes a row's text happen to match the pattern, the existing line is
- * still kept and just updated normally — a line only disappears here if its
- * row is genuinely gone (deleted or blanked).
+ * Every content row gets a line here, including "Travelled Via" rows
+ * ("continued via: …" route narratives, typically part of a departure —
+ * see the "d"/"ar" shortcut expansions in ensureDefaultShortcuts). Court
+ * Statements deliberately exclude those (routers.ts's statement.previewData)
+ * since a witness statement doesn't need turn-by-turn route detail, but the
+ * Summary's whole purpose is a comprehensive log of the sheet, not a curated
+ * narrative — skipping them here just silently dropped every departure
+ * observation that happened to include a route.
  *
  * While the summary is marked complete, none of this runs at all — no new
  * lines are added and no existing ones are refreshed, even if RS rows keep
@@ -5187,24 +6447,19 @@ export async function getSheetSummaryEntries(
   const summary = await getSheetSummary(sheetId);
   const isComplete = !!summary?.completedAt;
 
+  // The sheet's own target's TGT alias (e.g. "MAY") — used to rewrite their
+  // name down to "TGT" in the shorthand Summary text (see
+  // buildSummaryAbbreviatedText). Not every sheet has a linked target.
+  const sheet = await getRunningSheetById(sheetId);
+  const target = sheet?.targetId ? await getTargetById(sheet.targetId) : null;
+  const tgtAlias = target?.tgt?.trim() || null;
+
   const allRows = await getRowsBySheetId(sheetId);
-  // Rows with real content — used for sort order and for deciding whether an
-  // existing line's row is still genuinely there, regardless of Travelled
-  // Via classification (that classification only ever gates new inserts).
+  // Rows with real content — used both for deciding which rows need a new
+  // line and for sort order / for deciding whether an existing line's row
+  // is still genuinely there.
   const contentRows = allRows.filter(r => (r.observation ?? "").trim());
   const contentRowById = new Map(contentRows.map(r => [r.id, r]));
-
-  const travelledViaRowIds = new Set<number>();
-  for (let i = 0; i < allRows.length; i++) {
-    const obs = (allRows[i].observation ?? "").toLowerCase();
-    if (obs.includes("continued via:")) {
-      travelledViaRowIds.add(allRows[i].id);
-      const next = allRows[i + 1];
-      if (next && /whereat$/i.test((next.observation ?? "").trim())) {
-        travelledViaRowIds.add(next.id);
-      }
-    }
-  }
 
   const existing = await db
     .select()
@@ -5215,13 +6470,11 @@ export async function getSheetSummaryEntries(
 
   if (!isComplete) {
     const existingRowIds = new Set(existing.map(e => e.rowId));
-    const missing = contentRows.filter(
-      r => !travelledViaRowIds.has(r.id) && !existingRowIds.has(r.id)
-    );
+    const missing = contentRows.filter(r => !existingRowIds.has(r.id));
     if (missing.length > 0) {
       await db.insert(sheetSummaryEntries).values(
         missing.map(r => {
-          const fields = buildSummaryEntryFields(r);
+          const fields = buildSummaryEntryFields(r, tgtAlias);
           return {
             sheetId,
             rowId: r.id,
@@ -5257,7 +6510,7 @@ export async function getSheetSummaryEntries(
         );
         return { ...e, deleted: true };
       }
-      const fields = buildSummaryEntryFields(row);
+      const fields = buildSummaryEntryFields(row, tgtAlias);
       const changed =
         fields.text !== e.text ||
         fields.location !== e.location ||
@@ -5802,22 +7055,25 @@ export async function getRecycleBinItems(): Promise<RecycleBinItem[]> {
     });
   }
 
-  // Deleted photo attachments
+  // Deleted photo attachments — left-joined through sheetRows/runningSheets
+  // (present only for row-captured photos) and directly through
+  // rowAttachments.operationId (always set, row-captured or manually
+  // uploaded) for the operation name, so a manually-uploaded photo with no
+  // rowId still surfaces here instead of silently vanishing from the list.
   const deletedAttachments = await db
     .select({
       id: rowAttachments.id,
       deletedAt: rowAttachments.deletedAt,
       deletedByCIN: rowAttachments.deletedByCIN,
-      sheetId: sheetRows.sheetId,
       sheetTitle: runningSheets.title,
       rowTime: sheetRows.time,
-      operationId: runningSheets.operationId,
+      operationId: rowAttachments.operationId,
       operationName: operations.name,
     })
     .from(rowAttachments)
-    .innerJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
-    .innerJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
-    .leftJoin(operations, eq(runningSheets.operationId, operations.id))
+    .leftJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
+    .leftJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
+    .leftJoin(operations, eq(rowAttachments.operationId, operations.id))
     .where(
       and(
         isNotNull(rowAttachments.deletedAt),
@@ -5828,7 +7084,7 @@ export async function getRecycleBinItems(): Promise<RecycleBinItem[]> {
     items.push({
       id: a.id,
       type: "attachment",
-      label: `Photo — ${a.sheetTitle}`,
+      label: a.sheetTitle ? `Photo — ${a.sheetTitle}` : "Photo — manual upload",
       sublabel: a.rowTime
         ? `${a.operationName ?? ""} · ${a.rowTime}`
         : (a.operationName ?? undefined),
@@ -5926,6 +7182,52 @@ export async function purgeExpiredRecycleBinItems() {
   }
 }
 
+/**
+ * Photos left behind by operations/sheets deleted before deleteOperation/
+ * deleteRunningSheet/softDeleteOperation/softDeleteSheet cascaded to
+ * attachments (a gap that existed until this was added) — still
+ * `deletedAt IS NULL` (so still "live" everywhere: Intelligence photo
+ * lookups, EntityPhotosSection, etc.) even though their owning operation is
+ * gone. Every attachment always has an operationId, so an attachment is
+ * orphaned exactly when that operation no longer exists or is itself
+ * soft-deleted.
+ */
+export async function getOrphanedAttachments() {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({
+      id: rowAttachments.id,
+      key: rowAttachments.key,
+      mimeType: rowAttachments.mimeType,
+      isManualUpload: rowAttachments.isManualUpload,
+      createdAt: rowAttachments.createdAt,
+      operationId: rowAttachments.operationId,
+      operationName: operations.name,
+      operationDeletedAt: operations.deletedAt,
+    })
+    .from(rowAttachments)
+    .leftJoin(operations, eq(rowAttachments.operationId, operations.id))
+    .where(
+      and(
+        isNull(rowAttachments.deletedAt),
+        or(isNull(operations.id), isNotNull(operations.deletedAt))
+      )
+    );
+}
+
+/** Permanently purges every currently-orphaned attachment (see
+ * getOrphanedAttachments) — bypasses the normal 7-day Recycle Bin grace
+ * period, since these were already deleted (their operation is gone) and
+ * simply never got cleaned up. Admin-only, see adminUtils.purgeOrphanedAttachments. */
+export async function purgeOrphanedAttachments(): Promise<number> {
+  const orphans = await getOrphanedAttachments();
+  for (const a of orphans) {
+    await deleteRowAttachment(a.id);
+  }
+  return orphans.length;
+}
+
 // ─── Intelligence Profile Queries ─────────────────────────────────────────────
 // Correct association logic: an entity is an "operational associate" of a target
 // ONLY if it appears in an observation row on a running sheet where that target
@@ -5971,6 +7273,22 @@ export interface IntelTargetProfile {
   assocPersons: IntelProfileEntity[];
   assocVehicles: IntelProfileEntity[];
   assocLocations: IntelProfileEntity[];
+  /** True until this target has appeared in at least one real running-sheet
+   * observation — i.e. everything known about them so far came from the
+   * Target Registry (or another non-RS source), not from the field. */
+  isIndicesOnly: boolean;
+  /** Associates recorded directly on this target in the Target Registry — a
+   * guaranteed link (not inferred from observation-text co-occurrence). */
+  registryAssociates: Array<{
+    id: number;
+    name: string;
+    tgt: string | null;
+    hbf: string | null;
+    hb: string | null;
+    v1f: string | null;
+    v1: string | null;
+    isIndicesOnly: boolean;
+  }>;
 }
 
 export interface IntelOperationProfile {
@@ -5999,6 +7317,7 @@ export interface IntelOperationProfile {
     assocVehicles: IntelProfileEntity[];
     assocLocations: IntelProfileEntity[];
     photos: OperationEntityPhoto[];
+    isIndicesOnly: boolean;
   }>;
 }
 
@@ -6019,6 +7338,20 @@ export interface IntelAssociateProfile {
   }>;
   assocLocations: IntelProfileEntity[];
   assocVehicles: IntelProfileEntity[];
+  /** True until this associate has appeared in at least one real running-sheet
+   * observation — i.e. everything known about them so far came from the
+   * Target Registry (or another non-RS source), not from the field. */
+  isIndicesOnly: boolean;
+  /** Present when this associate has a formal Target Registry record — its
+   * own structured identity/address/vehicle, not just text-mined mentions. */
+  registryAssociateId?: number | null;
+  firstNames?: string | null;
+  surname?: string | null;
+  bornDate?: string | null;
+  hbf?: string | null;
+  hb?: string | null;
+  v1f?: string | null;
+  v1?: string | null;
 }
 
 export interface IntelVehicleProfile {
@@ -6036,6 +7369,9 @@ export interface IntelVehicleProfile {
   assocLocations: IntelProfileEntity[];
   /** True when this vehicle itself matches a value superseded by a target-merge. */
   isPrevious?: boolean;
+  /** True until this vehicle has appeared in at least one real running-sheet
+   * observation — i.e. it's only known from a Target/Associate registry field. */
+  isIndicesOnly: boolean;
 }
 
 export interface IntelLocationProfile {
@@ -6052,6 +7388,9 @@ export interface IntelLocationProfile {
   assocVehicles: IntelProfileEntity[];
   /** True when this location itself matches a value superseded by a target-merge. */
   isPrevious?: boolean;
+  /** True until this location has appeared in at least one real running-sheet
+   * observation — i.e. it's only known from a Target/Associate registry field. */
+  isIndicesOnly: boolean;
 }
 
 // A target's registered name is often followed by descriptive detail
@@ -6328,6 +7667,16 @@ export async function getIntelTargetProfile(
     await getPreviousEntityMatchers()
   );
 
+  const registryAssociateRows = await getAssociatesForTarget(targetId);
+  const targetEntity = allEntities.find(
+    e => e.isTarget && e.targetId === targetId
+  );
+  const associateEntityById = new Map(
+    allEntities
+      .filter(e => e.isAssociate && e.associateId != null)
+      .map(e => [e.associateId as number, e])
+  );
+
   return {
     targetId,
     name: target.name,
@@ -6352,6 +7701,17 @@ export async function getIntelTargetProfile(
     assocPersons,
     assocVehicles,
     assocLocations,
+    isIndicesOnly: targetEntity?.isIndicesOnly ?? false,
+    registryAssociates: registryAssociateRows.map(a => ({
+      id: a.id,
+      name: a.name,
+      tgt: a.tgt,
+      hbf: a.hbf,
+      hb: a.hb,
+      v1f: a.v1f,
+      v1: a.v1,
+      isIndicesOnly: associateEntityById.get(a.id)?.isIndicesOnly ?? false,
+    })),
   };
 }
 
@@ -6404,6 +7764,9 @@ export async function getIntelOperationProfile(
             target.name,
             allEntities
           );
+        const targetEntity = allEntities.find(
+          e => e.isTarget && e.targetId === targetId
+        );
         return {
           targetId,
           name: target.name,
@@ -6417,6 +7780,7 @@ export async function getIntelOperationProfile(
           assocPersons,
           assocVehicles,
           assocLocations,
+          isIndicesOnly: targetEntity?.isIndicesOnly ?? false,
         };
       })
     )
@@ -6545,6 +7909,42 @@ export async function getIntelAssociateProfile(
 
   const linkedTargets: IntelAssociateProfile["linkedTargets"] = [];
 
+  // Guaranteed link: a registry associate always belongs to exactly one
+  // target, regardless of whether they've been mentioned in that target's
+  // observation text yet — this must show up even with zero row overlap.
+  if (entity.isAssociate && entity.associateOfTargetId) {
+    const parentOpLinks = await db
+      .select({ id: operations.id, name: operations.name })
+      .from(operationTargetLinks)
+      .innerJoin(
+        operations,
+        eq(operations.id, operationTargetLinks.operationId)
+      )
+      .where(
+        and(
+          eq(operationTargetLinks.targetId, entity.associateOfTargetId),
+          isNull(operations.deletedAt)
+        )
+      );
+    if (parentOpLinks.length > 0) {
+      for (const op of parentOpLinks) {
+        linkedTargets.push({
+          targetId: entity.associateOfTargetId,
+          name: entity.associateOfTargetName ?? "Unknown",
+          operationId: op.id,
+          operationName: op.name,
+        });
+      }
+    } else {
+      linkedTargets.push({
+        targetId: entity.associateOfTargetId,
+        name: entity.associateOfTargetName ?? "Unknown",
+        operationId: 0,
+        operationName: "(Registry)",
+      });
+    }
+  }
+
   for (const target of allTargets) {
     const targetSheets = await db
       .select({ id: runningSheets.id, operationId: runningSheets.operationId })
@@ -6624,6 +8024,12 @@ export async function getIntelAssociateProfile(
     await getPreviousEntityMatchers()
   );
 
+  // Surface the associate's own structured identity/address/vehicle if this
+  // is a formal registry record, not just a text-mined mention.
+  const registryAssociate = entity.isAssociate
+    ? await getAssociateById(entity.associateId ?? -1)
+    : undefined;
+
   return {
     label: entity.shortForm,
     type: entity.type as "person" | "business",
@@ -6631,6 +8037,15 @@ export async function getIntelAssociateProfile(
     linkedSheets: Array.from(sheetMap.values()),
     assocLocations,
     assocVehicles,
+    isIndicesOnly: entity.isIndicesOnly ?? false,
+    registryAssociateId: registryAssociate?.id ?? null,
+    firstNames: registryAssociate?.firstNames ?? null,
+    surname: registryAssociate?.surname ?? null,
+    bornDate: registryAssociate?.bornDate ?? null,
+    hbf: registryAssociate?.hbf ?? null,
+    hb: registryAssociate?.hb ?? null,
+    v1f: registryAssociate?.v1f ?? null,
+    v1: registryAssociate?.v1 ?? null,
   };
 }
 
@@ -6762,6 +8177,7 @@ export async function getIntelVehicleProfile(
     assocPersons,
     assocLocations,
     isPrevious,
+    isIndicesOnly: entity.isIndicesOnly ?? false,
   };
 }
 
@@ -6896,6 +8312,7 @@ export async function getIntelLocationProfile(
     assocPersons,
     assocVehicles,
     isPrevious,
+    isIndicesOnly: entity.isIndicesOnly ?? false,
   };
 }
 

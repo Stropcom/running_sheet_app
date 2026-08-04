@@ -17,6 +17,9 @@ import {
   createNotificationsForUsers,
   findRecentUnreadNotification,
   updateNotificationContent,
+  getOpManagerPriorityBoard,
+  getOpManagerTaskingCalendar,
+  getOutstandingTodosByUser,
 } from "./db";
 import {
   ctoRosterTeams,
@@ -2379,5 +2382,155 @@ export async function repeatCtoRosterCycle(
     daysFilledForSource,
     membersUpdated,
     changedByMember,
+  };
+}
+
+// ─── Weekly Tasking Report ───────────────────────────────────────────────────
+// "What the unit can do next week" — priority board, day-by-day tasking grid,
+// team deployability risk, and outstanding governance actions, all for a
+// given Monday-start week.
+
+const ON_DUTY_CODES = new Set(["d", "a", "ad", "adoc", "aoc", "doc"]);
+const DEFAULT_TEAM_MIN = 3;
+
+export interface WeeklyTaskingPriorityRow {
+  category: string;
+  priority: number;
+  operationName: string | null;
+  team: string | null;
+  requestType: string | null;
+}
+
+export interface WeeklyTaskingCell {
+  dayIndex: number;
+  teamRow: string;
+  shiftTime: string | null;
+  primaryTask: string | null;
+  secondaryTask: string | null;
+}
+
+export interface WeeklyTaskingDeployability {
+  date: string;
+  teamName: string;
+  onDuty: number;
+  min: number;
+  deployable: boolean;
+}
+
+export interface WeeklyTaskingOutstandingTodo {
+  cin: string;
+  name: string;
+  totalCount: number;
+}
+
+export interface WeeklyTaskingReport {
+  weekStart: string;
+  weekEnd: string;
+  priorityRows: WeeklyTaskingPriorityRow[];
+  taskingCells: WeeklyTaskingCell[];
+  deployability: WeeklyTaskingDeployability[];
+  atRiskDayCount: number;
+  outstandingTodos: WeeklyTaskingOutstandingTodo[];
+}
+
+/** weekStart is a Monday, YYYY-MM-DD.
+ *
+ * Deployability here is a simplified read of the same on-duty-vs-minimum
+ * check the live Outlook coverage page (OutlookPage.tsx) computes — it
+ * deliberately skips that page's secondment handling and blended Team
+ * 1/Team 2 combined-minimum logic, since this is a weekly summary rather
+ * than the live operational tool: a per-team, per-day on-duty headcount
+ * against its configured minimum is enough to flag a week worth reviewing
+ * there in full. */
+export async function getWeeklyTaskingReport(
+  weekStart: string
+): Promise<WeeklyTaskingReport> {
+  const weekEnd = addDaysToDateStr(weekStart, 6);
+
+  const [
+    priorityRowsRaw,
+    taskingCellsRaw,
+    teams,
+    members,
+    settings,
+    shifts,
+    todoUsers,
+  ] = await Promise.all([
+    getOpManagerPriorityBoard(weekStart),
+    getOpManagerTaskingCalendar(weekStart),
+    getAllCtoRosterTeams(),
+    getAllCtoRosterMembers(),
+    getCtoRosterOutlookSettings(),
+    getCtoRosterShiftsForDateRange(weekStart, weekEnd),
+    getOutstandingTodosByUser(),
+  ]);
+
+  const priorityRows: WeeklyTaskingPriorityRow[] = priorityRowsRaw
+    .map(r => ({
+      category: r.category,
+      priority: r.priority,
+      operationName: r.operationName,
+      team: r.team,
+      requestType: r.requestType,
+    }))
+    .sort((a, b) => a.priority - b.priority);
+
+  const taskingCells: WeeklyTaskingCell[] = taskingCellsRaw.map(c => ({
+    dayIndex: c.dayIndex,
+    teamRow: c.teamRow,
+    shiftTime: c.shiftTime,
+    primaryTask: c.primaryTask,
+    secondaryTask: c.secondaryTask,
+  }));
+
+  const teamMinimums = settings.teamMinimums;
+
+  const membersByTeam = new Map<number, typeof members>();
+  for (const m of members) {
+    if (m.excludedFromCounts) continue;
+    if (!membersByTeam.has(m.teamId)) membersByTeam.set(m.teamId, []);
+    membersByTeam.get(m.teamId)!.push(m);
+  }
+  const shiftCodeByMemberDate = new Map<string, string>();
+  for (const s of shifts)
+    shiftCodeByMemberDate.set(`${s.memberId}::${s.shiftDate}`, s.shiftCode);
+
+  const deployability: WeeklyTaskingDeployability[] = [];
+  for (let i = 0; i < 7; i++) {
+    const date = addDaysToDateStr(weekStart, i);
+    for (const team of teams) {
+      const teamMembers = membersByTeam.get(team.id) ?? [];
+      const min = teamMinimums[team.name] ?? DEFAULT_TEAM_MIN;
+      const onDuty = teamMembers.filter(m =>
+        ON_DUTY_CODES.has(shiftCodeByMemberDate.get(`${m.id}::${date}`) ?? "")
+      ).length;
+      deployability.push({
+        date,
+        teamName: team.name,
+        onDuty,
+        min,
+        deployable: onDuty >= min,
+      });
+    }
+  }
+  const atRiskDayCount = new Set(
+    deployability.filter(d => !d.deployable).map(d => d.date)
+  ).size;
+
+  const outstandingTodos: WeeklyTaskingOutstandingTodo[] = (
+    todoUsers as { cin: string; name: string; totalCount: number }[]
+  )
+    .filter(u => u.totalCount > 0)
+    .slice(0, 15)
+    .map(u => ({ cin: u.cin, name: u.name, totalCount: u.totalCount }));
+
+  return {
+    weekStart,
+    weekEnd,
+    priorityRows,
+    taskingCells,
+    deployability,
+    atRiskDayCount,
+    outstandingTodos,
   };
 }

@@ -469,7 +469,9 @@ export default function ReportsPage() {
           <div className="flex items-center gap-3">
             <BarChart3 className="h-5 w-5 text-slate-400" />
             <div>
-              <h1 className="text-xl font-semibold text-foreground">Reports</h1>
+              <h1 className="text-xl font-semibold text-foreground">
+                Outstanding Actions
+              </h1>
               <p className="text-xs text-muted-foreground mt-0.5">
                 Incomplete running sheets and outstanding actions
               </p>

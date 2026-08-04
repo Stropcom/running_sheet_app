@@ -40,6 +40,8 @@ import IntelligenceMapping from "@/pages/IntelligenceMapping";
 import RSMapping from "@/pages/RSMapping";
 import DraftSheetPage from "@/pages/DraftSheetPage";
 import ReportsPage from "@/pages/ReportsPage";
+import WeeklyActivityReportPage from "@/pages/WeeklyActivityReportPage";
+import WeeklyTaskingReportPage from "@/pages/WeeklyTaskingReportPage";
 import ImagesPage from "@/pages/ImagesPage";
 import OperationManagerPage from "@/pages/OperationManagerPage";
 import CtoRosterPage from "@/pages/CtoRoster/RosterPage";
@@ -161,7 +163,15 @@ function Router() {
       <Route path="/recycle-bin" component={RecycleBin} />
       <Route path="/draft" component={DraftHubPage} />
       <Route path="/draft/sheet/:localId" component={DraftSheetPage} />
-      <Route path="/reports" component={ReportsPage} />
+      <Route path="/reports/outstanding-actions" component={ReportsPage} />
+      <Route
+        path="/reports/weekly-activity"
+        component={WeeklyActivityReportPage}
+      />
+      <Route
+        path="/reports/weekly-tasking"
+        component={WeeklyTaskingReportPage}
+      />
       <Route path="/audit" component={AuditLogPage} />
       <Route path="/admin" component={AdminPage} />
       <Route path="/404" component={NotFound} />

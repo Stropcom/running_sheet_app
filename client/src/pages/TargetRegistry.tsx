@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -26,7 +26,6 @@ import { toast } from "sonner";
 import {
   Search,
   Plus,
-  Pencil,
   Trash2,
   Link2,
   ChevronRight,
@@ -39,22 +38,44 @@ import {
   Folder,
   Car,
   Home,
-  Hash,
-  AlertTriangle,
-  Merge,
+  Users,
 } from "lucide-react";
 import { ViewToggle } from "@/components/ViewToggle";
 import { useViewMode } from "@/contexts/ViewModeContext";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
-import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
-import { EntityAutocompleteInput } from "@/components/EntityAutocompleteInput";
-import { extractShortVehicle, extractShortTarget, extractShortAddress } from "@/lib/addressFormat";
-import { TargetMergeDialog, type ExistingTargetLike } from "@/components/TargetMergeDialog";
+import {
+  TargetIdentityFields,
+  TargetAddressFields,
+  TargetVehicleFields,
+  EMPTY_NAME_PARTS,
+  EMPTY_ADDRESS_PARTS,
+  EMPTY_VEHICLE_PARTS,
+  parseExtraVehicles,
+  parseExtraAddresses,
+  type ExtraVehicle,
+  type ExtraAddress,
+} from "@/components/TargetStructuredFields";
+import { AddTargetDialog, type RegistryCreatePayload } from "@/components/AddTargetDialog";
+import {
+  composeTargetName,
+  composeAddress,
+  composeVehicle,
+  isoToDdMmYyyy,
+  ddMmYyyyToIso,
+  type StructuredNameParts,
+  type StructuredAddressParts,
+  type StructuredVehicleParts,
+} from "@/lib/addressFormat";
+import {
+  PossibleDuplicateAlert,
+  type DuplicateWarning,
+} from "@/components/PossibleDuplicateAlert";
+import { runDuplicateChecks } from "@/lib/duplicateCheck";
+import { IndicesBadge } from "@/components/IndicesBadge";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type ExtraVehicle = { full: string; short: string };
 type WildField = { label: string; value: string };
 
 type RegistryTarget = {
@@ -70,20 +91,28 @@ type RegistryTarget = {
   dep: string | null;
   arr: string | null;
   extraVehicles: string | null; // JSON: ExtraVehicle[]
-  wildFields: string | null;    // JSON: WildField[]
+  extraAddresses: string | null; // JSON: ExtraAddress[]
+  wildFields: string | null;    // JSON: WildField[] — deprecated, no longer editable
+  firstNames: string | null;
+  surname: string | null;
+  bornDate: string | null; // ISO yyyy-mm-dd
+  addrUnitNo: string | null;
+  addrHouseNo: string | null;
+  addrStreetName: string | null;
+  addrStreetType: string | null;
+  addrSuburb: string | null;
+  addrState: string | null;
+  vehRegistration: string | null;
+  vehState: string | null;
+  vehColour: string | null;
+  vehMake: string | null;
+  vehModel: string | null;
+  vehType: string | null;
   createdAt: Date;
   updatedAt: Date;
   linkedOperations: Array<{ operationId: number; operationName: string | null }>;
+  isIndicesOnly?: boolean;
 };
-
-function parseExtraVehicles(json: string | null | undefined): ExtraVehicle[] {
-  if (!json) return [];
-  try { return JSON.parse(json) as ExtraVehicle[]; } catch { return []; }
-}
-function parseWildFields(json: string | null | undefined): WildField[] {
-  if (!json) return [];
-  try { return JSON.parse(json) as WildField[]; } catch { return []; }
-}
 
 // ─── Link to Operation Dialog ─────────────────────────────────────────────────
 
@@ -186,25 +215,37 @@ function TargetCard({
   const utils = trpc.useUtils();
   const [expanded, setExpanded] = useState(defaultExpanded);
 
-  // Editable fields
-  const [name, setName] = useState(target.name);
-  const [tgt, setTgt] = useState(target.tgt ?? "");
-  const [hbf, setHbf] = useState(target.hbf ?? "");
-  const [hb, setHb] = useState(target.hb ?? "");
-  const [v1f, setV1f] = useState(target.v1f ?? "");
-  const [v1, setV1] = useState(target.v1 ?? "");
+  // Structured identity/address/vehicle input
+  const [identity, setIdentity] = useState<StructuredNameParts>({
+    firstNames: target.firstNames ?? "",
+    surname: target.surname ?? "",
+    bornDate: isoToDdMmYyyy(target.bornDate),
+  });
+  const [address, setAddress] = useState<StructuredAddressParts>({
+    unitNo: target.addrUnitNo ?? "",
+    houseNo: target.addrHouseNo ?? "",
+    streetName: target.addrStreetName ?? "",
+    streetType: target.addrStreetType ?? "",
+    suburb: target.addrSuburb ?? "",
+    state: target.addrState ?? "WA",
+  });
+  const [vehicle, setVehicle] = useState<StructuredVehicleParts & { vehicleType: string }>({
+    registration: target.vehRegistration ?? "",
+    state: target.vehState ?? "WA",
+    colour: target.vehColour ?? "",
+    make: target.vehMake ?? "",
+    model: target.vehModel ?? "",
+    vehicleType: target.vehType ?? "",
+  });
   const [dep, setDep] = useState(target.dep ?? "");
   const [arr, setArr] = useState(target.arr ?? "");
-  // Dynamic extra vehicles (V2+): initialise from extraVehicles JSON, falling back to legacy v2f/v2
-  const [extraVehicles, setExtraVehicles] = useState<ExtraVehicle[]>(() => {
-    const parsed = parseExtraVehicles(target.extraVehicles);
-    if (parsed.length > 0) return parsed;
-    // Migrate legacy v2f/v2 if present
-    if (target.v2f || target.v2) return [{ full: target.v2f ?? "", short: target.v2 ?? "" }];
-    return [];
-  });
-  // Numbered wild fields (#1, #2, …)
-  const [wildFields, setWildFields] = useState<WildField[]>(() => parseWildFields(target.wildFields));
+  // Dynamic extra addresses/vehicles beyond the primary Home/Vehicle 1
+  const [extraAddresses, setExtraAddresses] = useState<ExtraAddress[]>(() =>
+    parseExtraAddresses(target.extraAddresses)
+  );
+  const [extraVehicles, setExtraVehicles] = useState<ExtraVehicle[]>(() =>
+    parseExtraVehicles(target.extraVehicles)
+  );
   const [dirty, setDirty] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -217,49 +258,106 @@ function TargetCard({
   // by a background refetch.
   useEffect(() => {
     if (dirty) return;
-    setName(target.name);
-    setTgt(target.tgt ?? "");
-    setHbf(target.hbf ?? "");
-    setHb(target.hb ?? "");
-    setV1f(target.v1f ?? "");
-    setV1(target.v1 ?? "");
+    setIdentity({
+      firstNames: target.firstNames ?? "",
+      surname: target.surname ?? "",
+      bornDate: isoToDdMmYyyy(target.bornDate),
+    });
+    setAddress({
+      unitNo: target.addrUnitNo ?? "",
+      houseNo: target.addrHouseNo ?? "",
+      streetName: target.addrStreetName ?? "",
+      streetType: target.addrStreetType ?? "",
+      suburb: target.addrSuburb ?? "",
+      state: target.addrState ?? "WA",
+    });
+    setVehicle({
+      registration: target.vehRegistration ?? "",
+      state: target.vehState ?? "WA",
+      colour: target.vehColour ?? "",
+      make: target.vehMake ?? "",
+      model: target.vehModel ?? "",
+      vehicleType: target.vehType ?? "",
+    });
     setDep(target.dep ?? "");
     setArr(target.arr ?? "");
-    const parsedVehicles = parseExtraVehicles(target.extraVehicles);
-    setExtraVehicles(
-      parsedVehicles.length > 0
-        ? parsedVehicles
-        : target.v2f || target.v2
-          ? [{ full: target.v2f ?? "", short: target.v2 ?? "" }]
-          : []
-    );
-    setWildFields(parseWildFields(target.wildFields));
+    setExtraAddresses(parseExtraAddresses(target.extraAddresses));
+    setExtraVehicles(parseExtraVehicles(target.extraVehicles));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target.updatedAt?.getTime()]);
 
   const mark = (fn: () => void) => { fn(); setDirty(true); };
 
-  const addVehicle = () => { setExtraVehicles(v => [...v, { full: "", short: "" }]); setDirty(true); };
-  const removeVehicle = (i: number) => { setExtraVehicles(v => v.filter((_, idx) => idx !== i)); setDirty(true); };
-  const updateVehicle = (i: number, field: 'full' | 'short', val: string) => {
-    setExtraVehicles(v => v.map((item, idx) => idx === i ? { ...item, [field]: val } : item));
+  const addAddress = () => {
+    setExtraAddresses(v => [...v, { ...EMPTY_ADDRESS_PARTS, label: "", full: "", short: "" }]);
     setDirty(true);
   };
-  const addWildField = () => {
-    const nextNum = wildFields.length + 1;
-    setWildFields(v => [...v, { label: `#${nextNum}`, value: "" }]);
+  const removeAddress = (i: number) => {
+    setExtraAddresses(v => v.filter((_, idx) => idx !== i));
     setDirty(true);
   };
-  const removeWildField = (i: number) => {
-    setWildFields(v => {
-      const next = v.filter((_, idx) => idx !== i).map((f, idx) => ({ ...f, label: `#${idx + 1}` }));
-      return next;
+  const updateAddress = (i: number, patch: Partial<ExtraAddress>) => {
+    setExtraAddresses(v => v.map((item, idx) => idx === i ? { ...item, ...patch } : item));
+    setDirty(true);
+  };
+
+  const addVehicle = () => {
+    setExtraVehicles(v => [...v, { ...EMPTY_VEHICLE_PARTS, full: "", short: "" }]);
+    setDirty(true);
+  };
+  const removeVehicle = (i: number) => {
+    setExtraVehicles(v => v.filter((_, idx) => idx !== i));
+    setDirty(true);
+  };
+  const updateVehicle = (i: number, patch: Partial<ExtraVehicle>) => {
+    setExtraVehicles(v => v.map((item, idx) => idx === i ? { ...item, ...patch } : item));
+    setDirty(true);
+  };
+
+  const handleSave = () => {
+    const { name, tgt } = composeTargetName(identity);
+    if (!name) {
+      toast.error("Enter both First Name/s and Surname.");
+      return;
+    }
+    const { full: hbf, short: hb } = composeAddress(address);
+    const { full: v1f, short: v1 } = composeVehicle(vehicle);
+    const composedExtraAddresses = extraAddresses.map(ea => ({
+      ...ea,
+      ...composeAddress(ea),
+    }));
+    const composedExtraVehicles = extraVehicles.map(ev => ({
+      ...ev,
+      ...composeVehicle(ev),
+    }));
+    update.mutate({
+      id: target.id,
+      name,
+      tgt: tgt || null,
+      hbf: hbf || null,
+      hb: hb || null,
+      v1f: v1f || null,
+      v1: v1 || null,
+      dep: dep || null,
+      arr: arr || null,
+      extraAddresses: JSON.stringify(composedExtraAddresses),
+      extraVehicles: JSON.stringify(composedExtraVehicles),
+      firstNames: identity.firstNames || null,
+      surname: identity.surname || null,
+      bornDate: ddMmYyyyToIso(identity.bornDate) || null,
+      addrUnitNo: address.unitNo || null,
+      addrHouseNo: address.houseNo || null,
+      addrStreetName: address.streetName || null,
+      addrStreetType: address.streetType || null,
+      addrSuburb: address.suburb || null,
+      addrState: address.state || null,
+      vehRegistration: vehicle.registration || null,
+      vehState: vehicle.state || null,
+      vehColour: vehicle.colour || null,
+      vehMake: vehicle.make || null,
+      vehModel: vehicle.model || null,
+      vehType: vehicle.vehicleType || null,
     });
-    setDirty(true);
-  };
-  const updateWildField = (i: number, val: string) => {
-    setWildFields(v => v.map((item, idx) => idx === i ? { ...item, value: val } : item));
-    setDirty(true);
   };
 
   const update = trpc.target.registry.update.useMutation({
@@ -282,30 +380,6 @@ function TargetCard({
     onError: (e: { message: string }) => toast.error(e.message),
   });
 
-  // Per-target shortcuts
-  const { data: targetShortcutList, refetch: refetchShortcuts } = trpc.targetShortcuts.list.useQuery(
-    { targetId: target.id },
-    { enabled: expanded }
-  );
-  const [newScTrigger, setNewScTrigger] = useState("");
-  const [newScExpansion, setNewScExpansion] = useState("");
-  const [editingScId, setEditingScId] = useState<number | null>(null);
-  const [editScTrigger, setEditScTrigger] = useState("");
-  const [editScExpansion, setEditScExpansion] = useState("");
-
-  const createSc = trpc.targetShortcuts.create.useMutation({
-    onSuccess: () => { refetchShortcuts(); setNewScTrigger(""); setNewScExpansion(""); toast.success("Shortcut added"); },
-    onError: (e: { message: string }) => toast.error(e.message),
-  });
-  const updateSc = trpc.targetShortcuts.update.useMutation({
-    onSuccess: () => { refetchShortcuts(); setEditingScId(null); toast.success("Shortcut updated"); },
-    onError: (e: { message: string }) => toast.error(e.message),
-  });
-  const deleteSc = trpc.targetShortcuts.delete.useMutation({
-    onSuccess: () => { refetchShortcuts(); toast.success("Shortcut deleted"); },
-    onError: (e: { message: string }) => toast.error(e.message),
-  });
-
   return (
     <>
     <div className="rounded-xl border border-border bg-card overflow-hidden">
@@ -316,6 +390,7 @@ function TargetCard({
       >
         <Target className="w-4 h-4 text-primary shrink-0" />
         <span className="flex-1 font-semibold text-sm text-foreground truncate">{target.name}</span>
+        {target.isIndicesOnly && <IndicesBadge />}
         {/* Linked operations badges */}
         {target.linkedOperations.length > 0 && (
           <div className="hidden sm:flex flex-wrap gap-1 mr-2">
@@ -350,118 +425,70 @@ function TargetCard({
             </div>
           )}
 
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Full Name, Born</label>
-            <EntityAutocompleteInput
-              entityType="person"
-              value={name}
-              onChange={v => { setName(v); setDirty(true); }}
-              onBlur={(e) => {
-                const short = extractShortTarget(e.target.value);
-                if (short && !tgt) mark(() => setTgt(short));
-              }}
-            />
-          </div>
-          {/* Target (TGT) */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Target (TGT)</label>
-            <Input value={tgt} onChange={e => mark(() => setTgt(e.target.value))} />
-          </div>
+          <TargetIdentityFields
+            value={identity}
+            onChange={v => mark(() => setIdentity(v))}
+          />
 
-          {/* Home Address Full (HBF) — with Google Places autocomplete */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Home Address Full (HBF)</label>
-            <AddressAutocompleteInput
-              value={hbf}
-              onChange={(v) => mark(() => setHbf(v))}
-              onShortAddress={(short) => { if (!hb) mark(() => setHb(short)); }}
-              onBlur={(e) => {
-                const short = extractShortAddress(e.target.value);
-                if (short && !hb) mark(() => setHb(short));
-              }}
-              placeholder="Search or type address…"
+          <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
+            <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
+              <Home className="w-3 h-3" /> Home Address
+            </p>
+            <TargetAddressFields
+              value={address}
+              onChange={v => mark(() => setAddress(v))}
             />
           </div>
 
-          {/* Home (HB) */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Home (HB)</label>
-            <Input value={hb} onChange={e => mark(() => setHb(e.target.value))} />
-          </div>
-
-          {/* Vehicle 1 Full (V1F) */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle 1 Full (V1F)</label>
-            <EntityAutocompleteInput
-              entityType="vehicle"
-              value={v1f}
-              onChange={v => mark(() => setV1f(v))}
-              onBlur={(e) => {
-                const short = extractShortVehicle(e.target.value);
-                if (short && !v1) mark(() => setV1(short));
-              }}
+          <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
+            <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
+              <Car className="w-3 h-3" /> Vehicle 1
+            </p>
+            <TargetVehicleFields
+              value={vehicle}
+              onChange={v => mark(() => setVehicle(v))}
             />
           </div>
 
-          {/* Vehicle (V1) */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle (V1)</label>
-            <Input value={v1} onChange={e => mark(() => setV1(e.target.value))} />
-          </div>
-
-          {/* ── Dynamic extra vehicles (V2, V3, …) ── */}
-          {extraVehicles.map((ev, i) => {
-            const num = i + 2; // V2, V3, …
-            return (
-              <div key={i} className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
-                    <Car className="w-3 h-3" /> Vehicle {num}
-                  </span>
-                  <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => removeVehicle(i)}>
-                    <X className="w-3 h-3" />
-                  </Button>
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle {num} Full (V{num}F)</label>
-                  <EntityAutocompleteInput
-                    entityType="vehicle"
-                    value={ev.full}
-                    onChange={v => updateVehicle(i, 'full', v)}
-                    onBlur={(e) => {
-                      const short = extractShortVehicle(e.target.value);
-                      if (short && !ev.short) updateVehicle(i, 'short', short);
-                    }}
-                    placeholder="Full description…"
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle {num} (V{num})</label>
-                  <Input value={ev.short} onChange={e => updateVehicle(i, 'short', e.target.value)} placeholder="Short (e.g. rego)…" />
-                </div>
-              </div>
-            );
-          })}
-          <Button size="sm" variant="outline" className="gap-1.5 self-start" onClick={addVehicle}>
-            <Plus className="w-3.5 h-3.5" /> Add Vehicle
-          </Button>
-
-          {/* ── Wild fields (#1, #2, …) — between vehicles and dep/arr ── */}
-          {wildFields.map((wf, i) => (
-            <div key={i} className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 flex flex-col gap-2">
+          {/* ── Dynamic extra addresses ── */}
+          {extraAddresses.map((ea, i) => (
+            <div key={i} className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-amber-500 uppercase tracking-wide flex items-center gap-1.5">
-                  <Hash className="w-3 h-3" /> Wild Field {wf.label}
+                <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
+                  <Home className="w-3 h-3" /> Additional Address {i + 2}
                 </span>
-                <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => removeWildField(i)}>
+                <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => removeAddress(i)}>
                   <X className="w-3 h-3" />
                 </Button>
               </div>
-              <Input value={wf.value} onChange={e => updateWildField(i, e.target.value)} placeholder={`${wf.label} value…`} />
+              <TargetAddressFields
+                value={ea}
+                onChange={v => updateAddress(i, v)}
+                label={ea.label}
+                onLabelChange={v => updateAddress(i, { label: v })}
+              />
             </div>
           ))}
-          <Button size="sm" variant="outline" className="gap-1.5 self-start border-amber-500/40 text-amber-500 hover:bg-amber-500/10" onClick={addWildField}>
-            <Hash className="w-3.5 h-3.5" /> Add Wild Field
+          <Button size="sm" variant="outline" className="gap-1.5 self-start" onClick={addAddress}>
+            <Plus className="w-3.5 h-3.5" /> Add Address
+          </Button>
+
+          {/* ── Dynamic extra vehicles (V2, V3, …) ── */}
+          {extraVehicles.map((ev, i) => (
+            <div key={i} className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
+                  <Car className="w-3 h-3" /> Vehicle {i + 2}
+                </span>
+                <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => removeVehicle(i)}>
+                  <X className="w-3 h-3" />
+                </Button>
+              </div>
+              <TargetVehicleFields value={ev} onChange={v => updateVehicle(i, v)} />
+            </div>
+          ))}
+          <Button size="sm" variant="outline" className="gap-1.5 self-start" onClick={addVehicle}>
+            <Plus className="w-3.5 h-3.5" /> Add Vehicle
           </Button>
 
           {/* ── Depart / Arrive ── */}
@@ -488,14 +515,7 @@ function TargetCard({
             <Button
               size="sm"
               className="gap-2"
-              onClick={() => update.mutate({
-                id: target.id, name,
-                tgt: tgt || null, hbf: hbf || null, hb: hb || null,
-                v1f: v1f || null, v1: v1 || null,
-                dep: dep || null, arr: arr || null,
-                extraVehicles: JSON.stringify(extraVehicles),
-                wildFields: JSON.stringify(wildFields),
-              })}
+              onClick={handleSave}
               disabled={update.isPending || !dirty}
             >
               <Save className="w-3.5 h-3.5" />
@@ -503,92 +523,7 @@ function TargetCard({
             </Button>
           </div>
 
-          {/* ── Per-target shortcuts ── */}
-          <div className="mt-4 pt-4 border-t border-border/50 flex flex-col gap-3">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Target Shortcuts</p>
-            {/* Existing shortcuts */}
-            {(targetShortcutList ?? []).map((sc) =>
-              editingScId === sc.id ? (
-                <div key={sc.id} className="flex flex-col gap-2 rounded-lg border border-primary/40 bg-primary/5 p-3">
-                  <div className="flex gap-2">
-                    <Input
-                      className="w-28 font-mono text-sm"
-                      placeholder="trigger"
-                      value={editScTrigger}
-                      onChange={e => setEditScTrigger(e.target.value)}
-                    />
-                    <Input
-                      className="flex-1 text-sm"
-                      placeholder="expansion text"
-                      value={editScExpansion}
-                      onChange={e => setEditScExpansion(e.target.value)}
-                    />
-                  </div>
-                  <div className="flex gap-2 justify-end">
-                    <Button size="sm" variant="ghost" onClick={() => setEditingScId(null)}>Cancel</Button>
-                    <Button
-                      size="sm"
-                      onClick={() => updateSc.mutate({ id: sc.id, trigger: editScTrigger, expansion: editScExpansion })}
-                      disabled={updateSc.isPending || !editScTrigger || !editScExpansion}
-                    >
-                      Save
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div key={sc.id} className="flex items-start gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
-                  <span className="font-mono text-xs font-bold text-primary bg-primary/10 rounded px-1.5 py-0.5 shrink-0 mt-0.5">{sc.trigger}</span>
-                  <span className="flex-1 text-sm text-foreground/80 break-words">{sc.expansion}</span>
-                  <div className="flex gap-1 shrink-0">
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-6 w-6"
-                      onClick={() => { setEditingScId(sc.id); setEditScTrigger(sc.trigger); setEditScExpansion(sc.expansion); }}
-                    >
-                      <Pencil className="w-3 h-3" />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-6 w-6 text-destructive hover:text-destructive"
-                      onClick={() => deleteSc.mutate({ id: sc.id })}
-                      disabled={deleteSc.isPending}
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </Button>
-                  </div>
-                </div>
-              )
-            )}
-            {/* Add new shortcut */}
-            <div className="flex flex-col gap-2">
-              <div className="flex gap-2">
-                <Input
-                  className="w-28 font-mono text-sm"
-                  placeholder="trigger"
-                  value={newScTrigger}
-                  onChange={e => setNewScTrigger(e.target.value)}
-                />
-                <Input
-                  className="flex-1 text-sm"
-                  placeholder="expansion text"
-                  value={newScExpansion}
-                  onChange={e => setNewScExpansion(e.target.value)}
-                />
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                className="self-start gap-1.5"
-                onClick={() => createSc.mutate({ targetId: target.id, trigger: newScTrigger, expansion: newScExpansion })}
-                disabled={createSc.isPending || !newScTrigger.trim() || !newScExpansion.trim()}
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Add Shortcut
-              </Button>
-            </div>
-          </div>
+          <AssociatesSection targetId={target.id} />
         </div>
       )}
     </div>
@@ -616,260 +551,383 @@ function TargetCard({
   );
 }
 
-// ─── Add Target Dialog ────────────────────────────────────────────────────────
+// ─── Associates ─────────────────────────────────────────────────────────────
+// A person linked to a target as a known associate — goes through the same
+// controlled Name → Address → Vehicle structured process as a target.
 
-const EMPTY_FORM = { name: "", tgt: "", hbf: "", hb: "", v1f: "", v1: "", dep: "", arr: "" };
-type TargetForm = typeof EMPTY_FORM;
+type AssociateRecord = {
+  id: number;
+  targetId: number;
+  name: string;
+  tgt: string | null;
+  hbf: string | null;
+  hb: string | null;
+  v1f: string | null;
+  v1: string | null;
+  firstNames: string | null;
+  surname: string | null;
+  bornDate: string | null;
+  addrUnitNo: string | null;
+  addrHouseNo: string | null;
+  addrStreetName: string | null;
+  addrStreetType: string | null;
+  addrSuburb: string | null;
+  addrState: string | null;
+  vehRegistration: string | null;
+  vehState: string | null;
+  vehColour: string | null;
+  vehMake: string | null;
+  vehModel: string | null;
+  vehType: string | null;
+  extraAddresses: string | null;
+  extraVehicles: string | null;
+  isIndicesOnly?: boolean;
+};
 
-function AddTargetDialog({
-  open,
-  onClose,
-  onSave,
+function AssociateCard({
+  targetId,
+  associate,
+  onCreated,
 }: {
-  open: boolean;
-  onClose: () => void;
-  onSave: (data: TargetForm & { extraVehicles: ExtraVehicle[]; wildFields: WildField[] }) => Promise<void>;
+  targetId: number;
+  associate: AssociateRecord | null; // null = new, unsaved
+  onCreated?: () => void;
 }) {
-  const [form, setForm] = useState<TargetForm>(EMPTY_FORM);
-  const [extraVehicles, setExtraVehicles] = useState<ExtraVehicle[]>([]);
-  const [wildFields, setWildFields] = useState<WildField[]>([]);
-  const [saving, setSaving] = useState(false);
   const utils = trpc.useUtils();
+  const isNew = associate === null;
+  const [expanded, setExpanded] = useState(isNew);
 
-  // ── Possible-duplicate detection (fires on Save, not while typing) ──
-  // A name that fuzzy-matches an existing target offers a merge instead of
-  // silently creating a lookalike duplicate record.
-  const [dupMatch, setDupMatch] = useState<{ id: number; name: string; reason: string } | null>(null);
-  const [existingFull, setExistingFull] = useState<ExistingTargetLike | null>(null);
-  const [mergeOpen, setMergeOpen] = useState(false);
-  const [checkingDup, setCheckingDup] = useState(false);
+  const [identity, setIdentity] = useState<StructuredNameParts>(() =>
+    associate
+      ? {
+          firstNames: associate.firstNames ?? "",
+          surname: associate.surname ?? "",
+          bornDate: isoToDdMmYyyy(associate.bornDate),
+        }
+      : EMPTY_NAME_PARTS
+  );
+  const [address, setAddress] = useState<StructuredAddressParts>(() =>
+    associate
+      ? {
+          unitNo: associate.addrUnitNo ?? "",
+          houseNo: associate.addrHouseNo ?? "",
+          streetName: associate.addrStreetName ?? "",
+          streetType: associate.addrStreetType ?? "",
+          suburb: associate.addrSuburb ?? "",
+          state: associate.addrState ?? "WA",
+        }
+      : EMPTY_ADDRESS_PARTS
+  );
+  const [vehicle, setVehicle] = useState<StructuredVehicleParts & { vehicleType: string }>(() =>
+    associate
+      ? {
+          registration: associate.vehRegistration ?? "",
+          state: associate.vehState ?? "WA",
+          colour: associate.vehColour ?? "",
+          make: associate.vehMake ?? "",
+          model: associate.vehModel ?? "",
+          vehicleType: associate.vehType ?? "",
+        }
+      : EMPTY_VEHICLE_PARTS
+  );
+  const [extraAddresses, setExtraAddresses] = useState<ExtraAddress[]>(() =>
+    associate ? parseExtraAddresses(associate.extraAddresses) : []
+  );
+  const [extraVehicles, setExtraVehicles] = useState<ExtraVehicle[]>(() =>
+    associate ? parseExtraVehicles(associate.extraVehicles) : []
+  );
+  const [dirty, setDirty] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const resetAndClose = () => {
-    setForm(EMPTY_FORM);
-    setExtraVehicles([]);
-    setWildFields([]);
-    setDupMatch(null);
-    setExistingFull(null);
-    setMergeOpen(false);
-    onClose();
+  // ── Possible-duplicate warning (new associates only) — checks name/address/
+  // vehicle against every existing target, associate and text-mined entity.
+  // Warn-only: an associate's registry profile isn't merged into anything,
+  // the officer just confirms it's genuinely a new person before saving.
+  const [warnQueue, setWarnQueue] = useState<DuplicateWarning[]>([]);
+  const [warnIndex, setWarnIndex] = useState(0);
+  const notDuplicateMutation =
+    trpc.intelligence.markEntitiesNotDuplicate.useMutation();
+
+  const mark = (fn: () => void) => { fn(); setDirty(true); };
+  const addAddress = () => { setExtraAddresses(v => [...v, { ...EMPTY_ADDRESS_PARTS, label: "", full: "", short: "" }]); setDirty(true); };
+  const removeAddress = (i: number) => { setExtraAddresses(v => v.filter((_, idx) => idx !== i)); setDirty(true); };
+  const updateAddressEntry = (i: number, patch: Partial<ExtraAddress>) => {
+    setExtraAddresses(v => v.map((item, idx) => idx === i ? { ...item, ...patch } : item));
+    setDirty(true);
+  };
+  const addVehicle = () => { setExtraVehicles(v => [...v, { ...EMPTY_VEHICLE_PARTS, full: "", short: "" }]); setDirty(true); };
+  const removeVehicle = (i: number) => { setExtraVehicles(v => v.filter((_, idx) => idx !== i)); setDirty(true); };
+  const updateVehicleEntry = (i: number, patch: Partial<ExtraVehicle>) => {
+    setExtraVehicles(v => v.map((item, idx) => idx === i ? { ...item, ...patch } : item));
+    setDirty(true);
   };
 
-  const setField = (field: keyof TargetForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setForm(f => ({ ...f, [field]: e.target.value }));
+  const createMut = trpc.associate.create.useMutation({
+    onSuccess: () => {
+      utils.associate.listForTarget.invalidate({ targetId });
+      toast.success("Associate added");
+      onCreated?.();
+    },
+    onError: (e: { message: string }) => toast.error(e.message),
+  });
+  const updateMut = trpc.associate.update.useMutation({
+    onSuccess: () => {
+      utils.associate.listForTarget.invalidate({ targetId });
+      setDirty(false);
+      toast.success("Associate saved");
+    },
+    onError: (e: { message: string }) => toast.error(e.message),
+  });
+  const deleteMut = trpc.associate.delete.useMutation({
+    onSuccess: () => {
+      utils.associate.listForTarget.invalidate({ targetId });
+      toast.success("Associate removed");
+    },
+    onError: (e: { message: string }) => toast.error(e.message),
+  });
 
-  const saveAsNew = async () => {
-    setSaving(true);
-    try {
-      await onSave({ ...form, extraVehicles, wildFields });
-      resetAndClose();
-    } catch (err: any) {
-      toast.error(err?.message ?? "Failed to save target.");
-    } finally {
-      setSaving(false);
+  const buildPayload = () => {
+    const { name, tgt } = composeTargetName(identity);
+    const { full: hbf, short: hb } = composeAddress(address);
+    const { full: v1f, short: v1 } = composeVehicle(vehicle);
+    return {
+      name,
+      tgt: tgt || null,
+      hbf: hbf || null,
+      hb: hb || null,
+      v1f: v1f || null,
+      v1: v1 || null,
+      extraAddresses: JSON.stringify(extraAddresses.map(ea => ({ ...ea, ...composeAddress(ea) }))),
+      extraVehicles: JSON.stringify(extraVehicles.map(ev => ({ ...ev, ...composeVehicle(ev) }))),
+      firstNames: identity.firstNames || null,
+      surname: identity.surname || null,
+      bornDate: ddMmYyyyToIso(identity.bornDate) || null,
+      addrUnitNo: address.unitNo || null,
+      addrHouseNo: address.houseNo || null,
+      addrStreetName: address.streetName || null,
+      addrStreetType: address.streetType || null,
+      addrSuburb: address.suburb || null,
+      addrState: address.state || null,
+      vehRegistration: vehicle.registration || null,
+      vehState: vehicle.state || null,
+      vehColour: vehicle.colour || null,
+      vehMake: vehicle.make || null,
+      vehModel: vehicle.model || null,
+      vehType: vehicle.vehicleType || null,
+    };
+  };
+
+  const createNow = (payload: ReturnType<typeof buildPayload>) => {
+    createMut.mutate({ targetId, ...payload });
+  };
+
+  const warnPayload = useRef<ReturnType<typeof buildPayload> | null>(null);
+
+  const handleWarnContinue = () => {
+    const current = warnQueue[warnIndex];
+    if (current) {
+      notDuplicateMutation.mutate({
+        type: current.kind === "target" ? "person" : current.kind,
+        labelA: current.candidateLabel,
+        labelB: current.existingLabel,
+      });
     }
+    const next = warnIndex + 1;
+    if (next < warnQueue.length) {
+      setWarnIndex(next);
+    } else {
+      const payload = warnPayload.current;
+      setWarnQueue([]);
+      setWarnIndex(0);
+      if (payload) createNow(payload);
+    }
+  };
+
+  const handleWarnReview = () => {
+    setWarnQueue([]);
+    setWarnIndex(0);
   };
 
   const handleSave = async () => {
-    if (!form.name.trim()) { toast.error("Target name is required."); return; }
-    setCheckingDup(true);
-    try {
-      const match = await utils.target.registry.findPossibleDuplicate.fetch({ name: form.name });
-      if (match) {
-        setDupMatch(match);
-      } else {
-        await saveAsNew();
-      }
-    } catch {
-      // If the duplicate check itself fails, don't block the save.
-      await saveAsNew();
-    } finally {
-      setCheckingDup(false);
+    const payload = buildPayload();
+    if (!payload.name) {
+      toast.error("Enter both First Name/s and Surname.");
+      return;
+    }
+    if (!isNew) {
+      updateMut.mutate({ id: associate.id, ...payload });
+      return;
+    }
+    const warnings = await runDuplicateChecks(utils, [
+      { kind: "target", label: payload.name },
+      { kind: "person", label: payload.name },
+      { kind: "address", label: payload.hbf ?? "" },
+      { kind: "vehicle", label: payload.v1f ?? "" },
+      ...extraAddresses.map(ea => ({
+        kind: "address" as const,
+        label: composeAddress(ea).full,
+      })),
+      ...extraVehicles.map(ev => ({
+        kind: "vehicle" as const,
+        label: composeVehicle(ev).full,
+      })),
+    ]);
+    if (warnings.length > 0) {
+      warnPayload.current = payload;
+      setWarnQueue(warnings);
+      setWarnIndex(0);
+    } else {
+      createNow(payload);
     }
   };
 
-  const handleMergeInstead = async () => {
-    if (!dupMatch) return;
-    const full = await utils.target.getById.fetch({ id: dupMatch.id });
-    if (!full) { toast.error("Couldn't load the existing target."); return; }
-    setExistingFull(full);
-    setDupMatch(null);
-    setMergeOpen(true);
-  };
+  const saving = createMut.isPending || updateMut.isPending;
+  const displayName = associate?.name || composeTargetName(identity).name || "New Associate";
 
   return (
-    <>
-    <Dialog open={open && !mergeOpen} onOpenChange={v => { if (!v) resetAndClose(); }}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Add Target to Registry</DialogTitle>
-        </DialogHeader>
-        <div className="flex flex-col gap-3 py-2">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Full Name, Born *</label>
-            <EntityAutocompleteInput
-              entityType="person"
-              value={form.name}
-              onChange={v => setForm(f => ({ ...f, name: v }))}
-              onBlur={(e) => {
-                const short = extractShortTarget(e.target.value);
-                if (short) setForm(f => ({ ...f, tgt: f.tgt || short }));
-              }}
-              placeholder="e.g. John SMITH, born 1 Jan 1980"
-              autoFocus
-            />
-          </div>
-          {/* Target (TGT) */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Target (TGT)</label>
-            <Input value={form.tgt} onChange={setField("tgt")} />
+    <div className="rounded-lg border border-border/60 bg-muted/10 overflow-hidden">
+      <div
+        className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-accent/10 transition-colors"
+        onClick={() => setExpanded(v => !v)}
+      >
+        <Users className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+        <span className="flex-1 text-sm font-medium truncate">{displayName}</span>
+        {associate?.isIndicesOnly && <IndicesBadge />}
+        <ChevronRight className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${expanded ? "rotate-90" : ""}`} />
+      </div>
+      {expanded && (
+        <div className="px-3 pb-3 pt-1 flex flex-col gap-3 border-t border-border/40">
+          <TargetIdentityFields value={identity} onChange={v => mark(() => setIdentity(v))} />
+
+          <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
+            <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
+              <Home className="w-3 h-3" /> Address
+            </p>
+            <TargetAddressFields value={address} onChange={v => mark(() => setAddress(v))} />
           </div>
 
-          {/* Home Address Full (HBF) — with Google Places autocomplete */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Home Address Full (HBF)</label>
-            <AddressAutocompleteInput
-              value={form.hbf}
-              onChange={(v) => setForm(f => ({ ...f, hbf: v }))}
-              onShortAddress={(short) => setForm(f => ({ ...f, hb: f.hb || short }))}
-              onBlur={(e) => {
-                const short = extractShortAddress(e.target.value);
-                if (short) setForm(f => ({ ...f, hb: f.hb || short }));
-              }}
-              placeholder="Search or type address…"
-            />
+          <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
+            <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
+              <Car className="w-3 h-3" /> Vehicle
+            </p>
+            <TargetVehicleFields value={vehicle} onChange={v => mark(() => setVehicle(v))} />
           </div>
 
-          {/* Home (HB) */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Home (HB)</label>
-            <Input value={form.hb} onChange={setField("hb")} />
-          </div>
-
-          {/* Vehicle 1 Full (V1F) */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle 1 Full (V1F)</label>
-            <EntityAutocompleteInput
-              entityType="vehicle"
-              value={form.v1f}
-              onChange={v => setForm(f => ({ ...f, v1f: v }))}
-              onBlur={(e) => {
-                const short = extractShortVehicle(e.target.value);
-                if (short) setForm(f => ({ ...f, v1: f.v1 || short }));
-              }}
-            />
-          </div>
-
-          {/* Vehicle (V1) */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vehicle (V1)</label>
-            <Input value={form.v1} onChange={setField("v1")} />
-          </div>
-
-          {/* Dynamic extra vehicles */}
-          {extraVehicles.map((ev, i) => {
-            const num = i + 2;
-            return (
-              <div key={i} className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5"><Car className="w-3 h-3" /> Vehicle {num}</span>
-                  <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => setExtraVehicles(v => v.filter((_, idx) => idx !== i))}><X className="w-3 h-3" /></Button>
-                </div>
-                <EntityAutocompleteInput
-                  entityType="vehicle"
-                  value={ev.full}
-                  onChange={v => setExtraVehicles(list => list.map((item, idx) => idx === i ? { ...item, full: v } : item))}
-                  onBlur={(e) => {
-                    const short = extractShortVehicle(e.target.value);
-                    if (short) setExtraVehicles(v => v.map((item, idx) => idx === i ? { ...item, short: item.short || short } : item));
-                  }}
-                  placeholder={`Vehicle ${num} Full (V${num}F)…`}
-                />
-                <Input value={ev.short} onChange={e => setExtraVehicles(v => v.map((item, idx) => idx === i ? { ...item, short: e.target.value } : item))} placeholder={`Vehicle ${num} (V${num})…`} />
+          {extraAddresses.map((ea, i) => (
+            <div key={i} className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
+                  <Home className="w-3 h-3" /> Additional Address {i + 2}
+                </span>
+                <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => removeAddress(i)}>
+                  <X className="w-3 h-3" />
+                </Button>
               </div>
-            );
-          })}
-          <Button size="sm" variant="outline" className="gap-1.5 self-start" onClick={() => setExtraVehicles(v => [...v, { full: "", short: "" }])}>
+              <TargetAddressFields
+                value={ea}
+                onChange={v => updateAddressEntry(i, v)}
+                label={ea.label}
+                onLabelChange={v => updateAddressEntry(i, { label: v })}
+              />
+            </div>
+          ))}
+          <Button size="sm" variant="outline" className="gap-1.5 self-start" onClick={addAddress}>
+            <Plus className="w-3.5 h-3.5" /> Add Address
+          </Button>
+
+          {extraVehicles.map((ev, i) => (
+            <div key={i} className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
+                  <Car className="w-3 h-3" /> Vehicle {i + 2}
+                </span>
+                <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => removeVehicle(i)}>
+                  <X className="w-3 h-3" />
+                </Button>
+              </div>
+              <TargetVehicleFields value={ev} onChange={v => updateVehicleEntry(i, v)} />
+            </div>
+          ))}
+          <Button size="sm" variant="outline" className="gap-1.5 self-start" onClick={addVehicle}>
             <Plus className="w-3.5 h-3.5" /> Add Vehicle
           </Button>
 
-          {/* Wild fields */}
-          {wildFields.map((wf, i) => (
-            <div key={i} className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-amber-500 uppercase tracking-wide flex items-center gap-1.5"><Hash className="w-3 h-3" /> Wild Field {wf.label}</span>
-                <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => setWildFields(v => v.filter((_, idx) => idx !== i).map((f, idx) => ({ ...f, label: `#${idx + 1}` })))}><X className="w-3 h-3" /></Button>
-              </div>
-              <Input value={wf.value} onChange={e => setWildFields(v => v.map((item, idx) => idx === i ? { ...item, value: e.target.value } : item))} placeholder={`${wf.label} value…`} />
-            </div>
-          ))}
-          <Button size="sm" variant="outline" className="gap-1.5 self-start border-amber-500/40 text-amber-500 hover:bg-amber-500/10" onClick={() => setWildFields(v => [...v, { label: `#${v.length + 1}`, value: "" }])}>
-            <Hash className="w-3.5 h-3.5" /> Add Wild Field
-          </Button>
-
-          {/* Depart / Arrive */}
-          {([
-            { label: "Depart (DEP)", field: "dep" as keyof TargetForm },
-            { label: "Arrive (ARR)", field: "arr" as keyof TargetForm },
-          ]).map(({ label, field }) => (
-            <div key={field} className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{label}</label>
-              <Input value={form[field]} onChange={setField(field)} />
-            </div>
-          ))}
+          <div className="flex items-center justify-between">
+            {!isNew && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-2 text-destructive hover:text-destructive"
+                onClick={() => setConfirmDelete(true)}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Remove
+              </Button>
+            )}
+            <Button size="sm" className="gap-2 ml-auto" onClick={handleSave} disabled={saving || (!isNew && !dirty)}>
+              <Save className="w-3.5 h-3.5" />
+              {saving ? "Saving…" : isNew ? "Add Associate" : "Save"}
+            </Button>
+          </div>
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={resetAndClose} disabled={saving || checkingDup}>Cancel</Button>
-          <Button onClick={handleSave} disabled={saving || checkingDup}>
-            {checkingDup ? "Checking…" : saving ? "Saving…" : "Save Target"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      )}
 
-    {/* Possible duplicate — asks before either creating a lookalike or merging */}
-    <AlertDialog open={dupMatch !== null} onOpenChange={v => { if (!v) setDupMatch(null); }}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
-            Possible duplicate target
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            "{form.name}" looks like it may be the same person as an existing target, <strong>{dupMatch?.name}</strong> ({dupMatch?.reason}). Is this the same person?
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter className="flex flex-col sm:flex-col gap-2">
-          <Button onClick={handleMergeInstead} className="w-full">
-            <Merge className="w-4 h-4 mr-1.5" /> Yes — merge details
-          </Button>
-          <Button
-            variant="outline"
-            className="w-full"
-            onClick={() => { setDupMatch(null); saveAsNew(); }}
-          >
-            No, different person — create new
-          </Button>
-          <AlertDialogCancel onClick={() => setDupMatch(null)} className="w-full mt-0">
-            Cancel
-          </AlertDialogCancel>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+      {!isNew && (
+        <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Remove associate?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Remove <strong>{associate.name}</strong> as an associate of this target? This cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => { setConfirmDelete(false); deleteMut.mutate({ id: associate.id }); }}
+              >
+                Remove
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
 
-    {/* Field-level merge into the existing target */}
-    {existingFull && (
-      <TargetMergeDialog
-        open={mergeOpen}
-        onOpenChange={v => { setMergeOpen(v); if (!v) setExistingFull(null); }}
-        existing={existingFull}
-        incoming={{ ...form, extraVehicles, wildFields }}
-        onMerged={() => {
-          utils.target.registry.list.invalidate();
-          resetAndClose();
-        }}
+      <PossibleDuplicateAlert
+        warning={warnQueue[warnIndex] ?? null}
+        onContinue={handleWarnContinue}
+        onReview={handleWarnReview}
       />
-    )}
-    </>
+    </div>
+  );
+}
+
+function AssociatesSection({ targetId }: { targetId: number }) {
+  const { data: assocList } = trpc.associate.listForTarget.useQuery({ targetId });
+  const [addingNew, setAddingNew] = useState(false);
+
+  return (
+    <div className="mt-2 pt-3 border-t border-border/50 flex flex-col gap-2">
+      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+        <Users className="w-3.5 h-3.5" /> Associates
+      </p>
+      {(assocList ?? []).map(a => (
+        <AssociateCard key={a.id} targetId={targetId} associate={a} />
+      ))}
+      {addingNew && (
+        <AssociateCard
+          targetId={targetId}
+          associate={null}
+          onCreated={() => setAddingNew(false)}
+        />
+      )}
+      {!addingNew && (
+        <Button size="sm" variant="outline" className="gap-1.5 self-start" onClick={() => setAddingNew(true)}>
+          <Plus className="w-3.5 h-3.5" /> Add Associate
+        </Button>
+      )}
+    </div>
   );
 }
 
@@ -1050,7 +1108,10 @@ export default function TargetRegistryPage() {
                 </div>
 
                 {/* Name */}
-                <p className="font-semibold text-foreground leading-tight line-clamp-2">{t.name}</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="font-semibold text-foreground leading-tight line-clamp-2">{t.name}</p>
+                  {t.isIndicesOnly && <IndicesBadge />}
+                </div>
 
                 {/* Key details */}
                 <div className="flex flex-col gap-1 mt-auto">
@@ -1123,19 +1184,8 @@ export default function TargetRegistryPage() {
       <AddTargetDialog
         open={showCreate}
         onClose={() => setShowCreate(false)}
-        onSave={async (form) => {
-          await createMutation.mutateAsync({
-            name: form.name,
-            tgt: form.tgt || null,
-            hbf: form.hbf || null,
-            hb: form.hb || null,
-            v1f: form.v1f || null,
-            v1: form.v1 || null,
-            dep: form.dep || null,
-            arr: form.arr || null,
-            extraVehicles: JSON.stringify(form.extraVehicles),
-            wildFields: JSON.stringify(form.wildFields),
-          });
+        onSave={async (payload) => {
+          await createMutation.mutateAsync(payload);
         }}
       />
 

@@ -30,6 +30,9 @@ import { useParams, useLocation } from "wouter";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
+import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
+import { EntityAutocompleteInput } from "@/components/EntityAutocompleteInput";
+import { useOffline } from "@/contexts/OfflineContext";
 
 // ─── Field definitions ─────────────────────────────────────────────────────
 
@@ -169,6 +172,53 @@ function FieldInput({
         </datalist>
       )}
     </div>
+  );
+}
+
+// Officers use "HB" (Home Base) / "HBF" (Home Base Full) as shorthand for the
+// linked Target's registered home address instead of retyping it — resolved
+// on blur, matched as the field's whole trimmed value (case-insensitive) so
+// it doesn't fire mid-type or clash with an address that happens to contain
+// "hb" as a substring.
+function resolveLocationShortcut(
+  value: string,
+  target: { hb?: string | null; hbf?: string | null } | null | undefined
+): string {
+  if (!target) return value;
+  const trimmed = value.trim().toLowerCase();
+  if (trimmed === "hb" && target.hb) return target.hb;
+  if (trimmed === "hbf" && target.hbf) return target.hbf;
+  return value;
+}
+
+// Google Places address search, plus the HB/HBF shortcut above — shared by
+// the Location field and the Coyotes special-project detail field, which the
+// same officers use to record a location the same way.
+function ShortcutAddressField({
+  value,
+  onChange,
+  target,
+  disabled,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  target: { hb?: string | null; hbf?: string | null } | null | undefined;
+  disabled?: boolean;
+  placeholder?: string;
+}) {
+  return (
+    <AddressAutocompleteInput
+      value={value}
+      onChange={onChange}
+      onBlur={() => {
+        const resolved = resolveLocationShortcut(value, target);
+        if (resolved !== value) onChange(resolved);
+      }}
+      disabled={disabled}
+      placeholder={placeholder ?? "Search address… (or type HB / HBF)"}
+      inputClassName="text-sm"
+    />
   );
 }
 
@@ -621,6 +671,7 @@ export default function SheetSummaryPage() {
   const [, navigate] = useLocation();
   const utils = trpc.useUtils();
   const { user } = useAuth();
+  const { isOnline } = useOffline();
 
   const { data: sheet } = trpc.sheet.get.useQuery(
     { id: sheetId },
@@ -630,6 +681,12 @@ export default function SheetSummaryPage() {
     ?.closedAt;
   const operationId = (sheet as { operationId?: number } | undefined)
     ?.operationId;
+  const sheetTargetId = (sheet as { targetId?: number | null } | undefined)
+    ?.targetId;
+  const { data: targetRecord } = trpc.target.getById.useQuery(
+    { id: sheetTargetId ?? 0 },
+    { enabled: !!sheetTargetId }
+  );
 
   const sheetCins: { cin: string; isTeamLeader?: boolean }[] = (() => {
     const raw = (sheet as { sheetCins?: string | null } | undefined)?.sheetCins;
@@ -646,16 +703,19 @@ export default function SheetSummaryPage() {
   );
   const canComplete = user?.role === "admin" || isTeamLeader;
 
+  // Poll while online — mirrors SheetDetail.tsx's row.list/entityChips
+  // polling, so a Summary left open picks up rows another officer is still
+  // adding on the Running Sheet instead of only refreshing on page load.
   const { data: record, isLoading } = trpc.summary.getBySheet.useQuery(
     { sheetId },
-    { enabled: !!sheetId }
+    { enabled: !!sheetId, refetchInterval: isOnline ? 10000 : false }
   );
   const isComplete = !!record?.completedAt;
   const isLocked = sheetIsClosed || isComplete;
 
   const { data: vehicles } = trpc.summary.getVehicles.useQuery(
     { sheetId },
-    { enabled: !!sheetId }
+    { enabled: !!sheetId, refetchInterval: isOnline ? 10000 : false }
   );
 
   const { data: ioSupportHistory } = trpc.summary.getSupportHistory.useQuery(
@@ -669,7 +729,7 @@ export default function SheetSummaryPage() {
 
   const { data: entries } = trpc.summary.getEntries.useQuery(
     { sheetId },
-    { enabled: !!sheetId }
+    { enabled: !!sheetId, refetchInterval: isOnline ? 10000 : false }
   );
 
   const updateMutation = trpc.summary.update.useMutation({
@@ -1002,12 +1062,17 @@ export default function SheetSummaryPage() {
                 onChange={v => handleChange("targetName", v)}
                 disabled={isLocked}
               />
-              <FieldInput
-                label="Location"
-                value={form.location}
-                onChange={v => handleChange("location", v)}
-                disabled={isLocked}
-              />
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-1.5">
+                  Location
+                </p>
+                <ShortcutAddressField
+                  value={form.location}
+                  onChange={v => handleChange("location", v)}
+                  target={targetRecord}
+                  disabled={isLocked}
+                />
+              </div>
 
               {/* Vehicle — always computed live, never stored; dismiss removes an entry */}
               <div>
@@ -1134,17 +1199,40 @@ export default function SheetSummaryPage() {
                         <span className="text-xs font-medium text-muted-foreground w-16 shrink-0">
                           {p.key}
                         </span>
-                        <Input
-                          value={p.detail}
-                          onChange={e =>
-                            setSpecialProjectDetail(p.key, e.target.value)
-                          }
-                          disabled={isLocked}
-                          placeholder={
-                            SPECIAL_PROJECT_PLACEHOLDERS[p.key] ?? "Details"
-                          }
-                          className="text-sm"
-                        />
+                        {p.key === "Coyotes" ? (
+                          <div className="flex-1">
+                            <ShortcutAddressField
+                              value={p.detail}
+                              onChange={v => setSpecialProjectDetail(p.key, v)}
+                              target={targetRecord}
+                              disabled={isLocked}
+                              placeholder="Search address… (or type HB / HBF)"
+                            />
+                          </div>
+                        ) : p.key === "Tracker" ? (
+                          <div className="flex-1">
+                            <EntityAutocompleteInput
+                              value={p.detail}
+                              onChange={v => setSpecialProjectDetail(p.key, v)}
+                              entityType="vehicle"
+                              disabled={isLocked}
+                              placeholder="Vehicle details (searches Intelligence folder)"
+                              inputClassName="text-sm"
+                            />
+                          </div>
+                        ) : (
+                          <Input
+                            value={p.detail}
+                            onChange={e =>
+                              setSpecialProjectDetail(p.key, e.target.value)
+                            }
+                            disabled={isLocked}
+                            placeholder={
+                              SPECIAL_PROJECT_PLACEHOLDERS[p.key] ?? "Details"
+                            }
+                            className="text-sm"
+                          />
+                        )}
                       </div>
                     ))}
                   </div>

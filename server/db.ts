@@ -17,6 +17,7 @@ import { createPool as createPromisePool } from "mysql2/promise";
 import { vaultEncrypt, vaultDecrypt } from "./wipcVault";
 import { cosineSimilarity } from "./faceRecognition";
 import { makeRequest, type GeocodingResult } from "./_core/map";
+import { formatIntelAddress, formatIntelVehicle } from "@shared/addressFormat";
 import {
   auditLogs,
   certifications,
@@ -6287,20 +6288,111 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** Strips the trailing "(ShortForm)" bracket for location/address entity mentions — the shortform duplicates what's already stated in the surrounding text. */
-function stripLocationBrackets(
-  text: string,
-  entities: ReturnType<typeof extractEntitiesFromText>
+/**
+ * A small fixed set of officer-facing shorthand the Summary tab writes back
+ * out — not the full `shortcuts` table (that also has phrases like
+ * "Surveillance commenced in the vicinity of" that stay spelled out in a
+ * Summary), just the specific abbreviations investigators expect to read:
+ * driver/sole occupant, front passenger, parked/unattended, continued out
+ * of sight. Case-insensitive, whole-phrase match.
+ */
+const SUMMARY_ABBREVIATIONS: Array<[RegExp, string]> = [
+  [/\bdriver and sole occupant\b/gi, "DSO"],
+  [/\bfront passenger\b/gi, "FP"],
+  [/\bparked and unattended\b/gi, "PU"],
+  [/\bcontinued out of sight\b/gi, "COOS"],
+];
+
+/**
+ * Rewrites one RS row's observation text into the shorthand style
+ * investigators actually write Summaries in — not a verbatim copy, and not
+ * an attempt at general rewriting (that would need real language
+ * understanding, which this app's Golden Rule rules out at runtime; text
+ * that doesn't match one of these specific, deterministic patterns is left
+ * exactly as written). Rules, applied in order:
+ *
+ *  1. Every bracket-introduced address/vehicle mention becomes its
+ *     Intelligence short form (formatIntelAddress/formatIntelVehicle —
+ *     the same functions the Intelligence folder itself uses), e.g.
+ *     "44 Elvira Street, PALMYRA WA (44 Elvira Street)" -> "44 Elvira
+ *     Street, PALMYRA", "...bearing WA registration 1FAT004 (Vehicle
+ *     1FAT004)" -> "1FAT004 ...".
+ *  2. A bare "Vehicle <rego>" mention (already introduced earlier in the
+ *     sheet, so it shows up here without its own bracket) drops the word
+ *     "Vehicle" — just the rego.
+ *  3. The sheet's own target — by TGT alias, whether bracket-introduced or
+ *     a bare re-mention — becomes "TGT".
+ *  4. DSO / FP / PU / COOS (see SUMMARY_ABBREVIATIONS above).
+ *  5. "departed ... continued via:" — the from-address in between is
+ *     dropped (it was just stated, or is the previous line's location) —
+ *     becomes "departed, travelled to:".
+ *  6. "PHOTOGRAPH/S TAKEN" is dropped entirely — investigators reading a
+ *     Summary don't need this noted, it's implicit in the photo count.
+ */
+function buildSummaryAbbreviatedText(
+  observation: string,
+  tgtAlias: string | null
 ): string {
-  let result = text;
-  for (const e of entities) {
-    if (e.type !== "address" || !e.shortForm) continue;
-    result = result.replace(
-      new RegExp(`\\s*\\(${escapeRegExp(e.shortForm)}\\)`, "g"),
-      ""
+  let text = observation;
+
+  // 1. Bracket-introduced address/vehicle mentions -> Intelligence short form.
+  const entities = extractEntitiesFromText(text);
+  const typeByRawShortForm = new Map(
+    entities.map(e => [e.rawShortForm.trim().toUpperCase(), e.type])
+  );
+  const bracketPattern = /([^()]{3,120}?)\s*\(([^()]{1,80})\)/g;
+  let rebuilt = "";
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = bracketPattern.exec(text)) !== null) {
+    const [full, , bracketContent] = match;
+    const type = typeByRawShortForm.get(bracketContent.trim().toUpperCase());
+    let replacement = full;
+    if (type === "address") {
+      replacement = formatIntelAddress(full);
+    } else if (type === "vehicle") {
+      replacement = formatIntelVehicle(bracketContent.trim(), text);
+    }
+    rebuilt += text.slice(lastIndex, match.index) + replacement;
+    lastIndex = match.index + full.length;
+  }
+  rebuilt += text.slice(lastIndex);
+  text = rebuilt;
+
+  // 2. Bare "Vehicle <rego>" (already introduced earlier in the sheet) -> just the rego.
+  text = text.replace(/\bVehicle\s+([A-Z0-9]{4,8})\b/gi, "$1");
+
+  // 3. The sheet's own target's alias -> "TGT".
+  if (tgtAlias && tgtAlias.trim()) {
+    text = text.replace(
+      new RegExp(`\\b${escapeRegExp(tgtAlias.trim())}\\b`, "g"),
+      "TGT"
     );
   }
-  return result;
+
+  // 4. Fixed abbreviations.
+  for (const [pattern, replacement] of SUMMARY_ABBREVIATIONS) {
+    text = text.replace(pattern, replacement);
+  }
+
+  // 5. "departed ... continued via:" -> "departed, travelled to:" — the
+  // from-address in between (bracket-introduced or bare) is dropped, along
+  // with any comma immediately preceding "departed" in the source sentence.
+  text = text.replace(
+    /,?\s*\bdeparted\b\s*(?:and\s+)?.*?,?\s*(?:and\s+)?continued via:/gi,
+    " departed, travelled to:"
+  );
+
+  // 6. Drop "PHOTOGRAPH/S TAKEN" entirely.
+  text = text.replace(/\s*PHOTOGRAPH\/?S?\s+TAKEN\.?/gi, "");
+
+  // Cleanup: collapse stray whitespace/punctuation left by the removals above.
+  text = text
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([,.;:])/g, "$1")
+    .trim();
+
+  return text;
 }
 
 /**
@@ -6310,16 +6402,19 @@ function stripLocationBrackets(
  * distinct Time / Address / Observation table columns without the address
  * being duplicated inside the observation text.
  */
-function buildSummaryEntryFields(row: {
-  time: string | null;
-  observation: string | null;
-}): { text: string; location: string | null } {
+function buildSummaryEntryFields(
+  row: {
+    time: string | null;
+    observation: string | null;
+  },
+  tgtAlias: string | null
+): { text: string; location: string | null } {
   const raw = row.observation ?? "";
   const entities = extractEntitiesFromText(raw);
   const location = entities.find(e => e.type === "address");
 
   return {
-    text: stripLocationBrackets(raw, entities),
+    text: buildSummaryAbbreviatedText(raw, tgtAlias),
     location: location ? location.shortForm || location.fullDescription : null,
   };
 }
@@ -6352,6 +6447,13 @@ export async function getSheetSummaryEntries(
   const summary = await getSheetSummary(sheetId);
   const isComplete = !!summary?.completedAt;
 
+  // The sheet's own target's TGT alias (e.g. "MAY") — used to rewrite their
+  // name down to "TGT" in the shorthand Summary text (see
+  // buildSummaryAbbreviatedText). Not every sheet has a linked target.
+  const sheet = await getRunningSheetById(sheetId);
+  const target = sheet?.targetId ? await getTargetById(sheet.targetId) : null;
+  const tgtAlias = target?.tgt?.trim() || null;
+
   const allRows = await getRowsBySheetId(sheetId);
   // Rows with real content — used both for deciding which rows need a new
   // line and for sort order / for deciding whether an existing line's row
@@ -6372,7 +6474,7 @@ export async function getSheetSummaryEntries(
     if (missing.length > 0) {
       await db.insert(sheetSummaryEntries).values(
         missing.map(r => {
-          const fields = buildSummaryEntryFields(r);
+          const fields = buildSummaryEntryFields(r, tgtAlias);
           return {
             sheetId,
             rowId: r.id,
@@ -6408,7 +6510,7 @@ export async function getSheetSummaryEntries(
         );
         return { ...e, deleted: true };
       }
-      const fields = buildSummaryEntryFields(row);
+      const fields = buildSummaryEntryFields(row, tgtAlias);
       const changed =
         fields.text !== e.text ||
         fields.location !== e.location ||

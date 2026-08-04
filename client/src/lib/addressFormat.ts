@@ -29,6 +29,9 @@ import {
   isValid as isValidDate,
   format as formatDate,
 } from "date-fns";
+import { formatIntelAddress, formatIntelVehicle } from "@shared/addressFormat";
+
+export { formatIntelAddress, formatIntelVehicle };
 
 const AU_STATES = "WA|NSW|VIC|QLD|SA|TAS|NT|ACT";
 
@@ -316,89 +319,6 @@ export function buildPoiAddress(name: string, address: string): string {
 }
 
 /**
- * Format an address for display in the Intelligence section and map pop-ups.
- *
- * Input is the RS shortForm (what's inside the brackets in an observation), e.g.:
- *   "1 Smith Street"                         → "1 Smith Street, MELVILLE"
- *   "1 Smith Street, MELVILLE WA"            → "1 Smith Street, MELVILLE"
- *   "1 Smith Street, MELVILLE WA (1 Smith Street)" → "1 Smith Street, MELVILLE"
- *   "Blend Cafe, 1 Smith Street, MELVILLE WA" → "Blend Cafe, 1 Smith Street, MELVILLE"
- *   "Blend Cafe"                             → "Blend Cafe"  (no address info, returned as-is)
- *   "Kent St & Queens Park Rd, WILSON WA"    → "Kent St & Queens Park Rd, WILSON"
- *
- * Rules:
- *  1. Strip any trailing bracket code e.g. " (1 SMITH STREET)"
- *  2. Strip the state abbreviation (WA, NSW, etc.) from the suburb+state segment
- *  3. Strip the postcode and ", Australia"
- *  4. Uppercase the suburb name
- *  5. If no suburb is detectable, return the address as-is (cleaned)
- */
-export function formatIntelAddress(shortForm: string): string {
-  if (!shortForm) return shortForm;
-
-  // Step 1: strip trailing bracket code " (ANYTHING)"
-  let text = shortForm.replace(/\s*\([^)]{1,80}\)\s*$/, "").trim();
-
-  // Step 2: strip ", Australia" and postcode
-  text = text.replace(/,?\s*Australia\s*$/i, "").trim();
-  text = text.replace(/\s+\d{4}\s*$/, "").trim();
-
-  // Step 3: detect and reformat "..., Suburb STATE" → "..., SUBURB"
-  // Match the trailing ", Suburb STATE" pattern
-  const AU_STATES_RE = /^(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)$/i;
-  const parts = text.split(",");
-  if (parts.length >= 2) {
-    const lastPart = parts[parts.length - 1].trim();
-    // Check if lastPart ends with a state abbreviation: "Southern River WA" or "MELVILLE WA"
-    const stateMatch = lastPart.match(
-      /^(.*?)\s+(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)$/i
-    );
-    if (stateMatch) {
-      const suburb = stateMatch[1].trim();
-      // Uppercase the suburb
-      parts[parts.length - 1] = " " + suburb.toUpperCase();
-      text = parts.join(",");
-    } else if (AU_STATES_RE.test(lastPart)) {
-      // The last part is just a state abbreviation — remove it entirely
-      parts.pop();
-      text = parts.join(",").trim();
-    }
-  }
-
-  // Step 4: if the street segment (everything before the last comma) is ALL-CAPS
-  // (e.g. "4 GLYDE ST" from an old entity), title-case it.
-  // This is a safety net for entities stored before the server-side fix.
-  const finalParts = text.split(",");
-  if (finalParts.length >= 1) {
-    const streetSegment = finalParts[0].trim();
-    // Detect all-caps street segment: all non-digit characters are uppercase
-    const nonDigitChars = streetSegment.replace(/[\d\s/]/g, "");
-    if (
-      nonDigitChars.length > 0 &&
-      nonDigitChars === nonDigitChars.toUpperCase() &&
-      /[A-Z]{2}/.test(nonDigitChars)
-    ) {
-      // Title-case the street segment
-      finalParts[0] =
-        " " +
-        streetSegment.replace(/\b(\w+)/g, w => {
-          if (/^\d+$/.test(w)) return w;
-          if (
-            /^(WA|NSW|VIC|QLD|SA|TAS|NT|ACT|HWY|RD|ST|AVE|DR|CT|PL|CL|CRES|BLVD|FWY|LN|TCE|PDE|CCT|GR|CNR)$/i.test(
-              w
-            )
-          )
-            return w.toUpperCase();
-          return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
-        });
-      text = finalParts.join(",").trim();
-    }
-  }
-
-  return text.trim();
-}
-
-/**
  * Format an address for map marker pop-up display.
  * Same as formatIntelAddress — produces "1 Smith Street, MELVILLE" or
  * "Blend Cafe, 1 Smith Street, MELVILLE".
@@ -516,128 +436,6 @@ export function ensureBracketCode(address: string): string {
     streetPart = firstPart || address;
   }
   return `${address} (${streetPart})`;
-}
-
-/**
- * Format a vehicle for display in the Intelligence section and map pop-ups.
- *
- * The RS shortForm is what's inside the brackets in an observation, e.g.:
- *   "Vehicle 1ABC123"   → extracted from "red Mercedes Benz sedan, bearing WA registration 1ABC123 (Vehicle 1ABC123)"
- *
- * The Intel display format is: "[registration] [description]"
- * e.g. "1ABC123 red Mercedes Benz sedan"
- *
- * Rules:
- *  1. If shortForm starts with "Vehicle " (case-insensitive), strip that prefix
- *     to get the registration: "Vehicle 1ABC123" → "1ABC123"
- *  2. If fullObservation is provided, extract the vehicle description from it:
- *     look for text before "bearing ... registration REGO" or before "(Vehicle REGO)"
- *  3. Combine as "[rego] [description]" — e.g. "1ABC123 red Mercedes Benz sedan"
- *  4. If no description can be found, return just the registration
- *  5. If shortForm doesn't look like a vehicle reference, return it as-is
- *    (stripped of leading "a " or "A ")
- */
-export function formatIntelVehicle(
-  shortForm: string,
-  fullObservation?: string
-): string {
-  if (!shortForm) return shortForm;
-
-  // Strip leading "a " or "A " (legacy normalisation)
-  let cleaned = shortForm.replace(/^[aA]\s+/, "").trim();
-
-  // Extract registration from "Vehicle REGO" pattern
-  const vehiclePrefix = cleaned.match(/^[Vv]ehicle\s+(.+)$/i);
-  if (!vehiclePrefix) {
-    // Not a "Vehicle REGO" format.
-    // Try to extract rego from "bearing [STATE] registration REGO" embedded in the text.
-    // e.g. "black Subaru WRX, bearing WA registration 1FDD444 (Vehicle 1FDD444)"
-    //   → rego = "1FDD444", desc = "black Subaru WRX" → "1FDD444 black Subaru WRX"
-    const bearingMatch = cleaned.match(
-      /^(.+?),?\s+bearing\s+(?:[A-Z]{2,3}\s+)?registration\s+([A-Z0-9-]+)/i
-    );
-    if (bearingMatch) {
-      const rawDesc = bearingMatch[1]
-        .replace(/^[aA]\s+/, "")
-        .replace(/^V\d[A-Z]?:\s*/i, "")
-        .trim();
-      const extractedRego = bearingMatch[2].trim().toUpperCase();
-      if (rawDesc && rawDesc.toLowerCase() !== "vehicle") {
-        // Avoid duplicating rego if desc already starts with it
-        if (rawDesc.toUpperCase().startsWith(extractedRego)) return rawDesc;
-        return `${extractedRego} ${rawDesc}`;
-      }
-      return extractedRego;
-    }
-    // No bearing pattern — strip any trailing bracket code and return
-    const stripped = cleaned.replace(/\s*\([^)]{1,80}\)\s*$/, "").trim();
-    return stripped || cleaned;
-  }
-
-  const rego = vehiclePrefix[1].trim().toUpperCase();
-
-  // Try to extract description from the full observation text
-  if (fullObservation) {
-    // Find the specific bearing clause for THIS rego in the full observation.
-    // Strategy: locate "bearing ... registration REGO" by index, then look backward
-    // from that position to extract the vehicle description.
-    // We split on closing brackets ) to avoid spilling across other vehicle references
-    // like "(Vehicle 1HTU905)" when there are multiple vehicles in one observation.
-    const escapedRego = rego.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const bearingIdx = fullObservation.search(
-      new RegExp(
-        "bearing\\s+(?:[A-Z]{2,3}\\s+)?registration\\s+" + escapedRego + "\\b",
-        "i"
-      )
-    );
-    if (bearingIdx >= 0) {
-      // Take text before the bearing clause, strip trailing comma/space
-      const beforeBearing = fullObservation
-        .slice(0, bearingIdx)
-        .replace(/,?\s*$/, "")
-        .trim();
-      // Split on closing brackets to isolate the last vehicle description segment
-      const segments = beforeBearing.split(")");
-      let lastSegment = segments[segments.length - 1].trim();
-      // Strip leading connectors: "and a", "and an", "and the", "a ", "an ", "the "
-      lastSegment = lastSegment
-        .replace(/^(?:and\s+(?:a[n]?\s+|the\s+)?|a[n]?\s+|the\s+)/i, "")
-        .trim();
-      lastSegment = lastSegment
-        .replace(/^[aA]\s+/, "")
-        .replace(/^V\d[A-Z]?:\s*/i, "")
-        .trim();
-      if (lastSegment && lastSegment.toLowerCase() !== "vehicle") {
-        if (lastSegment.toLowerCase().startsWith(rego.toLowerCase()))
-          return lastSegment;
-        return `${rego} ${lastSegment}`;
-      }
-    }
-    // Fallback: original approach — match from start of observation (single-vehicle case)
-    const descMatch = fullObservation.match(
-      /^(.+?),?\s+bearing\s+(?:[A-Z]{2,3}\s+)?registration\s+[\w\s-]+/i
-    );
-    if (descMatch) {
-      const rawDesc = descMatch[1].trim();
-      // Clean up: remove leading "a " or "A "
-      // Also strip shortcut prefixes like "V1F:", "V2F:", "V1:", "V2:"
-      const desc = rawDesc
-        .replace(/^[aA]\s+/, "")
-        .replace(/^V\d[A-Z]?:\s*/i, "")
-        .trim();
-      if (desc && desc.toLowerCase() !== "vehicle") {
-        // If desc already starts with the rego (e.g. "1FDD444 black Subaru WRX"),
-        // return desc directly to avoid duplicating the rego in the display.
-        if (desc.toLowerCase().startsWith(rego.toLowerCase())) {
-          return desc;
-        }
-        return `${rego} ${desc}`;
-      }
-    }
-  }
-
-  // No description available — return just the registration
-  return rego;
 }
 
 /**

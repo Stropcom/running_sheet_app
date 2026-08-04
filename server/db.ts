@@ -6251,9 +6251,9 @@ export function computeSheetSummaryVehicles(
 
   if (target) {
     const v1 = target.v1f?.trim() || target.v1?.trim();
-    if (v1) add("target:v1", v1);
+    if (v1) add("target:v1", formatIntelVehicle(v1));
     const v2 = target.v2f?.trim() || target.v2?.trim();
-    if (v2) add("target:v2", v2);
+    if (v2) add("target:v2", formatIntelVehicle(v2));
     if (target.extraVehicles) {
       try {
         const extras: Array<{ full?: string; short?: string }> = JSON.parse(
@@ -6261,7 +6261,7 @@ export function computeSheetSummaryVehicles(
         );
         extras.forEach((ev, idx) => {
           const label = ev.full?.trim() || ev.short?.trim();
-          if (label) add(`target:extra${idx}`, label);
+          if (label) add(`target:extra${idx}`, formatIntelVehicle(label));
         });
       } catch {
         // ignore malformed JSON

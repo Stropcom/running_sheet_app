@@ -1688,8 +1688,12 @@ function DashboardLayoutContent({
             top/bottom overlays. flex-1 alone already fills the remaining
             space for short pages; min-h-0 just lets it shrink correctly
             instead of forcing more height than is actually available. */}
+        {/* app-canvas: the page ground. Carries the soft background wash (see
+            index.css) — it has to live here rather than on <body>, because this
+            element's bg-background/90 and SidebarInset's bg-background would
+            paint straight over anything set further up. */}
         <main
-          className={`flex-1 min-h-0 bg-background/90 ${
+          className={`app-canvas flex-1 min-h-0 bg-background/90 ${
             fillViewport ? "overflow-hidden" : ""
           }`}
         >

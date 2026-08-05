@@ -519,3 +519,56 @@ html.app-no-scroll body {
   position: relative;
   margin: 0;
 }
+
+/* ── Page ground wash ─────────────────────────────────────────────────────────
+   Two large, very soft radial gradients on the app canvas so the light theme
+   doesn't read as one flat sheet of white. Deliberately not a repeating
+   pattern: there's no tile, no grain and no lines, so nothing can moiré against
+   running-sheet row borders or sit behind observation text. Cards keep their
+   solid --card background and paint over this, so the wash only ever shows in
+   the gutters around content.
+
+   The alphas are higher than they look: a fade this broad needs more colour at
+   its centre to register at all, and it falls to fully transparent well before
+   the edge.
+
+   No background-attachment: fixed — iOS Safari treats it unreliably, and the
+   canvas is roughly viewport-height anyway, so the gradient is anchored to the
+   element instead. */
+@media not print {
+  .app-canvas {
+    background-image:
+      radial-gradient(
+        900px 460px at 10% -10%,
+        oklch(0.15 0.015 250 / 0.11),
+        transparent 62%
+      ),
+      radial-gradient(
+        700px 420px at 98% 6%,
+        oklch(0.15 0.015 250 / 0.09),
+        transparent 64%
+      );
+  }
+
+  /* Dark mode takes roughly half: a light wash on a dark ground reads much
+     heavier than the same value on white. */
+  .dark .app-canvas {
+    background-image:
+      radial-gradient(
+        900px 460px at 10% -10%,
+        oklch(0.93 0.01 250 / 0.055),
+        transparent 62%
+      ),
+      radial-gradient(
+        700px 420px at 98% 6%,
+        oklch(0.93 0.01 250 / 0.045),
+        transparent 64%
+      );
+  }
+
+  /* Map pages are a full-bleed surface with no visible ground — the wash would
+     only ever show as a flash while tiles load. */
+  html.app-no-scroll .app-canvas {
+    background-image: none;
+  }
+}

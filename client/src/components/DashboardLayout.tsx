@@ -709,6 +709,52 @@ export default function DashboardLayout({
     localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());
   }, [sidebarWidth]);
 
+  /**
+   * Hard lock against document scrolling for `fillViewport` pages.
+   *
+   * CSS viewport units alone are not enough here: on iOS Safari `100svh`/`100vh`
+   * are measured against the browser's chrome state and don't necessarily match
+   * the area actually on screen, so the shell ends up a little taller than the
+   * visible viewport and the page scrolls by roughly the header's height —
+   * which is exactly the symptom this is fixing. `window.innerHeight` *is* the
+   * real visible height on every browser, so we publish it as `--app-vh` and
+   * size the shell off that instead of trusting a unit, re-measuring whenever
+   * the viewport changes (rotation, browser chrome collapsing, keyboard).
+   *
+   * The `app-no-scroll` class then pins html/body/#root to that height with
+   * overflow hidden and `overscroll-behavior: none`, so there is nothing to
+   * scroll and no iOS rubber-band bounce. Both are torn down on unmount so
+   * ordinary scrolling pages are completely unaffected.
+   *
+   * useLayoutEffect (not useEffect) so the height is set before first paint —
+   * otherwise the map flashes at the wrong size on entry.
+   */
+  useLayoutEffect(() => {
+    if (!fillViewport) return;
+    const root = document.documentElement;
+    const setVh = () => {
+      const vv = window.visualViewport;
+      // visualViewport excludes browser chrome; innerHeight is the fallback.
+      const h = Math.round(vv?.height ?? window.innerHeight);
+      if (h > 0) root.style.setProperty("--app-vh", `${h}px`);
+    };
+    setVh();
+    root.classList.add("app-no-scroll");
+    document.body.classList.add("app-no-scroll");
+
+    window.addEventListener("resize", setVh);
+    window.addEventListener("orientationchange", setVh);
+    window.visualViewport?.addEventListener("resize", setVh);
+    return () => {
+      window.removeEventListener("resize", setVh);
+      window.removeEventListener("orientationchange", setVh);
+      window.visualViewport?.removeEventListener("resize", setVh);
+      root.classList.remove("app-no-scroll");
+      document.body.classList.remove("app-no-scroll");
+      root.style.removeProperty("--app-vh");
+    };
+  }, [fillViewport]);
+
   // A forced password change locks the user out of every other page until
   // they set a real password — enforced server-side too, this is just the
   // matching client-side redirect.
@@ -754,8 +800,16 @@ export default function DashboardLayout({
   return (
     <SidebarProvider
       defaultOpen={getInitialSidebarOpen()}
-      style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
-      className={fillViewport ? "h-svh min-h-0 overflow-hidden" : undefined}
+      style={
+        {
+          "--sidebar-width": `${sidebarWidth}px`,
+          // --app-vh is the real visible height measured in JS (see the
+          // useLayoutEffect above); the svh fallback only covers the instant
+          // before that first measurement lands.
+          ...(fillViewport ? { height: "var(--app-vh, 100svh)" } : {}),
+        } as CSSProperties
+      }
+      className={fillViewport ? "min-h-0 overflow-hidden" : undefined}
     >
       <DashboardLayoutContent
         setSidebarWidth={setSidebarWidth}

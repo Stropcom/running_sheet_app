@@ -682,9 +682,21 @@ const ROLE_CONFIG = {
 export default function DashboardLayout({
   children,
   rightPaneToggle,
+  fillViewport = false,
 }: {
   children: React.ReactNode;
   rightPaneToggle?: { isOpen: boolean; onToggle: () => void };
+  /**
+   * Lock the whole layout to exactly the viewport height and stop the document
+   * scrolling at all. For pages that are a single fixed-size surface the user
+   * pans/zooms inside (the map pages) rather than a document they scroll
+   * through: the shell's default `min-h-svh` is only a *minimum*, so the flex
+   * column's height ends up content-driven and `<main>` grows past the
+   * viewport — which scrolled the map's own fixed top/bottom overlays (search
+   * bar, Map/Satellite toggle, bottom pill bar) out of view. Opt-in, so every
+   * ordinary scrolling page keeps its existing behaviour.
+   */
+  fillViewport?: boolean;
 }) {
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
@@ -743,10 +755,12 @@ export default function DashboardLayout({
     <SidebarProvider
       defaultOpen={getInitialSidebarOpen()}
       style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
+      className={fillViewport ? "h-svh min-h-0 overflow-hidden" : undefined}
     >
       <DashboardLayoutContent
         setSidebarWidth={setSidebarWidth}
         rightPaneToggle={rightPaneToggle}
+        fillViewport={fillViewport}
       >
         {children}
       </DashboardLayoutContent>
@@ -758,10 +772,12 @@ function DashboardLayoutContent({
   children,
   setSidebarWidth,
   rightPaneToggle,
+  fillViewport = false,
 }: {
   children: React.ReactNode;
   setSidebarWidth: (w: number) => void;
   rightPaneToggle?: { isOpen: boolean; onToggle: () => void };
+  fillViewport?: boolean;
 }) {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -1495,7 +1511,9 @@ function DashboardLayoutContent({
         )}
       </div>
 
-      <SidebarInset>
+      <SidebarInset
+        className={fillViewport ? "min-h-0 overflow-hidden" : undefined}
+      >
         {/* Section colour accent bar */}
         <SectionAccentBar />
         {isMobile && (
@@ -1616,7 +1634,11 @@ function DashboardLayoutContent({
             top/bottom overlays. flex-1 alone already fills the remaining
             space for short pages; min-h-0 just lets it shrink correctly
             instead of forcing more height than is actually available. */}
-        <main className="flex-1 min-h-0 bg-background/90">
+        <main
+          className={`flex-1 min-h-0 bg-background/90 ${
+            fillViewport ? "overflow-hidden" : ""
+          }`}
+        >
           <PullToRefresh disabled={location === "/intelligence/mapping"}>
             {children}
           </PullToRefresh>

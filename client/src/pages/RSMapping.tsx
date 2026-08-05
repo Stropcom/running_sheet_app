@@ -810,8 +810,12 @@ export default function RSMapping() {
   // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
-    <DashboardLayout>
-      <div className="flex flex-col h-screen overflow-hidden bg-background">
+    <DashboardLayout fillViewport>
+      {/* h-full, not h-screen: this sits below the layout's header, so a 100vh
+          floor here overflows the viewport by the header's height and scrolls
+          the map's fixed chrome out of view. fillViewport gives the shell a
+          definite height for this to fill. */}
+      <div className="flex flex-col h-full overflow-hidden bg-background">
 
         {/* ── Header ─────────────────────────────────────────────────────────── */}
         <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-card shrink-0">

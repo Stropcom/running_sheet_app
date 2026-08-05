@@ -170,14 +170,24 @@ function OperationFolderList({
 // page, sectioned by a thin banner naming which running sheet each group
 // came from. Linking/deleting a photo still only happens in the per-sheet
 // gallery (level 3), reached via the "Running Sheet view" list below.
-function SheetFolderList({
+//
+// Exported because the map's right-hand pane renders this same browser inline
+// (see IntelligenceMapping's Images section) rather than navigating away — it
+// takes all its state through props and doesn't touch routing or the dashboard
+// shell, so it drops straight into the pane.
+export function SheetFolderList({
   operationId,
   onBack,
   onSelect,
+  hideBackButton = false,
 }: {
   operationId: number;
   onBack: () => void;
   onSelect: (sheetId: number) => void;
+  /** Embedded in the map pane, whose header already carries a back chevron —
+   *  suppresses this view's own back arrow so there aren't two doing the same
+   *  thing stacked next to each other. */
+  hideBackButton?: boolean;
 }) {
   const utils = trpc.useUtils();
   const [viewMode, setViewMode] = useState<"sheets" | "combined">("sheets");
@@ -258,9 +268,11 @@ function SheetFolderList({
   return (
     <div className="max-w-3xl mx-auto px-4 py-8">
       <div className="flex items-center gap-3 mb-4">
-        <Button variant="ghost" size="icon" onClick={onBack}>
-          <ArrowLeft className="w-4 h-4" />
-        </Button>
+        {!hideBackButton && (
+          <Button variant="ghost" size="icon" onClick={onBack}>
+            <ArrowLeft className="w-4 h-4" />
+          </Button>
+        )}
         <div className="p-2.5 rounded-lg bg-pink-500/10 border border-pink-500/20">
           <ImageIcon className="w-5 h-5 text-pink-500" />
         </div>
@@ -458,14 +470,18 @@ function SheetFolderList({
 }
 
 // Level 3: the actual photos for one running sheet.
-function SheetGallery({
+// Exported for the map pane too — see the note on SheetFolderList above.
+export function SheetGallery({
   operationId,
   sheetId,
   onBack,
+  hideBackButton = false,
 }: {
   operationId: number;
   sheetId: number;
   onBack: () => void;
+  /** See SheetFolderList — the map pane supplies its own back control. */
+  hideBackButton?: boolean;
 }) {
   const utils = trpc.useUtils();
   const [lightbox, setLightbox] = useState<{ id: number; url: string } | null>(
@@ -491,9 +507,11 @@ function SheetGallery({
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
       <div className="flex items-center gap-3 mb-6">
-        <Button variant="ghost" size="icon" onClick={onBack}>
-          <ArrowLeft className="w-4 h-4" />
-        </Button>
+        {!hideBackButton && (
+          <Button variant="ghost" size="icon" onClick={onBack}>
+            <ArrowLeft className="w-4 h-4" />
+          </Button>
+        )}
         <div className="p-2.5 rounded-lg bg-pink-500/10 border border-pink-500/20">
           <ImageIcon className="w-5 h-5 text-pink-500" />
         </div>

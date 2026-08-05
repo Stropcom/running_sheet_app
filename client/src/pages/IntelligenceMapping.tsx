@@ -3151,6 +3151,7 @@ export default function IntelligenceMapping() {
 
   return (
     <DashboardLayout
+      fillViewport
       rightPaneToggle={{
         isOpen: rsActionsPaneOpen,
         onToggle: () => setRsActionsPaneOpen(o => !o),

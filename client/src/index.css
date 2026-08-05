@@ -492,3 +492,30 @@ button:active:not(:disabled) {
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* ── Full-viewport pages (map) ────────────────────────────────────────────────
+   Applied to <html> and <body> by DashboardLayout's `fillViewport` effect, and
+   removed again on unmount so ordinary scrolling pages are untouched.
+
+   Map pages are a fixed surface the user pans and pinch-zooms inside, not a
+   document to scroll through. Clamping the shell with viewport units alone
+   isn't reliable on iOS Safari, where 100svh/100vh are measured against the
+   browser's chrome state rather than what's actually on screen — the shell
+   ends up slightly taller than the visible area and the page scrolls by about
+   the header's height. So the height comes from --app-vh (measured in JS from
+   visualViewport/innerHeight) and this class removes the ability to scroll at
+   all: nothing to scroll, and overscroll-behavior stops the iOS rubber-band
+   bounce that otherwise still drags the header out of view. */
+html.app-no-scroll,
+html.app-no-scroll body,
+html.app-no-scroll #root {
+  height: var(--app-vh, 100svh);
+  max-height: var(--app-vh, 100svh);
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+html.app-no-scroll body {
+  position: relative;
+  margin: 0;
+}

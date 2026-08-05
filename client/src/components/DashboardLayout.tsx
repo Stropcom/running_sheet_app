@@ -682,9 +682,21 @@ const ROLE_CONFIG = {
 export default function DashboardLayout({
   children,
   rightPaneToggle,
+  fillViewport = false,
 }: {
   children: React.ReactNode;
   rightPaneToggle?: { isOpen: boolean; onToggle: () => void };
+  /**
+   * Lock the whole layout to exactly the viewport height and stop the document
+   * scrolling at all. For pages that are a single fixed-size surface the user
+   * pans/zooms inside (the map pages) rather than a document they scroll
+   * through: the shell's default `min-h-svh` is only a *minimum*, so the flex
+   * column's height ends up content-driven and `<main>` grows past the
+   * viewport — which scrolled the map's own fixed top/bottom overlays (search
+   * bar, Map/Satellite toggle, bottom pill bar) out of view. Opt-in, so every
+   * ordinary scrolling page keeps its existing behaviour.
+   */
+  fillViewport?: boolean;
 }) {
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
@@ -696,6 +708,52 @@ export default function DashboardLayout({
   useEffect(() => {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());
   }, [sidebarWidth]);
+
+  /**
+   * Hard lock against document scrolling for `fillViewport` pages.
+   *
+   * CSS viewport units alone are not enough here: on iOS Safari `100svh`/`100vh`
+   * are measured against the browser's chrome state and don't necessarily match
+   * the area actually on screen, so the shell ends up a little taller than the
+   * visible viewport and the page scrolls by roughly the header's height —
+   * which is exactly the symptom this is fixing. `window.innerHeight` *is* the
+   * real visible height on every browser, so we publish it as `--app-vh` and
+   * size the shell off that instead of trusting a unit, re-measuring whenever
+   * the viewport changes (rotation, browser chrome collapsing, keyboard).
+   *
+   * The `app-no-scroll` class then pins html/body/#root to that height with
+   * overflow hidden and `overscroll-behavior: none`, so there is nothing to
+   * scroll and no iOS rubber-band bounce. Both are torn down on unmount so
+   * ordinary scrolling pages are completely unaffected.
+   *
+   * useLayoutEffect (not useEffect) so the height is set before first paint —
+   * otherwise the map flashes at the wrong size on entry.
+   */
+  useLayoutEffect(() => {
+    if (!fillViewport) return;
+    const root = document.documentElement;
+    const setVh = () => {
+      const vv = window.visualViewport;
+      // visualViewport excludes browser chrome; innerHeight is the fallback.
+      const h = Math.round(vv?.height ?? window.innerHeight);
+      if (h > 0) root.style.setProperty("--app-vh", `${h}px`);
+    };
+    setVh();
+    root.classList.add("app-no-scroll");
+    document.body.classList.add("app-no-scroll");
+
+    window.addEventListener("resize", setVh);
+    window.addEventListener("orientationchange", setVh);
+    window.visualViewport?.addEventListener("resize", setVh);
+    return () => {
+      window.removeEventListener("resize", setVh);
+      window.removeEventListener("orientationchange", setVh);
+      window.visualViewport?.removeEventListener("resize", setVh);
+      root.classList.remove("app-no-scroll");
+      document.body.classList.remove("app-no-scroll");
+      root.style.removeProperty("--app-vh");
+    };
+  }, [fillViewport]);
 
   // A forced password change locks the user out of every other page until
   // they set a real password — enforced server-side too, this is just the
@@ -742,11 +800,21 @@ export default function DashboardLayout({
   return (
     <SidebarProvider
       defaultOpen={getInitialSidebarOpen()}
-      style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
+      style={
+        {
+          "--sidebar-width": `${sidebarWidth}px`,
+          // --app-vh is the real visible height measured in JS (see the
+          // useLayoutEffect above); the svh fallback only covers the instant
+          // before that first measurement lands.
+          ...(fillViewport ? { height: "var(--app-vh, 100svh)" } : {}),
+        } as CSSProperties
+      }
+      className={fillViewport ? "min-h-0 overflow-hidden" : undefined}
     >
       <DashboardLayoutContent
         setSidebarWidth={setSidebarWidth}
         rightPaneToggle={rightPaneToggle}
+        fillViewport={fillViewport}
       >
         {children}
       </DashboardLayoutContent>
@@ -758,10 +826,12 @@ function DashboardLayoutContent({
   children,
   setSidebarWidth,
   rightPaneToggle,
+  fillViewport = false,
 }: {
   children: React.ReactNode;
   setSidebarWidth: (w: number) => void;
   rightPaneToggle?: { isOpen: boolean; onToggle: () => void };
+  fillViewport?: boolean;
 }) {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -1495,7 +1565,9 @@ function DashboardLayoutContent({
         )}
       </div>
 
-      <SidebarInset>
+      <SidebarInset
+        className={fillViewport ? "min-h-0 overflow-hidden" : undefined}
+      >
         {/* Section colour accent bar */}
         <SectionAccentBar />
         {isMobile && (
@@ -1616,7 +1688,11 @@ function DashboardLayoutContent({
             top/bottom overlays. flex-1 alone already fills the remaining
             space for short pages; min-h-0 just lets it shrink correctly
             instead of forcing more height than is actually available. */}
-        <main className="flex-1 min-h-0 bg-background/90">
+        <main
+          className={`flex-1 min-h-0 bg-background/90 ${
+            fillViewport ? "overflow-hidden" : ""
+          }`}
+        >
           <PullToRefresh disabled={location === "/intelligence/mapping"}>
             {children}
           </PullToRefresh>

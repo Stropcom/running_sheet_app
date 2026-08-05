@@ -60,10 +60,92 @@ import { SectionColorProvider } from "@/contexts/SectionColorContext";
 import { useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 
+/**
+ * Resolves a CSS colour string (including `oklch(...)`, which the theme
+ * variables use) down to a plain `rgb(...)` value.
+ *
+ * Needed because <meta name="theme-color"> is read by the browser/OS chrome,
+ * not by the CSS engine, and iOS in particular won't parse an oklch() value
+ * there — it just ignores it and the strip stays whatever it was. Painting the
+ * colour onto a 1x1 canvas and reading the pixel back gets an exact rgb
+ * equivalent regardless of the source colour space.
+ */
+function resolveToRgb(cssColor: string): string | null {
+  const value = cssColor.trim();
+  if (!value) return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = 1;
+  canvas.height = 1;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  // Assigning an unparseable colour leaves fillStyle at its previous value, so
+  // probe from two different sentinels: if both land on the same result the
+  // colour really did parse, otherwise it was rejected and we bail out rather
+  // than writing a wrong colour to the tag.
+  ctx.fillStyle = "#000000";
+  ctx.fillStyle = value;
+  const fromBlack = ctx.fillStyle;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillStyle = value;
+  if (ctx.fillStyle !== fromBlack) return null;
+  ctx.fillRect(0, 0, 1, 1);
+  const data = ctx.getImageData(0, 0, 1, 1).data;
+  return `rgb(${data[0]}, ${data[1]}, ${data[2]})`;
+}
+
+/**
+ * Keeps <meta name="theme-color"> in step with the live theme.
+ *
+ * The tag was hard-coded to a single dark slate in index.html, so the strip at
+ * the very top of the screen (browser chrome in Safari, the status-bar area in
+ * the installed PWA) stayed that colour no matter what the user picked — it
+ * never followed light/dark or the accent palette. We read the resolved
+ * --background (the same token the app's own top bar uses, so the two read as
+ * one continuous surface) and write it to the tag.
+ *
+ * A MutationObserver on <html> is what drives it: the theme toggle sets a
+ * `class`, the palette setting sets `data-palette`, and watching the element
+ * itself catches both without this needing to know about either mechanism.
+ */
+function useThemeColorMeta() {
+  useEffect(() => {
+    const root = document.documentElement;
+
+    const sync = () => {
+      const background = getComputedStyle(root)
+        .getPropertyValue("--background")
+        .trim();
+      const rgb = resolveToRgb(background);
+      if (!rgb) return;
+      // There can be several theme-color tags (e.g. media-scoped ones); keep
+      // them all in step rather than only the first.
+      const tags = document.head.querySelectorAll('meta[name="theme-color"]');
+      if (tags.length === 0) {
+        const meta = document.createElement("meta");
+        meta.name = "theme-color";
+        meta.content = rgb;
+        document.head.appendChild(meta);
+        return;
+      }
+      tags.forEach(tag => tag.setAttribute("content", rgb));
+    };
+
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(root, {
+      attributes: true,
+      attributeFilter: ["class", "data-palette", "style"],
+    });
+    return () => observer.disconnect();
+  }, []);
+}
+
 /** Reads the logged-in user's accent-palette setting from auth.me and
  * applies it globally (a data-palette attribute) so it persists across
  * all pages. */
 function AppearanceApplier() {
+  useThemeColorMeta();
+
   const { data: user } = trpc.auth.me.useQuery(undefined, {
     retry: false,
     refetchOnWindowFocus: false,

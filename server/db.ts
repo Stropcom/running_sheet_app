@@ -3840,6 +3840,40 @@ export async function resolveLatLng(
   }
 }
 
+/** Batch-geocode a list of raw address strings via the same cache-first
+ * geocoder as the Heat Map, deduping repeats — used by the Supervisor
+ * Summary export to plot its own Location column on a map page rather than
+ * re-deriving addresses from row text. */
+export async function geocodeAddressList(
+  addresses: string[]
+): Promise<{ address: string; lat: number; lng: number }[]> {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const raw of addresses) {
+    const address = raw.trim();
+    if (!address) continue;
+    const key = normalizeEntityLabel(address);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(address);
+  }
+
+  const results = await Promise.all(
+    unique.map(async address => {
+      const coords = await resolveLatLng(
+        normalizeEntityLabel(address),
+        address
+      );
+      if (!coords) return null;
+      return { address, lat: coords.lat, lng: coords.lng };
+    })
+  );
+
+  return results.filter(
+    (r): r is { address: string; lat: number; lng: number } => r !== null
+  );
+}
+
 // ─── Weekly Activity Report ─────────────────────────────────────────────────
 // "What the unit did this week" — operations coverage, newly-gathered
 // intelligence, target visit activity, and governance completed, all for a

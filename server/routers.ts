@@ -228,6 +228,7 @@ import {
   purgeOrphanedAttachments,
   getRsMappingWaypoints,
   upsertRsMappingWaypoint,
+  geocodeAddressList,
   getIncompleteRunningSheets,
   getOutstandingTodosByUser,
   getWeeklyActivityReport,
@@ -4538,6 +4539,15 @@ export const appRouter = router({
         const base64 = Buffer.from(arrayBuffer).toString("base64");
         const dataUrl = `data:${contentType};base64,${base64}`;
         return { dataUrl };
+      }),
+
+    /** Geocodes a plain list of address strings (cache-first, same geocoder
+     * as the Heat Map) — used by the Supervisor Summary export to plot its
+     * own Location column on a map page. */
+    geocodeAddresses: protectedProcedure
+      .input(z.object({ addresses: z.array(z.string()) }))
+      .query(async ({ input }) => {
+        return geocodeAddressList(input.addresses);
       }),
 
     getWaypoints: protectedProcedure

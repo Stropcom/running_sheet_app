@@ -13,7 +13,6 @@ import {
   convertGoogleAddresses,
   buildPoiAddress,
   formatIntelAddress,
-  extractShortVehicle,
   ensureBracketCode,
 } from "@/lib/addressFormat";
 import { useLocation } from "wouter";
@@ -21,12 +20,8 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { MapView } from "@/components/Map";
-import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
 import { TargetProfileContent } from "@/components/TargetProfileContent";
 import { OperationProfileContent } from "@/components/OperationProfileContent";
-// The Images page's own folder/gallery levels, reused verbatim so the pane and
-// the full page can't drift apart.
-import { SheetFolderList, SheetGallery } from "@/pages/ImagesPage";
 import { DocumentZoomViewer } from "@/components/DocumentZoomViewer";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -50,13 +45,11 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import {
@@ -549,11 +542,6 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
       `<div style="margin-top:5px;"><button onclick="window.__intelRsQuickEntry('${safeLabel}')" style="${btnBase}background:#6366f1;color:#fff;border:none;font-size:13px;padding:9px 0;">RS Quick Entry</button></div>`
     );
 
-    // Row 1: View Observation Profile — full width, purple
-    sections.push(
-      `<div style="margin-top:5px;"><a href="/intelligence/location/${encodedLabel}" style="${btnBase}background:#7c3aed;color:#fff;font-size:13px;padding:9px 0;">View Observation Profile</a></div>`
-    );
-
     // Row 2: Waze | Street View
     if (loc.lat != null && loc.lng != null) {
       const lat = loc.lat;
@@ -605,15 +593,6 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
     sections.push(
       `<div style="margin-top:5px;"><button onclick="window.__intelRsQuickEntry('${safeLabel}')" style="${btnBase}background:#6366f1;color:#fff;border:none;font-size:13px;padding:9px 0;">RS Quick Entry</button></div>`
     );
-
-    // Row 1: Edit Target buttons (one per linked target) — teal
-    if (loc.linkedTargets.length > 0) {
-      for (const t of loc.linkedTargets) {
-        sections.push(
-          `<div style="margin-top:5px;"><button onclick="window.__editTargetFromMap(${t.targetId})" style="${btnBase}background:#0f766e;color:#fff;border:none;font-size:13px;padding:9px 0;">Edit ${t.name}</button></div>`
-        );
-      }
-    }
 
     // Row 2: Waze | Street View
     if (loc.lat != null && loc.lng != null) {
@@ -718,9 +697,6 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
       `);
       lines.push(
         `<div style="margin-top:5px;"><button onclick="window.__intelRsQuickEntry('${secSafeLabel}')" style="${secBtnBase}background:#6366f1;color:#fff;border:none;font-size:13px;padding:9px 0;">RS Quick Entry</button></div>`
-      );
-      lines.push(
-        `<div style="margin-top:5px;"><a href="/intelligence/location/${secEncodedLabel}" style="${secBtnBase}background:#7c3aed;color:#fff;font-size:13px;padding:9px 0;">View Observation Profile</a></div>`
       );
       if (sec.lat != null && sec.lng != null) {
         const sLat = sec.lat;
@@ -949,14 +925,6 @@ export default function IntelligenceMapping() {
   const [paneOperationProfileId, setPaneOperationProfileId] = useState<
     number | null
   >(null);
-  // Operation Images, browsed inside the pane the same way the profiles are,
-  // rather than navigating away to /images and losing the map. Two levels:
-  // the operation's running-sheet folders, then one sheet's photos — mirroring
-  // the Images page's own hierarchy (it reuses the very same components).
-  const [paneImagesOpId, setPaneImagesOpId] = useState<number | null>(null);
-  const [paneImagesSheetId, setPaneImagesSheetId] = useState<number | null>(
-    null
-  );
   // Pane width — resizable by dragging its left edge, remembered separately for the
   // normal pane content vs. the Target Profile sub-view (which wants more room)
   const [panelWidthNormal, setPanelWidthNormal] = useState<number>(() => {
@@ -985,15 +953,10 @@ export default function IntelligenceMapping() {
   });
   const paneResizeDraggingRef = useRef(false);
   const PANE_MIN_WIDTH = 288;
-  // Any full-pane sub-view (profile or images) gets the wider remembered width —
-  // they're all content to read/browse rather than the compact settings list.
-  const paneSubViewOpen =
-    paneTargetProfileId !== null ||
-    paneOperationProfileId !== null ||
-    paneImagesOpId !== null;
-  const activePaneWidth = paneSubViewOpen
-    ? panelWidthProfile
-    : panelWidthNormal;
+  const activePaneWidth =
+    paneTargetProfileId !== null || paneOperationProfileId !== null
+      ? panelWidthProfile
+      : panelWidthNormal;
 
   // Draggable pill bar vertical position (percentage from top, 5-95)
   const [pillBarTop, setPillBarTop] = useState<number>(() => {
@@ -1175,19 +1138,6 @@ export default function IntelligenceMapping() {
   const [cmVehicleInput, setCmVehicleInput] = useState("");
   const [cmSaving, setCmSaving] = useState(false);
   const [editingMarkerId, setEditingMarkerId] = useState<number | null>(null);
-  // Target edit dialog state
-  const [editingTargetId, setEditingTargetId] = useState<number | null>(null);
-  const [etName, setEtName] = useState("");
-  const [etTgt, setEtTgt] = useState("");
-  const [etHbf, setEtHbf] = useState("");
-  const [etHb, setEtHb] = useState("");
-  const [etV1f, setEtV1f] = useState("");
-  const [etV1, setEtV1] = useState("");
-  const [etV2f, setEtV2f] = useState("");
-  const [etV2, setEtV2] = useState("");
-  const [etDep, setEtDep] = useState("");
-  const [etArr, setEtArr] = useState("");
-  const [etSaving, setEtSaving] = useState(false);
   // Address search bar state
   const [addrSearch, setAddrSearch] = useState("");
   const [addrSuggestions, setAddrSuggestions] = useState<
@@ -1434,23 +1384,6 @@ export default function IntelligenceMapping() {
     },
   });
   const utils = trpc.useUtils();
-  const updateTargetMut = trpc.target.registry.update.useMutation({
-    onSuccess: () => {
-      void utils.target.registry.list.invalidate();
-      void utils.intelligence.mappingLocations.invalidate();
-      // Invalidate getById so any open RS sheet refreshes chips immediately
-      if (editingTargetId)
-        void utils.target.getById.invalidate({ id: editingTargetId });
-      void utils.target.listAll.invalidate();
-      setEditingTargetId(null);
-      setEtSaving(false);
-      toast.success("Target saved");
-    },
-    onError: e => {
-      setEtSaving(false);
-      toast.error(e.message);
-    },
-  });
 
   // Intelligence entities for associate/vehicle dropdowns
   const { data: intelEntities } = trpc.intelligence.getEntities.useQuery();
@@ -2476,33 +2409,6 @@ export default function IntelligenceMapping() {
               `<div style="margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;"><button onclick="window.__cmRsQuickEntry(${cm.id})" style="${btnBase}background:#6366f1;color:#fff;border:none;font-size:13px;padding:9px 0;">RS Quick Entry</button></div>`
             );
 
-            // Row 1: Intel actions (full-width) — only in merged mode (excluding RS Quick Entry which moved to top)
-            if (mergedIntel) {
-              const intelBtns: string[] = [];
-              const isTarget = mergedIntel.type === "target_address";
-              if (isTarget && mergedIntel.linkedTargets.length > 0) {
-                for (const t of mergedIntel.linkedTargets) {
-                  intelBtns.push(
-                    `<button onclick="window.__editTargetFromMap(${t.targetId})" style="${btnBase}background:#0f766e;color:#fff;border:none;font-size:13px;padding:9px 0;">Edit ${t.name}</button>`
-                  );
-                }
-              }
-              // Also add View Profile for any observation entries
-              for (const intel of mergedIntelList) {
-                if (intel.type !== "target_address") {
-                  const encodedLabel = encodeURIComponent(intel.label);
-                  intelBtns.push(
-                    `<a href="/intelligence/location/${encodedLabel}" style="${btnBase}background:#7c3aed;color:#fff;font-size:13px;padding:9px 0;">View Observation Profile</a>`
-                  );
-                }
-              }
-              if (intelBtns.length > 0) {
-                sections.push(
-                  `<div style="display:grid;grid-template-columns:1fr;gap:5px;margin-top:5px;">${intelBtns.join("")}</div>`
-                );
-              }
-            }
-
             // Row 2: Navigation — Waze | Street View (2 columns)
             const navBtns = [
               `<a href="https://waze.com/ul?ll=${lat},${lng}&navigate=yes" target="_blank" style="${btnBase}background:#00bcd4;color:#fff;">Waze</a>`,
@@ -2703,31 +2609,6 @@ export default function IntelligenceMapping() {
       delete (window as any).__deleteCustomMarker;
     };
   }, [deleteCustomMarkerMut]);
-
-  // Global edit handler for target-address markers
-  useEffect(() => {
-    (window as any).__editTargetFromMap = (targetId: number) => {
-      infoWindowRef.current?.close();
-      const t = (allTargets as any[] | undefined)?.find(
-        (t: any) => t.id === targetId
-      );
-      if (!t) return;
-      setEtName(t.name ?? "");
-      setEtTgt(t.tgt ?? "");
-      setEtHbf(t.hbf ?? "");
-      setEtHb(t.hb ?? "");
-      setEtV1f(t.v1f ?? "");
-      setEtV1(t.v1 ?? "");
-      setEtV2f(t.v2f ?? "");
-      setEtV2(t.v2 ?? "");
-      setEtDep(t.dep ?? "");
-      setEtArr(t.arr ?? "");
-      setEditingTargetId(targetId);
-    };
-    return () => {
-      delete (window as any).__editTargetFromMap;
-    };
-  }, [allTargets]);
 
   // Global edit handler for custom marker info window
   useEffect(() => {
@@ -3167,7 +3048,6 @@ export default function IntelligenceMapping() {
 
   return (
     <DashboardLayout
-      fillViewport
       rightPaneToggle={{
         isOpen: rsActionsPaneOpen,
         onToggle: () => setRsActionsPaneOpen(o => !o),
@@ -3760,7 +3640,11 @@ export default function IntelligenceMapping() {
                   maxW,
                   Math.max(PANE_MIN_WIDTH, startWidth + delta)
                 );
-                if (paneSubViewOpen) setPanelWidthProfile(next);
+                if (
+                  paneTargetProfileId !== null ||
+                  paneOperationProfileId !== null
+                )
+                  setPanelWidthProfile(next);
                 else setPanelWidthNormal(next);
               };
               const onUp = () => {
@@ -3786,7 +3670,11 @@ export default function IntelligenceMapping() {
                   maxW,
                   Math.max(PANE_MIN_WIDTH, startWidth + delta)
                 );
-                if (paneSubViewOpen) setPanelWidthProfile(next);
+                if (
+                  paneTargetProfileId !== null ||
+                  paneOperationProfileId !== null
+                )
+                  setPanelWidthProfile(next);
                 else setPanelWidthNormal(next);
               };
               const onEnd = () => {
@@ -3826,22 +3714,6 @@ export default function IntelligenceMapping() {
                 Operation Profile
               </span>
             </button>
-          ) : paneImagesOpId !== null ? (
-            <button
-              onClick={() => {
-                // Back steps one level at a time: a sheet's photos -> that
-                // operation's sheet folders -> out to the settings list.
-                if (paneImagesSheetId !== null) setPaneImagesSheetId(null);
-                else setPaneImagesOpId(null);
-              }}
-              className="flex items-center gap-2 min-w-0 flex-1 text-left hover:opacity-75 transition-opacity"
-            >
-              <ChevronLeft className="h-4 w-4 text-pink-500 flex-shrink-0" />
-              <ImageIcon className="h-4 w-4 text-pink-500 flex-shrink-0" />
-              <span className="font-bold text-sm tracking-tight truncate">
-                Operation Images
-              </span>
-            </button>
           ) : (
             <div className="flex items-center gap-2">
               <Settings2 className="h-4 w-4 text-primary" />
@@ -3858,8 +3730,6 @@ export default function IntelligenceMapping() {
               setRsActionsPaneOpen(false);
               setPaneTargetProfileId(null);
               setPaneOperationProfileId(null);
-              setPaneImagesOpId(null);
-              setPaneImagesSheetId(null);
             }}
           >
             <X className="h-4 w-4" />
@@ -3878,27 +3748,6 @@ export default function IntelligenceMapping() {
             <DocumentZoomViewer contentWidth={768} className="w-full h-full">
               <OperationProfileContent operationId={paneOperationProfileId} />
             </DocumentZoomViewer>
-          </div>
-        ) : paneImagesOpId !== null ? (
-          // The Images page's own two levels, rendered inline. Plain scroll
-          // rather than DocumentZoomViewer: this is an interactive gallery
-          // (upload, link, delete, lightbox), not a document to zoom.
-          <div className="flex-1 overflow-y-auto">
-            {paneImagesSheetId !== null ? (
-              <SheetGallery
-                operationId={paneImagesOpId}
-                sheetId={paneImagesSheetId}
-                onBack={() => setPaneImagesSheetId(null)}
-                hideBackButton
-              />
-            ) : (
-              <SheetFolderList
-                operationId={paneImagesOpId}
-                onBack={() => setPaneImagesOpId(null)}
-                onSelect={id => setPaneImagesSheetId(id)}
-                hideBackButton
-              />
-            )}
           </div>
         ) : (
           <div
@@ -4150,8 +3999,6 @@ export default function IntelligenceMapping() {
                         onClick={() => {
                           setPaneOperationProfileId(opId);
                           setPaneTargetProfileId(null);
-                          setPaneImagesOpId(null);
-                          setPaneImagesSheetId(null);
                         }}
                         className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-blue-500/40 bg-blue-500/10 hover:bg-blue-500/20 active:scale-[0.98] transition-all min-w-0"
                       >
@@ -4192,12 +4039,7 @@ export default function IntelligenceMapping() {
                 }
                 return (
                   <button
-                    onClick={() => {
-                      setPaneImagesOpId(opId);
-                      setPaneImagesSheetId(null);
-                      setPaneTargetProfileId(null);
-                      setPaneOperationProfileId(null);
-                    }}
+                    onClick={() => setLocation(`/images/${opId}`)}
                     className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-pink-500/40 bg-pink-500/10 hover:bg-pink-500/20 active:scale-[0.98] transition-all min-w-0"
                   >
                     <ImageIcon className="h-3.5 w-3.5 text-pink-500 flex-shrink-0" />
@@ -4211,37 +4053,6 @@ export default function IntelligenceMapping() {
             </div>
             {/* end Images */}
 
-            {/* ── LOCATION (own section, so sharing your position is a
-                deliberate act with its own heading rather than a small switch
-                tucked into the Teams header) ── */}
-            <div className="px-3 py-3 border-b border-border space-y-2">
-              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
-                Location
-              </span>
-              <button
-                onClick={() => handleSharingToggle(!sharingEnabled)}
-                className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-border bg-card hover:bg-accent/40 active:scale-[0.98] transition-all min-w-0"
-                aria-pressed={sharingEnabled}
-              >
-                <Radio
-                  className={`h-3.5 w-3.5 flex-shrink-0 ${
-                    sharingEnabled ? "text-emerald-500" : "text-muted-foreground"
-                  }`}
-                />
-                <span className="text-xs font-semibold text-foreground truncate flex-1 text-left">
-                  Show &amp; Share
-                </span>
-                <span
-                  className={`text-[11px] font-bold uppercase tracking-wide flex-shrink-0 ${
-                    sharingEnabled ? "text-emerald-500" : "text-muted-foreground"
-                  }`}
-                >
-                  {sharingEnabled ? "On" : "Off"}
-                </span>
-              </button>
-            </div>
-            {/* end Location */}
-
             {/* ── TEAMS (Live Location) ── */}
             <div className="px-3 py-3">
               <div className="flex items-center justify-between mb-3">
@@ -4250,6 +4061,16 @@ export default function IntelligenceMapping() {
                   <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
                     TEAMS
                   </span>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <span className="text-[11px] font-medium text-muted-foreground">
+                    Show &amp; Share
+                  </span>
+                  <Switch
+                    checked={sharingEnabled}
+                    onCheckedChange={handleSharingToggle}
+                    className="scale-90"
+                  />
                 </div>
               </div>
 
@@ -6248,181 +6069,6 @@ export default function IntelligenceMapping() {
           </div>
         </div>
       )}
-      {/* ── Target Edit Dialog ── */}
-      <Dialog
-        open={editingTargetId !== null}
-        onOpenChange={open => {
-          if (!open) setEditingTargetId(null);
-        }}
-      >
-        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Edit Target</DialogTitle>
-          </DialogHeader>
-          <div className="flex flex-col gap-3 py-2">
-            {(
-              [
-                {
-                  label: "Full Name, Born",
-                  val: etName,
-                  set: setEtName,
-                  isHbf: false,
-                  isV1f: false,
-                  isV2f: false,
-                },
-                {
-                  label: "Target (TGT)",
-                  val: etTgt,
-                  set: setEtTgt,
-                  isHbf: false,
-                  isV1f: false,
-                  isV2f: false,
-                },
-                {
-                  label: "Home Address Full (HBF)",
-                  val: etHbf,
-                  set: setEtHbf,
-                  isHbf: true,
-                  isV1f: false,
-                  isV2f: false,
-                },
-                {
-                  label: "Home (HB)",
-                  val: etHb,
-                  set: setEtHb,
-                  isHbf: false,
-                  isV1f: false,
-                  isV2f: false,
-                },
-                {
-                  label: "Vehicle 1 Full (V1F)",
-                  val: etV1f,
-                  set: setEtV1f,
-                  isHbf: false,
-                  isV1f: true,
-                  isV2f: false,
-                },
-                {
-                  label: "Vehicle (V1)",
-                  val: etV1,
-                  set: setEtV1,
-                  isHbf: false,
-                  isV1f: false,
-                  isV2f: false,
-                },
-                {
-                  label: "Vehicle 2 Full (V2F)",
-                  val: etV2f,
-                  set: setEtV2f,
-                  isHbf: false,
-                  isV1f: false,
-                  isV2f: true,
-                },
-                {
-                  label: "Vehicle (V2)",
-                  val: etV2,
-                  set: setEtV2,
-                  isHbf: false,
-                  isV1f: false,
-                  isV2f: false,
-                },
-                {
-                  label: "Depart (DEP)",
-                  val: etDep,
-                  set: setEtDep,
-                  isHbf: false,
-                  isV1f: false,
-                  isV2f: false,
-                },
-                {
-                  label: "Arrive (ARR)",
-                  val: etArr,
-                  set: setEtArr,
-                  isHbf: false,
-                  isV1f: false,
-                  isV2f: false,
-                },
-              ] as {
-                label: string;
-                val: string;
-                set: (v: string) => void;
-                isHbf: boolean;
-                isV1f: boolean;
-                isV2f: boolean;
-              }[]
-            ).map(({ label, val, set, isHbf, isV1f, isV2f }) => (
-              <div key={label} className="flex flex-col gap-1">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                  {label}
-                </label>
-                {isHbf ? (
-                  <AddressAutocompleteInput
-                    value={val}
-                    onChange={set}
-                    onShortAddress={short => {
-                      if (!etHb) setEtHb(short);
-                    }}
-                    locationBias={
-                      mapRef.current
-                        ? (() => {
-                            const c = mapRef.current!.getCenter();
-                            return c ? { lat: c.lat(), lng: c.lng() } : null;
-                          })()
-                        : null
-                    }
-                    placeholder="Search or type address…"
-                  />
-                ) : (
-                  <Input
-                    value={val}
-                    onChange={e => set(e.target.value)}
-                    onBlur={
-                      isV1f
-                        ? e => {
-                            const s = extractShortVehicle(e.target.value);
-                            if (s && !etV1) setEtV1(s);
-                          }
-                        : isV2f
-                          ? e => {
-                              const s = extractShortVehicle(e.target.value);
-                              if (s && !etV2) setEtV2(s);
-                            }
-                          : undefined
-                    }
-                  />
-                )}
-              </div>
-            ))}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditingTargetId(null)}>
-              Cancel
-            </Button>
-            <Button
-              disabled={etSaving}
-              onClick={() => {
-                if (!editingTargetId) return;
-                setEtSaving(true);
-                updateTargetMut.mutate({
-                  id: editingTargetId,
-                  name: etName || undefined,
-                  tgt: etTgt || null,
-                  hbf: etHbf || null,
-                  hb: etHb || null,
-                  v1f: etV1f || null,
-                  v1: etV1 || null,
-                  v2f: etV2f || null,
-                  v2: etV2 || null,
-                  dep: etDep || null,
-                  arr: etArr || null,
-                });
-              }}
-            >
-              {etSaving ? <Spinner className="h-4 w-4" /> : "Save Changes"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
     </DashboardLayout>
   );

@@ -22,6 +22,9 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { MapView } from "@/components/Map";
 import { TargetProfileContent } from "@/components/TargetProfileContent";
 import { OperationProfileContent } from "@/components/OperationProfileContent";
+// The Images page's own folder/gallery levels, reused verbatim so the pane and
+// the full page can't drift apart.
+import { SheetFolderList, SheetGallery } from "@/pages/ImagesPage";
 import { DocumentZoomViewer } from "@/components/DocumentZoomViewer";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -925,6 +928,14 @@ export default function IntelligenceMapping() {
   const [paneOperationProfileId, setPaneOperationProfileId] = useState<
     number | null
   >(null);
+  // Operation Images, browsed inside the pane the same way the profiles are,
+  // rather than navigating away to /images and losing the map. Two levels:
+  // the operation's running-sheet folders, then one sheet's photos — mirroring
+  // the Images page's own hierarchy (it reuses the very same components).
+  const [paneImagesOpId, setPaneImagesOpId] = useState<number | null>(null);
+  const [paneImagesSheetId, setPaneImagesSheetId] = useState<number | null>(
+    null
+  );
   // Pane width — resizable by dragging its left edge, remembered separately for the
   // normal pane content vs. the Target Profile sub-view (which wants more room)
   const [panelWidthNormal, setPanelWidthNormal] = useState<number>(() => {
@@ -953,10 +964,15 @@ export default function IntelligenceMapping() {
   });
   const paneResizeDraggingRef = useRef(false);
   const PANE_MIN_WIDTH = 288;
-  const activePaneWidth =
-    paneTargetProfileId !== null || paneOperationProfileId !== null
-      ? panelWidthProfile
-      : panelWidthNormal;
+  // Any full-pane sub-view (profile or images) gets the wider remembered width —
+  // they're all content to read/browse rather than the compact settings list.
+  const paneSubViewOpen =
+    paneTargetProfileId !== null ||
+    paneOperationProfileId !== null ||
+    paneImagesOpId !== null;
+  const activePaneWidth = paneSubViewOpen
+    ? panelWidthProfile
+    : panelWidthNormal;
 
   // Draggable pill bar vertical position (percentage from top, 5-95)
   const [pillBarTop, setPillBarTop] = useState<number>(() => {
@@ -3048,6 +3064,7 @@ export default function IntelligenceMapping() {
 
   return (
     <DashboardLayout
+      fillViewport
       rightPaneToggle={{
         isOpen: rsActionsPaneOpen,
         onToggle: () => setRsActionsPaneOpen(o => !o),
@@ -3640,11 +3657,7 @@ export default function IntelligenceMapping() {
                   maxW,
                   Math.max(PANE_MIN_WIDTH, startWidth + delta)
                 );
-                if (
-                  paneTargetProfileId !== null ||
-                  paneOperationProfileId !== null
-                )
-                  setPanelWidthProfile(next);
+                if (paneSubViewOpen) setPanelWidthProfile(next);
                 else setPanelWidthNormal(next);
               };
               const onUp = () => {
@@ -3670,11 +3683,7 @@ export default function IntelligenceMapping() {
                   maxW,
                   Math.max(PANE_MIN_WIDTH, startWidth + delta)
                 );
-                if (
-                  paneTargetProfileId !== null ||
-                  paneOperationProfileId !== null
-                )
-                  setPanelWidthProfile(next);
+                if (paneSubViewOpen) setPanelWidthProfile(next);
                 else setPanelWidthNormal(next);
               };
               const onEnd = () => {
@@ -3714,6 +3723,22 @@ export default function IntelligenceMapping() {
                 Operation Profile
               </span>
             </button>
+          ) : paneImagesOpId !== null ? (
+            <button
+              onClick={() => {
+                // Back steps one level at a time: a sheet's photos -> that
+                // operation's sheet folders -> out to the settings list.
+                if (paneImagesSheetId !== null) setPaneImagesSheetId(null);
+                else setPaneImagesOpId(null);
+              }}
+              className="flex items-center gap-2 min-w-0 flex-1 text-left hover:opacity-75 transition-opacity"
+            >
+              <ChevronLeft className="h-4 w-4 text-pink-500 flex-shrink-0" />
+              <ImageIcon className="h-4 w-4 text-pink-500 flex-shrink-0" />
+              <span className="font-bold text-sm tracking-tight truncate">
+                Operation Images
+              </span>
+            </button>
           ) : (
             <div className="flex items-center gap-2">
               <Settings2 className="h-4 w-4 text-primary" />
@@ -3730,6 +3755,8 @@ export default function IntelligenceMapping() {
               setRsActionsPaneOpen(false);
               setPaneTargetProfileId(null);
               setPaneOperationProfileId(null);
+              setPaneImagesOpId(null);
+              setPaneImagesSheetId(null);
             }}
           >
             <X className="h-4 w-4" />
@@ -3748,6 +3775,27 @@ export default function IntelligenceMapping() {
             <DocumentZoomViewer contentWidth={768} className="w-full h-full">
               <OperationProfileContent operationId={paneOperationProfileId} />
             </DocumentZoomViewer>
+          </div>
+        ) : paneImagesOpId !== null ? (
+          // The Images page's own two levels, rendered inline. Plain scroll
+          // rather than DocumentZoomViewer: this is an interactive gallery
+          // (upload, link, delete, lightbox), not a document to zoom.
+          <div className="flex-1 overflow-y-auto">
+            {paneImagesSheetId !== null ? (
+              <SheetGallery
+                operationId={paneImagesOpId}
+                sheetId={paneImagesSheetId}
+                onBack={() => setPaneImagesSheetId(null)}
+                hideBackButton
+              />
+            ) : (
+              <SheetFolderList
+                operationId={paneImagesOpId}
+                onBack={() => setPaneImagesOpId(null)}
+                onSelect={id => setPaneImagesSheetId(id)}
+                hideBackButton
+              />
+            )}
           </div>
         ) : (
           <div
@@ -3999,6 +4047,8 @@ export default function IntelligenceMapping() {
                         onClick={() => {
                           setPaneOperationProfileId(opId);
                           setPaneTargetProfileId(null);
+                          setPaneImagesOpId(null);
+                          setPaneImagesSheetId(null);
                         }}
                         className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-blue-500/40 bg-blue-500/10 hover:bg-blue-500/20 active:scale-[0.98] transition-all min-w-0"
                       >
@@ -4039,7 +4089,12 @@ export default function IntelligenceMapping() {
                 }
                 return (
                   <button
-                    onClick={() => setLocation(`/images/${opId}`)}
+                    onClick={() => {
+                      setPaneImagesOpId(opId);
+                      setPaneImagesSheetId(null);
+                      setPaneTargetProfileId(null);
+                      setPaneOperationProfileId(null);
+                    }}
                     className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-pink-500/40 bg-pink-500/10 hover:bg-pink-500/20 active:scale-[0.98] transition-all min-w-0"
                   >
                     <ImageIcon className="h-3.5 w-3.5 text-pink-500 flex-shrink-0" />
@@ -4053,6 +4108,37 @@ export default function IntelligenceMapping() {
             </div>
             {/* end Images */}
 
+            {/* ── LOCATION (own section, so sharing your position is a
+                deliberate act with its own heading rather than a small switch
+                tucked into the Teams header) ── */}
+            <div className="px-3 py-3 border-b border-border space-y-2">
+              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
+                Location
+              </span>
+              <button
+                onClick={() => handleSharingToggle(!sharingEnabled)}
+                className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-border bg-card hover:bg-accent/40 active:scale-[0.98] transition-all min-w-0"
+                aria-pressed={sharingEnabled}
+              >
+                <Radio
+                  className={`h-3.5 w-3.5 flex-shrink-0 ${
+                    sharingEnabled ? "text-emerald-500" : "text-muted-foreground"
+                  }`}
+                />
+                <span className="text-xs font-semibold text-foreground truncate flex-1 text-left">
+                  Show &amp; Share
+                </span>
+                <span
+                  className={`text-[11px] font-bold uppercase tracking-wide flex-shrink-0 ${
+                    sharingEnabled ? "text-emerald-500" : "text-muted-foreground"
+                  }`}
+                >
+                  {sharingEnabled ? "On" : "Off"}
+                </span>
+              </button>
+            </div>
+            {/* end Location */}
+
             {/* ── TEAMS (Live Location) ── */}
             <div className="px-3 py-3">
               <div className="flex items-center justify-between mb-3">
@@ -4061,16 +4147,6 @@ export default function IntelligenceMapping() {
                   <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
                     TEAMS
                   </span>
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className="text-[11px] font-medium text-muted-foreground">
-                    Show &amp; Share
-                  </span>
-                  <Switch
-                    checked={sharingEnabled}
-                    onCheckedChange={handleSharingToggle}
-                    className="scale-90"
-                  />
                 </div>
               </div>
 

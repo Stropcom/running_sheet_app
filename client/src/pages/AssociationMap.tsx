@@ -210,14 +210,24 @@ export default function AssociationMap() {
 
   // ── Link paint ────────────────────────────────────────────────────────────
   const paintLink = useCallback((link: AssocEdge, ctx: CanvasRenderingContext2D) => {
-    const s = typeof link.source === "string" ? link.source : (link.source as AssocNode).id;
-    const t = typeof link.target === "string" ? link.target : (link.target as AssocNode).id;
-    const edgeKey1 = `${s}|||${t}`;
-    const edgeKey2 = `${t}|||${s}`;
+    const sourceNode = typeof link.source === "string" ? null : (link.source as AssocNode);
+    const targetNode = typeof link.target === "string" ? null : (link.target as AssocNode);
+    if (!sourceNode || !targetNode) return;
+    if (sourceNode.x == null || sourceNode.y == null || targetNode.x == null || targetNode.y == null) return;
+
+    const edgeKey1 = `${sourceNode.id}|||${targetNode.id}`;
+    const edgeKey2 = `${targetNode.id}|||${sourceNode.id}`;
     const isHighlighted = highlightEdges.size === 0 || highlightEdges.has(edgeKey1) || highlightEdges.has(edgeKey2);
+
+    ctx.save();
     ctx.globalAlpha = isHighlighted ? Math.min(0.9, 0.2 + link.weight * 0.15) : 0.05;
     ctx.strokeStyle = isHighlighted ? "#94a3b8" : "#475569";
     ctx.lineWidth = Math.max(0.5, Math.min(4, link.weight * 0.8));
+    ctx.beginPath();
+    ctx.moveTo(sourceNode.x, sourceNode.y);
+    ctx.lineTo(targetNode.x, targetNode.y);
+    ctx.stroke();
+    ctx.restore();
   }, [highlightEdges]);
 
   // ── Connected nodes for detail panel ─────────────────────────────────────

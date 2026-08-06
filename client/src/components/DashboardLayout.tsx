@@ -847,6 +847,35 @@ function DashboardLayoutContent({
   const sidebarRef = useRef<HTMLDivElement>(null);
   const sidebarScrollRef = useRef<HTMLDivElement>(null);
 
+  // Remembers whether the folder menu was open right before the page's
+  // right-hand pane (e.g. the map's Map Settings) auto-closed it, so closing
+  // that pane again can put the folder menu back exactly how it was — rather
+  // than always leaving it closed. null = not currently tracking (right pane
+  // is closed, or already restored). Reacting to rightPaneToggle.isOpen
+  // itself, rather than only handling this inside the Map Settings button's
+  // own onClick, is what makes this work no matter how the pane closes — the
+  // map also closes it from a click on the map area and from its own X
+  // button, neither of which goes through this component at all.
+  const sidebarStateBeforeRightPaneRef = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (!rightPaneToggle) return;
+    if (rightPaneToggle.isOpen) {
+      sidebarStateBeforeRightPaneRef.current = state === "expanded";
+      if (state === "expanded") setOpen(false);
+    } else if (sidebarStateBeforeRightPaneRef.current !== null) {
+      // Only ever re-open here, never force-close: if the folder menu was
+      // already closed before the pane opened, leave it exactly as it
+      // currently is rather than fighting anything else that may have
+      // changed it in the meantime (e.g. the Folders button's own manual
+      // open+close-the-other-pane action, below).
+      if (sidebarStateBeforeRightPaneRef.current) setOpen(true);
+      sidebarStateBeforeRightPaneRef.current = null;
+    }
+    // Only react to the pane opening/closing, not to the folder menu's own
+    // state changes -- those are handled by the Folders button directly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rightPaneToggle?.isOpen]);
+
   // Restore the sidebar's scroll position immediately on mount (before paint)
   // so re-opening a nav item deep in the list doesn't visibly jump to the top.
   // For pages under Op Manager / CTO Roster specifically, don't just trust
@@ -1181,15 +1210,7 @@ function DashboardLayoutContent({
             )}
             {rightPaneToggle && (
               <button
-                onClick={() => {
-                  // Mutual exclusion lives here rather than in the page,
-                  // because this component is the one inside SidebarProvider
-                  // and so the only one that can touch the folder menu.
-                  // Opening the right pane closes the folders; closing it just
-                  // closes it, leaving the map full width.
-                  if (!rightPaneToggle.isOpen) setOpen(false);
-                  rightPaneToggle.onToggle();
-                }}
+                onClick={rightPaneToggle.onToggle}
                 className={`flex items-center justify-center gap-2 min-w-[150px] px-3 py-2 rounded-xl border text-sm font-semibold shadow-sm transition-all ${
                   rightPaneToggle.isOpen
                     ? "text-primary border-primary/50 bg-primary/10 hover:bg-primary/20"

@@ -1143,9 +1143,9 @@ function DashboardLayoutContent({
               centre rather than being pushed around by whatever is on either
               side of it. pointer-events-none so it can never swallow a click
               aimed at a control underneath. */}
-          <div className="pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2">
-            <ShieldCheck className="w-5 h-5 text-sidebar-primary shrink-0" />
-            <span className="font-semibold text-sidebar-foreground tracking-tight text-base">
+          <div className="pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2.5">
+            <ShieldCheck className="w-7 h-7 text-sidebar-primary shrink-0" />
+            <span className="font-semibold text-sidebar-foreground tracking-tight text-xl">
               RunLog
             </span>
           </div>

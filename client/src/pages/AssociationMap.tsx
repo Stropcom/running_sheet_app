@@ -64,6 +64,13 @@ export default function AssociationMap() {
   const graphRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ w: 800, h: 600 });
+  // Label bounding boxes already drawn this frame — reset each frame via
+  // onRenderFramePre, checked in paintNode so overlapping labels don't pile
+  // into an unreadable stack when the graph is dense.
+  const labelRectsRef = useRef<{ x1: number; y1: number; x2: number; y2: number }[]>([]);
+  const resetLabelRects = useCallback(() => {
+    labelRectsRef.current = [];
+  }, []);
 
   // ── Filters ──────────────────────────────────────────────────────────────────
   const [selectedOpIds, setSelectedOpIds] = useState<number[]>([]);
@@ -118,7 +125,13 @@ export default function AssociationMap() {
         .map((n) => n.id)
     );
 
-    const filteredNodes = graphData.nodes.filter((n) => filteredNodeIds.has(n.id));
+    // Sorted by occurrence count descending — nodes are painted in this
+    // order, and the label collision check (see paintNode) lets earlier
+    // (busier) nodes' labels win, so the most relevant labels are the ones
+    // that stay visible when the graph is dense.
+    const filteredNodes = graphData.nodes
+      .filter((n) => filteredNodeIds.has(n.id))
+      .sort((a, b) => b.occurrences - a.occurrences);
 
     // Only include edges where both endpoints are in filtered set
     const filteredLinks = graphData.edges.filter((e) => {
@@ -194,16 +207,56 @@ export default function AssociationMap() {
       ctx.lineWidth = 2 / globalScale;
       ctx.stroke();
     }
+    ctx.restore();
 
-    // Label
-    const fontSize = Math.max(8, 10 / globalScale);
+    // Label — sized in plain world units (no `/globalScale`) so it scales
+    // down together with the node radius when zoomed out, instead of
+    // staying a constant screen size while the nodes shrink underneath it.
+    // The old `10 / globalScale` formula did the opposite — it held text at
+    // a fixed ~10px on screen regardless of zoom, so at the initial
+    // zoomed-to-fit view (where nodes render small) the text towered over
+    // the nodes and every label collided with its neighbours. Skipped
+    // entirely if it would overlap a label an earlier (busier) node already
+    // drew this frame — see labelRectsRef — as a backstop for genuinely
+    // dense clusters even at a single zoom level.
+    ctx.save();
+    ctx.globalAlpha = isHighlighted ? 1 : 0.15;
+    const fontSize = isSelected ? 5 : 4;
     ctx.font = `${isSelected ? "bold " : ""}${fontSize}px sans-serif`;
-    ctx.fillStyle = isHighlighted ? "#ffffff" : "#94a3b8";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "top";
-    const label = node.label.length > 20 ? node.label.slice(0, 18) + "…" : node.label;
-    ctx.fillText(label, node.x!, node.y! + radius + 2 / globalScale);
+    const label = node.label.length > 16 ? node.label.slice(0, 15) + "…" : node.label;
+    const textWidth = ctx.measureText(label).width;
+    const padX = 1.5;
+    const padY = 0.75;
+    const labelY = node.y! + radius + 1.5;
+    const rect = {
+      x1: node.x! - textWidth / 2 - padX,
+      y1: labelY - padY,
+      x2: node.x! + textWidth / 2 + padX,
+      y2: labelY + fontSize + padY,
+    };
+    const collides = labelRectsRef.current.some(
+      (r) => rect.x1 < r.x2 && rect.x2 > r.x1 && rect.y1 < r.y2 && rect.y2 > r.y1
+    );
+    if (!collides || isSelected) {
+      labelRectsRef.current.push(rect);
 
+      // Background pill so text stays legible over links/other nodes
+      const rr = Math.min(1, (rect.x2 - rect.x1) / 2);
+      ctx.fillStyle = "rgba(15,17,23,0.78)";
+      ctx.beginPath();
+      ctx.moveTo(rect.x1 + rr, rect.y1);
+      ctx.arcTo(rect.x2, rect.y1, rect.x2, rect.y2, rr);
+      ctx.arcTo(rect.x2, rect.y2, rect.x1, rect.y2, rr);
+      ctx.arcTo(rect.x1, rect.y2, rect.x1, rect.y1, rr);
+      ctx.arcTo(rect.x1, rect.y1, rect.x2, rect.y1, rr);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = isHighlighted ? "#ffffff" : "#94a3b8";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      ctx.fillText(label, node.x!, labelY);
+    }
     ctx.restore();
   }, [highlightNodes, selectedNode]);
 
@@ -409,6 +462,7 @@ export default function AssociationMap() {
                 linkCanvasObject={paintLink as (link: object, ctx: CanvasRenderingContext2D) => void}
                 onNodeClick={handleNodeClick as (node: object) => void}
                 onBackgroundClick={handleBackgroundClick}
+                onRenderFramePre={resetLabelRects}
                 linkDirectionalParticles={0}
                 cooldownTicks={120}
                 d3AlphaDecay={0.02}

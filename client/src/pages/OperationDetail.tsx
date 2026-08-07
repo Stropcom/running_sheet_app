@@ -680,15 +680,11 @@ function DeploymentRollupPanel({
   // lists sheets in); this just reverses that array for a chronological,
   // oldest-first read — no extra round-trip needed.
   const [sortAsc, setSortAsc] = useState(false);
-  // Which cards are expanded — independent per card, so several can be open
-  // at once or just one at a time, whichever suits the review.
-  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
+  // Accordion — opening a card closes whichever one was open before it, so
+  // only one is expanded at a time while stepping through a deployment.
+  const [expandedId, setExpandedId] = useState<number | null>(null);
   const toggleExpanded = (sheetId: number) => {
-    setExpandedIds(prev => {
-      const next = new Set(prev);
-      next.has(sheetId) ? next.delete(sheetId) : next.add(sheetId);
-      return next;
-    });
+    setExpandedId(prev => (prev === sheetId ? null : sheetId));
   };
 
   const { data: rows, isLoading } = trpc.summary.listByOperation.useQuery({
@@ -759,7 +755,7 @@ function DeploymentRollupPanel({
                 key={r.sheetId}
                 row={r}
                 showTarget={showTargetFilter}
-                expanded={expandedIds.has(r.sheetId)}
+                expanded={expandedId === r.sheetId}
                 onToggle={() => toggleExpanded(r.sheetId)}
               />
             ))}
@@ -833,7 +829,6 @@ function DeploymentRollupCard({
   expanded: boolean;
   onToggle: () => void;
 }) {
-  const [, navigate] = useLocation();
   const objectives = parseRollupJsonArray<string>(r.objectives).filter(o =>
     o.trim()
   );
@@ -1082,13 +1077,6 @@ function DeploymentRollupCard({
               <p className="text-xs text-muted-foreground italic">None recorded.</p>
             )}
           </RollupSection>
-
-          <button
-            onClick={() => navigate(`/summary/${r.sheetId}`)}
-            className="text-[11px] text-primary hover:underline self-start mt-0.5"
-          >
-            Open full Summary to edit →
-          </button>
         </div>
       )}
     </div>
@@ -1653,7 +1641,7 @@ export default function OperationDetail() {
           </div>
         </div>
 
-        {/* Main tabs: Running Sheets | Add Target */}
+        {/* Main tabs: Running Sheets | Deployment Rollup */}
         <Tabs value={activeTab} onValueChange={(v) => {
             const sp = new URLSearchParams(window.location.search);
             sp.set("tab", v);
@@ -1672,11 +1660,12 @@ export default function OperationDetail() {
                 <span className="hidden sm:inline">Deployment Rollup</span>
                 <span className="sm:hidden">Rollup</span>
               </TabsTrigger>
-              <TabsTrigger value="target">
-                <Target className="w-3.5 h-3.5 mr-1.5" />
-                <span className="hidden sm:inline">Add Target</span>
-                <span className="sm:hidden">Target</span>
-              </TabsTrigger>
+              {/* No visible "Add Target" trigger — target creation/editing
+                  lives in the New Running Sheet dialog, the Edit Running
+                  Sheet target-edit pencil, and the Target Registry page.
+                  The tab/content itself (TabsContent value="target" below)
+                  stays wired up so those deep links (?tab=target&targetId=…)
+                  still land on the same TargetPanel as before. */}
             </TabsList>
             {/* Back to Running Sheet — shown when navigated here from a sheet */}
             {fromSheetId && (

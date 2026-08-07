@@ -1057,6 +1057,14 @@ export default function IntelligencePage() {
   const isMobile = useIsMobile();
   const [search, setSearch]         = useState("");
   const [activeTab, setActiveTab]   = useState<TabView>("operations");
+  // The map tabs render a full-bleed canvas with their own filter chrome and
+  // their own data fetch — none of the entity-list scaffolding (search/sort
+  // bar, skeleton loader, entity grid) applies to them. Kept as one derived
+  // flag so adding another map tab can't leave one of those behind it.
+  const isMapTab =
+    activeTab === "heatmap" ||
+    activeTab === "assocmap" ||
+    activeTab === "egonet";
   const [selected, setSelected]     = useState<Entity | null>(null);
 
   // Date filter state
@@ -1282,12 +1290,8 @@ export default function IntelligencePage() {
           </div>
         )}
 
-        {/* Search bar + sort control (entity tabs only — the map tabs have
-            their own filter chrome and fetch their own data) */}
-        {activeTab !== "operations" &&
-          activeTab !== "heatmap" &&
-          activeTab !== "assocmap" &&
-          activeTab !== "egonet" && (
+        {/* Search bar + sort control — entity tabs only */}
+        {activeTab !== "operations" && !isMapTab && (
           <div className="space-y-2 mb-5">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -1324,10 +1328,7 @@ export default function IntelligencePage() {
         )}
 
         {/* Loading */}
-        {isLoading &&
-          activeTab !== "heatmap" &&
-          activeTab !== "assocmap" &&
-          activeTab !== "egonet" && (
+        {isLoading && !isMapTab && (
           <div className="space-y-3">
             {[...Array(6)].map((_, i) => (
               <Skeleton key={i} className="h-14 w-full rounded-xl" />
@@ -1406,7 +1407,7 @@ export default function IntelligencePage() {
         )}
 
         {/* Entity type tab content */}
-        {!isLoading && activeTab !== "operations" && activeTab !== "heatmap" && (
+        {!isLoading && activeTab !== "operations" && !isMapTab && (
           <>
             {filteredByTab.length === 0 ? (
               <div className="text-center py-16 text-muted-foreground">

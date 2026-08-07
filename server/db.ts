@@ -5077,10 +5077,32 @@ export async function getAllIntelligenceEntities(): Promise<
         if (
           (entry.type === "person" ||
             entry.type === "address" ||
-            entry.type === "business") &&
+            entry.type === "business" ||
+            entry.type === "vehicle") &&
           entry.rawShortForm !== entry.shortForm
         ) {
           searchTerms.push(entry.rawShortForm);
+        }
+        // A vehicle is identified by its registration, and later rows refer
+        // back to it however the officer typed it that day — "Vehicle
+        // 1FAD093", "in 1FAD093", or the bare plate. Searching the plate
+        // itself catches all of those. Without it the only term searched is
+        // the enriched display form ("1FAD093 red Mercedes SUV"), which this
+        // pipeline assembles and which therefore never appears verbatim in a
+        // later row — so every bare vehicle re-mention went uncounted, and a
+        // vehicle never co-occurred with the target driving it.
+        if (entry.type === "vehicle") {
+          const rego = vehicleRegoKey(entry.shortForm);
+          const alreadySearched = searchTerms.some(
+            t => t.toLowerCase() === rego
+          );
+          if (
+            rego &&
+            rego !== entry.shortForm.toLowerCase() &&
+            !alreadySearched
+          ) {
+            searchTerms.push(rego);
+          }
         }
 
         let found = false;
@@ -5528,162 +5550,100 @@ export interface AssociationGraph {
   edges: AssocEdge[];
 }
 
+/**
+ * Co-occurrence graph for the Association Map / Ego Network.
+ *
+ * Built on getAllIntelligenceEntities() — the same two-pass, alias-merged
+ * pipeline the Intelligence folder's own entity list uses — rather than
+ * running extractEntitiesFromText() per row. That distinction is the whole
+ * point: extractEntitiesFromText only recognises entities that are
+ * bracket-introduced in the row it is handed, but the running sheet
+ * convention is to bracket-introduce an entity once and then refer to it
+ * bare ("HOGAN entered Vehicle 1FAD093"). Per-row extraction therefore sees
+ * at most one entity in almost every row, finds no pairs, and produces a
+ * graph with zero edges. Grouping the resolved entities' own occurrences by
+ * rowId picks up those bare re-mentions and yields the real co-occurrences.
+ *
+ * Occurrences with rowId 0 are synthetic — they come from a Target Registry
+ * card rather than an observation — so they make an entity appear as a node
+ * but never manufacture an edge.
+ */
 export async function getAssociationGraph(
   operationIds?: number[]
 ): Promise<AssociationGraph> {
   const db = await getDb();
   if (!db) return { nodes: [], edges: [] };
 
-  // Fetch all rows with their observations, filtered by operation if specified
-  // Exclude rows from soft-deleted sheets
-  let rowQuery = db
-    .select({
-      rowId: sheetRows.id,
-      observation: sheetRows.observation,
-      sheetId: sheetRows.sheetId,
-      operationId: runningSheets.operationId,
-      operationName: operations.name,
-    })
-    .from(sheetRows)
-    .innerJoin(
-      runningSheets,
-      and(
-        eq(sheetRows.sheetId, runningSheets.id),
-        isNull(runningSheets.deletedAt)
-      )
-    )
-    .innerJoin(operations, eq(runningSheets.operationId, operations.id));
+  const scoped = operationIds && operationIds.length > 0 ? operationIds : null;
+  const entities = await getAllIntelligenceEntities();
 
-  const allRows = await rowQuery;
-  const filteredRows =
-    operationIds && operationIds.length > 0
-      ? allRows.filter(r => operationIds.includes(r.operationId))
-      : allRows;
-
-  // Build TGT alias map from targets (exclude soft-deleted)
-  const allTargets = await db
-    .select({
-      id: targets.id,
-      name: targets.name,
-      tgt: targets.tgt,
-      operationId: targets.operationId,
-    })
-    .from(targets)
-    .where(isNull(targets.deletedAt));
-  const tgtAliasMap = new Map<string, string>(); // alias -> full name
-  for (const t of allTargets) {
-    if (t.tgt?.trim()) tgtAliasMap.set(t.tgt.trim().toUpperCase(), t.name);
-  }
-
-  // nodeMap: id -> AssocNode (accumulate)
   const nodeMap = new Map<string, AssocNode>();
+  // rowId -> node ids mentioned in that row
+  const rowMembers = new Map<number, Set<string>>();
 
-  // Add target nodes from target cards
-  for (const t of allTargets) {
-    if (
-      operationIds &&
-      operationIds.length > 0 &&
-      t.operationId &&
-      !operationIds.includes(t.operationId)
-    )
-      continue;
-    const nodeId = `target::${t.name}`;
-    if (!nodeMap.has(nodeId)) {
-      nodeMap.set(nodeId, {
+  for (const entity of entities) {
+    const type: AssocNode["type"] = entity.isTarget
+      ? "target"
+      : (entity.type as AssocNode["type"]);
+    const nodeId = entity.isTarget
+      ? `target::${entity.shortForm}`
+      : `${entity.type}::${entity.shortForm.toLowerCase()}`;
+
+    const relevant = scoped
+      ? entity.occurrences.filter(o => scoped.includes(o.operationId))
+      : entity.occurrences;
+    if (relevant.length === 0) continue;
+
+    let node = nodeMap.get(nodeId);
+    if (!node) {
+      node = {
         id: nodeId,
-        label: t.name,
-        type: "target",
-        occurrences: 0,
-        operationIds: [],
-        operationNames: [],
-      });
-    }
-  }
-
-  // edgeWeight: "nodeId1|||nodeId2" -> count (always sort ids so order is consistent)
-  const edgeWeight = new Map<string, number>();
-
-  const ensureNode = (
-    id: string,
-    label: string,
-    type: AssocNode["type"],
-    opId: number,
-    opName: string
-  ) => {
-    if (!nodeMap.has(id)) {
-      nodeMap.set(id, {
-        id,
-        label,
+        label: entity.shortForm,
         type,
         occurrences: 0,
         operationIds: [],
         operationNames: [],
-      });
+      };
+      nodeMap.set(nodeId, node);
     }
-    const n = nodeMap.get(id)!;
-    n.occurrences++;
-    if (!n.operationIds.includes(opId)) {
-      n.operationIds.push(opId);
-      n.operationNames.push(opName);
-    }
-  };
 
-  const addEdge = (a: string, b: string) => {
-    if (a === b) return;
-    const key = [a, b].sort().join("|||");
-    edgeWeight.set(key, (edgeWeight.get(key) ?? 0) + 1);
-  };
-
-  for (const row of filteredRows) {
-    if (!row.observation) continue;
-    const rawEntities = extractEntitiesFromText(row.observation);
-
-    // Resolve TGT aliases to canonical target names
-    const rowNodeIds: string[] = [];
-    for (const e of rawEntities) {
-      let nodeId: string;
-      let label: string;
-      let nodeType: AssocNode["type"];
-
-      if (e.type === "person") {
-        const canonical = tgtAliasMap.get(e.shortForm.toUpperCase());
-        if (canonical) {
-          nodeId = `target::${canonical}`;
-          label = canonical;
-          nodeType = "target";
-        } else {
-          nodeId = `person::${e.shortForm.toLowerCase()}`;
-          label = e.shortForm;
-          nodeType = "person";
-        }
-      } else {
-        nodeId = `${e.type}::${e.shortForm.toLowerCase()}`;
-        label = e.shortForm;
-        nodeType = e.type as AssocNode["type"];
+    for (const occ of relevant) {
+      node.occurrences++;
+      if (!node.operationIds.includes(occ.operationId)) {
+        node.operationIds.push(occ.operationId);
+        node.operationNames.push(occ.operationName);
       }
-
-      ensureNode(nodeId, label, nodeType, row.operationId, row.operationName);
-      rowNodeIds.push(nodeId);
-    }
-
-    // Create edges between every pair of entities in this row
-    for (let i = 0; i < rowNodeIds.length; i++) {
-      for (let j = i + 1; j < rowNodeIds.length; j++) {
-        addEdge(rowNodeIds[i], rowNodeIds[j]);
+      // rowId 0 is a registry-card mention, not a real observation — it
+      // makes the entity visible but must not create a co-occurrence.
+      if (occ.rowId > 0) {
+        if (!rowMembers.has(occ.rowId)) rowMembers.set(occ.rowId, new Set());
+        rowMembers.get(occ.rowId)!.add(nodeId);
       }
     }
   }
 
-  // Build edges array
+  // Every pair of entities sharing a row is one co-occurrence.
+  const edgeWeight = new Map<string, number>();
+  for (const members of Array.from(rowMembers.values())) {
+    const ids = Array.from(members);
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const key = [ids[i], ids[j]].sort().join("|||");
+        edgeWeight.set(key, (edgeWeight.get(key) ?? 0) + 1);
+      }
+    }
+  }
+
   const edges: AssocEdge[] = [];
   for (const [key, weight] of Array.from(edgeWeight.entries())) {
-    const [src, dst] = key.split("|||");
-    edges.push({ source: src, target: dst, weight });
+    const [source, target] = key.split("|||");
+    edges.push({ source, target, weight });
   }
 
-  // Increment occurrences for target nodes from target cards (they may have 0 row appearances)
-  for (const [, node] of Array.from(nodeMap.entries())) {
-    if (node.type === "target" && node.occurrences === 0) node.occurrences = 1;
+  // A registry-only entity has real presence in the app even with no
+  // observation behind it yet — keep it visible rather than showing 0.
+  for (const node of Array.from(nodeMap.values())) {
+    if (node.occurrences === 0) node.occurrences = 1;
   }
 
   return { nodes: Array.from(nodeMap.values()), edges };

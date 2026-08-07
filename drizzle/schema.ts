@@ -706,6 +706,11 @@ export const sheetSummaries = mysqlTable("sheet_summaries", {
   dayDate: varchar("dayDate", { length: 64 }),
   startTime: varchar("startTime", { length: 32 }),
   finishTime: varchar("finishTime", { length: 32 }),
+  // Once true, that field stops auto-syncing from the RS's first/last timed
+  // row on read — the supervisor's manual edit sticks, exactly like
+  // sheetSummaryEntries.edited below.
+  startTimeEdited: boolean("startTimeEdited").notNull().default(false),
+  finishTimeEdited: boolean("finishTimeEdited").notNull().default(false),
   targetName: text("targetName"),
   // Sourced from the RS row containing "surveillance commenced", not target.hbf.
   location: text("location"),

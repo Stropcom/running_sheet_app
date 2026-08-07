@@ -526,6 +526,13 @@
       "when": 1786076110111,
       "tag": "0074_parallel_steel_serpent",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "5",
+      "when": 1786089068746,
+      "tag": "0075_nasty_old_lace",
+      "breakpoints": true
     }
   ]
 }

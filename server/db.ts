@@ -6204,6 +6204,8 @@ export interface SheetSummaryUpsertInput {
   dayDate?: string | null;
   startTime?: string | null;
   finishTime?: string | null;
+  startTimeEdited?: boolean;
+  finishTimeEdited?: boolean;
   targetName?: string | null;
   location?: string | null;
   dismissedVehicleKeys?: string | null;
@@ -6516,19 +6518,44 @@ function buildSummaryEntryFields(
 }
 
 /**
+ * A row that is nothing but the "Travelled Via" route mechanics — the bare
+ * "continued via:" trigger, its paired street-list row, or a self-contained
+ * "continued via: <streets>, whereat" row — carries no observational
+ * content of its own, so it never gets a Summary line. This is deliberately
+ * narrower than "the row mentions continued via" — a row that WRAPS a via
+ * clause in real narrative (e.g. "departed 44 Smith St and continued via:
+ * Jones Ave, whereat continued surveillance") still gets a line; only the
+ * via clause inside it is shortened, by buildSummaryAbbreviatedText's
+ * "departed ... continued via:" step. A blanket exclusion on any row
+ * mentioning "continued via" would silently drop that real narrative along
+ * with the route detail.
+ */
+function isPureTravelledViaRow(observation: string): boolean {
+  const trimmed = observation.trim();
+  if (/^continued via[;:]\s*$/i.test(trimmed)) return true;
+  return /^continued via[;:].*\bwhereat[;:.,]?\s*$/i.test(trimmed);
+}
+
+function isPureTravelledViaFollowUp(
+  observation: string,
+  previousObservation: string | null
+): boolean {
+  if (!previousObservation) return false;
+  if (!/^continued via[;:]\s*$/i.test(previousObservation.trim())) return false;
+  return /whereat[;:.,]?\s*$/i.test(observation.trim());
+}
+
+/**
  * Returns the Summary tab's per-row entry list, first append-only syncing in
- * any RS row with real observation text that doesn't have an entry yet.
- * Existing entries (including ones the supervisor has edited or soft-deleted)
- * are never touched or regenerated.
- *
- * Every content row gets a line here, including "Travelled Via" rows
- * ("continued via: …" route narratives, typically part of a departure —
- * see the "d"/"ar" shortcut expansions in ensureDefaultShortcuts). Court
- * Statements deliberately exclude those (routers.ts's statement.previewData)
- * since a witness statement doesn't need turn-by-turn route detail, but the
- * Summary's whole purpose is a comprehensive log of the sheet, not a curated
- * narrative — skipping them here just silently dropped every departure
- * observation that happened to include a route.
+ * any RS row with real observation text that doesn't have an entry yet —
+ * except pure "Travelled Via" street-list rows (see isPureTravelledViaRow),
+ * which are skipped entirely; a witness/supervisor reading the Summary
+ * doesn't need the turn-by-turn route, same reasoning Court Statements
+ * already apply (routers.ts's statement.previewData). That check only ever
+ * gates new inserts — an existing line is never removed or regenerated,
+ * even if a later edit makes its row match the pattern. Existing entries
+ * (including ones the supervisor has edited or soft-deleted) are never
+ * touched or regenerated either way.
  *
  * While the summary is marked complete, none of this runs at all — no new
  * lines are added and no existing ones are refreshed, even if RS rows keep
@@ -6557,6 +6584,19 @@ export async function getSheetSummaryEntries(
   const contentRows = allRows.filter(r => (r.observation ?? "").trim());
   const contentRowById = new Map(contentRows.map(r => [r.id, r]));
 
+  const pureTravelledViaRowIds = new Set<number>();
+  for (let i = 0; i < allRows.length; i++) {
+    const obs = allRows[i].observation ?? "";
+    if (!obs.trim()) continue;
+    const prevObs = i > 0 ? allRows[i - 1].observation : null;
+    if (
+      isPureTravelledViaRow(obs) ||
+      isPureTravelledViaFollowUp(obs, prevObs)
+    ) {
+      pureTravelledViaRowIds.add(allRows[i].id);
+    }
+  }
+
   const existing = await db
     .select()
     .from(sheetSummaryEntries)
@@ -6566,7 +6606,9 @@ export async function getSheetSummaryEntries(
 
   if (!isComplete) {
     const existingRowIds = new Set(existing.map(e => e.rowId));
-    const missing = contentRows.filter(r => !existingRowIds.has(r.id));
+    const missing = contentRows.filter(
+      r => !existingRowIds.has(r.id) && !pureTravelledViaRowIds.has(r.id)
+    );
     if (missing.length > 0) {
       await db.insert(sheetSummaryEntries).values(
         missing.map(r => {
@@ -6748,22 +6790,32 @@ export async function getSheetSummarySupportHistory(
  * (Location, Team, Target, the Communication section, Critical Decisions,
  * Issues) starts blank/derived fresh per the supervisor's spec.
  */
+/**
+ * Donor sheet for carry-forward fields (Investigator, Intel Support, Special
+ * Projects, Objectives — see summary.getBySheet). When this sheet has a
+ * target, only a summary for that SAME target counts — Special Projects
+ * ticked for one target shouldn't leak onto the next summary for a
+ * different target just because it happens to be the most recently created
+ * sheet in the operation. Falls back to the most recent summary anywhere in
+ * the operation when this sheet has no target to scope by.
+ */
 export async function getMostRecentSheetSummaryForOperation(
   operationId: number,
-  excludeSheetId: number
+  excludeSheetId: number,
+  targetId?: number | null
 ): Promise<SheetSummary | null> {
   const db = await getDb();
   if (!db) return null;
+  const conditions = [
+    eq(runningSheets.operationId, operationId),
+    sql`${runningSheets.id} != ${excludeSheetId}`,
+  ];
+  if (targetId) conditions.push(eq(runningSheets.targetId, targetId));
   const rows = await db
     .select({ summary: sheetSummaries })
     .from(sheetSummaries)
     .innerJoin(runningSheets, eq(sheetSummaries.sheetId, runningSheets.id))
-    .where(
-      and(
-        eq(runningSheets.operationId, operationId),
-        sql`${runningSheets.id} != ${excludeSheetId}`
-      )
-    )
+    .where(and(...conditions))
     .orderBy(desc(runningSheets.createdAt))
     .limit(1);
   return rows[0]?.summary ?? null;

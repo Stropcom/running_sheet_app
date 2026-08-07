@@ -1027,9 +1027,9 @@ const TAB_OPTIONS: Array<{ value: TabView; label: string; icon: React.ReactNode 
   { value: "associates", label: "Associates", icon: <User className="w-3.5 h-3.5" /> },
   { value: "vehicle",    label: "Vehicles",   icon: <Car className="w-3.5 h-3.5" /> },
   { value: "locations",  label: "Locations",  icon: <MapPin className="w-3.5 h-3.5" /> },
-  { value: "heatmap",    label: "Heat Map",    icon: <Flame className="w-3.5 h-3.5" /> },
-  { value: "assocmap",   label: "Association Map", icon: <Network className="w-3.5 h-3.5" /> },
-  { value: "egonet",     label: "Ego Network", icon: <Radar className="w-3.5 h-3.5" /> },
+  { value: "heatmap",    label: "HEAT",        icon: <Flame className="w-3.5 h-3.5" /> },
+  { value: "assocmap",   label: "ASSOCIATION", icon: <Network className="w-3.5 h-3.5" /> },
+  { value: "egonet",     label: "EGO",         icon: <Radar className="w-3.5 h-3.5" /> },
 ];
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
@@ -1180,9 +1180,11 @@ export default function IntelligencePage() {
           </div>
           <div className="flex-1">
             <h1 className="text-xl font-semibold text-foreground">Intelligence Folder</h1>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {isLoading ? "Loading…" : `${totalEntities} entities extracted from observation records`}
-            </p>
+            {!isMobile && (
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {isLoading ? "Loading…" : `${totalEntities} entities extracted from observation records`}
+              </p>
+            )}
           </div>
           <MergeEntitiesButton />
           <ViewToggle />

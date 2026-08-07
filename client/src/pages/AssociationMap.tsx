@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Spinner } from "@/components/ui/spinner";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import {
   X,
   ZoomIn,
@@ -335,7 +334,10 @@ export default function AssociationMap() {
       {/* ── Top filter bar ─────────────────────────────────────────────── */}
         <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-border bg-card shrink-0">
           <span className="text-sm font-semibold text-foreground mr-1">Association Map</span>
-          <Separator orientation="vertical" className="h-5" />
+          {/* Plain divider, not Separator — its h-full default beats a "h-5"
+              override once this bar wraps to multiple lines (see the same
+              note in EgoNetworkMap.tsx for the full explanation). */}
+          <div className="h-5 w-px bg-border shrink-0" />
 
           {/* Entity type toggles */}
           <div className="flex items-center gap-1.5 flex-wrap">
@@ -355,7 +357,7 @@ export default function AssociationMap() {
             ))}
           </div>
 
-          <Separator orientation="vertical" className="h-5" />
+          <div className="h-5 w-px bg-border shrink-0" />
 
           {/* Min connections */}
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -368,7 +370,7 @@ export default function AssociationMap() {
             <span className="w-4 text-center font-mono">{minConnections}</span>
           </div>
 
-          <Separator orientation="vertical" className="h-5" />
+          <div className="h-5 w-px bg-border shrink-0" />
 
           {/* Zoom controls */}
           <div className="flex items-center gap-1 ml-auto">

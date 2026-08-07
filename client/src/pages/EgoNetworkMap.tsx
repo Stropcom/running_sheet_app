@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
@@ -84,8 +83,15 @@ const RING1_MAX = 12;
  * truncates harder. */
 const RING2_MAX = 18;
 
-const RING1_RADIUS = 165;
-const RING2_RADIUS = 290;
+// Upper bounds — the actual radii used are scaled down to fit the canvas
+// (see ringRadii below) so ring-1/ring-2 nodes and their labels never run
+// past the visible edge on a narrow phone screen.
+const RING1_RADIUS_MAX = 165;
+const RING2_RADIUS_MAX = 290;
+/** Reserved for label text extending past a node's centre, plus padding. */
+const RING_LABEL_MARGIN = 110;
+const RING1_RADIUS_MIN = 70;
+const RING2_RADIUS_MIN = 120;
 
 interface PlacedNode {
   node: EgoNode;
@@ -138,6 +144,18 @@ export default function EgoNetworkMap() {
   const [operationId, setOperationId] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
+
+  // Scale both rings down together (keeping their proportions) so the
+  // outermost nodes — and their labels — stay within the canvas instead of
+  // running off the edge on a narrow phone screen.
+  const ringRadii = useMemo(() => {
+    const avail = Math.min(size.w, size.h) / 2 - RING_LABEL_MARGIN;
+    const scale = Math.min(1, avail / RING2_RADIUS_MAX);
+    return {
+      ring1: Math.max(RING1_RADIUS_MIN, RING1_RADIUS_MAX * scale),
+      ring2: Math.max(RING2_RADIUS_MIN, RING2_RADIUS_MAX * scale),
+    };
+  }, [size.w, size.h]);
 
   const { data: operations } = trpc.operation.list.useQuery();
 
@@ -250,8 +268,8 @@ export default function EgoNetworkMap() {
         if (!node) return;
         placedNodes.push({
           node,
-          x: Math.cos(angle) * RING1_RADIUS,
-          y: Math.sin(angle) * RING1_RADIUS,
+          x: Math.cos(angle) * ringRadii.ring1,
+          y: Math.sin(angle) * ringRadii.ring1,
           hop: 1,
           weight: entry.weight,
         });
@@ -296,8 +314,8 @@ export default function EgoNetworkMap() {
             ring2Parent.set(kid.id, parentId);
             placedNodes.push({
               node,
-              x: Math.cos(angle) * RING2_RADIUS,
-              y: Math.sin(angle) * RING2_RADIUS,
+              x: Math.cos(angle) * ringRadii.ring2,
+              y: Math.sin(angle) * ringRadii.ring2,
               hop: 2,
               weight: kid.weight,
             });
@@ -328,7 +346,7 @@ export default function EgoNetworkMap() {
         hiddenRing2Count: hidden2,
         edges: edgeList,
       };
-    }, [focusNode, adjacency, nodesById, hops, expandRing1]);
+    }, [focusNode, adjacency, nodesById, hops, expandRing1, ringRadii]);
 
   const cx = size.w / 2;
   const cy = size.h / 2;
@@ -364,7 +382,13 @@ export default function EgoNetworkMap() {
         <span className="text-sm font-semibold text-foreground mr-1">
           Ego Network
         </span>
-        <Separator orientation="vertical" className="h-5" />
+        {/* Plain divider, not the shared Separator component — Separator's
+            own data-[orientation=vertical]:h-full default beats a "h-5"
+            override in the generated CSS, and h-full inside a *wrapping*
+            flex row (this bar wraps to several lines on narrow screens)
+            resolves to a wildly oversized height, throwing off every row
+            after it. */}
+        <div className="h-5 w-px bg-border shrink-0" />
 
         <Select
           value={operationId != null ? String(operationId) : "all"}
@@ -383,7 +407,7 @@ export default function EgoNetworkMap() {
           </SelectContent>
         </Select>
 
-        <Separator orientation="vertical" className="h-5" />
+        <div className="h-5 w-px bg-border shrink-0" />
 
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span>Focus:</span>
@@ -392,7 +416,7 @@ export default function EgoNetworkMap() {
           </span>
         </div>
 
-        <Separator orientation="vertical" className="h-5" />
+        <div className="h-5 w-px bg-border shrink-0" />
 
         {/* Hop depth */}
         <div className="inline-flex rounded-lg border border-border overflow-hidden">
@@ -551,7 +575,7 @@ export default function EgoNetworkMap() {
                 <circle
                   cx={cx}
                   cy={cy}
-                  r={RING1_RADIUS}
+                  r={ringRadii.ring1}
                   fill="none"
                   stroke="#262b36"
                   strokeDasharray="4 4"
@@ -560,7 +584,7 @@ export default function EgoNetworkMap() {
                   <circle
                     cx={cx}
                     cy={cy}
-                    r={RING2_RADIUS}
+                    r={ringRadii.ring2}
                     fill="none"
                     stroke="#262b36"
                     strokeDasharray="4 4"
@@ -666,7 +690,7 @@ export default function EgoNetworkMap() {
                   className="absolute text-[10px] px-2 py-1 rounded-full border border-dashed border-slate-500 text-slate-300 hover:bg-slate-700/40 transition-colors"
                   style={{
                     left: cx,
-                    top: cy + RING1_RADIUS + 34,
+                    top: cy + ringRadii.ring1 + 34,
                     transform: "translate(-50%, -50%)",
                   }}
                 >

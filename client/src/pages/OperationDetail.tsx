@@ -47,6 +47,7 @@ import {
   LayoutGrid,
   Car,
   Home,
+  History,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -650,6 +651,181 @@ function TargetPanel({ operationId, autoExpandId, fromSheetId }: { operationId: 
   );
 }
 
+// ── Deployment Rollup ────────────────────────────────────────────────────────
+// A chronological (newest-first) read view over every running sheet's
+// Supervisor Summary for this operation — lets a supervisor scan how a
+// deployment has progressed across 20-50+ sheets without opening each one.
+
+function parseRollupJsonArray<T>(raw: string | null | undefined): T[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function DeploymentRollupPanel({
+  operationId,
+  targets,
+}: {
+  operationId: number;
+  targets?: { id: number; name: string }[];
+}) {
+  const [, navigate] = useLocation();
+  const [targetFilter, setTargetFilter] = useState<number | null>(null);
+
+  const { data: rows, isLoading } = trpc.summary.listByOperation.useQuery({
+    operationId,
+    targetId: targetFilter,
+  });
+
+  const showTargetFilter = (targets?.length ?? 0) > 1;
+
+  return (
+    <div className="flex flex-col gap-4">
+      {showTargetFilter && (
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-medium text-muted-foreground">
+            Target
+          </label>
+          <Select
+            value={targetFilter ? String(targetFilter) : "all"}
+            onValueChange={v => setTargetFilter(v === "all" ? null : Number(v))}
+          >
+            <SelectTrigger className="h-8 w-[220px] text-sm">
+              <SelectValue placeholder="All targets" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All targets</SelectItem>
+              {targets?.map(t => (
+                <SelectItem key={t.id} value={String(t.id)}>
+                  {t.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="flex flex-col gap-2">
+          {[0, 1, 2].map(i => (
+            <Skeleton key={i} className="h-20 w-full rounded-lg" />
+          ))}
+        </div>
+      ) : !rows || rows.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 text-center border border-dashed border-border rounded-xl">
+          <History className="w-8 h-8 text-muted-foreground/50 mb-3" />
+          <p className="text-sm text-muted-foreground max-w-sm">
+            No Supervisor Summaries yet. Once a running sheet's Summary tab
+            has been opened, it will appear here.
+          </p>
+        </div>
+      ) : (
+        <>
+          <p className="text-xs text-muted-foreground">
+            {rows.length} summar{rows.length !== 1 ? "ies" : "y"}, newest first
+          </p>
+          <div className="flex flex-col gap-2">
+            {rows.map(r => {
+              const objectives = parseRollupJsonArray<string>(r.objectives).filter(
+                o => o.trim()
+              );
+              const specialProjects = parseRollupJsonArray<{ key: string }>(
+                r.specialProjects
+              );
+              const hasIssues = !!(r.issues && r.issues.trim());
+              const hasCriticalDecisions =
+                parseRollupJsonArray<string>(r.criticalDecisions).filter(c =>
+                  c.trim()
+                ).length > 0;
+              const isComplete = !!r.completedAt;
+
+              return (
+                <button
+                  key={r.sheetId}
+                  onClick={() => navigate(`/summary/${r.sheetId}`)}
+                  className="text-left rounded-xl border border-border bg-card hover:border-primary/40 hover:bg-accent/20 transition-colors px-4 py-3"
+                >
+                  <div className="flex items-start justify-between gap-3 mb-1.5">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
+                      <span className="text-sm font-semibold text-foreground">
+                        {r.sheetDate ?? format(new Date(r.createdAt), "yyyy-MM-dd")}
+                      </span>
+                      {r.teamLabel && (
+                        <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20">
+                          {r.teamLabel}
+                        </span>
+                      )}
+                      {(r.startTime || r.finishTime) && (
+                        <span className="text-xs text-muted-foreground">
+                          {r.startTime ?? "?"}–{r.finishTime ?? "?"}
+                        </span>
+                      )}
+                      {showTargetFilter && r.targetName && (
+                        <span className="text-xs text-muted-foreground truncate">
+                          {r.targetName}
+                        </span>
+                      )}
+                    </div>
+                    <span
+                      className={`shrink-0 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md border ${
+                        isComplete
+                          ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:text-emerald-400"
+                          : "bg-amber-500/10 text-amber-600 border-amber-500/20 dark:text-amber-400"
+                      }`}
+                    >
+                      {isComplete ? "Complete" : "Open"}
+                    </span>
+                  </div>
+
+                  {objectives.length > 0 ? (
+                    <p className="text-sm text-foreground/90 line-clamp-2">
+                      {objectives[0]}
+                      {objectives.length > 1 &&
+                        ` (+${objectives.length - 1} more)`}
+                    </p>
+                  ) : (
+                    <p className="text-sm text-muted-foreground italic">
+                      No objectives recorded
+                    </p>
+                  )}
+
+                  {(specialProjects.length > 0 ||
+                    hasCriticalDecisions ||
+                    hasIssues) && (
+                    <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                      {specialProjects.map(p => (
+                        <span
+                          key={p.key}
+                          className="text-[10px] px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground border border-border/60"
+                        >
+                          {p.key}
+                        </span>
+                      ))}
+                      {hasCriticalDecisions && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                          Critical decision
+                        </span>
+                      )}
+                      {hasIssues && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-destructive/10 text-destructive border border-destructive/20">
+                          Issue flagged
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 /** Individual sheet card — fetches cert status and highlights green when all CINs certified */
 function SheetCard({
@@ -917,7 +1093,9 @@ export default function OperationDetail() {
 
   // Derive active tab and target to auto-expand from URL search params
   const searchParams = new URLSearchParams(search);
-  const activeTab = searchParams.get('tab') === 'target' ? 'target' : 'sheets';
+  const tabParam = searchParams.get('tab');
+  const activeTab =
+    tabParam === 'target' ? 'target' : tabParam === 'rollup' ? 'rollup' : 'sheets';
   const autoExpandTargetId = searchParams.get('targetId') ? parseInt(searchParams.get('targetId')!, 10) : undefined;
   const fromSheetId = searchParams.get('fromSheet') ? parseInt(searchParams.get('fromSheet')!, 10) : undefined;
 
@@ -1218,11 +1396,18 @@ export default function OperationDetail() {
             <TabsList>
               <TabsTrigger value="sheets">
                 <FileText className="w-3.5 h-3.5 mr-1.5" />
-                Running Sheets
+                <span className="hidden sm:inline">Running Sheets</span>
+                <span className="sm:hidden">Sheets</span>
+              </TabsTrigger>
+              <TabsTrigger value="rollup">
+                <History className="w-3.5 h-3.5 mr-1.5" />
+                <span className="hidden sm:inline">Deployment Rollup</span>
+                <span className="sm:hidden">Rollup</span>
               </TabsTrigger>
               <TabsTrigger value="target">
                 <Target className="w-3.5 h-3.5 mr-1.5" />
-                Add Target
+                <span className="hidden sm:inline">Add Target</span>
+                <span className="sm:hidden">Target</span>
               </TabsTrigger>
             </TabsList>
             {/* Back to Running Sheet — shown when navigated here from a sheet */}
@@ -1352,6 +1537,14 @@ export default function OperationDetail() {
             {sheets.length} running sheet{sheets.length !== 1 ? "s" : ""}
           </p>
         )}
+          </TabsContent>
+
+          {/* ── Deployment Rollup tab ── */}
+          <TabsContent value="rollup">
+            <DeploymentRollupPanel
+              operationId={operationId}
+              targets={operationTargets}
+            />
           </TabsContent>
 
           {/* ── Add Target tab ── */}

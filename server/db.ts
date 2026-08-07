@@ -6782,6 +6782,75 @@ export async function getMostRecentSheetSummaryForOperation(
   return rows[0]?.summary ?? null;
 }
 
+export interface OperationSummaryRollupRow {
+  sheetId: number;
+  sheetTitle: string;
+  sheetDate: string | null;
+  createdAt: Date;
+  targetId: number | null;
+  targetName: string | null;
+  teamLabel: string | null;
+  startTime: string | null;
+  finishTime: string | null;
+  location: string | null;
+  objectives: string | null;
+  specialProjects: string | null;
+  criticalDecisions: string | null;
+  issues: string | null;
+  completedAt: number | null;
+}
+
+/**
+ * Every running sheet's Supervisor Summary for an operation (optionally
+ * narrowed to one target), newest first — the "Deployment Rollup" view. Only
+ * sheets that already have a summary record are included (a sheet nobody has
+ * opened the Summary tab on yet has nothing to roll up).
+ */
+export async function getSheetSummariesForOperation(
+  operationId: number,
+  targetId?: number | null
+): Promise<OperationSummaryRollupRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [
+    eq(runningSheets.operationId, operationId),
+    isNull(runningSheets.deletedAt),
+  ];
+  if (targetId) conditions.push(eq(runningSheets.targetId, targetId));
+
+  const rows = await db
+    .select({
+      sheetId: runningSheets.id,
+      sheetTitle: runningSheets.title,
+      sheetDate: runningSheets.sheetDate,
+      createdAt: runningSheets.createdAt,
+      targetId: runningSheets.targetId,
+      summary: sheetSummaries,
+    })
+    .from(runningSheets)
+    .innerJoin(sheetSummaries, eq(sheetSummaries.sheetId, runningSheets.id))
+    .where(and(...conditions))
+    .orderBy(desc(runningSheets.sheetDate), desc(runningSheets.id));
+
+  return rows.map(r => ({
+    sheetId: r.sheetId,
+    sheetTitle: r.sheetTitle,
+    sheetDate: r.sheetDate,
+    createdAt: r.createdAt,
+    targetId: r.targetId,
+    targetName: r.summary.targetName,
+    teamLabel: r.summary.teamLabel,
+    startTime: r.summary.startTime,
+    finishTime: r.summary.finishTime,
+    location: r.summary.location,
+    objectives: r.summary.objectives,
+    specialProjects: r.summary.specialProjects,
+    criticalDecisions: r.summary.criticalDecisions,
+    issues: r.summary.issues,
+    completedAt: r.summary.completedAt,
+  }));
+}
+
 // ─── Target Shortcuts ─────────────────────────────────────────────────────────
 
 export async function getTargetShortcuts(targetId: number) {

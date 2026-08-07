@@ -170,6 +170,7 @@ import {
   deleteSheetSummaryEntry,
   getSheetSummarySupportHistory,
   getMostRecentSheetSummaryForOperation,
+  getSheetSummariesForOperation,
   completeSheetSummary,
   reopenSheetSummary,
   addManualSheetSummaryEntry,
@@ -3312,6 +3313,21 @@ export const appRouter = router({
           }
         }
         return record;
+      }),
+
+    /** Every sheet's Supervisor Summary for an operation, newest first — the Deployment Rollup tab */
+    listByOperation: protectedProcedure
+      .input(
+        z.object({
+          operationId: z.number(),
+          targetId: z.number().nullable().optional(),
+        })
+      )
+      .query(async ({ input }) => {
+        return getSheetSummariesForOperation(
+          input.operationId,
+          input.targetId ?? null
+        );
       }),
 
     /** Update summary fields (free text, save-as-you-go) */

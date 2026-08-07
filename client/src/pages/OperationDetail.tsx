@@ -48,6 +48,7 @@ import {
   Car,
   Home,
   History,
+  ArrowUpDown,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -675,11 +676,16 @@ function DeploymentRollupPanel({
 }) {
   const [, navigate] = useLocation();
   const [targetFilter, setTargetFilter] = useState<number | null>(null);
+  // Server returns newest-first (same direction the Running Sheets tab
+  // lists sheets in); this just reverses that array for a chronological,
+  // oldest-first read — no extra round-trip needed.
+  const [sortAsc, setSortAsc] = useState(false);
 
   const { data: rows, isLoading } = trpc.summary.listByOperation.useQuery({
     operationId,
     targetId: targetFilter,
   });
+  const displayRows = sortAsc && rows ? [...rows].reverse() : rows;
 
   const showTargetFilter = (targets?.length ?? 0) > 1;
 
@@ -725,11 +731,20 @@ function DeploymentRollupPanel({
         </div>
       ) : (
         <>
-          <p className="text-xs text-muted-foreground">
-            {rows.length} summar{rows.length !== 1 ? "ies" : "y"}, newest first
-          </p>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">
+              {rows.length} summar{rows.length !== 1 ? "ies" : "y"}
+            </p>
+            <button
+              onClick={() => setSortAsc(v => !v)}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-2.5 py-1 rounded-md border border-border/50 hover:border-border bg-background hover:bg-muted/40"
+            >
+              <ArrowUpDown className="w-3 h-3" />
+              {sortAsc ? "Oldest first" : "Newest first"}
+            </button>
+          </div>
           <div className="flex flex-col gap-2">
-            {rows.map(r => {
+            {(displayRows ?? []).map(r => {
               const objectives = parseRollupJsonArray<string>(r.objectives).filter(
                 o => o.trim()
               );

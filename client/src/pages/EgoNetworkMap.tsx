@@ -7,6 +7,13 @@ import { Spinner } from "@/components/ui/spinner";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   X,
   Search,
   Target,
@@ -100,14 +107,22 @@ export default function EgoNetworkMap() {
   const [hops, setHops] = useState<1 | 2>(1);
   const [pickerSearch, setPickerSearch] = useState("");
   const [expandRing1, setExpandRing1] = useState(false);
+  // null = every operation. Scoping here narrows the whole view at once —
+  // the graph, the focus-entity list, and the rings all come off this query.
+  const [operationId, setOperationId] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
+
+  const { data: operations } = trpc.operation.list.useQuery();
 
   const {
     data: graphData,
     isLoading,
     refetch,
-  } = trpc.intelligence.getAssociationGraph.useQuery({}, { staleTime: 30_000 });
+  } = trpc.intelligence.getAssociationGraph.useQuery(
+    { operationIds: operationId != null ? [operationId] : undefined },
+    { staleTime: 30_000 }
+  );
 
   useEffect(() => {
     const update = () => {
@@ -145,8 +160,12 @@ export default function EgoNetworkMap() {
 
   // Default the focus to the best-connected entity so the view isn't empty
   // on first open — the officer can pick a different one from the list.
+  // This also re-picks when the operation filter changes and the entity
+  // currently in focus isn't part of the newly-scoped graph, rather than
+  // leaving the canvas blank on a focus that no longer exists.
   useEffect(() => {
-    if (focusId || !graphData?.nodes?.length) return;
+    if (!graphData?.nodes?.length) return;
+    if (focusId && nodesById.has(focusId)) return;
     let best: string | null = null;
     let bestCount = -1;
     for (const n of graphData.nodes as EgoNode[]) {
@@ -156,8 +175,8 @@ export default function EgoNetworkMap() {
         best = n.id;
       }
     }
-    if (best) setFocusId(best);
-  }, [graphData, adjacency, focusId]);
+    setFocusId(best);
+  }, [graphData, adjacency, nodesById, focusId]);
 
   useEffect(() => {
     setExpandRing1(false);
@@ -319,6 +338,25 @@ export default function EgoNetworkMap() {
         <span className="text-sm font-semibold text-foreground mr-1">
           Ego Network
         </span>
+        <Separator orientation="vertical" className="h-5" />
+
+        <Select
+          value={operationId != null ? String(operationId) : "all"}
+          onValueChange={v => setOperationId(v === "all" ? null : Number(v))}
+        >
+          <SelectTrigger className="w-44 h-8 text-xs">
+            <SelectValue placeholder="All operations" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All operations</SelectItem>
+            {(operations ?? []).map(op => (
+              <SelectItem key={op.id} value={String(op.id)}>
+                {op.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
         <Separator orientation="vertical" className="h-5" />
 
         <div className="flex items-center gap-2 text-xs text-muted-foreground">

@@ -914,11 +914,16 @@ export default function SheetSummaryPage() {
               lat: g.lat,
               lng: g.lng,
               index: i,
-              size: "small" as const,
+              // Default (full-size) pin, not "small" — needed for the
+              // number label below; Static Maps can't label its small pins.
               // Red, not the endpoint's default indigo — matches the red
               // used for target/observation pins everywhere else, and
               // stands out against the roadmap tiles better than purple.
               colour: "#dc2626",
+              // Static Maps labels are a single character, so only pins
+              // 1-9 get numbered; the 10th+ address renders unlabelled
+              // rather than silently showing a truncated/wrong digit.
+              label: i < 9 ? String(i + 1) : undefined,
             }));
             const result = await trpcClient.rsMapping.getStaticMapImage.query({
               waypoints,

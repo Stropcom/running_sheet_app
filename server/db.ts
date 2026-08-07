@@ -64,6 +64,7 @@ import {
   WipcMemberRecord,
   WipcOfficerProfile,
   userLocations,
+  userLocationHistory,
   customMapMarkers,
   intelligenceGeocodeCache,
   CustomMapMarker,
@@ -8770,6 +8771,20 @@ export async function upsertUserLocation(
       },
     });
 
+  if (sharingEnabled) {
+    await recordUserLocationHistory(
+      userId,
+      deviceId,
+      lat,
+      lng,
+      speed,
+      heading,
+      accuracy,
+      opIdsJson,
+      now
+    );
+  }
+
   // Auto-cleanup: remove stale rows for this user that are not sharing and older than 2 hours.
   // This prevents accumulation of orphaned device rows from old sessions.
   const twoHoursAgo = now - 2 * 60 * 60 * 1000;
@@ -8837,6 +8852,141 @@ export async function getUserLocationState(
     opIds = [];
   }
   return { sharingEnabled: rows[0].sharingEnabled, operationIds: opIds };
+}
+
+// ─── User Location History (trail / live trace) ────────────────────────────────
+
+function haversineMetres(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number
+): number {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+// Only append a trail point when the officer has moved a meaningful distance
+// since the last recorded point, or enough time has passed — GPS pings can
+// fire every few seconds, and recording every single one would flood the
+// table for no benefit. A slower stationary heartbeat still keeps the trail
+// continuous (and useful for "where was officer X at time Y") when parked.
+const HISTORY_MOVE_THRESHOLD_M = 25;
+const HISTORY_MOVING_MIN_INTERVAL_MS = 15_000;
+const HISTORY_STATIONARY_HEARTBEAT_MS = 120_000;
+
+async function recordUserLocationHistory(
+  userId: number,
+  deviceId: string,
+  lat: number,
+  lng: number,
+  speed: number | null,
+  heading: number | null,
+  accuracy: number | null,
+  operationIdsJson: string,
+  now: number
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  const [lastPoint] = await db
+    .select({
+      lat: userLocationHistory.lat,
+      lng: userLocationHistory.lng,
+      recordedAt: userLocationHistory.recordedAt,
+    })
+    .from(userLocationHistory)
+    .where(
+      and(
+        eq(userLocationHistory.userId, userId),
+        eq(userLocationHistory.deviceId, deviceId)
+      )
+    )
+    .orderBy(desc(userLocationHistory.recordedAt))
+    .limit(1);
+
+  let shouldRecord = !lastPoint;
+  if (lastPoint) {
+    const elapsed = now - lastPoint.recordedAt;
+    const distance = haversineMetres(lastPoint.lat, lastPoint.lng, lat, lng);
+    if (
+      distance >= HISTORY_MOVE_THRESHOLD_M &&
+      elapsed >= HISTORY_MOVING_MIN_INTERVAL_MS
+    ) {
+      shouldRecord = true;
+    } else if (elapsed >= HISTORY_STATIONARY_HEARTBEAT_MS) {
+      shouldRecord = true;
+    }
+  }
+  if (!shouldRecord) return;
+
+  await db.insert(userLocationHistory).values({
+    userId,
+    deviceId,
+    lat,
+    lng,
+    speed,
+    heading,
+    accuracy,
+    operationIds: operationIdsJson,
+    recordedAt: now,
+  });
+}
+
+export interface UserLocationHistoryPointDTO {
+  lat: number;
+  lng: number;
+  speed: number | null;
+  recordedAt: number;
+}
+
+/**
+ * Returns each requested user's recorded location trail since `sinceMs`,
+ * ordered oldest-first, for drawing a live-trace line on the map. Grouped by
+ * userId (not deviceId) since a single officer's trail should read as one
+ * continuous line regardless of which device recorded which point.
+ */
+export async function getUserLocationHistories(
+  userIds: number[],
+  sinceMs: number
+): Promise<Record<number, UserLocationHistoryPointDTO[]>> {
+  const db = await getDb();
+  const result: Record<number, UserLocationHistoryPointDTO[]> = {};
+  if (!db || userIds.length === 0) return result;
+
+  const rows = await db
+    .select({
+      userId: userLocationHistory.userId,
+      lat: userLocationHistory.lat,
+      lng: userLocationHistory.lng,
+      speed: userLocationHistory.speed,
+      recordedAt: userLocationHistory.recordedAt,
+    })
+    .from(userLocationHistory)
+    .where(
+      and(
+        inArray(userLocationHistory.userId, userIds),
+        gt(userLocationHistory.recordedAt, sinceMs)
+      )
+    )
+    .orderBy(asc(userLocationHistory.recordedAt));
+
+  for (const r of rows) {
+    if (!result[r.userId]) result[r.userId] = [];
+    result[r.userId].push({
+      lat: r.lat,
+      lng: r.lng,
+      speed: r.speed,
+      recordedAt: r.recordedAt,
+    });
+  }
+  return result;
 }
 
 // ─── Custom Map Markers ───────────────────────────────────────────────────────

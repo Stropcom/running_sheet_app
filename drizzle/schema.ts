@@ -914,6 +914,44 @@ export const userLocations = mysqlTable(
 export type UserLocation = typeof userLocations.$inferSelect;
 export type InsertUserLocation = typeof userLocations.$inferInsert;
 
+// ─── User Location History ─────────────────────────────────────────────────────
+// Append-only trail of recorded GPS points, throttled at insert time (see
+// recordUserLocationHistory in db.ts) so continuous GPS pings don't flood this
+// table. Powers the "live trace" line drawn on the Intelligence map and, more
+// generally, "where was officer X at time Y" lookups — this is a legal/
+// evidentiary system, so history rows are never purged like userLocations'
+// stale-device cleanup.
+
+export const userLocationHistory = mysqlTable(
+  "user_location_history",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(), // FK → users.id
+    deviceId: varchar("deviceId", { length: 128 }).notNull(),
+    lat: double("lat").notNull(),
+    lng: double("lng").notNull(),
+    speed: double("speed"),
+    heading: double("heading"),
+    accuracy: double("accuracy"),
+    operationIds: text("operationIds").notNull().default("[]"),
+    recordedAt: bigint("recordedAt", { mode: "number" }).notNull(),
+  },
+  table => ({
+    userRecordedIdx: index("idx_location_history_user_recorded").on(
+      table.userId,
+      table.recordedAt
+    ),
+    deviceRecordedIdx: index("idx_location_history_device_recorded").on(
+      table.deviceId,
+      table.recordedAt
+    ),
+  })
+);
+
+export type UserLocationHistoryPoint = typeof userLocationHistory.$inferSelect;
+export type InsertUserLocationHistoryPoint =
+  typeof userLocationHistory.$inferInsert;
+
 // ─── Style Guide & Writing Rules ─────────────────────────────────────────────
 // Stores the uploaded pro forma style guide (raw text only — no names/locations
 // are retained) and the extracted writing rules used by the local checker engine.

@@ -857,6 +857,10 @@ export default function IntelligenceMapping() {
   });
   // Per-user visibility: Set of userIds that are hidden
   const [hiddenUsers, setHiddenUsers] = useState<Set<number>>(new Set());
+  // Users currently being "live traced" — draws their recorded trail as a
+  // line on the map, colour-matched to their team pin. Not persisted; each
+  // session starts with tracing off.
+  const [tracedUserIds, setTracedUserIds] = useState<Set<number>>(new Set());
   // Per-team visibility: Set of team keys that are hidden — persisted
   const [hiddenTeams, setHiddenTeams] = useState<Set<string>>(() => {
     try {
@@ -1246,6 +1250,11 @@ export default function IntelligenceMapping() {
   const liveMarkersRef = useRef<
     Map<string, google.maps.marker.AdvancedMarkerElement>
   >(new Map());
+  // Key: userId — one trace polyline per traced officer
+  const traceLinesRef = useRef<Map<number, google.maps.Polyline>>(new Map());
+  // Remembers each user's last-known team so a trace line keeps its colour
+  // even if that officer briefly drops out of the live liveUsers list.
+  const traceUserTeamRef = useRef<Map<number, LiveUser["team"]>>(new Map());
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
   const geocoderRef = useRef<google.maps.Geocoder | null>(null);
   const geocodeQueueRef = useRef<IntelMapLocation[]>([]);
@@ -1355,6 +1364,21 @@ export default function IntelligenceMapping() {
     { operationIds: selectedOpIds },
     { refetchInterval: 1000, enabled: true }
   );
+
+  // Live-trace trails for any currently-traced officers — a full shift's
+  // worth of history, only fetched while at least one user is being traced.
+  const traceUserIdsArray = useMemo(
+    () => Array.from(tracedUserIds),
+    [tracedUserIds]
+  );
+  const { data: traceHistories } =
+    trpc.intelligence.userLocationHistories.useQuery(
+      {
+        userIds: traceUserIdsArray,
+        sinceMs: Date.now() - 8 * 60 * 60 * 1000, // trailing 8h shift window
+      },
+      { refetchInterval: 3000, enabled: traceUserIdsArray.length > 0 }
+    );
 
   // Mutations — declared early so refs are available to GPS effects below
   const updateLocationMut = trpc.intelligence.updateUserLocation.useMutation();
@@ -1675,6 +1699,8 @@ export default function IntelligenceMapping() {
       if (watchIdRef.current !== null) {
         navigator.geolocation.clearWatch(watchIdRef.current);
       }
+      traceLinesRef.current.forEach(line => line.setMap(null));
+      traceLinesRef.current.clear();
     };
   }, []);
 
@@ -2133,6 +2159,51 @@ export default function IntelligenceMapping() {
     createUserPinElement,
     mapReady,
   ]);
+
+  // Remember each live user's team so a trace line keeps its colour even if
+  // that officer's pin briefly drops out of the live list (GPS gap, etc.).
+  useEffect(() => {
+    if (!liveUsers) return;
+    for (const u of liveUsers as LiveUser[]) {
+      traceUserTeamRef.current.set(u.userId, u.team);
+    }
+  }, [liveUsers]);
+
+  // ── Live-trace line rendering ────────────────────────────────────────────────
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    // Remove lines for users no longer being traced
+    Array.from(traceLinesRef.current.entries()).forEach(([userId, line]) => {
+      if (!tracedUserIds.has(userId)) {
+        line.setMap(null);
+        traceLinesRef.current.delete(userId);
+      }
+    });
+
+    if (!traceHistories) return;
+    for (const userId of Array.from(tracedUserIds)) {
+      const points = (traceHistories as Record<number, { lat: number; lng: number }[]>)[userId];
+      if (!points || points.length < 2) continue;
+      const path = points.map(p => ({ lat: p.lat, lng: p.lng }));
+      const colour = getTeamColour(traceUserTeamRef.current.get(userId) ?? null);
+      const existing = traceLinesRef.current.get(userId);
+      if (existing) {
+        existing.setPath(path);
+      } else {
+        const line = new google.maps.Polyline({
+          path,
+          geodesic: true,
+          strokeColor: colour,
+          strokeOpacity: 0.85,
+          strokeWeight: 3,
+          zIndex: 500,
+          map: mapRef.current,
+        });
+        traceLinesRef.current.set(userId, line);
+      }
+    }
+  }, [traceHistories, tracedUserIds]);
 
   const handleMapReady = useCallback(
     (map: google.maps.Map) => {
@@ -2842,6 +2913,14 @@ export default function IntelligenceMapping() {
 
   const toggleUserVisibility = (userId: number) => {
     setHiddenUsers(prev => {
+      const next = new Set(prev);
+      next.has(userId) ? next.delete(userId) : next.add(userId);
+      return next;
+    });
+  };
+
+  const toggleUserTrace = (userId: number) => {
+    setTracedUserIds(prev => {
       const next = new Set(prev);
       next.has(userId) ? next.delete(userId) : next.add(userId);
       return next;
@@ -4250,16 +4329,30 @@ export default function IntelligenceMapping() {
                                       </span>
                                     )}
                                   </span>
-                                  <button
-                                    onClick={() =>
-                                      toggleUserVisibility(u.userId)
-                                    }
-                                    className="text-[10px] text-muted-foreground hover:text-foreground ml-2 flex-shrink-0"
-                                  >
-                                    {hiddenUsers.has(u.userId)
-                                      ? "Show"
-                                      : "Hide"}
-                                  </button>
+                                  <div className="flex items-center gap-1 flex-shrink-0">
+                                    <button
+                                      onClick={() => toggleUserTrace(u.userId)}
+                                      className={`text-[10px] px-1.5 py-0.5 rounded-md border ${
+                                        tracedUserIds.has(u.userId)
+                                          ? "border-indigo-500 text-indigo-400 bg-indigo-500/10"
+                                          : "border-border/50 text-muted-foreground hover:text-foreground bg-background/50"
+                                      }`}
+                                    >
+                                      {tracedUserIds.has(u.userId)
+                                        ? "Tracing"
+                                        : "Trace"}
+                                    </button>
+                                    <button
+                                      onClick={() =>
+                                        toggleUserVisibility(u.userId)
+                                      }
+                                      className="text-[10px] text-muted-foreground hover:text-foreground"
+                                    >
+                                      {hiddenUsers.has(u.userId)
+                                        ? "Show"
+                                        : "Hide"}
+                                    </button>
+                                  </div>
                                 </div>
                               ))}
                             </div>
@@ -4325,16 +4418,30 @@ export default function IntelligenceMapping() {
                                       </span>
                                     )}
                                   </span>
-                                  <button
-                                    onClick={() =>
-                                      toggleUserVisibility(u.userId)
-                                    }
-                                    className="text-[10px] text-muted-foreground hover:text-foreground ml-2 flex-shrink-0"
-                                  >
-                                    {hiddenUsers.has(u.userId)
-                                      ? "Show"
-                                      : "Hide"}
-                                  </button>
+                                  <div className="flex items-center gap-1 flex-shrink-0">
+                                    <button
+                                      onClick={() => toggleUserTrace(u.userId)}
+                                      className={`text-[10px] px-1.5 py-0.5 rounded-md border ${
+                                        tracedUserIds.has(u.userId)
+                                          ? "border-indigo-500 text-indigo-400 bg-indigo-500/10"
+                                          : "border-border/50 text-muted-foreground hover:text-foreground bg-background/50"
+                                      }`}
+                                    >
+                                      {tracedUserIds.has(u.userId)
+                                        ? "Tracing"
+                                        : "Trace"}
+                                    </button>
+                                    <button
+                                      onClick={() =>
+                                        toggleUserVisibility(u.userId)
+                                      }
+                                      className="text-[10px] text-muted-foreground hover:text-foreground"
+                                    >
+                                      {hiddenUsers.has(u.userId)
+                                        ? "Show"
+                                        : "Hide"}
+                                    </button>
+                                  </div>
                                 </div>
                               ))}
                             </div>

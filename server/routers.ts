@@ -220,6 +220,7 @@ import {
   upsertUserLocation,
   clearUserLocation,
   getUserLocationState,
+  getUserLocationHistories,
   getCustomMarkers,
   createCustomMarker,
   updateCustomMarker,
@@ -2867,6 +2868,18 @@ export const appRouter = router({
           input.accuracy ?? null
         );
         return { ok: true };
+      }),
+
+    /** Recorded trail for the given users since sinceMs — powers the map's live-trace lines */
+    userLocationHistories: protectedProcedure
+      .input(
+        z.object({
+          userIds: z.array(z.number()),
+          sinceMs: z.number(),
+        })
+      )
+      .query(async ({ input }) => {
+        return getUserLocationHistories(input.userIds, input.sinceMs);
       }),
 
     /** Get the target details (DEP/ARR/etc.) for a specific running sheet */

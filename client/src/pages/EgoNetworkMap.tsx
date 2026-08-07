@@ -145,17 +145,22 @@ export default function EgoNetworkMap() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
 
-  // Scale both rings down together (keeping their proportions) so the
-  // outermost nodes — and their labels — stay within the canvas instead of
-  // running off the edge on a narrow phone screen.
+  // Desktop/laptop always gets the full-size rings — that layout already had
+  // enough canvas room and was correct as-is. Only compact (phone/iPad
+  // portrait) layouts scale the rings down together (keeping their
+  // proportions) so the outermost nodes — and their labels — stay within the
+  // canvas instead of running off the edge on a narrow screen.
   const ringRadii = useMemo(() => {
+    if (!isCompact) {
+      return { ring1: RING1_RADIUS_MAX, ring2: RING2_RADIUS_MAX };
+    }
     const avail = Math.min(size.w, size.h) / 2 - RING_LABEL_MARGIN;
     const scale = Math.min(1, avail / RING2_RADIUS_MAX);
     return {
       ring1: Math.max(RING1_RADIUS_MIN, RING1_RADIUS_MAX * scale),
       ring2: Math.max(RING2_RADIUS_MIN, RING2_RADIUS_MAX * scale),
     };
-  }, [size.w, size.h]);
+  }, [isCompact, size.w, size.h]);
 
   const { data: operations } = trpc.operation.list.useQuery();
 

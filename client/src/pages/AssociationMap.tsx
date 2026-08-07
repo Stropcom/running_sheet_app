@@ -180,7 +180,7 @@ export default function AssociationMap() {
   // blows up both the nodes and their now-proportionally-scaled labels well
   // past a readable size. Clamp back down to a sane maximum right after the
   // engine stops, rather than fighting a zoom the user picked themselves.
-  const MAX_AUTO_ZOOM = 2.2;
+  const MAX_AUTO_ZOOM = 1.3;
   const handleEngineStop = useCallback(() => {
     const fg = graphRef.current;
     if (!fg) return;
@@ -194,8 +194,8 @@ export default function AssociationMap() {
   const paintNode = useCallback((node: AssocNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
     const isHighlighted = highlightNodes.size === 0 || highlightNodes.has(node.id);
     const isSelected = selectedNode?.id === node.id;
-    const baseRadius = Math.max(4, Math.min(12, 4 + Math.log1p(node.occurrences) * 2));
-    const radius = isSelected ? baseRadius * 1.4 : baseRadius;
+    const baseRadius = Math.max(3, Math.min(7, 3 + Math.log1p(node.occurrences) * 1.3));
+    const radius = isSelected ? baseRadius * 1.3 : baseRadius;
     const color = NODE_COLORS[node.type] ?? NODE_COLORS.unknown;
     const alpha = isHighlighted ? 1 : 0.15;
 
@@ -236,7 +236,7 @@ export default function AssociationMap() {
     // dense clusters even at a single zoom level.
     ctx.save();
     ctx.globalAlpha = isHighlighted ? 1 : 0.15;
-    const fontSize = isSelected ? 5 : 4;
+    const fontSize = isSelected ? 3.4 : 2.8;
     ctx.font = `${isSelected ? "bold " : ""}${fontSize}px sans-serif`;
     const label = node.label.length > 16 ? node.label.slice(0, 15) + "…" : node.label;
     const textWidth = ctx.measureText(label).width;

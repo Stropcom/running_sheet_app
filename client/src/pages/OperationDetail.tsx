@@ -49,6 +49,7 @@ import {
   Home,
   History,
   ArrowUpDown,
+  ChevronDown,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -59,7 +60,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { CopyMoveSheetDialog } from "@/components/CopyMoveSheetDialog";
 import {
   TargetIdentityFields,
@@ -674,12 +675,21 @@ function DeploymentRollupPanel({
   operationId: number;
   targets?: { id: number; name: string }[];
 }) {
-  const [, navigate] = useLocation();
   const [targetFilter, setTargetFilter] = useState<number | null>(null);
   // Server returns newest-first (same direction the Running Sheets tab
   // lists sheets in); this just reverses that array for a chronological,
   // oldest-first read — no extra round-trip needed.
   const [sortAsc, setSortAsc] = useState(false);
+  // Which cards are expanded — independent per card, so several can be open
+  // at once or just one at a time, whichever suits the review.
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
+  const toggleExpanded = (sheetId: number) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      next.has(sheetId) ? next.delete(sheetId) : next.add(sheetId);
+      return next;
+    });
+  };
 
   const { data: rows, isLoading } = trpc.summary.listByOperation.useQuery({
     operationId,
@@ -744,99 +754,342 @@ function DeploymentRollupPanel({
             </button>
           </div>
           <div className="flex flex-col gap-2">
-            {(displayRows ?? []).map(r => {
-              const objectives = parseRollupJsonArray<string>(r.objectives).filter(
-                o => o.trim()
-              );
-              const specialProjects = parseRollupJsonArray<{ key: string }>(
-                r.specialProjects
-              );
-              const hasIssues = !!(r.issues && r.issues.trim());
-              const hasCriticalDecisions =
-                parseRollupJsonArray<string>(r.criticalDecisions).filter(c =>
-                  c.trim()
-                ).length > 0;
-              const isComplete = !!r.completedAt;
-
-              return (
-                <button
-                  key={r.sheetId}
-                  onClick={() => navigate(`/summary/${r.sheetId}`)}
-                  className="text-left rounded-xl border border-border bg-card hover:border-primary/40 hover:bg-accent/20 transition-colors px-4 py-3"
-                >
-                  <div className="flex items-start justify-between gap-3 mb-1.5">
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
-                      <span className="text-sm font-semibold text-foreground">
-                        {r.sheetDate ?? format(new Date(r.createdAt), "yyyy-MM-dd")}
-                      </span>
-                      {r.teamLabel && (
-                        <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20">
-                          {r.teamLabel}
-                        </span>
-                      )}
-                      {(r.startTime || r.finishTime) && (
-                        <span className="text-xs text-muted-foreground">
-                          {r.startTime ?? "?"}–{r.finishTime ?? "?"}
-                        </span>
-                      )}
-                      {showTargetFilter && r.targetName && (
-                        <span className="text-xs text-muted-foreground truncate">
-                          {r.targetName}
-                        </span>
-                      )}
-                    </div>
-                    <span
-                      className={`shrink-0 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md border ${
-                        isComplete
-                          ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:text-emerald-400"
-                          : "bg-amber-500/10 text-amber-600 border-amber-500/20 dark:text-amber-400"
-                      }`}
-                    >
-                      {isComplete ? "Complete" : "Open"}
-                    </span>
-                  </div>
-
-                  {objectives.length > 0 ? (
-                    <p className="text-sm text-foreground/90 line-clamp-2">
-                      {objectives[0]}
-                      {objectives.length > 1 &&
-                        ` (+${objectives.length - 1} more)`}
-                    </p>
-                  ) : (
-                    <p className="text-sm text-muted-foreground italic">
-                      No objectives recorded
-                    </p>
-                  )}
-
-                  {(specialProjects.length > 0 ||
-                    hasCriticalDecisions ||
-                    hasIssues) && (
-                    <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                      {specialProjects.map(p => (
-                        <span
-                          key={p.key}
-                          className="text-[10px] px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground border border-border/60"
-                        >
-                          {p.key}
-                        </span>
-                      ))}
-                      {hasCriticalDecisions && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
-                          Critical decision
-                        </span>
-                      )}
-                      {hasIssues && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-destructive/10 text-destructive border border-destructive/20">
-                          Issue flagged
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </button>
-              );
-            })}
+            {(displayRows ?? []).map(r => (
+              <DeploymentRollupCard
+                key={r.sheetId}
+                row={r}
+                showTarget={showTargetFilter}
+                expanded={expandedIds.has(r.sheetId)}
+                onToggle={() => toggleExpanded(r.sheetId)}
+              />
+            ))}
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+// Shape returned by summary.listByOperation — kept local since it's only
+// consumed here.
+type RollupRow = {
+  sheetId: number;
+  sheetDate: string | null;
+  createdAt: Date | string;
+  targetName: string | null;
+  teamLabel: string | null;
+  teamCins: string | null;
+  startTime: string | null;
+  finishTime: string | null;
+  location: string | null;
+  ioSupport: string | null;
+  intelSupport: string | null;
+  ioContactTiming: string | null;
+  ioContactMethod: string | null;
+  objectives: string | null;
+  specialProjects: string | null;
+  criticalDecisions: string | null;
+  issues: string | null;
+  completedAt: number | null;
+};
+
+function RollupDetailRow({ label, value }: { label: string; value?: string | null }) {
+  if (!value || !value.trim()) return null;
+  return (
+    <>
+      <span className="text-muted-foreground">{label}</span>
+      <span className="text-foreground">{value}</span>
+    </>
+  );
+}
+
+function RollupSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="rounded-lg border border-border/70 overflow-hidden">
+      <div className="px-3 py-1.5 bg-primary/5 border-b border-border/70">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-primary">
+          {title}
+        </span>
+      </div>
+      <div className="p-3">{children}</div>
+    </div>
+  );
+}
+
+function DeploymentRollupCard({
+  row: r,
+  showTarget,
+  expanded,
+  onToggle,
+}: {
+  row: RollupRow;
+  showTarget: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const [, navigate] = useLocation();
+  const objectives = parseRollupJsonArray<string>(r.objectives).filter(o =>
+    o.trim()
+  );
+  const specialProjects = parseRollupJsonArray<{ key: string; detail: string }>(
+    r.specialProjects
+  );
+  const criticalDecisions = parseRollupJsonArray<string>(
+    r.criticalDecisions
+  ).filter(c => c.trim());
+  const hasIssues = !!(r.issues && r.issues.trim());
+  const isComplete = !!r.completedAt;
+
+  const { data: entries, isLoading: entriesLoading } =
+    trpc.summary.getEntries.useQuery({ sheetId: r.sheetId }, { enabled: expanded });
+  const { data: vehicles, isLoading: vehiclesLoading } =
+    trpc.summary.getVehicles.useQuery({ sheetId: r.sheetId }, { enabled: expanded });
+
+  const communicationParts = [r.ioContactTiming, r.ioContactMethod]
+    .filter((p): p is string => !!p && !!p.trim());
+
+  return (
+    <div className="rounded-xl border border-border bg-card overflow-hidden">
+      <button
+        onClick={onToggle}
+        className="w-full text-left px-4 py-3 hover:bg-accent/20 transition-colors"
+      >
+        <div className="flex items-start justify-between gap-3 mb-1.5">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
+            <ChevronDown
+              className={`w-3.5 h-3.5 text-muted-foreground shrink-0 transition-transform ${expanded ? "" : "-rotate-90"}`}
+            />
+            <span className="text-sm font-semibold text-foreground">
+              {r.sheetDate ?? format(new Date(r.createdAt), "yyyy-MM-dd")}
+            </span>
+            {r.teamLabel && (
+              <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20">
+                {r.teamLabel}
+              </span>
+            )}
+            {(r.startTime || r.finishTime) && (
+              <span className="text-xs text-muted-foreground">
+                {r.startTime ?? "?"}–{r.finishTime ?? "?"}
+              </span>
+            )}
+            {showTarget && r.targetName && (
+              <span className="text-xs text-muted-foreground truncate">
+                {r.targetName}
+              </span>
+            )}
+          </div>
+          <span
+            className={`shrink-0 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md border ${
+              isComplete
+                ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:text-emerald-400"
+                : "bg-amber-500/10 text-amber-600 border-amber-500/20 dark:text-amber-400"
+            }`}
+          >
+            {isComplete ? "Complete" : "Open"}
+          </span>
+        </div>
+
+        {!expanded && (
+          <>
+            {objectives.length > 0 ? (
+              <p className="text-sm text-foreground/90 line-clamp-2 pl-5">
+                {objectives[0]}
+                {objectives.length > 1 && ` (+${objectives.length - 1} more)`}
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground italic pl-5">
+                No objectives recorded
+              </p>
+            )}
+
+            {(specialProjects.length > 0 || criticalDecisions.length > 0 || hasIssues) && (
+              <div className="flex flex-wrap items-center gap-1.5 mt-2 pl-5">
+                {specialProjects.map(p => (
+                  <span
+                    key={p.key}
+                    className="text-[10px] px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground border border-border/60"
+                  >
+                    {p.key}
+                  </span>
+                ))}
+                {criticalDecisions.length > 0 && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                    Critical decision
+                  </span>
+                )}
+                {hasIssues && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-destructive/10 text-destructive border border-destructive/20">
+                    Issue flagged
+                  </span>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </button>
+
+      {expanded && (
+        <div className="px-4 pb-4 flex flex-col gap-2.5 border-t border-border/70 pt-3">
+          <RollupSection title="Deployment">
+            <div className="grid grid-cols-[130px_1fr] gap-y-1.5 text-xs">
+              <RollupDetailRow label="Team" value={r.teamLabel} />
+              <RollupDetailRow label="Team Members CIN" value={r.teamCins} />
+              <RollupDetailRow label="Start time" value={r.startTime} />
+              <RollupDetailRow label="Finish time" value={r.finishTime} />
+              <RollupDetailRow label="Target (TGT)" value={r.targetName} />
+              <RollupDetailRow label="Location" value={r.location} />
+            </div>
+          </RollupSection>
+
+          <RollupSection title="Vehicle">
+            {vehiclesLoading ? (
+              <Skeleton className="h-5 w-40" />
+            ) : vehicles && vehicles.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {vehicles.map(v => (
+                  <span
+                    key={v.key}
+                    className="text-[10px] px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20 font-medium"
+                  >
+                    {v.label}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground italic">
+                No vehicles found in the Target Registry or running sheet text.
+              </p>
+            )}
+          </RollupSection>
+
+          <RollupSection title="Investigator">
+            {r.ioSupport?.trim() || r.intelSupport?.trim() || communicationParts.length ? (
+              <div className="grid grid-cols-[130px_1fr] gap-y-1.5 text-xs">
+                <RollupDetailRow label="Investigator" value={r.ioSupport} />
+                {communicationParts.length > 0 && (
+                  <RollupDetailRow
+                    label="Contacted"
+                    value={communicationParts.join(" — ")}
+                  />
+                )}
+                <RollupDetailRow label="Intel Support" value={r.intelSupport} />
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground italic">None recorded.</p>
+            )}
+          </RollupSection>
+
+          <RollupSection title="Special Projects">
+            {specialProjects.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {specialProjects.map(p => (
+                  <span
+                    key={p.key}
+                    className="text-[10px] px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20"
+                  >
+                    <strong>{p.key}</strong>
+                    {p.detail?.trim() && (
+                      <span className="font-normal"> — {p.detail}</span>
+                    )}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground italic">None recorded.</p>
+            )}
+          </RollupSection>
+
+          <RollupSection title="Objectives">
+            {objectives.length > 0 ? (
+              <ol className="list-decimal list-inside space-y-1 text-xs text-foreground">
+                {objectives.map((o, i) => (
+                  <li key={i}>{o}</li>
+                ))}
+              </ol>
+            ) : (
+              <p className="text-xs text-muted-foreground italic">None recorded.</p>
+            )}
+          </RollupSection>
+
+          <RollupSection title="Critical Decisions">
+            {criticalDecisions.length > 0 ? (
+              <ol className="list-decimal list-inside space-y-1 text-xs text-foreground">
+                {criticalDecisions.map((d, i) => (
+                  <li key={i}>{d}</li>
+                ))}
+              </ol>
+            ) : (
+              <p className="text-xs text-muted-foreground italic">None recorded.</p>
+            )}
+          </RollupSection>
+
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wider text-primary mb-1.5 px-1">
+              Summary
+            </div>
+            {entriesLoading ? (
+              <Skeleton className="h-24 w-full" />
+            ) : entries && entries.length > 0 ? (
+              <div className="overflow-x-auto rounded-lg border border-border/70">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-primary/5 border-b border-border/70">
+                      <th className="text-left font-bold uppercase tracking-wide text-[9.5px] text-primary px-2 py-1.5 w-[64px]">
+                        Time
+                      </th>
+                      <th className="text-left font-bold uppercase tracking-wide text-[9.5px] text-primary px-2 py-1.5 w-[26%]">
+                        Address
+                      </th>
+                      <th className="text-left font-bold uppercase tracking-wide text-[9.5px] text-primary px-2 py-1.5">
+                        Observation
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {entries.map(e => (
+                      <tr key={e.id} className="border-b border-border/50 last:border-b-0">
+                        <td className="align-top px-2 py-1.5 text-muted-foreground">
+                          {e.time || "—"}
+                        </td>
+                        <td className="align-top px-2 py-1.5 text-muted-foreground">
+                          {e.location || ""}
+                        </td>
+                        <td className="align-top px-2 py-1.5 text-foreground">
+                          {e.text}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground italic px-1">
+                No running sheet rows yet.
+              </p>
+            )}
+          </div>
+
+          <RollupSection title="Issues">
+            {hasIssues ? (
+              <p className="text-xs text-foreground whitespace-pre-wrap">{r.issues}</p>
+            ) : (
+              <p className="text-xs text-muted-foreground italic">None recorded.</p>
+            )}
+          </RollupSection>
+
+          <button
+            onClick={() => navigate(`/summary/${r.sheetId}`)}
+            className="text-[11px] text-primary hover:underline self-start mt-0.5"
+          >
+            Open full Summary to edit →
+          </button>
+        </div>
       )}
     </div>
   );

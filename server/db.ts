@@ -6790,9 +6790,14 @@ export interface OperationSummaryRollupRow {
   targetId: number | null;
   targetName: string | null;
   teamLabel: string | null;
+  teamCins: string | null;
   startTime: string | null;
   finishTime: string | null;
   location: string | null;
+  ioSupport: string | null;
+  intelSupport: string | null;
+  ioContactTiming: string | null;
+  ioContactMethod: string | null;
   objectives: string | null;
   specialProjects: string | null;
   criticalDecisions: string | null;
@@ -6840,9 +6845,14 @@ export async function getSheetSummariesForOperation(
     targetId: r.targetId,
     targetName: r.summary.targetName,
     teamLabel: r.summary.teamLabel,
+    teamCins: r.summary.teamCins,
     startTime: r.summary.startTime,
     finishTime: r.summary.finishTime,
     location: r.summary.location,
+    ioSupport: r.summary.ioSupport,
+    intelSupport: r.summary.intelSupport,
+    ioContactTiming: r.summary.ioContactTiming,
+    ioContactMethod: r.summary.ioContactMethod,
     objectives: r.summary.objectives,
     specialProjects: r.summary.specialProjects,
     criticalDecisions: r.summary.criticalDecisions,

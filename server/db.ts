@@ -1386,17 +1386,17 @@ export interface FaceMatchCandidate {
 }
 
 // Threshold picked from empirical testing against one real multi-face photo
-// (same face re-encoded ~0.99, mirrored ~0.89, different people ~0.1-0.3) —
-// deliberately generous since a missed real match is worse than an extra
-// candidate the officer just rejects. Lowered from an initial 0.35 after
-// real operational photos showed the on-device MobileFace embedding's
-// discriminative margin is narrow under real lighting/angle/pose variation
-// (different people ranged roughly -0.06 to 0.31, one confirmed same-person
-// cross-photo pair scored 0.45) — 0.35 was missing true matches that sat
-// just under it. Still just a starting point for further calibration:
-// matches are always human-confirmed, never applied automatically, so a
-// loose threshold only means more suggestions to review, not bad data.
-export const FACE_MATCH_THRESHOLD = 0.25;
+// (same face re-encoded ~0.99, mirrored ~0.89, different people ~0.1-0.3).
+// Was lowered to 0.25 after real operational photos showed the on-device
+// MobileFace embedding's discriminative margin is narrow under real
+// lighting/angle/pose variation (different people ranged roughly -0.06 to
+// 0.31, one confirmed same-person cross-photo pair scored 0.45) — 0.25 was
+// generous specifically to avoid missing that kind of true match. Raised
+// back to 0.35 to cut down on false-positive suggestion volume; re-lower if
+// operational use shows genuine matches being missed again. Matches are
+// always human-confirmed, never applied automatically, so this only trades
+// off review noise vs. recall, never data correctness.
+export const FACE_MATCH_THRESHOLD = 0.35;
 const FACE_MATCH_MAX_RESULTS = 5;
 
 // Compares a newly-confirmed face's embedding against every other confirmed

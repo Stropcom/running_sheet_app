@@ -915,6 +915,10 @@ export default function SheetSummaryPage() {
               lng: g.lng,
               index: i,
               size: "small" as const,
+              // Red, not the endpoint's default indigo — matches the red
+              // used for target/observation pins everywhere else, and
+              // stands out against the roadmap tiles better than purple.
+              colour: "#dc2626",
             }));
             const result = await trpcClient.rsMapping.getStaticMapImage.query({
               waypoints,

@@ -35,6 +35,8 @@ import {
   LayoutGrid,
   Camera,
   Flame,
+  Network,
+  Radar,
 } from "lucide-react";
 import { ViewToggle } from "@/components/ViewToggle";
 import { useViewMode } from "@/contexts/ViewModeContext";
@@ -42,11 +44,13 @@ import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
 import { MergeEntitiesButton } from "@/components/MergeEntitiesButton";
 import { IndicesBadge } from "@/components/IndicesBadge";
 import IntelligenceHeatMap from "@/pages/IntelligenceHeatMap";
+import AssociationMap from "@/pages/AssociationMap";
+import EgoNetworkMap from "@/pages/EgoNetworkMap";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type EntityType = "person" | "vehicle" | "address" | "business" | "unknown";
-type TabView = "operations" | "targets" | "associates" | "vehicle" | "locations" | "all" | "heatmap";
+type TabView = "operations" | "targets" | "associates" | "vehicle" | "locations" | "all" | "heatmap" | "assocmap" | "egonet";
 
 interface Occurrence {
   sheetId: number;
@@ -1024,6 +1028,8 @@ const TAB_OPTIONS: Array<{ value: TabView; label: string; icon: React.ReactNode 
   { value: "vehicle",    label: "Vehicles",   icon: <Car className="w-3.5 h-3.5" /> },
   { value: "locations",  label: "Locations",  icon: <MapPin className="w-3.5 h-3.5" /> },
   { value: "heatmap",    label: "Heat Map",    icon: <Flame className="w-3.5 h-3.5" /> },
+  { value: "assocmap",   label: "Association Map", icon: <Network className="w-3.5 h-3.5" /> },
+  { value: "egonet",     label: "Ego Network", icon: <Radar className="w-3.5 h-3.5" /> },
 ];
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
@@ -1276,8 +1282,12 @@ export default function IntelligencePage() {
           </div>
         )}
 
-        {/* Search bar + sort control (shown for entity tabs, not operations/heatmap) */}
-        {activeTab !== "operations" && activeTab !== "heatmap" && (
+        {/* Search bar + sort control (entity tabs only — the map tabs have
+            their own filter chrome and fetch their own data) */}
+        {activeTab !== "operations" &&
+          activeTab !== "heatmap" &&
+          activeTab !== "assocmap" &&
+          activeTab !== "egonet" && (
           <div className="space-y-2 mb-5">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -1314,7 +1324,10 @@ export default function IntelligencePage() {
         )}
 
         {/* Loading */}
-        {isLoading && activeTab !== "heatmap" && (
+        {isLoading &&
+          activeTab !== "heatmap" &&
+          activeTab !== "assocmap" &&
+          activeTab !== "egonet" && (
           <div className="space-y-3">
             {[...Array(6)].map((_, i) => (
               <Skeleton key={i} className="h-14 w-full rounded-xl" />
@@ -1326,6 +1339,20 @@ export default function IntelligencePage() {
         {activeTab === "heatmap" && (
           <div className="-mx-4 -mb-4 flex-1" style={{ height: "calc(100vh - 260px)" }}>
             <IntelligenceHeatMap />
+          </div>
+        )}
+
+        {/* Association Map tab content */}
+        {activeTab === "assocmap" && (
+          <div className="-mx-4 -mb-4 flex-1" style={{ height: "calc(100vh - 260px)" }}>
+            <AssociationMap />
+          </div>
+        )}
+
+        {/* Ego Network tab content */}
+        {activeTab === "egonet" && (
+          <div className="-mx-4 -mb-4 flex-1" style={{ height: "calc(100vh - 260px)" }}>
+            <EgoNetworkMap />
           </div>
         )}
 

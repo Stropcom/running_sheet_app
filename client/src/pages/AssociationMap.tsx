@@ -3,7 +3,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 // @ts-ignore
 import ForceGraph2D from "react-force-graph-2d";
 import { trpc } from "@/lib/trpc";
-import DashboardLayout from "@/components/DashboardLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -263,9 +262,8 @@ export default function AssociationMap() {
     });
 
   return (
-    <DashboardLayout>
-      <div className="flex flex-col h-full" style={{ height: "calc(100vh - 64px)" }}>
-        {/* ── Top filter bar ─────────────────────────────────────────────── */}
+    <div className="flex flex-col h-full">
+      {/* ── Top filter bar ─────────────────────────────────────────────── */}
         <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-border bg-card shrink-0">
           <span className="text-sm font-semibold text-foreground mr-1">Association Map</span>
           <Separator orientation="vertical" className="h-5" />
@@ -497,6 +495,5 @@ export default function AssociationMap() {
           )}
         </div>
       </div>
-    </DashboardLayout>
   );
 }

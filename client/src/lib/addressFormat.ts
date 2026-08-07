@@ -47,12 +47,18 @@ const AU_STATES = "WA|NSW|VIC|QLD|SA|TAS|NT|ACT";
 const GOOGLE_ADDRESS_RE = new RegExp(
   // Optional business name: anything before the street number that ends with ", "
   `((?:[^,\\d\\n][^,\\n]*,\\s*)?)` +
-    // Street number: optional unit/number (e.g. "3/12" or "131A")
-    `(\\d{1,5}[A-Za-z]?(?:\\/\\d{1,5}[A-Za-z]?)?)\\s+` +
+    // Street number: optional unit/number (e.g. "3/12" or "131A") — \b stops
+    // this from matching digits embedded mid-word (e.g. the "450" in a
+    // vehicle description like "GL450 SUV, bearing WA registration...").
+    `\\b(\\d{1,5}[A-Za-z]?(?:\\/\\d{1,5}[A-Za-z]?)?)\\s+` +
     // Street name: 1-5 words
     `([A-Za-z][\\w\\s]{2,50}?)` +
-    // Comma + suburb + state abbreviation
-    `,\\s*([A-Za-z][\\w\\s]{1,40}?\\s+(?:${AU_STATES}))` +
+    // Comma + suburb + state abbreviation. The negative lookahead keeps the
+    // running sheet's own vehicle convention — "<description>, bearing WA
+    // registration <rego>" — from being read as "suburb STATE": without it,
+    // "bearing" parses as a suburb and the whole clause gets rewritten as an
+    // address (see convertGoogleAddresses.test.ts).
+    `,\\s*([A-Za-z][\\w\\s]{1,40}?\\s+(?:${AU_STATES}))\\b(?!\\s+(?:registration|rego)\\b)` +
     // Optional postcode
     `(?:\\s+(\\d{4}))?` +
     // Optional ", Australia" suffix

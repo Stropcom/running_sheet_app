@@ -85,6 +85,7 @@ import {
   type DedupType,
   type DedupCandidateEntity,
 } from "./entityDedup";
+import { buildRunningSheetTitle } from "../shared/runningSheetTitle";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 let _pool: Awaited<ReturnType<typeof createPromisePool>> | null = null;
@@ -568,6 +569,67 @@ export async function updateRunningSheet(
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(runningSheets).set(data).where(eq(runningSheets.id, id));
+}
+
+/** Recomputes and overwrites a sheet's auto-generated title from its
+ * current date/author/operation/target — call this after anything that
+ * feeds the title changes (sheetDate, sheetCins/author, targetId, or the
+ * operation's own name). Missing pieces are simply left out until they're
+ * known, per buildRunningSheetTitle. */
+export async function recomputeRunningSheetTitle(
+  sheetId: number
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const sheet = await getRunningSheetById(sheetId);
+  if (!sheet) return;
+
+  const [operation, target] = await Promise.all([
+    getOperationById(sheet.operationId),
+    sheet.targetId ? getTargetById(sheet.targetId) : Promise.resolve(null),
+  ]);
+  if (!operation) return;
+
+  let authorCIN: string | null = null;
+  if (sheet.sheetCins) {
+    try {
+      const roster: { cin: string; isAuthor?: boolean }[] = JSON.parse(
+        sheet.sheetCins
+      );
+      authorCIN = roster.find(c => c.isAuthor)?.cin ?? null;
+    } catch {
+      authorCIN = null;
+    }
+  }
+
+  const title = buildRunningSheetTitle({
+    sheetDate: sheet.sheetDate,
+    createdAt: sheet.createdAt,
+    authorCIN,
+    operationName: operation.name,
+    targetSurname: target?.surname ?? null,
+  });
+
+  await db
+    .update(runningSheets)
+    .set({ title })
+    .where(eq(runningSheets.id, sheetId));
+}
+
+/** Resyncs every sheet under an operation — used when the operation itself
+ * is renamed, since the operation name is baked into every sheet's title. */
+export async function recomputeRunningSheetTitlesForOperation(
+  operationId: number
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const sheets = await db
+    .select({ id: runningSheets.id })
+    .from(runningSheets)
+    .where(eq(runningSheets.operationId, operationId));
+  for (const s of sheets) {
+    await recomputeRunningSheetTitle(s.id);
+  }
 }
 
 export async function softDeleteSheet(id: number, cin: string) {

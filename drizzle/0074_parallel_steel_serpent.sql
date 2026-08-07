@@ -1,0 +1,1 @@
+ALTER TABLE `running_sheets` ADD `sheetDate` varchar(16);

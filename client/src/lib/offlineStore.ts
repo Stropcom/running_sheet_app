@@ -52,6 +52,9 @@ export interface DraftSheet {
   operationServerId?: number;
   targetLocalId?: string;
   targetServerId?: number;
+  sheetDate: string;
+  // Local-only placeholder shown while offline — the server generates the
+  // real title from sheetDate/author/operation/target once this syncs.
   title: string;
   sheetCins: Array<{ cin: string; hasImages: boolean; isTeamLeader?: boolean; isAuthor?: boolean }>;
   createdAt: number;

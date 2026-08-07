@@ -159,7 +159,7 @@ export function useOfflineCreateTarget() {
 interface CreateSheetInput {
   operationLocalId?: string;
   operationServerId?: number;
-  title: string;
+  sheetDate: string;
   targetLocalId?: string;
   targetServerId?: number;
   sheetCins?: Array<{ cin: string; hasImages: boolean; isTeamLeader?: boolean; isAuthor?: boolean }>;
@@ -184,7 +184,7 @@ export function useOfflineCreateSheet() {
           if (!operationId) throw new Error("operationServerId required when online");
           const result = await onlineMutation.mutateAsync({
             operationId,
-            title: input.title,
+            sheetDate: input.sheetDate,
             targetId: input.targetServerId ?? null,
             sheetCins: input.sheetCins,
           });
@@ -199,7 +199,10 @@ export function useOfflineCreateSheet() {
           operationServerId: input.operationServerId,
           targetLocalId: input.targetLocalId,
           targetServerId: input.targetServerId,
-          title: input.title,
+          sheetDate: input.sheetDate,
+          // Placeholder only — the real title is generated server-side once
+          // this draft syncs and the operation/target/author are resolved.
+          title: `${input.sheetDate} (draft)`,
           sheetCins: input.sheetCins ?? [],
           createdAt: Date.now(),
           synced: false,
@@ -213,6 +216,7 @@ export function useOfflineCreateSheet() {
             operationServerId: draft.operationServerId,
             targetLocalId: draft.targetLocalId,
             targetServerId: draft.targetServerId,
+            sheetDate: draft.sheetDate,
             title: draft.title,
             sheetCins: draft.sheetCins,
             createdAt: draft.createdAt,

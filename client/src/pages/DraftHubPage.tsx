@@ -76,6 +76,7 @@ import {
   type CachedOperationSummary,
 } from "@/lib/offlineStore";
 import { toast } from "sonner";
+import { buildRunningSheetTitle } from "@shared/runningSheetTitle";
 
 // ── Unified option type used in the operation picker ──────────────────────────
 type OperationOption =
@@ -110,7 +111,9 @@ export default function DraftHubPage() {
 
   // New sheet dialog
   const [showNewSheet, setShowNewSheet] = useState(false);
-  const [newSheetTitle, setNewSheetTitle] = useState("");
+  const [newSheetDate, setNewSheetDate] = useState(() =>
+    new Date().toISOString().slice(0, 10)
+  );
   const [newSheetOpKey, setNewSheetOpKey] = useState<string>(""); // "draft:<localId>" or "server:<id>"
   const [newSheetCins, setNewSheetCins] = useState("");
   const [savingSheet, setSavingSheet] = useState(false);
@@ -174,8 +177,17 @@ export default function DraftHubPage() {
   };
 
   // ── Create draft sheet ─────────────────────────────────────────────────────
+  const newSheetOpName =
+    draftOps.find(op => `draft:${op.localId}` === newSheetOpKey)?.name ??
+    cachedServerOps.find(op => `server:${op.id}` === newSheetOpKey)?.name ??
+    null;
+  const newSheetTitlePreview = buildRunningSheetTitle({
+    sheetDate: newSheetDate || null,
+    operationName: newSheetOpName ?? "…",
+  });
+
   const handleCreateSheet = async () => {
-    if (!newSheetTitle.trim() || !newSheetOpKey) return;
+    if (!newSheetDate || !newSheetOpKey) return;
     setSavingSheet(true);
     try {
       const localId = generateLocalId();
@@ -199,7 +211,10 @@ export default function DraftHubPage() {
         localId,
         operationLocalId,
         operationServerId,
-        title: newSheetTitle.trim(),
+        sheetDate: newSheetDate,
+        // Local-only placeholder — the real title is generated server-side
+        // once this draft syncs and the operation/author are resolved.
+        title: newSheetTitlePreview,
         sheetCins: cins,
         createdAt: Date.now(),
         synced: false,
@@ -211,6 +226,7 @@ export default function DraftHubPage() {
         payload: {
           operationLocalId: draft.operationLocalId,
           operationServerId: draft.operationServerId,
+          sheetDate: draft.sheetDate,
           title: draft.title,
           sheetCins: draft.sheetCins,
           createdAt: draft.createdAt,
@@ -218,7 +234,7 @@ export default function DraftHubPage() {
       });
       await refreshDraftCounts();
       setShowNewSheet(false);
-      setNewSheetTitle("");
+      setNewSheetDate(new Date().toISOString().slice(0, 10));
       setNewSheetCins("");
       setNewSheetOpKey("");
       toast.success(`Sheet "${draft.title}" saved as draft`);
@@ -522,13 +538,16 @@ export default function DraftHubPage() {
 
             <div>
               <label className="mb-1 block text-sm font-medium">
-                Sheet Title <span className="text-red-500">*</span>
+                Date <span className="text-red-500">*</span>
               </label>
               <Input
-                placeholder="e.g. 20260706 - STILLWATER (JAMES)"
-                value={newSheetTitle}
-                onChange={(e) => setNewSheetTitle(e.target.value)}
+                type="date"
+                value={newSheetDate}
+                onChange={(e) => setNewSheetDate(e.target.value)}
               />
+              <p className="mt-1 text-xs text-muted-foreground font-mono truncate">
+                {newSheetTitlePreview}
+              </p>
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium">Team CINs</label>
@@ -544,7 +563,7 @@ export default function DraftHubPage() {
             <Button variant="ghost" onClick={() => setShowNewSheet(false)}>Cancel</Button>
             <Button
               onClick={handleCreateSheet}
-              disabled={!newSheetTitle.trim() || !newSheetOpKey || savingSheet}
+              disabled={!newSheetDate || !newSheetOpKey || savingSheet}
             >
               {savingSheet ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Create &amp; Open

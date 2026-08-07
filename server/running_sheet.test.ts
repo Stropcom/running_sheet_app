@@ -105,7 +105,7 @@ describe("sheet.list", () => {
 describe("sheet.create", () => {
   it("allows observers to create sheets", async () => {
     const caller = appRouter.createCaller(makeCtx("observer"));
-    const result = await caller.sheet.create({ operationId: 1, title: "New Sheet" });
+    const result = await caller.sheet.create({ operationId: 1, sheetDate: "2026-08-07" });
     expect(result.id).toBe(1);
   });
 });

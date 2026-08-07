@@ -2832,7 +2832,7 @@ export default function SheetDetail() {
 
   // Edit sheet state
   const [editSheetOpen, setEditSheetOpen] = useState(false);
-  const [editTitle, setEditTitle] = useState("");
+  const [editSheetDate, setEditSheetDate] = useState("");
   const [editTargetName, setEditTargetName] = useState("");
   const [editTargetMode, setEditTargetMode] = useState<"none" | "link">("none");
   const [editSelectedTargetId, setEditSelectedTargetId] = useState<
@@ -2994,7 +2994,10 @@ export default function SheetDetail() {
   }, [exportData, pendingExportType, sheet]);
 
   const openEditSheet = () => {
-    setEditTitle(sheet?.title ?? "");
+    setEditSheetDate(
+      (sheet as { sheetDate?: string | null } | undefined)?.sheetDate ??
+        new Date().toISOString().slice(0, 10)
+    );
     setEditTargetName(sheet?.targetName ?? "");
     setEditTargetMode("none");
     setEditTargetSearch("");
@@ -4391,13 +4394,18 @@ export default function SheetDetail() {
           <div className="py-2 flex flex-col gap-4">
             <div>
               <label className="text-sm font-medium text-foreground mb-1.5 block">
-                Title <span className="text-destructive">*</span>
+                Date <span className="text-destructive">*</span>
               </label>
               <Input
+                type="date"
                 autoFocus
-                value={editTitle}
-                onChange={e => setEditTitle(e.target.value)}
+                value={editSheetDate}
+                onChange={e => setEditSheetDate(e.target.value)}
               />
+              <p className="text-xs text-muted-foreground mt-1.5">
+                The sheet's title is generated automatically from this date, the
+                author, operation and target.
+              </p>
             </div>
             <div>
               <label className="text-sm font-medium text-foreground mb-1.5 block">
@@ -4620,10 +4628,10 @@ export default function SheetDetail() {
                 }
                 updateSheet.mutate({
                   id: sheetId,
-                  title: editTitle.trim(),
+                  sheetDate: editSheetDate,
                 });
               }}
-              disabled={!editTitle.trim() || updateSheet.isPending}
+              disabled={!editSheetDate || updateSheet.isPending}
             >
               {updateSheet.isPending ? "Saving…" : "Save"}
             </Button>

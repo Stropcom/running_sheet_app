@@ -1,5 +1,6 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
+import { buildRunningSheetTitle } from "@shared/runningSheetTitle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -922,7 +923,9 @@ export default function OperationDetail() {
 
   // Create sheet state
   const [createOpen, setCreateOpen] = useState(false);
-  const [newTitle, setNewTitle] = useState("");
+  const [newSheetDate, setNewSheetDate] = useState(() =>
+    new Date().toISOString().slice(0, 10)
+  );
   const [newTargetId, setNewTargetId] = useState<number | null>(null);
   const [targetMode, setTargetMode] = useState<"none" | "link">("none");
   const [createTargetDialogOpen, setCreateTargetDialogOpen] = useState(false);
@@ -966,6 +969,21 @@ export default function OperationDetail() {
   );
   const [targetSearch, setTargetSearch] = useState("");
 
+  // Full record for the selected target — used only for the title preview
+  // below (the list queries above don't carry surname on every row).
+  const { data: newSheetTarget } = trpc.target.getById.useQuery(
+    { id: newTargetId ?? 0 },
+    { enabled: !!newTargetId }
+  );
+
+  const newSheetTitlePreview = buildRunningSheetTitle({
+    sheetDate: newSheetDate || null,
+    authorCIN: cinList.find(c => c.isAuthor)?.cin ?? null,
+    operationName: operation?.name ?? "…",
+    targetSurname:
+      targetMode === "link" ? (newSheetTarget?.surname ?? null) : null,
+  });
+
   // Fetch all users so we can add a whole team at once
   const { data: allUsers } = trpc.admin.listUsers.useQuery(undefined, {
     enabled: isAuthenticated && user?.role === "admin",
@@ -985,7 +1003,7 @@ export default function OperationDetail() {
     onSuccess: (data) => {
       utils.sheet.listByOperation.invalidate({ operationId });
       setCreateOpen(false);
-      setNewTitle("");
+      setNewSheetDate(new Date().toISOString().slice(0, 10));
       setCinList([]);
       setCinInput("");
       toast.success("Running sheet created");
@@ -1077,10 +1095,10 @@ export default function OperationDetail() {
   };
 
   const handleCreate = () => {
-    if (!newTitle.trim()) return;
+    if (!newSheetDate) return;
     createSheet.mutate({
       operationId,
-      title: newTitle.trim(),
+      sheetDate: newSheetDate,
       targetId: targetMode === "link" ? (newTargetId ?? undefined) : undefined,
       sheetCins: cinList.length > 0 ? cinList : undefined,
     });
@@ -1088,7 +1106,7 @@ export default function OperationDetail() {
 
   const handleDialogClose = (open: boolean) => {
     if (!open) {
-      setNewTitle("");
+      setNewSheetDate(new Date().toISOString().slice(0, 10));
       setNewTargetId(null);
       setTargetMode("none");
       setTargetSearch("");
@@ -1461,18 +1479,22 @@ export default function OperationDetail() {
             <DialogTitle>New Running Sheet</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-4 py-2">
-            {/* Title */}
+            {/* Date — the sheet's title is generated from this + the
+                Author/Target below, not typed in directly. */}
             <div>
               <label className="text-sm font-medium text-foreground mb-1.5 block">
-                Title <span className="text-destructive">*</span>
+                Date <span className="text-destructive">*</span>
               </label>
               <Input
-                placeholder="e.g. Day 1 — Morning Shift"
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
+                type="date"
+                value={newSheetDate}
+                onChange={(e) => setNewSheetDate(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleCreate()}
                 autoFocus
               />
+              <p className="text-xs text-muted-foreground mt-1.5 font-mono truncate">
+                {newSheetTitlePreview}
+              </p>
             </div>
 
             {/* Target selector — New / Link Existing / None */}
@@ -1680,7 +1702,7 @@ export default function OperationDetail() {
             <Button variant="outline" onClick={() => handleDialogClose(false)}>Cancel</Button>
             <Button
               onClick={handleCreate}
-              disabled={!newTitle.trim() || createSheet.isPending}
+              disabled={!newSheetDate || createSheet.isPending}
             >
               {createSheet.isPending ? "Creating…" : "Create Sheet"}
             </Button>

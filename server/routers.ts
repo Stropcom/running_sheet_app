@@ -5,6 +5,7 @@ import { detectAndEmbedFaces, cosineSimilarity } from "./faceRecognition";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { COOKIE_NAME, SESSION_EXPIRY_MS, COLOR_PALETTES } from "@shared/const";
+import { buildRunningSheetTitle } from "@shared/runningSheetTitle";
 import { getSessionCookieOptions } from "./_core/cookies";
 import {
   processAttachmentUpload,
@@ -91,6 +92,8 @@ import {
   createCertification,
   createOperation,
   createRunningSheet,
+  recomputeRunningSheetTitle,
+  recomputeRunningSheetTitlesForOperation,
   createSheetRow,
   createUser,
   deactivateAllCertificationsForRow,
@@ -614,6 +617,11 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         const { id, ...rest } = input;
         await updateOperation(id, rest);
+        // The operation name is baked into every sheet's auto-generated
+        // title — resync them all when it changes.
+        if (rest.name !== undefined) {
+          await recomputeRunningSheetTitlesForOperation(id);
+        }
         return { success: true };
       }),
 
@@ -724,7 +732,7 @@ export const appRouter = router({
       .input(
         z.object({
           operationId: z.number(),
-          title: z.string().min(1),
+          sheetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
           targetId: z.number().optional().nullable(),
           sheetCins: z
             .array(
@@ -746,9 +754,24 @@ export const appRouter = router({
         if (input.targetId) {
           await linkTargetToOperation(input.targetId, input.operationId);
         }
+        // Title is auto-generated (DATE - AUTHOR CIN - OPERATION (TARGET)),
+        // never free-typed — see shared/runningSheetTitle.ts. Missing pieces
+        // (no author yet, no target) are left out, not blocked on.
+        const [operation, target] = await Promise.all([
+          getOperationById(input.operationId),
+          input.targetId ? getTargetById(input.targetId) : null,
+        ]);
+        const authorCIN = input.sheetCins?.find(c => c.isAuthor)?.cin ?? null;
+        const title = buildRunningSheetTitle({
+          sheetDate: input.sheetDate,
+          authorCIN,
+          operationName: operation?.name ?? "Untitled Operation",
+          targetSurname: target?.surname ?? null,
+        });
         const id = await createRunningSheet({
           operationId: input.operationId,
-          title: input.title,
+          title,
+          sheetDate: input.sheetDate,
           targetId: input.targetId ?? null,
           targetName: null,
           sheetCins: input.sheetCins ? JSON.stringify(input.sheetCins) : null,
@@ -760,7 +783,7 @@ export const appRouter = router({
           userName: ctx.user.cin ?? "Unknown",
           userCIN: ctx.user.cin ?? undefined,
           action: "sheet_created",
-          details: `Sheet "${input.title}" created`,
+          details: `Sheet "${title}" created`,
           createdAt: Date.now(),
         });
         return { id };
@@ -770,7 +793,10 @@ export const appRouter = router({
       .input(
         z.object({
           id: z.number(),
-          title: z.string().min(1).optional(),
+          sheetDate: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/)
+            .optional(),
           sheetCins: z
             .array(
               z.object({
@@ -805,6 +831,11 @@ export const appRouter = router({
         }
         if (sheetCins !== undefined) data.sheetCins = JSON.stringify(sheetCins);
         await updateRunningSheet(id, data);
+        // Title is auto-generated — resync it whenever anything it's built
+        // from (date, author) changes.
+        if (sheetCins !== undefined || input.sheetDate !== undefined) {
+          await recomputeRunningSheetTitle(id);
+        }
         await createAuditLog({
           sheetId: id,
           userId: ctx.user.id,
@@ -2362,6 +2393,8 @@ export const appRouter = router({
         } else {
           await setSheetTarget(input.sheetId, null);
         }
+        // Title's (TARGET) segment is auto-derived — resync it.
+        await recomputeRunningSheetTitle(input.sheetId);
         return { success: true };
       }),
 

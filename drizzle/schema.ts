@@ -80,6 +80,10 @@ export const runningSheets = mysqlTable("running_sheets", {
   id: int("id").autoincrement().primaryKey(),
   operationId: int("operationId").notNull(),
   title: varchar("title", { length: 255 }).notNull(),
+  // The calendar date this sheet represents (YYYY-MM-DD) — distinct from
+  // createdAt, which is just when the DB row was inserted. Drives the
+  // auto-generated title's date segment; editable after creation.
+  sheetDate: varchar("sheetDate", { length: 16 }),
   targetName: varchar("targetName", { length: 255 }),
   // JSON array of { cin: string, hasImages: boolean } — daily CIN roster
   sheetCins: text("sheetCins"),

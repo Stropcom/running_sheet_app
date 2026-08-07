@@ -175,6 +175,22 @@ export default function AssociationMap() {
     setHighlightEdges(new Set());
   }, []);
 
+  // force-graph auto-zooms to fit the settled node positions once the
+  // simulation cools — for a small/sparse graph (few nodes, so they settle
+  // close together) that fit can land on a very high zoom factor, which
+  // blows up both the nodes and their now-proportionally-scaled labels well
+  // past a readable size. Clamp back down to a sane maximum right after the
+  // engine stops, rather than fighting a zoom the user picked themselves.
+  const MAX_AUTO_ZOOM = 2.2;
+  const handleEngineStop = useCallback(() => {
+    const fg = graphRef.current;
+    if (!fg) return;
+    const currentZoom = fg.zoom();
+    if (currentZoom > MAX_AUTO_ZOOM) {
+      fg.zoom(MAX_AUTO_ZOOM, 0);
+    }
+  }, []);
+
   // ── Node paint ────────────────────────────────────────────────────────────
   const paintNode = useCallback((node: AssocNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
     const isHighlighted = highlightNodes.size === 0 || highlightNodes.has(node.id);
@@ -462,6 +478,7 @@ export default function AssociationMap() {
                 linkCanvasObject={paintLink as (link: object, ctx: CanvasRenderingContext2D) => void}
                 onNodeClick={handleNodeClick as (node: object) => void}
                 onBackgroundClick={handleBackgroundClick}
+                onEngineStop={handleEngineStop}
                 onRenderFramePre={resetLabelRects}
                 linkDirectionalParticles={0}
                 cooldownTicks={120}

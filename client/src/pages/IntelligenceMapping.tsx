@@ -164,6 +164,7 @@ interface IntelMapLocation {
     v2f: string | null;
     operationId: number | null;
     operationName: string | null;
+    addressLabel: string | null;
   }>;
   assocPersons: string[];
   assocVehicles: string[];
@@ -423,8 +424,14 @@ const DARK_MAP_STYLES: google.maps.MapTypeStyle[] = [
 
 function buildInfoWindowContent(loc: IntelMapLocation): string {
   const isTarget = loc.type === "target_address";
+  const isAdditionalTargetAddress =
+    !isTarget && loc.linkedTargets.some(t => t.addressLabel);
   const accentColor = isTarget ? "#dc2626" : "#7c3aed";
-  const typeLabel = isTarget ? "TARGET ADDRESS" : "OBSERVED LOCATION";
+  const typeLabel = isTarget
+    ? "TARGET ADDRESS"
+    : isAdditionalTargetAddress
+      ? "ADDITIONAL ADDRESS"
+      : "OBSERVED LOCATION";
   const displayLabel = formatIntelAddress(loc.label);
   const encodedLabel = encodeURIComponent(loc.label);
 
@@ -494,7 +501,11 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
     );
     for (const t of loc.linkedTargets) {
       lines.push(
-        `<div style="font-size:12px;color:#111;padding:1px 0;">${t.name}</div>`
+        `<div style="font-size:12px;color:#111;padding:1px 0;">${t.name}${
+          t.addressLabel
+            ? `<span style="color:#7c3aed;font-weight:600;"> · ${t.addressLabel}</span>`
+            : ""
+        }</div>`
       );
     }
     lines.push(`</div>`);

@@ -8519,6 +8519,8 @@ export interface IntelMapLocation {
     v2f: string | null;
     operationId: number | null;
     operationName: string | null;
+    /** Set when this pin is one of the target's Additional Addresses (e.g. "Work — KFC Cannington") rather than the home address or a co-occurrence match */
+    addressLabel: string | null;
   }>;
   /** Associates (non-target persons) seen at this location in observation rows */
   assocPersons: string[];
@@ -8576,6 +8578,7 @@ export async function getIntelMappingLocations(
       v1: targets.v1,
       v2f: targets.v2f,
       v2: targets.v2,
+      extraAddresses: targets.extraAddresses,
       operationId: targets.operationId,
       operationName: operations.name,
     })
@@ -8595,6 +8598,7 @@ export async function getIntelMappingLocations(
       v1: targets.v1,
       v2f: targets.v2f,
       v2: targets.v2,
+      extraAddresses: targets.extraAddresses,
       operationId: operationTargetLinks.operationId,
       operationName: operations.name,
     })
@@ -8662,6 +8666,41 @@ export async function getIntelMappingLocations(
           v2f: t.v2f?.trim() || t.v2?.trim() || null,
           operationId: t.operationId ?? null,
           operationName: t.operationName ?? null,
+          addressLabel: null,
+        });
+      }
+    }
+
+    // Additional Addresses from the target's Add Target form (e.g. "Work —
+    // KFC Cannington") get their own pins too — purple (observation), same
+    // as any other non-home location, since only the home address counts as
+    // "target_address" red. Each still carries the target's card details so
+    // the popup reads exactly like the home-address pin, plus the address's
+    // own label to say which additional address this is.
+    let extraAddrs: { full?: string; label?: string }[] = [];
+    try {
+      extraAddrs = t.extraAddresses ? JSON.parse(t.extraAddresses) : [];
+    } catch {
+      extraAddrs = [];
+    }
+    for (const ea of extraAddrs) {
+      const addr = ea.full?.trim();
+      if (!addr) continue;
+      const loc = ensureLocation(addr);
+      // Don't downgrade a pin that's already this target's (or another
+      // target's) home address at the same spot.
+      if (loc.type !== "target_address") loc.type = "observation";
+      if (!loc.linkedTargets.find(lt => lt.targetId === t.id)) {
+        loc.linkedTargets.push({
+          targetId: t.id,
+          name: t.name,
+          tgt: t.tgt,
+          hbf: t.hbf?.trim() || t.hb?.trim() || null,
+          v1f: t.v1f?.trim() || t.v1?.trim() || null,
+          v2f: t.v2f?.trim() || t.v2?.trim() || null,
+          operationId: t.operationId ?? null,
+          operationName: t.operationName ?? null,
+          addressLabel: ea.label?.trim() || "Additional address",
         });
       }
     }
@@ -8709,6 +8748,7 @@ export async function getIntelMappingLocations(
               hbf: tData.hbf?.trim() || tData.hb?.trim() || null,
               v1f: tData.v1f?.trim() || tData.v1?.trim() || null,
               v2f: tData.v2f?.trim() || tData.v2?.trim() || null,
+              addressLabel: null,
               operationId: tData.operationId ?? null,
               operationName: tData.operationName ?? null,
             });

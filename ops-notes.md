@@ -11,6 +11,155 @@ happen before."
 
 ---
 
+## 2026-08-06 — Deploy procedure, and why `pnpm db:push` shouldn't run on the droplet
+
+The deploy that had been used routinely up to this point:
+
+```bash
+cd /opt/runlog && git pull && pnpm install && pnpm db:push && pnpm build && pm2 restart runlog
+```
+
+It works, but `db:push` is `drizzle-kit generate && drizzle-kit migrate`
+(see `package.json`), and the **`generate` half should never run on a
+server**. It compares `drizzle/schema.ts` against the committed snapshots
+and *writes a new migration file* when they differ. Normally both come from
+git so it's a no-op — but if a schema change is ever committed without its
+migration, the droplet authors one itself. That file then exists only on the
+droplet, with a random name that won't match the one a developer generates
+later for the same change. Two consequences:
+
+- the working tree goes dirty, so the **next `git pull` fails** with "local
+  changes would be overwritten" — mid-deploy;
+- when the developer's migration for that same change arrives, `migrate`
+  tries to apply it on top of a column that already exists and dies with
+  `ER_DUP_FIELDNAME`.
+
+That second failure was reproduced in a dev sandbox while checking this
+(sandbox DB showed 72 applied against 74 files, failing on
+`ALTER TABLE users ADD colorPalette`). **Production was verified clean at
+the same time** — see the baseline below — so this is a hazard to avoid,
+not damage to repair.
+
+### Health check — run before changing anything about migrations
+
+```bash
+cd /opt/runlog
+ls drizzle/*.sql | wc -l
+git status --porcelain drizzle/          # any output here = server-generated files = drift
+node --input-type=module -e "
+import 'dotenv/config';
+import mysql from 'mysql2/promise';
+const c = await mysql.createConnection(process.env.DATABASE_URL);
+const [r] = await c.query('SELECT COUNT(*) AS applied FROM __drizzle_migrations');
+console.log('applied migrations:', r[0].applied);
+await c.end();
+"
+```
+
+Reads `DATABASE_URL` from `.env`, so no credentials get typed or echoed.
+Healthy = applied count equals file count, and `git status` on `drizzle/`
+prints nothing.
+
+**Baseline recorded 2026-08-06: 74 of 74 applied, `drizzle/` clean.**
+If a future check shows applied < files with no pending deploy to explain
+it, or untracked `.sql` files in `drizzle/`, the journal has drifted —
+don't just re-run migrate, work out which migration was applied without
+being recorded first.
+
+### Preferred deploy — `/opt/runlog/deploy.sh`
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+cd /opt/runlog
+
+mkdir -p ~/backups
+node --input-type=module -e "
+import 'dotenv/config';
+const u = new URL(process.env.DATABASE_URL);
+console.log(\`-h\${u.hostname} -P\${u.port||3306} -u\${u.username} -p\${decodeURIComponent(u.password)} \${u.pathname.slice(1)}\`);
+" | xargs mysqldump > ~/backups/runlog-$(date +%F-%H%M).sql
+echo "backup written"
+
+git pull --ff-only
+pnpm install --frozen-lockfile
+pnpm build
+pnpm exec drizzle-kit migrate
+pm2 restart runlog
+
+sleep 3
+curl -fsS localhost:3000/ > /dev/null && echo "DEPLOY OK" || {
+  echo "APP DID NOT COME UP"; pm2 logs runlog --lines 30 --nostream; exit 1;
+}
+```
+
+Why each difference from the old line, most important first:
+
+1. **`mysqldump` first.** `drizzle-kit migrate` has no undo and this is an
+   evidentiary system with certified, locked rows. Non-negotiable.
+2. **`build` before `migrate`.** The build can fail on a typecheck or
+   bundling error; if that happens after migrating, the schema has moved for
+   a deploy that never landed. This way a bad build costs nothing.
+3. **`drizzle-kit migrate`, not `db:push`.** Apply-only — it can't author a
+   migration on the droplet. See above.
+4. **`git pull --ff-only`.** Fails loudly instead of quietly creating a merge
+   commit on the server if history diverged.
+5. **`--frozen-lockfile`.** Refuses to resolve different versions if the
+   lockfile and `package.json` disagree, rather than silently shipping them.
+6. **The `curl` check.** `pm2 restart` reports success even when the process
+   then crash-loops; this catches a failed boot in three seconds instead of
+   when an officer opens the app mid-shift. Adjust the port if nginx fronts
+   something other than 3000.
+
+Note there is no rollback for a bad migration other than the dump, hence
+point 1. Restoring: `mysql ... running_sheet_app < ~/backups/runlog-<stamp>.sql`.
+
+### Run it detached — the DO web console drops mid-deploy
+
+Deploying from the DigitalOcean web console, the session frequently ends
+before the deploy finishes, so there's no way to tell whether it worked or
+to copy the output. Don't run the deploy in the foreground there. Run it
+detached and log it:
+
+```bash
+cd /opt/runlog
+nohup ./deploy.sh > ~/deploy.log 2>&1 &
+```
+
+Then, whenever the console comes back:
+
+```bash
+tail -40 ~/deploy.log        # did it finish? look for "DEPLOY OK"
+pm2 status runlog            # is it actually up
+pm2 logs runlog --lines 30 --nostream
+```
+
+`nohup ... &` means a dropped console can no longer kill the deploy
+half-way — which matters most between `migrate` and `pm2 restart`, where
+the schema has moved but the running code hasn't.
+
+**If the console dies specifically during `pnpm build`, suspect the OOM
+killer** rather than the console. The droplet has 2GB and the vite build is
+the most memory-hungry step of the whole deploy. Check:
+
+```bash
+dmesg | grep -i "killed process" | tail -5
+free -m
+```
+
+If it is OOM, the fix is a swap file (there is none by default on this
+droplet):
+
+```bash
+fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+echo '/swapfile none swap sw 0 0' >> /etc/fstab   # persist across reboot
+```
+
+Building on the droplet at all is the underlying cause; the longer-term fix
+is to build elsewhere and ship `dist/`, but swap is the cheap answer.
+
+---
+
 ## 2026-07-30 (even later) — Doc Import upload failing: missing OCR model in production build
 
 Uploading a document (especially HEIC) through CTO Roster's new "Doc

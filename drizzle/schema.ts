@@ -80,6 +80,10 @@ export const runningSheets = mysqlTable("running_sheets", {
   id: int("id").autoincrement().primaryKey(),
   operationId: int("operationId").notNull(),
   title: varchar("title", { length: 255 }).notNull(),
+  // The calendar date this sheet represents (YYYY-MM-DD) — distinct from
+  // createdAt, which is just when the DB row was inserted. Drives the
+  // auto-generated title's date segment; editable after creation.
+  sheetDate: varchar("sheetDate", { length: 16 }),
   targetName: varchar("targetName", { length: 255 }),
   // JSON array of { cin: string, hasImages: boolean } — daily CIN roster
   sheetCins: text("sheetCins"),
@@ -702,6 +706,11 @@ export const sheetSummaries = mysqlTable("sheet_summaries", {
   dayDate: varchar("dayDate", { length: 64 }),
   startTime: varchar("startTime", { length: 32 }),
   finishTime: varchar("finishTime", { length: 32 }),
+  // Once true, that field stops auto-syncing from the RS's first/last timed
+  // row on read — the supervisor's manual edit sticks, exactly like
+  // sheetSummaryEntries.edited below.
+  startTimeEdited: boolean("startTimeEdited").notNull().default(false),
+  finishTimeEdited: boolean("finishTimeEdited").notNull().default(false),
   targetName: text("targetName"),
   // Sourced from the RS row containing "surveillance commenced", not target.hbf.
   location: text("location"),
@@ -904,6 +913,44 @@ export const userLocations = mysqlTable(
 
 export type UserLocation = typeof userLocations.$inferSelect;
 export type InsertUserLocation = typeof userLocations.$inferInsert;
+
+// ─── User Location History ─────────────────────────────────────────────────────
+// Append-only trail of recorded GPS points, throttled at insert time (see
+// recordUserLocationHistory in db.ts) so continuous GPS pings don't flood this
+// table. Powers the "live trace" line drawn on the Intelligence map and, more
+// generally, "where was officer X at time Y" lookups — this is a legal/
+// evidentiary system, so history rows are never purged like userLocations'
+// stale-device cleanup.
+
+export const userLocationHistory = mysqlTable(
+  "user_location_history",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(), // FK → users.id
+    deviceId: varchar("deviceId", { length: 128 }).notNull(),
+    lat: double("lat").notNull(),
+    lng: double("lng").notNull(),
+    speed: double("speed"),
+    heading: double("heading"),
+    accuracy: double("accuracy"),
+    operationIds: text("operationIds").notNull().default("[]"),
+    recordedAt: bigint("recordedAt", { mode: "number" }).notNull(),
+  },
+  table => ({
+    userRecordedIdx: index("idx_location_history_user_recorded").on(
+      table.userId,
+      table.recordedAt
+    ),
+    deviceRecordedIdx: index("idx_location_history_device_recorded").on(
+      table.deviceId,
+      table.recordedAt
+    ),
+  })
+);
+
+export type UserLocationHistoryPoint = typeof userLocationHistory.$inferSelect;
+export type InsertUserLocationHistoryPoint =
+  typeof userLocationHistory.$inferInsert;
 
 // ─── Style Guide & Writing Rules ─────────────────────────────────────────────
 // Stores the uploaded pro forma style guide (raw text only — no names/locations

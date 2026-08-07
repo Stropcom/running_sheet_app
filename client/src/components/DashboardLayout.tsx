@@ -74,6 +74,7 @@ import {
   Trash2,
   WifiOff,
   Settings,
+  SlidersHorizontal,
   UserCog,
   BarChart3,
   GripVertical,
@@ -809,7 +810,10 @@ export default function DashboardLayout({
           ...(fillViewport ? { height: "var(--app-vh, 100svh)" } : {}),
         } as CSSProperties
       }
-      className={fillViewport ? "min-h-0 overflow-hidden" : undefined}
+      // flex-col: the shell's default is a row (folder menu beside the page).
+      // The app banner has to span the full width above both, so the wrapper
+      // stacks banner-then-row instead, and the row itself is a nested flex.
+      className={`flex-col ${fillViewport ? "min-h-0 overflow-hidden" : ""}`}
     >
       <DashboardLayoutContent
         setSidebarWidth={setSidebarWidth}
@@ -836,12 +840,41 @@ function DashboardLayoutContent({
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [location, setLocation] = useLocation();
-  const { state, toggleSidebar } = useSidebar();
+  const { state, toggleSidebar, setOpen } = useSidebar();
   const isCollapsed = state === "collapsed";
   const { refresh, refreshing } = useRefreshAction();
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const sidebarScrollRef = useRef<HTMLDivElement>(null);
+
+  // Remembers whether the folder menu was open right before the page's
+  // right-hand pane (e.g. the map's Map Settings) auto-closed it, so closing
+  // that pane again can put the folder menu back exactly how it was — rather
+  // than always leaving it closed. null = not currently tracking (right pane
+  // is closed, or already restored). Reacting to rightPaneToggle.isOpen
+  // itself, rather than only handling this inside the Map Settings button's
+  // own onClick, is what makes this work no matter how the pane closes — the
+  // map also closes it from a click on the map area and from its own X
+  // button, neither of which goes through this component at all.
+  const sidebarStateBeforeRightPaneRef = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (!rightPaneToggle) return;
+    if (rightPaneToggle.isOpen) {
+      sidebarStateBeforeRightPaneRef.current = state === "expanded";
+      if (state === "expanded") setOpen(false);
+    } else if (sidebarStateBeforeRightPaneRef.current !== null) {
+      // Only ever re-open here, never force-close: if the folder menu was
+      // already closed before the pane opened, leave it exactly as it
+      // currently is rather than fighting anything else that may have
+      // changed it in the meantime (e.g. the Folders button's own manual
+      // open+close-the-other-pane action, below).
+      if (sidebarStateBeforeRightPaneRef.current) setOpen(true);
+      sidebarStateBeforeRightPaneRef.current = null;
+    }
+    // Only react to the pane opening/closing, not to the folder menu's own
+    // state changes -- those are handled by the Folders button directly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rightPaneToggle?.isOpen]);
 
   // Restore the sidebar's scroll position immediately on mount (before paint)
   // so re-opening a nav item deep in the list doesn't visibly jump to the top.
@@ -1087,59 +1120,132 @@ function DashboardLayoutContent({
 
   return (
     <>
+      {/* ── App top banner (laptop/tablet only) ───────────────────────────────
+          One bar across the full width of the screen, above both the folder
+          menu and the page, so the wordmark and the always-available controls
+          stay put on every page and don't move when the folder menu collapses.
+          Phones keep their own compact header inside SidebarInset instead —
+          there's no room for this there. */}
+      {!isMobile && (
+        <header className="relative z-30 flex h-14 shrink-0 items-center justify-between gap-2 border-b border-sidebar-border bg-sidebar px-3 print:hidden">
+          {/* Left: folder menu, refresh, notifications */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                // Opening the folders menu closes whatever right-hand pane the
+                // page has (the map's Map Settings), so only one pane ever eats
+                // into the page width. Closing it just closes it.
+                if (state === "collapsed" && rightPaneToggle?.isOpen) {
+                  rightPaneToggle.onToggle();
+                }
+                toggleSidebar();
+              }}
+              className={`flex items-center justify-center gap-2 min-w-[130px] px-3 py-2 rounded-xl border text-sm font-semibold shadow-sm transition-all ${
+                state === "expanded"
+                  ? "text-primary border-primary/50 bg-primary/10 hover:bg-primary/20"
+                  : "text-muted-foreground border-sidebar-border/60 hover:text-foreground hover:bg-accent"
+              }`}
+              aria-label="Toggle folders"
+              title="Folders"
+            >
+              <PanelLeft className="h-6 w-6" />
+              <span>Folders</span>
+            </button>
+            <button
+              onClick={() => void refresh()}
+              disabled={refreshing}
+              className="h-10 w-10 flex items-center justify-center hover:bg-sidebar-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0 disabled:opacity-50"
+              aria-label="Refresh"
+              title="Refresh"
+            >
+              <RefreshCw
+                className={`h-5 w-5 text-sidebar-foreground/70 ${refreshing ? "animate-spin" : ""}`}
+              />
+            </button>
+            <NotificationBell
+              className="hover:bg-sidebar-accent h-10 w-10"
+              iconClassName="h-5 w-5 text-sidebar-foreground/70"
+            />
+          </div>
+
+          {/* Centre: wordmark, absolutely positioned so it sits at true screen
+              centre rather than being pushed around by whatever is on either
+              side of it. pointer-events-none so it can never swallow a click
+              aimed at a control underneath. */}
+          <div className="pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2.5">
+            <ShieldCheck className="w-7 h-7 text-sidebar-primary shrink-0" />
+            <span className="font-semibold text-sidebar-foreground tracking-tight text-xl">
+              RunLog
+            </span>
+          </div>
+
+          {/* Right: page-level quick links (Active RS / Map, or the map's own
+              Map Settings pane toggle) */}
+          <div className="flex items-center gap-2">
+            {location !== "/intelligence/mapping" && (
+              <>
+                <button
+                  onClick={() => {
+                    if (activeRsId) setLocation(`/sheet/${activeRsId}`);
+                  }}
+                  className={`flex items-center justify-center gap-2 min-w-[130px] px-3 py-2 rounded-xl border text-sm font-semibold shadow-sm transition-all ${
+                    activeRsId
+                      ? "text-blue-700 border-blue-700/50 bg-blue-700/10 hover:bg-blue-700/20 cursor-pointer"
+                      : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"
+                  }`}
+                  title={activeRsId ? "Go to Active RS" : "No active RS selected"}
+                >
+                  <ClipboardList className="h-6 w-6" />
+                  <span>Active RS</span>
+                </button>
+                <button
+                  onClick={() => setLocation("/intelligence/mapping")}
+                  className="flex items-center justify-center gap-2 min-w-[130px] px-3 py-2 rounded-xl border border-teal-400/50 bg-teal-400/10 text-teal-400 hover:bg-teal-400/20 text-sm font-semibold shadow-sm transition-all"
+                  title="Map"
+                >
+                  <Map className="h-6 w-6" />
+                  <span>Map</span>
+                </button>
+              </>
+            )}
+            {rightPaneToggle && (
+              <button
+                onClick={rightPaneToggle.onToggle}
+                className={`flex items-center justify-center gap-2 min-w-[150px] px-3 py-2 rounded-xl border text-sm font-semibold shadow-sm transition-all ${
+                  rightPaneToggle.isOpen
+                    ? "text-primary border-primary/50 bg-primary/10 hover:bg-primary/20"
+                    : "text-muted-foreground border-sidebar-border/60 hover:text-foreground hover:bg-accent"
+                }`}
+                aria-label="Toggle side panel"
+                title="Map Settings"
+              >
+                <SlidersHorizontal className="h-6 w-6" />
+                <span>Map Settings</span>
+              </button>
+            )}
+          </div>
+        </header>
+      )}
+
+      {/* The banner sits above this row, so the folder menu and the page share
+          what's left of the viewport height. */}
+      <div className="flex w-full flex-1 min-h-0">
       <div className="relative print:hidden" ref={sidebarRef}>
         <Sidebar
           collapsible="icon"
-          className="border-r border-sidebar-border rounded-r-2xl shadow-2xl overflow-hidden"
+          className={`border-r border-sidebar-border rounded-r-2xl shadow-2xl overflow-hidden ${
+            isMobile
+              ? ""
+              : "top-14 h-[calc(var(--app-vh,100svh)-3.5rem)]"
+          }`}
           disableTransition={isResizing}
         >
-          {/* Header */}
-          <SidebarHeader className="h-16 justify-center border-b border-sidebar-border">
-            <div className="flex items-center gap-3 px-2 w-full">
-              <button
-                onClick={toggleSidebar}
-                className={`flex items-center justify-center hover:bg-sidebar-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0 ${
-                  isCollapsed ? "h-8 w-8" : "h-10 w-10"
-                }`}
-                aria-label="Toggle navigation"
-              >
-                <PanelLeft
-                  className={
-                    isCollapsed
-                      ? "h-4 w-4 text-sidebar-foreground/60"
-                      : "h-5 w-5 text-sidebar-foreground/60"
-                  }
-                />
-              </button>
-              {!isCollapsed && (
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <ShieldCheck className="w-5 h-5 text-sidebar-primary shrink-0" />
-                  <span className="font-semibold text-sidebar-foreground tracking-tight truncate text-sm">
-                    RunLog
-                  </span>
-                </div>
-              )}
-              {!isCollapsed && (
-                <button
-                  onClick={() => void refresh()}
-                  disabled={refreshing}
-                  className="h-8 w-8 flex items-center justify-center hover:bg-sidebar-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0 disabled:opacity-50"
-                  aria-label="Refresh"
-                  title="Refresh"
-                >
-                  <RefreshCw
-                    className={`h-4 w-4 text-sidebar-foreground/60 ${refreshing ? "animate-spin" : ""}`}
-                  />
-                </button>
-              )}
-              {!isCollapsed && (
-                <NotificationBell
-                  className="hover:bg-sidebar-accent"
-                  iconClassName="h-4 w-4 text-sidebar-foreground/60"
-                />
-              )}
-            </div>
-          </SidebarHeader>
+          {/* The shield/wordmark, refresh, bell and the folder-menu toggle all
+              live in the app banner above now — on phones they're in the
+              compact mobile header instead — so this header would otherwise be
+              an empty 64px band above the nav. Kept only as a small spacer so
+              the first folder isn't jammed against the banner. */}
+          <SidebarHeader className="h-2 p-0" />
 
           {/* Navigation */}
           <SidebarContent
@@ -1631,56 +1737,6 @@ function DashboardLayoutContent({
             </div>
           </div>
         )}
-        {!isMobile && (location !== "/intelligence/mapping" || rightPaneToggle) && (
-          <div className="flex justify-end items-center gap-2 px-4 pt-2 pb-0">
-            {location !== "/intelligence/mapping" && (
-              <>
-                {/* Active RS quick-link (desktop) — folder-chip style matching the
-                    Operations sidebar item's blue theme; fades out when there's
-                    no active RS, same as before. */}
-                <button
-                  onClick={() => {
-                    if (activeRsId) setLocation(`/sheet/${activeRsId}`);
-                  }}
-                  className={`flex items-center justify-center gap-2 min-w-[130px] px-3 py-2 rounded-xl border text-sm font-semibold shadow-sm transition-all ${
-                    activeRsId
-                      ? "text-blue-700 border-blue-700/50 bg-blue-700/10 hover:bg-blue-700/20 cursor-pointer"
-                      : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"
-                  }`}
-                  title={activeRsId ? "Go to Active RS" : "No active RS selected"}
-                >
-                  <ClipboardList className="h-6 w-6" />
-                  <span>Active RS</span>
-                </button>
-                {/* Map quick-link (desktop) — folder-chip style matching the
-                    Mapping sidebar item's turquoise theme. */}
-                <button
-                  onClick={() => setLocation("/intelligence/mapping")}
-                  className="flex items-center justify-center gap-2 min-w-[130px] px-3 py-2 rounded-xl border border-teal-400/50 bg-teal-400/10 text-teal-400 hover:bg-teal-400/20 text-sm font-semibold shadow-sm transition-all"
-                  title="Map"
-                >
-                  <Map className="h-6 w-6" />
-                  <span>Map</span>
-                </button>
-              </>
-            )}
-            {/* Right pane folder-expander (page-specific, e.g. Map's RS Actions pane) */}
-            {rightPaneToggle && (
-              <button
-                onClick={rightPaneToggle.onToggle}
-                className={`flex items-center justify-center h-10 w-10 rounded-lg border transition-colors ${
-                  rightPaneToggle.isOpen
-                    ? "text-primary border-primary/50 bg-primary/10"
-                    : "text-muted-foreground border-sidebar-border/50 hover:text-foreground hover:bg-accent"
-                }`}
-                aria-label="Toggle side panel"
-                title="Toggle side panel"
-              >
-                <PanelRight className="h-5 w-5" />
-              </button>
-            )}
-          </div>
-        )}
         {/* min-h-0 (not min-h-screen): this sits below the mobile header bar
             in the same flex column, so a 100vh floor here always overflows
             the actual viewport by the header's height — that's what caused
@@ -1702,6 +1758,8 @@ function DashboardLayoutContent({
           </PullToRefresh>
         </main>
       </SidebarInset>
+      </div>
+      {/* end sidebar + page row */}
 
       {/* ── Shortcuts Reference Panel ─────────────────────────────────────── */}
       {shortcutsPanelOpen && isObservationFocused && (

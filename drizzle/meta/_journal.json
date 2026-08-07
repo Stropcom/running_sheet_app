@@ -519,6 +519,27 @@
       "when": 1785752736223,
       "tag": "0073_fearless_lorna_dane",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "5",
+      "when": 1786076110111,
+      "tag": "0074_parallel_steel_serpent",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "5",
+      "when": 1786089068746,
+      "tag": "0075_nasty_old_lace",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "5",
+      "when": 1786097150236,
+      "tag": "0076_silent_devos",
+      "breakpoints": true
     }
   ]
 }

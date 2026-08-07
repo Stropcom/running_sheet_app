@@ -144,7 +144,7 @@ async function processSyncEntry(entry: { id?: number; action: import("./offlineS
 
       const result = await trpcClient.sheet.create.mutate({
         operationId,
-        title: payload.title,
+        sheetDate: payload.sheetDate,
         targetId: targetId ?? null,
         sheetCins: payload.sheetCins,
       });

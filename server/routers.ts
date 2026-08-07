@@ -5,6 +5,7 @@ import { detectAndEmbedFaces, cosineSimilarity } from "./faceRecognition";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { COOKIE_NAME, SESSION_EXPIRY_MS, COLOR_PALETTES } from "@shared/const";
+import { buildRunningSheetTitle } from "@shared/runningSheetTitle";
 import { getSessionCookieOptions } from "./_core/cookies";
 import {
   processAttachmentUpload,
@@ -91,6 +92,8 @@ import {
   createCertification,
   createOperation,
   createRunningSheet,
+  recomputeRunningSheetTitle,
+  recomputeRunningSheetTitlesForOperation,
   createSheetRow,
   createUser,
   deactivateAllCertificationsForRow,
@@ -167,6 +170,7 @@ import {
   deleteSheetSummaryEntry,
   getSheetSummarySupportHistory,
   getMostRecentSheetSummaryForOperation,
+  getSheetSummariesForOperation,
   completeSheetSummary,
   reopenSheetSummary,
   addManualSheetSummaryEntry,
@@ -217,6 +221,7 @@ import {
   upsertUserLocation,
   clearUserLocation,
   getUserLocationState,
+  getUserLocationHistories,
   getCustomMarkers,
   createCustomMarker,
   updateCustomMarker,
@@ -228,6 +233,7 @@ import {
   purgeOrphanedAttachments,
   getRsMappingWaypoints,
   upsertRsMappingWaypoint,
+  geocodeAddressList,
   getIncompleteRunningSheets,
   getOutstandingTodosByUser,
   getWeeklyActivityReport,
@@ -613,6 +619,11 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         const { id, ...rest } = input;
         await updateOperation(id, rest);
+        // The operation name is baked into every sheet's auto-generated
+        // title — resync them all when it changes.
+        if (rest.name !== undefined) {
+          await recomputeRunningSheetTitlesForOperation(id);
+        }
         return { success: true };
       }),
 
@@ -723,7 +734,7 @@ export const appRouter = router({
       .input(
         z.object({
           operationId: z.number(),
-          title: z.string().min(1),
+          sheetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
           targetId: z.number().optional().nullable(),
           sheetCins: z
             .array(
@@ -745,9 +756,24 @@ export const appRouter = router({
         if (input.targetId) {
           await linkTargetToOperation(input.targetId, input.operationId);
         }
+        // Title is auto-generated (DATE - AUTHOR CIN - OPERATION (TARGET)),
+        // never free-typed — see shared/runningSheetTitle.ts. Missing pieces
+        // (no author yet, no target) are left out, not blocked on.
+        const [operation, target] = await Promise.all([
+          getOperationById(input.operationId),
+          input.targetId ? getTargetById(input.targetId) : null,
+        ]);
+        const authorCIN = input.sheetCins?.find(c => c.isAuthor)?.cin ?? null;
+        const title = buildRunningSheetTitle({
+          sheetDate: input.sheetDate,
+          authorCIN,
+          operationName: operation?.name ?? "Untitled Operation",
+          targetSurname: target?.surname ?? null,
+        });
         const id = await createRunningSheet({
           operationId: input.operationId,
-          title: input.title,
+          title,
+          sheetDate: input.sheetDate,
           targetId: input.targetId ?? null,
           targetName: null,
           sheetCins: input.sheetCins ? JSON.stringify(input.sheetCins) : null,
@@ -759,7 +785,7 @@ export const appRouter = router({
           userName: ctx.user.cin ?? "Unknown",
           userCIN: ctx.user.cin ?? undefined,
           action: "sheet_created",
-          details: `Sheet "${input.title}" created`,
+          details: `Sheet "${title}" created`,
           createdAt: Date.now(),
         });
         return { id };
@@ -769,7 +795,10 @@ export const appRouter = router({
       .input(
         z.object({
           id: z.number(),
-          title: z.string().min(1).optional(),
+          sheetDate: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/)
+            .optional(),
           sheetCins: z
             .array(
               z.object({
@@ -804,6 +833,11 @@ export const appRouter = router({
         }
         if (sheetCins !== undefined) data.sheetCins = JSON.stringify(sheetCins);
         await updateRunningSheet(id, data);
+        // Title is auto-generated — resync it whenever anything it's built
+        // from (date, author) changes.
+        if (sheetCins !== undefined || input.sheetDate !== undefined) {
+          await recomputeRunningSheetTitle(id);
+        }
         await createAuditLog({
           sheetId: id,
           userId: ctx.user.id,
@@ -2361,6 +2395,8 @@ export const appRouter = router({
         } else {
           await setSheetTarget(input.sheetId, null);
         }
+        // Title's (TARGET) segment is auto-derived — resync it.
+        await recomputeRunningSheetTitle(input.sheetId);
         return { success: true };
       }),
 
@@ -2835,6 +2871,18 @@ export const appRouter = router({
         return { ok: true };
       }),
 
+    /** Recorded trail for the given users since sinceMs — powers the map's live-trace lines */
+    userLocationHistories: protectedProcedure
+      .input(
+        z.object({
+          userIds: z.array(z.number()),
+          sinceMs: z.number(),
+        })
+      )
+      .query(async ({ input }) => {
+        return getUserLocationHistories(input.userIds, input.sinceMs);
+      }),
+
     /** Get the target details (DEP/ARR/etc.) for a specific running sheet */
     getSheetTarget: protectedProcedure
       .input(z.object({ sheetId: z.number() }))
@@ -3162,6 +3210,17 @@ export const appRouter = router({
         const sheet = await getRunningSheetById(input.sheetId);
         if (!sheet) throw new TRPCError({ code: "NOT_FOUND" });
         let record = await getSheetSummary(input.sheetId);
+
+        // Start/finish time track the RS's own first/last timed row until
+        // the supervisor manually edits one — same "sync until touched"
+        // rule as sheetSummaryEntries.edited.
+        const rows = await getRowsBySheetId(input.sheetId);
+        const timedRows = rows
+          .filter(r => r.time)
+          .sort((a, b) => (a.timeMinutes ?? 0) - (b.timeMinutes ?? 0));
+        const derivedStartTime = timedRows[0]?.time ?? null;
+        const derivedFinishTime = timedRows[timedRows.length - 1]?.time ?? null;
+
         if (!record) {
           const operation = sheet.operationId
             ? await getOperationById(sheet.operationId)
@@ -3169,10 +3228,6 @@ export const appRouter = router({
           const target = sheet.targetId
             ? await getTargetById(sheet.targetId)
             : null;
-          const rows = await getRowsBySheetId(input.sheetId);
-          const timedRows = rows
-            .filter(r => r.time)
-            .sort((a, b) => (a.timeMinutes ?? 0) - (b.timeMinutes ?? 0));
           let cinRoster: { cin: string; isTeamLeader?: boolean }[] = [];
           try {
             cinRoster = sheet.sheetCins ? JSON.parse(sheet.sheetCins) : [];
@@ -3207,13 +3262,16 @@ export const appRouter = router({
                 : null;
 
           // Carry forward Investigator, Intel Support, Special Projects and
-          // Objectives from the most recent summary on the same Operation —
-          // everything else (including the Communication section) starts
-          // fresh on a new summary.
+          // Objectives from the most recent summary for the SAME target on
+          // this Operation (falls back to the most recent summary on the
+          // Operation when this sheet has no target) — everything else
+          // (including the Communication section) starts fresh on a new
+          // summary.
           const priorSummary = sheet.operationId
             ? await getMostRecentSheetSummaryForOperation(
                 sheet.operationId,
-                input.sheetId
+                input.sheetId,
+                sheet.targetId ?? null
               )
             : null;
 
@@ -3223,8 +3281,8 @@ export const appRouter = router({
             teamCins: orderTeamCins(cinRoster).join(", ") || null,
             operationName: operation?.name ?? null,
             dayDate: format(new Date(sheet.createdAt), "d MMMM yyyy"),
-            startTime: timedRows[0]?.time ?? null,
-            finishTime: timedRows[timedRows.length - 1]?.time ?? null,
+            startTime: derivedStartTime,
+            finishTime: derivedFinishTime,
             targetName: target?.name ?? sheet.targetName ?? null,
             location: extractSummaryLocation(rows),
             ioSupport: priorSummary?.ioSupport ?? null,
@@ -3232,8 +3290,44 @@ export const appRouter = router({
             specialProjects: priorSummary?.specialProjects ?? null,
             objectives: priorSummary?.objectives ?? null,
           });
+        } else {
+          const patch: {
+            sheetId: number;
+            startTime?: string | null;
+            finishTime?: string | null;
+          } = { sheetId: input.sheetId };
+          if (
+            !record.startTimeEdited &&
+            record.startTime !== derivedStartTime
+          ) {
+            patch.startTime = derivedStartTime;
+          }
+          if (
+            !record.finishTimeEdited &&
+            record.finishTime !== derivedFinishTime
+          ) {
+            patch.finishTime = derivedFinishTime;
+          }
+          if (patch.startTime !== undefined || patch.finishTime !== undefined) {
+            record = await upsertSheetSummary(patch);
+          }
         }
         return record;
+      }),
+
+    /** Every sheet's Supervisor Summary for an operation, newest first — the Deployment Rollup tab */
+    listByOperation: protectedProcedure
+      .input(
+        z.object({
+          operationId: z.number(),
+          targetId: z.number().nullable().optional(),
+        })
+      )
+      .query(async ({ input }) => {
+        return getSheetSummariesForOperation(
+          input.operationId,
+          input.targetId ?? null
+        );
       }),
 
     /** Update summary fields (free text, save-as-you-go) */
@@ -3268,7 +3362,14 @@ export const appRouter = router({
           });
         }
         const userCIN = ctx.user.cin ?? ctx.user.username ?? "Unknown";
-        return upsertSheetSummary({ ...input, lastEditedByCIN: userCIN });
+        return upsertSheetSummary({
+          ...input,
+          lastEditedByCIN: userCIN,
+          // A manual edit here sticks — stop auto-syncing that field from
+          // the RS's rows (see getBySheet).
+          ...(input.startTime !== undefined ? { startTimeEdited: true } : {}),
+          ...(input.finishTime !== undefined ? { finishTimeEdited: true } : {}),
+        });
       }),
 
     /** Team Leader (or Admin) acknowledges the summary is complete — locks it */
@@ -4538,6 +4639,15 @@ export const appRouter = router({
         const base64 = Buffer.from(arrayBuffer).toString("base64");
         const dataUrl = `data:${contentType};base64,${base64}`;
         return { dataUrl };
+      }),
+
+    /** Geocodes a plain list of address strings (cache-first, same geocoder
+     * as the Heat Map) — used by the Supervisor Summary export to plot its
+     * own Location column on a map page. */
+    geocodeAddresses: protectedProcedure
+      .input(z.object({ addresses: z.array(z.string()) }))
+      .query(async ({ input }) => {
+        return geocodeAddressList(input.addresses);
       }),
 
     getWaypoints: protectedProcedure

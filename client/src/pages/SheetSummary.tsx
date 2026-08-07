@@ -1,4 +1,4 @@
-import { trpc } from "@/lib/trpc";
+import { trpc, trpcClient } from "@/lib/trpc";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -359,7 +359,7 @@ function SummaryTimePicker({
                 commit(v, minute, period);
               }}
             >
-              <SelectTrigger className="w-16 h-8 text-sm font-mono">
+              <SelectTrigger className="w-[70px] h-8 text-sm font-mono">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -383,7 +383,7 @@ function SummaryTimePicker({
                 commit(hour, v, period);
               }}
             >
-              <SelectTrigger className="w-16 h-8 text-sm font-mono">
+              <SelectTrigger className="w-[70px] h-8 text-sm font-mono">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -406,7 +406,7 @@ function SummaryTimePicker({
                 commit(hour, minute, v);
               }}
             >
-              <SelectTrigger className="w-16 h-8 text-sm">
+              <SelectTrigger className="w-[76px] h-8 text-sm">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -456,8 +456,10 @@ function exportSummaryToPDF(params: {
   vehicles: SheetSummaryVehicleLike[];
   entries: SheetSummaryEntryLike[];
   record: SheetSummaryRecordLike | null | undefined;
+  mapImageDataUrl: string | null;
 }) {
-  const { sheetTitle, form, vehicles, entries, record } = params;
+  const { sheetTitle, form, vehicles, entries, record, mapImageDataUrl } =
+    params;
   const esc = (s: string | null | undefined) =>
     (s ?? "")
       .replace(/&/g, "&amp;")
@@ -569,6 +571,7 @@ tfoot { display:table-footer-group; }
 .section-title { font-size:10px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${BLUE_DARK} !important; padding:7px 14px; background:${BLUE_LIGHT} !important; border-bottom:1px solid ${GREY_BORDER}; }
 .section-body { padding:12px 14px; }
 .plain-section { margin-bottom:18px; }
+.page-break { page-break-before:always; break-before:page; }
 .plain-section-title { font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${BLUE_DARK} !important; padding:6px 10px; background:${BLUE_LIGHT} !important; border-left:3px solid ${BLUE_MID}; margin-bottom:10px; }
 .detail-grid { display:grid; grid-template-columns:130px 1fr; gap:0; font-size:10.5px; }
 .detail-grid > div { padding:4px 6px; }
@@ -644,6 +647,14 @@ tfoot { display:table-footer-group; }
   <div class="footer-note">
     <span>Generated: ${generatedAt}</span>
   </div>
+  ${
+    mapImageDataUrl
+      ? `<div class="page-break">${plainSection(
+          "Location Map",
+          `<img src="${mapImageDataUrl}" style="width:100%;border-radius:6px;display:block;border:1px solid ${GREY_BORDER}" />`
+        )}</div>`
+      : ""
+  }
 </div>
 </td></tr></tbody>
 </table>
@@ -880,6 +891,65 @@ export default function SheetSummaryPage() {
     }, 800);
   }
 
+  // ── PDF export (with a geocoded map as its own final page) ────────────────
+  const [exportingPdf, setExportingPdf] = useState(false);
+  async function handleExportPdf() {
+    setExportingPdf(true);
+    try {
+      let mapImageDataUrl: string | null = null;
+      const addresses = Array.from(
+        new Set(
+          (entries ?? [])
+            .map(e => e.location?.trim())
+            .filter((loc): loc is string => !!loc)
+        )
+      );
+      if (addresses.length > 0) {
+        try {
+          const geocoded = await trpcClient.rsMapping.geocodeAddresses.query({
+            addresses,
+          });
+          if (geocoded.length > 0) {
+            const waypoints = geocoded.map((g, i) => ({
+              lat: g.lat,
+              lng: g.lng,
+              index: i,
+              // Default (full-size) pin, not "small" — needed for the
+              // number label below; Static Maps can't label its small pins.
+              // Red, not the endpoint's default indigo — matches the red
+              // used for target/observation pins everywhere else, and
+              // stands out against the roadmap tiles better than purple.
+              colour: "#dc2626",
+              // Static Maps labels are a single character, so only pins
+              // 1-9 get numbered; the 10th+ address renders unlabelled
+              // rather than silently showing a truncated/wrong digit.
+              label: i < 9 ? String(i + 1) : undefined,
+            }));
+            const result = await trpcClient.rsMapping.getStaticMapImage.query({
+              waypoints,
+              size: "800x500",
+            });
+            mapImageDataUrl = result.dataUrl;
+          }
+        } catch {
+          toast.error(
+            "Couldn't build the location map — exporting without it."
+          );
+        }
+      }
+      exportSummaryToPDF({
+        sheetTitle: sheet?.title ?? "Running Sheet",
+        form,
+        vehicles: vehicles ?? [],
+        entries: entries ?? [],
+        record,
+        mapImageDataUrl,
+      });
+    } finally {
+      setExportingPdf(false);
+    }
+  }
+
   return (
     <DashboardLayout>
       <div className="max-w-3xl mx-auto px-4 py-6">
@@ -931,19 +1001,12 @@ export default function SheetSummaryPage() {
             </div>
           </div>
           <button
-            onClick={() =>
-              exportSummaryToPDF({
-                sheetTitle: sheet?.title ?? "Running Sheet",
-                form,
-                vehicles: vehicles ?? [],
-                entries: entries ?? [],
-                record,
-              })
-            }
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border bg-card text-sm font-medium text-foreground hover:bg-muted/50 transition-colors shrink-0"
+            onClick={handleExportPdf}
+            disabled={exportingPdf}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border bg-card text-sm font-medium text-foreground hover:bg-muted/50 transition-colors shrink-0 disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <Download className="w-4 h-4" />
-            Export PDF
+            {exportingPdf ? "Exporting…" : "Export PDF"}
           </button>
         </div>
 

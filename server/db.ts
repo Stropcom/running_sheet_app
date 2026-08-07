@@ -64,6 +64,7 @@ import {
   WipcMemberRecord,
   WipcOfficerProfile,
   userLocations,
+  userLocationHistory,
   customMapMarkers,
   intelligenceGeocodeCache,
   CustomMapMarker,
@@ -85,6 +86,7 @@ import {
   type DedupType,
   type DedupCandidateEntity,
 } from "./entityDedup";
+import { buildRunningSheetTitle } from "../shared/runningSheetTitle";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 let _pool: Awaited<ReturnType<typeof createPromisePool>> | null = null;
@@ -568,6 +570,67 @@ export async function updateRunningSheet(
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(runningSheets).set(data).where(eq(runningSheets.id, id));
+}
+
+/** Recomputes and overwrites a sheet's auto-generated title from its
+ * current date/author/operation/target — call this after anything that
+ * feeds the title changes (sheetDate, sheetCins/author, targetId, or the
+ * operation's own name). Missing pieces are simply left out until they're
+ * known, per buildRunningSheetTitle. */
+export async function recomputeRunningSheetTitle(
+  sheetId: number
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const sheet = await getRunningSheetById(sheetId);
+  if (!sheet) return;
+
+  const [operation, target] = await Promise.all([
+    getOperationById(sheet.operationId),
+    sheet.targetId ? getTargetById(sheet.targetId) : Promise.resolve(null),
+  ]);
+  if (!operation) return;
+
+  let authorCIN: string | null = null;
+  if (sheet.sheetCins) {
+    try {
+      const roster: { cin: string; isAuthor?: boolean }[] = JSON.parse(
+        sheet.sheetCins
+      );
+      authorCIN = roster.find(c => c.isAuthor)?.cin ?? null;
+    } catch {
+      authorCIN = null;
+    }
+  }
+
+  const title = buildRunningSheetTitle({
+    sheetDate: sheet.sheetDate,
+    createdAt: sheet.createdAt,
+    authorCIN,
+    operationName: operation.name,
+    targetSurname: target?.surname ?? null,
+  });
+
+  await db
+    .update(runningSheets)
+    .set({ title })
+    .where(eq(runningSheets.id, sheetId));
+}
+
+/** Resyncs every sheet under an operation — used when the operation itself
+ * is renamed, since the operation name is baked into every sheet's title. */
+export async function recomputeRunningSheetTitlesForOperation(
+  operationId: number
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const sheets = await db
+    .select({ id: runningSheets.id })
+    .from(runningSheets)
+    .where(eq(runningSheets.operationId, operationId));
+  for (const s of sheets) {
+    await recomputeRunningSheetTitle(s.id);
+  }
 }
 
 export async function softDeleteSheet(id: number, cin: string) {
@@ -1323,17 +1386,17 @@ export interface FaceMatchCandidate {
 }
 
 // Threshold picked from empirical testing against one real multi-face photo
-// (same face re-encoded ~0.99, mirrored ~0.89, different people ~0.1-0.3) —
-// deliberately generous since a missed real match is worse than an extra
-// candidate the officer just rejects. Lowered from an initial 0.35 after
-// real operational photos showed the on-device MobileFace embedding's
-// discriminative margin is narrow under real lighting/angle/pose variation
-// (different people ranged roughly -0.06 to 0.31, one confirmed same-person
-// cross-photo pair scored 0.45) — 0.35 was missing true matches that sat
-// just under it. Still just a starting point for further calibration:
-// matches are always human-confirmed, never applied automatically, so a
-// loose threshold only means more suggestions to review, not bad data.
-export const FACE_MATCH_THRESHOLD = 0.25;
+// (same face re-encoded ~0.99, mirrored ~0.89, different people ~0.1-0.3).
+// Was lowered to 0.25 after real operational photos showed the on-device
+// MobileFace embedding's discriminative margin is narrow under real
+// lighting/angle/pose variation (different people ranged roughly -0.06 to
+// 0.31, one confirmed same-person cross-photo pair scored 0.45) — 0.25 was
+// generous specifically to avoid missing that kind of true match. Raised
+// back to 0.35 to cut down on false-positive suggestion volume; re-lower if
+// operational use shows genuine matches being missed again. Matches are
+// always human-confirmed, never applied automatically, so this only trades
+// off review noise vs. recall, never data correctness.
+export const FACE_MATCH_THRESHOLD = 0.35;
 const FACE_MATCH_MAX_RESULTS = 5;
 
 // Compares a newly-confirmed face's embedding against every other confirmed
@@ -3840,6 +3903,40 @@ export async function resolveLatLng(
   }
 }
 
+/** Batch-geocode a list of raw address strings via the same cache-first
+ * geocoder as the Heat Map, deduping repeats — used by the Supervisor
+ * Summary export to plot its own Location column on a map page rather than
+ * re-deriving addresses from row text. */
+export async function geocodeAddressList(
+  addresses: string[]
+): Promise<{ address: string; lat: number; lng: number }[]> {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const raw of addresses) {
+    const address = raw.trim();
+    if (!address) continue;
+    const key = normalizeEntityLabel(address);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(address);
+  }
+
+  const results = await Promise.all(
+    unique.map(async address => {
+      const coords = await resolveLatLng(
+        normalizeEntityLabel(address),
+        address
+      );
+      if (!coords) return null;
+      return { address, lat: coords.lat, lng: coords.lng };
+    })
+  );
+
+  return results.filter(
+    (r): r is { address: string; lat: number; lng: number } => r !== null
+  );
+}
+
 // ─── Weekly Activity Report ─────────────────────────────────────────────────
 // "What the unit did this week" — operations coverage, newly-gathered
 // intelligence, target visit activity, and governance completed, all for a
@@ -4981,10 +5078,32 @@ export async function getAllIntelligenceEntities(): Promise<
         if (
           (entry.type === "person" ||
             entry.type === "address" ||
-            entry.type === "business") &&
+            entry.type === "business" ||
+            entry.type === "vehicle") &&
           entry.rawShortForm !== entry.shortForm
         ) {
           searchTerms.push(entry.rawShortForm);
+        }
+        // A vehicle is identified by its registration, and later rows refer
+        // back to it however the officer typed it that day — "Vehicle
+        // 1FAD093", "in 1FAD093", or the bare plate. Searching the plate
+        // itself catches all of those. Without it the only term searched is
+        // the enriched display form ("1FAD093 red Mercedes SUV"), which this
+        // pipeline assembles and which therefore never appears verbatim in a
+        // later row — so every bare vehicle re-mention went uncounted, and a
+        // vehicle never co-occurred with the target driving it.
+        if (entry.type === "vehicle") {
+          const rego = vehicleRegoKey(entry.shortForm);
+          const alreadySearched = searchTerms.some(
+            t => t.toLowerCase() === rego
+          );
+          if (
+            rego &&
+            rego !== entry.shortForm.toLowerCase() &&
+            !alreadySearched
+          ) {
+            searchTerms.push(rego);
+          }
         }
 
         let found = false;
@@ -5432,162 +5551,100 @@ export interface AssociationGraph {
   edges: AssocEdge[];
 }
 
+/**
+ * Co-occurrence graph for the Association Map / Ego Network.
+ *
+ * Built on getAllIntelligenceEntities() — the same two-pass, alias-merged
+ * pipeline the Intelligence folder's own entity list uses — rather than
+ * running extractEntitiesFromText() per row. That distinction is the whole
+ * point: extractEntitiesFromText only recognises entities that are
+ * bracket-introduced in the row it is handed, but the running sheet
+ * convention is to bracket-introduce an entity once and then refer to it
+ * bare ("HOGAN entered Vehicle 1FAD093"). Per-row extraction therefore sees
+ * at most one entity in almost every row, finds no pairs, and produces a
+ * graph with zero edges. Grouping the resolved entities' own occurrences by
+ * rowId picks up those bare re-mentions and yields the real co-occurrences.
+ *
+ * Occurrences with rowId 0 are synthetic — they come from a Target Registry
+ * card rather than an observation — so they make an entity appear as a node
+ * but never manufacture an edge.
+ */
 export async function getAssociationGraph(
   operationIds?: number[]
 ): Promise<AssociationGraph> {
   const db = await getDb();
   if (!db) return { nodes: [], edges: [] };
 
-  // Fetch all rows with their observations, filtered by operation if specified
-  // Exclude rows from soft-deleted sheets
-  let rowQuery = db
-    .select({
-      rowId: sheetRows.id,
-      observation: sheetRows.observation,
-      sheetId: sheetRows.sheetId,
-      operationId: runningSheets.operationId,
-      operationName: operations.name,
-    })
-    .from(sheetRows)
-    .innerJoin(
-      runningSheets,
-      and(
-        eq(sheetRows.sheetId, runningSheets.id),
-        isNull(runningSheets.deletedAt)
-      )
-    )
-    .innerJoin(operations, eq(runningSheets.operationId, operations.id));
+  const scoped = operationIds && operationIds.length > 0 ? operationIds : null;
+  const entities = await getAllIntelligenceEntities();
 
-  const allRows = await rowQuery;
-  const filteredRows =
-    operationIds && operationIds.length > 0
-      ? allRows.filter(r => operationIds.includes(r.operationId))
-      : allRows;
-
-  // Build TGT alias map from targets (exclude soft-deleted)
-  const allTargets = await db
-    .select({
-      id: targets.id,
-      name: targets.name,
-      tgt: targets.tgt,
-      operationId: targets.operationId,
-    })
-    .from(targets)
-    .where(isNull(targets.deletedAt));
-  const tgtAliasMap = new Map<string, string>(); // alias -> full name
-  for (const t of allTargets) {
-    if (t.tgt?.trim()) tgtAliasMap.set(t.tgt.trim().toUpperCase(), t.name);
-  }
-
-  // nodeMap: id -> AssocNode (accumulate)
   const nodeMap = new Map<string, AssocNode>();
+  // rowId -> node ids mentioned in that row
+  const rowMembers = new Map<number, Set<string>>();
 
-  // Add target nodes from target cards
-  for (const t of allTargets) {
-    if (
-      operationIds &&
-      operationIds.length > 0 &&
-      t.operationId &&
-      !operationIds.includes(t.operationId)
-    )
-      continue;
-    const nodeId = `target::${t.name}`;
-    if (!nodeMap.has(nodeId)) {
-      nodeMap.set(nodeId, {
+  for (const entity of entities) {
+    const type: AssocNode["type"] = entity.isTarget
+      ? "target"
+      : (entity.type as AssocNode["type"]);
+    const nodeId = entity.isTarget
+      ? `target::${entity.shortForm}`
+      : `${entity.type}::${entity.shortForm.toLowerCase()}`;
+
+    const relevant = scoped
+      ? entity.occurrences.filter(o => scoped.includes(o.operationId))
+      : entity.occurrences;
+    if (relevant.length === 0) continue;
+
+    let node = nodeMap.get(nodeId);
+    if (!node) {
+      node = {
         id: nodeId,
-        label: t.name,
-        type: "target",
-        occurrences: 0,
-        operationIds: [],
-        operationNames: [],
-      });
-    }
-  }
-
-  // edgeWeight: "nodeId1|||nodeId2" -> count (always sort ids so order is consistent)
-  const edgeWeight = new Map<string, number>();
-
-  const ensureNode = (
-    id: string,
-    label: string,
-    type: AssocNode["type"],
-    opId: number,
-    opName: string
-  ) => {
-    if (!nodeMap.has(id)) {
-      nodeMap.set(id, {
-        id,
-        label,
+        label: entity.shortForm,
         type,
         occurrences: 0,
         operationIds: [],
         operationNames: [],
-      });
+      };
+      nodeMap.set(nodeId, node);
     }
-    const n = nodeMap.get(id)!;
-    n.occurrences++;
-    if (!n.operationIds.includes(opId)) {
-      n.operationIds.push(opId);
-      n.operationNames.push(opName);
-    }
-  };
 
-  const addEdge = (a: string, b: string) => {
-    if (a === b) return;
-    const key = [a, b].sort().join("|||");
-    edgeWeight.set(key, (edgeWeight.get(key) ?? 0) + 1);
-  };
-
-  for (const row of filteredRows) {
-    if (!row.observation) continue;
-    const rawEntities = extractEntitiesFromText(row.observation);
-
-    // Resolve TGT aliases to canonical target names
-    const rowNodeIds: string[] = [];
-    for (const e of rawEntities) {
-      let nodeId: string;
-      let label: string;
-      let nodeType: AssocNode["type"];
-
-      if (e.type === "person") {
-        const canonical = tgtAliasMap.get(e.shortForm.toUpperCase());
-        if (canonical) {
-          nodeId = `target::${canonical}`;
-          label = canonical;
-          nodeType = "target";
-        } else {
-          nodeId = `person::${e.shortForm.toLowerCase()}`;
-          label = e.shortForm;
-          nodeType = "person";
-        }
-      } else {
-        nodeId = `${e.type}::${e.shortForm.toLowerCase()}`;
-        label = e.shortForm;
-        nodeType = e.type as AssocNode["type"];
+    for (const occ of relevant) {
+      node.occurrences++;
+      if (!node.operationIds.includes(occ.operationId)) {
+        node.operationIds.push(occ.operationId);
+        node.operationNames.push(occ.operationName);
       }
-
-      ensureNode(nodeId, label, nodeType, row.operationId, row.operationName);
-      rowNodeIds.push(nodeId);
-    }
-
-    // Create edges between every pair of entities in this row
-    for (let i = 0; i < rowNodeIds.length; i++) {
-      for (let j = i + 1; j < rowNodeIds.length; j++) {
-        addEdge(rowNodeIds[i], rowNodeIds[j]);
+      // rowId 0 is a registry-card mention, not a real observation — it
+      // makes the entity visible but must not create a co-occurrence.
+      if (occ.rowId > 0) {
+        if (!rowMembers.has(occ.rowId)) rowMembers.set(occ.rowId, new Set());
+        rowMembers.get(occ.rowId)!.add(nodeId);
       }
     }
   }
 
-  // Build edges array
+  // Every pair of entities sharing a row is one co-occurrence.
+  const edgeWeight = new Map<string, number>();
+  for (const members of Array.from(rowMembers.values())) {
+    const ids = Array.from(members);
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const key = [ids[i], ids[j]].sort().join("|||");
+        edgeWeight.set(key, (edgeWeight.get(key) ?? 0) + 1);
+      }
+    }
+  }
+
   const edges: AssocEdge[] = [];
   for (const [key, weight] of Array.from(edgeWeight.entries())) {
-    const [src, dst] = key.split("|||");
-    edges.push({ source: src, target: dst, weight });
+    const [source, target] = key.split("|||");
+    edges.push({ source, target, weight });
   }
 
-  // Increment occurrences for target nodes from target cards (they may have 0 row appearances)
-  for (const [, node] of Array.from(nodeMap.entries())) {
-    if (node.type === "target" && node.occurrences === 0) node.occurrences = 1;
+  // A registry-only entity has real presence in the app even with no
+  // observation behind it yet — keep it visible rather than showing 0.
+  for (const node of Array.from(nodeMap.values())) {
+    if (node.occurrences === 0) node.occurrences = 1;
   }
 
   return { nodes: Array.from(nodeMap.values()), edges };
@@ -6108,6 +6165,8 @@ export interface SheetSummaryUpsertInput {
   dayDate?: string | null;
   startTime?: string | null;
   finishTime?: string | null;
+  startTimeEdited?: boolean;
+  finishTimeEdited?: boolean;
   targetName?: string | null;
   location?: string | null;
   dismissedVehicleKeys?: string | null;
@@ -6420,19 +6479,44 @@ function buildSummaryEntryFields(
 }
 
 /**
+ * A row that is nothing but the "Travelled Via" route mechanics — the bare
+ * "continued via:" trigger, its paired street-list row, or a self-contained
+ * "continued via: <streets>, whereat" row — carries no observational
+ * content of its own, so it never gets a Summary line. This is deliberately
+ * narrower than "the row mentions continued via" — a row that WRAPS a via
+ * clause in real narrative (e.g. "departed 44 Smith St and continued via:
+ * Jones Ave, whereat continued surveillance") still gets a line; only the
+ * via clause inside it is shortened, by buildSummaryAbbreviatedText's
+ * "departed ... continued via:" step. A blanket exclusion on any row
+ * mentioning "continued via" would silently drop that real narrative along
+ * with the route detail.
+ */
+function isPureTravelledViaRow(observation: string): boolean {
+  const trimmed = observation.trim();
+  if (/^continued via[;:]\s*$/i.test(trimmed)) return true;
+  return /^continued via[;:].*\bwhereat[;:.,]?\s*$/i.test(trimmed);
+}
+
+function isPureTravelledViaFollowUp(
+  observation: string,
+  previousObservation: string | null
+): boolean {
+  if (!previousObservation) return false;
+  if (!/^continued via[;:]\s*$/i.test(previousObservation.trim())) return false;
+  return /whereat[;:.,]?\s*$/i.test(observation.trim());
+}
+
+/**
  * Returns the Summary tab's per-row entry list, first append-only syncing in
- * any RS row with real observation text that doesn't have an entry yet.
- * Existing entries (including ones the supervisor has edited or soft-deleted)
- * are never touched or regenerated.
- *
- * Every content row gets a line here, including "Travelled Via" rows
- * ("continued via: …" route narratives, typically part of a departure —
- * see the "d"/"ar" shortcut expansions in ensureDefaultShortcuts). Court
- * Statements deliberately exclude those (routers.ts's statement.previewData)
- * since a witness statement doesn't need turn-by-turn route detail, but the
- * Summary's whole purpose is a comprehensive log of the sheet, not a curated
- * narrative — skipping them here just silently dropped every departure
- * observation that happened to include a route.
+ * any RS row with real observation text that doesn't have an entry yet —
+ * except pure "Travelled Via" street-list rows (see isPureTravelledViaRow),
+ * which are skipped entirely; a witness/supervisor reading the Summary
+ * doesn't need the turn-by-turn route, same reasoning Court Statements
+ * already apply (routers.ts's statement.previewData). That check only ever
+ * gates new inserts — an existing line is never removed or regenerated,
+ * even if a later edit makes its row match the pattern. Existing entries
+ * (including ones the supervisor has edited or soft-deleted) are never
+ * touched or regenerated either way.
  *
  * While the summary is marked complete, none of this runs at all — no new
  * lines are added and no existing ones are refreshed, even if RS rows keep
@@ -6461,6 +6545,19 @@ export async function getSheetSummaryEntries(
   const contentRows = allRows.filter(r => (r.observation ?? "").trim());
   const contentRowById = new Map(contentRows.map(r => [r.id, r]));
 
+  const pureTravelledViaRowIds = new Set<number>();
+  for (let i = 0; i < allRows.length; i++) {
+    const obs = allRows[i].observation ?? "";
+    if (!obs.trim()) continue;
+    const prevObs = i > 0 ? allRows[i - 1].observation : null;
+    if (
+      isPureTravelledViaRow(obs) ||
+      isPureTravelledViaFollowUp(obs, prevObs)
+    ) {
+      pureTravelledViaRowIds.add(allRows[i].id);
+    }
+  }
+
   const existing = await db
     .select()
     .from(sheetSummaryEntries)
@@ -6470,7 +6567,9 @@ export async function getSheetSummaryEntries(
 
   if (!isComplete) {
     const existingRowIds = new Set(existing.map(e => e.rowId));
-    const missing = contentRows.filter(r => !existingRowIds.has(r.id));
+    const missing = contentRows.filter(
+      r => !existingRowIds.has(r.id) && !pureTravelledViaRowIds.has(r.id)
+    );
     if (missing.length > 0) {
       await db.insert(sheetSummaryEntries).values(
         missing.map(r => {
@@ -6652,25 +6751,114 @@ export async function getSheetSummarySupportHistory(
  * (Location, Team, Target, the Communication section, Critical Decisions,
  * Issues) starts blank/derived fresh per the supervisor's spec.
  */
+/**
+ * Donor sheet for carry-forward fields (Investigator, Intel Support, Special
+ * Projects, Objectives — see summary.getBySheet). When this sheet has a
+ * target, only a summary for that SAME target counts — Special Projects
+ * ticked for one target shouldn't leak onto the next summary for a
+ * different target just because it happens to be the most recently created
+ * sheet in the operation. Falls back to the most recent summary anywhere in
+ * the operation when this sheet has no target to scope by.
+ */
 export async function getMostRecentSheetSummaryForOperation(
   operationId: number,
-  excludeSheetId: number
+  excludeSheetId: number,
+  targetId?: number | null
 ): Promise<SheetSummary | null> {
   const db = await getDb();
   if (!db) return null;
+  const conditions = [
+    eq(runningSheets.operationId, operationId),
+    sql`${runningSheets.id} != ${excludeSheetId}`,
+  ];
+  if (targetId) conditions.push(eq(runningSheets.targetId, targetId));
   const rows = await db
     .select({ summary: sheetSummaries })
     .from(sheetSummaries)
     .innerJoin(runningSheets, eq(sheetSummaries.sheetId, runningSheets.id))
-    .where(
-      and(
-        eq(runningSheets.operationId, operationId),
-        sql`${runningSheets.id} != ${excludeSheetId}`
-      )
-    )
+    .where(and(...conditions))
     .orderBy(desc(runningSheets.createdAt))
     .limit(1);
   return rows[0]?.summary ?? null;
+}
+
+export interface OperationSummaryRollupRow {
+  sheetId: number;
+  sheetTitle: string;
+  sheetDate: string | null;
+  createdAt: Date;
+  targetId: number | null;
+  targetName: string | null;
+  teamLabel: string | null;
+  teamCins: string | null;
+  startTime: string | null;
+  finishTime: string | null;
+  location: string | null;
+  ioSupport: string | null;
+  intelSupport: string | null;
+  ioContactTiming: string | null;
+  ioContactMethod: string | null;
+  objectives: string | null;
+  specialProjects: string | null;
+  criticalDecisions: string | null;
+  issues: string | null;
+  completedAt: number | null;
+}
+
+/**
+ * Every running sheet's Supervisor Summary for an operation (optionally
+ * narrowed to one target), newest first — the "Deployment Rollup" view. Only
+ * sheets that already have a summary record are included (a sheet nobody has
+ * opened the Summary tab on yet has nothing to roll up).
+ */
+export async function getSheetSummariesForOperation(
+  operationId: number,
+  targetId?: number | null
+): Promise<OperationSummaryRollupRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [
+    eq(runningSheets.operationId, operationId),
+    isNull(runningSheets.deletedAt),
+  ];
+  if (targetId) conditions.push(eq(runningSheets.targetId, targetId));
+
+  const rows = await db
+    .select({
+      sheetId: runningSheets.id,
+      sheetTitle: runningSheets.title,
+      sheetDate: runningSheets.sheetDate,
+      createdAt: runningSheets.createdAt,
+      targetId: runningSheets.targetId,
+      summary: sheetSummaries,
+    })
+    .from(runningSheets)
+    .innerJoin(sheetSummaries, eq(sheetSummaries.sheetId, runningSheets.id))
+    .where(and(...conditions))
+    .orderBy(desc(runningSheets.sheetDate), desc(runningSheets.id));
+
+  return rows.map(r => ({
+    sheetId: r.sheetId,
+    sheetTitle: r.sheetTitle,
+    sheetDate: r.sheetDate,
+    createdAt: r.createdAt,
+    targetId: r.targetId,
+    targetName: r.summary.targetName,
+    teamLabel: r.summary.teamLabel,
+    teamCins: r.summary.teamCins,
+    startTime: r.summary.startTime,
+    finishTime: r.summary.finishTime,
+    location: r.summary.location,
+    ioSupport: r.summary.ioSupport,
+    intelSupport: r.summary.intelSupport,
+    ioContactTiming: r.summary.ioContactTiming,
+    ioContactMethod: r.summary.ioContactMethod,
+    objectives: r.summary.objectives,
+    specialProjects: r.summary.specialProjects,
+    criticalDecisions: r.summary.criticalDecisions,
+    issues: r.summary.issues,
+    completedAt: r.summary.completedAt,
+  }));
 }
 
 // ─── Target Shortcuts ─────────────────────────────────────────────────────────
@@ -8331,6 +8519,8 @@ export interface IntelMapLocation {
     v2f: string | null;
     operationId: number | null;
     operationName: string | null;
+    /** Set when this pin is one of the target's Additional Addresses (e.g. "Work — KFC Cannington") rather than the home address or a co-occurrence match */
+    addressLabel: string | null;
   }>;
   /** Associates (non-target persons) seen at this location in observation rows */
   assocPersons: string[];
@@ -8388,6 +8578,7 @@ export async function getIntelMappingLocations(
       v1: targets.v1,
       v2f: targets.v2f,
       v2: targets.v2,
+      extraAddresses: targets.extraAddresses,
       operationId: targets.operationId,
       operationName: operations.name,
     })
@@ -8407,6 +8598,7 @@ export async function getIntelMappingLocations(
       v1: targets.v1,
       v2f: targets.v2f,
       v2: targets.v2,
+      extraAddresses: targets.extraAddresses,
       operationId: operationTargetLinks.operationId,
       operationName: operations.name,
     })
@@ -8474,6 +8666,41 @@ export async function getIntelMappingLocations(
           v2f: t.v2f?.trim() || t.v2?.trim() || null,
           operationId: t.operationId ?? null,
           operationName: t.operationName ?? null,
+          addressLabel: null,
+        });
+      }
+    }
+
+    // Additional Addresses from the target's Add Target form (e.g. "Work —
+    // KFC Cannington") get their own pins too — purple (observation), same
+    // as any other non-home location, since only the home address counts as
+    // "target_address" red. Each still carries the target's card details so
+    // the popup reads exactly like the home-address pin, plus the address's
+    // own label to say which additional address this is.
+    let extraAddrs: { full?: string; label?: string }[] = [];
+    try {
+      extraAddrs = t.extraAddresses ? JSON.parse(t.extraAddresses) : [];
+    } catch {
+      extraAddrs = [];
+    }
+    for (const ea of extraAddrs) {
+      const addr = ea.full?.trim();
+      if (!addr) continue;
+      const loc = ensureLocation(addr);
+      // Don't downgrade a pin that's already this target's (or another
+      // target's) home address at the same spot.
+      if (loc.type !== "target_address") loc.type = "observation";
+      if (!loc.linkedTargets.find(lt => lt.targetId === t.id)) {
+        loc.linkedTargets.push({
+          targetId: t.id,
+          name: t.name,
+          tgt: t.tgt,
+          hbf: t.hbf?.trim() || t.hb?.trim() || null,
+          v1f: t.v1f?.trim() || t.v1?.trim() || null,
+          v2f: t.v2f?.trim() || t.v2?.trim() || null,
+          operationId: t.operationId ?? null,
+          operationName: t.operationName ?? null,
+          addressLabel: ea.label?.trim() || "Additional address",
         });
       }
     }
@@ -8521,6 +8748,7 @@ export async function getIntelMappingLocations(
               hbf: tData.hbf?.trim() || tData.hb?.trim() || null,
               v1f: tData.v1f?.trim() || tData.v1?.trim() || null,
               v2f: tData.v2f?.trim() || tData.v2?.trim() || null,
+              addressLabel: null,
               operationId: tData.operationId ?? null,
               operationName: tData.operationName ?? null,
             });
@@ -8662,6 +8890,20 @@ export async function upsertUserLocation(
       },
     });
 
+  if (sharingEnabled) {
+    await recordUserLocationHistory(
+      userId,
+      deviceId,
+      lat,
+      lng,
+      speed,
+      heading,
+      accuracy,
+      opIdsJson,
+      now
+    );
+  }
+
   // Auto-cleanup: remove stale rows for this user that are not sharing and older than 2 hours.
   // This prevents accumulation of orphaned device rows from old sessions.
   const twoHoursAgo = now - 2 * 60 * 60 * 1000;
@@ -8729,6 +8971,141 @@ export async function getUserLocationState(
     opIds = [];
   }
   return { sharingEnabled: rows[0].sharingEnabled, operationIds: opIds };
+}
+
+// ─── User Location History (trail / live trace) ────────────────────────────────
+
+function haversineMetres(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number
+): number {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+// Only append a trail point when the officer has moved a meaningful distance
+// since the last recorded point, or enough time has passed — GPS pings can
+// fire every few seconds, and recording every single one would flood the
+// table for no benefit. A slower stationary heartbeat still keeps the trail
+// continuous (and useful for "where was officer X at time Y") when parked.
+const HISTORY_MOVE_THRESHOLD_M = 25;
+const HISTORY_MOVING_MIN_INTERVAL_MS = 15_000;
+const HISTORY_STATIONARY_HEARTBEAT_MS = 120_000;
+
+async function recordUserLocationHistory(
+  userId: number,
+  deviceId: string,
+  lat: number,
+  lng: number,
+  speed: number | null,
+  heading: number | null,
+  accuracy: number | null,
+  operationIdsJson: string,
+  now: number
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  const [lastPoint] = await db
+    .select({
+      lat: userLocationHistory.lat,
+      lng: userLocationHistory.lng,
+      recordedAt: userLocationHistory.recordedAt,
+    })
+    .from(userLocationHistory)
+    .where(
+      and(
+        eq(userLocationHistory.userId, userId),
+        eq(userLocationHistory.deviceId, deviceId)
+      )
+    )
+    .orderBy(desc(userLocationHistory.recordedAt))
+    .limit(1);
+
+  let shouldRecord = !lastPoint;
+  if (lastPoint) {
+    const elapsed = now - lastPoint.recordedAt;
+    const distance = haversineMetres(lastPoint.lat, lastPoint.lng, lat, lng);
+    if (
+      distance >= HISTORY_MOVE_THRESHOLD_M &&
+      elapsed >= HISTORY_MOVING_MIN_INTERVAL_MS
+    ) {
+      shouldRecord = true;
+    } else if (elapsed >= HISTORY_STATIONARY_HEARTBEAT_MS) {
+      shouldRecord = true;
+    }
+  }
+  if (!shouldRecord) return;
+
+  await db.insert(userLocationHistory).values({
+    userId,
+    deviceId,
+    lat,
+    lng,
+    speed,
+    heading,
+    accuracy,
+    operationIds: operationIdsJson,
+    recordedAt: now,
+  });
+}
+
+export interface UserLocationHistoryPointDTO {
+  lat: number;
+  lng: number;
+  speed: number | null;
+  recordedAt: number;
+}
+
+/**
+ * Returns each requested user's recorded location trail since `sinceMs`,
+ * ordered oldest-first, for drawing a live-trace line on the map. Grouped by
+ * userId (not deviceId) since a single officer's trail should read as one
+ * continuous line regardless of which device recorded which point.
+ */
+export async function getUserLocationHistories(
+  userIds: number[],
+  sinceMs: number
+): Promise<Record<number, UserLocationHistoryPointDTO[]>> {
+  const db = await getDb();
+  const result: Record<number, UserLocationHistoryPointDTO[]> = {};
+  if (!db || userIds.length === 0) return result;
+
+  const rows = await db
+    .select({
+      userId: userLocationHistory.userId,
+      lat: userLocationHistory.lat,
+      lng: userLocationHistory.lng,
+      speed: userLocationHistory.speed,
+      recordedAt: userLocationHistory.recordedAt,
+    })
+    .from(userLocationHistory)
+    .where(
+      and(
+        inArray(userLocationHistory.userId, userIds),
+        gt(userLocationHistory.recordedAt, sinceMs)
+      )
+    )
+    .orderBy(asc(userLocationHistory.recordedAt));
+
+  for (const r of rows) {
+    if (!result[r.userId]) result[r.userId] = [];
+    result[r.userId].push({
+      lat: r.lat,
+      lng: r.lng,
+      speed: r.speed,
+      recordedAt: r.recordedAt,
+    });
+  }
+  return result;
 }
 
 // ─── Custom Map Markers ───────────────────────────────────────────────────────

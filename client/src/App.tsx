@@ -18,7 +18,6 @@ import TodoImagesPage from "./pages/TodoImagesPage";
 import TodoGovernancePage from "./pages/TodoGovernancePage";
 import ShortcutsPage from "./pages/ShortcutsPage";
 import IntelligencePage from "./pages/Intelligence";
-import AssociationMap from "./pages/AssociationMap";
 import GovernancePage from "./pages/Governance";
 import SheetSummaryPage from "./pages/SheetSummary";
 import GovernanceListPage from "./pages/GovernanceList";
@@ -176,7 +175,6 @@ function Router() {
       <Route path="/shortcuts" component={ShortcutsPage} />
       <Route path="/intelligence" component={IntelligencePage} />
       <Route path="/intelligence/entities" component={IntelligencePage} />
-      <Route path="/intelligence/association-map" component={AssociationMap} />
       <Route
         path="/intelligence/target/:id"
         component={IntelligenceTargetProfile}

@@ -35,6 +35,7 @@ import {
   LayoutGrid,
   Camera,
   Flame,
+  Radar,
 } from "lucide-react";
 import { ViewToggle } from "@/components/ViewToggle";
 import { useViewMode } from "@/contexts/ViewModeContext";
@@ -42,11 +43,12 @@ import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
 import { MergeEntitiesButton } from "@/components/MergeEntitiesButton";
 import { IndicesBadge } from "@/components/IndicesBadge";
 import IntelligenceHeatMap from "@/pages/IntelligenceHeatMap";
+import EgoNetworkMap from "@/pages/EgoNetworkMap";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type EntityType = "person" | "vehicle" | "address" | "business" | "unknown";
-type TabView = "operations" | "targets" | "associates" | "vehicle" | "locations" | "all" | "heatmap";
+type TabView = "operations" | "targets" | "associates" | "vehicle" | "locations" | "all" | "heatmap" | "egonet";
 
 interface Occurrence {
   sheetId: number;
@@ -1024,6 +1026,7 @@ const TAB_OPTIONS: Array<{ value: TabView; label: string; icon: React.ReactNode 
   { value: "vehicle",    label: "Vehicles",   icon: <Car className="w-3.5 h-3.5" /> },
   { value: "locations",  label: "Locations",  icon: <MapPin className="w-3.5 h-3.5" /> },
   { value: "heatmap",    label: "Heat Map",    icon: <Flame className="w-3.5 h-3.5" /> },
+  { value: "egonet",     label: "Ego Network", icon: <Radar className="w-3.5 h-3.5" /> },
 ];
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
@@ -1051,6 +1054,11 @@ export default function IntelligencePage() {
   const isMobile = useIsMobile();
   const [search, setSearch]         = useState("");
   const [activeTab, setActiveTab]   = useState<TabView>("operations");
+  // The map tabs render a full-bleed canvas with their own filter chrome and
+  // their own data fetch — none of the entity-list scaffolding (search/sort
+  // bar, skeleton loader, entity grid) applies to them. Kept as one derived
+  // flag so adding another map tab can't leave one of those behind it.
+  const isMapTab = activeTab === "heatmap" || activeTab === "egonet";
   const [selected, setSelected]     = useState<Entity | null>(null);
 
   // Date filter state
@@ -1166,9 +1174,11 @@ export default function IntelligencePage() {
           </div>
           <div className="flex-1">
             <h1 className="text-xl font-semibold text-foreground">Intelligence Folder</h1>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {isLoading ? "Loading…" : `${totalEntities} entities extracted from observation records`}
-            </p>
+            {!isMobile && (
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {isLoading ? "Loading…" : `${totalEntities} entities extracted from observation records`}
+              </p>
+            )}
           </div>
           <MergeEntitiesButton />
           <ViewToggle />
@@ -1276,8 +1286,8 @@ export default function IntelligencePage() {
           </div>
         )}
 
-        {/* Search bar + sort control (shown for entity tabs, not operations/heatmap) */}
-        {activeTab !== "operations" && activeTab !== "heatmap" && (
+        {/* Search bar + sort control — entity tabs only */}
+        {activeTab !== "operations" && !isMapTab && (
           <div className="space-y-2 mb-5">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -1314,7 +1324,7 @@ export default function IntelligencePage() {
         )}
 
         {/* Loading */}
-        {isLoading && activeTab !== "heatmap" && (
+        {isLoading && !isMapTab && (
           <div className="space-y-3">
             {[...Array(6)].map((_, i) => (
               <Skeleton key={i} className="h-14 w-full rounded-xl" />
@@ -1326,6 +1336,13 @@ export default function IntelligencePage() {
         {activeTab === "heatmap" && (
           <div className="-mx-4 -mb-4 flex-1" style={{ height: "calc(100vh - 260px)" }}>
             <IntelligenceHeatMap />
+          </div>
+        )}
+
+        {/* Ego Network tab content */}
+        {activeTab === "egonet" && (
+          <div className="-mx-4 -mb-4 flex-1" style={{ height: "calc(100vh - 260px)" }}>
+            <EgoNetworkMap />
           </div>
         )}
 
@@ -1379,7 +1396,7 @@ export default function IntelligencePage() {
         )}
 
         {/* Entity type tab content */}
-        {!isLoading && activeTab !== "operations" && activeTab !== "heatmap" && (
+        {!isLoading && activeTab !== "operations" && !isMapTab && (
           <>
             {filteredByTab.length === 0 ? (
               <div className="text-center py-16 text-muted-foreground">

@@ -102,11 +102,37 @@ function edgeEnds(e: EgoEdge): [string, string] {
   return [s, t];
 }
 
+/** Below this width the three-column layout (entity list / map / detail
+ * panel) has nowhere near enough room — the two fixed-width side panels
+ * alone (224px + 256px) already exceed a phone's viewport, so the map ends
+ * up with zero space and never renders. Covers phone and iPad portrait;
+ * iPad landscape and up keep the normal three-column view. */
+const COMPACT_BREAKPOINT = 1024;
+
+function useCompactLayout() {
+  const [isCompact, setIsCompact] = useState(false);
+  useEffect(() => {
+    const mql = window.matchMedia(`(max-width: ${COMPACT_BREAKPOINT - 1}px)`);
+    const onChange = () => setIsCompact(window.innerWidth < COMPACT_BREAKPOINT);
+    mql.addEventListener("change", onChange);
+    onChange();
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
+  return isCompact;
+}
+
 export default function EgoNetworkMap() {
   const [focusId, setFocusId] = useState<string | null>(null);
   const [hops, setHops] = useState<1 | 2>(1);
   const [pickerSearch, setPickerSearch] = useState("");
   const [expandRing1, setExpandRing1] = useState(false);
+  const isCompact = useCompactLayout();
+  // Which single panel is shown in compact mode — defaults to the map since
+  // that's the point of the page; picking an entity from the list jumps
+  // here automatically so the officer isn't left staring at the list.
+  const [mobilePanel, setMobilePanel] = useState<"entities" | "map" | "details">(
+    "map"
+  );
   // null = every operation. Scoping here narrows the whole view at once —
   // the graph, the focus-entity list, and the rings all come off this query.
   const [operationId, setOperationId] = useState<number | null>(null);
@@ -397,9 +423,31 @@ export default function EgoNetworkMap() {
         </div>
       </div>
 
+      {/* ── Compact panel switcher — phone/iPad only ────────────────────── */}
+      {isCompact && (
+        <div className="px-4 py-2 border-b border-border bg-card shrink-0">
+          <Select
+            value={mobilePanel}
+            onValueChange={v => setMobilePanel(v as typeof mobilePanel)}
+          >
+            <SelectTrigger className="w-full h-9 text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="entities">Focus entity list</SelectItem>
+              <SelectItem value="map">Map</SelectItem>
+              <SelectItem value="details" disabled={!focusNode}>
+                Direct links
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
       <div className="flex flex-1 overflow-hidden">
         {/* ── Left: focus entity picker ──────────────────────────────────── */}
-        <div className="w-56 shrink-0 border-r border-border bg-card flex flex-col overflow-hidden">
+        {(!isCompact || mobilePanel === "entities") && (
+        <div className={isCompact ? "w-full flex flex-col overflow-hidden" : "w-56 shrink-0 border-r border-border bg-card flex flex-col overflow-hidden"}>
           <div className="px-3 py-2.5 border-b border-border">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
               Focus entity
@@ -424,7 +472,10 @@ export default function EgoNetworkMap() {
               {pickerResults.map(n => (
                 <button
                   key={n.id}
-                  onClick={() => recenter(n.id)}
+                  onClick={() => {
+                    recenter(n.id);
+                    if (isCompact) setMobilePanel("map");
+                  }}
                   className={`w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors ${
                     n.id === focusId
                       ? "bg-primary/15 text-primary font-medium"
@@ -469,8 +520,10 @@ export default function EgoNetworkMap() {
             </div>
           </div>
         </div>
+        )}
 
         {/* ── Ring canvas ─────────────────────────────────────────────────── */}
+        {(!isCompact || mobilePanel === "map") && (
         <div
           ref={containerRef}
           className="flex-1 relative overflow-hidden bg-[#0f1117]"
@@ -631,10 +684,11 @@ export default function EgoNetworkMap() {
             </>
           )}
         </div>
+        )}
 
         {/* ── Right: focus detail ─────────────────────────────────────────── */}
-        {focusNode && (
-          <div className="w-64 shrink-0 border-l border-border bg-card flex flex-col overflow-hidden">
+        {(!isCompact || mobilePanel === "details") && focusNode && (
+          <div className={isCompact ? "w-full flex flex-col overflow-hidden" : "w-64 shrink-0 border-l border-border bg-card flex flex-col overflow-hidden"}>
             <div className="flex items-start justify-between px-3 py-3 border-b border-border">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5 mb-1">

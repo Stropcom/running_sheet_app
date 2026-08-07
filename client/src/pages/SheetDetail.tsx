@@ -1535,7 +1535,7 @@ function TimePickerCell({
               onOpenChange={o => setSelectOpen(o)}
               onValueChange={v => setHour(v)}
             >
-              <SelectTrigger className="w-16 h-8 text-sm font-mono">
+              <SelectTrigger className="w-[70px] h-8 text-sm font-mono">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1557,7 +1557,7 @@ function TimePickerCell({
               onOpenChange={o => setSelectOpen(o)}
               onValueChange={v => setMinute(v)}
             >
-              <SelectTrigger className="w-16 h-8 text-sm font-mono">
+              <SelectTrigger className="w-[70px] h-8 text-sm font-mono">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1578,7 +1578,7 @@ function TimePickerCell({
               onOpenChange={o => setSelectOpen(o)}
               onValueChange={v => setPeriod(v)}
             >
-              <SelectTrigger className="w-16 h-8 text-sm">
+              <SelectTrigger className="w-[76px] h-8 text-sm">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

@@ -359,7 +359,7 @@ function SummaryTimePicker({
                 commit(v, minute, period);
               }}
             >
-              <SelectTrigger className="w-16 h-8 text-sm font-mono">
+              <SelectTrigger className="w-[70px] h-8 text-sm font-mono">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -383,7 +383,7 @@ function SummaryTimePicker({
                 commit(hour, v, period);
               }}
             >
-              <SelectTrigger className="w-16 h-8 text-sm font-mono">
+              <SelectTrigger className="w-[70px] h-8 text-sm font-mono">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -406,7 +406,7 @@ function SummaryTimePicker({
                 commit(hour, minute, v);
               }}
             >
-              <SelectTrigger className="w-16 h-8 text-sm">
+              <SelectTrigger className="w-[76px] h-8 text-sm">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

@@ -32,6 +32,7 @@ import {
   type EgoEdge,
 } from "@/lib/egoNetworkLayout";
 import { buildRollupSheetBlocksHtml } from "@/lib/rollupSection";
+import { buildProfileTargetBlockHtml } from "@/lib/profileSection";
 
 type PackageScope = "operation" | "target";
 
@@ -56,6 +57,11 @@ export default function IntelPackages() {
       { operationId: operationId ?? 0 },
       { enabled: operationId != null }
     );
+
+  const { data: opProfile } = trpc.intelligence.operationProfile.useQuery(
+    { operationId: operationId ?? 0 },
+    { enabled: operationId != null, staleTime: 30_000 }
+  );
 
   const { data: graphData } = trpc.intelligence.getAssociationGraph.useQuery(
     { operationIds: operationId != null ? [operationId] : undefined },
@@ -197,6 +203,27 @@ export default function IntelPackages() {
     };
   }
 
+  /** Target profiles — the same per-target block the Operation Profile
+   * export renders, one per included target. */
+  function buildProfileSection(): PackageSection | null {
+    const byId = new Map(
+      ((opProfile?.targets ?? []) as { targetId: number }[]).map(t => [
+        t.targetId,
+        t,
+      ])
+    );
+    const blocks = chosenTargets
+      .map(t => byId.get(t.id))
+      .filter((t): t is NonNullable<typeof t> => !!t)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map(t => buildProfileTargetBlockHtml(t as any));
+    if (!blocks.length) return null;
+    return {
+      title: scope === "target" ? "Target Profile" : "Operation Profile",
+      html: blocks.join("\n"),
+    };
+  }
+
   /** Deployment Rollup — every summary in scope, target-filtered for a
    * target package. Uses the same endpoint as the Operation page's own
    * Rollup export so both stay in step. */
@@ -231,6 +258,9 @@ export default function IntelPackages() {
     setIsBuilding(true);
     try {
       const sections: PackageSection[] = [];
+
+      const profile = buildProfileSection();
+      if (profile) sections.push(profile);
 
       const rollup = await buildRollupSection();
       if (rollup) sections.push(rollup);
@@ -401,6 +431,10 @@ export default function IntelPackages() {
             Package contents
           </p>
           <ul className="text-xs text-muted-foreground list-disc list-inside space-y-0.5">
+            <li>
+              {scope === "target" ? "Target Profile" : "Operation Profile"} —
+              registered details, photos, sheets and associations
+            </li>
             <li>
               Deployment Rollup — every Supervisor Summary in scope
             </li>

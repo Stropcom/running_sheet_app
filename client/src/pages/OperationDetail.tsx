@@ -1178,10 +1178,6 @@ function SheetCard({
             <span className="truncate">{targetName}</span>
           </div>
         )}
-        <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground">
-          <Calendar className="w-3 h-3" />
-          <span>Created {format(new Date(sheet.createdAt), "d MMM yyyy, HH:mm")}</span>
-        </div>
         {isClosed && sheet.closedByCIN && sheet.closedAt && (
           <div className="flex items-center gap-1.5 mt-1 text-xs text-slate-400 dark:text-slate-500">
             <LockKeyhole className="w-3 h-3 shrink-0" />

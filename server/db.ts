@@ -4000,9 +4000,25 @@ export async function getWeeklyActivityReport(
   const sheetById = new Map(sheets.map(s => [s.id, s]));
   const opIds = Array.from(new Set(sheets.map(s => s.operationId)));
 
+  // Targets are looked up by the ids the sheets actually reference, not by
+  // targets.operationId — that column is a nullable legacy field (the real
+  // association is the operation_target_links join table, since a registry
+  // target can belong to several operations). Filtering on it silently
+  // dropped every registry-created target, leaving the Target Activity
+  // section showing "—" instead of a name.
+  const referencedTargetIds = Array.from(
+    new Set(
+      sheets
+        .map(s => s.targetId)
+        .filter((id): id is number => typeof id === "number")
+    )
+  );
+
   const [ops, targetRows, rows, govRecords] = await Promise.all([
     db.select().from(operations).where(inArray(operations.id, opIds)),
-    db.select().from(targets).where(inArray(targets.operationId, opIds)),
+    referencedTargetIds.length
+      ? db.select().from(targets).where(inArray(targets.id, referencedTargetIds))
+      : Promise.resolve([] as (typeof targets.$inferSelect)[]),
     db
       .select()
       .from(sheetRows)
@@ -4182,6 +4198,7 @@ export async function getWeeklyActivityReport(
     entityKey: string;
     label: string;
     targetId: number;
+    operationId: number;
     order: number;
   };
   const qualifying: QualifyingMention[] = [];
@@ -4207,6 +4224,7 @@ export async function getWeeklyActivityReport(
         entityKey: normalizeEntityLabel(entity.shortForm),
         label: entity.shortForm,
         targetId: sheet.targetId,
+        operationId: sheet.operationId,
         order: rowOrderIndex.get(occ.rowId) ?? 0,
       });
     }
@@ -4239,10 +4257,21 @@ export async function getWeeklyActivityReport(
   )
     .map(([targetId, locMap]) => {
       const target = targetById.get(targetId);
+      // The operation comes from the sheets this week's activity was logged
+      // on, not the target's own legacy operationId — a registry target can
+      // be linked to several operations, and what matters here is where it
+      // was actually observed.
+      const opNames = Array.from(
+        new Set(
+          (qualifyingByTarget.get(targetId) ?? [])
+            .map(m => opById.get(m.operationId)?.name)
+            .filter((n): n is string => !!n)
+        )
+      );
       return {
         targetId,
         targetName: target?.name ?? "—",
-        operationName: opById.get(target?.operationId ?? -1)?.name ?? "—",
+        operationName: opNames.length ? opNames.join(", ") : "—",
         locations: Array.from(locMap.values()).sort(
           (a, b) => b.count - a.count
         ),

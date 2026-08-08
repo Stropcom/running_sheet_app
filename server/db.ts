@@ -2073,7 +2073,36 @@ export async function getAllTargets() {
     .leftJoin(operations, eq(targets.operationId, operations.id))
     .where(isNull(targets.deletedAt))
     .orderBy(targets.name);
-  return rows;
+
+  // targets.operationId is a nullable legacy column — a registry target's
+  // real operations live in operation_target_links. Without this the
+  // cross-operation target picker showed no "Op:" label for registry
+  // targets and couldn't find them by operation name in its search.
+  const links = await db
+    .select({
+      targetId: operationTargetLinks.targetId,
+      operationName: operations.name,
+    })
+    .from(operationTargetLinks)
+    .leftJoin(operations, eq(operationTargetLinks.operationId, operations.id));
+
+  const namesByTarget = new Map<number, Set<string>>();
+  for (const l of links) {
+    if (!l.operationName) continue;
+    if (!namesByTarget.has(l.targetId))
+      namesByTarget.set(l.targetId, new Set());
+    namesByTarget.get(l.targetId)!.add(l.operationName);
+  }
+
+  return rows.map(r => {
+    const names = new Set(namesByTarget.get(r.id) ?? []);
+    // The legacy FK still counts as a link where it's set.
+    if (r.operationName) names.add(r.operationName);
+    return {
+      ...r,
+      operationName: names.size ? Array.from(names).join(", ") : null,
+    };
+  });
 }
 
 export async function createTarget(data: InsertTarget) {

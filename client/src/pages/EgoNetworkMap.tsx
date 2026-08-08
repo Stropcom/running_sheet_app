@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
+import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +25,7 @@ import {
   HelpCircle,
   ChevronRight,
   RefreshCw,
+  FileDown,
 } from "lucide-react";
 
 // Same palette/labels as the Association Map — the two views show the same
@@ -106,6 +109,424 @@ function edgeEnds(e: EgoEdge): [string, string] {
   const s = typeof e.source === "string" ? e.source : e.source.id;
   const t = typeof e.target === "string" ? e.target : e.target.id;
   return [s, t];
+}
+
+interface EgoLayout {
+  placed: PlacedNode[];
+  ring1Ids: string[];
+  hiddenRing1Count: number;
+  hiddenRing2Count: number;
+  edges: { from: PlacedNode | null; to: PlacedNode; hop: 1 | 2 }[];
+}
+
+/**
+ * Concentric-ring layout. Ring 1 is the focus entity's direct
+ * co-occurrences, spaced evenly around it. Ring 2 (when 2 hops are shown)
+ * is everything one step further out, placed near the angle of whichever
+ * ring-1 entity introduced it — so a cluster stays visually attached to
+ * its parent instead of scattering.
+ *
+ * Pure and radius-agnostic so the on-screen view (which scales its rings to
+ * the viewport) and the PDF export (fixed print canvas) lay out identically
+ * from the same code rather than each doing its own trigonometry.
+ */
+function computeEgoLayout(params: {
+  focusNode: EgoNode | null;
+  adjacency: Map<string, { id: string; weight: number }[]>;
+  nodesById: Map<string, EgoNode>;
+  hops: 1 | 2;
+  expandRing1: boolean;
+  ring1Radius: number;
+  ring2Radius: number;
+}): EgoLayout {
+  const {
+    focusNode,
+    adjacency,
+    nodesById,
+    hops,
+    expandRing1,
+    ring1Radius,
+    ring2Radius,
+  } = params;
+
+  if (!focusNode) {
+    return {
+      placed: [],
+      ring1Ids: [],
+      hiddenRing1Count: 0,
+      hiddenRing2Count: 0,
+      edges: [],
+    };
+  }
+
+  const ring1All = adjacency.get(focusNode.id) ?? [];
+  const ring1Limit = expandRing1 ? ring1All.length : RING1_MAX;
+  const ring1 = ring1All.slice(0, ring1Limit);
+  const hidden1 = ring1All.length - ring1.length;
+
+  const seen = new Set<string>([focusNode.id, ...ring1.map(r => r.id)]);
+  const placedNodes: PlacedNode[] = [];
+  const angleOf = new Map<string, number>();
+
+  ring1.forEach((entry, i) => {
+    const angle = (i / Math.max(1, ring1.length)) * Math.PI * 2 - Math.PI / 2;
+    angleOf.set(entry.id, angle);
+    const node = nodesById.get(entry.id);
+    if (!node) return;
+    placedNodes.push({
+      node,
+      x: Math.cos(angle) * ring1Radius,
+      y: Math.sin(angle) * ring1Radius,
+      hop: 1,
+      weight: entry.weight,
+    });
+  });
+
+  let hidden2 = 0;
+  const ring2Parent = new Map<string, string>();
+  if (hops === 2) {
+    const candidates: { id: string; parent: string; weight: number }[] = [];
+    for (const parent of ring1) {
+      for (const nb of adjacency.get(parent.id) ?? []) {
+        if (seen.has(nb.id)) continue;
+        seen.add(nb.id);
+        candidates.push({ id: nb.id, parent: parent.id, weight: nb.weight });
+      }
+    }
+    candidates.sort((a, b) => b.weight - a.weight);
+    const shown = candidates.slice(0, RING2_MAX);
+    hidden2 = candidates.length - shown.length;
+
+    // Fan each parent's children out around that parent's own angle.
+    const byParent = new Map<string, typeof shown>();
+    for (const c of shown) {
+      if (!byParent.has(c.parent)) byParent.set(c.parent, []);
+      byParent.get(c.parent)!.push(c);
+    }
+    for (const [parentId, kids] of Array.from(byParent.entries())) {
+      const base = angleOf.get(parentId) ?? 0;
+      const spread = Math.min(0.9, 0.28 * kids.length);
+      kids.forEach((kid, i) => {
+        const offset =
+          kids.length === 1
+            ? 0
+            : -spread / 2 + (i / (kids.length - 1)) * spread;
+        const angle = base + offset;
+        const node = nodesById.get(kid.id);
+        if (!node) return;
+        ring2Parent.set(kid.id, parentId);
+        placedNodes.push({
+          node,
+          x: Math.cos(angle) * ring2Radius,
+          y: Math.sin(angle) * ring2Radius,
+          hop: 2,
+          weight: kid.weight,
+        });
+      });
+    }
+  }
+
+  const byId = new Map(placedNodes.map(p => [p.node.id, p]));
+  const edgeList: { from: PlacedNode | null; to: PlacedNode; hop: 1 | 2 }[] =
+    [];
+  for (const p of placedNodes) {
+    if (p.hop === 1) {
+      edgeList.push({ from: null, to: p, hop: 1 });
+    } else {
+      const parentId = ring2Parent.get(p.node.id);
+      const parent = parentId ? (byId.get(parentId) ?? null) : null;
+      if (parent) edgeList.push({ from: parent, to: p, hop: 2 });
+    }
+  }
+
+  return {
+    placed: placedNodes,
+    ring1Ids: ring1.map(r => r.id),
+    hiddenRing1Count: hidden1,
+    hiddenRing2Count: hidden2,
+    edges: edgeList,
+  };
+}
+
+/** Node radius by occurrence count — shared by the live view and the export. */
+function egoNodeRadius(n: EgoNode, hop: 1 | 2) {
+  const base = Math.max(5, Math.min(11, 4 + Math.log1p(n.occurrences) * 2));
+  return hop === 1 ? base : base * 0.72;
+}
+
+// ── PDF export ───────────────────────────────────────────────────────────────
+// The ring diagram is redrawn as a standalone SVG rather than screenshotting
+// the live view: the on-screen version is a mix of an <svg> (rings/edges) and
+// absolutely-positioned DOM nodes, and it's sized to the viewport, so a
+// capture would be raster, fuzzy in print, and different on every screen.
+// Re-rendering from computeEgoLayout at a fixed print canvas gives vector
+// output that's identical every time — the same reasoning behind the Heat
+// Map export using a static map image instead of capturing its live map.
+
+const EXPORT_RING1_MIN = 170;
+const EXPORT_RING1_MAX = 330;
+/**
+ * Ring 2 sits a fixed distance outside ring 1 rather than a multiple of it.
+ * As a ratio, a wide ring 1 pushed ring 2 out far enough that one lone
+ * second-degree node stretched the whole canvas, and since the diagram is
+ * scaled to fit the page that shrank every ring-1 label with it.
+ */
+const EXPORT_RING_GAP = 150;
+/** SVG can't ellipsize text, so long labels are cut to fit their slice. */
+const EXPORT_LABEL_MAX_CHARS = 26;
+/** Room a centred label needs either side of / below its node. */
+const EXPORT_LABEL_PAD_X = 115;
+const EXPORT_LABEL_PAD_Y = 46;
+
+/**
+ * Ring 1 grows with how many entities sit on it. Unlike the on-screen view
+ * — where the rings shrink to fit a viewport and overlapping labels are
+ * tolerable because you can pan/zoom/see colour — a printed page has to be
+ * readable as-is. A truncated label runs ~145px wide, so each node needs
+ * roughly that much arc: radius ≈ count × 145 / 2π.
+ */
+function exportRingRadii(ring1Count: number) {
+  const ring1 = Math.min(
+    EXPORT_RING1_MAX,
+    Math.max(EXPORT_RING1_MIN, Math.round((ring1Count * 145) / (2 * Math.PI)))
+  );
+  return { ring1, ring2: ring1 + EXPORT_RING_GAP };
+}
+
+function escXml(s: string | null | undefined): string {
+  return (s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function truncateLabel(s: string, max = EXPORT_LABEL_MAX_CHARS): string {
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+}
+
+/**
+ * Drawn around a (0,0) origin — placed nodes already carry offsets relative
+ * to the focus entity — with the viewBox cropped to whatever the graph
+ * actually occupies. A fixed canvas would leave a sparse graph (a couple of
+ * links, no second ring) stranded in a mostly-empty page, the same way the
+ * Association Map's zoom-to-fit used to blow small graphs up.
+ */
+function buildEgoNetworkSvg(params: {
+  focusNode: EgoNode;
+  layout: EgoLayout;
+  radii: { ring1: number; ring2: number };
+}): string {
+  const { focusNode, layout, radii } = params;
+  const { placed, edges } = layout;
+
+  const centreColour = NODE_COLORS[focusNode.type] ?? NODE_COLORS.unknown;
+  const hasRing1 = placed.some(p => p.hop === 1);
+  const hasRing2 = placed.some(p => p.hop === 2);
+
+  // Crop to content: the furthest node out, not the nominal ring radius, so
+  // a 2-hop view with no second-degree hits doesn't reserve ring-2 space.
+  const contentR = placed.reduce(
+    (max, p) => Math.max(max, Math.hypot(p.x, p.y) + egoNodeRadius(p.node, p.hop)),
+    hasRing1 ? radii.ring1 : 60
+  );
+  const halfW = Math.max(180, contentR + EXPORT_LABEL_PAD_X);
+  const halfH = Math.max(110, contentR + EXPORT_LABEL_PAD_Y);
+  const viewBox = `${-halfW} ${-halfH} ${halfW * 2} ${halfH * 2}`;
+
+  // Guide rings only where that ring is actually populated.
+  const guides = `
+    ${hasRing1 ? `<circle cx="0" cy="0" r="${radii.ring1}" fill="none" stroke="#e2e8f0" stroke-dasharray="5 5"/>` : ""}
+    ${hasRing2 ? `<circle cx="0" cy="0" r="${radii.ring2}" fill="none" stroke="#e2e8f0" stroke-dasharray="5 5"/>` : ""}`;
+
+  const edgeEls = edges
+    .map(e => {
+      const x1 = e.from ? e.from.x : 0;
+      const y1 = e.from ? e.from.y : 0;
+      const stroke = e.hop === 1 ? "#64748b" : "#cbd5e1";
+      const width =
+        e.hop === 1 ? Math.max(1, Math.min(4, e.to.weight * 0.9)) : 1.2;
+      return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${e.to.x.toFixed(1)}" y2="${e.to.y.toFixed(1)}" stroke="${stroke}" stroke-width="${width}" stroke-opacity="${e.hop === 1 ? 0.85 : 0.6}"/>`;
+    })
+    .join("\n    ");
+
+  // Labels carry a white halo (paint-order: stroke) so they stay readable
+  // where they cross an edge or another ring's label.
+  const nodeEls = placed
+    .map(p => {
+      const r = egoNodeRadius(p.node, p.hop);
+      const colour = NODE_COLORS[p.node.type] ?? NODE_COLORS.unknown;
+      const fontSize = p.hop === 1 ? 11 : 10;
+      const fill = p.hop === 1 ? "#1e293b" : "#64748b";
+      return `<g>
+      <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r.toFixed(1)}" fill="${colour}" fill-opacity="${p.hop === 1 ? 1 : 0.75}"/>
+      <text x="${p.x.toFixed(1)}" y="${(p.y + r + 13).toFixed(1)}" text-anchor="middle" font-size="${fontSize}" font-family="-apple-system, 'Segoe UI', Arial, sans-serif" fill="${fill}" paint-order="stroke" stroke="#ffffff" stroke-width="3" stroke-linejoin="round">${escXml(truncateLabel(p.node.label))}</text>
+    </g>`;
+    })
+    .join("\n    ");
+
+  const centre = `
+    <circle cx="0" cy="0" r="34" fill="${centreColour}" fill-opacity="0.16"/>
+    <circle cx="0" cy="0" r="22" fill="${centreColour}"/>
+    <text x="0" y="46" text-anchor="middle" font-size="13" font-weight="700" font-family="-apple-system, 'Segoe UI', Arial, sans-serif" fill="#0f172a" paint-order="stroke" stroke="#ffffff" stroke-width="4" stroke-linejoin="round">${escXml(truncateLabel(focusNode.label, 34))}</text>`;
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}" width="100%" style="display:block" preserveAspectRatio="xMidYMid meet">
+    <rect x="${-halfW}" y="${-halfH}" width="${halfW * 2}" height="${halfH * 2}" fill="#ffffff"/>
+    ${guides}
+    ${edgeEls}
+    ${centre}
+    ${nodeEls}
+  </svg>`;
+}
+
+function exportEgoNetworkPdf(params: {
+  focusNode: EgoNode;
+  layout: EgoLayout;
+  radii: { ring1: number; ring2: number };
+  hops: 1 | 2;
+  operationName: string | null;
+}) {
+  const { focusNode, layout, radii, hops, operationName } = params;
+
+  const BLUE_DARK = "#1e3a8a";
+  const BLUE_MID = "#93c5fd";
+  const BLUE_LIGHT = "#dbeafe";
+  const GREY_TEXT = "#1e293b";
+  const GREY_BORDER = "#e2e8f0";
+
+  const svg = buildEgoNetworkSvg({ focusNode, layout, radii });
+  const ring1 = layout.placed.filter(p => p.hop === 1);
+  const ring2 = layout.placed.filter(p => p.hop === 2);
+
+  const linkRows = layout.placed
+    .map(
+      p =>
+        `<tr><td>${escXml(p.node.label)}</td><td>${escXml(ENTITY_LABELS[p.node.type] ?? p.node.type)}</td><td>${p.hop === 1 ? `${p.weight}&times;` : "2nd degree"}</td></tr>`
+    )
+    .join("");
+
+  const legend = ENTITY_TYPES.map(
+    t =>
+      `<span class="legend-item"><span class="legend-dot" style="background:${NODE_COLORS[t]}"></span>${escXml(ENTITY_LABELS[t])}</span>`
+  ).join("");
+
+  const generatedAt = new Date().toLocaleString("en-AU", {
+    dateStyle: "long",
+    timeStyle: "short",
+  });
+
+  const statsLine = [
+    `${ring1.length} direct link${ring1.length !== 1 ? "s" : ""}`,
+    hops === 2 ? `${ring2.length} second-degree` : null,
+    layout.hiddenRing1Count > 0
+      ? `${layout.hiddenRing1Count} direct not shown`
+      : null,
+    layout.hiddenRing2Count > 0
+      ? `${layout.hiddenRing2Count} second-degree not shown`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" &middot; ");
+
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>RunLog Ego Network — ${escXml(focusNode.label)}</title>
+<style>
+* { box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+@page{ margin:14mm 12mm; @top-center{content:'PROTECTED';font-family:'Roboto',sans-serif;font-size:12px;font-weight:700;color:#dc2626;letter-spacing:0.08em} @bottom-center{content:"Page " counter(page) " of " counter(pages);font-family:'Roboto',sans-serif;font-size:11px;font-weight:700;color:${BLUE_DARK};letter-spacing:0.04em} }
+body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.6; color:${GREY_TEXT}; background:#fff; }
+.cover-header { background:${BLUE_DARK} !important; color:#fff !important; padding:22px 32px 20px; text-align:center; }
+.brand-row { display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:12px; opacity:0.85; }
+.brand-dot { width:10px; height:10px; border-radius:50%; background:${BLUE_MID}; }
+.brand-label { font-size:10px; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; color:${BLUE_MID}; }
+.main-title { font-size:24px; font-weight:800; letter-spacing:0.04em; text-transform:uppercase; line-height:1.2; }
+.op-date-line { font-size:15px; font-weight:600; margin-top:8px; }
+.sheet-name { font-size:11px; opacity:0.7; margin-top:6px; }
+.content { padding:18px 32px 8px; }
+.section { margin-bottom:14px; border:1px solid ${GREY_BORDER}; border-radius:8px; overflow:hidden; break-inside:avoid; page-break-inside:avoid; }
+.section-title { font-size:10px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${BLUE_DARK} !important; padding:7px 14px; background:${BLUE_LIGHT} !important; border-bottom:1px solid ${GREY_BORDER}; }
+.section-body { padding:12px 14px; }
+.detail-grid { display:grid; grid-template-columns:130px 1fr; gap:0; font-size:10.5px; }
+.detail-grid > div { padding:4px 6px; }
+.detail-grid > div:nth-child(4n+1), .detail-grid > div:nth-child(4n+2) { background:#f8fafc; }
+.detail-label { color:#64748b; font-weight:600; }
+.detail-value { color:${GREY_TEXT}; }
+.diagram-wrap { padding:4px 10px 10px; }
+.stats-line { text-align:center; font-size:10px; color:#64748b; padding-bottom:8px; }
+.legend { display:flex; flex-wrap:wrap; gap:14px; justify-content:center; padding:10px 0 2px; border-top:1px solid ${GREY_BORDER}; }
+.legend-item { display:inline-flex; align-items:center; gap:6px; font-size:10px; color:#475569; }
+.legend-dot { width:9px; height:9px; border-radius:50%; display:inline-block; }
+.links-table { width:100%; border-collapse:collapse; border:1.5px solid ${BLUE_DARK}; }
+.links-table th { background:${BLUE_LIGHT} !important; color:${BLUE_DARK} !important; font-weight:700; font-size:9.5px; text-transform:uppercase; letter-spacing:0.04em; text-align:left; padding:6px 8px; border-bottom:2px solid ${BLUE_DARK}; border-right:1px solid #c7d5ee; }
+.links-table th:last-child, .links-table td:last-child { border-right:none; }
+.links-table td { vertical-align:top; font-size:10.5px; padding:6px 8px; border-bottom:1px solid ${GREY_BORDER}; border-right:1px solid ${GREY_BORDER}; }
+.links-table tbody tr:last-child td { border-bottom:none; }
+.muted-note { font-size:10px; color:#94a3b8; font-style:italic; }
+.footer-note { margin:10px 32px 0; padding:12px 0 18px; border-top:1px solid ${GREY_BORDER}; font-size:9px; color:#94a3b8; }
+.footer-band { background:${BLUE_DARK} !important; color:#fff !important; padding:8px 32px; display:grid; grid-template-columns:1fr 1fr 1fr; align-items:center; font-size:9px; font-weight:700; letter-spacing:0.04em; }
+.footer-band span:first-child { text-align:left; }
+.footer-band span:last-child { text-align:right; color:rgba(255,255,255,0.85); text-transform:uppercase; }
+.footer-protected { text-align:center; font-weight:800; letter-spacing:0.14em; color:#f87171; text-transform:uppercase; }
+@media print { * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; } .cover-header { background:${BLUE_DARK} !important; } .section-title { background:${BLUE_LIGHT} !important; } .links-table th { background:${BLUE_LIGHT} !important; } .footer-band { background:${BLUE_DARK} !important; } }
+</style></head><body>
+<div class="cover-header">
+  <div class="brand-row"><div class="brand-dot"></div><span class="brand-label">RunLog</span></div>
+  <div class="main-title">Ego Network</div>
+  <div class="op-date-line">${escXml(focusNode.label)}</div>
+  <div class="sheet-name">${escXml(operationName ?? "All operations")} &middot; ${hops} hop${hops > 1 ? "s" : ""}</div>
+</div>
+<div class="content">
+  <div class="section">
+    <div class="section-title">Focus Entity</div>
+    <div class="section-body">
+      <div class="detail-grid">
+        <div class="detail-label">Entity</div><div class="detail-value">${escXml(focusNode.label)}</div>
+        <div class="detail-label">Type</div><div class="detail-value">${escXml(ENTITY_LABELS[focusNode.type] ?? focusNode.type)}</div>
+        <div class="detail-label">Occurrences</div><div class="detail-value">${focusNode.occurrences}</div>
+        <div class="detail-label">Operations</div><div class="detail-value">${escXml(focusNode.operationNames.join(", ") || "—")}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Association Diagram</div>
+    <div class="diagram-wrap">
+      ${svg}
+      <div class="stats-line">${statsLine}</div>
+      <div class="legend">${legend}</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Linked Entities (${layout.placed.length})</div>
+    <div class="section-body">
+      ${
+        layout.placed.length
+          ? `<table class="links-table">
+        <thead><tr><th>Entity</th><th style="width:110px">Type</th><th style="width:110px">Co-occurrences</th></tr></thead>
+        <tbody>${linkRows}</tbody>
+      </table>`
+          : `<p class="muted-note">This entity has no recorded co-occurrences.</p>`
+      }
+    </div>
+  </div>
+
+  <div class="footer-note">Generated: ${generatedAt}</div>
+</div>
+<div class="footer-band"><span></span><span class="footer-protected">Protected</span><span>RunLog</span></div>
+${buildExportPreviewCloseBar()}
+</body></html>`;
+
+  const win = window.open("", "_blank");
+  if (!win) {
+    toast.error("Pop-up blocked. Please allow pop-ups and try again.");
+    return;
+  }
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  setTimeout(() => {
+    win.print();
+  }, 400);
 }
 
 /** Below this width the three-column layout (entity list / map / detail
@@ -233,125 +654,20 @@ export default function EgoNetworkMap() {
 
   const focusNode = focusId ? (nodesById.get(focusId) ?? null) : null;
 
-  /**
-   * Concentric-ring layout. Ring 1 is the focus entity's direct
-   * co-occurrences, spaced evenly around it. Ring 2 (when 2 hops are shown)
-   * is everything one step further out, placed near the angle of whichever
-   * ring-1 entity introduced it — so a cluster stays visually attached to
-   * its parent instead of scattering.
-   */
   const { placed, ring1Ids, hiddenRing1Count, hiddenRing2Count, edges } =
-    useMemo(() => {
-      if (!focusNode) {
-        return {
-          placed: [] as PlacedNode[],
-          ring1Ids: [] as string[],
-          hiddenRing1Count: 0,
-          hiddenRing2Count: 0,
-          edges: [] as {
-            from: PlacedNode | null;
-            to: PlacedNode;
-            hop: 1 | 2;
-          }[],
-        };
-      }
-
-      const ring1All = adjacency.get(focusNode.id) ?? [];
-      const ring1Limit = expandRing1 ? ring1All.length : RING1_MAX;
-      const ring1 = ring1All.slice(0, ring1Limit);
-      const hidden1 = ring1All.length - ring1.length;
-
-      const seen = new Set<string>([focusNode.id, ...ring1.map(r => r.id)]);
-      const placedNodes: PlacedNode[] = [];
-      const angleOf = new Map<string, number>();
-
-      ring1.forEach((entry, i) => {
-        const angle =
-          (i / Math.max(1, ring1.length)) * Math.PI * 2 - Math.PI / 2;
-        angleOf.set(entry.id, angle);
-        const node = nodesById.get(entry.id);
-        if (!node) return;
-        placedNodes.push({
-          node,
-          x: Math.cos(angle) * ringRadii.ring1,
-          y: Math.sin(angle) * ringRadii.ring1,
-          hop: 1,
-          weight: entry.weight,
-        });
-      });
-
-      let hidden2 = 0;
-      const ring2Parent = new Map<string, string>();
-      if (hops === 2) {
-        const candidates: { id: string; parent: string; weight: number }[] = [];
-        for (const parent of ring1) {
-          for (const nb of adjacency.get(parent.id) ?? []) {
-            if (seen.has(nb.id)) continue;
-            seen.add(nb.id);
-            candidates.push({
-              id: nb.id,
-              parent: parent.id,
-              weight: nb.weight,
-            });
-          }
-        }
-        candidates.sort((a, b) => b.weight - a.weight);
-        const shown = candidates.slice(0, RING2_MAX);
-        hidden2 = candidates.length - shown.length;
-
-        // Fan each parent's children out around that parent's own angle.
-        const byParent = new Map<string, typeof shown>();
-        for (const c of shown) {
-          if (!byParent.has(c.parent)) byParent.set(c.parent, []);
-          byParent.get(c.parent)!.push(c);
-        }
-        for (const [parentId, kids] of Array.from(byParent.entries())) {
-          const base = angleOf.get(parentId) ?? 0;
-          const spread = Math.min(0.9, 0.28 * kids.length);
-          kids.forEach((kid, i) => {
-            const offset =
-              kids.length === 1
-                ? 0
-                : -spread / 2 + (i / (kids.length - 1)) * spread;
-            const angle = base + offset;
-            const node = nodesById.get(kid.id);
-            if (!node) return;
-            ring2Parent.set(kid.id, parentId);
-            placedNodes.push({
-              node,
-              x: Math.cos(angle) * ringRadii.ring2,
-              y: Math.sin(angle) * ringRadii.ring2,
-              hop: 2,
-              weight: kid.weight,
-            });
-          });
-        }
-      }
-
-      const byId = new Map(placedNodes.map(p => [p.node.id, p]));
-      const edgeList: {
-        from: PlacedNode | null;
-        to: PlacedNode;
-        hop: 1 | 2;
-      }[] = [];
-      for (const p of placedNodes) {
-        if (p.hop === 1) {
-          edgeList.push({ from: null, to: p, hop: 1 });
-        } else {
-          const parentId = ring2Parent.get(p.node.id);
-          const parent = parentId ? (byId.get(parentId) ?? null) : null;
-          if (parent) edgeList.push({ from: parent, to: p, hop: 2 });
-        }
-      }
-
-      return {
-        placed: placedNodes,
-        ring1Ids: ring1.map(r => r.id),
-        hiddenRing1Count: hidden1,
-        hiddenRing2Count: hidden2,
-        edges: edgeList,
-      };
-    }, [focusNode, adjacency, nodesById, hops, expandRing1, ringRadii]);
+    useMemo(
+      () =>
+        computeEgoLayout({
+          focusNode,
+          adjacency,
+          nodesById,
+          hops,
+          expandRing1,
+          ring1Radius: ringRadii.ring1,
+          ring2Radius: ringRadii.ring2,
+        }),
+      [focusNode, adjacency, nodesById, hops, expandRing1, ringRadii]
+    );
 
   const cx = size.w / 2;
   const cy = size.h / 2;
@@ -375,10 +691,48 @@ export default function EgoNetworkMap() {
 
   const recenter = useCallback((id: string) => setFocusId(id), []);
 
-  const radiusFor = (n: EgoNode, hop: 1 | 2) => {
-    const base = Math.max(5, Math.min(11, 4 + Math.log1p(n.occurrences) * 2));
-    return hop === 1 ? base : base * 0.72;
-  };
+  const radiusFor = egoNodeRadius;
+
+  // Recomputed at the fixed print radii rather than reusing `placed` — the
+  // on-screen layout is scaled to the viewport, so exporting it directly
+  // would bake the current window size into the PDF.
+  const handleExport = useCallback(() => {
+    if (!focusNode) return;
+    // How many entities land on ring 1 is independent of the radius, so the
+    // count can be measured up front and the rings sized to suit it.
+    const ring1Count = Math.min(
+      adjacency.get(focusNode.id)?.length ?? 0,
+      expandRing1 ? Number.MAX_SAFE_INTEGER : RING1_MAX
+    );
+    const radii = exportRingRadii(ring1Count);
+    const exportLayout = computeEgoLayout({
+      focusNode,
+      adjacency,
+      nodesById,
+      hops,
+      expandRing1,
+      ring1Radius: radii.ring1,
+      ring2Radius: radii.ring2,
+    });
+    exportEgoNetworkPdf({
+      focusNode,
+      layout: exportLayout,
+      radii,
+      hops,
+      operationName:
+        operationId != null
+          ? ((operations ?? []).find(o => o.id === operationId)?.name ?? null)
+          : null,
+    });
+  }, [
+    focusNode,
+    adjacency,
+    nodesById,
+    hops,
+    expandRing1,
+    operationId,
+    operations,
+  ]);
 
   return (
     <div className="flex flex-col h-full">
@@ -440,7 +794,17 @@ export default function EgoNetworkMap() {
           ))}
         </div>
 
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex items-center gap-1.5">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 gap-1.5 text-xs"
+            disabled={!focusNode}
+            onClick={handleExport}
+          >
+            <FileDown className="w-3.5 h-3.5" />
+            Export
+          </Button>
           <Button
             size="icon"
             variant="ghost"

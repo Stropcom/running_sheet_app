@@ -21,6 +21,12 @@ export function escHtml(s: string | null | undefined): string {
     .replace(/>/g, "&gt;");
 }
 
+/** One row of the cover page's Package Summary panel. */
+export interface PackageSummaryRow {
+  label: string;
+  value: string;
+}
+
 /** One titled block in the package. */
 export interface PackageSection {
   /** Shown in the section header bar and the contents list. */
@@ -33,7 +39,10 @@ export interface PackageSection {
 
 const PACKAGE_CSS = `
 * { box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-@page{ margin:16mm 12mm; @top-center{content:'PROTECTED';font-family:'Roboto',sans-serif;font-size:12px;font-weight:700;color:#dc2626;letter-spacing:0.08em} @bottom-center{content:"Page " counter(page) " of " counter(pages);font-family:'Roboto',sans-serif;font-size:11px;font-weight:700;color:${PKG_BLUE_DARK};letter-spacing:0.04em} }
+/* Paper size is declared rather than left to the print dialog's default —
+   a package is a legal record and its pagination shouldn't depend on
+   whichever paper the printing machine happens to default to. */
+@page{ size:A4 portrait; margin:16mm 12mm; @top-center{content:'PROTECTED';font-family:'Roboto',sans-serif;font-size:12px;font-weight:700;color:#dc2626;letter-spacing:0.08em} @bottom-center{content:"Page " counter(page) " of " counter(pages);font-family:'Roboto',sans-serif;font-size:11px;font-weight:700;color:${PKG_BLUE_DARK};letter-spacing:0.04em} }
 body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.6; color:${PKG_GREY_TEXT}; background:#fff; }
 
 /* ── Cover ── */
@@ -45,14 +54,14 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 .op-date-line { font-size:16px; font-weight:600; margin-top:8px; }
 .sheet-name { font-size:11px; opacity:0.7; margin-top:6px; }
 
-/* ── Contents ── */
-.contents { padding:20px 32px 4px; }
-.contents-title { font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${PKG_BLUE_DARK}; margin-bottom:8px; }
-.contents-list { list-style:none; counter-reset:sec; border:1px solid ${PKG_GREY_BORDER}; border-radius:8px; overflow:hidden; }
-.contents-list li { counter-increment:sec; font-size:11px; padding:7px 14px; border-bottom:1px solid ${PKG_GREY_BORDER}; }
+/* ── Cover body: summary panel + contents ── */
+.cover-body { padding:20px 32px 0; }
+.contents-list { list-style:none; counter-reset:sec; }
+.contents-list li { counter-increment:sec; font-size:11px; padding:5px 6px; border-bottom:1px solid ${PKG_GREY_BORDER}; }
 .contents-list li:last-child { border-bottom:none; }
 .contents-list li:nth-child(odd) { background:#f8fafc; }
 .contents-list li::before { content:counter(sec) ". "; font-weight:700; color:${PKG_BLUE_DARK}; }
+.cover-foot { margin-top:14px; padding-top:10px; border-top:1px solid ${PKG_GREY_BORDER}; font-size:9.5px; color:#94a3b8; display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px 12px; }
 
 /* ── Section framing ── */
 .pkg-section { padding:0 32px 18px; }
@@ -116,14 +125,16 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
    with the page width a single wide graph would run over a whole page. */
 .sub-block svg { max-height:520px; }
 
-/* ── Footer ── */
-.footer-note { margin:10px 32px 0; padding:12px 0 18px; border-top:1px solid ${PKG_GREY_BORDER}; font-size:9px; color:#94a3b8; }
-.footer-band { background:${PKG_BLUE_DARK} !important; color:#fff !important; padding:8px 32px; display:grid; grid-template-columns:1fr 1fr 1fr; align-items:center; font-size:9px; font-weight:700; letter-spacing:0.04em; }
-.footer-band span:first-child { text-align:left; }
-.footer-band span:last-child { text-align:right; color:rgba(255,255,255,0.85); text-transform:uppercase; }
-.footer-protected { text-align:center; font-weight:800; letter-spacing:0.14em; color:#f87171; text-transform:uppercase; }
+/* Nothing trails the last section — no closing footer band, no trailing
+   note. Every page already carries the PROTECTED marking and "Page n of m"
+   from the @page margin boxes above, so a document-level footer would be
+   duplicate marking whose only other effect is to spill onto a page of its
+   own when the last section happens to end near a page boundary. */
+.pkg-section:last-of-type { padding-bottom:0; }
+.pkg-section:last-of-type .sub-block:last-child,
+.pkg-section:last-of-type .section:last-child { margin-bottom:0; }
 
-@media print { * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; } .cover-header, .pkg-section-head, .footer-band { background:${PKG_BLUE_DARK} !important; } .section-title, .chip, .numbered-list li::before, .data-table th { background:${PKG_BLUE_LIGHT} !important; } }
+@media print { * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; } .cover-header, .pkg-section-head { background:${PKG_BLUE_DARK} !important; } .section-title, .chip, .numbered-list li::before, .data-table th { background:${PKG_BLUE_LIGHT} !important; } }
 `;
 
 export function buildPackageDocument(params: {
@@ -135,18 +146,45 @@ export function buildPackageDocument(params: {
   coverSubject: string;
   /** Scope line under the subject. */
   coverMeta: string;
+  /** At-a-glance figures for the cover page's Package Summary panel. */
+  summaryRows?: PackageSummaryRow[];
+  /** Officer building the package, e.g. "J Smith (CIN 1234)". */
+  preparedBy?: string | null;
   sections: PackageSection[];
 }): string {
-  const { docTitle, coverTitle, coverSubject, coverMeta, sections } = params;
+  const {
+    docTitle,
+    coverTitle,
+    coverSubject,
+    coverMeta,
+    summaryRows = [],
+    preparedBy,
+    sections,
+  } = params;
   const generatedAt = new Date().toLocaleString("en-AU", {
     dateStyle: "long",
     timeStyle: "short",
   });
 
+  // The cover used to be the banner plus a bare contents list, which left
+  // most of page one empty. It now carries the figures a reader would
+  // otherwise have to total up by hand from the sections themselves.
+  const summaryPanel = summaryRows.length
+    ? `<div class="section">
+    <div class="section-title">Package Summary</div>
+    <div class="section-body"><div class="detail-grid">${summaryRows
+      .map(
+        r =>
+          `<div class="detail-label">${escHtml(r.label)}</div><div class="detail-value">${escHtml(r.value)}</div>`
+      )
+      .join("")}</div></div>
+  </div>`
+    : "";
+
   const contents = sections.length
-    ? `<div class="contents">
-    <div class="contents-title">Contents</div>
-    <ol class="contents-list">${sections.map(s => `<li>${escHtml(s.title)}</li>`).join("")}</ol>
+    ? `<div class="section">
+    <div class="section-title">Contents</div>
+    <div class="section-body"><ol class="contents-list">${sections.map(s => `<li>${escHtml(s.title)}</li>`).join("")}</ol></div>
   </div>`
     : "";
 
@@ -169,10 +207,12 @@ export function buildPackageDocument(params: {
   <div class="op-date-line">${escHtml(coverSubject)}</div>
   <div class="sheet-name">${escHtml(coverMeta)}</div>
 </div>
-${contents}
+<div class="cover-body">
+  ${summaryPanel}
+  ${contents}
+  <div class="cover-foot"><span>${preparedBy ? `Prepared by: ${escHtml(preparedBy)}` : ""}</span><span>Generated: ${generatedAt}</span></div>
+</div>
 ${body}
-<div class="footer-note">Generated: ${generatedAt}</div>
-<div class="footer-band"><span></span><span class="footer-protected">Protected</span><span>RunLog</span></div>
 ${buildExportPreviewCloseBar()}
 </body></html>`;
 }

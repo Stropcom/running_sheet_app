@@ -18,6 +18,7 @@ import {
   openPrintPreview,
   escHtml,
   type PackageSection,
+  type PackageSummaryRow,
 } from "@/lib/intelPackage";
 import {
   computeEgoLayout,
@@ -31,7 +32,11 @@ import {
   type EgoNode,
   type EgoEdge,
 } from "@/lib/egoNetworkLayout";
-import { buildRollupSheetBlocksHtml } from "@/lib/rollupSection";
+import {
+  buildRollupSheetBlocksHtml,
+  formatRollupDate,
+  type RollupExportRow,
+} from "@/lib/rollupSection";
 import { buildProfileTargetBlockHtml } from "@/lib/profileSection";
 import {
   heatColourFor,
@@ -56,6 +61,7 @@ export default function IntelPackages() {
     useState<Set<number> | null>(null);
   const [isBuilding, setIsBuilding] = useState(false);
 
+  const { data: me } = trpc.auth.me.useQuery(undefined, { retry: false });
   const { data: operations } = trpc.operation.list.useQuery();
   const { data: targets, isLoading: targetsLoading } =
     trpc.target.list.useQuery(
@@ -232,11 +238,7 @@ export default function IntelPackages() {
   /** Deployment Rollup — every summary in scope, target-filtered for a
    * target package. Uses the same endpoint as the Operation page's own
    * Rollup export so both stay in step. */
-  async function buildRollupSection(): Promise<PackageSection | null> {
-    const rows = await trpcClient.summary.exportRollup.query({
-      operationId: operationId!,
-      targetId: scope === "target" ? targetId : null,
-    });
+  function buildRollupSection(rows: RollupExportRow[]): PackageSection | null {
     if (!rows.length) return null;
     return {
       title: "Deployment Rollup",
@@ -248,12 +250,9 @@ export default function IntelPackages() {
    * target of a target package), over every sheet rather than a rolling
    * window: a package is a point-in-time record of everything held, not a
    * "last 30 days" view. */
-  async function buildHeatMapSection(): Promise<PackageSection | null> {
-    const locations = await trpcClient.intelligence.getHeatMapLocations.query({
-      operationId: operationId!,
-      targetId: scope === "target" ? targetId : null,
-      when: { mode: "all" },
-    });
+  async function buildHeatMapSection(
+    locations: { label: string; count: number; lat: number; lng: number }[]
+  ): Promise<PackageSection | null> {
     if (!locations.length) return null;
 
     const maxCount = Math.max(1, ...locations.map(l => l.count));
@@ -277,6 +276,59 @@ export default function IntelPackages() {
     };
   }
 
+  /** Cover-page figures, built from the same data the sections render so the
+   * two can't drift. */
+  function buildSummaryRows(
+    rollupRows: RollupExportRow[],
+    heatLocations: { count: number }[]
+  ): PackageSummaryRow[] {
+    const ymd = (r: RollupExportRow) =>
+      r.sheetDate ?? new Date(r.createdAt).toISOString().slice(0, 10);
+    const sorted = [...rollupRows].sort((a, b) => ymd(a).localeCompare(ymd(b)));
+    const period = sorted.length
+      ? sorted.length === 1 || ymd(sorted[0]) === ymd(sorted[sorted.length - 1])
+        ? formatRollupDate(sorted[0].sheetDate, sorted[0].createdAt)
+        : `${formatRollupDate(sorted[0].sheetDate, sorted[0].createdAt)} to ${formatRollupDate(
+            sorted[sorted.length - 1].sheetDate,
+            sorted[sorted.length - 1].createdAt
+          )}`
+      : "—";
+
+    const totalTargets = (targets ?? []).length;
+    const names = chosenTargets.map(t => t.name).join("; ");
+    // Only say "all"/"n of m" when there was actually a choice to make —
+    // "All 1 — <name>" reads as noise on a single-target operation.
+    const targetsValue =
+      scope === "target"
+        ? (chosenTargets[0]?.name ?? "—")
+        : totalTargets <= 1
+          ? names || "—"
+          : chosenTargets.length === totalTargets
+            ? `All ${totalTargets} — ${names}`
+            : `${chosenTargets.length} of ${totalTargets} — ${names}`;
+
+    const linkedTargets = chosenTargets.filter(t => {
+      const n = nodeByTargetId.get(t.id);
+      return n && (adjacency.get(n.id)?.length ?? 0) > 0;
+    }).length;
+
+    const observations = rollupRows.reduce((n, r) => n + r.entries.length, 0);
+
+    return [
+      {
+        label: "Package type",
+        value: scope === "target" ? "Target package" : "Operation package",
+      },
+      { label: "Operation", value: operationName || "—" },
+      { label: scope === "target" ? "Target" : "Targets", value: targetsValue },
+      { label: "Running sheets", value: String(rollupRows.length) },
+      { label: "Period covered", value: period },
+      { label: "Logged observations", value: String(observations) },
+      { label: "Locations mapped", value: String(heatLocations.length) },
+      { label: "Ego diagrams", value: String(linkedTargets) },
+    ];
+  }
+
   // ── Export ──────────────────────────────────────────────────────────────
 
   async function handleExport() {
@@ -295,15 +347,28 @@ export default function IntelPackages() {
 
     setIsBuilding(true);
     try {
+      const scopedTargetId = scope === "target" ? targetId : null;
+      const [rollupRows, heatLocations] = await Promise.all([
+        trpcClient.summary.exportRollup.query({
+          operationId: operationId!,
+          targetId: scopedTargetId,
+        }),
+        trpcClient.intelligence.getHeatMapLocations.query({
+          operationId: operationId!,
+          targetId: scopedTargetId,
+          when: { mode: "all" },
+        }),
+      ]);
+
       const sections: PackageSection[] = [];
 
       const profile = buildProfileSection();
       if (profile) sections.push(profile);
 
-      const rollup = await buildRollupSection();
+      const rollup = buildRollupSection(rollupRows);
       if (rollup) sections.push(rollup);
 
-      const heat = await buildHeatMapSection();
+      const heat = await buildHeatMapSection(heatLocations);
       if (heat) sections.push(heat);
 
       const ego = buildEgoSection();
@@ -328,6 +393,10 @@ export default function IntelPackages() {
         coverTitle: "Intelligence Package",
         coverSubject: subjectName,
         coverMeta: meta,
+        summaryRows: buildSummaryRows(rollupRows, heatLocations),
+        preparedBy: me?.name
+          ? `${me.name}${me.cin ? ` (CIN ${me.cin})` : ""}`
+          : null,
         sections,
       });
       if (!openPrintPreview(html)) {

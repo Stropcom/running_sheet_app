@@ -827,7 +827,6 @@ function DeploymentRollupPanel({
               <DeploymentRollupCard
                 key={r.sheetId}
                 row={r}
-                showTarget={showTargetFilter}
                 expanded={expandedId === r.sheetId}
                 onToggle={() => toggleExpanded(r.sheetId)}
               />
@@ -1166,12 +1165,10 @@ function RollupSection({
 
 function DeploymentRollupCard({
   row: r,
-  showTarget,
   expanded,
   onToggle,
 }: {
   row: RollupRow;
-  showTarget: boolean;
   expanded: boolean;
   onToggle: () => void;
 }) {
@@ -1221,7 +1218,7 @@ function DeploymentRollupCard({
                 </span>
               )}
             </div>
-            {showTarget && r.targetName && (
+            {r.targetName && (
               <p className="text-xs font-bold text-foreground truncate pl-5 mt-0.5">
                 {r.targetName}
               </p>

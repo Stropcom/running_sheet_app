@@ -82,6 +82,27 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 .data-table td { vertical-align:top; font-size:10.5px; padding:6px 8px; border-bottom:1px solid ${PKG_GREY_BORDER}; border-right:1px solid ${PKG_GREY_BORDER}; }
 .data-table tbody tr:last-child td { border-bottom:none; }
 
+/* ── Deployment Rollup blocks (buildRollupSheetBlocksHtml) ── */
+.sheet-block { border-top:4px solid ${PKG_BLUE_MID}; margin-bottom:8px; }
+.sheet-block:first-child { border-top:none; }
+.sheet-header { padding:14px 0 8px; }
+.sheet-header-main { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.sheet-date { font-size:15px; font-weight:700; color:${PKG_GREY_TEXT}; }
+.sheet-chip { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; padding:3px 8px; border-radius:5px; background:${PKG_BLUE_LIGHT} !important; color:${PKG_BLUE_DARK} !important; border:1px solid ${PKG_BLUE_MID}; }
+.sheet-time { font-size:11px; color:#64748b; }
+.sheet-target { font-size:11px; font-weight:700; color:${PKG_GREY_TEXT}; margin-top:4px; }
+.status-pill { display:inline-flex; align-items:center; padding:3px 10px; border-radius:9999px; font-size:9px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; margin-left:auto; }
+.status-complete { background:#dcfce7 !important; color:#15803d !important; border:1px solid #86efac; }
+.status-open { background:#fef3c7 !important; color:#92400e !important; border:1px solid #fcd34d; }
+/* Rollup blocks wrap their sections in .content; inside a package section
+   that padding is already supplied by .pkg-section. */
+.pkg-section .content { padding:0 0 18px; }
+.summary-table { width:100%; border-collapse:collapse; border:1.5px solid ${PKG_BLUE_DARK}; }
+.summary-table th { background:${PKG_BLUE_LIGHT} !important; color:${PKG_BLUE_DARK} !important; font-weight:700; font-size:9.5px; text-transform:uppercase; letter-spacing:0.04em; text-align:left; padding:6px 8px; border-bottom:2px solid ${PKG_BLUE_DARK}; border-right:1px solid #c7d5ee; }
+.summary-table th:last-child, .summary-table td:last-child { border-right:none; }
+.summary-table td { vertical-align:top; font-size:10.5px; padding:6px 8px; border-bottom:1px solid ${PKG_GREY_BORDER}; border-right:1px solid ${PKG_GREY_BORDER}; }
+.summary-table tbody tr:last-child td { border-bottom:none; }
+
 /* ── Diagram captions / legend ── */
 .stats-line { text-align:center; font-size:10px; color:#64748b; padding:6px 0 2px; }
 .legend { display:flex; flex-wrap:wrap; gap:14px; justify-content:center; padding:8px 0 2px; border-top:1px solid ${PKG_GREY_BORDER}; }
@@ -91,6 +112,9 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 /* ── Sub-heading used between repeated blocks (e.g. one per target) ── */
 .sub-head { font-size:13px; font-weight:700; color:${PKG_GREY_TEXT}; margin:0 0 10px; padding-bottom:6px; border-bottom:2px solid ${PKG_BLUE_MID}; }
 .sub-block { margin-bottom:22px; break-inside:avoid-page; }
+/* A package carries one diagram per target, so cap each one — left to scale
+   with the page width a single wide graph would run over a whole page. */
+.sub-block svg { max-height:520px; }
 
 /* ── Footer ── */
 .footer-note { margin:10px 32px 0; padding:12px 0 18px; border-top:1px solid ${PKG_GREY_BORDER}; font-size:9px; color:#94a3b8; }

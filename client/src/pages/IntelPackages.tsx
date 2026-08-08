@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { trpc } from "@/lib/trpc";
+import { trpc, trpcClient } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -31,6 +31,7 @@ import {
   type EgoNode,
   type EgoEdge,
 } from "@/lib/egoNetworkLayout";
+import { buildRollupSheetBlocksHtml } from "@/lib/rollupSection";
 
 type PackageScope = "operation" | "target";
 
@@ -152,6 +153,17 @@ export default function IntelPackages() {
         ring1Radius: radii.ring1,
         ring2Radius: radii.ring2,
       });
+      // A lone node with nothing around it still produces a valid diagram,
+      // but it's a big empty circle taking most of a page — the note alone
+      // carries the same information.
+      if (layout.placed.length === 0) {
+        blocks.push(`<div class="sub-block">
+        <p class="sub-head">${escHtml(t.name)}</p>
+        <p class="muted-note">No recorded co-occurrences.</p>
+      </div>`);
+        continue;
+      }
+
       const svg = buildEgoNetworkSvg({ focusNode, layout, radii });
       const ring1 = layout.placed.filter(p => p.hop === 1);
       const rows = layout.placed
@@ -166,14 +178,10 @@ export default function IntelPackages() {
         ${svg}
         <div class="stats-line">${ring1.length} direct link${ring1.length !== 1 ? "s" : ""}${layout.hiddenRing1Count > 0 ? ` &middot; ${layout.hiddenRing1Count} not shown` : ""}</div>
         <div class="legend">${legendHtml}</div>
-        ${
-          layout.placed.length
-            ? `<table class="data-table" style="margin-top:10px">
+        <table class="data-table" style="margin-top:10px">
           <thead><tr><th>Entity</th><th style="width:110px">Type</th><th style="width:110px">Co-occurrences</th></tr></thead>
           <tbody>${rows}</tbody>
-        </table>`
-            : `<p class="muted-note">No recorded co-occurrences.</p>`
-        }
+        </table>
       </div>`);
     }
 
@@ -186,6 +194,21 @@ export default function IntelPackages() {
     return {
       title: "Ego Networks",
       html: `${blocks.join("\n")}${missingNote}`,
+    };
+  }
+
+  /** Deployment Rollup — every summary in scope, target-filtered for a
+   * target package. Uses the same endpoint as the Operation page's own
+   * Rollup export so both stay in step. */
+  async function buildRollupSection(): Promise<PackageSection | null> {
+    const rows = await trpcClient.summary.exportRollup.query({
+      operationId: operationId!,
+      targetId: scope === "target" ? targetId : null,
+    });
+    if (!rows.length) return null;
+    return {
+      title: "Deployment Rollup",
+      html: buildRollupSheetBlocksHtml(rows),
     };
   }
 
@@ -208,6 +231,10 @@ export default function IntelPackages() {
     setIsBuilding(true);
     try {
       const sections: PackageSection[] = [];
+
+      const rollup = await buildRollupSection();
+      if (rollup) sections.push(rollup);
+
       const ego = buildEgoSection();
       if (ego) sections.push(ego);
 
@@ -374,6 +401,9 @@ export default function IntelPackages() {
             Package contents
           </p>
           <ul className="text-xs text-muted-foreground list-disc list-inside space-y-0.5">
+            <li>
+              Deployment Rollup — every Supervisor Summary in scope
+            </li>
             <li>
               Ego Network — one diagram per included target, that target
               centred

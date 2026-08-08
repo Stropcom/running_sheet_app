@@ -1,6 +1,12 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc, trpcClient } from "@/lib/trpc";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
+import {
+  buildRollupSheetBlocksHtml,
+  formatRollupDate,
+  parseRollupJsonArray,
+  type RollupExportRow,
+} from "@/lib/rollupSection";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { buildRunningSheetTitle } from "@shared/runningSheetTitle";
 import { Button } from "@/components/ui/button";
@@ -661,28 +667,6 @@ function TargetPanel({ operationId, autoExpandId, fromSheetId }: { operationId: 
 // Supervisor Summary for this operation — lets a supervisor scan how a
 // deployment has progressed across 20-50+ sheets without opening each one.
 
-// sheetDate (when present) is a plain "yyyy-MM-dd" string with no time
-// component — reformatted with a string split rather than round-tripping
-// through `new Date()`, which parses a bare date as UTC midnight and could
-// shift the displayed day depending on the browser's local timezone offset.
-function formatRollupDate(
-  sheetDate: string | null,
-  createdAt: Date | string
-): string {
-  const ymd = sheetDate ?? format(new Date(createdAt), "yyyy-MM-dd");
-  const [y, m, d] = ymd.split("-");
-  return y && m && d ? `${d}-${m}-${y}` : ymd;
-}
-
-function parseRollupJsonArray<T>(raw: string | null | undefined): T[] {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
 
 function DeploymentRollupPanel({
   operationId,
@@ -917,11 +901,6 @@ type RollupRow = {
   completedAt: number | null;
 };
 
-type RollupExportRow = RollupRow & {
-  entries: { id: number; time: string | null; location: string | null; text: string }[];
-  vehicles: { key: string; label: string }[];
-};
-
 // ── Rollup PDF export ────────────────────────────────────────────────────────
 // Same dark-blue-banner / light-blue-section visual language as the
 // Supervisor Summary export (SheetSummary.tsx's exportSummaryToPDF) — every
@@ -947,108 +926,7 @@ function buildRollupExportPdf(params: {
   const GREY_TEXT = "#1e293b";
   const GREY_BORDER = "#e2e8f0";
 
-  const detailRow = (label: string, value: string | null) =>
-    value && value.trim()
-      ? `<div class="detail-label">${esc(label)}</div><div class="detail-value">${esc(value)}</div>`
-      : "";
-
-  const section = (title: string, bodyHtml: string) =>
-    bodyHtml
-      ? `<div class="section"><div class="section-title">${esc(title)}</div><div class="section-body">${bodyHtml}</div></div>`
-      : "";
-
-  const sheetBlocks = rows
-    .map((r, i) => {
-      const objectives = parseRollupJsonArray<string>(r.objectives).filter(o =>
-        o.trim()
-      );
-      const specialProjects = parseRollupJsonArray<{
-        key: string;
-        detail: string;
-      }>(r.specialProjects);
-      const criticalDecisions = parseRollupJsonArray<string>(
-        r.criticalDecisions
-      ).filter(c => c.trim());
-      const communicationParts = [r.ioContactTiming, r.ioContactMethod].filter(
-        (p): p is string => !!p && !!p.trim()
-      );
-      const isComplete = !!r.completedAt;
-
-      const vehiclesHtml = r.vehicles.length
-        ? `<div class="chip-list">${r.vehicles.map(v => `<span class="chip">${esc(v.label)}</span>`).join("")}</div>`
-        : `<p class="muted-note">No vehicles found in the Target Registry or running sheet text.</p>`;
-
-      const specialProjectsHtml = specialProjects.length
-        ? `<div class="chip-list">${specialProjects
-            .map(
-              p =>
-                `<span class="chip"><strong>${esc(p.key)}</strong>${p.detail?.trim() ? `<span class="chip-detail"> — ${esc(p.detail)}</span>` : ""}</span>`
-            )
-            .join("")}</div>`
-        : `<p class="muted-note">None recorded.</p>`;
-
-      const objectivesHtml = objectives.length
-        ? `<ol class="numbered-list">${objectives.map(o => `<li>${esc(o)}</li>`).join("")}</ol>`
-        : `<p class="muted-note">None recorded.</p>`;
-
-      const criticalDecisionsHtml = criticalDecisions.length
-        ? `<ol class="numbered-list">${criticalDecisions.map(d => `<li>${esc(d)}</li>`).join("")}</ol>`
-        : `<p class="muted-note">None recorded.</p>`;
-
-      const summaryHtml = r.entries.length
-        ? `<table class="summary-table">
-            <thead><tr><th style="width:70px">Time</th><th style="width:28%">Address</th><th>Observation</th></tr></thead>
-            <tbody>${r.entries
-              .map(
-                e =>
-                  `<tr><td>${esc(e.time || "—")}</td><td>${esc(e.location || "")}</td><td>${esc(e.text)}</td></tr>`
-              )
-              .join("")}</tbody>
-          </table>`
-        : `<p class="muted-note">No running sheet rows yet.</p>`;
-
-      return `<div class="sheet-block${i > 0 ? " page-break" : ""}">
-        <div class="sheet-header">
-          <div class="sheet-header-main">
-            <span class="sheet-date">${esc(formatRollupDate(r.sheetDate, r.createdAt))}</span>
-            ${r.teamLabel ? `<span class="sheet-chip">${esc(r.teamLabel)}</span>` : ""}
-            ${r.startTime || r.finishTime ? `<span class="sheet-time">${esc(r.startTime ?? "?")}–${esc(r.finishTime ?? "?")}</span>` : ""}
-            <span class="status-pill ${isComplete ? "status-complete" : "status-open"}">${isComplete ? "Complete" : "Open"}</span>
-          </div>
-          ${r.targetName ? `<div class="sheet-target">${esc(r.targetName)}</div>` : ""}
-        </div>
-        <div class="content">
-          ${section(
-            "Deployment",
-            `<div class="detail-grid">
-              ${detailRow("Team", r.teamLabel)}
-              ${detailRow("Team Members CIN", r.teamCins)}
-              ${detailRow("Start time", r.startTime)}
-              ${detailRow("Finish time", r.finishTime)}
-              ${detailRow("Target (TGT)", r.targetName)}
-              ${detailRow("Location", r.location)}
-            </div>`
-          )}
-          ${section("Vehicle", vehiclesHtml)}
-          ${section(
-            "Investigator",
-            r.ioSupport?.trim() || communicationParts.length || r.intelSupport?.trim()
-              ? `<div class="detail-grid">
-                  ${detailRow("Investigator", r.ioSupport)}
-                  ${communicationParts.length ? detailRow("Contacted", communicationParts.join(" — ")) : ""}
-                  ${detailRow("Intel Support", r.intelSupport)}
-                </div>`
-              : `<p class="muted-note">None recorded.</p>`
-          )}
-          ${section("Special Projects", specialProjectsHtml)}
-          ${section("Objectives", objectivesHtml)}
-          ${section("Critical Decisions", criticalDecisionsHtml)}
-          ${section("Summary", summaryHtml)}
-          ${section("Issues", r.issues?.trim() ? `<p>${esc(r.issues)}</p>` : "")}
-        </div>
-      </div>`;
-    })
-    .join("");
+  const sheetBlocks = buildRollupSheetBlocksHtml(rows);
 
   const scopeLine = targetName ? `Target: ${targetName}` : "All targets";
   const generatedAt = new Date().toLocaleString("en-AU", {

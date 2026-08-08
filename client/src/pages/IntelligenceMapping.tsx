@@ -13,6 +13,7 @@ import {
   convertGoogleAddresses,
   buildPoiAddress,
   formatIntelAddress,
+  formatIntelVehicle,
   ensureBracketCode,
 } from "@/lib/addressFormat";
 import { useLocation } from "wouter";
@@ -422,6 +423,29 @@ const DARK_MAP_STYLES: google.maps.MapTypeStyle[] = [
   },
 ];
 
+// ── Marker pop-up entity blocks ─────────────────────────────────────────────
+// A long operation accumulates a lot of entities against a single address.
+// Left unbounded they push the pop-up's action buttons (RS Quick Entry,
+// Waze, Edit/Move) off the bottom of the map, so each block is capped and
+// scrolls on its own — the target details and the associated entities can be
+// scrolled independently of each other. `overscroll-behavior:contain` stops a
+// flick that reaches the end of a list from carrying on into a map pan.
+const POPUP_SCROLL =
+  "max-height:150px;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;";
+
+/** Vehicle mentions arrive either as a raw target-card V1F ("White Toyota
+ * Corolla, bearing WA registration 5IND123 (Vehicle 5IND123)") or already as
+ * an entity short form — both go through the same formatter the Intelligence
+ * folder uses, so a vehicle reads identically in both places. */
+function popupVehicleLines(vehicles: string[], fontSize: string): string {
+  return vehicles
+    .map(
+      v =>
+        `<div style="font-size:${fontSize};color:#111;padding:1px 0;">${formatIntelVehicle(v)}</div>`
+    )
+    .join("");
+}
+
 function buildInfoWindowContent(loc: IntelMapLocation): string {
   const isTarget = loc.type === "target_address";
   const isAdditionalTargetAddress =
@@ -461,68 +485,70 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
     <strong style="font-size:13px;color:#111;line-height:1.35;display:block;margin-bottom:2px;">${displayLabel}</strong>
   `);
 
-  // Linked target details (for target_address)
+  // Linked target details (for target_address).
+  // The TGT alias and HBF are deliberately not repeated here: the alias is
+  // already inside the target's own name, and the address is the pop-up's
+  // heading directly above. Vehicles show in the Intelligence folder's form
+  // rather than the raw V1F/V2F card text.
   if (isTarget && loc.linkedTargets.length > 0) {
+    lines.push(`<div style="margin-top:6px;${POPUP_SCROLL}">`);
     for (const t of loc.linkedTargets) {
       lines.push(
-        `<div style="margin-top:6px;padding:6px 8px;background:#fef2f2;border-left:3px solid #dc2626;border-radius:0 4px 4px 0;">`
+        `<div style="margin-bottom:5px;padding:6px 8px;background:#fef2f2;border-left:3px solid #dc2626;border-radius:0 4px 4px 0;">`
       );
       lines.push(
         `<div style="font-size:12px;font-weight:700;color:#111;margin-bottom:2px;">${t.name}</div>`
       );
-      if (t.tgt)
-        lines.push(
-          `<div style="font-size:11px;color:#444;margin-bottom:1px;">TGT: ${t.tgt}</div>`
-        );
-      if (t.hbf)
-        lines.push(
-          `<div style="font-size:11px;color:#555;margin-bottom:1px;">HBF: ${t.hbf}</div>`
-        );
-      if (t.v1f)
-        lines.push(
-          `<div style="font-size:11px;color:#555;margin-bottom:1px;">V1F: ${t.v1f}</div>`
-        );
-      if (t.v2f)
-        lines.push(
-          `<div style="font-size:11px;color:#555;margin-bottom:1px;">V2F: ${t.v2f}</div>`
-        );
+      const tVehicles = [t.v1f, t.v2f].filter((v): v is string => !!v);
+      if (tVehicles.length)
+        lines.push(popupVehicleLines(tVehicles, "11px"));
       if (t.operationName)
         lines.push(
           `<div style="font-size:10px;color:#888;margin-top:2px;">Op: ${t.operationName}</div>`
         );
       lines.push(`</div>`);
     }
-  }
-
-  // Linked targets (for observation)
-  if (!isTarget && loc.linkedTargets.length > 0) {
-    lines.push(
-      `<div style="margin-top:6px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Linked Targets</span>`
-    );
-    for (const t of loc.linkedTargets) {
-      lines.push(
-        `<div style="font-size:12px;color:#111;padding:1px 0;">${t.name}${
-          t.addressLabel
-            ? `<span style="color:#7c3aed;font-weight:600;"> · ${t.addressLabel}</span>`
-            : ""
-        }</div>`
-      );
-    }
     lines.push(`</div>`);
   }
 
-  // Associated persons
-  if (loc.assocPersons.length > 0) {
-    lines.push(
-      `<div style="margin-top:6px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Persons</span><p style="font-size:12px;color:#111;margin:2px 0 0">${loc.assocPersons.join(", ")}</p></div>`
-    );
-  }
+  // ── Associated entities ──────────────────────────────────────────────────
+  // Linked targets (observation pins only), persons and vehicles share one
+  // scroll container, so this list scrolls independently of the target
+  // details above it.
+  {
+    const entityLines: string[] = [];
 
-  // Associated vehicles
-  if (loc.assocVehicles.length > 0) {
-    lines.push(
-      `<div style="margin-top:4px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Vehicles</span><p style="font-size:12px;color:#111;margin:2px 0 0">${loc.assocVehicles.join(", ")}</p></div>`
-    );
+    if (!isTarget && loc.linkedTargets.length > 0) {
+      entityLines.push(
+        `<span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Linked Targets</span>`
+      );
+      for (const t of loc.linkedTargets) {
+        entityLines.push(
+          `<div style="font-size:12px;color:#111;padding:1px 0;">${t.name}${
+            t.addressLabel
+              ? `<span style="color:#7c3aed;font-weight:600;"> · ${t.addressLabel}</span>`
+              : ""
+          }</div>`
+        );
+      }
+    }
+
+    if (loc.assocPersons.length > 0) {
+      entityLines.push(
+        `<div style="margin-top:6px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Persons</span><p style="font-size:12px;color:#111;margin:2px 0 0">${loc.assocPersons.join(", ")}</p></div>`
+      );
+    }
+
+    if (loc.assocVehicles.length > 0) {
+      entityLines.push(
+        `<div style="margin-top:6px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Vehicles</span><div style="margin-top:2px">${popupVehicleLines(loc.assocVehicles, "12px")}</div></div>`
+      );
+    }
+
+    if (entityLines.length)
+      lines.push(
+        `<div style="margin-top:6px;${POPUP_SCROLL}">${entityLines.join("")}</div>`
+      );
   }
 
   // ── Action buttons (observed location only — same layout as custom marker popup) ──
@@ -666,25 +692,30 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
         </div>
         <strong style="font-size:12px;color:#111;line-height:1.35;display:block;margin-bottom:2px;">${secLabel}</strong>
       `);
+      const secEntityLines: string[] = [];
       if (sec.linkedTargets.length > 0) {
-        lines.push(
-          `<div style="margin-top:4px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Linked Targets</span>`
+        secEntityLines.push(
+          `<span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Linked Targets</span>`
         );
         for (const t of sec.linkedTargets) {
-          lines.push(
+          secEntityLines.push(
             `<div style="font-size:12px;color:#111;padding:1px 0;">${t.name}</div>`
           );
         }
-        lines.push(`</div>`);
       }
       if (sec.assocPersons.length > 0) {
-        lines.push(
-          `<div style="margin-top:4px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Persons</span><p style="font-size:12px;color:#111;margin:2px 0 0">${sec.assocPersons.join(", ")}</p></div>`
+        secEntityLines.push(
+          `<div style="margin-top:6px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Persons</span><p style="font-size:12px;color:#111;margin:2px 0 0">${sec.assocPersons.join(", ")}</p></div>`
         );
       }
       if (sec.assocVehicles.length > 0) {
+        secEntityLines.push(
+          `<div style="margin-top:6px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Vehicles</span><div style="margin-top:2px">${popupVehicleLines(sec.assocVehicles, "12px")}</div></div>`
+        );
+      }
+      if (secEntityLines.length) {
         lines.push(
-          `<div style="margin-top:4px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Vehicles</span><p style="font-size:12px;color:#111;margin:2px 0 0">${sec.assocVehicles.join(", ")}</p></div>`
+          `<div style="margin-top:4px;${POPUP_SCROLL}">${secEntityLines.join("")}</div>`
         );
       }
 
@@ -2424,8 +2455,11 @@ export default function IntelligenceMapping() {
                   </div>
                   <div style="font-size:12px;font-weight:700;color:#111;margin-bottom:3px;">${formatIntelAddress(intel.label)}</div>
               `);
-              // Linked target details
+              // Linked target details — same treatment as the standalone
+              // target pin: no repeated TGT alias or HBF, vehicles in the
+              // Intelligence folder's form, capped and scrollable.
               if (isTarget && intel.linkedTargets.length > 0) {
+                lines.push(`<div style="${POPUP_SCROLL}">`);
                 for (const t of intel.linkedTargets) {
                   lines.push(
                     `<div style="padding:4px 6px;background:#fef2f2;border-left:2px solid #dc2626;border-radius:0 3px 3px 0;margin-bottom:3px;">`
@@ -2433,47 +2467,41 @@ export default function IntelligenceMapping() {
                   lines.push(
                     `<div style="font-size:11px;font-weight:700;color:#111;">${t.name}</div>`
                   );
-                  if (t.tgt)
-                    lines.push(
-                      `<div style="font-size:10px;color:#555;">TGT: ${t.tgt}</div>`
-                    );
-                  if (t.hbf)
-                    lines.push(
-                      `<div style="font-size:10px;color:#555;">HBF: ${t.hbf}</div>`
-                    );
-                  if (t.v1f)
-                    lines.push(
-                      `<div style="font-size:10px;color:#555;">V1F: ${t.v1f}</div>`
-                    );
-                  if (t.v2f)
-                    lines.push(
-                      `<div style="font-size:10px;color:#555;">V2F: ${t.v2f}</div>`
-                    );
+                  const tVehicles = [t.v1f, t.v2f].filter(
+                    (v): v is string => !!v
+                  );
+                  if (tVehicles.length)
+                    lines.push(popupVehicleLines(tVehicles, "10px"));
                   lines.push(`</div>`);
                 }
+                lines.push(`</div>`);
               }
-              // Linked targets for observation
+
+              const intelEntityLines: string[] = [];
               if (!isTarget && intel.linkedTargets.length > 0) {
-                lines.push(
+                intelEntityLines.push(
                   `<div style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Linked Targets</div>`
                 );
                 for (const t of intel.linkedTargets) {
-                  lines.push(
+                  intelEntityLines.push(
                     `<div style="font-size:11px;color:#111;">${t.name}</div>`
                   );
                 }
               }
-              // Intel persons/vehicles
               if (intel.assocPersons.length > 0) {
-                lines.push(
+                intelEntityLines.push(
                   `<div style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;margin-top:3px;">Intel Persons</div><div style="font-size:11px;color:#111;">${intel.assocPersons.join(", ")}</div>`
                 );
               }
               if (intel.assocVehicles.length > 0) {
-                lines.push(
-                  `<div style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;margin-top:2px;">Intel Vehicles</div><div style="font-size:11px;color:#111;">${intel.assocVehicles.join(", ")}</div>`
+                intelEntityLines.push(
+                  `<div style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;margin-top:2px;">Intel Vehicles</div><div>${popupVehicleLines(intel.assocVehicles, "11px")}</div>`
                 );
               }
+              if (intelEntityLines.length)
+                lines.push(
+                  `<div style="${POPUP_SCROLL}">${intelEntityLines.join("")}</div>`
+                );
               lines.push(`</div>`);
             }
             // ─────────────────────────────────────────────────────────────────────────

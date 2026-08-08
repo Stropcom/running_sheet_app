@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { trpc, trpcClient } from "@/lib/trpc";
+import { trpc } from "@/lib/trpc";
 import { MapView } from "@/components/Map";
 import {
   Select,
@@ -11,17 +11,13 @@ import {
 import { Flame, MapPin, Download } from "lucide-react";
 import { toast } from "sonner";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
-
-// Cool → hot, six stops — used for both the map's heat gradient and the
-// Top Locations intensity dots, so the two stay visually consistent.
-const HEAT_RAMP = [
-  "#2f6fed",
-  "#1fb6c9",
-  "#7bc142",
-  "#f2c230",
-  "#f0862c",
-  "#dd3a3a",
-];
+import {
+  HEAT_RAMP,
+  heatColourFor,
+  buildHeatMapImageHtml,
+  buildHeatMapLocationsTableHtml,
+  fetchHeatMapStaticImage,
+} from "@/lib/heatMapSection";
 
 type WhenMode = "sheet" | "last7" | "last30" | "custom";
 
@@ -60,21 +56,8 @@ function exportHeatMapToPDF(params: {
       ? `<div class="section"><div class="section-title">${esc(title)}</div><div class="section-body">${bodyHtml}</div></div>`
       : "";
 
-  const mapHtml = mapImageDataUrl
-    ? `<img src="${mapImageDataUrl}" style="width:100%;border-radius:6px;display:block" />`
-    : `<p class="muted-note">No geocoded locations to plot for this selection.</p>`;
-
-  const locationsHtml = locations.length
-    ? `<table class="summary-table">
-        <thead><tr><th style="width:28px"></th><th>Location</th><th style="width:90px">Observations</th></tr></thead>
-        <tbody>${locations
-          .map(
-            l =>
-              `<tr><td><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${l.colour}"></span></td><td>${esc(l.label)}</td><td>${l.count}</td></tr>`
-          )
-          .join("")}</tbody>
-      </table>`
-    : `<p class="muted-note">No locations found for this selection.</p>`;
+  const mapHtml = buildHeatMapImageHtml(mapImageDataUrl);
+  const locationsHtml = buildHeatMapLocationsTableHtml(locations);
 
   const generatedAt = new Date().toLocaleString("en-AU", {
     dateStyle: "long",
@@ -203,13 +186,7 @@ export default function IntelligenceHeatMap() {
     () => Math.max(1, ...(locations ?? []).map(l => l.count)),
     [locations]
   );
-  const colourFor = (count: number) => {
-    const idx = Math.min(
-      HEAT_RAMP.length - 1,
-      Math.floor((count / maxCount) * (HEAT_RAMP.length - 1))
-    );
-    return HEAT_RAMP[idx];
-  };
+  const colourFor = (count: number) => heatColourFor(count, maxCount);
 
   const mapRef = useRef<google.maps.Map | null>(null);
   const circlesRef = useRef<google.maps.Circle[]>([]);
@@ -281,20 +258,8 @@ export default function IntelligenceHeatMap() {
       let mapImageDataUrl: string | null = null;
       if (locations && locations.length > 0) {
         toast.info("Capturing map…");
-        try {
-          const waypoints = locations.map((l, i) => ({
-            lat: l.lat,
-            lng: l.lng,
-            index: i,
-            colour: colourFor(l.count),
-            size: "small" as const,
-          }));
-          const result = await trpcClient.rsMapping.getStaticMapImage.query({
-            waypoints,
-            size: "720x540",
-          });
-          mapImageDataUrl = result.dataUrl;
-        } catch {
+        mapImageDataUrl = await fetchHeatMapStaticImage(locations, maxCount);
+        if (!mapImageDataUrl) {
           // A failed map snapshot shouldn't block exporting the Top
           // Locations table — the document falls back to a muted note in
           // the Map section instead of erroring out entirely.

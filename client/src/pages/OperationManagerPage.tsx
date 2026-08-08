@@ -1596,8 +1596,8 @@ function PageHeader({
   rightSlot?: React.ReactNode;
 }) {
   return (
-    <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border px-4 py-3 flex items-center gap-3">
-      <div className="flex-1 flex items-center justify-center gap-1 min-w-0">
+    <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+      <div className="flex-1 flex items-center justify-center gap-1 min-w-0 basis-full sm:basis-auto">
         <Button
           variant="ghost"
           size="icon"
@@ -1626,7 +1626,11 @@ function PageHeader({
           <ChevronRight className="h-4 w-4" />
         </Button>
       </div>
-      {rightSlot && <div className="shrink-0">{rightSlot}</div>}
+      {rightSlot && (
+        <div className="shrink-0 basis-full sm:basis-auto flex items-center justify-center sm:justify-end">
+          {rightSlot}
+        </div>
+      )}
     </div>
   );
 }

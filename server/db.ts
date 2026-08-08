@@ -2073,7 +2073,36 @@ export async function getAllTargets() {
     .leftJoin(operations, eq(targets.operationId, operations.id))
     .where(isNull(targets.deletedAt))
     .orderBy(targets.name);
-  return rows;
+
+  // targets.operationId is a nullable legacy column — a registry target's
+  // real operations live in operation_target_links. Without this the
+  // cross-operation target picker showed no "Op:" label for registry
+  // targets and couldn't find them by operation name in its search.
+  const links = await db
+    .select({
+      targetId: operationTargetLinks.targetId,
+      operationName: operations.name,
+    })
+    .from(operationTargetLinks)
+    .leftJoin(operations, eq(operationTargetLinks.operationId, operations.id));
+
+  const namesByTarget = new Map<number, Set<string>>();
+  for (const l of links) {
+    if (!l.operationName) continue;
+    if (!namesByTarget.has(l.targetId))
+      namesByTarget.set(l.targetId, new Set());
+    namesByTarget.get(l.targetId)!.add(l.operationName);
+  }
+
+  return rows.map(r => {
+    const names = new Set(namesByTarget.get(r.id) ?? []);
+    // The legacy FK still counts as a link where it's set.
+    if (r.operationName) names.add(r.operationName);
+    return {
+      ...r,
+      operationName: names.size ? Array.from(names).join(", ") : null,
+    };
+  });
 }
 
 export async function createTarget(data: InsertTarget) {
@@ -3651,6 +3680,7 @@ function isNonObservationRow(
 
 export type IntelligenceHeatMapWhen =
   | { mode: "sheet"; sheetId: number }
+  | { mode: "all" } // every sheet in scope, no date window
   | { mode: "last7" }
   | { mode: "last30" }
   | { mode: "custom"; startDate: string; endDate: string }; // YYYY-MM-DD, inclusive
@@ -3752,16 +3782,20 @@ export async function getIntelligenceHeatMapLocations(params: {
   // sequential scan meant for single-sheet rendering, disproportionately
   // expensive to replicate across every sheet in scope here, and only
   // matters for legacy rows predating rowDate.)
+  // "sheet" takes the whole sheet and "all" takes every sheet in scope, so
+  // neither resolves a window — only the three windowed modes do.
+  const hasDateWindow =
+    params.when.mode === "custom" ||
+    params.when.mode === "last7" ||
+    params.when.mode === "last30";
   let startISO = "";
   let endISO = "";
-  if (params.when.mode !== "sheet") {
-    if (params.when.mode === "custom") {
-      startISO = params.when.startDate;
-      endISO = params.when.endDate;
-    } else {
-      endISO = perthTodayISO();
-      startISO = addDaysISO(endISO, params.when.mode === "last7" ? -6 : -29);
-    }
+  if (params.when.mode === "custom") {
+    startISO = params.when.startDate;
+    endISO = params.when.endDate;
+  } else if (params.when.mode === "last7" || params.when.mode === "last30") {
+    endISO = perthTodayISO();
+    startISO = addDaysISO(endISO, params.when.mode === "last7" ? -6 : -29);
   }
 
   // ── Reuse the same entity extraction/dedup pipeline as the Locations tab
@@ -3806,7 +3840,7 @@ export async function getIntelligenceHeatMapLocations(params: {
         continue;
       if (!OBSERVATION_SIGNAL_RE.test(row.observation)) continue;
 
-      if (params.when.mode !== "sheet") {
+      if (hasDateWindow) {
         const resolvedDate =
           row.rowDate ??
           addDaysISO(
@@ -4000,9 +4034,28 @@ export async function getWeeklyActivityReport(
   const sheetById = new Map(sheets.map(s => [s.id, s]));
   const opIds = Array.from(new Set(sheets.map(s => s.operationId)));
 
+  // Targets are looked up by the ids the sheets actually reference, not by
+  // targets.operationId — that column is a nullable legacy field (the real
+  // association is the operation_target_links join table, since a registry
+  // target can belong to several operations). Filtering on it silently
+  // dropped every registry-created target, leaving the Target Activity
+  // section showing "—" instead of a name.
+  const referencedTargetIds = Array.from(
+    new Set(
+      sheets
+        .map(s => s.targetId)
+        .filter((id): id is number => typeof id === "number")
+    )
+  );
+
   const [ops, targetRows, rows, govRecords] = await Promise.all([
     db.select().from(operations).where(inArray(operations.id, opIds)),
-    db.select().from(targets).where(inArray(targets.operationId, opIds)),
+    referencedTargetIds.length
+      ? db
+          .select()
+          .from(targets)
+          .where(inArray(targets.id, referencedTargetIds))
+      : Promise.resolve([] as (typeof targets.$inferSelect)[]),
     db
       .select()
       .from(sheetRows)
@@ -4182,6 +4235,7 @@ export async function getWeeklyActivityReport(
     entityKey: string;
     label: string;
     targetId: number;
+    operationId: number;
     order: number;
   };
   const qualifying: QualifyingMention[] = [];
@@ -4207,6 +4261,7 @@ export async function getWeeklyActivityReport(
         entityKey: normalizeEntityLabel(entity.shortForm),
         label: entity.shortForm,
         targetId: sheet.targetId,
+        operationId: sheet.operationId,
         order: rowOrderIndex.get(occ.rowId) ?? 0,
       });
     }
@@ -4239,10 +4294,21 @@ export async function getWeeklyActivityReport(
   )
     .map(([targetId, locMap]) => {
       const target = targetById.get(targetId);
+      // The operation comes from the sheets this week's activity was logged
+      // on, not the target's own legacy operationId — a registry target can
+      // be linked to several operations, and what matters here is where it
+      // was actually observed.
+      const opNames = Array.from(
+        new Set(
+          (qualifyingByTarget.get(targetId) ?? [])
+            .map(m => opById.get(m.operationId)?.name)
+            .filter((n): n is string => !!n)
+        )
+      );
       return {
         targetId,
         targetName: target?.name ?? "—",
-        operationName: opById.get(target?.operationId ?? -1)?.name ?? "—",
+        operationName: opNames.length ? opNames.join(", ") : "—",
         locations: Array.from(locMap.values()).sort(
           (a, b) => b.count - a.count
         ),
@@ -5538,6 +5604,10 @@ export interface AssocNode {
   occurrences: number; // total times seen
   operationIds: number[];
   operationNames: string[];
+  /** Registry target id when this node is a target, else null. Lets callers
+   * (e.g. the Intelligence Package, which centres a diagram on each chosen
+   * target) match a target to its node by id instead of by display label. */
+  targetId: number | null;
 }
 
 export interface AssocEdge {
@@ -5604,6 +5674,7 @@ export async function getAssociationGraph(
         occurrences: 0,
         operationIds: [],
         operationNames: [],
+        targetId: entity.isTarget ? (entity.targetId ?? null) : null,
       };
       nodeMap.set(nodeId, node);
     }
@@ -6859,6 +6930,51 @@ export async function getSheetSummariesForOperation(
     issues: r.summary.issues,
     completedAt: r.summary.completedAt,
   }));
+}
+
+export interface RollupExportRow extends OperationSummaryRollupRow {
+  entries: SheetSummaryEntry[];
+  vehicles: SheetSummaryVehicle[];
+}
+
+/**
+ * Same rows as getSheetSummariesForOperation, but with each sheet's
+ * summary-entries table and computed vehicle list attached — everything the
+ * Deployment Rollup's expanded card view shows, for every sheet at once, so
+ * the PDF export doesn't need one round-trip per sheet.
+ */
+export async function getRollupExportData(
+  operationId: number,
+  targetId?: number | null
+): Promise<RollupExportRow[]> {
+  const rows = await getSheetSummariesForOperation(operationId, targetId);
+  return Promise.all(
+    rows.map(async r => {
+      const [entries, sheet, record, allRows] = await Promise.all([
+        getSheetSummaryEntries(r.sheetId),
+        getRunningSheetById(r.sheetId),
+        getSheetSummary(r.sheetId),
+        getRowsBySheetId(r.sheetId),
+      ]);
+      const target = sheet?.targetId
+        ? await getTargetById(sheet.targetId)
+        : null;
+      let dismissed: string[] = [];
+      try {
+        dismissed = record?.dismissedVehicleKeys
+          ? JSON.parse(record.dismissedVehicleKeys)
+          : [];
+      } catch {
+        dismissed = [];
+      }
+      const vehicles = computeSheetSummaryVehicles(
+        target ?? null,
+        allRows,
+        dismissed
+      );
+      return { ...r, entries, vehicles };
+    })
+  );
 }
 
 // ─── Target Shortcuts ─────────────────────────────────────────────────────────

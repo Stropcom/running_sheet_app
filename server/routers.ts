@@ -171,6 +171,7 @@ import {
   getSheetSummarySupportHistory,
   getMostRecentSheetSummaryForOperation,
   getSheetSummariesForOperation,
+  getRollupExportData,
   completeSheetSummary,
   reopenSheetSummary,
   addManualSheetSummaryEntry,
@@ -2729,6 +2730,7 @@ export const appRouter = router({
           targetId: z.number().nullable().optional(),
           when: z.discriminatedUnion("mode", [
             z.object({ mode: z.literal("sheet"), sheetId: z.number() }),
+            z.object({ mode: z.literal("all") }),
             z.object({ mode: z.literal("last7") }),
             z.object({ mode: z.literal("last30") }),
             z.object({
@@ -3328,6 +3330,20 @@ export const appRouter = router({
           input.operationId,
           input.targetId ?? null
         );
+      }),
+
+    /** Same rows as listByOperation, but with each sheet's entries table and
+     * computed vehicle list attached — feeds the Rollup PDF export, which
+     * needs every card's full expanded content in one round-trip. */
+    exportRollup: protectedProcedure
+      .input(
+        z.object({
+          operationId: z.number(),
+          targetId: z.number().nullable().optional(),
+        })
+      )
+      .query(async ({ input }) => {
+        return getRollupExportData(input.operationId, input.targetId ?? null);
       }),
 
     /** Update summary fields (free text, save-as-you-go) */

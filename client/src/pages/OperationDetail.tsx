@@ -1,5 +1,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
-import { trpc } from "@/lib/trpc";
+import { trpc, trpcClient } from "@/lib/trpc";
+import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { buildRunningSheetTitle } from "@shared/runningSheetTitle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,6 +52,7 @@ import {
   History,
   ArrowUpDown,
   ChevronDown,
+  FileDown,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -658,6 +661,19 @@ function TargetPanel({ operationId, autoExpandId, fromSheetId }: { operationId: 
 // Supervisor Summary for this operation — lets a supervisor scan how a
 // deployment has progressed across 20-50+ sheets without opening each one.
 
+// sheetDate (when present) is a plain "yyyy-MM-dd" string with no time
+// component — reformatted with a string split rather than round-tripping
+// through `new Date()`, which parses a bare date as UTC midnight and could
+// shift the displayed day depending on the browser's local timezone offset.
+function formatRollupDate(
+  sheetDate: string | null,
+  createdAt: Date | string
+): string {
+  const ymd = sheetDate ?? format(new Date(createdAt), "yyyy-MM-dd");
+  const [y, m, d] = ymd.split("-");
+  return y && m && d ? `${d}-${m}-${y}` : ymd;
+}
+
 function parseRollupJsonArray<T>(raw: string | null | undefined): T[] {
   if (!raw) return [];
   try {
@@ -670,9 +686,11 @@ function parseRollupJsonArray<T>(raw: string | null | undefined): T[] {
 
 function DeploymentRollupPanel({
   operationId,
+  operationName,
   targets,
 }: {
   operationId: number;
+  operationName?: string | null;
   targets?: { id: number; name: string }[];
 }) {
   const [targetFilter, setTargetFilter] = useState<number | null>(null);
@@ -695,31 +713,86 @@ function DeploymentRollupPanel({
 
   const showTargetFilter = (targets?.length ?? 0) > 1;
 
+  // ── PDF export dialog ────────────────────────────────────────────────────
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportMode, setExportMode] = useState<"operation" | "target">(
+    "operation"
+  );
+  const [exportTargetId, setExportTargetId] = useState<number | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExport = async () => {
+    if (exportMode === "target" && !exportTargetId) {
+      toast.error("Pick a target to export.");
+      return;
+    }
+    setIsExporting(true);
+    try {
+      const exportRows = await trpcClient.summary.exportRollup.query({
+        operationId,
+        targetId: exportMode === "target" ? exportTargetId : null,
+      });
+      if (exportRows.length === 0) {
+        toast.error("No Supervisor Summaries to export for this selection.");
+        return;
+      }
+      const targetName =
+        exportMode === "target"
+          ? (targets?.find(t => t.id === exportTargetId)?.name ?? null)
+          : null;
+      buildRollupExportPdf({
+        operationName: operationName ?? "Operation",
+        targetName,
+        rows: exportRows,
+      });
+      setExportOpen(false);
+    } catch {
+      toast.error("Couldn't build the export — please try again.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4">
-      {showTargetFilter && (
-        <div className="flex items-center gap-2">
-          <label className="text-xs font-medium text-muted-foreground">
-            Target
-          </label>
-          <Select
-            value={targetFilter ? String(targetFilter) : "all"}
-            onValueChange={v => setTargetFilter(v === "all" ? null : Number(v))}
-          >
-            <SelectTrigger className="h-8 w-[220px] text-sm">
-              <SelectValue placeholder="All targets" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All targets</SelectItem>
-              {targets?.map(t => (
-                <SelectItem key={t.id} value={String(t.id)}>
-                  {t.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        {showTargetFilter ? (
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-medium text-muted-foreground">
+              Target
+            </label>
+            <Select
+              value={targetFilter ? String(targetFilter) : "all"}
+              onValueChange={v =>
+                setTargetFilter(v === "all" ? null : Number(v))
+              }
+            >
+              <SelectTrigger className="h-8 w-[220px] text-sm">
+                <SelectValue placeholder="All targets" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All targets</SelectItem>
+                {targets?.map(t => (
+                  <SelectItem key={t.id} value={String(t.id)}>
+                    {t.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : (
+          <div />
+        )}
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-1.5"
+          onClick={() => setExportOpen(true)}
+        >
+          <FileDown className="w-3.5 h-3.5" />
+          Export
+        </Button>
+      </div>
 
       {isLoading ? (
         <div className="flex flex-col gap-2">
@@ -762,6 +835,62 @@ function DeploymentRollupPanel({
           </div>
         </>
       )}
+
+      {/* Export dialog */}
+      <Dialog open={exportOpen} onOpenChange={setExportOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Export Deployment Rollup</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-4 py-1">
+            <RadioGroup
+              value={exportMode}
+              onValueChange={v => setExportMode(v as "operation" | "target")}
+              className="gap-2.5"
+            >
+              <label className="flex items-center gap-2.5 text-sm cursor-pointer">
+                <RadioGroupItem value="operation" />
+                Operation export — every summary in this operation
+              </label>
+              <label className="flex items-center gap-2.5 text-sm cursor-pointer">
+                <RadioGroupItem value="target" />
+                Target export — one target only
+              </label>
+            </RadioGroup>
+
+            {exportMode === "target" && (
+              <Select
+                value={exportTargetId ? String(exportTargetId) : undefined}
+                onValueChange={v => setExportTargetId(Number(v))}
+              >
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue placeholder="Choose a target…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {targets?.map(t => (
+                    <SelectItem key={t.id} value={String(t.id)}>
+                      {t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setExportOpen(false)}
+              disabled={isExporting}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleExport} disabled={isExporting} className="gap-1.5">
+              <FileDown className="w-3.5 h-3.5" />
+              {isExporting ? "Building…" : "Export PDF"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -788,6 +917,223 @@ type RollupRow = {
   issues: string | null;
   completedAt: number | null;
 };
+
+type RollupExportRow = RollupRow & {
+  entries: { id: number; time: string | null; location: string | null; text: string }[];
+  vehicles: { key: string; label: string }[];
+};
+
+// ── Rollup PDF export ────────────────────────────────────────────────────────
+// Same dark-blue-banner / light-blue-section visual language as the
+// Supervisor Summary export (SheetSummary.tsx's exportSummaryToPDF) — every
+// row here is that same set of sections (Deployment/Vehicle/Investigator/
+// Special Projects/Objectives/Critical Decisions/Summary/Issues), just one
+// block per sheet with a page break between sheets instead of one sheet at
+// a time.
+function buildRollupExportPdf(params: {
+  operationName: string;
+  targetName: string | null;
+  rows: RollupExportRow[];
+}) {
+  const { operationName, targetName, rows } = params;
+  const esc = (s: string | null | undefined) =>
+    (s ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+
+  const BLUE_DARK = "#1e3a8a";
+  const BLUE_MID = "#93c5fd";
+  const BLUE_LIGHT = "#dbeafe";
+  const GREY_TEXT = "#1e293b";
+  const GREY_BORDER = "#e2e8f0";
+
+  const detailRow = (label: string, value: string | null) =>
+    value && value.trim()
+      ? `<div class="detail-label">${esc(label)}</div><div class="detail-value">${esc(value)}</div>`
+      : "";
+
+  const section = (title: string, bodyHtml: string) =>
+    bodyHtml
+      ? `<div class="section"><div class="section-title">${esc(title)}</div><div class="section-body">${bodyHtml}</div></div>`
+      : "";
+
+  const sheetBlocks = rows
+    .map((r, i) => {
+      const objectives = parseRollupJsonArray<string>(r.objectives).filter(o =>
+        o.trim()
+      );
+      const specialProjects = parseRollupJsonArray<{
+        key: string;
+        detail: string;
+      }>(r.specialProjects);
+      const criticalDecisions = parseRollupJsonArray<string>(
+        r.criticalDecisions
+      ).filter(c => c.trim());
+      const communicationParts = [r.ioContactTiming, r.ioContactMethod].filter(
+        (p): p is string => !!p && !!p.trim()
+      );
+      const isComplete = !!r.completedAt;
+
+      const vehiclesHtml = r.vehicles.length
+        ? `<div class="chip-list">${r.vehicles.map(v => `<span class="chip">${esc(v.label)}</span>`).join("")}</div>`
+        : `<p class="muted-note">No vehicles found in the Target Registry or running sheet text.</p>`;
+
+      const specialProjectsHtml = specialProjects.length
+        ? `<div class="chip-list">${specialProjects
+            .map(
+              p =>
+                `<span class="chip"><strong>${esc(p.key)}</strong>${p.detail?.trim() ? `<span class="chip-detail"> — ${esc(p.detail)}</span>` : ""}</span>`
+            )
+            .join("")}</div>`
+        : `<p class="muted-note">None recorded.</p>`;
+
+      const objectivesHtml = objectives.length
+        ? `<ol class="numbered-list">${objectives.map(o => `<li>${esc(o)}</li>`).join("")}</ol>`
+        : `<p class="muted-note">None recorded.</p>`;
+
+      const criticalDecisionsHtml = criticalDecisions.length
+        ? `<ol class="numbered-list">${criticalDecisions.map(d => `<li>${esc(d)}</li>`).join("")}</ol>`
+        : `<p class="muted-note">None recorded.</p>`;
+
+      const summaryHtml = r.entries.length
+        ? `<table class="summary-table">
+            <thead><tr><th style="width:70px">Time</th><th style="width:28%">Address</th><th>Observation</th></tr></thead>
+            <tbody>${r.entries
+              .map(
+                e =>
+                  `<tr><td>${esc(e.time || "—")}</td><td>${esc(e.location || "")}</td><td>${esc(e.text)}</td></tr>`
+              )
+              .join("")}</tbody>
+          </table>`
+        : `<p class="muted-note">No running sheet rows yet.</p>`;
+
+      return `<div class="sheet-block${i > 0 ? " page-break" : ""}">
+        <div class="sheet-header">
+          <div class="sheet-header-main">
+            <span class="sheet-date">${esc(formatRollupDate(r.sheetDate, r.createdAt))}</span>
+            ${r.teamLabel ? `<span class="sheet-chip">${esc(r.teamLabel)}</span>` : ""}
+            ${r.startTime || r.finishTime ? `<span class="sheet-time">${esc(r.startTime ?? "?")}–${esc(r.finishTime ?? "?")}</span>` : ""}
+            <span class="status-pill ${isComplete ? "status-complete" : "status-open"}">${isComplete ? "Complete" : "Open"}</span>
+          </div>
+          ${r.targetName ? `<div class="sheet-target">${esc(r.targetName)}</div>` : ""}
+        </div>
+        <div class="content">
+          ${section(
+            "Deployment",
+            `<div class="detail-grid">
+              ${detailRow("Team", r.teamLabel)}
+              ${detailRow("Team Members CIN", r.teamCins)}
+              ${detailRow("Start time", r.startTime)}
+              ${detailRow("Finish time", r.finishTime)}
+              ${detailRow("Target (TGT)", r.targetName)}
+              ${detailRow("Location", r.location)}
+            </div>`
+          )}
+          ${section("Vehicle", vehiclesHtml)}
+          ${section(
+            "Investigator",
+            r.ioSupport?.trim() || communicationParts.length || r.intelSupport?.trim()
+              ? `<div class="detail-grid">
+                  ${detailRow("Investigator", r.ioSupport)}
+                  ${communicationParts.length ? detailRow("Contacted", communicationParts.join(" — ")) : ""}
+                  ${detailRow("Intel Support", r.intelSupport)}
+                </div>`
+              : `<p class="muted-note">None recorded.</p>`
+          )}
+          ${section("Special Projects", specialProjectsHtml)}
+          ${section("Objectives", objectivesHtml)}
+          ${section("Critical Decisions", criticalDecisionsHtml)}
+          ${section("Summary", summaryHtml)}
+          ${section("Issues", r.issues?.trim() ? `<p>${esc(r.issues)}</p>` : "")}
+        </div>
+      </div>`;
+    })
+    .join("");
+
+  const scopeLine = targetName ? `Target: ${targetName}` : "All targets";
+  const generatedAt = new Date().toLocaleString("en-AU", {
+    dateStyle: "long",
+    timeStyle: "short",
+  });
+
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>RunLog Deployment Rollup — ${esc(operationName)}</title>
+<style>
+* { box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+@page{ margin:20mm 15mm; @top-center{content:'PROTECTED';font-family:'Roboto',sans-serif;font-size:12px;font-weight:700;color:#dc2626;letter-spacing:0.08em} @bottom-center{content:"Page " counter(page) " of " counter(pages);font-family:'Roboto',sans-serif;font-size:11px;font-weight:700;color:${BLUE_DARK};letter-spacing:0.04em} }
+body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.6; color:${GREY_TEXT}; background:#fff; }
+.cover-header { background:${BLUE_DARK} !important; color:#fff !important; padding:26px 32px 22px; text-align:center; }
+.brand-row { display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:14px; opacity:0.85; }
+.brand-dot { width:10px; height:10px; border-radius:50%; background:${BLUE_MID}; }
+.brand-label { font-size:10px; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; color:${BLUE_MID}; }
+.main-title { font-size:26px; font-weight:800; letter-spacing:0.04em; text-transform:uppercase; line-height:1.2; }
+.op-date-line { font-size:16px; font-weight:600; margin-top:8px; }
+.sheet-name { font-size:11px; opacity:0.65; margin-top:6px; }
+.sheet-block { border-top:6px solid ${BLUE_DARK}; }
+.sheet-header { padding:16px 32px 10px; }
+.sheet-header-main { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.sheet-date { font-size:15px; font-weight:700; color:${GREY_TEXT}; }
+.sheet-chip { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; padding:3px 8px; border-radius:5px; background:${BLUE_LIGHT} !important; color:${BLUE_DARK} !important; border:1px solid ${BLUE_MID}; }
+.sheet-time { font-size:11px; color:#64748b; }
+.sheet-target { font-size:11px; font-weight:700; color:${GREY_TEXT}; margin-top:4px; }
+.status-pill{display:inline-flex;align-items:center;padding:3px 10px;border-radius:9999px;font-size:9px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;margin-left:auto}
+.status-complete{background:#dcfce7 !important;color:#15803d !important;border:1px solid #86efac}
+.status-open{background:#fef3c7 !important;color:#92400e !important;border:1px solid #fcd34d}
+.content { padding:8px 32px 26px; }
+.section { margin-bottom:14px; border:1px solid ${GREY_BORDER}; border-radius:8px; overflow:hidden; break-inside:avoid; page-break-inside:avoid; }
+.section-title { font-size:10px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${BLUE_DARK} !important; padding:7px 14px; background:${BLUE_LIGHT} !important; border-bottom:1px solid ${GREY_BORDER}; }
+.section-body { padding:12px 14px; }
+.page-break { page-break-before:always; break-before:page; }
+.detail-grid { display:grid; grid-template-columns:130px 1fr; gap:0; font-size:10.5px; }
+.detail-grid > div { padding:4px 6px; }
+.detail-grid > div:nth-child(4n+1), .detail-grid > div:nth-child(4n+2) { background:#f8fafc; }
+.detail-label { color:#64748b; font-weight:600; }
+.detail-value { color:${GREY_TEXT}; }
+.chip-list { display:flex; flex-wrap:wrap; gap:6px; }
+.chip { background:${BLUE_LIGHT} !important; color:${BLUE_DARK} !important; border:1px solid ${BLUE_MID}; border-radius:6px; padding:4px 10px; font-size:10px; font-weight:600; }
+.chip-detail { font-weight:400; color:#475569; }
+.numbered-list { list-style:none; counter-reset:item; }
+.numbered-list li { counter-increment:item; display:flex; align-items:flex-start; gap:8px; margin-bottom:7px; font-size:10.5px; }
+.numbered-list li:last-child { margin-bottom:0; }
+.numbered-list li::before { content:counter(item); flex-shrink:0; width:16px; height:16px; border-radius:50%; background:${BLUE_LIGHT} !important; color:${BLUE_DARK} !important; font-size:9px; font-weight:700; display:flex; align-items:center; justify-content:center; margin-top:1px; }
+.muted-note { font-size:10px; color:#94a3b8; font-style:italic; }
+.summary-table { width:100%; border-collapse:collapse; border:1.5px solid ${BLUE_DARK}; }
+.summary-table th { background:${BLUE_LIGHT} !important; color:${BLUE_DARK} !important; font-weight:700; font-size:9.5px; text-transform:uppercase; letter-spacing:0.04em; text-align:left; padding:6px 8px; border-bottom:2px solid ${BLUE_DARK}; border-right:1px solid #c7d5ee; }
+.summary-table th:last-child, .summary-table td:last-child { border-right:none; }
+.summary-table td { vertical-align:top; font-size:10.5px; padding:6px 8px; border-bottom:1px solid ${GREY_BORDER}; border-right:1px solid ${GREY_BORDER}; }
+.summary-table tbody tr:last-child td { border-bottom:none; }
+.footer-band { background:${BLUE_DARK} !important; color:#fff !important; padding:8px 32px; display:grid; grid-template-columns:1fr 1fr 1fr; align-items:center; font-size:9px; font-weight:700; letter-spacing:0.04em; }
+.footer-band span:first-child { text-align:left; }
+.footer-band span:last-child { text-align:right; color:rgba(255,255,255,0.85); text-transform:uppercase; }
+.footer-protected { text-align:center; font-weight:800; letter-spacing:0.14em; color:#f87171; text-transform:uppercase; }
+.footer-note { margin:14px 32px 0; padding:12px 0 20px; border-top:1px solid ${GREY_BORDER}; font-size:9px; color:#94a3b8; }
+@media print { * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; } .cover-header { background:${BLUE_DARK} !important; } .section-title { background:${BLUE_LIGHT} !important; } .chip { background:${BLUE_LIGHT} !important; } .numbered-list li::before { background:${BLUE_LIGHT} !important; } .summary-table th { background:${BLUE_LIGHT} !important; } .footer-band { background:${BLUE_DARK} !important; } .sheet-chip { background:${BLUE_LIGHT} !important; } }
+</style></head><body>
+<div class="cover-header">
+  <div class="brand-row"><div class="brand-dot"></div><span class="brand-label">RunLog</span></div>
+  <div class="main-title">Deployment Rollup</div>
+  <div class="op-date-line">${esc(operationName)}</div>
+  <div class="sheet-name">${esc(scopeLine)} &middot; ${rows.length} summar${rows.length !== 1 ? "ies" : "y"}</div>
+</div>
+${sheetBlocks}
+<div class="footer-note">Generated: ${generatedAt}</div>
+<div class="footer-band"><span></span><span class="footer-protected">Protected</span><span>RunLog</span></div>
+${buildExportPreviewCloseBar()}
+</body></html>`;
+
+  const win = window.open("", "_blank");
+  if (!win) {
+    toast.error("Pop-up blocked. Please allow pop-ups and try again.");
+    return;
+  }
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  setTimeout(() => {
+    win.print();
+  }, 400);
+}
 
 function RollupDetailRow({ label, value }: { label: string; value?: string | null }) {
   if (!value || !value.trim()) return null;
@@ -855,28 +1201,30 @@ function DeploymentRollupCard({
         onClick={onToggle}
         className="w-full text-left px-4 py-3 hover:bg-accent/20 transition-colors"
       >
-        <div className="flex items-start justify-between gap-3 mb-1.5">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
-            <ChevronDown
-              className={`w-3.5 h-3.5 text-muted-foreground shrink-0 transition-transform ${expanded ? "" : "-rotate-90"}`}
-            />
-            <span className="text-sm font-semibold text-foreground">
-              {r.sheetDate ?? format(new Date(r.createdAt), "yyyy-MM-dd")}
-            </span>
-            {r.teamLabel && (
-              <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20">
-                {r.teamLabel}
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
+              <ChevronDown
+                className={`w-3.5 h-3.5 text-muted-foreground shrink-0 transition-transform ${expanded ? "" : "-rotate-90"}`}
+              />
+              <span className="text-sm font-semibold text-foreground">
+                {formatRollupDate(r.sheetDate, r.createdAt)}
               </span>
-            )}
-            {(r.startTime || r.finishTime) && (
-              <span className="text-xs text-muted-foreground">
-                {r.startTime ?? "?"}–{r.finishTime ?? "?"}
-              </span>
-            )}
+              {r.teamLabel && (
+                <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20">
+                  {r.teamLabel}
+                </span>
+              )}
+              {(r.startTime || r.finishTime) && (
+                <span className="text-xs text-muted-foreground">
+                  {r.startTime ?? "?"}–{r.finishTime ?? "?"}
+                </span>
+              )}
+            </div>
             {showTarget && r.targetName && (
-              <span className="text-xs text-muted-foreground truncate">
+              <p className="text-xs font-bold text-foreground truncate pl-5 mt-0.5">
                 {r.targetName}
-              </span>
+              </p>
             )}
           </div>
           <span
@@ -889,44 +1237,6 @@ function DeploymentRollupCard({
             {isComplete ? "Complete" : "Open"}
           </span>
         </div>
-
-        {!expanded && (
-          <>
-            {objectives.length > 0 ? (
-              <p className="text-sm text-foreground/90 line-clamp-2 pl-5">
-                {objectives[0]}
-                {objectives.length > 1 && ` (+${objectives.length - 1} more)`}
-              </p>
-            ) : (
-              <p className="text-sm text-muted-foreground italic pl-5">
-                No objectives recorded
-              </p>
-            )}
-
-            {(specialProjects.length > 0 || criticalDecisions.length > 0 || hasIssues) && (
-              <div className="flex flex-wrap items-center gap-1.5 mt-2 pl-5">
-                {specialProjects.map(p => (
-                  <span
-                    key={p.key}
-                    className="text-[10px] px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground border border-border/60"
-                  >
-                    {p.key}
-                  </span>
-                ))}
-                {criticalDecisions.length > 0 && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
-                    Critical decision
-                  </span>
-                )}
-                {hasIssues && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-destructive/10 text-destructive border border-destructive/20">
-                    Issue flagged
-                  </span>
-                )}
-              </div>
-            )}
-          </>
-        )}
       </button>
 
       {expanded && (
@@ -1796,6 +2106,7 @@ export default function OperationDetail() {
           <TabsContent value="rollup">
             <DeploymentRollupPanel
               operationId={operationId}
+              operationName={operation?.name}
               targets={operationTargets}
             />
           </TabsContent>

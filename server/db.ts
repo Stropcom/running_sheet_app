@@ -6861,6 +6861,51 @@ export async function getSheetSummariesForOperation(
   }));
 }
 
+export interface RollupExportRow extends OperationSummaryRollupRow {
+  entries: SheetSummaryEntry[];
+  vehicles: SheetSummaryVehicle[];
+}
+
+/**
+ * Same rows as getSheetSummariesForOperation, but with each sheet's
+ * summary-entries table and computed vehicle list attached — everything the
+ * Deployment Rollup's expanded card view shows, for every sheet at once, so
+ * the PDF export doesn't need one round-trip per sheet.
+ */
+export async function getRollupExportData(
+  operationId: number,
+  targetId?: number | null
+): Promise<RollupExportRow[]> {
+  const rows = await getSheetSummariesForOperation(operationId, targetId);
+  return Promise.all(
+    rows.map(async r => {
+      const [entries, sheet, record, allRows] = await Promise.all([
+        getSheetSummaryEntries(r.sheetId),
+        getRunningSheetById(r.sheetId),
+        getSheetSummary(r.sheetId),
+        getRowsBySheetId(r.sheetId),
+      ]);
+      const target = sheet?.targetId
+        ? await getTargetById(sheet.targetId)
+        : null;
+      let dismissed: string[] = [];
+      try {
+        dismissed = record?.dismissedVehicleKeys
+          ? JSON.parse(record.dismissedVehicleKeys)
+          : [];
+      } catch {
+        dismissed = [];
+      }
+      const vehicles = computeSheetSummaryVehicles(
+        target ?? null,
+        allRows,
+        dismissed
+      );
+      return { ...r, entries, vehicles };
+    })
+  );
+}
+
 // ─── Target Shortcuts ─────────────────────────────────────────────────────────
 
 export async function getTargetShortcuts(targetId: number) {

@@ -3680,6 +3680,7 @@ function isNonObservationRow(
 
 export type IntelligenceHeatMapWhen =
   | { mode: "sheet"; sheetId: number }
+  | { mode: "all" } // every sheet in scope, no date window
   | { mode: "last7" }
   | { mode: "last30" }
   | { mode: "custom"; startDate: string; endDate: string }; // YYYY-MM-DD, inclusive
@@ -3781,16 +3782,20 @@ export async function getIntelligenceHeatMapLocations(params: {
   // sequential scan meant for single-sheet rendering, disproportionately
   // expensive to replicate across every sheet in scope here, and only
   // matters for legacy rows predating rowDate.)
+  // "sheet" takes the whole sheet and "all" takes every sheet in scope, so
+  // neither resolves a window — only the three windowed modes do.
+  const hasDateWindow =
+    params.when.mode === "custom" ||
+    params.when.mode === "last7" ||
+    params.when.mode === "last30";
   let startISO = "";
   let endISO = "";
-  if (params.when.mode !== "sheet") {
-    if (params.when.mode === "custom") {
-      startISO = params.when.startDate;
-      endISO = params.when.endDate;
-    } else {
-      endISO = perthTodayISO();
-      startISO = addDaysISO(endISO, params.when.mode === "last7" ? -6 : -29);
-    }
+  if (params.when.mode === "custom") {
+    startISO = params.when.startDate;
+    endISO = params.when.endDate;
+  } else if (params.when.mode === "last7" || params.when.mode === "last30") {
+    endISO = perthTodayISO();
+    startISO = addDaysISO(endISO, params.when.mode === "last7" ? -6 : -29);
   }
 
   // ── Reuse the same entity extraction/dedup pipeline as the Locations tab
@@ -3835,7 +3840,7 @@ export async function getIntelligenceHeatMapLocations(params: {
         continue;
       if (!OBSERVATION_SIGNAL_RE.test(row.observation)) continue;
 
-      if (params.when.mode !== "sheet") {
+      if (hasDateWindow) {
         const resolvedDate =
           row.rowDate ??
           addDaysISO(
@@ -4046,7 +4051,10 @@ export async function getWeeklyActivityReport(
   const [ops, targetRows, rows, govRecords] = await Promise.all([
     db.select().from(operations).where(inArray(operations.id, opIds)),
     referencedTargetIds.length
-      ? db.select().from(targets).where(inArray(targets.id, referencedTargetIds))
+      ? db
+          .select()
+          .from(targets)
+          .where(inArray(targets.id, referencedTargetIds))
       : Promise.resolve([] as (typeof targets.$inferSelect)[]),
     db
       .select()

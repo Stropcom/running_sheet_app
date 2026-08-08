@@ -33,6 +33,12 @@ import {
 } from "@/lib/egoNetworkLayout";
 import { buildRollupSheetBlocksHtml } from "@/lib/rollupSection";
 import { buildProfileTargetBlockHtml } from "@/lib/profileSection";
+import {
+  heatColourFor,
+  buildHeatMapImageHtml,
+  buildHeatMapLocationsTableHtml,
+  fetchHeatMapStaticImage,
+} from "@/lib/heatMapSection";
 
 type PackageScope = "operation" | "target";
 
@@ -46,9 +52,8 @@ export default function IntelPackages() {
   const [operationId, setOperationId] = useState<number | null>(null);
   const [targetId, setTargetId] = useState<number | null>(null);
   /** null = every target (the default); a Set = an explicit subset. */
-  const [selectedTargetIds, setSelectedTargetIds] = useState<Set<number> | null>(
-    null
-  );
+  const [selectedTargetIds, setSelectedTargetIds] =
+    useState<Set<number> | null>(null);
   const [isBuilding, setIsBuilding] = useState(false);
 
   const { data: operations } = trpc.operation.list.useQuery();
@@ -239,6 +244,39 @@ export default function IntelPackages() {
     };
   }
 
+  /** Heat Map — one map for the whole scope (the operation, or the single
+   * target of a target package), over every sheet rather than a rolling
+   * window: a package is a point-in-time record of everything held, not a
+   * "last 30 days" view. */
+  async function buildHeatMapSection(): Promise<PackageSection | null> {
+    const locations = await trpcClient.intelligence.getHeatMapLocations.query({
+      operationId: operationId!,
+      targetId: scope === "target" ? targetId : null,
+      when: { mode: "all" },
+    });
+    if (!locations.length) return null;
+
+    const maxCount = Math.max(1, ...locations.map(l => l.count));
+    const mapImageDataUrl = await fetchHeatMapStaticImage(locations, maxCount);
+    const rows = locations.map(l => ({
+      label: l.label,
+      count: l.count,
+      colour: heatColourFor(l.count, maxCount),
+    }));
+
+    return {
+      title: "Heat Map",
+      html: `<div class="section">
+        <div class="section-title">Map</div>
+        <div class="section-body">${buildHeatMapImageHtml(mapImageDataUrl)}</div>
+      </div>
+      <div class="section">
+        <div class="section-title">Top Locations</div>
+        <div class="section-body">${buildHeatMapLocationsTableHtml(rows)}</div>
+      </div>`,
+    };
+  }
+
   // ── Export ──────────────────────────────────────────────────────────────
 
   async function handleExport() {
@@ -264,6 +302,9 @@ export default function IntelPackages() {
 
       const rollup = await buildRollupSection();
       if (rollup) sections.push(rollup);
+
+      const heat = await buildHeatMapSection();
+      if (heat) sections.push(heat);
 
       const ego = buildEgoSection();
       if (ego) sections.push(ego);
@@ -435,12 +476,10 @@ export default function IntelPackages() {
               {scope === "target" ? "Target Profile" : "Operation Profile"} —
               registered details, photos, sheets and associations
             </li>
+            <li>Deployment Rollup — every Supervisor Summary in scope</li>
+            <li>Heat Map — all-time location activity, mapped and ranked</li>
             <li>
-              Deployment Rollup — every Supervisor Summary in scope
-            </li>
-            <li>
-              Ego Network — one diagram per included target, that target
-              centred
+              Ego Network — one diagram per included target, that target centred
             </li>
           </ul>
         </div>

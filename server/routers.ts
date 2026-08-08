@@ -2730,6 +2730,7 @@ export const appRouter = router({
           targetId: z.number().nullable().optional(),
           when: z.discriminatedUnion("mode", [
             z.object({ mode: z.literal("sheet"), sheetId: z.number() }),
+            z.object({ mode: z.literal("all") }),
             z.object({ mode: z.literal("last7") }),
             z.object({ mode: z.literal("last30") }),
             z.object({

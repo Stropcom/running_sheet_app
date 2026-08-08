@@ -41,6 +41,9 @@ export type EgoNode = {
   occurrences: number;
   operationIds: number[];
   operationNames: string[];
+  /** Registry target id for target nodes — lets the package centre a
+   * diagram on a chosen target without matching on the display label. */
+  targetId?: number | null;
 };
 
 export type EgoEdge = {

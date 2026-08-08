@@ -36,6 +36,7 @@ import {
   Camera,
   Flame,
   Radar,
+  PackageOpen,
 } from "lucide-react";
 import { ViewToggle } from "@/components/ViewToggle";
 import { useViewMode } from "@/contexts/ViewModeContext";
@@ -44,11 +45,12 @@ import { MergeEntitiesButton } from "@/components/MergeEntitiesButton";
 import { IndicesBadge } from "@/components/IndicesBadge";
 import IntelligenceHeatMap from "@/pages/IntelligenceHeatMap";
 import EgoNetworkMap from "@/pages/EgoNetworkMap";
+import IntelPackages from "@/pages/IntelPackages";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type EntityType = "person" | "vehicle" | "address" | "business" | "unknown";
-type TabView = "operations" | "targets" | "associates" | "vehicle" | "locations" | "all" | "heatmap" | "egonet";
+type TabView = "operations" | "targets" | "associates" | "vehicle" | "locations" | "all" | "heatmap" | "egonet" | "packages";
 
 interface Occurrence {
   sheetId: number;
@@ -1027,6 +1029,7 @@ const TAB_OPTIONS: Array<{ value: TabView; label: string; icon: React.ReactNode 
   { value: "locations",  label: "Locations",  icon: <MapPin className="w-3.5 h-3.5" /> },
   { value: "heatmap",    label: "Heat Map",    icon: <Flame className="w-3.5 h-3.5" /> },
   { value: "egonet",     label: "Ego Network", icon: <Radar className="w-3.5 h-3.5" /> },
+  { value: "packages",   label: "Packages",    icon: <PackageOpen className="w-3.5 h-3.5" /> },
 ];
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
@@ -1058,7 +1061,13 @@ export default function IntelligencePage() {
   // their own data fetch — none of the entity-list scaffolding (search/sort
   // bar, skeleton loader, entity grid) applies to them. Kept as one derived
   // flag so adding another map tab can't leave one of those behind it.
-  const isMapTab = activeTab === "heatmap" || activeTab === "egonet";
+  // Full-bleed tabs that bring their own chrome and data fetching — none of
+  // the entity-list scaffolding (search/sort bar, skeleton, entity grid)
+  // applies to them.
+  const isMapTab =
+    activeTab === "heatmap" ||
+    activeTab === "egonet" ||
+    activeTab === "packages";
   const [selected, setSelected]     = useState<Entity | null>(null);
 
   // Date filter state
@@ -1343,6 +1352,13 @@ export default function IntelligencePage() {
         {activeTab === "egonet" && (
           <div className="-mx-4 -mb-4 flex-1" style={{ height: "calc(100vh - 260px)" }}>
             <EgoNetworkMap />
+          </div>
+        )}
+
+        {/* Packages tab content */}
+        {activeTab === "packages" && (
+          <div className="-mx-4 -mb-4 flex-1" style={{ height: "calc(100vh - 260px)" }}>
+            <IntelPackages />
           </div>
         )}
 

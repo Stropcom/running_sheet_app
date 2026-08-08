@@ -82,6 +82,12 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 .data-table td { vertical-align:top; font-size:10.5px; padding:6px 8px; border-bottom:1px solid ${PKG_GREY_BORDER}; border-right:1px solid ${PKG_GREY_BORDER}; }
 .data-table tbody tr:last-child td { border-bottom:none; }
 
+/* ── Diagram captions / legend ── */
+.stats-line { text-align:center; font-size:10px; color:#64748b; padding:6px 0 2px; }
+.legend { display:flex; flex-wrap:wrap; gap:14px; justify-content:center; padding:8px 0 2px; border-top:1px solid ${PKG_GREY_BORDER}; }
+.legend-item { display:inline-flex; align-items:center; gap:6px; font-size:10px; color:#475569; }
+.legend-dot { width:9px; height:9px; border-radius:50%; display:inline-block; }
+
 /* ── Sub-heading used between repeated blocks (e.g. one per target) ── */
 .sub-head { font-size:13px; font-weight:700; color:${PKG_GREY_TEXT}; margin:0 0 10px; padding-bottom:6px; border-bottom:2px solid ${PKG_BLUE_MID}; }
 .sub-block { margin-bottom:22px; break-inside:avoid-page; }

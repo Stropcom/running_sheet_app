@@ -5596,6 +5596,10 @@ export interface AssocNode {
   occurrences: number; // total times seen
   operationIds: number[];
   operationNames: string[];
+  /** Registry target id when this node is a target, else null. Lets callers
+   * (e.g. the Intelligence Package, which centres a diagram on each chosen
+   * target) match a target to its node by id instead of by display label. */
+  targetId: number | null;
 }
 
 export interface AssocEdge {
@@ -5662,6 +5666,7 @@ export async function getAssociationGraph(
         occurrences: 0,
         operationIds: [],
         operationNames: [],
+        targetId: entity.isTarget ? (entity.targetId ?? null) : null,
       };
       nodeMap.set(nodeId, node);
     }

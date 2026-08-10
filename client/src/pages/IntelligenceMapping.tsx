@@ -2958,6 +2958,11 @@ export default function IntelligenceMapping() {
     });
   };
 
+  // Draws an officer's recorded GPS breadcrumb from user_location_history.
+  // Labelled "Track" in the UI — the running-sheet map's old "Trace Route"
+  // (waypoint route reconstruction) was a different feature and has been
+  // removed, so the name is no longer shared. The internal tracedUserIds /
+  // traceLinesRef names are unchanged to keep this diff to the label.
   const toggleUserTrace = (userId: number) => {
     setTracedUserIds(prev => {
       const next = new Set(prev);
@@ -4378,8 +4383,8 @@ export default function IntelligenceMapping() {
                                       }`}
                                     >
                                       {tracedUserIds.has(u.userId)
-                                        ? "Tracing"
-                                        : "Trace"}
+                                        ? "Tracking"
+                                        : "Track"}
                                     </button>
                                     <button
                                       onClick={() =>
@@ -4467,8 +4472,8 @@ export default function IntelligenceMapping() {
                                       }`}
                                     >
                                       {tracedUserIds.has(u.userId)
-                                        ? "Tracing"
-                                        : "Trace"}
+                                        ? "Tracking"
+                                        : "Track"}
                                     </button>
                                     <button
                                       onClick={() =>

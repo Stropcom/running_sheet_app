@@ -245,6 +245,7 @@ import {
   getAttachmentsByRowIds,
   getAttachmentById,
   getAttachmentsByOperationId,
+  getAttachmentCountsByOperation,
   getAttachmentsBySheetId,
   deleteRowAttachment,
   softDeleteAttachment,
@@ -1336,6 +1337,11 @@ export const appRouter = router({
       .query(async ({ input }) => {
         return getAttachmentsByOperationId(input.operationId);
       }),
+
+    /** Photo count per operation, for the top-level Images folder list. */
+    countsByOperation: protectedProcedure.query(async () => {
+      return getAttachmentCountsByOperation();
+    }),
 
     listBySheet: protectedProcedure
       .input(z.object({ sheetId: z.number() }))

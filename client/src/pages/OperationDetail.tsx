@@ -677,6 +677,7 @@ function DeploymentRollupPanel({
   operationName?: string | null;
   targets?: { id: number; name: string }[];
 }) {
+  const { viewMode } = useViewMode();
   const [targetFilter, setTargetFilter] = useState<number | null>(null);
   // Server returns newest-first (same direction the Running Sheets tab
   // lists sheets in); this just reverses that array for a chronological,
@@ -806,13 +807,20 @@ function DeploymentRollupPanel({
               {sortAsc ? "Oldest first" : "Newest first"}
             </button>
           </div>
-          <div className="flex flex-col gap-2">
+          <div
+            className={
+              viewMode === "tile"
+                ? "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3"
+                : "flex flex-col gap-2"
+            }
+          >
             {(displayRows ?? []).map(r => (
               <DeploymentRollupCard
                 key={r.sheetId}
                 row={r}
                 expanded={expandedId === r.sheetId}
                 onToggle={() => toggleExpanded(r.sheetId)}
+                gridSpan={viewMode === "tile" && expandedId === r.sheetId}
               />
             ))}
           </div>
@@ -1045,10 +1053,14 @@ function DeploymentRollupCard({
   row: r,
   expanded,
   onToggle,
+  gridSpan = false,
 }: {
   row: RollupRow;
   expanded: boolean;
   onToggle: () => void;
+  /** Tile view only — expanded cards span the full grid width so the
+   *  detailed content below isn't squeezed into a single narrow column. */
+  gridSpan?: boolean;
 }) {
   const objectives = parseRollupJsonArray<string>(r.objectives).filter(o =>
     o.trim()
@@ -1071,7 +1083,9 @@ function DeploymentRollupCard({
     .filter((p): p is string => !!p && !!p.trim());
 
   return (
-    <div className="rounded-xl border border-border bg-card overflow-hidden">
+    <div
+      className={`rounded-xl border border-border bg-card overflow-hidden${gridSpan ? " sm:col-span-2 xl:col-span-3" : ""}`}
+    >
       <button
         onClick={onToggle}
         className="w-full text-left px-4 py-3 hover:bg-accent/20 transition-colors"

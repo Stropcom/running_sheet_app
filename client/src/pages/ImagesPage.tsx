@@ -77,6 +77,15 @@ function OperationFolderList({
       enabled: isAuthenticated,
     }
   );
+  const { data: photoCounts } = trpc.attachment.countsByOperation.useQuery(
+    undefined,
+    { enabled: isAuthenticated }
+  );
+  const countByOpId = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const c of photoCounts ?? []) m.set(c.operationId, c.count);
+    return m;
+  }, [photoCounts]);
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8">
@@ -124,37 +133,51 @@ function OperationFolderList({
         </div>
       ) : viewMode === "tile" ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {operations.map((op: any) => (
-            <div
-              key={op.id}
-              className="group flex flex-col gap-3 p-5 rounded-xl border border-border bg-card hover:bg-accent/20 hover:border-pink-500/30 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 cursor-pointer"
-              onClick={() => onSelect(op.id)}
-            >
-              <div className="p-2.5 rounded-lg bg-pink-500/10 border border-pink-500/20 shrink-0 w-fit">
-                <FolderOpen className="w-5 h-5 text-pink-500" />
+          {operations.map((op: any) => {
+            const count = countByOpId.get(op.id) ?? 0;
+            return (
+              <div
+                key={op.id}
+                className="group flex flex-col gap-3 p-5 rounded-xl border border-border bg-card hover:bg-accent/20 hover:border-pink-500/30 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 cursor-pointer"
+                onClick={() => onSelect(op.id)}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="p-2.5 rounded-lg bg-pink-500/10 border border-pink-500/20 shrink-0 w-fit">
+                    <FolderOpen className="w-5 h-5 text-pink-500" />
+                  </div>
+                  <span className="text-xs text-muted-foreground shrink-0 mt-1.5">
+                    {count} photo{count === 1 ? "" : "s"}
+                  </span>
+                </div>
+                <span className="font-semibold text-foreground leading-tight line-clamp-2">
+                  {op.name}
+                </span>
               </div>
-              <span className="font-semibold text-foreground leading-tight line-clamp-2">
-                {op.name}
-              </span>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <div className="flex flex-col gap-2">
-          {operations.map((op: any) => (
-            <div
-              key={op.id}
-              className="group flex items-center gap-4 p-4 rounded-xl border border-border bg-card hover:bg-accent/20 hover:border-pink-500/30 transition-all duration-150 cursor-pointer"
-              onClick={() => onSelect(op.id)}
-            >
-              <div className="p-2.5 rounded-lg bg-pink-500/10 border border-pink-500/20 shrink-0">
-                <FolderOpen className="w-5 h-5 text-pink-500" />
+          {operations.map((op: any) => {
+            const count = countByOpId.get(op.id) ?? 0;
+            return (
+              <div
+                key={op.id}
+                className="group flex items-center gap-4 p-4 rounded-xl border border-border bg-card hover:bg-accent/20 hover:border-pink-500/30 transition-all duration-150 cursor-pointer"
+                onClick={() => onSelect(op.id)}
+              >
+                <div className="p-2.5 rounded-lg bg-pink-500/10 border border-pink-500/20 shrink-0">
+                  <FolderOpen className="w-5 h-5 text-pink-500" />
+                </div>
+                <span className="font-semibold text-foreground truncate flex-1">
+                  {op.name}
+                </span>
+                <span className="text-xs text-muted-foreground shrink-0">
+                  {count} photo{count === 1 ? "" : "s"}
+                </span>
               </div>
-              <span className="font-semibold text-foreground truncate flex-1">
-                {op.name}
-              </span>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -190,7 +213,7 @@ export function SheetFolderList({
   hideBackButton?: boolean;
 }) {
   const utils = trpc.useUtils();
-  const [viewMode, setViewMode] = useState<"sheets" | "combined">("sheets");
+  const [viewMode, setViewMode] = useState<"sheets" | "combined">("combined");
   const [lightbox, setLightbox] = useState<{ id: number; url: string } | null>(
     null
   );
@@ -298,17 +321,6 @@ export function SheetFolderList({
 
       <div className="flex items-center gap-1 mb-6 p-1 rounded-xl border border-border bg-muted/30 w-fit">
         <button
-          onClick={() => setViewMode("sheets")}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-            viewMode === "sheets"
-              ? "bg-card text-foreground shadow-sm border border-border"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <List className="w-3.5 h-3.5" />
-          Running Sheet view
-        </button>
-        <button
           onClick={() => setViewMode("combined")}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
             viewMode === "combined"
@@ -318,6 +330,17 @@ export function SheetFolderList({
         >
           <LayoutGrid className="w-3.5 h-3.5" />
           Operation view
+        </button>
+        <button
+          onClick={() => setViewMode("sheets")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+            viewMode === "sheets"
+              ? "bg-card text-foreground shadow-sm border border-border"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <List className="w-3.5 h-3.5" />
+          Running Sheet view
         </button>
       </div>
 

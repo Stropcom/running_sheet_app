@@ -42,9 +42,15 @@ const esc = (s: string | null | undefined) =>
   (s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 export function buildProfileTargetBlockHtml(t: ProfileTargetBlock): string {
+  // Deliberately no break-inside:avoid-page on the outer card: a target with
+  // several photos and associations easily runs taller than a full page, and
+  // forcing a tall block to stay in one piece just pushes it whole onto the
+  // next page — leaving a large blank gap under whatever fit above it. Left
+  // to flow naturally instead; only the header bar is kept from being
+  // orphaned alone at the bottom of a page via break-after:avoid.
   return `
-    <div style="margin-bottom:20px;border:1px solid ${GREY_BORDER};border-radius:8px;overflow:hidden;break-inside:avoid-page">
-      <div style="background:${BLUE_LIGHT};padding:8px 14px;border-bottom:1px solid ${GREY_BORDER}">
+    <div style="margin-bottom:20px;border:1px solid ${GREY_BORDER};border-radius:8px;overflow:hidden">
+      <div style="background:${BLUE_LIGHT};padding:8px 14px;border-bottom:1px solid ${GREY_BORDER};break-after:avoid;break-inside:avoid">
         <strong style="font-size:12px;color:${BLUE_DARK}">${esc(t.name)}</strong>${t.tgt ? ` <span style="font-size:10px;color:#64748b;margin-left:8px">TGT: ${esc(t.tgt)}</span>` : ""}${t.isIndicesOnly ? ` <span style="display:inline-block;margin-left:8px;padding:1px 7px;border-radius:999px;font-size:9px;font-weight:700;letter-spacing:0.04em;background:#e0e7ff;border:1px solid #c7d2fe;color:#4338ca">INDICES</span>` : ""}
       </div>
       <div style="padding:10px 14px">

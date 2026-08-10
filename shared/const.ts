@@ -10,18 +10,19 @@ export const AXIOS_TIMEOUT_MS = 30_000;
 export const UNAUTHED_ERR_MSG = "Please login (10001)";
 export const NOT_ADMIN_ERR_MSG = "You do not have required permission (10002)";
 
-// Accent colour options for the "Appearance" settings — each name maps to
-// a `data-palette` value applied to <html> (see index.css for the actual
-// colour definitions, in both light and dark variants). "Blue" is the
-// original app accent and the default; the rest are calm/muted options.
+// Full colour theme options for the "Appearance" settings — each name maps
+// to a `data-palette` value applied to <html> (see index.css for the actual
+// colour definitions, in both light and dark variants). Unlike the old
+// accent-only picker this replaced, each option here re-themes the whole
+// surface (background, sidebar, borders) as well as the accent, not just a
+// single hue. "Steel Blue" is the original app look and the default; the
+// rest are full alternate directions.
 export const COLOR_PALETTES = [
-  { id: "blue", label: "Blue" },
-  { id: "sage", label: "Sage" },
-  { id: "dusty-blue", label: "Dusty Blue" },
-  { id: "lavender", label: "Lavender" },
-  { id: "sand", label: "Sand" },
-  { id: "pink", label: "Pink" },
-  { id: "slate", label: "Slate" },
+  { id: "steel-blue", label: "Steel Blue" },
+  { id: "phosphor", label: "Phosphor" },
+  { id: "amber", label: "Amber Console" },
+  { id: "federal-navy", label: "Federal Navy" },
+  { id: "case-file", label: "Case File" },
 ] as const;
 export type ColorPalette = (typeof COLOR_PALETTES)[number]["id"];
-export const DEFAULT_COLOR_PALETTE: ColorPalette = "blue";
+export const DEFAULT_COLOR_PALETTE: ColorPalette = "steel-blue";

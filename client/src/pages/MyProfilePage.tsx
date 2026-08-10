@@ -33,14 +33,35 @@ const ROLE_LABELS: Record<string, { label: string; color: string; badge: string 
 // Representative swatch colours for each palette, matching index.css exactly
 // (light-mode and dark-mode variants, since the picker should preview
 // whichever mode the user is currently in).
-const PALETTE_SWATCHES: Record<string, { light: string; dark: string }> = {
-  blue: { light: "oklch(0.5 0.16 220)", dark: "oklch(0.72 0.14 220)" },
-  sage: { light: "oklch(0.53 0.085 195)", dark: "oklch(0.7 0.075 195)" },
-  "dusty-blue": { light: "oklch(0.53 0.075 235)", dark: "oklch(0.7 0.06 235)" },
-  lavender: { light: "oklch(0.53 0.07 300)", dark: "oklch(0.7 0.06 300)" },
-  sand: { light: "oklch(0.53 0.09 55)", dark: "oklch(0.7 0.05 55)" },
-  pink: { light: "oklch(0.53 0.1 10)", dark: "oklch(0.7 0.08 10)" },
-  slate: { light: "oklch(0.53 0.035 250)", dark: "oklch(0.7 0.02 250)" },
+// Each option now re-themes the whole surface, not just one accent hue, so
+// the preview swatch shows both: the background as the swatch fill, the
+// accent as the inset dot. Values mirror the data-palette blocks in
+// index.css — kept in sync by hand since CSS custom properties can't be
+// read at module-eval time before the page mounts.
+const PALETTE_SWATCHES: Record<
+  string,
+  { light: { bg: string; accent: string }; dark: { bg: string; accent: string } }
+> = {
+  "steel-blue": {
+    light: { bg: "oklch(0.98 0.005 250)", accent: "oklch(0.5 0.16 220)" },
+    dark: { bg: "oklch(0.12 0.01 250)", accent: "oklch(0.72 0.14 220)" },
+  },
+  phosphor: {
+    light: { bg: "oklch(0.985 0.003 100)", accent: "oklch(0.44 0.12 145)" },
+    dark: { bg: "oklch(0.1 0.002 145)", accent: "oklch(0.72 0.16 145)" },
+  },
+  amber: {
+    light: { bg: "oklch(0.97 0.012 70)", accent: "oklch(0.56 0.15 55)" },
+    dark: { bg: "oklch(0.14 0.016 55)", accent: "oklch(0.74 0.13 55)" },
+  },
+  "federal-navy": {
+    light: { bg: "oklch(0.965 0.028 250)", accent: "oklch(0.4 0.17 224)" },
+    dark: { bg: "oklch(0.075 0.05 253)", accent: "oklch(0.74 0.11 224)" },
+  },
+  "case-file": {
+    light: { bg: "oklch(0.965 0.005 60)", accent: "oklch(0.42 0.14 15)" },
+    dark: { bg: "oklch(0.13 0.002 30)", accent: "oklch(0.6 0.13 15)" },
+  },
 };
 
 function InfoRow({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value?: string | null }) {
@@ -269,8 +290,12 @@ export default function MyProfilePage() {
               </button>
             </div>
 
-            <p className="text-xs text-muted-foreground mt-5 mb-3">Choose your accent colour.</p>
-            <div className="grid grid-cols-4 sm:grid-cols-7 gap-3">
+            <p className="text-xs text-muted-foreground mt-5 mb-3">
+              Choose your colour theme — each option changes the background
+              and sidebar as well as the accent, previewed here in
+              whichever of light/dark you've picked above.
+            </p>
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
               {COLOR_PALETTES.map((p) => {
                 const swatch = PALETTE_SWATCHES[p.id][theme === "dark" ? "dark" : "light"];
                 const selected = colorPalette === p.id;
@@ -278,16 +303,24 @@ export default function MyProfilePage() {
                   <button
                     key={p.id}
                     onClick={() => handleSelectPalette(p.id)}
-                    className={`flex flex-col items-center justify-center gap-1.5 min-h-[76px] rounded-lg border px-2 py-2.5 text-xs font-medium text-center transition-all ${
+                    className={`flex flex-col items-center justify-center gap-2 min-h-[84px] rounded-lg border px-2 py-2.5 text-xs font-medium text-center transition-all ${
                       selected
                         ? "border-primary bg-primary/10 text-primary"
                         : "border-border text-muted-foreground hover:border-border/80 hover:text-foreground"
                     }`}
                   >
                     <span
-                      className="w-6 h-6 rounded-full border border-border/50 shrink-0"
-                      style={{ backgroundColor: swatch }}
-                    />
+                      className="relative w-8 h-8 rounded-full border border-border/50 shrink-0 overflow-hidden"
+                      style={{ backgroundColor: swatch.bg }}
+                    >
+                      <span
+                        className="absolute bottom-0 right-0 w-4 h-4 rounded-full border-2"
+                        style={{
+                          backgroundColor: swatch.accent,
+                          borderColor: swatch.bg,
+                        }}
+                      />
+                    </span>
                     {p.label}
                   </button>
                 );

@@ -1829,17 +1829,25 @@ export default function OperationDetail() {
             if (v !== "target") sp.delete("targetId");
             navigate(`/operation/${operationId}?${sp.toString()}`);
           }} className="mt-2">
-          <div className="flex items-center gap-2 mb-4">
-            <TabsList>
-              <TabsTrigger value="sheets">
+          {/* flex-wrap so the "Back to Running Sheet" button below drops to
+              its own line on a narrow screen rather than squeezing the tabs
+              off one row. */}
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            {/* Both tabs carry their full names at every width. At the
+                default text-sm the pair measures 341px, which overflows a
+                phone row (342px usable at 390px, 312px at 360px) —
+                text-[11px] brings it to 289px, so it sits on one row with
+                room to spare. w-full on mobile lets the two triggers split
+                the row evenly rather than leaving a ragged gap; from sm up
+                the list goes back to sizing to its content. */}
+            <TabsList className="w-full sm:w-fit">
+              <TabsTrigger value="sheets" className="text-[11px] sm:text-sm">
                 <FileText className="w-3.5 h-3.5 mr-1.5" />
-                <span className="hidden sm:inline">Running Sheets</span>
-                <span className="sm:hidden">Sheets</span>
+                Running Sheets
               </TabsTrigger>
-              <TabsTrigger value="rollup">
+              <TabsTrigger value="rollup" className="text-[11px] sm:text-sm">
                 <History className="w-3.5 h-3.5 mr-1.5" />
-                <span className="hidden sm:inline">Deployment Rollup</span>
-                <span className="sm:hidden">Rollup</span>
+                Deployment Rollup
               </TabsTrigger>
               {/* No visible "Add Target" trigger — target creation/editing
                   lives in the New Running Sheet dialog, the Edit Running

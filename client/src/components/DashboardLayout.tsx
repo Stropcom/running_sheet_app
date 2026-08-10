@@ -840,8 +840,23 @@ function DashboardLayoutContent({
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [location, setLocation] = useLocation();
-  const { state, toggleSidebar, setOpen } = useSidebar();
-  const isCollapsed = state === "collapsed";
+  const {
+    state,
+    isMobile: sidebarIsMobile,
+    toggleSidebar,
+    setOpen,
+  } = useSidebar();
+  // The collapsed icon-rail is a desktop-only mode: on mobile <Sidebar>
+  // renders as a full-width sheet and never as the rail. But `state` is
+  // derived purely from the desktop open/closed cookie, which mobile's
+  // toggle never writes — so a browser that once collapsed the sidebar at
+  // desktop width (a tablet in landscape, say) carries state="collapsed"
+  // into every later phone-width visit. Without the isMobile guard that hid
+  // the chevron and the sub-items on every expandable folder
+  // (Administration, User Management, To-Do, Op Manager), leaving folders
+  // that looked tappable but never opened. ui/sidebar.tsx guards its
+  // collapsed-only tooltips the same way.
+  const isCollapsed = state === "collapsed" && !sidebarIsMobile;
   const { refresh, refreshing } = useRefreshAction();
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);

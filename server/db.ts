@@ -9108,13 +9108,27 @@ function haversineMetres(
 }
 
 // Only append a trail point when the officer has moved a meaningful distance
-// since the last recorded point, or enough time has passed — GPS pings can
-// fire every few seconds, and recording every single one would flood the
-// table for no benefit. A slower stationary heartbeat still keeps the trail
-// continuous (and useful for "where was officer X at time Y") when parked.
-const HISTORY_MOVE_THRESHOLD_M = 25;
-const HISTORY_MOVING_MIN_INTERVAL_MS = 15_000;
+// since the last recorded point, or enough time has passed. A slower
+// stationary heartbeat still keeps the trail continuous (and useful for
+// "where was officer X at time Y") when parked.
+//
+// These are tuned for a vehicle. At 10 m / 2 s a car records continuously
+// from about 18 km/h up — 2 s apart at 50 km/h is a point every ~28 m, which
+// draws a road-following line rather than the corner-cutting chords the old
+// 25 m / 15 s pair produced (a point every ~208 m at 50 km/h). Below ~18 km/h
+// the distance gate takes over and spaces points out again, which is what you
+// want at walking pace or crawling a car park.
+const HISTORY_MOVE_THRESHOLD_M = 10;
+const HISTORY_MOVING_MIN_INTERVAL_MS = 2_000;
 const HISTORY_STATIONARY_HEARTBEAT_MS = 120_000;
+/**
+ * A 10 m movement gate is inside the error margin of a poor GPS fix, so a
+ * parked car with ±20 m drift would otherwise write a point every 2 seconds
+ * and draw itself wandering around the street. Fixes vaguer than this are
+ * treated as noise for movement purposes — the stationary heartbeat below
+ * still records them, so the trail stays continuous either way.
+ */
+const HISTORY_MAX_ACCURACY_M = 50;
 
 async function recordUserLocationHistory(
   userId: number,
@@ -9150,7 +9164,11 @@ async function recordUserLocationHistory(
   if (lastPoint) {
     const elapsed = now - lastPoint.recordedAt;
     const distance = haversineMetres(lastPoint.lat, lastPoint.lng, lat, lng);
+    // A vague fix can "move" 10 m while the vehicle is stationary, so it
+    // only counts as movement when the fix is accurate enough to trust.
+    const fixIsPrecise = accuracy == null || accuracy <= HISTORY_MAX_ACCURACY_M;
     if (
+      fixIsPrecise &&
       distance >= HISTORY_MOVE_THRESHOLD_M &&
       elapsed >= HISTORY_MOVING_MIN_INTERVAL_MS
     ) {
@@ -9502,22 +9520,6 @@ export interface RsWaypointRow {
   markerColour: string | null;
   markerRotation: number | null;
   waypointId: number | null;
-  /**
-   * Route segment type for the path AFTER this waypoint:
-   * - 'normal'        — straight line to next waypoint (no via data)
-   * - 'continued_via' — the NEXT row is a "continued via:" row; viaStreets holds the parsed streets
-   * - 'coos'          — the NEXT row is a COOS/OOS row; draw dashed line
-   */
-  segmentType: "normal" | "continued_via" | "coos";
-  /**
-   * Ordered list of street names/intersections extracted from the following
-   * "continued via:" row. Empty when segmentType !== 'continued_via'.
-   */
-  viaStreets: string[];
-  /**
-   * Suburb context inferred from this waypoint's address (used to help geocode viaStreets).
-   */
-  suburbContext: string | null;
   /** Explicit calendar date (YYYY-MM-DD, Perth) set by the operator */
   rowDate: string | null;
   /** Legacy day-offset (0 = sheet start day, 1 = next day, etc.) */
@@ -9528,63 +9530,6 @@ export interface RsWaypointRow {
  * Return all sheet rows that contain a bracketed address entity,
  * merged with any persisted waypoint overrides (comment / moved position).
  */
-/**
- * Parse a "continued via:" or "continued via;" observation text into an ordered
- * list of street names / intersection tokens.
- *
- * Handles separators:  →  |  ->  |  ,  |  then  |  via  (as conjunction)
- * Strips bracketed short-forms, leading/trailing whitespace, and common filler
- * words so only the actual street names remain.
- */
-// Australian street type suffixes used to identify genuine street names
-const STREET_TYPE_RE =
-  /\b(street|st|road|rd|avenue|ave|drive|dr|highway|hwy|freeway|fwy|parade|pde|terrace|tce|place|pl|court|ct|crescent|cres|boulevard|blvd|way|lane|ln|close|cl|circuit|cct|grove|gr|rise|row|walk|track|trk|path|loop|mews|quay|esplanade|esp)\b/i;
-
-function parseViaStreets(obs: string): string[] {
-  // If the observation ends with "continued via:" (street list is in the NEXT row),
-  // return empty immediately so the caller falls back to reading the next row.
-  if (/continued\s+via[;:]\s*$/i.test(obs.trim())) return [];
-
-  // Extract only the part AFTER "continued via:" prefix (may appear mid-text)
-  const match = obs.match(/continued\s+via[;:]\s*([\s\S]*)$/i);
-  const body = match
-    ? match[1].trim()
-    : obs.replace(/^continued\s+via[;:]/i, "").trim();
-  if (!body) return [];
-
-  // Split on common separators: →, ->, newline, comma, semicolon
-  const parts = body
-    .split(/\s*(?:→|->|\n|,|;)\s*/i)
-    .map(p => {
-      // Strip bracketed short-forms like (CV) (OOS) etc.
-      return p.replace(/\([^)]*\)/g, "").trim();
-    })
-    .filter(p => {
-      if (p.length < 3) return false;
-      // Only keep parts that look like street names (contain a street-type suffix)
-      return STREET_TYPE_RE.test(p);
-    });
-
-  return parts;
-}
-
-/**
- * Extract suburb/city context from an address string.
- * Returns the suburb portion (e.g. "FREMANTLE" from "1 Smith St, FREMANTLE WA").
- */
-function extractSuburb(address: string): string | null {
-  // Try to match suburb from common Australian address formats
-  // "1 Smith St, FREMANTLE WA 6160" → "FREMANTLE WA"
-  const m = address.match(
-    /,\s*([A-Z][A-Za-z\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\s*\d{0,4})/
-  );
-  if (m) return m[1].trim();
-  // Fallback: last word-group after a comma
-  const parts = address.split(",");
-  if (parts.length >= 2) return parts[parts.length - 1].trim();
-  return null;
-}
-
 export async function getRsMappingWaypoints(
   sheetId: number
 ): Promise<RsWaypointRow[]> {
@@ -9726,88 +9671,11 @@ export async function getRsMappingWaypoints(
       (rowOrderMap.get(a.row.id) ?? 0) - (rowOrderMap.get(b.row.id) ?? 0)
   );
 
-  // ── Build a rowId → index map for the sorted full row list ───────────────
-  const rowIndexMap = new Map(rows.map((r, i) => [r.id, i]));
-
-  // ── Second pass: annotate each address row with segment type ─────────────
   const result: RsWaypointRow[] = [];
 
   for (let wi = 0; wi < addressRows.length; wi++) {
     const { row, address, addressFull } = addressRows[wi];
     const override = overrideMap.get(row.id);
-
-    // Determine what comes between this waypoint and the next in the full row list
-    let segmentType: RsWaypointRow["segmentType"] = "normal";
-    let viaStreets: string[] = [];
-    const suburbContext = extractSuburb(addressFull || address);
-
-    // Look at rows that fall between this address row and the next address row
-    const thisRowIdx = rowIndexMap.get(row.id) ?? -1;
-    const nextWpRow = addressRows[wi + 1];
-    const nextRowIdx = nextWpRow
-      ? (rowIndexMap.get(nextWpRow.row.id) ?? rows.length)
-      : rows.length;
-
-    // Scan the rows between the two waypoints
-    for (let ri = thisRowIdx + 1; ri < nextRowIdx; ri++) {
-      const between = rows[ri];
-      if (!between.observation) continue;
-      const obs = between.observation.trim();
-
-      if (/continued\s+via[;:]/i.test(obs)) {
-        segmentType = "continued_via";
-        // Try to parse streets from the same row first
-        viaStreets = parseViaStreets(obs);
-        // If no streets found inline, check if the observation ends with "continued via:"
-        // and the streets are in the very next row (separate row format)
-        if (viaStreets.length === 0 && ri + 1 < nextRowIdx) {
-          const nextRow = rows[ri + 1];
-          if (nextRow?.observation) {
-            const nextObs = nextRow.observation.trim();
-            // The next row should look like a street list (no bracketed address entity)
-            // and not be another continued_via or coos row
-            const hasAddress = extractEntitiesFromText(nextObs).some(
-              e => e.type === "address"
-            );
-            const isAnotherKeyword =
-              /continued\s+via[;:]|continued\s+out\s+of\s+sight|\bcoos\b/i.test(
-                nextObs
-              );
-            if (!hasAddress && !isAnotherKeyword) {
-              // Parse the next row as the street list.
-              // Format: "Street Name, SUBURB,\nStreet Name,\n...\nStreet Name, SUBURB, whereat;"
-              // Each line/comma-segment may be a street name or a suburb name.
-              // We only want parts that contain a street-type suffix.
-              const streetBody = nextObs
-                .replace(/[,;]?\s*whereat[;:,.]?.*$/i, "") // strip trailing "whereat"
-                .trim();
-              viaStreets = streetBody
-                .split(/\s*(?:→|->|,|;|\n)\s*/i)
-                .map(p => p.replace(/\([^)]*\)/g, "").trim())
-                .filter(p => {
-                  if (p.length < 3) return false;
-                  // Only keep parts that look like street names
-                  return STREET_TYPE_RE.test(p);
-                })
-                .map(p => {
-                  // Strip trailing suburb/state info (e.g. "Marine Parade, COTTESLOE" -> "Marine Parade")
-                  // Remove anything after the street type word
-                  const m = p.match(
-                    /^(.+?\b(?:street|st|road|rd|avenue|ave|drive|dr|highway|hwy|freeway|fwy|parade|pde|terrace|tce|place|pl|court|ct|crescent|cres|boulevard|blvd|way|lane|ln|close|cl|circuit|cct|grove|gr|rise|row|walk|track|trk|path|loop|mews|quay|esplanade|esp))\b/i
-                  );
-                  return m ? m[1].trim() : p.trim();
-                });
-            }
-          }
-        }
-        break; // continued via takes priority
-      }
-      // COOS / OOS patterns (out of sight)
-      if (/continued\s+out\s+of\s+sight|\bcoos\b|\boos\b/i.test(obs)) {
-        segmentType = "coos";
-        // don't break — a continued_via later in the gap would override
-      }
-    }
 
     result.push({
       rowId: row.id,
@@ -9824,9 +9692,6 @@ export async function getRsMappingWaypoints(
       markerColour: override?.markerColour ?? null,
       markerRotation: override?.markerRotation ?? null,
       waypointId: override?.id ?? null,
-      segmentType,
-      viaStreets,
-      suburbContext,
       rowDate: (row as any).rowDate ?? null,
       dayOffset: (row as any).dayOffset ?? 0,
     } as RsWaypointRow);

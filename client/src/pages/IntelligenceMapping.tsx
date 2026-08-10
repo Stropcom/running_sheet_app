@@ -1297,6 +1297,9 @@ export default function IntelligenceMapping() {
   // Remembers each user's last-known team so a trace line keeps its colour
   // even if that officer briefly drops out of the live liveUsers list.
   const traceUserTeamRef = useRef<Map<number, LiveUser["team"]>>(new Map());
+  // Key: userId -> epoch ms when Track was switched on for that officer, so
+  // each line starts where they started rather than showing earlier history.
+  const trackStartsRef = useRef<Map<number, number>>(new Map());
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
   const geocoderRef = useRef<google.maps.Geocoder | null>(null);
   const geocodeQueueRef = useRef<IntelMapLocation[]>([]);
@@ -1407,18 +1410,27 @@ export default function IntelligenceMapping() {
     { refetchInterval: 1000, enabled: true }
   );
 
-  // Live-trace trails for any currently-traced officers — a full shift's
-  // worth of history, only fetched while at least one user is being traced.
+  // Live trails for any officers currently being tracked. Each officer's
+  // line starts at the moment Track was switched on for them (see
+  // toggleUserTrace) — the query asks for everything since the earliest of
+  // those starts, and each officer's points are then clipped to their own
+  // start when the line is drawn.
   const traceUserIdsArray = useMemo(
     () => Array.from(tracedUserIds),
     [tracedUserIds]
   );
+  // Rounded to the second so the query key doesn't churn on every render
+  // (Date.now() as an input would refetch continuously).
+  const trackSinceMs = useMemo(() => {
+    const starts = traceUserIdsArray
+      .map(id => trackStartsRef.current.get(id))
+      .filter((t): t is number => typeof t === "number");
+    const earliest = starts.length ? Math.min(...starts) : Date.now();
+    return Math.floor(earliest / 1000) * 1000;
+  }, [traceUserIdsArray]);
   const { data: traceHistories } =
     trpc.intelligence.userLocationHistories.useQuery(
-      {
-        userIds: traceUserIdsArray,
-        sinceMs: Date.now() - 8 * 60 * 60 * 1000, // trailing 8h shift window
-      },
+      { userIds: traceUserIdsArray, sinceMs: trackSinceMs },
       { refetchInterval: 3000, enabled: traceUserIdsArray.length > 0 }
     );
 
@@ -1698,7 +1710,11 @@ export default function IntelligenceMapping() {
       err => {
         setGpsError(`GPS error: ${err.message}`);
       },
-      { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+      // maximumAge caps how stale a cached fix the browser may hand back.
+      // At 5000 it could serve a 5-second-old position, which alone would
+      // stop the 2-second trail sampling on the server from ever seeing
+      // 2-second-apart fixes. 1000 keeps them fresh enough to sample.
+      { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 }
     );
   }, []); // no deps — uses refs only
 
@@ -2225,8 +2241,15 @@ export default function IntelligenceMapping() {
 
     if (!traceHistories) return;
     for (const userId of Array.from(tracedUserIds)) {
-      const points = (traceHistories as Record<number, { lat: number; lng: number }[]>)[userId];
-      if (!points || points.length < 2) continue;
+      const all = (traceHistories as Record<
+        number,
+        { lat: number; lng: number; recordedAt: number }[]
+      >)[userId];
+      // The query fetches from the earliest start across all tracked
+      // officers, so clip each one to their own Track-on moment.
+      const startedAt = trackStartsRef.current.get(userId) ?? 0;
+      const points = (all ?? []).filter(p => p.recordedAt >= startedAt);
+      if (points.length < 2) continue;
       const path = points.map(p => ({ lat: p.lat, lng: p.lng }));
       const colour = getTeamColour(traceUserTeamRef.current.get(userId) ?? null);
       const existing = traceLinesRef.current.get(userId);
@@ -2966,7 +2989,16 @@ export default function IntelligenceMapping() {
   const toggleUserTrace = (userId: number) => {
     setTracedUserIds(prev => {
       const next = new Set(prev);
-      next.has(userId) ? next.delete(userId) : next.add(userId);
+      if (next.has(userId)) {
+        next.delete(userId);
+        trackStartsRef.current.delete(userId);
+      } else {
+        next.add(userId);
+        // Track draws from the moment it is switched on, not from whatever
+        // history already exists — an officer tracked for a search wants the
+        // line to start where they started, not to open with the drive in.
+        trackStartsRef.current.set(userId, Date.now());
+      }
       return next;
     });
   };

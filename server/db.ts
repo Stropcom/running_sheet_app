@@ -9108,13 +9108,27 @@ function haversineMetres(
 }
 
 // Only append a trail point when the officer has moved a meaningful distance
-// since the last recorded point, or enough time has passed — GPS pings can
-// fire every few seconds, and recording every single one would flood the
-// table for no benefit. A slower stationary heartbeat still keeps the trail
-// continuous (and useful for "where was officer X at time Y") when parked.
-const HISTORY_MOVE_THRESHOLD_M = 25;
-const HISTORY_MOVING_MIN_INTERVAL_MS = 15_000;
+// since the last recorded point, or enough time has passed. A slower
+// stationary heartbeat still keeps the trail continuous (and useful for
+// "where was officer X at time Y") when parked.
+//
+// These are tuned for a vehicle. At 10 m / 2 s a car records continuously
+// from about 18 km/h up — 2 s apart at 50 km/h is a point every ~28 m, which
+// draws a road-following line rather than the corner-cutting chords the old
+// 25 m / 15 s pair produced (a point every ~208 m at 50 km/h). Below ~18 km/h
+// the distance gate takes over and spaces points out again, which is what you
+// want at walking pace or crawling a car park.
+const HISTORY_MOVE_THRESHOLD_M = 10;
+const HISTORY_MOVING_MIN_INTERVAL_MS = 2_000;
 const HISTORY_STATIONARY_HEARTBEAT_MS = 120_000;
+/**
+ * A 10 m movement gate is inside the error margin of a poor GPS fix, so a
+ * parked car with ±20 m drift would otherwise write a point every 2 seconds
+ * and draw itself wandering around the street. Fixes vaguer than this are
+ * treated as noise for movement purposes — the stationary heartbeat below
+ * still records them, so the trail stays continuous either way.
+ */
+const HISTORY_MAX_ACCURACY_M = 50;
 
 async function recordUserLocationHistory(
   userId: number,
@@ -9150,7 +9164,11 @@ async function recordUserLocationHistory(
   if (lastPoint) {
     const elapsed = now - lastPoint.recordedAt;
     const distance = haversineMetres(lastPoint.lat, lastPoint.lng, lat, lng);
+    // A vague fix can "move" 10 m while the vehicle is stationary, so it
+    // only counts as movement when the fix is accurate enough to trust.
+    const fixIsPrecise = accuracy == null || accuracy <= HISTORY_MAX_ACCURACY_M;
     if (
+      fixIsPrecise &&
       distance >= HISTORY_MOVE_THRESHOLD_M &&
       elapsed >= HISTORY_MOVING_MIN_INTERVAL_MS
     ) {

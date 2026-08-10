@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { RS_CANONICAL_CHIP_ORDER } from "@/lib/rsChipOrder";
 import {
   getMarkerDataUrl,
   getMarkerSvg,
@@ -1135,32 +1136,10 @@ export default function IntelligenceMapping() {
   const [showMapQeDateStepper, setShowMapQeDateStepper] = useState(false); // toggled by Date button
   const [mapQeSelectOpen, setMapQeSelectOpen] = useState(false);
   const [mapQeAddress, setMapQeAddress] = useState(""); // pre-filled address for the observation
-  // Quick Entry shortcut chip order — persisted to localStorage so user can reorder them
-  const QE_CANONICAL_ORDER = [
-    "SC",
-    "HBF",
-    ...(
-      Array.from({ length: 8 }, (_, i) => [
-        `V${i + 1}F`,
-        `V${i + 1}`,
-      ]) as string[][]
-    ).flat(),
-    "TGT",
-    "DSO",
-    "DR",
-    "FP",
-    "US",
-    "DE",
-    "AR",
-    "CV",
-    "OOS",
-    "COOS",
-    "PU",
-    "PT",
-    "RACK",
-    "DEP",
-    ...(Array.from({ length: 10 }, (_, i) => `#${i + 1}`) as string[]),
-  ];
+  // Quick Entry shortcut chip order — persisted to localStorage so user can reorder them.
+  // Shared with SheetDetail's canonical order so the QE popup's fallback (used only
+  // when a sheet has no saved custom order yet) can't drift out of sync with the main RS.
+  const QE_CANONICAL_ORDER = RS_CANONICAL_CHIP_ORDER;
   // QE chips mirror the main RS chip order (read from the active sheet's localStorage key)
   // No drag in QE — main RS is the single source of truth for chip order
   const [qeChipOrder, setQeChipOrder] = useState<string[]>(QE_CANONICAL_ORDER);

@@ -3311,7 +3311,41 @@ export default function IntelligenceMapping() {
             initialCenter={mapInitialCenter}
             initialZoom={mapInitialZoom}
             initialMapTypeId={mapInitialTypeId}
+            hideMapTypeControl
           />
+
+          {/* Map / Sat toggle — top-right, replaces Google's native
+              mapTypeControl (see Map.tsx) so it can sit at a predictable,
+              compact size next to the search bar instead of the SDK's own
+              wider "Map"/"Satellite" control, which doesn't shrink or
+              relabel and collided with the search bar on narrow screens. */}
+          <div
+            className="absolute z-20 pointer-events-auto flex items-center bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden"
+            style={{ top: "10px", right: "10px", height: "36px" }}
+            onClick={e => e.stopPropagation()}
+          >
+            {(
+              [
+                { id: "roadmap", label: "Map" },
+                { id: "satellite", label: "Sat" },
+              ] as const
+            ).map((opt, i) => {
+              const active = mapInitialTypeId === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  onClick={() => mapRef.current?.setMapTypeId(opt.id)}
+                  className={`h-full px-3 text-xs font-semibold transition-colors ${
+                    active
+                      ? "bg-sky-600 text-white"
+                      : "text-gray-600 hover:bg-gray-50"
+                  } ${i === 0 ? "border-r border-gray-200" : ""}`}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
 
           {/* Centre on me / Follow me floating buttons — top-left below search bar */}
           <div
@@ -3369,15 +3403,10 @@ export default function IntelligenceMapping() {
             </button>
           </div>
 
-          {/* Floating address search bar — top-left, next to Map/Satellite toggle.
-              The toggle is Google's own native mapTypeControl (see Map.tsx,
-              pinned TOP_RIGHT by the Maps SDK itself, not something this app
-              positions) — it doesn't shrink or coordinate with anything on
-              our side, so on a narrow screen a fixed 260px search bar starting
-              at left:10px reaches far enough right to physically collide with
-              it. Capping maxWidth to leave the toggle's own ~150px reserved
-              clearance keeps them apart at any viewport width without
-              touching Map.tsx or a resize listener. */}
+          {/* Floating address search bar — top-left, next to our own Map/Sat
+              toggle above (a fixed ~76px, unlike Google's native control it
+              replaces). Capping maxWidth to leave that clearance keeps them
+              apart at any viewport width without a resize listener. */}
           <div
             className="absolute z-20 pointer-events-auto"
             style={{ top: "10px", left: "10px" }}
@@ -3389,7 +3418,7 @@ export default function IntelligenceMapping() {
                 style={{
                   height: "40px",
                   minWidth: "160px",
-                  maxWidth: "min(260px, calc(100vw - 180px))",
+                  maxWidth: "min(260px, calc(100vw - 120px))",
                 }}
               >
                 <Search className="w-4 h-4 text-gray-400 ml-3 shrink-0" />

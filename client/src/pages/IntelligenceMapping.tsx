@@ -854,13 +854,17 @@ export default function IntelligenceMapping() {
     }
     return 11;
   });
-  // Persist the user's chosen map type (roadmap / satellite)
+  // Persist the user's chosen map type (roadmap / hybrid). Not plain
+  // "satellite" — that's imagery with no street/business/number labels,
+  // which isn't usable for this app; "hybrid" is the same imagery with
+  // labels overlaid. Anyone with "satellite" already saved (from before
+  // this was fixed) gets migrated to "hybrid" on read below.
   const [mapInitialTypeId, setMapInitialTypeId] = useState<string>(() => {
     try {
       const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
       if (s) {
         const t = JSON.parse(s).mapTypeId;
-        if (typeof t === "string") return t;
+        if (typeof t === "string") return t === "satellite" ? "hybrid" : t;
       }
     } catch {
       /* ignore */
@@ -3327,7 +3331,7 @@ export default function IntelligenceMapping() {
             {(
               [
                 { id: "roadmap", label: "Map" },
-                { id: "satellite", label: "Sat" },
+                { id: "hybrid", label: "Sat" },
               ] as const
             ).map((opt, i) => {
               const active = mapInitialTypeId === opt.id;

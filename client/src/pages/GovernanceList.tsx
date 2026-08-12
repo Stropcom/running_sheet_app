@@ -203,8 +203,8 @@ function GovernanceTileCard({
     <div className="group flex flex-col gap-3 p-5 rounded-xl border border-border bg-card hover:bg-accent/20 hover:border-primary/30 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150">
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
-        <div className="p-2 rounded-lg bg-primary/10 border border-primary/20 shrink-0">
-          <ClipboardCheck className="w-4 h-4 text-primary" />
+        <div className="p-2 rounded-lg bg-purple-400/10 border border-purple-400/20 shrink-0">
+          <ClipboardCheck className="w-4 h-4 text-purple-400" />
         </div>
         {allDone ? (
           <Badge className="text-[10px] px-1.5 py-0 bg-emerald-500/15 text-emerald-500 border-emerald-500/30 border shrink-0">
@@ -288,8 +288,8 @@ export default function GovernanceListPage() {
       <div className="p-6 max-w-3xl mx-auto">
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-            <ClipboardCheck className="w-5 h-5 text-primary" />
+          <div className="w-10 h-10 rounded-xl bg-purple-400/10 border border-purple-400/20 flex items-center justify-center">
+            <ClipboardCheck className="w-5 h-5 text-purple-400" />
           </div>
           <div className="flex-1">
             <h1 className="text-lg font-semibold text-foreground">Governance</h1>

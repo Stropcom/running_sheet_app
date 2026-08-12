@@ -876,8 +876,8 @@ function OperationsTab({
             onClick={() => navigate(`/intelligence/operation/${op.operationId}`)}
           >
             <div className="flex items-start justify-between gap-2">
-              <div className="p-2 rounded-lg bg-primary/10 border border-primary/20 shrink-0">
-                <Folder className="w-4 h-4 text-primary" />
+              <div className="p-2 rounded-lg bg-violet-400/10 border border-violet-400/20 shrink-0">
+                <Folder className="w-4 h-4 text-violet-400" />
               </div>
               <button
                 onClick={(e) => { e.stopPropagation(); navigate(`/intelligence/operation/${op.operationId}`); }}
@@ -1178,8 +1178,8 @@ export default function IntelligencePage() {
       <div className="p-6 max-w-5xl mx-auto">
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
-          <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
-            <FileText className="w-4 h-4 text-primary" />
+          <div className="w-9 h-9 rounded-lg bg-violet-400/10 border border-violet-400/20 flex items-center justify-center">
+            <FileText className="w-4 h-4 text-violet-400" />
           </div>
           <div className="flex-1">
             <h1 className="text-xl font-semibold text-foreground">Intelligence Folder</h1>

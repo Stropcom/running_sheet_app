@@ -388,7 +388,7 @@ function TargetCard({
         className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-accent/20 transition-colors"
         onClick={() => setExpanded(v => !v)}
       >
-        <Target className="w-4 h-4 text-primary shrink-0" />
+        <Target className="w-4 h-4 text-rose-400 shrink-0" />
         <span className="flex-1 font-semibold text-sm text-foreground truncate">{target.name}</span>
         {target.isIndicesOnly && <IndicesBadge />}
         {/* Linked operations badges */}
@@ -1093,8 +1093,8 @@ export default function TargetRegistryPage() {
               >
                 {/* Header */}
                 <div className="flex items-start justify-between gap-2">
-                  <div className="p-2 rounded-lg bg-primary/10 border border-primary/20 shrink-0">
-                    <Target className="w-4 h-4 text-primary" />
+                  <div className="p-2 rounded-lg bg-rose-400/10 border border-rose-400/20 shrink-0">
+                    <Target className="w-4 h-4 text-rose-400" />
                   </div>
                   <Button
                     variant="ghost"

@@ -146,6 +146,10 @@ type SortableNavItemProps = {
   setOpManagerExpanded: React.Dispatch<React.SetStateAction<boolean>>;
   ctoRosterSubExpanded: boolean;
   setCtoRosterSubExpanded: React.Dispatch<React.SetStateAction<boolean>>;
+  reportsExpanded: boolean;
+  setReportsExpanded: React.Dispatch<React.SetStateAction<boolean>>;
+  courtExpanded: boolean;
+  setCourtExpanded: React.Dispatch<React.SetStateAction<boolean>>;
   shortcutsItemRef: React.RefObject<HTMLLIElement | null>;
   isObservationFocused: boolean;
   setShortcutsPanelOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -191,6 +195,10 @@ function SortableNavItem({
   setOpManagerExpanded,
   ctoRosterSubExpanded,
   setCtoRosterSubExpanded,
+  reportsExpanded,
+  setReportsExpanded,
+  courtExpanded,
+  setCourtExpanded,
   shortcutsItemRef,
   isObservationFocused,
   setShortcutsPanelOpen,
@@ -646,6 +654,125 @@ function SortableNavItem({
     );
   }
 
+  if (id === "reports") {
+    const isActive = location.startsWith("/reports");
+    return (
+      <SidebarMenuItem {...itemProps}>
+        <SidebarMenuButton
+          isActive={isActive}
+          onClick={e => {
+            const willExpand = !reportsExpanded;
+            setReportsExpanded(v => !v);
+            if (willExpand)
+              scrollToggleNearTop(sidebarScrollRef.current, e.currentTarget);
+          }}
+          tooltip="Reports"
+          className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-indigo-400/50 shadow-sm"
+        >
+          <BarChart3 className="h-4 w-4 text-indigo-400" />
+          <span
+            className={`flex-1 ${isActive ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}
+          >
+            Reports
+          </span>
+          {!isCollapsed &&
+            (reportsExpanded ? (
+              <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />
+            ) : (
+              <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />
+            ))}
+          {gripHandle}
+        </SidebarMenuButton>
+        {reportsExpanded && !isCollapsed && (
+          <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
+            <button
+              onClick={() => setLocation("/reports/outstanding-actions")}
+              className={subItemClass(location === "/reports/outstanding-actions")}
+            >
+              <ClipboardCheck className="h-3.5 w-3.5 shrink-0" />
+              Outstanding Actions
+            </button>
+            <button
+              onClick={() => setLocation("/reports/weekly-activity")}
+              className={subItemClass(location === "/reports/weekly-activity")}
+            >
+              <TrendingUp className="h-3.5 w-3.5 shrink-0" />
+              Weekly Activity
+            </button>
+            <button
+              onClick={() => setLocation("/reports/weekly-tasking")}
+              className={subItemClass(location === "/reports/weekly-tasking")}
+            >
+              <CalendarClock className="h-3.5 w-3.5 shrink-0" />
+              Weekly Tasking
+            </button>
+          </div>
+        )}
+      </SidebarMenuItem>
+    );
+  }
+
+  if (id === "court") {
+    const isActive = location.startsWith("/court");
+    return (
+      <SidebarMenuItem {...itemProps}>
+        <SidebarMenuButton
+          isActive={isActive}
+          onClick={e => {
+            const willExpand = !courtExpanded;
+            setCourtExpanded(v => !v);
+            if (willExpand)
+              scrollToggleNearTop(sidebarScrollRef.current, e.currentTarget);
+          }}
+          tooltip="Court"
+          className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-amber-400/50 shadow-sm"
+        >
+          <Scale className="h-4 w-4 text-amber-400" />
+          <span
+            className={`flex-1 ${isActive ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}
+          >
+            Court
+          </span>
+          {!isCollapsed &&
+            (courtExpanded ? (
+              <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />
+            ) : (
+              <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />
+            ))}
+          {gripHandle}
+        </SidebarMenuButton>
+        {courtExpanded && !isCollapsed && (
+          <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
+            <button
+              onClick={() => setLocation("/court/statements")}
+              className={subItemClass(location === "/court/statements")}
+            >
+              <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+              Statements
+            </button>
+            <button
+              onClick={() => setLocation("/court/witness-list")}
+              className={subItemClass(location === "/court/witness-list")}
+            >
+              <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+              Witness List
+            </button>
+            <button
+              onClick={() => setLocation("/court/wipc")}
+              className={subItemClass(location === "/court/wipc")}
+            >
+              <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+              <span className="flex-1">WIPC</span>
+              <span className="inline-flex items-center gap-0.5 px-1 py-0 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 leading-4">
+                🔒
+              </span>
+            </button>
+          </div>
+        )}
+      </SidebarMenuItem>
+    );
+  }
+
   return null;
 }
 
@@ -987,6 +1114,78 @@ function SortableNavTile({
     );
   }
 
+  if (id === "reports") {
+    const isActive = location.startsWith("/reports");
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <div className="w-full">
+            <NavTileShell
+              setNodeRef={setNodeRef}
+              style={style}
+              gripListeners={gripListeners}
+              icon={<BarChart3 className="h-5 w-5 text-indigo-400" />}
+              label="Reports"
+              isActive={isActive}
+              hasSub
+              activeBorderClass="data-[active=true]:border-indigo-400/60"
+            />
+          </div>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-56">
+          <DropdownMenuItem onClick={() => setLocation("/reports/outstanding-actions")}>
+            <ClipboardCheck className="h-4 w-4 mr-2" />
+            Outstanding Actions
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setLocation("/reports/weekly-activity")}>
+            <TrendingUp className="h-4 w-4 mr-2" />
+            Weekly Activity
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setLocation("/reports/weekly-tasking")}>
+            <CalendarClock className="h-4 w-4 mr-2" />
+            Weekly Tasking
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  }
+
+  if (id === "court") {
+    const isActive = location.startsWith("/court");
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <div className="w-full">
+            <NavTileShell
+              setNodeRef={setNodeRef}
+              style={style}
+              gripListeners={gripListeners}
+              icon={<Scale className="h-5 w-5 text-amber-400" />}
+              label="Court"
+              isActive={isActive}
+              hasSub
+              activeBorderClass="data-[active=true]:border-amber-400/60"
+            />
+          </div>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-56">
+          <DropdownMenuItem onClick={() => setLocation("/court/statements")}>
+            <FolderOpen className="h-4 w-4 mr-2" />
+            Statements
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setLocation("/court/witness-list")}>
+            <FolderOpen className="h-4 w-4 mr-2" />
+            Witness List
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setLocation("/court/wipc")}>
+            <ShieldCheck className="h-4 w-4 mr-2 text-amber-400" />
+            WIPC
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  }
+
   return null;
 }
 
@@ -1001,13 +1200,11 @@ function AdminNavTile({
   setLocation: (path: string) => void;
 }) {
   const isActive =
-    location.startsWith("/court") ||
     location === "/audit" ||
     location === "/draft" ||
     location === "/operation-management" ||
     location === "/recycle-bin" ||
-    location === "/help" ||
-    location.startsWith("/reports");
+    location === "/help";
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -1022,47 +1219,6 @@ function AdminNavTile({
         </div>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-56">
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
-            <BarChart3 className="h-4 w-4 mr-2 text-slate-400" />
-            Reports
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent>
-            <DropdownMenuItem onClick={() => setLocation("/reports/outstanding-actions")}>
-              <ClipboardCheck className="h-4 w-4 mr-2" />
-              Outstanding Actions
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setLocation("/reports/weekly-activity")}>
-              <TrendingUp className="h-4 w-4 mr-2" />
-              Weekly Activity
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setLocation("/reports/weekly-tasking")}>
-              <CalendarClock className="h-4 w-4 mr-2" />
-              Weekly Tasking
-            </DropdownMenuItem>
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
-            <Scale className="h-4 w-4 mr-2" />
-            Court
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent>
-            <DropdownMenuItem onClick={() => setLocation("/court/statements")}>
-              <FolderOpen className="h-4 w-4 mr-2" />
-              Statements
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setLocation("/court/witness-list")}>
-              <FolderOpen className="h-4 w-4 mr-2" />
-              Witness List
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setLocation("/court/wipc")}>
-              <ShieldCheck className="h-4 w-4 mr-2 text-amber-400" />
-              WIPC
-            </DropdownMenuItem>
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-        <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => setLocation("/audit")}>
           <ScrollText className="h-4 w-4 mr-2" />
           Audit Log
@@ -1516,6 +1672,8 @@ function DashboardLayoutContent({
     "intelligence",
     "targetRegistry",
     "operationManager",
+    "reports",
+    "court",
   ];
   const [navOrder, setNavOrder] = useState<string[]>(DEFAULT_NAV_ORDER);
   const { data: sidebarOrderData } = trpc.sidebar.getOrder.useQuery(undefined, {
@@ -1807,6 +1965,10 @@ function DashboardLayoutContent({
                       setOpManagerExpanded={setOpManagerExpanded}
                       ctoRosterSubExpanded={ctoRosterSubExpanded}
                       setCtoRosterSubExpanded={setCtoRosterSubExpanded}
+                      reportsExpanded={reportsExpanded}
+                      setReportsExpanded={setReportsExpanded}
+                      courtExpanded={courtExpanded}
+                      setCourtExpanded={setCourtExpanded}
                       shortcutsItemRef={shortcutsItemRef}
                       isObservationFocused={isObservationFocused}
                       setShortcutsPanelOpen={setShortcutsPanelOpen}
@@ -1823,13 +1985,11 @@ function DashboardLayoutContent({
                   isActive={
                     adminFolderExpanded && !isCollapsed
                       ? false
-                      : location.startsWith("/court") ||
-                        location === "/audit" ||
+                      : location === "/audit" ||
                         location === "/draft" ||
                         location === "/operation-management" ||
                         location === "/recycle-bin" ||
-                        location === "/help" ||
-                        location.startsWith("/reports")
+                        location === "/help"
                   }
                   onClick={() => setAdminFolderExpanded(v => !v)}
                   tooltip="Administration"
@@ -1838,13 +1998,11 @@ function DashboardLayoutContent({
                   <Settings className="h-4 w-4 text-slate-400" />
                   <span
                     className={`flex-1 ${
-                      location.startsWith("/court") ||
                       location === "/audit" ||
                       location === "/draft" ||
                       location === "/operation-management" ||
                       location === "/recycle-bin" ||
-                      location === "/help" ||
-                      location === "/reports"
+                      location === "/help"
                         ? "text-sidebar-foreground font-medium"
                         : "text-sidebar-foreground/80"
                     }`}
@@ -1861,101 +2019,6 @@ function DashboardLayoutContent({
 
                 {adminFolderExpanded && !isCollapsed && (
                   <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
-                    {/* Reports (expandable sub-folder) */}
-                    <button
-                      onClick={() => setReportsExpanded(v => !v)}
-                      className={subItemClass(location.startsWith("/reports"))}
-                    >
-                      <BarChart3 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                      <span className="flex-1">Reports</span>
-                      {reportsExpanded ? (
-                        <ChevronDown className="h-3 w-3 text-sidebar-foreground/40" />
-                      ) : (
-                        <ChevronRight className="h-3 w-3 text-sidebar-foreground/40" />
-                      )}
-                    </button>
-                    {reportsExpanded && (
-                      <div className="ml-4 border-l border-sidebar-border/40 pl-3 flex flex-col gap-0.5 mb-0.5">
-                        <button
-                          onClick={() =>
-                            setLocation("/reports/outstanding-actions")
-                          }
-                          className={subItemClass(
-                            location === "/reports/outstanding-actions"
-                          )}
-                        >
-                          <ClipboardCheck className="h-3.5 w-3.5 shrink-0" />
-                          Outstanding Actions
-                        </button>
-                        <button
-                          onClick={() =>
-                            setLocation("/reports/weekly-activity")
-                          }
-                          className={subItemClass(
-                            location === "/reports/weekly-activity"
-                          )}
-                        >
-                          <TrendingUp className="h-3.5 w-3.5 shrink-0" />
-                          Weekly Activity
-                        </button>
-                        <button
-                          onClick={() => setLocation("/reports/weekly-tasking")}
-                          className={subItemClass(
-                            location === "/reports/weekly-tasking"
-                          )}
-                        >
-                          <CalendarClock className="h-3.5 w-3.5 shrink-0" />
-                          Weekly Tasking
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Court (expandable sub-folder) */}
-                    <button
-                      onClick={() => setCourtExpanded(v => !v)}
-                      className={subItemClass(location.startsWith("/court"))}
-                    >
-                      <Scale className="h-3.5 w-3.5 shrink-0 text-foreground" />
-                      <span className="flex-1">Court</span>
-                      {courtExpanded ? (
-                        <ChevronDown className="h-3 w-3 text-sidebar-foreground/40" />
-                      ) : (
-                        <ChevronRight className="h-3 w-3 text-sidebar-foreground/40" />
-                      )}
-                    </button>
-                    {courtExpanded && (
-                      <div className="ml-4 border-l border-sidebar-border/40 pl-3 flex flex-col gap-0.5 mb-0.5">
-                        <button
-                          onClick={() => setLocation("/court/statements")}
-                          className={subItemClass(
-                            location === "/court/statements"
-                          )}
-                        >
-                          <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-                          Statements
-                        </button>
-                        <button
-                          onClick={() => setLocation("/court/witness-list")}
-                          className={subItemClass(
-                            location === "/court/witness-list"
-                          )}
-                        >
-                          <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-                          Witness List
-                        </button>
-                        <button
-                          onClick={() => setLocation("/court/wipc")}
-                          className={subItemClass(location === "/court/wipc")}
-                        >
-                          <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-amber-400" />
-                          <span className="flex-1">WIPC</span>
-                          <span className="inline-flex items-center gap-0.5 px-1 py-0 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 leading-4">
-                            🔒
-                          </span>
-                        </button>
-                      </div>
-                    )}
-
                     {/* Audit Log */}
                     <button
                       onClick={() => setLocation("/audit")}

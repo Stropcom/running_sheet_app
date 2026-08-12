@@ -1780,8 +1780,8 @@ export default function OperationDetail() {
         <div className="flex items-start justify-between mb-6">
           <div>
             <div className="flex items-center gap-3 mb-2">
-              <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">
-                <FolderOpen className="w-5 h-5 text-primary" />
+              <div className="p-2 rounded-lg bg-blue-700/10 border border-blue-700/20">
+                <FolderOpen className="w-5 h-5 text-blue-700" />
               </div>
               <h1 className="text-2xl font-semibold text-foreground">
                 {opLoading ? <Skeleton className="h-7 w-48" /> : (operation?.name ?? "Operation")}

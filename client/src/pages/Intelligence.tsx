@@ -914,7 +914,7 @@ function OperationsTab({
         }
 
         return (
-          <div key={op.operationId} className="rounded-xl border border-border/60 overflow-hidden bg-card/50">
+          <div key={op.operationId} className="rounded-xl border border-border/60 overflow-hidden bg-card">
             <button
               onClick={() => setExpandedOpId(isExpanded ? null : op.operationId)}
               className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-accent/10 transition-colors"
@@ -1483,7 +1483,7 @@ export default function IntelligencePage() {
                 })}
               </div>
             ) : (
-              <div className="rounded-xl border border-border/60 overflow-hidden bg-card/50">
+              <div className="rounded-xl border border-border/60 overflow-hidden bg-card">
                 {sortedByTab(filteredByTab)
                   .map((entity, idx) => {
                     const iconColor = entity.isTarget ? TYPE_COLORS.person : TYPE_COLORS[entity.type];

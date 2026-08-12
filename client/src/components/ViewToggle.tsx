@@ -1,9 +1,21 @@
 import { LayoutGrid, List } from "lucide-react";
-import { useViewMode } from "@/contexts/ViewModeContext";
+import { useViewMode, type ViewMode } from "@/contexts/ViewModeContext";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
-export function ViewToggle() {
-  const { viewMode, setViewMode } = useViewMode();
+export function ViewToggle({
+  value,
+  onChange,
+  folderLabel = "Folder view",
+  tileLabel = "Tile view",
+}: {
+  value?: ViewMode;
+  onChange?: (mode: ViewMode) => void;
+  folderLabel?: string;
+  tileLabel?: string;
+} = {}) {
+  const ctx = useViewMode();
+  const viewMode = value ?? ctx.viewMode;
+  const setViewMode = onChange ?? ctx.setViewMode;
 
   return (
     <div className="inline-flex items-center rounded-lg border border-border/60 bg-muted/30 p-0.5 gap-0.5">
@@ -16,12 +28,12 @@ export function ViewToggle() {
                 ? "bg-background text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground"
             }`}
-            aria-label="Folder view"
+            aria-label={folderLabel}
           >
             <List className="w-3.5 h-3.5" />
           </button>
         </TooltipTrigger>
-        <TooltipContent side="bottom">Folder view</TooltipContent>
+        <TooltipContent side="bottom">{folderLabel}</TooltipContent>
       </Tooltip>
       <Tooltip>
         <TooltipTrigger asChild>
@@ -32,12 +44,12 @@ export function ViewToggle() {
                 ? "bg-background text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground"
             }`}
-            aria-label="Tile view"
+            aria-label={tileLabel}
           >
             <LayoutGrid className="w-3.5 h-3.5" />
           </button>
         </TooltipTrigger>
-        <TooltipContent side="bottom">Tile view</TooltipContent>
+        <TooltipContent side="bottom">{tileLabel}</TooltipContent>
       </Tooltip>
     </div>
   );

@@ -778,7 +778,7 @@ function SortableNavTile({
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <div>
+          <div className="contents">
             <NavTileShell
               setNodeRef={setNodeRef}
               style={style}
@@ -928,7 +928,7 @@ function SortableNavTile({
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <div>
+          <div className="contents">
             <NavTileShell
               setNodeRef={setNodeRef}
               style={style}
@@ -1011,7 +1011,7 @@ function AdminNavTile({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <div>
+        <div className="contents">
           <NavTileShell
             icon={<Settings className="h-5 w-5 text-slate-400" />}
             label="Administration"
@@ -1098,7 +1098,7 @@ function UserMgmtNavTile({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <div>
+        <div className="contents">
           <NavTileShell
             icon={<UserCog className="h-5 w-5 text-blue-400" />}
             label="User Management"

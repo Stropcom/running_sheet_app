@@ -3656,7 +3656,7 @@ function toPerthDateISO(d: Date): string {
 
 /** Add (or subtract) days to a YYYY-MM-DD string, Perth-anchored — same
  * anchoring approach as getRowsBySheetId's day-offset math above. */
-function addDaysISO(dateISO: string, days: number): string {
+export function addDaysISO(dateISO: string, days: number): string {
   const d = new Date(dateISO + "T00:00:00+08:00");
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
@@ -4093,11 +4093,17 @@ export async function getWeeklyActivityReport(
   const opById = new Map(ops.map(o => [o.id, o]));
   const targetById = new Map(targetRows.map(t => [t.id, t]));
 
+  // Priority: explicit rowDate, then the sheet's picker date (sheetDate —
+  // the authoritative calendar date for the sheet, distinct from createdAt),
+  // then createdAt only as a last resort for legacy sheets with no
+  // sheetDate. Falling straight to createdAt (as this used to) silently
+  // misdated every row on a sheet created for a different day than it was
+  // actually saved, dropping it out of every week's report entirely.
   function resolveRowDate(row: (typeof rows)[number]): string {
     if (row.rowDate) return row.rowDate;
     const sheet = sheetById.get(row.sheetId);
     return addDaysISO(
-      toPerthDateISO(sheet?.createdAt ?? new Date()),
+      sheet?.sheetDate ?? toPerthDateISO(sheet?.createdAt ?? new Date()),
       row.dayOffset
     );
   }
@@ -10489,12 +10495,17 @@ export async function computeWitnessListData(
     Awaited<ReturnType<typeof getRunningSheetById>>
   >[];
 
-  // Sort sheets by date (YYYYMMDD prefix or createdAt)
+  // Sort sheets by date — read sheetDate directly (the source the title's
+  // date prefix is itself generated from) rather than re-deriving it by
+  // regex-parsing the title, falling back to createdAt for legacy sheets
+  // with no sheetDate.
   const getSheetDate = (
     sheet: NonNullable<Awaited<ReturnType<typeof getRunningSheetById>>>
   ) => {
-    const m = sheet.title.match(/^(\d{4})(\d{2})(\d{2})/);
-    if (m) return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    if (sheet.sheetDate) {
+      const [y, mo, da] = sheet.sheetDate.split("-").map(Number);
+      return Date.UTC(y, mo - 1, da);
+    }
     const d = new Date(
       sheet.createdAt instanceof Date
         ? sheet.createdAt.getTime()

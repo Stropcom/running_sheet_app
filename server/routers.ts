@@ -118,6 +118,7 @@ import {
   getRunningSheetById,
   computeWitnessListData,
   getRunningSheets,
+  addDaysISO,
   getRunningSheetsByOperation,
   getRunningSheetsByOperations,
   getUserById,
@@ -1169,13 +1170,27 @@ export const appRouter = router({
         await guardActiveSheet(input.sheetId);
         const existingRows = await getRowsBySheetId(input.sheetId);
         const rowNumber = existingRows.length + 1;
+        // A row always gets a concrete rowDate at creation, even when the
+        // caller doesn't supply one — derived from the sheet's picker date
+        // (sheetDate), never left to be inferred later from createdAt, which
+        // is just when this DB row happened to be inserted and can differ
+        // from the sheet's actual calendar date (e.g. a sheet backfilled for
+        // a past/future date). Legacy sheets with no sheetDate yet are the
+        // only case this still leaves null.
+        let rowDate = input.rowDate;
+        if (!rowDate) {
+          const sheet = await getRunningSheetById(input.sheetId);
+          if (sheet?.sheetDate) {
+            rowDate = addDaysISO(sheet.sheetDate, input.dayOffset ?? 0);
+          }
+        }
         const id = await createSheetRow({
           sheetId: input.sheetId,
           rowNumber,
           time: input.time,
           timeMinutes: input.timeMinutes,
           dayOffset: input.dayOffset ?? 0,
-          rowDate: input.rowDate,
+          rowDate,
           observation: input.observation,
           isLocked: false,
         });
@@ -3691,7 +3706,9 @@ export const appRouter = router({
        * Extract a UTC-safe day start from a title that begins with YYYYMMDD,
        * e.g. "20260702 - FOREST (OSBORNE)" → 2026-07-02T00:00:00Z.
        * Falls back to the UTC date of the createdAt timestamp so no timezone
-       * shift occurs on the server (which runs in UTC).
+       * shift occurs on the server (which runs in UTC). Operations have no
+       * picker-set date field of their own, so this title-regex approach is
+       * still the right one for them.
        */
       function dayStartFromTitleOrDate(
         title: string,
@@ -3709,6 +3726,12 @@ export const appRouter = router({
         return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
       }
 
+      /** UTC-safe day start from a YYYY-MM-DD string. */
+      function dayStartFromISODate(dateISO: string): number {
+        const [y, mo, da] = dateISO.split("-").map(Number);
+        return Date.UTC(y, mo - 1, da);
+      }
+
       for (const op of operations) {
         const dayStart = dayStartFromTitleOrDate(op.name, op.createdAt);
         events.push({
@@ -3724,7 +3747,14 @@ export const appRouter = router({
       }
 
       for (const sheet of sheets) {
-        const dayStart = dayStartFromTitleOrDate(sheet.title, sheet.createdAt);
+        // Read the sheet's picker date directly rather than re-deriving it
+        // by parsing the title (title is generated from sheetDate, so this
+        // used to happen to agree, but only by coincidence of format — this
+        // reads the source field). Legacy sheets predating sheetDate still
+        // fall back to the title/createdAt parse.
+        const dayStart = sheet.sheetDate
+          ? dayStartFromISODate(sheet.sheetDate)
+          : dayStartFromTitleOrDate(sheet.title, sheet.createdAt);
         const op = operations.find(o => o.id === sheet.operationId);
         events.push({
           id: `sheet-${sheet.id}`,

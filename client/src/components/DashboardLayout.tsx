@@ -683,7 +683,7 @@ function NavTileShell({
       style={style}
       onClick={onClick}
       data-active={isActive}
-      className={`group/tile relative flex flex-col items-center justify-center gap-1.5 h-[84px] rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border transition-all shadow-sm px-1 ${activeBorderClass}`}
+      className={`group/tile relative flex w-full flex-col items-center justify-center gap-1.5 h-[84px] rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border transition-all shadow-sm px-1 ${activeBorderClass}`}
     >
       {gripListeners && (
         <span
@@ -778,7 +778,7 @@ function SortableNavTile({
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <div className="contents">
+          <div className="w-full">
             <NavTileShell
               setNodeRef={setNodeRef}
               style={style}
@@ -928,7 +928,7 @@ function SortableNavTile({
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <div className="contents">
+          <div className="w-full">
             <NavTileShell
               setNodeRef={setNodeRef}
               style={style}
@@ -1011,7 +1011,7 @@ function AdminNavTile({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <div className="contents">
+        <div className="w-full">
           <NavTileShell
             icon={<Settings className="h-5 w-5 text-slate-400" />}
             label="Administration"
@@ -1098,7 +1098,7 @@ function UserMgmtNavTile({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <div className="contents">
+        <div className="w-full">
           <NavTileShell
             icon={<UserCog className="h-5 w-5 text-blue-400" />}
             label="User Management"

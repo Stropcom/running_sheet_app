@@ -60,7 +60,7 @@ function OperationGroup({
   const anyOverdue = summaries.some((s) => s.isOverdue);
 
   return (
-    <div className="rounded-xl border border-border/50 overflow-hidden">
+    <div className="rounded-xl border border-border/50 overflow-hidden bg-card">
       {/* Operation header row */}
       <button
         onClick={() => setExpanded((v) => !v)}

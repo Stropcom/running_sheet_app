@@ -919,7 +919,7 @@ function OperationsTab({
               onClick={() => setExpandedOpId(isExpanded ? null : op.operationId)}
               className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-accent/10 transition-colors"
             >
-              <span className="inline-flex items-center justify-center w-7 h-7 rounded-full border bg-muted/30 text-muted-foreground shrink-0">
+              <span className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-violet-400/20 bg-violet-400/15 text-violet-400 shrink-0">
                 <Folder className="w-3.5 h-3.5" />
               </span>
               <div className="flex-1 min-w-0">

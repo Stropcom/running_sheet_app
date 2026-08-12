@@ -66,7 +66,7 @@ function OperationGroup({
         onClick={() => setExpanded((v) => !v)}
         className="w-full flex items-center gap-2 px-4 py-3 bg-muted/30 border-b border-border/30 hover:bg-muted/50 transition-colors"
       >
-        <FolderOpen className="w-4 h-4 text-muted-foreground shrink-0" />
+        <FolderOpen className="w-4 h-4 text-purple-400 shrink-0" />
         <span className="text-sm font-semibold text-foreground flex-1 text-left">
           {operationName}
         </span>

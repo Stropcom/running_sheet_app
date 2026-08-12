@@ -122,7 +122,7 @@ export default function TodoPage() {
               {Object.entries(certByOp).map(([opId, group]) => (
                 <div key={opId} className="rounded-xl border border-border/50 overflow-hidden bg-card">
                   <div className="flex items-center gap-2 px-4 py-2 bg-muted/20 border-b border-border/20">
-                    <Building2 className="w-3 h-3 text-muted-foreground shrink-0" />
+                    <Building2 className="w-3 h-3 text-red-400 shrink-0" />
                     <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                       {group.operationName}
                     </span>

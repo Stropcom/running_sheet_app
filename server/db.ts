@@ -3655,11 +3655,22 @@ function toPerthDateISO(d: Date): string {
 }
 
 /** Add (or subtract) days to a YYYY-MM-DD string, Perth-anchored — same
- * anchoring approach as getRowsBySheetId's day-offset math above. */
+ * anchoring approach as getRowsBySheetId's day-offset math above.
+ *
+ * `new Date(dateISO + "T00:00:00+08:00")`'s underlying UTC instant is
+ * always 16:00 on the PREVIOUS UTC calendar day (Perth midnight = UTC-8h),
+ * so reading .toISOString() straight off it after setUTCDate() reads the
+ * UTC day, not the Perth day — silently one day short for every call,
+ * including days=0. Re-anchor back to Perth by shifting +8h before slicing,
+ * same as toPerthDateISO does. (This was wrong for years — addDaysISO(x, 6)
+ * for a Monday-start week produced Saturday instead of Sunday, silently
+ * dropping the last day of every week from any range built with it, e.g.
+ * the Weekly Activity Report's weekEnd and the Heat Map's last7/last30
+ * windows.) */
 export function addDaysISO(dateISO: string, days: number): string {
   const d = new Date(dateISO + "T00:00:00+08:00");
   d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
+  return new Date(d.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
 // A row only marks a genuine sighting of the target at a location if it

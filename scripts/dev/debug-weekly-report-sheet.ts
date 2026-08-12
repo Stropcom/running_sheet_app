@@ -40,7 +40,7 @@ function toPerthDateISO(d: Date): string {
 function addDaysISO(dateISO: string, days: number): string {
   const d = new Date(dateISO + "T00:00:00+08:00");
   d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
+  return new Date(d.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
 /** Monday-start week (YYYY-MM-DD) containing a given YYYY-MM-DD date, Perth-anchored. */

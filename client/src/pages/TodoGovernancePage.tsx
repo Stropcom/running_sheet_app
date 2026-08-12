@@ -49,7 +49,7 @@ export default function TodoGovernancePage() {
       <div className="max-w-2xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
-          <div className="p-2.5 rounded-xl bg-blue-400/15 border border-blue-400/30">
+          <div className="p-2.5 rounded-lg bg-blue-400/10 border border-blue-400/20">
             <ClipboardCheck className="w-5 h-5 text-blue-400" />
           </div>
           <div className="flex-1">
@@ -101,8 +101,8 @@ export default function TodoGovernancePage() {
                 className="group flex flex-col gap-3 p-5 rounded-xl border border-blue-400/30 bg-card hover:bg-blue-400/5 hover:border-blue-400/50 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 cursor-pointer"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <div className="p-2 rounded-lg bg-blue-400/10 border border-blue-400/20 shrink-0">
-                    <FileText className="w-4 h-4 text-blue-400" />
+                  <div className="p-2.5 rounded-lg bg-blue-400/10 border border-blue-400/20 shrink-0">
+                    <FileText className="w-5 h-5 text-blue-400" />
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${
@@ -180,8 +180,8 @@ export default function TodoGovernancePage() {
                     className="group flex items-start gap-4 px-4 py-3 hover:bg-blue-400/5 transition-colors cursor-pointer border-b border-border/20 last:border-0"
                     onClick={() => navigate(`/governance/${item.sheetId}`)}
                   >
-                    <div className="p-2 rounded-lg bg-blue-400/10 border border-blue-400/20 shrink-0 mt-0.5">
-                      <FileText className="w-4 h-4 text-blue-400" />
+                    <div className="p-2.5 rounded-lg bg-blue-400/10 border border-blue-400/20 shrink-0 mt-0.5">
+                      <FileText className="w-5 h-5 text-blue-400" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <span className="font-medium text-sm text-foreground truncate block">

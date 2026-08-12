@@ -232,8 +232,8 @@ export default function Home() {
               >
                 {/* Card header */}
                 <div className="flex items-start justify-between gap-2">
-                  <div className="p-2 rounded-lg bg-blue-700/10 border border-blue-700/20 shrink-0">
-                    <LayoutGrid className="w-4 h-4 text-blue-700" />
+                  <div className="p-2.5 rounded-lg bg-blue-700/10 border border-blue-700/20 shrink-0">
+                    <LayoutGrid className="w-5 h-5 text-blue-700" />
                   </div>
                   <div className="flex flex-wrap gap-1 justify-end">
                     {(op as any).operationStatus === "before_court" && (

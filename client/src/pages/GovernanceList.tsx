@@ -66,7 +66,9 @@ function OperationGroup({
         onClick={() => setExpanded((v) => !v)}
         className="w-full flex items-center gap-2 px-4 py-3 bg-muted/30 border-b border-border/30 hover:bg-muted/50 transition-colors"
       >
-        <FolderOpen className="w-4 h-4 text-purple-400 shrink-0" />
+        <div className="p-2.5 rounded-lg bg-purple-400/10 border border-purple-400/20 shrink-0">
+          <FolderOpen className="w-5 h-5 text-purple-400" />
+        </div>
         <span className="text-sm font-semibold text-foreground flex-1 text-left">
           {operationName}
         </span>
@@ -203,8 +205,8 @@ function GovernanceTileCard({
     <div className="group flex flex-col gap-3 p-5 rounded-xl border border-border bg-card hover:bg-accent/20 hover:border-primary/30 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150">
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
-        <div className="p-2 rounded-lg bg-purple-400/10 border border-purple-400/20 shrink-0">
-          <ClipboardCheck className="w-4 h-4 text-purple-400" />
+        <div className="p-2.5 rounded-lg bg-purple-400/10 border border-purple-400/20 shrink-0">
+          <ClipboardCheck className="w-5 h-5 text-purple-400" />
         </div>
         {allDone ? (
           <Badge className="text-[10px] px-1.5 py-0 bg-emerald-500/15 text-emerald-500 border-emerald-500/30 border shrink-0">
@@ -288,7 +290,7 @@ export default function GovernanceListPage() {
       <div className="p-6 max-w-3xl mx-auto">
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded-xl bg-purple-400/10 border border-purple-400/20 flex items-center justify-center">
+          <div className="p-2.5 rounded-lg bg-purple-400/10 border border-purple-400/20">
             <ClipboardCheck className="w-5 h-5 text-purple-400" />
           </div>
           <div className="flex-1">

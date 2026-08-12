@@ -388,7 +388,9 @@ function TargetCard({
         className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-accent/20 transition-colors"
         onClick={() => setExpanded(v => !v)}
       >
-        <Target className="w-4 h-4 text-rose-400 shrink-0" />
+        <div className="p-2.5 rounded-lg bg-rose-400/10 border border-rose-400/20 shrink-0">
+          <Target className="w-5 h-5 text-rose-400" />
+        </div>
         <span className="flex-1 font-semibold text-sm text-foreground truncate">{target.name}</span>
         {target.isIndicesOnly && <IndicesBadge />}
         {/* Linked operations badges */}
@@ -999,11 +1001,16 @@ export default function TargetRegistryPage() {
       <div className="flex flex-col gap-6 p-6 max-w-4xl mx-auto w-full">
         {/* Header */}
         <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Target Registry</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              All targets are stored here independently. Deleting an operation or running sheet does not remove targets.
-            </p>
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-lg bg-rose-400/10 border border-rose-400/20 shrink-0">
+              <BookOpen className="w-5 h-5 text-rose-400" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-foreground">Target Registry</h1>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                All targets are stored here independently. Deleting an operation or running sheet does not remove targets.
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <ViewToggle />
@@ -1093,8 +1100,8 @@ export default function TargetRegistryPage() {
               >
                 {/* Header */}
                 <div className="flex items-start justify-between gap-2">
-                  <div className="p-2 rounded-lg bg-rose-400/10 border border-rose-400/20 shrink-0">
-                    <Target className="w-4 h-4 text-rose-400" />
+                  <div className="p-2.5 rounded-lg bg-rose-400/10 border border-rose-400/20 shrink-0">
+                    <Target className="w-5 h-5 text-rose-400" />
                   </div>
                   <Button
                     variant="ghost"

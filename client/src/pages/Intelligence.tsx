@@ -876,8 +876,8 @@ function OperationsTab({
             onClick={() => navigate(`/intelligence/operation/${op.operationId}`)}
           >
             <div className="flex items-start justify-between gap-2">
-              <div className="p-2 rounded-lg bg-violet-400/10 border border-violet-400/20 shrink-0">
-                <Folder className="w-4 h-4 text-violet-400" />
+              <div className="p-2.5 rounded-lg bg-violet-400/10 border border-violet-400/20 shrink-0">
+                <Folder className="w-5 h-5 text-violet-400" />
               </div>
               <button
                 onClick={(e) => { e.stopPropagation(); navigate(`/intelligence/operation/${op.operationId}`); }}
@@ -919,9 +919,9 @@ function OperationsTab({
               onClick={() => setExpandedOpId(isExpanded ? null : op.operationId)}
               className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-accent/10 transition-colors"
             >
-              <span className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-violet-400/20 bg-violet-400/15 text-violet-400 shrink-0">
-                <Folder className="w-3.5 h-3.5" />
-              </span>
+              <div className="p-2.5 rounded-lg bg-violet-400/10 border border-violet-400/20 shrink-0">
+                <Folder className="w-5 h-5 text-violet-400" />
+              </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-foreground truncate">{op.operationName}</p>
                 <p className="text-xs text-muted-foreground">
@@ -1178,8 +1178,8 @@ export default function IntelligencePage() {
       <div className="p-6 max-w-5xl mx-auto">
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
-          <div className="w-9 h-9 rounded-lg bg-violet-400/10 border border-violet-400/20 flex items-center justify-center">
-            <FileText className="w-4 h-4 text-violet-400" />
+          <div className="p-2.5 rounded-lg bg-violet-400/10 border border-violet-400/20">
+            <FileText className="w-5 h-5 text-violet-400" />
           </div>
           <div className="flex-1">
             <h1 className="text-xl font-semibold text-foreground">Intelligence Folder</h1>

@@ -34,7 +34,12 @@ interface WitnessListPdfData {
   operationName: string;
   overallPrimary: string[];
   overallSecondary: string[];
-  sheets: { sheetTitle: string; sheetDate: number; primary: string[]; secondary: string[] }[];
+  sheets: {
+    sheetTitle: string;
+    sheetDate: number;
+    primary: string[];
+    secondary: string[];
+  }[];
   producedAt: number;
   certifierCin: string;
 }
@@ -100,7 +105,7 @@ function buildWitnessListPdfHtml(data: WitnessListPdfData) {
     <p style="font-size:10px;color:#475569;margin-bottom:10px">The following witness lists are specific to each individual running sheet selected under Operation ${esc(data.operationName)}, presented in date order.</p>
     ${data.sheets
       .map(
-        (sheet) => `
+        sheet => `
     <div style="margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid ${GREY_BORDER}">
       <p style="font-size:11px;font-weight:700;color:${GREY_TEXT}">${esc(sheet.sheetTitle)}</p>
       <p style="font-size:9px;color:#64748b;margin-bottom:8px">${esc(formatDayDate(sheet.sheetDate))}</p>
@@ -171,15 +176,23 @@ ${buildExportPreviewCloseBar()}
 
 // ─── Step badge ───────────────────────────────────────────────────────────────
 
-function StepBadge({ n, active, done }: { n: number; active: boolean; done: boolean }) {
+function StepBadge({
+  n,
+  active,
+  done,
+}: {
+  n: number;
+  active: boolean;
+  done: boolean;
+}) {
   return (
     <div
       className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold shrink-0 transition-colors ${
         done
           ? "bg-emerald-500 text-white"
           : active
-          ? "bg-primary text-primary-foreground"
-          : "bg-muted text-muted-foreground"
+            ? "bg-primary text-primary-foreground"
+            : "bg-muted text-muted-foreground"
       }`}
     >
       {done ? "✓" : n}
@@ -202,26 +215,28 @@ export default function WitnessListPage() {
 
   // ── Data fetching ──────────────────────────────────────────────────────────
 
-  const { data: operations, isLoading: opsLoading } = trpc.operation.list.useQuery(undefined, {
-    enabled: isAuthenticated,
-  });
+  const { data: operations, isLoading: opsLoading } =
+    trpc.operation.list.useQuery(undefined, {
+      enabled: isAuthenticated,
+    });
 
   const selectedOp = useMemo(
-    () => operations?.find((o) => o.id === selectedOpId) ?? null,
+    () => operations?.find(o => o.id === selectedOpId) ?? null,
     [operations, selectedOpId]
   );
 
-  const { data: sheets, isLoading: sheetsLoading } = trpc.sheet.listByOperation.useQuery(
-    { operationId: selectedOpId ?? 0 },
-    { enabled: !!selectedOpId }
-  );
+  const { data: sheets, isLoading: sheetsLoading } =
+    trpc.sheet.listByOperation.useQuery(
+      { operationId: selectedOpId ?? 0 },
+      { enabled: !!selectedOpId }
+    );
 
   const generateMutation = trpc.witnessList.generate.useMutation({
-    onError: (e) => {
+    onError: e => {
       toast.error(e.message);
       setGenerating(false);
     },
-    onSuccess: (data) => {
+    onSuccess: data => {
       setGenerating(false);
       downloadBase64File(
         data.base64,
@@ -240,8 +255,8 @@ export default function WitnessListPage() {
   // ── Handlers ───────────────────────────────────────────────────────────────
 
   const toggleSheet = (id: number) => {
-    setSelectedSheetIds((prev) =>
-      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
+    setSelectedSheetIds(prev =>
+      prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]
     );
   };
 
@@ -250,7 +265,7 @@ export default function WitnessListPage() {
     if (selectedSheetIds.length === sheets.length) {
       setSelectedSheetIds([]);
     } else {
-      setSelectedSheetIds(sheets.map((s) => s.id));
+      setSelectedSheetIds(sheets.map(s => s.id));
     }
   };
 
@@ -274,14 +289,18 @@ export default function WitnessListPage() {
       const html = buildWitnessListPdfHtml(data);
       const win = window.open("", "_blank");
       if (!win) {
-        toast.error("Couldn't open a new tab — check your browser's popup blocker.");
+        toast.error(
+          "Couldn't open a new tab — check your browser's popup blocker."
+        );
         return;
       }
       win.document.write(html);
       win.document.close();
       setTimeout(() => win.print(), 600);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Couldn't generate the PDF.");
+      toast.error(
+        e instanceof Error ? e.message : "Couldn't generate the PDF."
+      );
     } finally {
       setExportingPdf(false);
     }
@@ -296,16 +315,24 @@ export default function WitnessListPage() {
       <div className="max-w-3xl mx-auto py-8 px-4 flex flex-col gap-8">
         {/* Page header */}
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" className="shrink-0" onClick={() => navigate("/")}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0"
+            onClick={() => navigate("/")}
+          >
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
             <Users className="w-5 h-5 text-primary" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-foreground">Produce Witness List</h1>
+            <h1 className="text-xl font-bold text-foreground">
+              Produce Witness List
+            </h1>
             <p className="text-sm text-muted-foreground">
-              Generate a primary and secondary witness list for selected running sheets
+              Generate a primary and secondary witness list for selected running
+              sheets
             </p>
           </div>
         </div>
@@ -313,14 +340,19 @@ export default function WitnessListPage() {
         {/* Explanation card */}
         <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground flex flex-col gap-1">
           <p>
-            <span className="font-semibold text-foreground">Primary witnesses</span> — operatives
-            with substantive observations (excludes Travelled Via and Surveillance
-            Commenced/Ceased entries).
+            <span className="font-semibold text-foreground">
+              Primary witnesses
+            </span>{" "}
+            — operatives with substantive observations (excludes Travelled Via
+            and Surveillance Commenced/Ceased entries).
           </p>
           <p>
-            <span className="font-semibold text-foreground">Secondary witnesses</span> — operatives
-            whose entries are limited to Travelled Via and/or Surveillance Commenced/Ceased rows
-            only (on duty, no substantive observations).
+            <span className="font-semibold text-foreground">
+              Secondary witnesses
+            </span>{" "}
+            — operatives whose entries are limited to Travelled Via and/or
+            Surveillance Commenced/Ceased rows only (on duty, no substantive
+            observations).
           </p>
         </div>
 
@@ -333,11 +365,13 @@ export default function WitnessListPage() {
 
           {opsLoading ? (
             <div className="flex flex-col gap-2 pl-10">
-              {[1, 2, 3].map((i) => <Skeleton key={i} className="h-10 w-full" />)}
+              {[1, 2, 3].map(i => (
+                <Skeleton key={i} className="h-10 w-full" />
+              ))}
             </div>
           ) : (
             <div className="pl-10 flex flex-col gap-1.5">
-              {(operations ?? []).map((op) => (
+              {(operations ?? []).map(op => (
                 <button
                   key={op.id}
                   onClick={() => {
@@ -357,7 +391,9 @@ export default function WitnessListPage() {
                 </button>
               ))}
               {(operations ?? []).length === 0 && (
-                <p className="text-sm text-muted-foreground italic pl-1">No operations found.</p>
+                <p className="text-sm text-muted-foreground italic pl-1">
+                  No operations found.
+                </p>
               )}
             </div>
           )}
@@ -368,12 +404,16 @@ export default function WitnessListPage() {
           <section className="flex flex-col gap-3">
             <div className="flex items-center gap-3">
               <StepBadge n={2} active={step === 2} done={false} />
-              <h2 className="font-semibold text-foreground">Choose Running Sheet(s)</h2>
+              <h2 className="font-semibold text-foreground">
+                Choose Running Sheet(s)
+              </h2>
             </div>
 
             {sheetsLoading ? (
               <div className="flex flex-col gap-2 pl-10">
-                {[1, 2].map((i) => <Skeleton key={i} className="h-10 w-full" />)}
+                {[1, 2].map(i => (
+                  <Skeleton key={i} className="h-10 w-full" />
+                ))}
               </div>
             ) : (
               <div className="pl-10 flex flex-col gap-2">
@@ -387,10 +427,12 @@ export default function WitnessListPage() {
                     ) : (
                       <Square className="w-4 h-4" />
                     )}
-                    {selectedSheetIds.length === (sheets ?? []).length ? "Deselect all" : "Select all"}
+                    {selectedSheetIds.length === (sheets ?? []).length
+                      ? "Deselect all"
+                      : "Select all"}
                   </button>
                 )}
-                {(sheets ?? []).map((sheet) => (
+                {(sheets ?? []).map(sheet => (
                   <label
                     key={sheet.id}
                     className={`flex items-center gap-3 px-4 py-3 rounded-lg border cursor-pointer transition-colors ${
@@ -404,16 +446,24 @@ export default function WitnessListPage() {
                       onCheckedChange={() => toggleSheet(sheet.id)}
                     />
                     <div className="flex flex-col min-w-0">
-                      <span className="font-medium text-sm text-foreground truncate">{sheet.title}</span>
+                      <span className="font-medium text-sm text-foreground truncate">
+                        {sheet.title}
+                      </span>
                       <span className="text-xs text-muted-foreground flex items-center gap-1">
                         <Calendar className="w-3 h-3" />
-                        {formatDateShort(new Date(sheet.createdAt).getTime())}
+                        {formatDateShort(
+                          sheet.sheetDate
+                            ? new Date(`${sheet.sheetDate}T00:00:00`).getTime()
+                            : new Date(sheet.createdAt).getTime()
+                        )}
                       </span>
                     </div>
                   </label>
                 ))}
                 {(sheets ?? []).length === 0 && (
-                  <p className="text-sm text-muted-foreground italic">No running sheets for this operation.</p>
+                  <p className="text-sm text-muted-foreground italic">
+                    No running sheets for this operation.
+                  </p>
                 )}
               </div>
             )}
@@ -446,7 +496,9 @@ export default function WitnessListPage() {
               ) : (
                 <Download className="w-4 h-4" />
               )}
-              {generating ? "Generating…" : `Generate Witness List (${selectedSheetIds.length} sheet${selectedSheetIds.length !== 1 ? "s" : ""})`}
+              {generating
+                ? "Generating…"
+                : `Generate Witness List (${selectedSheetIds.length} sheet${selectedSheetIds.length !== 1 ? "s" : ""})`}
             </Button>
           </div>
         )}

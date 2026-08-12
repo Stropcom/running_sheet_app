@@ -669,9 +669,11 @@ export default function GovernancePage() {
           <div className="rounded-lg border border-border/40 bg-card/40 px-3 py-2.5">
             <p className="text-muted-foreground mb-0.5">Sheet Date</p>
             <p className="font-medium text-foreground">
-              {sheet?.createdAt
-                ? format(new Date(sheet.createdAt), "dd MMM yyyy")
-                : "—"}
+              {sheet?.sheetDate
+                ? format(new Date(`${sheet.sheetDate}T00:00:00`), "dd MMM yyyy")
+                : sheet?.createdAt
+                  ? format(new Date(sheet.createdAt), "dd MMM yyyy")
+                  : "—"}
             </p>
           </div>
           <div className="rounded-lg border border-border/40 bg-card/40 px-3 py-2.5">

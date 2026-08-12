@@ -275,7 +275,8 @@ function exportToPDF(
   operation: OperationMeta,
   sheetCinsRaw: string | null,
   sheetCreatedAt: Date,
-  targetFullName?: string | null
+  targetFullName?: string | null,
+  sheetDate?: string | null
 ) {
   const lockedBg = "#ffffff"; // White in PDF — dark green is screen-only via CSS class
   const cb = "border-right:1px solid #e2e9f6";
@@ -299,7 +300,9 @@ function exportToPDF(
 
   // ── Page header (repeats on every page) ─────────────────────────────────────
   const operationName = operation?.name ?? "";
-  const dateStr = format(new Date(sheetCreatedAt), "d MMMM yyyy");
+  const dateStr = sheetDate
+    ? format(new Date(`${sheetDate}T00:00:00`), "d MMMM yyyy")
+    : format(new Date(sheetCreatedAt), "d MMMM yyyy");
 
   // Derive the author CIN from the roster (isAuthor flag)
   const authorEntry = cinRoster.find(c => c.isAuthor);
@@ -484,6 +487,8 @@ function exportToPDF(
         let divLabel: string;
         if (rowOnDay?.rowDate) {
           divLabel = formatPerthDateLabel(rowOnDay.rowDate);
+        } else if (sheetDate) {
+          divLabel = formatPerthDateLabel(addDaysToYmd(sheetDate, day));
         } else {
           const divDate = new Date(sheetCreatedAt);
           divDate.setDate(divDate.getDate() + day);
@@ -1390,6 +1395,7 @@ function TimePickerCell({
   rowDate,
   inferredRowDate,
   sheetHasCrossedMidnight = false,
+  sheetDate,
   sheetCreatedAt,
   onSave,
 }: {
@@ -1399,6 +1405,11 @@ function TimePickerCell({
   rowDate?: string | null;
   inferredRowDate?: string | null;
   sheetHasCrossedMidnight?: boolean;
+  /** The sheet's picker-set calendar date (YYYY-MM-DD) — the authoritative
+   * date for a new row, taking priority over createdAt (when the DB row was
+   * inserted, which can differ if the sheet was created for a past/future
+   * date). Null only for legacy sheets that predate the date picker. */
+  sheetDate?: string | null;
   sheetCreatedAt?: number | null;
   onSave: (
     display: string,
@@ -1407,8 +1418,12 @@ function TimePickerCell({
     rowDate?: string
   ) => void;
 }) {
-  // Derive the RS creation date in Perth (YYYY-MM-DD) — used as the default rowDate
+  // Default rowDate for a new row: the sheet's picker date first, falling
+  // back to its creation date (Perth) only for legacy sheets with no
+  // sheetDate — never the other way around, since createdAt is just when
+  // the DB row was inserted and can differ from the shift's actual date.
   const sheetCreatedYmd = useMemo(() => {
+    if (sheetDate) return sheetDate;
     if (!sheetCreatedAt) return getTodayPerthYmd();
     return new Intl.DateTimeFormat("en-CA", {
       timeZone: PERTH_TIME_ZONE,
@@ -1416,7 +1431,7 @@ function TimePickerCell({
       month: "2-digit",
       day: "2-digit",
     }).format(new Date(sheetCreatedAt));
-  }, [sheetCreatedAt]);
+  }, [sheetDate, sheetCreatedAt]);
 
   // Parse existing value into hour/minute/period; default to current time when empty
   const parsed = useMemo(() => {
@@ -2965,7 +2980,8 @@ export default function SheetDetail() {
         exportData.operation ?? null,
         exportData.sheet.sheetCins ?? null,
         exportData.sheet.createdAt,
-        exportData.targetFullName ?? null
+        exportData.targetFullName ?? null,
+        exportData.sheet.sheetDate ?? null
       );
       setPendingExportType(null);
     }
@@ -3936,6 +3952,10 @@ export default function SheetDetail() {
                                 label = formatPerthDateLabel(
                                   (rowOnLaterDay as any).rowDate as string
                                 );
+                              } else if (sheet?.sheetDate) {
+                                label = formatPerthDateLabel(
+                                  addDaysToYmd(sheet.sheetDate, laterDay)
+                                );
                               } else {
                                 const sheetStartMs = sheet?.createdAt
                                   ? new Date(sheet.createdAt).getTime()
@@ -3995,9 +4015,18 @@ export default function SheetDetail() {
                                 rowDate={(row as any).rowDate ?? null}
                                 inferredRowDate={(() => {
                                   if (!sheetHasCrossedMidnight) return null;
-                                  // Compute inferred date from day offset + sheet start date
+                                  // Compute inferred date from day offset +
+                                  // the sheet's picker date (falling back to
+                                  // creation date only for legacy sheets with
+                                  // no sheetDate).
                                   const dayOff =
                                     rowDayOffsetMap.get(row.id) ?? 0;
+                                  if (sheet?.sheetDate) {
+                                    return addDaysToYmd(
+                                      sheet.sheetDate,
+                                      dayOff
+                                    );
+                                  }
                                   const sheetStartMs = sheet?.createdAt
                                     ? new Date(sheet.createdAt).getTime()
                                     : Date.now();
@@ -4014,6 +4043,7 @@ export default function SheetDetail() {
                                 sheetHasCrossedMidnight={
                                   sheetHasCrossedMidnight
                                 }
+                                sheetDate={sheet?.sheetDate ?? null}
                                 sheetCreatedAt={
                                   sheet?.createdAt
                                     ? new Date(sheet.createdAt).getTime()

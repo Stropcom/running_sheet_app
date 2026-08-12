@@ -81,7 +81,10 @@ import {
   type ExtraVehicle,
   type ExtraAddress,
 } from "@/components/TargetStructuredFields";
-import { AddTargetDialog, type RegistryCreatePayload } from "@/components/AddTargetDialog";
+import {
+  AddTargetDialog,
+  type RegistryCreatePayload,
+} from "@/components/AddTargetDialog";
 import {
   composeTargetName,
   composeAddress,
@@ -97,7 +100,12 @@ import { useLocation, useParams, useSearch } from "wouter";
 import { format } from "date-fns";
 import { toast } from "sonner";
 
-type CinEntry = { cin: string; hasImages: boolean; isTeamLeader?: boolean; isAuthor?: boolean };
+type CinEntry = {
+  cin: string;
+  hasImages: boolean;
+  isTeamLeader?: boolean;
+  isAuthor?: boolean;
+};
 
 /** Single target card — shows name + structured identity/address/vehicle fields, inline edit, delete */
 function TargetCard({
@@ -158,7 +166,9 @@ function TargetCard({
     suburb: target.addrSuburb ?? "",
     state: target.addrState ?? "WA",
   });
-  const [vehicle, setVehicle] = useState<StructuredVehicleParts & { vehicleType: string }>({
+  const [vehicle, setVehicle] = useState<
+    StructuredVehicleParts & { vehicleType: string }
+  >({
     registration: target.vehRegistration ?? "",
     state: target.vehState ?? "WA",
     colour: target.vehColour ?? "",
@@ -177,7 +187,10 @@ function TargetCard({
   const [dirty, setDirty] = useState(false);
 
   const addAddress = () => {
-    setExtraAddresses(v => [...v, { ...EMPTY_ADDRESS_PARTS, label: "", full: "", short: "" }]);
+    setExtraAddresses(v => [
+      ...v,
+      { ...EMPTY_ADDRESS_PARTS, label: "", full: "", short: "" },
+    ]);
     setDirty(true);
   };
   const removeAddress = (i: number) => {
@@ -185,11 +198,16 @@ function TargetCard({
     setDirty(true);
   };
   const updateAddress = (i: number, patch: Partial<ExtraAddress>) => {
-    setExtraAddresses(v => v.map((item, idx) => idx === i ? { ...item, ...patch } : item));
+    setExtraAddresses(v =>
+      v.map((item, idx) => (idx === i ? { ...item, ...patch } : item))
+    );
     setDirty(true);
   };
   const addVehicle = () => {
-    setExtraVehicles(v => [...v, { ...EMPTY_VEHICLE_PARTS, full: "", short: "" }]);
+    setExtraVehicles(v => [
+      ...v,
+      { ...EMPTY_VEHICLE_PARTS, full: "", short: "" },
+    ]);
     setDirty(true);
   };
   const removeVehicle = (i: number) => {
@@ -197,7 +215,9 @@ function TargetCard({
     setDirty(true);
   };
   const updateVehicle = (i: number, patch: Partial<ExtraVehicle>) => {
-    setExtraVehicles(v => v.map((item, idx) => idx === i ? { ...item, ...patch } : item));
+    setExtraVehicles(v =>
+      v.map((item, idx) => (idx === i ? { ...item, ...patch } : item))
+    );
     setDirty(true);
   };
 
@@ -219,8 +239,12 @@ function TargetCard({
       v1: v1 || null,
       dep: dep || null,
       arr: arr || null,
-      extraAddresses: JSON.stringify(extraAddresses.map(ea => ({ ...ea, ...composeAddress(ea) }))),
-      extraVehicles: JSON.stringify(extraVehicles.map(ev => ({ ...ev, ...composeVehicle(ev) }))),
+      extraAddresses: JSON.stringify(
+        extraAddresses.map(ea => ({ ...ea, ...composeAddress(ea) }))
+      ),
+      extraVehicles: JSON.stringify(
+        extraVehicles.map(ev => ({ ...ev, ...composeVehicle(ev) }))
+      ),
       firstNames: identity.firstNames || null,
       surname: identity.surname || null,
       bornDate: ddMmYyyyToIso(identity.bornDate) || null,
@@ -250,7 +274,11 @@ function TargetCard({
     onError: (e: { message: string }) => toast.error(e.message),
   });
   const removeFromOp = trpc.target.registry.unlinkFromOperation.useMutation({
-    onSuccess: () => { utils.target.list.invalidate({ operationId }); onDeleted(); toast.success("Target removed from operation"); },
+    onSuccess: () => {
+      utils.target.list.invalidate({ operationId });
+      onDeleted();
+      toast.success("Target removed from operation");
+    },
     onError: (e: { message: string }) => toast.error(e.message),
   });
   const removeFromSheet = trpc.target.setSheetTarget.useMutation({
@@ -262,275 +290,403 @@ function TargetCard({
   });
 
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const mark = (fn: () => void) => { fn(); setDirty(true); };
+  const mark = (fn: () => void) => {
+    fn();
+    setDirty(true);
+  };
 
   // Per-target shortcuts
-  const { data: targetShortcutList, refetch: refetchShortcuts } = trpc.targetShortcuts.list.useQuery(
-    { targetId: target.id },
-    { enabled: expanded }
-  );
+  const { data: targetShortcutList, refetch: refetchShortcuts } =
+    trpc.targetShortcuts.list.useQuery(
+      { targetId: target.id },
+      { enabled: expanded }
+    );
   const [newScTrigger, setNewScTrigger] = useState("");
   const [newScExpansion, setNewScExpansion] = useState("");
   const [editingScId, setEditingScId] = useState<number | null>(null);
   const [editScTrigger, setEditScTrigger] = useState("");
   const [editScExpansion, setEditScExpansion] = useState("");
   const createSc = trpc.targetShortcuts.create.useMutation({
-    onSuccess: () => { refetchShortcuts(); setNewScTrigger(""); setNewScExpansion(""); toast.success("Shortcut added"); },
+    onSuccess: () => {
+      refetchShortcuts();
+      setNewScTrigger("");
+      setNewScExpansion("");
+      toast.success("Shortcut added");
+    },
     onError: (e: { message: string }) => toast.error(e.message),
   });
   const updateSc = trpc.targetShortcuts.update.useMutation({
-    onSuccess: () => { refetchShortcuts(); setEditingScId(null); toast.success("Shortcut updated"); },
+    onSuccess: () => {
+      refetchShortcuts();
+      setEditingScId(null);
+      toast.success("Shortcut updated");
+    },
     onError: (e: { message: string }) => toast.error(e.message),
   });
   const deleteSc = trpc.targetShortcuts.delete.useMutation({
-    onSuccess: () => { refetchShortcuts(); toast.success("Shortcut deleted"); },
+    onSuccess: () => {
+      refetchShortcuts();
+      toast.success("Shortcut deleted");
+    },
     onError: (e: { message: string }) => toast.error(e.message),
   });
 
   return (
     <>
-    <div className="rounded-xl border border-border bg-card overflow-hidden">
-      {/* Header row */}
-      <div
-        className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-accent/20 transition-colors"
-        onClick={() => setExpanded((v) => !v)}
-      >
-        <Target className="w-4 h-4 text-primary shrink-0" />
-        <span className="flex-1 font-semibold text-sm text-foreground truncate">{target.name}</span>
-        <ChevronRight className={`w-4 h-4 text-muted-foreground transition-transform ${expanded ? "rotate-90" : ""}`} />
-      </div>
-
-      {/* Expanded fields */}
-      {expanded && (
-        <div className="px-4 pb-4 pt-1 flex flex-col gap-3 border-t border-border/50">
-          <TargetIdentityFields
-            value={identity}
-            onChange={v => mark(() => setIdentity(v))}
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
+        {/* Header row */}
+        <div
+          className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-accent/20 transition-colors"
+          onClick={() => setExpanded(v => !v)}
+        >
+          <Target className="w-4 h-4 text-primary shrink-0" />
+          <span className="flex-1 font-semibold text-sm text-foreground truncate">
+            {target.name}
+          </span>
+          <ChevronRight
+            className={`w-4 h-4 text-muted-foreground transition-transform ${expanded ? "rotate-90" : ""}`}
           />
+        </div>
 
-          <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
-            <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
-              <Home className="w-3 h-3" /> Home Address
-            </p>
-            <TargetAddressFields
-              value={address}
-              onChange={v => mark(() => setAddress(v))}
+        {/* Expanded fields */}
+        {expanded && (
+          <div className="px-4 pb-4 pt-1 flex flex-col gap-3 border-t border-border/50">
+            <TargetIdentityFields
+              value={identity}
+              onChange={v => mark(() => setIdentity(v))}
             />
-          </div>
 
-          <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
-            <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
-              <Car className="w-3 h-3" /> Vehicle 1
-            </p>
-            <TargetVehicleFields
-              value={vehicle}
-              onChange={v => mark(() => setVehicle(v))}
-            />
-          </div>
-
-          {/* ── Dynamic extra addresses ── */}
-          {extraAddresses.map((ea, i) => (
-            <div key={i} className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
-                  <Home className="w-3 h-3" /> Additional Address {i + 2}
-                </span>
-                <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => removeAddress(i)}>
-                  <X className="w-3 h-3" />
-                </Button>
-              </div>
+            <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
+              <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
+                <Home className="w-3 h-3" /> Home Address
+              </p>
               <TargetAddressFields
-                value={ea}
-                onChange={v => updateAddress(i, v)}
-                label={ea.label}
-                onLabelChange={v => updateAddress(i, { label: v })}
+                value={address}
+                onChange={v => mark(() => setAddress(v))}
               />
             </div>
-          ))}
-          <Button size="sm" variant="outline" className="gap-1.5 self-start" onClick={addAddress}>
-            <Plus className="w-3.5 h-3.5" /> Add Address
-          </Button>
 
-          {/* ── Dynamic extra vehicles (V2, V3, …) ── */}
-          {extraVehicles.map((ev, i) => (
-            <div key={i} className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
-                  <Car className="w-3 h-3" /> Vehicle {i + 2}
-                </span>
-                <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => removeVehicle(i)}>
-                  <X className="w-3 h-3" />
+            <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
+              <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
+                <Car className="w-3 h-3" /> Vehicle 1
+              </p>
+              <TargetVehicleFields
+                value={vehicle}
+                onChange={v => mark(() => setVehicle(v))}
+              />
+            </div>
+
+            {/* ── Dynamic extra addresses ── */}
+            {extraAddresses.map((ea, i) => (
+              <div
+                key={i}
+                className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
+                    <Home className="w-3 h-3" /> Additional Address {i + 2}
+                  </span>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-6 w-6 text-destructive hover:text-destructive"
+                    onClick={() => removeAddress(i)}
+                  >
+                    <X className="w-3 h-3" />
+                  </Button>
+                </div>
+                <TargetAddressFields
+                  value={ea}
+                  onChange={v => updateAddress(i, v)}
+                  label={ea.label}
+                  onLabelChange={v => updateAddress(i, { label: v })}
+                />
+              </div>
+            ))}
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 self-start"
+              onClick={addAddress}
+            >
+              <Plus className="w-3.5 h-3.5" /> Add Address
+            </Button>
+
+            {/* ── Dynamic extra vehicles (V2, V3, …) ── */}
+            {extraVehicles.map((ev, i) => (
+              <div
+                key={i}
+                className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
+                    <Car className="w-3 h-3" /> Vehicle {i + 2}
+                  </span>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-6 w-6 text-destructive hover:text-destructive"
+                    onClick={() => removeVehicle(i)}
+                  >
+                    <X className="w-3 h-3" />
+                  </Button>
+                </div>
+                <TargetVehicleFields
+                  value={ev}
+                  onChange={v => updateVehicle(i, v)}
+                />
+              </div>
+            ))}
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 self-start"
+              onClick={addVehicle}
+            >
+              <Plus className="w-3.5 h-3.5" /> Add Vehicle
+            </Button>
+
+            {/* ── Depart / Arrive ── */}
+            {(
+              [
+                {
+                  label: "Depart (DEP)",
+                  val: dep,
+                  set: (v: string) => mark(() => setDep(v)),
+                },
+                {
+                  label: "Arrive (ARR)",
+                  val: arr,
+                  set: (v: string) => mark(() => setArr(v)),
+                },
+              ] as { label: string; val: string; set: (v: string) => void }[]
+            ).map(({ label, val, set }) => (
+              <div key={label} className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  {label}
+                </label>
+                <Input value={val} onChange={e => set(e.target.value)} />
+              </div>
+            ))}
+
+            <div className="flex items-center justify-between">
+              {fromSheetId ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="gap-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+                  onClick={() =>
+                    removeFromSheet.mutate({
+                      sheetId: fromSheetId,
+                      targetId: null,
+                    })
+                  }
+                  disabled={removeFromSheet.isPending}
+                >
+                  <X className="w-3.5 h-3.5" />
+                  {removeFromSheet.isPending
+                    ? "Removing…"
+                    : "Remove from sheet"}
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="gap-2 text-amber-500 hover:text-amber-600 hover:bg-amber-500/10"
+                  onClick={() => setConfirmDelete(true)}
+                  disabled={removeFromOp.isPending}
+                >
+                  <X className="w-3.5 h-3.5" />
+                  {removeFromOp.isPending
+                    ? "Removing…"
+                    : "Remove from operation"}
+                </Button>
+              )}
+              <Button
+                size="sm"
+                className="gap-2"
+                onClick={handleSave}
+                disabled={update.isPending || !dirty}
+              >
+                <Save className="w-3.5 h-3.5" />
+                {update.isPending ? "Saving…" : "Save"}
+              </Button>
+            </div>
+
+            {/* ── Per-target shortcuts ── */}
+            <div className="mt-4 pt-4 border-t border-border/50 flex flex-col gap-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                Target Shortcuts
+              </p>
+              {/* Existing shortcuts */}
+              {(targetShortcutList ?? []).map(sc =>
+                editingScId === sc.id ? (
+                  <div
+                    key={sc.id}
+                    className="flex flex-col gap-2 rounded-lg border border-primary/40 bg-primary/5 p-3"
+                  >
+                    <div className="flex gap-2">
+                      <Input
+                        className="w-28 font-mono text-sm"
+                        placeholder="trigger"
+                        value={editScTrigger}
+                        onChange={e => setEditScTrigger(e.target.value)}
+                      />
+                      <Input
+                        className="flex-1 text-sm"
+                        placeholder="expansion text"
+                        value={editScExpansion}
+                        onChange={e => setEditScExpansion(e.target.value)}
+                      />
+                    </div>
+                    <div className="flex gap-2 justify-end">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setEditingScId(null)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() =>
+                          updateSc.mutate({
+                            id: sc.id,
+                            trigger: editScTrigger,
+                            expansion: editScExpansion,
+                          })
+                        }
+                        disabled={
+                          updateSc.isPending ||
+                          !editScTrigger ||
+                          !editScExpansion
+                        }
+                      >
+                        Save
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    key={sc.id}
+                    className="flex items-start gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2"
+                  >
+                    <span className="font-mono text-xs font-bold text-primary bg-primary/10 rounded px-1.5 py-0.5 shrink-0 mt-0.5">
+                      {sc.trigger}
+                    </span>
+                    <span className="flex-1 text-sm text-foreground/80 break-words">
+                      {sc.expansion}
+                    </span>
+                    <div className="flex gap-1 shrink-0">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-6 w-6"
+                        onClick={() => {
+                          setEditingScId(sc.id);
+                          setEditScTrigger(sc.trigger);
+                          setEditScExpansion(sc.expansion);
+                        }}
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-6 w-6 text-destructive hover:text-destructive"
+                        onClick={() => deleteSc.mutate({ id: sc.id })}
+                        disabled={deleteSc.isPending}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  </div>
+                )
+              )}
+              {/* Add new shortcut */}
+              <div className="flex flex-col gap-2">
+                <div className="flex gap-2">
+                  <Input
+                    className="w-28 font-mono text-sm"
+                    placeholder="trigger"
+                    value={newScTrigger}
+                    onChange={e => setNewScTrigger(e.target.value)}
+                  />
+                  <Input
+                    className="flex-1 text-sm"
+                    placeholder="expansion text"
+                    value={newScExpansion}
+                    onChange={e => setNewScExpansion(e.target.value)}
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="self-start gap-1.5"
+                  onClick={() =>
+                    createSc.mutate({
+                      targetId: target.id,
+                      trigger: newScTrigger,
+                      expansion: newScExpansion,
+                    })
+                  }
+                  disabled={
+                    createSc.isPending ||
+                    !newScTrigger.trim() ||
+                    !newScExpansion.trim()
+                  }
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add Shortcut
                 </Button>
               </div>
-              <TargetVehicleFields value={ev} onChange={v => updateVehicle(i, v)} />
             </div>
-          ))}
-          <Button size="sm" variant="outline" className="gap-1.5 self-start" onClick={addVehicle}>
-            <Plus className="w-3.5 h-3.5" /> Add Vehicle
-          </Button>
+          </div>
+        )}
+      </div>
 
-          {/* ── Depart / Arrive ── */}
-          {([
-            { label: "Depart (DEP)", val: dep, set: (v: string) => mark(() => setDep(v)) },
-            { label: "Arrive (ARR)", val: arr, set: (v: string) => mark(() => setArr(v)) },
-          ] as { label: string; val: string; set: (v: string) => void }[]).map(({ label, val, set }) => (
-            <div key={label} className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{label}</label>
-              <Input value={val} onChange={(e) => set(e.target.value)} />
-            </div>
-          ))}
-
-          <div className="flex items-center justify-between">
-            {fromSheetId ? (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="gap-2 text-destructive hover:text-destructive hover:bg-destructive/10"
-                onClick={() => removeFromSheet.mutate({ sheetId: fromSheetId, targetId: null })}
-                disabled={removeFromSheet.isPending}
-              >
-                <X className="w-3.5 h-3.5" />
-                {removeFromSheet.isPending ? "Removing…" : "Remove from sheet"}
-              </Button>
-            ) : (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="gap-2 text-amber-500 hover:text-amber-600 hover:bg-amber-500/10"
-                onClick={() => setConfirmDelete(true)}
-                disabled={removeFromOp.isPending}
-              >
-                <X className="w-3.5 h-3.5" />
-                {removeFromOp.isPending ? "Removing…" : "Remove from operation"}
-              </Button>
-            )}
-            <Button
-              size="sm" className="gap-2"
-              onClick={handleSave}
-              disabled={update.isPending || !dirty}
+      <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove target from operation?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove <strong>{target.name}</strong> from this
+              operation. The target will remain in the Target Registry and can
+              be re-linked at any time.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-amber-600 text-white hover:bg-amber-700"
+              onClick={() => {
+                setConfirmDelete(false);
+                removeFromOp.mutate({ targetId: target.id, operationId });
+              }}
             >
-              <Save className="w-3.5 h-3.5" />
-              {update.isPending ? "Saving…" : "Save"}
-            </Button>
-          </div>
-
-          {/* ── Per-target shortcuts ── */}
-          <div className="mt-4 pt-4 border-t border-border/50 flex flex-col gap-3">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Target Shortcuts</p>
-            {/* Existing shortcuts */}
-            {(targetShortcutList ?? []).map((sc) =>
-              editingScId === sc.id ? (
-                <div key={sc.id} className="flex flex-col gap-2 rounded-lg border border-primary/40 bg-primary/5 p-3">
-                  <div className="flex gap-2">
-                    <Input
-                      className="w-28 font-mono text-sm"
-                      placeholder="trigger"
-                      value={editScTrigger}
-                      onChange={(e) => setEditScTrigger(e.target.value)}
-                    />
-                    <Input
-                      className="flex-1 text-sm"
-                      placeholder="expansion text"
-                      value={editScExpansion}
-                      onChange={(e) => setEditScExpansion(e.target.value)}
-                    />
-                  </div>
-                  <div className="flex gap-2 justify-end">
-                    <Button size="sm" variant="ghost" onClick={() => setEditingScId(null)}>Cancel</Button>
-                    <Button
-                      size="sm"
-                      onClick={() => updateSc.mutate({ id: sc.id, trigger: editScTrigger, expansion: editScExpansion })}
-                      disabled={updateSc.isPending || !editScTrigger || !editScExpansion}
-                    >
-                      Save
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div key={sc.id} className="flex items-start gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
-                  <span className="font-mono text-xs font-bold text-primary bg-primary/10 rounded px-1.5 py-0.5 shrink-0 mt-0.5">{sc.trigger}</span>
-                  <span className="flex-1 text-sm text-foreground/80 break-words">{sc.expansion}</span>
-                  <div className="flex gap-1 shrink-0">
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-6 w-6"
-                      onClick={() => { setEditingScId(sc.id); setEditScTrigger(sc.trigger); setEditScExpansion(sc.expansion); }}
-                    >
-                      <Pencil className="w-3 h-3" />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-6 w-6 text-destructive hover:text-destructive"
-                      onClick={() => deleteSc.mutate({ id: sc.id })}
-                      disabled={deleteSc.isPending}
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </Button>
-                  </div>
-                </div>
-              )
-            )}
-            {/* Add new shortcut */}
-            <div className="flex flex-col gap-2">
-              <div className="flex gap-2">
-                <Input
-                  className="w-28 font-mono text-sm"
-                  placeholder="trigger"
-                  value={newScTrigger}
-                  onChange={(e) => setNewScTrigger(e.target.value)}
-                />
-                <Input
-                  className="flex-1 text-sm"
-                  placeholder="expansion text"
-                  value={newScExpansion}
-                  onChange={(e) => setNewScExpansion(e.target.value)}
-                />
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                className="self-start gap-1.5"
-                onClick={() => createSc.mutate({ targetId: target.id, trigger: newScTrigger, expansion: newScExpansion })}
-                disabled={createSc.isPending || !newScTrigger.trim() || !newScExpansion.trim()}
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Add Shortcut
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-
-    <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Remove target from operation?</AlertDialogTitle>
-          <AlertDialogDescription>
-            This will remove <strong>{target.name}</strong> from this operation. The target will remain in the Target Registry and can be re-linked at any time.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            className="bg-amber-600 text-white hover:bg-amber-700"
-            onClick={() => { setConfirmDelete(false); removeFromOp.mutate({ targetId: target.id, operationId }); }}
-          >
-            Remove
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
 
 /** Add Target tab panel — lists all targets for the operation, allows adding more */
-function TargetPanel({ operationId, autoExpandId, fromSheetId }: { operationId: number; autoExpandId?: number; fromSheetId?: number }) {
+function TargetPanel({
+  operationId,
+  autoExpandId,
+  fromSheetId,
+}: {
+  operationId: number;
+  autoExpandId?: number;
+  fromSheetId?: number;
+}) {
   const utils = trpc.useUtils();
-  const { data: targets, isLoading } = trpc.target.list.useQuery({ operationId });
+  const { data: targets, isLoading } = trpc.target.list.useQuery({
+    operationId,
+  });
   const { data: allTargets } = trpc.target.listAll.useQuery();
   const [mode, setMode] = useState<"idle" | "link">("idle");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
@@ -557,10 +713,10 @@ function TargetPanel({ operationId, autoExpandId, fromSheetId }: { operationId: 
   });
 
   // Targets already in this operation (to avoid duplicates in link list)
-  const existingIds = new Set((targets ?? []).map((t) => t.id));
+  const existingIds = new Set((targets ?? []).map(t => t.id));
 
   // Filter allTargets for the link picker — exclude already-added ones, apply search
-  const linkOptions = (allTargets ?? []).filter((t) => {
+  const linkOptions = (allTargets ?? []).filter(t => {
     if (existingIds.has(t.id)) return false;
     const q = linkSearch.toLowerCase();
     if (!q) return true;
@@ -571,17 +727,27 @@ function TargetPanel({ operationId, autoExpandId, fromSheetId }: { operationId: 
     );
   });
 
-  if (isLoading) return (
-    <div className="flex flex-col gap-3">
-      {[1,2,3].map((i) => <Skeleton key={i} className="h-12 rounded-xl" />)}
-    </div>
-  );
+  if (isLoading)
+    return (
+      <div className="flex flex-col gap-3">
+        {[1, 2, 3].map(i => (
+          <Skeleton key={i} className="h-12 rounded-xl" />
+        ))}
+      </div>
+    );
 
   return (
     <div className="flex flex-col gap-3">
       {targets && targets.length > 0 ? (
-        targets.map((t) => (
-          <TargetCard key={t.id} target={t} operationId={operationId} onDeleted={() => {}} initialExpanded={autoExpandId === t.id} fromSheetId={fromSheetId} />
+        targets.map(t => (
+          <TargetCard
+            key={t.id}
+            target={t}
+            operationId={operationId}
+            onDeleted={() => {}}
+            initialExpanded={autoExpandId === t.id}
+            fromSheetId={fromSheetId}
+          />
         ))
       ) : (
         <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -597,7 +763,10 @@ function TargetPanel({ operationId, autoExpandId, fromSheetId }: { operationId: 
         open={addDialogOpen}
         onClose={() => setAddDialogOpen(false)}
         onSave={async (payload: RegistryCreatePayload) => {
-          await create.mutateAsync({ ...payload, linkToOperationId: operationId });
+          await create.mutateAsync({
+            ...payload,
+            linkToOperationId: operationId,
+          });
         }}
       />
 
@@ -610,32 +779,52 @@ function TargetPanel({ operationId, autoExpandId, fromSheetId }: { operationId: 
               className="h-8 text-sm"
               placeholder="Search by name, TGT code or operation…"
               value={linkSearch}
-              onChange={(e) => setLinkSearch(e.target.value)}
+              onChange={e => setLinkSearch(e.target.value)}
             />
-            <Button size="sm" variant="ghost" className="shrink-0" onClick={() => { setMode("idle"); setLinkSearch(""); }}>Cancel</Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="shrink-0"
+              onClick={() => {
+                setMode("idle");
+                setLinkSearch("");
+              }}
+            >
+              Cancel
+            </Button>
           </div>
           <div className="max-h-64 overflow-y-auto flex flex-col gap-1">
             {linkOptions.length === 0 ? (
               <p className="text-xs text-muted-foreground text-center py-4">
-                {linkSearch ? "No matching targets" : "All existing targets are already in this operation"}
+                {linkSearch
+                  ? "No matching targets"
+                  : "All existing targets are already in this operation"}
               </p>
             ) : (
-              linkOptions.map((t) => (
+              linkOptions.map(t => (
                 <button
                   key={t.id}
                   className="flex items-start gap-3 px-3 py-2 rounded-lg hover:bg-muted/60 text-left transition-colors w-full"
-                  onClick={() => linkTarget.mutate({
-                    targetId: t.id,
-                    operationId,
-                  })}
+                  onClick={() =>
+                    linkTarget.mutate({
+                      targetId: t.id,
+                      operationId,
+                    })
+                  }
                   disabled={linkTarget.isPending}
                 >
                   <Target className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">{t.name}</p>
+                    <p className="text-sm font-medium text-foreground truncate">
+                      {t.name}
+                    </p>
                     <p className="text-xs text-muted-foreground">
-                      {t.tgt ? <span className="font-mono mr-2">TGT: {t.tgt}</span> : null}
-                      {t.operationName ? <span>Op: {t.operationName}</span> : null}
+                      {t.tgt ? (
+                        <span className="font-mono mr-2">TGT: {t.tgt}</span>
+                      ) : null}
+                      {t.operationName ? (
+                        <span>Op: {t.operationName}</span>
+                      ) : null}
                     </p>
                   </div>
                 </button>
@@ -647,11 +836,21 @@ function TargetPanel({ operationId, autoExpandId, fromSheetId }: { operationId: 
 
       {mode === "idle" && (
         <div className="flex gap-2">
-          <Button size="sm" variant="outline" className="gap-2" onClick={() => setAddDialogOpen(true)}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-2"
+            onClick={() => setAddDialogOpen(true)}
+          >
             <Plus className="w-3.5 h-3.5" />
             New Target
           </Button>
-          <Button size="sm" variant="outline" className="gap-2" onClick={() => setMode("link")}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-2"
+            onClick={() => setMode("link")}
+          >
             <Search className="w-3.5 h-3.5" />
             Link Existing
           </Button>
@@ -665,7 +864,6 @@ function TargetPanel({ operationId, autoExpandId, fromSheetId }: { operationId: 
 // A chronological (newest-first) read view over every running sheet's
 // Supervisor Summary for this operation — lets a supervisor scan how a
 // deployment has progressed across 20-50+ sheets without opening each one.
-
 
 function DeploymentRollupPanel({
   operationId,
@@ -788,8 +986,8 @@ function DeploymentRollupPanel({
         <div className="flex flex-col items-center justify-center py-16 text-center border border-dashed border-border rounded-xl">
           <History className="w-8 h-8 text-muted-foreground/50 mb-3" />
           <p className="text-sm text-muted-foreground max-w-sm">
-            No Supervisor Summaries yet. Once a running sheet's Summary tab
-            has been opened, it will appear here.
+            No Supervisor Summaries yet. Once a running sheet's Summary tab has
+            been opened, it will appear here.
           </p>
         </div>
       ) : (
@@ -874,7 +1072,11 @@ function DeploymentRollupPanel({
             >
               Cancel
             </Button>
-            <Button onClick={handleExport} disabled={isExporting} className="gap-1.5">
+            <Button
+              onClick={handleExport}
+              disabled={isExporting}
+              className="gap-1.5"
+            >
               <FileDown className="w-3.5 h-3.5" />
               {isExporting ? "Building…" : "Export PDF"}
             </Button>
@@ -1019,7 +1221,13 @@ ${buildExportPreviewCloseBar()}
   }, 400);
 }
 
-function RollupDetailRow({ label, value }: { label: string; value?: string | null }) {
+function RollupDetailRow({
+  label,
+  value,
+}: {
+  label: string;
+  value?: string | null;
+}) {
   if (!value || !value.trim()) return null;
   return (
     <>
@@ -1074,12 +1282,19 @@ function DeploymentRollupCard({
   const isComplete = !!r.completedAt;
 
   const { data: entries, isLoading: entriesLoading } =
-    trpc.summary.getEntries.useQuery({ sheetId: r.sheetId }, { enabled: expanded });
+    trpc.summary.getEntries.useQuery(
+      { sheetId: r.sheetId },
+      { enabled: expanded }
+    );
   const { data: vehicles, isLoading: vehiclesLoading } =
-    trpc.summary.getVehicles.useQuery({ sheetId: r.sheetId }, { enabled: expanded });
+    trpc.summary.getVehicles.useQuery(
+      { sheetId: r.sheetId },
+      { enabled: expanded }
+    );
 
-  const communicationParts = [r.ioContactTiming, r.ioContactMethod]
-    .filter((p): p is string => !!p && !!p.trim());
+  const communicationParts = [r.ioContactTiming, r.ioContactMethod].filter(
+    (p): p is string => !!p && !!p.trim()
+  );
 
   return (
     <div
@@ -1162,7 +1377,9 @@ function DeploymentRollupCard({
           </RollupSection>
 
           <RollupSection title="Investigator">
-            {r.ioSupport?.trim() || r.intelSupport?.trim() || communicationParts.length ? (
+            {r.ioSupport?.trim() ||
+            r.intelSupport?.trim() ||
+            communicationParts.length ? (
               <div className="grid grid-cols-[130px_1fr] gap-y-1.5 text-xs">
                 <RollupDetailRow label="Investigator" value={r.ioSupport} />
                 {communicationParts.length > 0 && (
@@ -1174,7 +1391,9 @@ function DeploymentRollupCard({
                 <RollupDetailRow label="Intel Support" value={r.intelSupport} />
               </div>
             ) : (
-              <p className="text-xs text-muted-foreground italic">None recorded.</p>
+              <p className="text-xs text-muted-foreground italic">
+                None recorded.
+              </p>
             )}
           </RollupSection>
 
@@ -1194,7 +1413,9 @@ function DeploymentRollupCard({
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-muted-foreground italic">None recorded.</p>
+              <p className="text-xs text-muted-foreground italic">
+                None recorded.
+              </p>
             )}
           </RollupSection>
 
@@ -1206,7 +1427,9 @@ function DeploymentRollupCard({
                 ))}
               </ol>
             ) : (
-              <p className="text-xs text-muted-foreground italic">None recorded.</p>
+              <p className="text-xs text-muted-foreground italic">
+                None recorded.
+              </p>
             )}
           </RollupSection>
 
@@ -1218,7 +1441,9 @@ function DeploymentRollupCard({
                 ))}
               </ol>
             ) : (
-              <p className="text-xs text-muted-foreground italic">None recorded.</p>
+              <p className="text-xs text-muted-foreground italic">
+                None recorded.
+              </p>
             )}
           </RollupSection>
 
@@ -1246,7 +1471,10 @@ function DeploymentRollupCard({
                   </thead>
                   <tbody>
                     {entries.map(e => (
-                      <tr key={e.id} className="border-b border-border/50 last:border-b-0">
+                      <tr
+                        key={e.id}
+                        className="border-b border-border/50 last:border-b-0"
+                      >
                         <td className="align-top px-2 py-1.5 text-muted-foreground">
                           {e.time || "—"}
                         </td>
@@ -1270,9 +1498,13 @@ function DeploymentRollupCard({
 
           <RollupSection title="Issues">
             {hasIssues ? (
-              <p className="text-xs text-foreground whitespace-pre-wrap">{r.issues}</p>
+              <p className="text-xs text-foreground whitespace-pre-wrap">
+                {r.issues}
+              </p>
             ) : (
-              <p className="text-xs text-muted-foreground italic">None recorded.</p>
+              <p className="text-xs text-muted-foreground italic">
+                None recorded.
+              </p>
             )}
           </RollupSection>
         </div>
@@ -1292,7 +1524,14 @@ function SheetCard({
   onDelete,
   onCopyMove,
 }: {
-  sheet: { id: number; title: string; createdAt: Date; sheetCins?: string | null; closedAt?: number | null; closedByCIN?: string | null };
+  sheet: {
+    id: number;
+    title: string;
+    createdAt: Date;
+    sheetCins?: string | null;
+    closedAt?: number | null;
+    closedByCIN?: string | null;
+  };
   cinNames: string[];
   cinEntries?: CinEntry[];
   isAdmin: boolean;
@@ -1303,13 +1542,13 @@ function SheetCard({
 }) {
   const { data: certStatus } = trpc.sheet.cinCertStatus.useQuery(
     { sheetId: sheet.id, cins: cinNames },
-    { enabled: cinNames.length > 0, staleTime: 30_000 },
+    { enabled: cinNames.length > 0, staleTime: 30_000 }
   );
 
   const allCertified =
     cinNames.length > 0 &&
     certStatus !== undefined &&
-    certStatus.every((s) => s.certified);
+    certStatus.every(s => s.certified);
 
   const isClosed = !!sheet.closedAt;
 
@@ -1324,23 +1563,41 @@ function SheetCard({
       }`}
       onClick={onNavigate}
     >
-      <div className={`p-2.5 rounded-lg border shrink-0 ${
-        isClosed ? "bg-slate-200/60 dark:bg-slate-700/40 border-slate-300 dark:border-slate-600" :
-        allCertified ? "bg-emerald-500/20 border-emerald-500/40" : "bg-blue-700/10 border-blue-700/20"
-      }`}>
-        {isClosed
-          ? <LockKeyhole className="w-5 h-5 text-slate-400" />
-          : <FileText className={`w-5 h-5 ${
-              allCertified ? "text-black dark:text-emerald-400" : "text-blue-700"
-            }`} />}
+      <div
+        className={`p-2.5 rounded-lg border shrink-0 ${
+          isClosed
+            ? "bg-slate-200/60 dark:bg-slate-700/40 border-slate-300 dark:border-slate-600"
+            : allCertified
+              ? "bg-emerald-500/20 border-emerald-500/40"
+              : "bg-blue-700/10 border-blue-700/20"
+        }`}
+      >
+        {isClosed ? (
+          <LockKeyhole className="w-5 h-5 text-slate-400" />
+        ) : (
+          <FileText
+            className={`w-5 h-5 ${
+              allCertified
+                ? "text-black dark:text-emerald-400"
+                : "text-blue-700"
+            }`}
+          />
+        )}
       </div>
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className={`font-semibold truncate ${
-            isClosed ? "text-slate-500 dark:text-slate-400" :
-            allCertified ? "text-black dark:text-emerald-300" : "text-foreground"
-          }`}>{sheet.title}</span>
+          <span
+            className={`font-semibold truncate ${
+              isClosed
+                ? "text-slate-500 dark:text-slate-400"
+                : allCertified
+                  ? "text-black dark:text-emerald-300"
+                  : "text-foreground"
+            }`}
+          >
+            {sheet.title}
+          </span>
           {isClosed && (
             <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border border-slate-400/50 bg-slate-200/60 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 font-medium shrink-0">
               <LockKeyhole className="w-2.5 h-2.5" />
@@ -1350,9 +1607,10 @@ function SheetCard({
         </div>
         {cinNames.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-1.5">
-            {cinNames.map((cin) => {
-              const certified = certStatus?.find((s) => s.cin === cin)?.certified ?? false;
-              const entry = cinEntries?.find((e) => e.cin === cin);
+            {cinNames.map(cin => {
+              const certified =
+                certStatus?.find(s => s.cin === cin)?.certified ?? false;
+              const entry = cinEntries?.find(e => e.cin === cin);
               return (
                 <span
                   key={cin}
@@ -1362,8 +1620,16 @@ function SheetCard({
                       : "border-red-500/40 bg-red-500/10 text-red-400"
                   }`}
                 >
-                  {entry?.isTeamLeader && <span className="text-yellow-400" title="Team Leader">★</span>}
-                  {entry?.isAuthor && <span className="text-sky-400" title="Author">✏</span>}
+                  {entry?.isTeamLeader && (
+                    <span className="text-yellow-400" title="Team Leader">
+                      ★
+                    </span>
+                  )}
+                  {entry?.isAuthor && (
+                    <span className="text-sky-400" title="Author">
+                      ✏
+                    </span>
+                  )}
                   {cin}
                 </span>
               );
@@ -1379,7 +1645,13 @@ function SheetCard({
         {isClosed && sheet.closedByCIN && sheet.closedAt && (
           <div className="flex items-center gap-1.5 mt-1 text-xs text-slate-400 dark:text-slate-500">
             <LockKeyhole className="w-3 h-3 shrink-0" />
-            <span>Closed by <span className="font-mono font-semibold">{sheet.closedByCIN}</span> on {format(new Date(sheet.closedAt), "d MMM yyyy, HH:mm")}</span>
+            <span>
+              Closed by{" "}
+              <span className="font-mono font-semibold">
+                {sheet.closedByCIN}
+              </span>{" "}
+              on {format(new Date(sheet.closedAt), "d MMM yyyy, HH:mm")}
+            </span>
           </div>
         )}
       </div>
@@ -1393,17 +1665,25 @@ function SheetCard({
               variant="ghost"
               className="w-8 h-8 text-sky-500 hover:text-sky-400 hover:bg-sky-500/10"
               title="Copy or Move sheet"
-              onClick={(e) => { e.stopPropagation(); onCopyMove(); }}
+              onClick={e => {
+                e.stopPropagation();
+                onCopyMove();
+              }}
             >
               <CopyPlus className="w-4 h-4" />
             </Button>
             {/* Delete button removed from RS panel — delete is only in the RS Edit dialog */}
           </>
         )}
-        <ChevronRight className={`w-4 h-4 transition-colors ${
-          isClosed ? "text-slate-400" :
-          allCertified ? "text-black dark:text-emerald-400" : "text-muted-foreground group-hover:text-foreground"
-        }`} />
+        <ChevronRight
+          className={`w-4 h-4 transition-colors ${
+            isClosed
+              ? "text-slate-400"
+              : allCertified
+                ? "text-black dark:text-emerald-400"
+                : "text-muted-foreground group-hover:text-foreground"
+          }`}
+        />
       </div>
     </div>
   );
@@ -1419,7 +1699,15 @@ function SheetTileCard({
   onNavigate,
   onCopyMove,
 }: {
-  sheet: { id: number; title: string; createdAt: Date; sheetCins?: string | null; closedAt?: number | null; closedByCIN?: string | null };
+  sheet: {
+    id: number;
+    title: string;
+    createdAt: Date;
+    sheetDate?: string | null;
+    sheetCins?: string | null;
+    closedAt?: number | null;
+    closedByCIN?: string | null;
+  };
   cinNames: string[];
   cinEntries?: CinEntry[];
   targetName?: string | null;
@@ -1429,13 +1717,13 @@ function SheetTileCard({
 }) {
   const { data: certStatus } = trpc.sheet.cinCertStatus.useQuery(
     { sheetId: sheet.id, cins: cinNames },
-    { enabled: cinNames.length > 0, staleTime: 30_000 },
+    { enabled: cinNames.length > 0, staleTime: 30_000 }
   );
 
   const allCertified =
     cinNames.length > 0 &&
     certStatus !== undefined &&
-    certStatus.every((s) => s.certified);
+    certStatus.every(s => s.certified);
 
   const isClosed = !!sheet.closedAt;
 
@@ -1452,19 +1740,28 @@ function SheetTileCard({
     >
       {/* Header row: icon + CLOSED badge + copy-move button */}
       <div className="flex items-start justify-between gap-2">
-        <div className={`p-2.5 rounded-lg border shrink-0 ${
-          isClosed ? "bg-slate-200/60 dark:bg-slate-700/40 border-slate-300 dark:border-slate-600"
-          : allCertified ? "bg-emerald-500/20 border-emerald-500/40"
-          : "bg-blue-700/10 border-blue-700/20"
-        }`}>
-          {isClosed
-            ? <LockKeyhole className="w-5 h-5 text-slate-400" />
-            : <FileText className={`w-5 h-5 ${allCertified ? "text-emerald-400" : "text-blue-700"}`} />}
+        <div
+          className={`p-2.5 rounded-lg border shrink-0 ${
+            isClosed
+              ? "bg-slate-200/60 dark:bg-slate-700/40 border-slate-300 dark:border-slate-600"
+              : allCertified
+                ? "bg-emerald-500/20 border-emerald-500/40"
+                : "bg-blue-700/10 border-blue-700/20"
+          }`}
+        >
+          {isClosed ? (
+            <LockKeyhole className="w-5 h-5 text-slate-400" />
+          ) : (
+            <FileText
+              className={`w-5 h-5 ${allCertified ? "text-emerald-400" : "text-blue-700"}`}
+            />
+          )}
         </div>
         <div className="flex items-center gap-1 shrink-0">
           {isClosed && (
             <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border border-slate-400/50 bg-slate-200/60 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 font-medium">
-              <LockKeyhole className="w-2.5 h-2.5" />CLOSED
+              <LockKeyhole className="w-2.5 h-2.5" />
+              CLOSED
             </span>
           )}
           {allCertified && !isClosed && (
@@ -1473,9 +1770,16 @@ function SheetTileCard({
             </span>
           )}
           {isAdmin && (
-            <Button size="icon" variant="ghost" className="w-7 h-7 text-sky-500 hover:text-sky-400 hover:bg-sky-500/10"
-              onClick={(e) => { e.stopPropagation(); onCopyMove(); }}
-              title="Copy or Move sheet">
+            <Button
+              size="icon"
+              variant="ghost"
+              className="w-7 h-7 text-sky-500 hover:text-sky-400 hover:bg-sky-500/10"
+              onClick={e => {
+                e.stopPropagation();
+                onCopyMove();
+              }}
+              title="Copy or Move sheet"
+            >
               <CopyPlus className="w-3.5 h-3.5" />
             </Button>
           )}
@@ -1483,11 +1787,17 @@ function SheetTileCard({
       </div>
 
       {/* Sheet title */}
-      <p className={`font-semibold leading-tight line-clamp-2 ${
-        isClosed ? "text-slate-500 dark:text-slate-400"
-        : allCertified ? "text-emerald-300"
-        : "text-foreground"
-      }`}>{sheet.title}</p>
+      <p
+        className={`font-semibold leading-tight line-clamp-2 ${
+          isClosed
+            ? "text-slate-500 dark:text-slate-400"
+            : allCertified
+              ? "text-emerald-300"
+              : "text-foreground"
+        }`}
+      >
+        {sheet.title}
+      </p>
 
       {/* Target */}
       {targetName && (
@@ -1500,9 +1810,10 @@ function SheetTileCard({
       {/* CIN chips — all shown, colour coded, with role icons */}
       {cinNames.length > 0 && (
         <div className="flex flex-wrap gap-1">
-          {cinNames.map((cin) => {
-            const certified = certStatus?.find((s) => s.cin === cin)?.certified ?? false;
-            const entry = cinEntries?.find((e) => e.cin === cin);
+          {cinNames.map(cin => {
+            const certified =
+              certStatus?.find(s => s.cin === cin)?.certified ?? false;
+            const entry = cinEntries?.find(e => e.cin === cin);
             return (
               <span
                 key={cin}
@@ -1512,9 +1823,21 @@ function SheetTileCard({
                     : "border-red-500/40 bg-red-500/10 text-red-400"
                 }`}
               >
-                {entry?.isTeamLeader && <span className="text-yellow-400" title="Team Leader">★</span>}
-                {entry?.isAuthor && <span className="text-sky-400" title="Author">✏</span>}
-                {entry?.hasImages && <span className="text-violet-400" title="Has images">📷</span>}
+                {entry?.isTeamLeader && (
+                  <span className="text-yellow-400" title="Team Leader">
+                    ★
+                  </span>
+                )}
+                {entry?.isAuthor && (
+                  <span className="text-sky-400" title="Author">
+                    ✏
+                  </span>
+                )}
+                {entry?.hasImages && (
+                  <span className="text-violet-400" title="Has images">
+                    📷
+                  </span>
+                )}
                 {cin}
               </span>
             );
@@ -1525,9 +1848,15 @@ function SheetTileCard({
       {/* Footer: date */}
       <div className="flex items-center gap-1 mt-auto text-xs text-muted-foreground">
         <Calendar className="w-3 h-3" />
-        <span>{format(new Date(sheet.createdAt), "d MMM yyyy")}</span>
+        <span>
+          {sheet.sheetDate
+            ? format(new Date(`${sheet.sheetDate}T00:00:00`), "d MMM yyyy")
+            : format(new Date(sheet.createdAt), "d MMM yyyy")}
+        </span>
         {sheet.closedAt && sheet.closedByCIN && (
-          <span className="ml-2 text-slate-400">· Closed by <span className="font-mono">{sheet.closedByCIN}</span></span>
+          <span className="ml-2 text-slate-400">
+            · Closed by <span className="font-mono">{sheet.closedByCIN}</span>
+          </span>
         )}
       </div>
     </div>
@@ -1543,11 +1872,19 @@ export default function OperationDetail() {
 
   // Derive active tab and target to auto-expand from URL search params
   const searchParams = new URLSearchParams(search);
-  const tabParam = searchParams.get('tab');
+  const tabParam = searchParams.get("tab");
   const activeTab =
-    tabParam === 'target' ? 'target' : tabParam === 'rollup' ? 'rollup' : 'sheets';
-  const autoExpandTargetId = searchParams.get('targetId') ? parseInt(searchParams.get('targetId')!, 10) : undefined;
-  const fromSheetId = searchParams.get('fromSheet') ? parseInt(searchParams.get('fromSheet')!, 10) : undefined;
+    tabParam === "target"
+      ? "target"
+      : tabParam === "rollup"
+        ? "rollup"
+        : "sheets";
+  const autoExpandTargetId = searchParams.get("targetId")
+    ? parseInt(searchParams.get("targetId")!, 10)
+    : undefined;
+  const fromSheetId = searchParams.get("fromSheet")
+    ? parseInt(searchParams.get("fromSheet")!, 10)
+    : undefined;
 
   // Create sheet state
   const [createOpen, setCreateOpen] = useState(false);
@@ -1563,7 +1900,10 @@ export default function OperationDetail() {
   const [sheetSearch, setSheetSearch] = useState("");
   const { viewMode } = useViewMode();
   // Copy/Move sheet dialog state
-  const [copyMoveSheet, setCopyMoveSheet] = useState<{ id: number; title: string } | null>(null);
+  const [copyMoveSheet, setCopyMoveSheet] = useState<{
+    id: number;
+    title: string;
+  } | null>(null);
 
   // Edit operation state
   const [editOpen, setEditOpen] = useState(false);
@@ -1579,10 +1919,11 @@ export default function OperationDetail() {
     { enabled: isAuthenticated && !!operationId }
   );
 
-  const { data: sheets, isLoading: sheetsLoading } = trpc.sheet.listByOperation.useQuery(
-    { operationId },
-    { enabled: isAuthenticated && !!operationId }
-  );
+  const { data: sheets, isLoading: sheetsLoading } =
+    trpc.sheet.listByOperation.useQuery(
+      { operationId },
+      { enabled: isAuthenticated && !!operationId }
+    );
 
   // Fetch targets for this operation (used in create sheet dialog)
   const { data: operationTargets } = trpc.target.list.useQuery(
@@ -1591,10 +1932,9 @@ export default function OperationDetail() {
   );
 
   // Fetch ALL targets across all operations for the create-sheet target picker
-  const { data: allTargetsForSheet } = trpc.target.listAll.useQuery(
-    undefined,
-    { enabled: isAuthenticated }
-  );
+  const { data: allTargetsForSheet } = trpc.target.listAll.useQuery(undefined, {
+    enabled: isAuthenticated,
+  });
   const [targetSearch, setTargetSearch] = useState("");
 
   // Full record for the selected target — used only for the title preview
@@ -1628,7 +1968,7 @@ export default function OperationDetail() {
   }, [operation]);
 
   const createSheet = trpc.sheet.create.useMutation({
-    onSuccess: (data) => {
+    onSuccess: data => {
       utils.sheet.listByOperation.invalidate({ operationId });
       setCreateOpen(false);
       setNewSheetDate(new Date().toISOString().slice(0, 10));
@@ -1637,7 +1977,7 @@ export default function OperationDetail() {
       toast.success("Running sheet created");
       navigate(`/sheet/${data.id}`);
     },
-    onError: (e) => toast.error(e.message),
+    onError: e => toast.error(e.message),
   });
 
   // New Target from within the "New Running Sheet" dialog — same structured
@@ -1656,7 +1996,7 @@ export default function OperationDetail() {
       setEditOpen(false);
       toast.success("Operation updated");
     },
-    onError: (e) => toast.error(e.message),
+    onError: e => toast.error(e.message),
   });
 
   // Delete operation (moved from Home page into Edit dialog)
@@ -1670,7 +2010,7 @@ export default function OperationDetail() {
       toast.success("Operation deleted");
       navigate("/");
     },
-    onError: (e) => toast.error(e.message),
+    onError: e => toast.error(e.message),
   });
 
   const deleteSheet = trpc.sheet.delete.useMutation({
@@ -1679,46 +2019,66 @@ export default function OperationDetail() {
       setDeleteId(null);
       toast.success("Sheet deleted");
     },
-    onError: (e) => toast.error(e.message),
+    onError: e => toast.error(e.message),
   });
 
   const handleAddTeam = (teamKey: "TEAM1" | "TEAM2" | "PTT") => {
-    if (!allUsers) { toast.error("User list not available"); return; }
-    const members = allUsers.filter((u) => u.team === teamKey);
-    if (members.length === 0) { toast.error("No members found in that team"); return; }
+    if (!allUsers) {
+      toast.error("User list not available");
+      return;
+    }
+    const members = allUsers.filter(u => u.team === teamKey);
+    if (members.length === 0) {
+      toast.error("No members found in that team");
+      return;
+    }
     let added = 0;
-    setCinList((prev) => {
+    setCinList(prev => {
       let updated = [...prev];
       for (const m of members) {
-        if (!updated.some((c) => c.cin.toLowerCase() === m.cin.toLowerCase())) {
-          updated = [...updated, { cin: m.cin, hasImages: false, isTeamLeader: false, isAuthor: false }];
+        if (!updated.some(c => c.cin.toLowerCase() === m.cin.toLowerCase())) {
+          updated = [
+            ...updated,
+            {
+              cin: m.cin,
+              hasImages: false,
+              isTeamLeader: false,
+              isAuthor: false,
+            },
+          ];
           added++;
         }
       }
       return updated;
     });
     if (added === 0) toast.info("All team members already added");
-    else toast.success(`Added ${added} member${added !== 1 ? "s" : ""} from ${teamKey.replace("TEAM", "TEAM ")}`); 
+    else
+      toast.success(
+        `Added ${added} member${added !== 1 ? "s" : ""} from ${teamKey.replace("TEAM", "TEAM ")}`
+      );
   };
 
   const handleAddCin = () => {
     const trimmed = cinInput.trim();
     if (!trimmed) return;
-    if (cinList.some((c) => c.cin.toLowerCase() === trimmed.toLowerCase())) {
+    if (cinList.some(c => c.cin.toLowerCase() === trimmed.toLowerCase())) {
       toast.error("CIN already added");
       return;
     }
-    setCinList((prev) => [...prev, { cin: trimmed, hasImages: false, isTeamLeader: false, isAuthor: false }]);
+    setCinList(prev => [
+      ...prev,
+      { cin: trimmed, hasImages: false, isTeamLeader: false, isAuthor: false },
+    ]);
     setCinInput("");
   };
 
   const handleRemoveCin = (cin: string) => {
-    setCinList((prev) => prev.filter((c) => c.cin !== cin));
+    setCinList(prev => prev.filter(c => c.cin !== cin));
   };
 
   const handleToggleImages = (cin: string) => {
-    setCinList((prev) =>
-      prev.map((c) => c.cin === cin ? { ...c, hasImages: !c.hasImages } : c)
+    setCinList(prev =>
+      prev.map(c => (c.cin === cin ? { ...c, hasImages: !c.hasImages } : c))
     );
   };
 
@@ -1783,7 +2143,11 @@ export default function OperationDetail() {
                 <FolderOpen className="w-5 h-5 text-blue-700" />
               </div>
               <h1 className="text-2xl font-semibold text-foreground">
-                {opLoading ? <Skeleton className="h-7 w-48" /> : (operation?.name ?? "Operation")}
+                {opLoading ? (
+                  <Skeleton className="h-7 w-48" />
+                ) : (
+                  (operation?.name ?? "Operation")
+                )}
               </h1>
               {!opLoading && operation && (
                 <Button
@@ -1803,19 +2167,27 @@ export default function OperationDetail() {
                 {operation.promisNumber && (
                   <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
                     <Hash className="w-3.5 h-3.5" />
-                    PROMIS: <span className="text-foreground font-medium ml-0.5">{operation.promisNumber}</span>
+                    PROMIS:{" "}
+                    <span className="text-foreground font-medium ml-0.5">
+                      {operation.promisNumber}
+                    </span>
                   </span>
                 )}
                 {operation.imsNumber && (
                   <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
                     <Hash className="w-3.5 h-3.5" />
-                    IMS: <span className="text-foreground font-medium ml-0.5">{operation.imsNumber}</span>
+                    IMS:{" "}
+                    <span className="text-foreground font-medium ml-0.5">
+                      {operation.imsNumber}
+                    </span>
                   </span>
                 )}
                 {operation.investigationUnit && (
                   <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
                     <Building2 className="w-3.5 h-3.5" />
-                    <span className="text-foreground font-medium">{operation.investigationUnit}</span>
+                    <span className="text-foreground font-medium">
+                      {operation.investigationUnit}
+                    </span>
                   </span>
                 )}
               </div>
@@ -1835,12 +2207,16 @@ export default function OperationDetail() {
         </div>
 
         {/* Main tabs: Running Sheets | Deployment Rollup */}
-        <Tabs value={activeTab} onValueChange={(v) => {
+        <Tabs
+          value={activeTab}
+          onValueChange={v => {
             const sp = new URLSearchParams(window.location.search);
             sp.set("tab", v);
             if (v !== "target") sp.delete("targetId");
             navigate(`/operation/${operationId}?${sp.toString()}`);
-          }} className="mt-2">
+          }}
+          className="mt-2"
+        >
           {/* flex-wrap so the "Back to Running Sheet" button below drops to
               its own line on a narrow screen rather than squeezing the tabs
               off one row. */}
@@ -1882,119 +2258,174 @@ export default function OperationDetail() {
 
           {/* ── Running Sheets tab ── */}
           <TabsContent value="sheets">
-        {isLoading ? (
-          <div className="flex flex-col gap-3">
-            {[1, 2, 3].map((i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
-          </div>
-        ) : !sheets || sheets.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="p-4 rounded-2xl bg-muted/40 mb-4">
-              <FileText className="w-8 h-8 text-muted-foreground" />
-            </div>
-            <p className="text-foreground font-medium mb-1">No running sheets yet</p>
-            <p className="text-muted-foreground text-sm mb-4">
-              Create the first running sheet for this operation
-            </p>
-            <Button size="sm" className="gap-2" onClick={() => setCreateOpen(true)}>
-              <Plus className="w-4 h-4" />
-              New Running Sheet
-            </Button>
-          </div>
-        ) : (() => {
-          const filteredSheets = sheets.filter((sheet) => {
-            if (!sheetSearch.trim()) return true;
-            const q = sheetSearch.trim().toLowerCase();
-            if (sheet.title.toLowerCase().includes(q)) return true;
-            const cins: CinEntry[] = (() => { try { return sheet.sheetCins ? JSON.parse(sheet.sheetCins) : []; } catch { return []; } })();
-            if (cins.some((c) => c.cin.toLowerCase().includes(q))) return true;
-            const tgt = operationTargets?.find((t) => t.id === (sheet as { targetId?: number | null }).targetId);
-            if (tgt && tgt.name.toLowerCase().includes(q)) return true;
-            return false;
-          });
-          return (
-          <div className="flex flex-col gap-2">
-            {/* Search bar */}
-            <div className="relative mb-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-              <Input
-                placeholder="Search by title, CIN or target…"
-                value={sheetSearch}
-                onChange={(e) => setSheetSearch(e.target.value)}
-                className="pl-8 h-9 text-sm"
-              />
-            </div>
-            {viewMode === "tile" ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filteredSheets.map((sheet) => {
-                  const parsedCins: CinEntry[] = (() => {
-                    try {
-                      const raw: CinEntry[] = sheet.sheetCins ? JSON.parse(sheet.sheetCins) : [];
-                      return [...raw].sort((a, b) => {
-                        if (a.isTeamLeader && !b.isTeamLeader) return -1;
-                        if (!a.isTeamLeader && b.isTeamLeader) return 1;
-                        const aNum = parseInt(a.cin, 10); const bNum = parseInt(b.cin, 10);
-                        if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
-                        return a.cin.localeCompare(b.cin);
-                      });
-                    } catch { return []; }
-                  })();
-                  const cinNames = parsedCins.map((c) => c.cin);
-                  const assignedTarget = operationTargets?.find((t) => t.id === (sheet as { targetId?: number | null }).targetId);
-                  return (
-                    <SheetTileCard
-                      key={sheet.id}
-                      sheet={sheet}
-                      cinNames={cinNames}
-                      cinEntries={parsedCins}
-                      targetName={assignedTarget?.name}
-                      isAdmin={user?.role === "admin" || user?.role === "member"}
-                      onNavigate={() => navigate(`/sheet/${sheet.id}`)}
-                      onCopyMove={() => setCopyMoveSheet({ id: sheet.id, title: sheet.title })}
-                    />
-                  );
-                })}
+            {isLoading ? (
+              <div className="flex flex-col gap-3">
+                {[1, 2, 3].map(i => (
+                  <Skeleton key={i} className="h-20 rounded-xl" />
+                ))}
+              </div>
+            ) : !sheets || sheets.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <div className="p-4 rounded-2xl bg-muted/40 mb-4">
+                  <FileText className="w-8 h-8 text-muted-foreground" />
+                </div>
+                <p className="text-foreground font-medium mb-1">
+                  No running sheets yet
+                </p>
+                <p className="text-muted-foreground text-sm mb-4">
+                  Create the first running sheet for this operation
+                </p>
+                <Button
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => setCreateOpen(true)}
+                >
+                  <Plus className="w-4 h-4" />
+                  New Running Sheet
+                </Button>
               </div>
             ) : (
-              filteredSheets.map((sheet) => {
-                const parsedCins: CinEntry[] = (() => {
-                  try {
-                    const raw: CinEntry[] = sheet.sheetCins ? JSON.parse(sheet.sheetCins) : [];
-                    return [...raw].sort((a, b) => {
-                      if (a.isTeamLeader && !b.isTeamLeader) return -1;
-                      if (!a.isTeamLeader && b.isTeamLeader) return 1;
-                      const aNum = parseInt(a.cin, 10); const bNum = parseInt(b.cin, 10);
-                      if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
-                      return a.cin.localeCompare(b.cin);
-                    });
-                  }
-                  catch { return []; }
-                })();
-                const cinNames = parsedCins.map((c) => c.cin);
-                const assignedTarget = operationTargets?.find((t) => t.id === (sheet as { targetId?: number | null }).targetId);
+              (() => {
+                const filteredSheets = sheets.filter(sheet => {
+                  if (!sheetSearch.trim()) return true;
+                  const q = sheetSearch.trim().toLowerCase();
+                  if (sheet.title.toLowerCase().includes(q)) return true;
+                  const cins: CinEntry[] = (() => {
+                    try {
+                      return sheet.sheetCins ? JSON.parse(sheet.sheetCins) : [];
+                    } catch {
+                      return [];
+                    }
+                  })();
+                  if (cins.some(c => c.cin.toLowerCase().includes(q)))
+                    return true;
+                  const tgt = operationTargets?.find(
+                    t =>
+                      t.id === (sheet as { targetId?: number | null }).targetId
+                  );
+                  if (tgt && tgt.name.toLowerCase().includes(q)) return true;
+                  return false;
+                });
                 return (
-                  <SheetCard
-                    key={sheet.id}
-                    sheet={sheet}
-                    cinNames={cinNames}
-                    cinEntries={parsedCins}
-                    isAdmin={user?.role === "admin" || user?.role === "member"}
-                    targetName={assignedTarget?.name ?? null}
-                    onNavigate={() => navigate(`/sheet/${sheet.id}`)}
-                    onDelete={() => setDeleteId(sheet.id)}
-                    onCopyMove={() => setCopyMoveSheet({ id: sheet.id, title: sheet.title })}
-                  />
+                  <div className="flex flex-col gap-2">
+                    {/* Search bar */}
+                    <div className="relative mb-1">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+                      <Input
+                        placeholder="Search by title, CIN or target…"
+                        value={sheetSearch}
+                        onChange={e => setSheetSearch(e.target.value)}
+                        className="pl-8 h-9 text-sm"
+                      />
+                    </div>
+                    {viewMode === "tile" ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {filteredSheets.map(sheet => {
+                          const parsedCins: CinEntry[] = (() => {
+                            try {
+                              const raw: CinEntry[] = sheet.sheetCins
+                                ? JSON.parse(sheet.sheetCins)
+                                : [];
+                              return [...raw].sort((a, b) => {
+                                if (a.isTeamLeader && !b.isTeamLeader)
+                                  return -1;
+                                if (!a.isTeamLeader && b.isTeamLeader) return 1;
+                                const aNum = parseInt(a.cin, 10);
+                                const bNum = parseInt(b.cin, 10);
+                                if (!isNaN(aNum) && !isNaN(bNum))
+                                  return aNum - bNum;
+                                return a.cin.localeCompare(b.cin);
+                              });
+                            } catch {
+                              return [];
+                            }
+                          })();
+                          const cinNames = parsedCins.map(c => c.cin);
+                          const assignedTarget = operationTargets?.find(
+                            t =>
+                              t.id ===
+                              (sheet as { targetId?: number | null }).targetId
+                          );
+                          return (
+                            <SheetTileCard
+                              key={sheet.id}
+                              sheet={sheet}
+                              cinNames={cinNames}
+                              cinEntries={parsedCins}
+                              targetName={assignedTarget?.name}
+                              isAdmin={
+                                user?.role === "admin" ||
+                                user?.role === "member"
+                              }
+                              onNavigate={() => navigate(`/sheet/${sheet.id}`)}
+                              onCopyMove={() =>
+                                setCopyMoveSheet({
+                                  id: sheet.id,
+                                  title: sheet.title,
+                                })
+                              }
+                            />
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      filteredSheets.map(sheet => {
+                        const parsedCins: CinEntry[] = (() => {
+                          try {
+                            const raw: CinEntry[] = sheet.sheetCins
+                              ? JSON.parse(sheet.sheetCins)
+                              : [];
+                            return [...raw].sort((a, b) => {
+                              if (a.isTeamLeader && !b.isTeamLeader) return -1;
+                              if (!a.isTeamLeader && b.isTeamLeader) return 1;
+                              const aNum = parseInt(a.cin, 10);
+                              const bNum = parseInt(b.cin, 10);
+                              if (!isNaN(aNum) && !isNaN(bNum))
+                                return aNum - bNum;
+                              return a.cin.localeCompare(b.cin);
+                            });
+                          } catch {
+                            return [];
+                          }
+                        })();
+                        const cinNames = parsedCins.map(c => c.cin);
+                        const assignedTarget = operationTargets?.find(
+                          t =>
+                            t.id ===
+                            (sheet as { targetId?: number | null }).targetId
+                        );
+                        return (
+                          <SheetCard
+                            key={sheet.id}
+                            sheet={sheet}
+                            cinNames={cinNames}
+                            cinEntries={parsedCins}
+                            isAdmin={
+                              user?.role === "admin" || user?.role === "member"
+                            }
+                            targetName={assignedTarget?.name ?? null}
+                            onNavigate={() => navigate(`/sheet/${sheet.id}`)}
+                            onDelete={() => setDeleteId(sheet.id)}
+                            onCopyMove={() =>
+                              setCopyMoveSheet({
+                                id: sheet.id,
+                                title: sheet.title,
+                              })
+                            }
+                          />
+                        );
+                      })
+                    )}
+                  </div>
                 );
-              })
+              })()
             )}
-          </div>
-          );
-        })()}
 
-        {sheets && sheets.length > 0 && (
-          <p className="text-xs text-muted-foreground mt-3 text-right">
-            {sheets.length} running sheet{sheets.length !== 1 ? "s" : ""}
-          </p>
-        )}
+            {sheets && sheets.length > 0 && (
+              <p className="text-xs text-muted-foreground mt-3 text-right">
+                {sheets.length} running sheet{sheets.length !== 1 ? "s" : ""}
+              </p>
+            )}
           </TabsContent>
 
           {/* ── Deployment Rollup tab ── */}
@@ -2008,7 +2439,11 @@ export default function OperationDetail() {
 
           {/* ── Add Target tab ── */}
           <TabsContent value="target">
-            <TargetPanel operationId={operationId} autoExpandId={autoExpandTargetId} fromSheetId={fromSheetId} />
+            <TargetPanel
+              operationId={operationId}
+              autoExpandId={autoExpandTargetId}
+              fromSheetId={fromSheetId}
+            />
           </TabsContent>
         </Tabs>
       </div>
@@ -2027,32 +2462,38 @@ export default function OperationDetail() {
               <Input
                 placeholder="Operation name"
                 value={editName}
-                onChange={(e) => setEditName(e.target.value)}
+                onChange={e => setEditName(e.target.value)}
                 autoFocus
               />
             </div>
             <div>
-              <label className="text-sm font-medium text-foreground mb-1.5 block">PROMIS Number</label>
+              <label className="text-sm font-medium text-foreground mb-1.5 block">
+                PROMIS Number
+              </label>
               <Input
                 placeholder="e.g. PROM-2024-001"
                 value={editPromis}
-                onChange={(e) => setEditPromis(e.target.value)}
+                onChange={e => setEditPromis(e.target.value)}
               />
             </div>
             <div>
-              <label className="text-sm font-medium text-foreground mb-1.5 block">IMS Number</label>
+              <label className="text-sm font-medium text-foreground mb-1.5 block">
+                IMS Number
+              </label>
               <Input
                 placeholder="e.g. IMS-2024-001"
                 value={editIms}
-                onChange={(e) => setEditIms(e.target.value)}
+                onChange={e => setEditIms(e.target.value)}
               />
             </div>
             <div>
-              <label className="text-sm font-medium text-foreground mb-1.5 block">Investigation Unit</label>
+              <label className="text-sm font-medium text-foreground mb-1.5 block">
+                Investigation Unit
+              </label>
               <Input
                 placeholder="e.g. Major Crime Unit"
                 value={editUnit}
-                onChange={(e) => setEditUnit(e.target.value)}
+                onChange={e => setEditUnit(e.target.value)}
               />
             </div>
           </div>
@@ -2063,7 +2504,10 @@ export default function OperationDetail() {
                   variant="ghost"
                   size="sm"
                   className="text-destructive hover:text-destructive hover:bg-destructive/10 gap-1.5"
-                  onClick={() => { setEditOpen(false); setDeleteOpConfirm(true); }}
+                  onClick={() => {
+                    setEditOpen(false);
+                    setDeleteOpConfirm(true);
+                  }}
                 >
                   <Trash2 className="w-4 h-4" />
                   Delete Operation
@@ -2071,7 +2515,9 @@ export default function OperationDetail() {
               )}
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+              <Button variant="outline" onClick={() => setEditOpen(false)}>
+                Cancel
+              </Button>
               <Button
                 onClick={handleEditSave}
                 disabled={!editName.trim() || updateOperation.isPending}
@@ -2084,30 +2530,47 @@ export default function OperationDetail() {
       </Dialog>
 
       {/* Delete Operation Confirmation */}
-      <AlertDialog open={deleteOpConfirm} onOpenChange={(o) => !o && setDeleteOpConfirm(false)}>
+      <AlertDialog
+        open={deleteOpConfirm}
+        onOpenChange={o => !o && setDeleteOpConfirm(false)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Operation?</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-3">
-                <p>This action <strong>cannot be undone</strong>. The following will be permanently deleted:</p>
+                <p>
+                  This action <strong>cannot be undone</strong>. The following
+                  will be permanently deleted:
+                </p>
                 {deleteOpStats ? (
                   <ul className="text-sm space-y-1 pl-1">
                     <li className="flex items-center gap-2">
                       <span className="inline-block w-2 h-2 rounded-full bg-destructive/70" />
-                      <span><strong>{deleteOpStats.sheetCount}</strong> running sheet{deleteOpStats.sheetCount !== 1 ? "s" : ""}</span>
+                      <span>
+                        <strong>{deleteOpStats.sheetCount}</strong> running
+                        sheet{deleteOpStats.sheetCount !== 1 ? "s" : ""}
+                      </span>
                     </li>
                     <li className="flex items-center gap-2">
                       <span className="inline-block w-2 h-2 rounded-full bg-destructive/70" />
-                      <span><strong>{deleteOpStats.rowCount}</strong> observation row{deleteOpStats.rowCount !== 1 ? "s" : ""}</span>
+                      <span>
+                        <strong>{deleteOpStats.rowCount}</strong> observation
+                        row{deleteOpStats.rowCount !== 1 ? "s" : ""}
+                      </span>
                     </li>
                     <li className="flex items-center gap-2">
                       <span className="inline-block w-2 h-2 rounded-full bg-destructive/70" />
-                      <span><strong>{deleteOpStats.targetCount}</strong> target{deleteOpStats.targetCount !== 1 ? "s" : ""}</span>
+                      <span>
+                        <strong>{deleteOpStats.targetCount}</strong> target
+                        {deleteOpStats.targetCount !== 1 ? "s" : ""}
+                      </span>
                     </li>
                   </ul>
                 ) : (
-                  <p className="text-sm text-muted-foreground">Loading details…</p>
+                  <p className="text-sm text-muted-foreground">
+                    Loading details…
+                  </p>
                 )}
               </div>
             </AlertDialogDescription>
@@ -2140,8 +2603,8 @@ export default function OperationDetail() {
               <Input
                 type="date"
                 value={newSheetDate}
-                onChange={(e) => setNewSheetDate(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+                onChange={e => setNewSheetDate(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleCreate()}
                 autoFocus
               />
               <p className="text-xs text-muted-foreground mt-1.5 font-mono truncate">
@@ -2152,17 +2615,25 @@ export default function OperationDetail() {
             {/* Target selector — New / Link Existing / None */}
             <div>
               <label className="text-sm font-medium text-foreground mb-1.5 block">
-                Target <span className="text-muted-foreground font-normal">(optional)</span>
+                Target{" "}
+                <span className="text-muted-foreground font-normal">
+                  (optional)
+                </span>
               </label>
               <div className="flex flex-col gap-2">
                 {/* Operation's existing targets — selectable */}
-                {(operationTargets ?? []).map((t) => (
+                {(operationTargets ?? []).map(t => (
                   <button
                     key={t.id}
                     type="button"
                     onClick={() => {
-                      if (newTargetId === t.id) { setNewTargetId(null); setTargetMode("none"); }
-                      else { setNewTargetId(t.id); setTargetMode("link"); }
+                      if (newTargetId === t.id) {
+                        setNewTargetId(null);
+                        setTargetMode("none");
+                      } else {
+                        setNewTargetId(t.id);
+                        setTargetMode("link");
+                      }
                     }}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-colors w-full ${
                       newTargetId === t.id
@@ -2171,8 +2642,12 @@ export default function OperationDetail() {
                     }`}
                   >
                     <Target className="w-4 h-4 shrink-0" />
-                    <span className="text-sm font-medium flex-1 truncate">{t.name}</span>
-                    {newTargetId === t.id && <CheckCircle2 className="w-4 h-4 shrink-0" />}
+                    <span className="text-sm font-medium flex-1 truncate">
+                      {t.name}
+                    </span>
+                    {newTargetId === t.id && (
+                      <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    )}
                   </button>
                 ))}
 
@@ -2186,58 +2661,127 @@ export default function OperationDetail() {
                         className="h-8 text-sm"
                         placeholder="Search by name, TGT code or operation…"
                         value={targetSearch}
-                        onChange={(e) => setTargetSearch(e.target.value)}
+                        onChange={e => setTargetSearch(e.target.value)}
                       />
-                      <Button size="sm" variant="ghost" className="shrink-0" onClick={() => { setTargetMode("none"); setTargetSearch(""); }}>Cancel</Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="shrink-0"
+                        onClick={() => {
+                          setTargetMode("none");
+                          setTargetSearch("");
+                        }}
+                      >
+                        Cancel
+                      </Button>
                     </div>
                     <div className="max-h-52 overflow-y-auto flex flex-col gap-1">
                       {(allTargetsForSheet ?? []).filter(t => {
                         const q = targetSearch.toLowerCase();
-                        return t.name.toLowerCase().includes(q) || (t.tgt ?? "").toLowerCase().includes(q) || (t.operationName ?? "").toLowerCase().includes(q);
+                        return (
+                          t.name.toLowerCase().includes(q) ||
+                          (t.tgt ?? "").toLowerCase().includes(q) ||
+                          (t.operationName ?? "").toLowerCase().includes(q)
+                        );
                       }).length === 0 ? (
-                        <p className="text-xs text-muted-foreground text-center py-4">{targetSearch ? "No matching targets" : "Start typing to search"}</p>
+                        <p className="text-xs text-muted-foreground text-center py-4">
+                          {targetSearch
+                            ? "No matching targets"
+                            : "Start typing to search"}
+                        </p>
                       ) : (
-                        (allTargetsForSheet ?? []).filter(t => {
-                          const q = targetSearch.toLowerCase();
-                          return t.name.toLowerCase().includes(q) || (t.tgt ?? "").toLowerCase().includes(q) || (t.operationName ?? "").toLowerCase().includes(q);
-                        }).map(t => (
-                          <button
-                            key={t.id}
-                            type="button"
-                            className="flex items-start gap-3 px-3 py-2 rounded-lg hover:bg-muted/60 text-left transition-colors w-full"
-                            onClick={() => { setNewTargetId(t.id); setTargetSearch(""); setTargetMode("link"); }}
-                          >
-                            <Target className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium text-foreground truncate">{t.name}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {t.tgt ? <span className="font-mono mr-2">TGT: {t.tgt}</span> : null}
-                                {t.operationName ? <span>Op: {t.operationName}</span> : null}
-                              </p>
-                            </div>
-                          </button>
-                        ))
+                        (allTargetsForSheet ?? [])
+                          .filter(t => {
+                            const q = targetSearch.toLowerCase();
+                            return (
+                              t.name.toLowerCase().includes(q) ||
+                              (t.tgt ?? "").toLowerCase().includes(q) ||
+                              (t.operationName ?? "").toLowerCase().includes(q)
+                            );
+                          })
+                          .map(t => (
+                            <button
+                              key={t.id}
+                              type="button"
+                              className="flex items-start gap-3 px-3 py-2 rounded-lg hover:bg-muted/60 text-left transition-colors w-full"
+                              onClick={() => {
+                                setNewTargetId(t.id);
+                                setTargetSearch("");
+                                setTargetMode("link");
+                              }}
+                            >
+                              <Target className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-foreground truncate">
+                                  {t.name}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {t.tgt ? (
+                                    <span className="font-mono mr-2">
+                                      TGT: {t.tgt}
+                                    </span>
+                                  ) : null}
+                                  {t.operationName ? (
+                                    <span>Op: {t.operationName}</span>
+                                  ) : null}
+                                </p>
+                              </div>
+                            </button>
+                          ))
                       )}
                     </div>
                   </div>
                 )}
 
                 {/* Selected linked target chip */}
-                {targetMode === "link" && newTargetId !== null && !(operationTargets ?? []).find(t => t.id === newTargetId) && (
-                  <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-primary bg-primary/10 text-primary">
-                    <Target className="w-4 h-4 shrink-0" />
-                    <span className="text-sm font-medium flex-1 truncate">{(allTargetsForSheet ?? []).find(t => t.id === newTargetId)?.name}</span>
-                    <button type="button" onClick={() => { setNewTargetId(null); setTargetMode("none"); }} className="hover:text-destructive"><X className="w-3.5 h-3.5" /></button>
-                  </div>
-                )}
+                {targetMode === "link" &&
+                  newTargetId !== null &&
+                  !(operationTargets ?? []).find(t => t.id === newTargetId) && (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-primary bg-primary/10 text-primary">
+                      <Target className="w-4 h-4 shrink-0" />
+                      <span className="text-sm font-medium flex-1 truncate">
+                        {
+                          (allTargetsForSheet ?? []).find(
+                            t => t.id === newTargetId
+                          )?.name
+                        }
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewTargetId(null);
+                          setTargetMode("none");
+                        }}
+                        className="hover:text-destructive"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
 
                 {/* Action buttons */}
                 {!(targetMode === "link" && newTargetId === null) && (
                   <div className="flex gap-2">
-                    <Button type="button" size="sm" variant="outline" className="gap-2" onClick={() => setCreateTargetDialogOpen(true)}>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="gap-2"
+                      onClick={() => setCreateTargetDialogOpen(true)}
+                    >
                       <Plus className="w-3.5 h-3.5" /> New Target
                     </Button>
-                    <Button type="button" size="sm" variant="outline" className="gap-2" onClick={() => { setTargetMode("link"); setNewTargetId(null); setTargetSearch(""); }}>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="gap-2"
+                      onClick={() => {
+                        setTargetMode("link");
+                        setNewTargetId(null);
+                        setTargetSearch("");
+                      }}
+                    >
                       <Search className="w-3.5 h-3.5" /> Link Existing
                     </Button>
                   </div>
@@ -2248,7 +2792,10 @@ export default function OperationDetail() {
             {/* TEAM */}
             <div>
               <label className="text-sm font-medium text-foreground mb-1 block">
-                TEAM <span className="text-muted-foreground font-normal">(optional)</span>
+                TEAM{" "}
+                <span className="text-muted-foreground font-normal">
+                  (optional)
+                </span>
               </label>
 
               {/* CIN input row */}
@@ -2256,8 +2803,13 @@ export default function OperationDetail() {
                 <Input
                   placeholder="Enter CIN and press Add"
                   value={cinInput}
-                  onChange={(e) => setCinInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddCin(); } }}
+                  onChange={e => setCinInput(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleAddCin();
+                    }
+                  }}
                   className="flex-1"
                 />
                 <Button
@@ -2275,8 +2827,10 @@ export default function OperationDetail() {
               {/* Team group buttons — only shown to admins who have allUsers loaded */}
               {user?.role === "admin" && (
                 <div className="flex gap-1.5 mb-3">
-                  <span className="text-xs text-muted-foreground self-center mr-1">Add team:</span>
-                  {(["TEAM1", "TEAM2", "PTT"] as const).map((t) => (
+                  <span className="text-xs text-muted-foreground self-center mr-1">
+                    Add team:
+                  </span>
+                  {(["TEAM1", "TEAM2", "PTT"] as const).map(t => (
                     <Button
                       key={t}
                       type="button"
@@ -2285,7 +2839,11 @@ export default function OperationDetail() {
                       onClick={() => handleAddTeam(t)}
                       className="text-xs h-7 px-2.5"
                     >
-                      {t === "TEAM1" ? "TEAM 1" : t === "TEAM2" ? "TEAM 2" : "PTT"}
+                      {t === "TEAM1"
+                        ? "TEAM 1"
+                        : t === "TEAM2"
+                          ? "TEAM 2"
+                          : "PTT"}
                     </Button>
                   ))}
                 </div>
@@ -2296,24 +2854,44 @@ export default function OperationDetail() {
                 <div className="rounded-lg border border-border overflow-hidden">
                   <div className="grid grid-cols-[1fr_40px_52px_40px_32px] px-3 py-2 bg-muted/40 border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wide">
                     <span>CIN</span>
-                    <span className="flex items-center gap-1 justify-center" title="Team Leader"><span className="text-yellow-400">★</span> TL</span>
-                    <span className="flex items-center gap-1 justify-center" title="Author"><span className="text-sky-400">✏</span> Author</span>
-                    <span className="flex items-center justify-center"><Camera className="w-3 h-3" /></span>
+                    <span
+                      className="flex items-center gap-1 justify-center"
+                      title="Team Leader"
+                    >
+                      <span className="text-yellow-400">★</span> TL
+                    </span>
+                    <span
+                      className="flex items-center gap-1 justify-center"
+                      title="Author"
+                    >
+                      <span className="text-sky-400">✏</span> Author
+                    </span>
+                    <span className="flex items-center justify-center">
+                      <Camera className="w-3 h-3" />
+                    </span>
                     <span></span>
                   </div>
-                  {cinList.map((entry) => (
+                  {cinList.map(entry => (
                     <div
                       key={entry.cin}
                       className="grid grid-cols-[1fr_40px_52px_40px_32px] items-center px-3 py-2.5 border-b border-border/50 last:border-0 hover:bg-muted/20 transition-colors"
                     >
-                      <span className="text-sm font-mono font-medium text-foreground">{entry.cin}</span>
+                      <span className="text-sm font-mono font-medium text-foreground">
+                        {entry.cin}
+                      </span>
                       {/* Team Leader — radio: selecting one clears all others */}
                       <div className="flex items-center justify-center">
                         <Checkbox
                           checked={!!entry.isTeamLeader}
                           onCheckedChange={() =>
-                            setCinList((prev) =>
-                              prev.map((c) => ({ ...c, isTeamLeader: c.cin === entry.cin ? !entry.isTeamLeader : false }))
+                            setCinList(prev =>
+                              prev.map(c => ({
+                                ...c,
+                                isTeamLeader:
+                                  c.cin === entry.cin
+                                    ? !entry.isTeamLeader
+                                    : false,
+                              }))
                             )
                           }
                           className="data-[state=checked]:bg-yellow-500 data-[state=checked]:border-yellow-500"
@@ -2324,8 +2902,12 @@ export default function OperationDetail() {
                         <Checkbox
                           checked={!!entry.isAuthor}
                           onCheckedChange={() =>
-                            setCinList((prev) =>
-                              prev.map((c) => ({ ...c, isAuthor: c.cin === entry.cin ? !entry.isAuthor : false }))
+                            setCinList(prev =>
+                              prev.map(c => ({
+                                ...c,
+                                isAuthor:
+                                  c.cin === entry.cin ? !entry.isAuthor : false,
+                              }))
                             )
                           }
                           className="data-[state=checked]:bg-sky-500 data-[state=checked]:border-sky-500"
@@ -2351,7 +2933,9 @@ export default function OperationDetail() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => handleDialogClose(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => handleDialogClose(false)}>
+              Cancel
+            </Button>
             <Button
               onClick={handleCreate}
               disabled={!newSheetDate || createSheet.isPending}
@@ -2377,19 +2961,25 @@ export default function OperationDetail() {
       />
 
       {/* Delete Confirmation */}
-      <AlertDialog open={deleteId !== null} onOpenChange={(o) => !o && setDeleteId(null)}>
+      <AlertDialog
+        open={deleteId !== null}
+        onOpenChange={o => !o && setDeleteId(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Running Sheet?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete the running sheet and all its rows, members, and certifications. This action cannot be undone.
+              This will permanently delete the running sheet and all its rows,
+              members, and certifications. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => deleteId !== null && deleteSheet.mutate({ id: deleteId })}
+              onClick={() =>
+                deleteId !== null && deleteSheet.mutate({ id: deleteId })
+              }
             >
               Delete
             </AlertDialogAction>
@@ -2401,7 +2991,9 @@ export default function OperationDetail() {
       {copyMoveSheet && (
         <CopyMoveSheetDialog
           open={copyMoveSheet !== null}
-          onOpenChange={(v) => { if (!v) setCopyMoveSheet(null); }}
+          onOpenChange={v => {
+            if (!v) setCopyMoveSheet(null);
+          }}
           sheetId={copyMoveSheet.id}
           sheetTitle={copyMoveSheet.title}
           currentOperationId={operationId}

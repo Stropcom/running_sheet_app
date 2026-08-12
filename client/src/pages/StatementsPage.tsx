@@ -32,15 +32,23 @@ function formatDateShort(ts: number) {
 
 // ─── Step indicator ───────────────────────────────────────────────────────────
 
-function StepBadge({ n, active, done }: { n: number; active: boolean; done: boolean }) {
+function StepBadge({
+  n,
+  active,
+  done,
+}: {
+  n: number;
+  active: boolean;
+  done: boolean;
+}) {
   return (
     <div
       className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold shrink-0 transition-colors ${
         done
           ? "bg-emerald-500 text-white"
           : active
-          ? "bg-primary text-primary-foreground"
-          : "bg-muted text-muted-foreground"
+            ? "bg-primary text-primary-foreground"
+            : "bg-muted text-muted-foreground"
       }`}
     >
       {done ? "✓" : n}
@@ -69,31 +77,34 @@ export default function StatementsPage() {
 
   // ── Data fetching ──────────────────────────────────────────────────────────
 
-  const { data: operations, isLoading: opsLoading } = trpc.operation.list.useQuery(undefined, {
-    enabled: isAuthenticated,
-  });
+  const { data: operations, isLoading: opsLoading } =
+    trpc.operation.list.useQuery(undefined, {
+      enabled: isAuthenticated,
+    });
 
   const selectedOp = useMemo(
-    () => operations?.find((o) => o.id === selectedOpId) ?? null,
+    () => operations?.find(o => o.id === selectedOpId) ?? null,
     [operations, selectedOpId]
   );
 
-  const { data: sheets, isLoading: sheetsLoading } = trpc.sheet.listByOperation.useQuery(
-    { operationId: selectedOpId ?? 0 },
-    { enabled: !!selectedOpId }
-  );
+  const { data: sheets, isLoading: sheetsLoading } =
+    trpc.sheet.listByOperation.useQuery(
+      { operationId: selectedOpId ?? 0 },
+      { enabled: !!selectedOpId }
+    );
 
-  const { data: previewData, isLoading: previewLoading } = trpc.statement.previewData.useQuery(
-    { sheetIds: selectedSheetIds },
-    { enabled: selectedSheetIds.length > 0 }
-  );
+  const { data: previewData, isLoading: previewLoading } =
+    trpc.statement.previewData.useQuery(
+      { sheetIds: selectedSheetIds },
+      { enabled: selectedSheetIds.length > 0 }
+    );
 
   const generateMutation = trpc.statement.generate.useMutation({
-    onError: (e) => {
+    onError: e => {
       toast.error(e.message);
       setGenerating(false);
     },
-    onSuccess: (data) => {
+    onSuccess: data => {
       setGenerating(false);
       // Notify about any skipped CINs
       if (data.skipped && data.skipped.length > 0) {
@@ -124,7 +135,8 @@ export default function StatementsPage() {
 
   // ── Derived state ──────────────────────────────────────────────────────────
 
-  const step = selectedOpId === null ? 1 : selectedSheetIds.length === 0 ? 2 : 3;
+  const step =
+    selectedOpId === null ? 1 : selectedSheetIds.length === 0 ? 2 : 3;
 
   // For non-admin, auto-filter previewData to own CIN
   // Split into qualifying (can generate) and excluded (no statement possible)
@@ -133,18 +145,18 @@ export default function StatementsPage() {
     let filtered = previewData;
     if (!isAdmin) {
       const myCin = user?.cin?.toUpperCase() ?? "";
-      filtered = previewData.filter((d) => d.cin === myCin);
+      filtered = previewData.filter(d => d.cin === myCin);
     }
     return {
-      availableCins: filtered.filter((d) => !d.excludedReason),
-      excludedCins: filtered.filter((d) => !!d.excludedReason),
+      availableCins: filtered.filter(d => !d.excludedReason),
+      excludedCins: filtered.filter(d => !!d.excludedReason),
     };
   }, [previewData, isAdmin, user?.cin]);
 
   // Auto-select own CIN for non-admin when previewData loads
   useMemo(() => {
     if (!isAdmin && availableCins.length > 0) {
-      setSelectedCins(availableCins.map((d) => d.cin));
+      setSelectedCins(availableCins.map(d => d.cin));
     }
   }, [availableCins, isAdmin]);
 
@@ -156,8 +168,8 @@ export default function StatementsPage() {
   // ── Handlers ───────────────────────────────────────────────────────────────
 
   const toggleSheet = (id: number) => {
-    setSelectedSheetIds((prev) =>
-      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
+    setSelectedSheetIds(prev =>
+      prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]
     );
     setSelectedCins([]);
   };
@@ -167,14 +179,14 @@ export default function StatementsPage() {
     if (selectedSheetIds.length === sheets.length) {
       setSelectedSheetIds([]);
     } else {
-      setSelectedSheetIds(sheets.map((s) => s.id));
+      setSelectedSheetIds(sheets.map(s => s.id));
     }
     setSelectedCins([]);
   };
 
   const toggleCin = (cin: string) => {
-    setSelectedCins((prev) =>
-      prev.includes(cin) ? prev.filter((c) => c !== cin) : [...prev, cin]
+    setSelectedCins(prev =>
+      prev.includes(cin) ? prev.filter(c => c !== cin) : [...prev, cin]
     );
   };
 
@@ -182,7 +194,7 @@ export default function StatementsPage() {
     if (selectedCins.length === availableCins.length) {
       setSelectedCins([]);
     } else {
-      setSelectedCins(availableCins.map((d) => d.cin));
+      setSelectedCins(availableCins.map(d => d.cin));
     }
   };
 
@@ -205,14 +217,21 @@ export default function StatementsPage() {
       <div className="max-w-3xl mx-auto py-8 px-4 flex flex-col gap-8">
         {/* Page header */}
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" className="shrink-0" onClick={() => navigate("/")}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0"
+            onClick={() => navigate("/")}
+          >
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
             <FileText className="w-5 h-5 text-primary" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-foreground">Produce Statement</h1>
+            <h1 className="text-xl font-bold text-foreground">
+              Produce Statement
+            </h1>
             <p className="text-sm text-muted-foreground">
               Generate a court-ready surveillance statement per officer CIN
             </p>
@@ -228,11 +247,13 @@ export default function StatementsPage() {
 
           {opsLoading ? (
             <div className="flex flex-col gap-2 pl-10">
-              {[1, 2, 3].map((i) => <Skeleton key={i} className="h-10 w-full" />)}
+              {[1, 2, 3].map(i => (
+                <Skeleton key={i} className="h-10 w-full" />
+              ))}
             </div>
           ) : (
             <div className="pl-10 flex flex-col gap-1.5">
-              {(operations ?? []).map((op) => (
+              {(operations ?? []).map(op => (
                 <button
                   key={op.id}
                   onClick={() => {
@@ -253,7 +274,9 @@ export default function StatementsPage() {
                 </button>
               ))}
               {(operations ?? []).length === 0 && (
-                <p className="text-sm text-muted-foreground italic pl-1">No operations found.</p>
+                <p className="text-sm text-muted-foreground italic pl-1">
+                  No operations found.
+                </p>
               )}
             </div>
           )}
@@ -264,12 +287,16 @@ export default function StatementsPage() {
           <section className="flex flex-col gap-3">
             <div className="flex items-center gap-3">
               <StepBadge n={2} active={step === 2} done={step > 2} />
-              <h2 className="font-semibold text-foreground">Choose Running Sheet(s)</h2>
+              <h2 className="font-semibold text-foreground">
+                Choose Running Sheet(s)
+              </h2>
             </div>
 
             {sheetsLoading ? (
               <div className="flex flex-col gap-2 pl-10">
-                {[1, 2].map((i) => <Skeleton key={i} className="h-10 w-full" />)}
+                {[1, 2].map(i => (
+                  <Skeleton key={i} className="h-10 w-full" />
+                ))}
               </div>
             ) : (
               <div className="pl-10 flex flex-col gap-2">
@@ -283,10 +310,12 @@ export default function StatementsPage() {
                     ) : (
                       <Square className="w-4 h-4" />
                     )}
-                    {selectedSheetIds.length === (sheets ?? []).length ? "Deselect all" : "Select all"}
+                    {selectedSheetIds.length === (sheets ?? []).length
+                      ? "Deselect all"
+                      : "Select all"}
                   </button>
                 )}
-                {(sheets ?? []).map((sheet) => (
+                {(sheets ?? []).map(sheet => (
                   <label
                     key={sheet.id}
                     className={`flex items-center gap-3 px-4 py-3 rounded-lg border cursor-pointer transition-colors ${
@@ -300,16 +329,24 @@ export default function StatementsPage() {
                       onCheckedChange={() => toggleSheet(sheet.id)}
                     />
                     <div className="flex flex-col min-w-0">
-                      <span className="font-medium text-sm text-foreground truncate">{sheet.title}</span>
+                      <span className="font-medium text-sm text-foreground truncate">
+                        {sheet.title}
+                      </span>
                       <span className="text-xs text-muted-foreground flex items-center gap-1">
                         <Calendar className="w-3 h-3" />
-                        {formatDateShort(new Date(sheet.createdAt).getTime())}
+                        {formatDateShort(
+                          sheet.sheetDate
+                            ? new Date(`${sheet.sheetDate}T00:00:00`).getTime()
+                            : new Date(sheet.createdAt).getTime()
+                        )}
                       </span>
                     </div>
                   </label>
                 ))}
                 {(sheets ?? []).length === 0 && (
-                  <p className="text-sm text-muted-foreground italic">No running sheets for this operation.</p>
+                  <p className="text-sm text-muted-foreground italic">
+                    No running sheets for this operation.
+                  </p>
                 )}
               </div>
             )}
@@ -322,14 +359,18 @@ export default function StatementsPage() {
             <div className="flex items-center gap-3">
               <StepBadge n={3} active={step === 3} done={false} />
               <h2 className="font-semibold text-foreground">
-                {isAdmin ? "Choose CIN(s) to produce statements for" : "Confirm your CIN"}
+                {isAdmin
+                  ? "Choose CIN(s) to produce statements for"
+                  : "Confirm your CIN"}
               </h2>
             </div>
 
             <div className="pl-10 flex flex-col gap-2">
               {previewLoading ? (
                 <div className="flex flex-col gap-2">
-                  {[1, 2, 3].map((i) => <Skeleton key={i} className="h-14 w-full" />)}
+                  {[1, 2, 3].map(i => (
+                    <Skeleton key={i} className="h-14 w-full" />
+                  ))}
                 </div>
               ) : availableCins.length === 0 && excludedCins.length === 0 ? (
                 <div className="flex items-center gap-2 text-sm text-amber-400 bg-amber-400/10 border border-amber-400/20 rounded-lg px-4 py-3">
@@ -344,7 +385,8 @@ export default function StatementsPage() {
                   {availableCins.length === 0 && excludedCins.length > 0 && (
                     <div className="flex items-center gap-2 text-sm text-amber-400 bg-amber-400/10 border border-amber-400/20 rounded-lg px-4 py-3">
                       <AlertCircle className="w-4 h-4 shrink-0" />
-                      No qualifying observation rows found — all CINs are excluded (see below).
+                      No qualifying observation rows found — all CINs are
+                      excluded (see below).
                     </div>
                   )}
                   {isAdmin && availableCins.length > 1 && (
@@ -357,10 +399,12 @@ export default function StatementsPage() {
                       ) : (
                         <Square className="w-4 h-4" />
                       )}
-                      {selectedCins.length === availableCins.length ? "Deselect all" : "Select all"}
+                      {selectedCins.length === availableCins.length
+                        ? "Deselect all"
+                        : "Select all"}
                     </button>
                   )}
-                  {availableCins.map((cinData) => (
+                  {availableCins.map(cinData => (
                     <label
                       key={cinData.cin}
                       className={`flex items-start gap-3 px-4 py-3 rounded-lg border transition-colors ${
@@ -380,29 +424,42 @@ export default function StatementsPage() {
                       )}
                       {!isAdmin && (
                         <div className="w-4 h-4 mt-0.5 rounded-sm bg-primary/20 border border-primary/40 flex items-center justify-center shrink-0">
-                          <span className="text-[10px] text-primary font-bold">✓</span>
+                          <span className="text-[10px] text-primary font-bold">
+                            ✓
+                          </span>
                         </div>
                       )}
                       <div className="flex flex-col gap-1 min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="font-mono font-bold text-sm text-foreground">{cinData.cin}</span>
-                          <span className="text-sm text-muted-foreground">{cinData.name}</span>
+                          <span className="font-mono font-bold text-sm text-foreground">
+                            {cinData.cin}
+                          </span>
+                          <span className="text-sm text-muted-foreground">
+                            {cinData.name}
+                          </span>
                         </div>
                         <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
                           <span className="flex items-center gap-1">
                             <Calendar className="w-3 h-3" />
-                            {cinData.surveillanceDates.length} surveillance day{cinData.surveillanceDates.length !== 1 ? "s" : ""}
+                            {cinData.surveillanceDates.length} surveillance day
+                            {cinData.surveillanceDates.length !== 1 ? "s" : ""}
                           </span>
                           {cinData.authorDates.length > 0 && (
                             <span className="flex items-center gap-1 text-sky-400">
                               <PenLine className="w-3 h-3" />
-                              RS Author: {cinData.authorDates.map(formatDateShort).join(", ")}
+                              RS Author:{" "}
+                              {cinData.authorDates
+                                .map(formatDateShort)
+                                .join(", ")}
                             </span>
                           )}
                           {cinData.imageDates.length > 0 && (
                             <span className="flex items-center gap-1 text-amber-400">
                               <Camera className="w-3 h-3" />
-                              Images: {cinData.imageDates.map(formatDateShort).join(", ")}
+                              Images:{" "}
+                              {cinData.imageDates
+                                .map(formatDateShort)
+                                .join(", ")}
                             </span>
                           )}
                         </div>
@@ -416,7 +473,7 @@ export default function StatementsPage() {
                       <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                         Excluded — no statement generated
                       </p>
-                      {excludedCins.map((cinData) => (
+                      {excludedCins.map(cinData => (
                         <div
                           key={cinData.cin}
                           className="flex items-start gap-3 px-4 py-3 rounded-lg border border-dashed border-muted-foreground/30 bg-muted/20 opacity-70"
@@ -424,8 +481,12 @@ export default function StatementsPage() {
                           <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-amber-400" />
                           <div className="flex flex-col gap-1 min-w-0 flex-1">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-mono font-bold text-sm text-foreground">{cinData.cin}</span>
-                              <span className="text-sm text-muted-foreground">{cinData.name}</span>
+                              <span className="font-mono font-bold text-sm text-foreground">
+                                {cinData.cin}
+                              </span>
+                              <span className="text-sm text-muted-foreground">
+                                {cinData.name}
+                              </span>
                               <span className="text-xs px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-500 border border-amber-400/30">
                                 {cinData.excludedReason}
                               </span>

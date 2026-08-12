@@ -3655,11 +3655,22 @@ function toPerthDateISO(d: Date): string {
 }
 
 /** Add (or subtract) days to a YYYY-MM-DD string, Perth-anchored — same
- * anchoring approach as getRowsBySheetId's day-offset math above. */
-function addDaysISO(dateISO: string, days: number): string {
+ * anchoring approach as getRowsBySheetId's day-offset math above.
+ *
+ * `new Date(dateISO + "T00:00:00+08:00")`'s underlying UTC instant is
+ * always 16:00 on the PREVIOUS UTC calendar day (Perth midnight = UTC-8h),
+ * so reading .toISOString() straight off it after setUTCDate() reads the
+ * UTC day, not the Perth day — silently one day short for every call,
+ * including days=0. Re-anchor back to Perth by shifting +8h before slicing,
+ * same as toPerthDateISO does. (This was wrong for years — addDaysISO(x, 6)
+ * for a Monday-start week produced Saturday instead of Sunday, silently
+ * dropping the last day of every week from any range built with it, e.g.
+ * the Weekly Activity Report's weekEnd and the Heat Map's last7/last30
+ * windows.) */
+export function addDaysISO(dateISO: string, days: number): string {
   const d = new Date(dateISO + "T00:00:00+08:00");
   d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
+  return new Date(d.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
 // A row only marks a genuine sighting of the target at a location if it
@@ -3725,11 +3736,21 @@ export async function getIntelligenceHeatMapLocations(params: {
 
   // ── Resolve the scoped set of sheets (Operation, optionally + Target) ──────
   let sheetIds: number[];
-  const sheetCreatedAt = new Map<number, Date>();
+  // Keyed by sheet id — sheetDate (the picker date) takes priority over
+  // createdAt when resolving a row's date below; createdAt is kept only as
+  // the fallback for legacy sheets with no sheetDate.
+  const sheetDateInfo = new Map<
+    number,
+    { createdAt: Date; sheetDate: string | null }
+  >();
 
   if (params.when.mode === "sheet") {
     const sheet = await db
-      .select({ id: runningSheets.id, createdAt: runningSheets.createdAt })
+      .select({
+        id: runningSheets.id,
+        createdAt: runningSheets.createdAt,
+        sheetDate: runningSheets.sheetDate,
+      })
       .from(runningSheets)
       .where(
         and(
@@ -3741,7 +3762,10 @@ export async function getIntelligenceHeatMapLocations(params: {
       .limit(1);
     if (!sheet.length) return [];
     sheetIds = [sheet[0].id];
-    sheetCreatedAt.set(sheet[0].id, sheet[0].createdAt);
+    sheetDateInfo.set(sheet[0].id, {
+      createdAt: sheet[0].createdAt,
+      sheetDate: sheet[0].sheetDate,
+    });
   } else {
     const conditions = [
       eq(runningSheets.operationId, params.operationId),
@@ -3750,12 +3774,20 @@ export async function getIntelligenceHeatMapLocations(params: {
     if (params.targetId)
       conditions.push(eq(runningSheets.targetId, params.targetId));
     const sheets = await db
-      .select({ id: runningSheets.id, createdAt: runningSheets.createdAt })
+      .select({
+        id: runningSheets.id,
+        createdAt: runningSheets.createdAt,
+        sheetDate: runningSheets.sheetDate,
+      })
       .from(runningSheets)
       .where(and(...conditions));
     if (!sheets.length) return [];
     sheetIds = sheets.map(s => s.id);
-    for (const s of sheets) sheetCreatedAt.set(s.id, s.createdAt);
+    for (const s of sheets)
+      sheetDateInfo.set(s.id, {
+        createdAt: s.createdAt,
+        sheetDate: s.sheetDate,
+      });
   }
   const sheetIdSet = new Set(sheetIds);
 
@@ -3864,10 +3896,11 @@ export async function getIntelligenceHeatMapLocations(params: {
       if (!OBSERVATION_SIGNAL_RE.test(row.observation)) continue;
 
       if (hasDateWindow) {
+        const info = sheetDateInfo.get(occ.sheetId);
         const resolvedDate =
           row.rowDate ??
           addDaysISO(
-            toPerthDateISO(sheetCreatedAt.get(occ.sheetId) ?? new Date()),
+            info?.sheetDate ?? toPerthDateISO(info?.createdAt ?? new Date()),
             row.dayOffset
           );
         if (resolvedDate < startISO || resolvedDate > endISO) continue;
@@ -4093,11 +4126,17 @@ export async function getWeeklyActivityReport(
   const opById = new Map(ops.map(o => [o.id, o]));
   const targetById = new Map(targetRows.map(t => [t.id, t]));
 
+  // Priority: explicit rowDate, then the sheet's picker date (sheetDate —
+  // the authoritative calendar date for the sheet, distinct from createdAt),
+  // then createdAt only as a last resort for legacy sheets with no
+  // sheetDate. Falling straight to createdAt (as this used to) silently
+  // misdated every row on a sheet created for a different day than it was
+  // actually saved, dropping it out of every week's report entirely.
   function resolveRowDate(row: (typeof rows)[number]): string {
     if (row.rowDate) return row.rowDate;
     const sheet = sheetById.get(row.sheetId);
     return addDaysISO(
-      toPerthDateISO(sheet?.createdAt ?? new Date()),
+      sheet?.sheetDate ?? toPerthDateISO(sheet?.createdAt ?? new Date()),
       row.dayOffset
     );
   }
@@ -10489,12 +10528,17 @@ export async function computeWitnessListData(
     Awaited<ReturnType<typeof getRunningSheetById>>
   >[];
 
-  // Sort sheets by date (YYYYMMDD prefix or createdAt)
+  // Sort sheets by date — read sheetDate directly (the source the title's
+  // date prefix is itself generated from) rather than re-deriving it by
+  // regex-parsing the title, falling back to createdAt for legacy sheets
+  // with no sheetDate.
   const getSheetDate = (
     sheet: NonNullable<Awaited<ReturnType<typeof getRunningSheetById>>>
   ) => {
-    const m = sheet.title.match(/^(\d{4})(\d{2})(\d{2})/);
-    if (m) return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    if (sheet.sheetDate) {
+      const [y, mo, da] = sheet.sheetDate.split("-").map(Number);
+      return Date.UTC(y, mo - 1, da);
+    }
     const d = new Date(
       sheet.createdAt instanceof Date
         ? sheet.createdAt.getTime()

@@ -118,6 +118,7 @@ import {
   getRunningSheetById,
   computeWitnessListData,
   getRunningSheets,
+  addDaysISO,
   getRunningSheetsByOperation,
   getRunningSheetsByOperations,
   getUserById,
@@ -1169,13 +1170,27 @@ export const appRouter = router({
         await guardActiveSheet(input.sheetId);
         const existingRows = await getRowsBySheetId(input.sheetId);
         const rowNumber = existingRows.length + 1;
+        // A row always gets a concrete rowDate at creation, even when the
+        // caller doesn't supply one — derived from the sheet's picker date
+        // (sheetDate), never left to be inferred later from createdAt, which
+        // is just when this DB row happened to be inserted and can differ
+        // from the sheet's actual calendar date (e.g. a sheet backfilled for
+        // a past/future date). Legacy sheets with no sheetDate yet are the
+        // only case this still leaves null.
+        let rowDate = input.rowDate;
+        if (!rowDate) {
+          const sheet = await getRunningSheetById(input.sheetId);
+          if (sheet?.sheetDate) {
+            rowDate = addDaysISO(sheet.sheetDate, input.dayOffset ?? 0);
+          }
+        }
         const id = await createSheetRow({
           sheetId: input.sheetId,
           rowNumber,
           time: input.time,
           timeMinutes: input.timeMinutes,
           dayOffset: input.dayOffset ?? 0,
-          rowDate: input.rowDate,
+          rowDate,
           observation: input.observation,
           isLocked: false,
         });
@@ -3288,7 +3303,9 @@ export const appRouter = router({
             teamLabel,
             teamCins: orderTeamCins(cinRoster).join(", ") || null,
             operationName: operation?.name ?? null,
-            dayDate: format(new Date(sheet.createdAt), "d MMMM yyyy"),
+            dayDate: sheet.sheetDate
+              ? format(new Date(`${sheet.sheetDate}T00:00:00`), "d MMMM yyyy")
+              : format(new Date(sheet.createdAt), "d MMMM yyyy"),
             startTime: derivedStartTime,
             finishTime: derivedFinishTime,
             targetName: target?.name ?? sheet.targetName ?? null,
@@ -3691,7 +3708,9 @@ export const appRouter = router({
        * Extract a UTC-safe day start from a title that begins with YYYYMMDD,
        * e.g. "20260702 - FOREST (OSBORNE)" → 2026-07-02T00:00:00Z.
        * Falls back to the UTC date of the createdAt timestamp so no timezone
-       * shift occurs on the server (which runs in UTC).
+       * shift occurs on the server (which runs in UTC). Operations have no
+       * picker-set date field of their own, so this title-regex approach is
+       * still the right one for them.
        */
       function dayStartFromTitleOrDate(
         title: string,
@@ -3709,6 +3728,12 @@ export const appRouter = router({
         return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
       }
 
+      /** UTC-safe day start from a YYYY-MM-DD string. */
+      function dayStartFromISODate(dateISO: string): number {
+        const [y, mo, da] = dateISO.split("-").map(Number);
+        return Date.UTC(y, mo - 1, da);
+      }
+
       for (const op of operations) {
         const dayStart = dayStartFromTitleOrDate(op.name, op.createdAt);
         events.push({
@@ -3724,7 +3749,14 @@ export const appRouter = router({
       }
 
       for (const sheet of sheets) {
-        const dayStart = dayStartFromTitleOrDate(sheet.title, sheet.createdAt);
+        // Read the sheet's picker date directly rather than re-deriving it
+        // by parsing the title (title is generated from sheetDate, so this
+        // used to happen to agree, but only by coincidence of format — this
+        // reads the source field). Legacy sheets predating sheetDate still
+        // fall back to the title/createdAt parse.
+        const dayStart = sheet.sheetDate
+          ? dayStartFromISODate(sheet.sheetDate)
+          : dayStartFromTitleOrDate(sheet.title, sheet.createdAt);
         const op = operations.find(o => o.id === sheet.operationId);
         events.push({
           id: `sheet-${sheet.id}`,
@@ -3778,7 +3810,9 @@ export const appRouter = router({
         >();
 
         for (const sheet of validSheets) {
-          const sheetDate = new Date(sheet.createdAt).setHours(0, 0, 0, 0);
+          const sheetDate = sheet.sheetDate
+            ? new Date(`${sheet.sheetDate}T00:00:00+08:00`).getTime()
+            : new Date(sheet.createdAt).setHours(0, 0, 0, 0);
           let roster: {
             cin: string;
             hasImages?: boolean;
@@ -3955,15 +3989,13 @@ export const appRouter = router({
         const PHOTO_PATTERN = /photograph|photo\/s|pt\b|video|image/i;
 
         for (const sheet of validSheets) {
-          // Derive date from YYYYMMDD prefix in title (same logic as calendar events)
+          // Read the sheet's picker date directly (falls back to createdAt
+          // only for legacy sheets predating sheetDate) — not the title,
+          // which is only ever a rendering of this same field.
           let sheetDate: number;
-          const titleMatch = sheet.title.match(/^(\d{4})(\d{2})(\d{2})/);
-          if (titleMatch) {
-            sheetDate = Date.UTC(
-              Number(titleMatch[1]),
-              Number(titleMatch[2]) - 1,
-              Number(titleMatch[3])
-            );
+          if (sheet.sheetDate) {
+            const [y, mo, da] = sheet.sheetDate.split("-").map(Number);
+            sheetDate = Date.UTC(y, mo - 1, da);
           } else {
             const d = new Date(
               sheet.createdAt instanceof Date
@@ -4212,10 +4244,13 @@ export const appRouter = router({
       .query(async ({ input }) => {
         const sheets = await getRunningSheetsByOperation(input.operationId);
         if (!sheets || sheets.length === 0) return { start: null, end: null };
-        // Extract date from YYYYMMDD prefix in title, fall back to createdAt
+        // Read the sheet's picker date directly, falling back to createdAt
+        // only for legacy sheets predating sheetDate.
         const getDate = (s: (typeof sheets)[0]) => {
-          const m = s.title.match(/^(\d{4})(\d{2})(\d{2})/);
-          if (m) return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+          if (s.sheetDate) {
+            const [y, mo, da] = s.sheetDate.split("-").map(Number);
+            return Date.UTC(y, mo - 1, da);
+          }
           return s.createdAt instanceof Date
             ? s.createdAt.getTime()
             : new Date(s.createdAt).getTime();

@@ -165,9 +165,9 @@ export default function TodoGovernancePage() {
           </div>
         )}
         {!isLoading && count > 0 && viewMode === "folder" && (
-          <div className="rounded-xl border border-border/50 overflow-hidden">
+          <div className="space-y-3">
             {Object.entries(govByOp).map(([opId, group]) => (
-              <div key={opId}>
+              <div key={opId} className="rounded-xl border border-border/50 overflow-hidden bg-card">
                 <div className="flex items-center gap-2 px-4 py-2 bg-muted/20 border-b border-border/20">
                   <Building2 className="w-3 h-3 text-muted-foreground shrink-0" />
                   <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">

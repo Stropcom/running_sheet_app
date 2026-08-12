@@ -11,7 +11,6 @@ import {
   AlertTriangle,
   CheckCircle2,
 } from "lucide-react";
-import { ViewToggle } from "@/components/ViewToggle";
 import { useViewMode } from "@/contexts/ViewModeContext";
 import { useState } from "react";
 import { useLocation } from "wouter";
@@ -299,7 +298,6 @@ export default function GovernanceListPage() {
               Running sheet write-off checklist — select a sheet to review
             </p>
           </div>
-          <ViewToggle />
         </div>
 
         {!operations || operations.length === 0 ? (

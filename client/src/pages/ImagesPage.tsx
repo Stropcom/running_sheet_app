@@ -3,7 +3,6 @@ import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ViewToggle } from "@/components/ViewToggle";
 import { useViewMode } from "@/contexts/ViewModeContext";
 import {
   FolderOpen,
@@ -114,7 +113,6 @@ function OperationFolderList({
             <Upload className="w-3.5 h-3.5" />
             Upload
           </Button>
-          <ViewToggle />
         </div>
       </div>
 

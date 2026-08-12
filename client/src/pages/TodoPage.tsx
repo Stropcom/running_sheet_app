@@ -13,7 +13,6 @@ import {
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
-import { ViewToggle } from "@/components/ViewToggle";
 import { useViewMode } from "@/contexts/ViewModeContext";
 
 export default function TodoPage() {
@@ -62,7 +61,6 @@ export default function TodoPage() {
               {count} sheet{count !== 1 ? "s" : ""}
             </Badge>
           )}
-          <ViewToggle />
         </div>
 
         {/* Loading */}

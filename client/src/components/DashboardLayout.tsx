@@ -31,7 +31,7 @@ import {
   DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu";
 import { ViewToggle } from "./ViewToggle";
-import type { ViewMode } from "@/contexts/ViewModeContext";
+import { useViewMode } from "@/contexts/ViewModeContext";
 import {
   SIDEBAR_COOKIE_NAME,
   Sidebar,
@@ -1136,7 +1136,6 @@ function SectionAccentBar() {
 }
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
-const SIDEBAR_VIEW_MODE_KEY = "sidebar-view-mode";
 const DEFAULT_WIDTH = 260;
 const MIN_WIDTH = 200;
 const MAX_WIDTH = 400;
@@ -1343,13 +1342,7 @@ function DashboardLayoutContent({
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const sidebarScrollRef = useRef<HTMLDivElement>(null);
-  const [sidebarViewMode, setSidebarViewMode] = useState<ViewMode>(() => {
-    const saved = localStorage.getItem(SIDEBAR_VIEW_MODE_KEY);
-    return saved === "tile" ? "tile" : "folder";
-  });
-  useEffect(() => {
-    localStorage.setItem(SIDEBAR_VIEW_MODE_KEY, sidebarViewMode);
-  }, [sidebarViewMode]);
+  const { viewMode } = useViewMode();
 
   // Remembers whether the folder menu was open right before the page's
   // right-hand pane (e.g. the map's Map Settings) auto-closed it, so closing
@@ -1655,6 +1648,7 @@ function DashboardLayoutContent({
               <PanelLeft className="h-6 w-6" />
               <span>Folders</span>
             </button>
+            <ViewToggle />
             <button
               onClick={() => void refresh()}
               disabled={refreshing}
@@ -1669,12 +1663,6 @@ function DashboardLayoutContent({
             <NotificationBell
               className="hover:bg-sidebar-accent h-10 w-10"
               iconClassName="h-5 w-5 text-sidebar-foreground/70"
-            />
-            <ViewToggle
-              value={sidebarViewMode}
-              onChange={setSidebarViewMode}
-              folderLabel="Folder view"
-              tileLabel="Tile view"
             />
           </div>
 
@@ -1765,7 +1753,7 @@ function DashboardLayoutContent({
               lastSidebarScrollTop = e.currentTarget.scrollTop;
             }}
           >
-            {sidebarViewMode === "tile" && !isCollapsed ? (
+            {viewMode === "tile" && !isCollapsed ? (
               <div className="grid grid-cols-2 gap-2 px-2">
                 <DndContext
                   sensors={sensors}
@@ -2232,12 +2220,7 @@ function DashboardLayoutContent({
                 className="h-11 w-11 hover:bg-accent"
                 iconClassName="h-6 w-6 text-muted-foreground"
               />
-              <ViewToggle
-                value={sidebarViewMode}
-                onChange={setSidebarViewMode}
-                folderLabel="Folder view"
-                tileLabel="Tile view"
-              />
+              <ViewToggle />
               {/* Active RS quick-link (mobile) */}
               <button
                 onClick={() => {

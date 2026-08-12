@@ -22,7 +22,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Plus, Search, FolderOpen, ChevronRight, Trash2, Calendar, Hash, Building2, Scale, Archive, WifiOff, LayoutGrid } from "lucide-react";
-import { ViewToggle } from "@/components/ViewToggle";
 import { useViewMode } from "@/contexts/ViewModeContext";
 import { Badge } from "@/components/ui/badge";
 import { useState, useEffect } from "react";
@@ -159,7 +158,6 @@ export default function Home() {
             )}
           </div>
           <div className="flex items-center gap-2">
-            <ViewToggle />
             <Button
               size="sm"
               className="gap-2"

@@ -16,7 +16,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Trash2, RotateCcw, FolderOpen, FileText, User, MapPin, Calendar, Camera, AlertTriangle } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { ViewToggle } from "@/components/ViewToggle";
 import { useViewMode } from "@/contexts/ViewModeContext";
 
 type RecycleBinItem = {
@@ -149,7 +148,6 @@ export default function RecycleBin() {
         <div className="flex items-center gap-3 mb-2">
           <Trash2 className="w-6 h-6 text-muted-foreground" />
           <h1 className="text-2xl font-bold tracking-tight flex-1">Recycle Bin</h1>
-          <ViewToggle />
         </div>
         <p className="text-sm text-muted-foreground mb-6">
           Deleted items are kept for <strong>7 days</strong> before being permanently removed.

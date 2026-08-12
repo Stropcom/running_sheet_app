@@ -40,7 +40,6 @@ import {
   Home,
   Users,
 } from "lucide-react";
-import { ViewToggle } from "@/components/ViewToggle";
 import { useViewMode } from "@/contexts/ViewModeContext";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
@@ -1013,7 +1012,6 @@ export default function TargetRegistryPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <ViewToggle />
             <Button className="gap-2" onClick={() => setShowCreate(true)}>
               <Plus className="h-4 w-4" /> Add Target
             </Button>

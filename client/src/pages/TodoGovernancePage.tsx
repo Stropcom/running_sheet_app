@@ -14,7 +14,6 @@ import {
   LockOpen,
 } from "lucide-react";
 import { useLocation } from "wouter";
-import { ViewToggle } from "@/components/ViewToggle";
 import { useViewMode } from "@/contexts/ViewModeContext";
 
 export default function TodoGovernancePage() {
@@ -66,7 +65,6 @@ export default function TodoGovernancePage() {
               {count} sheet{count !== 1 ? "s" : ""}
             </Badge>
           )}
-          <ViewToggle />
         </div>
 
         {/* Loading */}

@@ -38,7 +38,6 @@ import {
   Radar,
   PackageOpen,
 } from "lucide-react";
-import { ViewToggle } from "@/components/ViewToggle";
 import { useViewMode } from "@/contexts/ViewModeContext";
 import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
 import { MergeEntitiesButton } from "@/components/MergeEntitiesButton";
@@ -1190,7 +1189,6 @@ export default function IntelligencePage() {
             )}
           </div>
           <MergeEntitiesButton />
-          <ViewToggle />
         </div>
 
         {/* Date filter */}

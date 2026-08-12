@@ -46,7 +46,6 @@ import { Input } from "@/components/ui/input";
 import { useLocation } from "wouter";
 import { useState } from "react";
 import { toast } from "sonner";
-import { ViewToggle } from "@/components/ViewToggle";
 import { useViewMode } from "@/contexts/ViewModeContext";
 
 type OpStatus = "before_court" | "archive";
@@ -316,7 +315,6 @@ export default function OperationManagementPage() {
               Manage operation status — Before Court and Archive
             </p>
           </div>
-          <ViewToggle />
         </div>
 
         {/* Info banner */}

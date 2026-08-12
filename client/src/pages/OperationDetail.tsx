@@ -31,7 +31,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import DashboardLayout from "@/components/DashboardLayout";
-import { ViewToggle } from "@/components/ViewToggle";
 import { useViewMode } from "@/contexts/ViewModeContext";
 import {
   Plus,
@@ -1823,7 +1822,6 @@ export default function OperationDetail() {
             )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <ViewToggle />
             <Button
               size="sm"
               className="gap-2"

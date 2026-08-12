@@ -1327,12 +1327,12 @@ function SheetCard({
     >
       <div className={`p-2.5 rounded-lg border shrink-0 ${
         isClosed ? "bg-slate-200/60 dark:bg-slate-700/40 border-slate-300 dark:border-slate-600" :
-        allCertified ? "bg-emerald-500/20 border-emerald-500/40" : "bg-muted/60 border-border"
+        allCertified ? "bg-emerald-500/20 border-emerald-500/40" : "bg-blue-700/10 border-blue-700/20"
       }`}>
         {isClosed
           ? <LockKeyhole className="w-5 h-5 text-slate-400" />
           : <FileText className={`w-5 h-5 ${
-              allCertified ? "text-black dark:text-emerald-400" : "text-muted-foreground"
+              allCertified ? "text-black dark:text-emerald-400" : "text-blue-700"
             }`} />}
       </div>
 
@@ -1453,14 +1453,14 @@ function SheetTileCard({
     >
       {/* Header row: icon + CLOSED badge + copy-move button */}
       <div className="flex items-start justify-between gap-2">
-        <div className={`p-2 rounded-lg border shrink-0 ${
+        <div className={`p-2.5 rounded-lg border shrink-0 ${
           isClosed ? "bg-slate-200/60 dark:bg-slate-700/40 border-slate-300 dark:border-slate-600"
           : allCertified ? "bg-emerald-500/20 border-emerald-500/40"
-          : "bg-primary/10 border-primary/20"
+          : "bg-blue-700/10 border-blue-700/20"
         }`}>
           {isClosed
-            ? <LockKeyhole className="w-4 h-4 text-slate-400" />
-            : <FileText className={`w-4 h-4 ${allCertified ? "text-emerald-400" : "text-primary"}`} />}
+            ? <LockKeyhole className="w-5 h-5 text-slate-400" />
+            : <FileText className={`w-5 h-5 ${allCertified ? "text-emerald-400" : "text-blue-700"}`} />}
         </div>
         <div className="flex items-center gap-1 shrink-0">
           {isClosed && (

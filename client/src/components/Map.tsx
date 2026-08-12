@@ -86,6 +86,13 @@ interface MapViewProps {
   initialCenter?: google.maps.LatLngLiteral;
   initialZoom?: number;
   initialMapTypeId?: string;
+  // Hides Google's own native Map/Satellite control. Used by pages that
+  // render their own compact toggle instead — the native control is fixed
+  // at TOP_RIGHT with a "Satellite" label neither of which can be resized,
+  // repositioned, or relabelled from here, so a page with other floating UI
+  // near that corner (e.g. a search bar) can collide with it on narrow
+  // screens no matter how much clearance is reserved for it.
+  hideMapTypeControl?: boolean;
   onMapReady?: (map: google.maps.Map) => void;
 }
 
@@ -94,6 +101,7 @@ export function MapView({
   initialCenter = { lat: 37.7749, lng: -122.4194 },
   initialZoom = 12,
   initialMapTypeId,
+  hideMapTypeControl = false,
   onMapReady,
 }: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -110,7 +118,7 @@ export function MapView({
       center: initialCenter,
       mapId: "DEMO_MAP_ID",
       mapTypeId: initialMapTypeId ?? "roadmap",
-      mapTypeControl: true,
+      mapTypeControl: !hideMapTypeControl,
       mapTypeControlOptions: {
         position: google.maps.ControlPosition.TOP_RIGHT,
       },
@@ -129,6 +137,9 @@ export function MapView({
   }, [init]);
 
   return (
-    <div ref={mapContainer} className={cn("w-full", className || "h-[500px]")} />
+    <div
+      ref={mapContainer}
+      className={cn("w-full", className || "h-[500px]")}
+    />
   );
 }

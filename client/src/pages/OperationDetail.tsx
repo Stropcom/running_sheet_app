@@ -31,7 +31,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import DashboardLayout from "@/components/DashboardLayout";
-import { ViewToggle } from "@/components/ViewToggle";
 import { useViewMode } from "@/contexts/ViewModeContext";
 import {
   Plus,
@@ -677,6 +676,7 @@ function DeploymentRollupPanel({
   operationName?: string | null;
   targets?: { id: number; name: string }[];
 }) {
+  const { viewMode } = useViewMode();
   const [targetFilter, setTargetFilter] = useState<number | null>(null);
   // Server returns newest-first (same direction the Running Sheets tab
   // lists sheets in); this just reverses that array for a chronological,
@@ -806,13 +806,20 @@ function DeploymentRollupPanel({
               {sortAsc ? "Oldest first" : "Newest first"}
             </button>
           </div>
-          <div className="flex flex-col gap-2">
+          <div
+            className={
+              viewMode === "tile"
+                ? "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4"
+                : "flex flex-col gap-3"
+            }
+          >
             {(displayRows ?? []).map(r => (
               <DeploymentRollupCard
                 key={r.sheetId}
                 row={r}
                 expanded={expandedId === r.sheetId}
                 onToggle={() => toggleExpanded(r.sheetId)}
+                gridSpan={viewMode === "tile" && expandedId === r.sheetId}
               />
             ))}
           </div>
@@ -1045,10 +1052,14 @@ function DeploymentRollupCard({
   row: r,
   expanded,
   onToggle,
+  gridSpan = false,
 }: {
   row: RollupRow;
   expanded: boolean;
   onToggle: () => void;
+  /** Tile view only — expanded cards span the full grid width so the
+   *  detailed content below isn't squeezed into a single narrow column. */
+  gridSpan?: boolean;
 }) {
   const objectives = parseRollupJsonArray<string>(r.objectives).filter(o =>
     o.trim()
@@ -1071,39 +1082,41 @@ function DeploymentRollupCard({
     .filter((p): p is string => !!p && !!p.trim());
 
   return (
-    <div className="rounded-xl border border-border bg-card overflow-hidden">
+    <div
+      className={`rounded-xl border border-border bg-card overflow-hidden${gridSpan ? " sm:col-span-2 xl:col-span-3" : ""}`}
+    >
       <button
         onClick={onToggle}
-        className="w-full text-left px-4 py-3 hover:bg-accent/20 transition-colors"
+        className="w-full text-left px-5 py-4 hover:bg-accent/20 transition-colors"
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 min-w-0">
               <ChevronDown
-                className={`w-3.5 h-3.5 text-muted-foreground shrink-0 transition-transform ${expanded ? "" : "-rotate-90"}`}
+                className={`w-4 h-4 text-muted-foreground shrink-0 transition-transform ${expanded ? "" : "-rotate-90"}`}
               />
-              <span className="text-sm font-semibold text-foreground">
+              <span className="text-base font-semibold text-foreground">
                 {formatRollupDate(r.sheetDate, r.createdAt)}
               </span>
               {r.teamLabel && (
-                <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20">
+                <span className="text-xs font-semibold uppercase tracking-wide px-2 py-1 rounded-md bg-primary/10 text-primary border border-primary/20">
                   {r.teamLabel}
                 </span>
               )}
               {(r.startTime || r.finishTime) && (
-                <span className="text-xs text-muted-foreground">
+                <span className="text-sm text-muted-foreground">
                   {r.startTime ?? "?"}–{r.finishTime ?? "?"}
                 </span>
               )}
             </div>
             {r.targetName && (
-              <p className="text-xs font-bold text-foreground truncate pl-5 mt-0.5">
+              <p className="text-sm font-bold text-foreground truncate pl-6 mt-1">
                 {r.targetName}
               </p>
             )}
           </div>
           <span
-            className={`shrink-0 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md border ${
+            className={`shrink-0 text-xs font-semibold uppercase tracking-wide px-2 py-1 rounded-md border ${
               isComplete
                 ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:text-emerald-400"
                 : "bg-amber-500/10 text-amber-600 border-amber-500/20 dark:text-amber-400"
@@ -1313,12 +1326,12 @@ function SheetCard({
     >
       <div className={`p-2.5 rounded-lg border shrink-0 ${
         isClosed ? "bg-slate-200/60 dark:bg-slate-700/40 border-slate-300 dark:border-slate-600" :
-        allCertified ? "bg-emerald-500/20 border-emerald-500/40" : "bg-muted/60 border-border"
+        allCertified ? "bg-emerald-500/20 border-emerald-500/40" : "bg-blue-700/10 border-blue-700/20"
       }`}>
         {isClosed
           ? <LockKeyhole className="w-5 h-5 text-slate-400" />
           : <FileText className={`w-5 h-5 ${
-              allCertified ? "text-black dark:text-emerald-400" : "text-muted-foreground"
+              allCertified ? "text-black dark:text-emerald-400" : "text-blue-700"
             }`} />}
       </div>
 
@@ -1439,14 +1452,14 @@ function SheetTileCard({
     >
       {/* Header row: icon + CLOSED badge + copy-move button */}
       <div className="flex items-start justify-between gap-2">
-        <div className={`p-2 rounded-lg border shrink-0 ${
+        <div className={`p-2.5 rounded-lg border shrink-0 ${
           isClosed ? "bg-slate-200/60 dark:bg-slate-700/40 border-slate-300 dark:border-slate-600"
           : allCertified ? "bg-emerald-500/20 border-emerald-500/40"
-          : "bg-primary/10 border-primary/20"
+          : "bg-blue-700/10 border-blue-700/20"
         }`}>
           {isClosed
-            ? <LockKeyhole className="w-4 h-4 text-slate-400" />
-            : <FileText className={`w-4 h-4 ${allCertified ? "text-emerald-400" : "text-primary"}`} />}
+            ? <LockKeyhole className="w-5 h-5 text-slate-400" />
+            : <FileText className={`w-5 h-5 ${allCertified ? "text-emerald-400" : "text-blue-700"}`} />}
         </div>
         <div className="flex items-center gap-1 shrink-0">
           {isClosed && (
@@ -1766,8 +1779,8 @@ export default function OperationDetail() {
         <div className="flex items-start justify-between mb-6">
           <div>
             <div className="flex items-center gap-3 mb-2">
-              <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">
-                <FolderOpen className="w-5 h-5 text-primary" />
+              <div className="p-2.5 rounded-lg bg-blue-700/10 border border-blue-700/20">
+                <FolderOpen className="w-5 h-5 text-blue-700" />
               </div>
               <h1 className="text-2xl font-semibold text-foreground">
                 {opLoading ? <Skeleton className="h-7 w-48" /> : (operation?.name ?? "Operation")}
@@ -1809,7 +1822,6 @@ export default function OperationDetail() {
             )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <ViewToggle />
             <Button
               size="sm"
               className="gap-2"

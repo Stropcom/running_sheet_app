@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -11,7 +11,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-// Small "X" delete button used on photo thumbnails, gated behind a confirm
+// Small bin delete button used on photo thumbnails, gated behind a confirm
 // step so a stray tap can't silently destroy an evidentiary photo.
 export function DeletePhotoButton({
   onConfirm,
@@ -41,7 +41,7 @@ export function DeletePhotoButton({
         title="Delete photo"
         className={`${positionClassName} ${iconSize} rounded-full bg-destructive text-destructive-foreground flex items-center justify-center hover:opacity-90 transition-opacity`}
       >
-        <X className={glyphSize} />
+        <Trash2 className={glyphSize} />
       </button>
 
       <AlertDialog open={confirming} onOpenChange={setConfirming}>

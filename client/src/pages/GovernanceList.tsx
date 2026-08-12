@@ -11,7 +11,6 @@ import {
   AlertTriangle,
   CheckCircle2,
 } from "lucide-react";
-import { ViewToggle } from "@/components/ViewToggle";
 import { useViewMode } from "@/contexts/ViewModeContext";
 import { useState } from "react";
 import { useLocation } from "wouter";
@@ -60,13 +59,15 @@ function OperationGroup({
   const anyOverdue = summaries.some((s) => s.isOverdue);
 
   return (
-    <div className="rounded-xl border border-border/50 overflow-hidden">
+    <div className="rounded-xl border border-border/50 overflow-hidden bg-card">
       {/* Operation header row */}
       <button
         onClick={() => setExpanded((v) => !v)}
         className="w-full flex items-center gap-2 px-4 py-3 bg-muted/30 border-b border-border/30 hover:bg-muted/50 transition-colors"
       >
-        <FolderOpen className="w-4 h-4 text-muted-foreground shrink-0" />
+        <div className="p-2.5 rounded-lg bg-purple-400/10 border border-purple-400/20 shrink-0">
+          <FolderOpen className="w-5 h-5 text-purple-400" />
+        </div>
         <span className="text-sm font-semibold text-foreground flex-1 text-left">
           {operationName}
         </span>
@@ -203,8 +204,8 @@ function GovernanceTileCard({
     <div className="group flex flex-col gap-3 p-5 rounded-xl border border-border bg-card hover:bg-accent/20 hover:border-primary/30 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150">
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
-        <div className="p-2 rounded-lg bg-primary/10 border border-primary/20 shrink-0">
-          <ClipboardCheck className="w-4 h-4 text-primary" />
+        <div className="p-2.5 rounded-lg bg-purple-400/10 border border-purple-400/20 shrink-0">
+          <ClipboardCheck className="w-5 h-5 text-purple-400" />
         </div>
         {allDone ? (
           <Badge className="text-[10px] px-1.5 py-0 bg-emerald-500/15 text-emerald-500 border-emerald-500/30 border shrink-0">
@@ -288,8 +289,8 @@ export default function GovernanceListPage() {
       <div className="p-6 max-w-3xl mx-auto">
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-            <ClipboardCheck className="w-5 h-5 text-primary" />
+          <div className="p-2.5 rounded-lg bg-purple-400/10 border border-purple-400/20">
+            <ClipboardCheck className="w-5 h-5 text-purple-400" />
           </div>
           <div className="flex-1">
             <h1 className="text-lg font-semibold text-foreground">Governance</h1>
@@ -297,7 +298,6 @@ export default function GovernanceListPage() {
               Running sheet write-off checklist — select a sheet to review
             </p>
           </div>
-          <ViewToggle />
         </div>
 
         {!operations || operations.length === 0 ? (

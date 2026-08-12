@@ -1,5 +1,6 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
+import { RS_CANONICAL_CHIP_ORDER } from "@/lib/rsChipOrder";
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -2722,30 +2723,7 @@ export default function SheetDetail() {
   // Shortcut chip order for the target panel — persisted per sheet in localStorage
   // Canonical default chip order — used when no saved order exists in localStorage
   // Generates: SC, HBF, V1F, V1, V2F, V2, V3F, V3, V4F, V4 ... (up to 8 vehicles), then fixed shortcuts, then DEP/ARR, then wild fields
-  const CANONICAL_CHIP_ORDER = [
-    "SC",
-    "HBF",
-    ...Array.from({ length: 8 }, (_, i) => [`V${i + 1}F`, `V${i + 1}`]).flat(),
-    "TGT",
-    "DSO",
-    "DR",
-    "FP",
-    "US",
-    "DE",
-    "AR",
-    "HB",
-    "CP",
-    "DW",
-    "CV",
-    "OOS",
-    "COOS",
-    "PU",
-    "PT",
-    "RACK",
-    "DEP",
-    "ARR",
-    ...Array.from({ length: 10 }, (_, i) => `#${i + 1}`),
-  ];
+  const CANONICAL_CHIP_ORDER = RS_CANONICAL_CHIP_ORDER;
   const [targetFieldOrder, setTargetFieldOrder] = useState<string[]>(() => {
     try {
       const s = localStorage.getItem(`runsheet_field_order_${sheetId}`);

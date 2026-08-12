@@ -1183,6 +1183,29 @@ export async function getAttachmentsByOperationId(operationId: number) {
   return attachLinkedCounts(db, await attachRowMemberCins(db, rows));
 }
 
+// Photo count per operation, for the top-level Images folder list badge —
+// same live-photo filter as getAttachmentsByOperationId (excludes soft-deleted
+// attachments and photos whose row-owning sheet was soft-deleted), grouped
+// across every operation in one query rather than N+1 per folder.
+export async function getAttachmentCountsByOperation(): Promise<
+  { operationId: number; count: number }[]
+> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({
+      operationId: rowAttachments.operationId,
+      count: sql<number>`count(*)`,
+    })
+    .from(rowAttachments)
+    .leftJoin(sheetRows, eq(rowAttachments.rowId, sheetRows.id))
+    .leftJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
+    .where(
+      and(isNull(runningSheets.deletedAt), isNull(rowAttachments.deletedAt))
+    )
+    .groupBy(rowAttachments.operationId);
+}
+
 // All attachments on a single running sheet, joined back to their row for a
 // time label.
 export async function getAttachmentsBySheetId(sheetId: number) {

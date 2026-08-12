@@ -810,8 +810,8 @@ function DeploymentRollupPanel({
           <div
             className={
               viewMode === "tile"
-                ? "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3"
-                : "flex flex-col gap-2"
+                ? "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4"
+                : "flex flex-col gap-3"
             }
           >
             {(displayRows ?? []).map(r => (
@@ -1088,36 +1088,36 @@ function DeploymentRollupCard({
     >
       <button
         onClick={onToggle}
-        className="w-full text-left px-4 py-3 hover:bg-accent/20 transition-colors"
+        className="w-full text-left px-5 py-4 hover:bg-accent/20 transition-colors"
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 min-w-0">
               <ChevronDown
-                className={`w-3.5 h-3.5 text-muted-foreground shrink-0 transition-transform ${expanded ? "" : "-rotate-90"}`}
+                className={`w-4 h-4 text-muted-foreground shrink-0 transition-transform ${expanded ? "" : "-rotate-90"}`}
               />
-              <span className="text-sm font-semibold text-foreground">
+              <span className="text-base font-semibold text-foreground">
                 {formatRollupDate(r.sheetDate, r.createdAt)}
               </span>
               {r.teamLabel && (
-                <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20">
+                <span className="text-xs font-semibold uppercase tracking-wide px-2 py-1 rounded-md bg-primary/10 text-primary border border-primary/20">
                   {r.teamLabel}
                 </span>
               )}
               {(r.startTime || r.finishTime) && (
-                <span className="text-xs text-muted-foreground">
+                <span className="text-sm text-muted-foreground">
                   {r.startTime ?? "?"}–{r.finishTime ?? "?"}
                 </span>
               )}
             </div>
             {r.targetName && (
-              <p className="text-xs font-bold text-foreground truncate pl-5 mt-0.5">
+              <p className="text-sm font-bold text-foreground truncate pl-6 mt-1">
                 {r.targetName}
               </p>
             )}
           </div>
           <span
-            className={`shrink-0 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md border ${
+            className={`shrink-0 text-xs font-semibold uppercase tracking-wide px-2 py-1 rounded-md border ${
               isComplete
                 ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:text-emerald-400"
                 : "bg-amber-500/10 text-amber-600 border-amber-500/20 dark:text-amber-400"

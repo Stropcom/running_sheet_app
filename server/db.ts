@@ -3725,11 +3725,21 @@ export async function getIntelligenceHeatMapLocations(params: {
 
   // ── Resolve the scoped set of sheets (Operation, optionally + Target) ──────
   let sheetIds: number[];
-  const sheetCreatedAt = new Map<number, Date>();
+  // Keyed by sheet id — sheetDate (the picker date) takes priority over
+  // createdAt when resolving a row's date below; createdAt is kept only as
+  // the fallback for legacy sheets with no sheetDate.
+  const sheetDateInfo = new Map<
+    number,
+    { createdAt: Date; sheetDate: string | null }
+  >();
 
   if (params.when.mode === "sheet") {
     const sheet = await db
-      .select({ id: runningSheets.id, createdAt: runningSheets.createdAt })
+      .select({
+        id: runningSheets.id,
+        createdAt: runningSheets.createdAt,
+        sheetDate: runningSheets.sheetDate,
+      })
       .from(runningSheets)
       .where(
         and(
@@ -3741,7 +3751,10 @@ export async function getIntelligenceHeatMapLocations(params: {
       .limit(1);
     if (!sheet.length) return [];
     sheetIds = [sheet[0].id];
-    sheetCreatedAt.set(sheet[0].id, sheet[0].createdAt);
+    sheetDateInfo.set(sheet[0].id, {
+      createdAt: sheet[0].createdAt,
+      sheetDate: sheet[0].sheetDate,
+    });
   } else {
     const conditions = [
       eq(runningSheets.operationId, params.operationId),
@@ -3750,12 +3763,20 @@ export async function getIntelligenceHeatMapLocations(params: {
     if (params.targetId)
       conditions.push(eq(runningSheets.targetId, params.targetId));
     const sheets = await db
-      .select({ id: runningSheets.id, createdAt: runningSheets.createdAt })
+      .select({
+        id: runningSheets.id,
+        createdAt: runningSheets.createdAt,
+        sheetDate: runningSheets.sheetDate,
+      })
       .from(runningSheets)
       .where(and(...conditions));
     if (!sheets.length) return [];
     sheetIds = sheets.map(s => s.id);
-    for (const s of sheets) sheetCreatedAt.set(s.id, s.createdAt);
+    for (const s of sheets)
+      sheetDateInfo.set(s.id, {
+        createdAt: s.createdAt,
+        sheetDate: s.sheetDate,
+      });
   }
   const sheetIdSet = new Set(sheetIds);
 
@@ -3864,10 +3885,11 @@ export async function getIntelligenceHeatMapLocations(params: {
       if (!OBSERVATION_SIGNAL_RE.test(row.observation)) continue;
 
       if (hasDateWindow) {
+        const info = sheetDateInfo.get(occ.sheetId);
         const resolvedDate =
           row.rowDate ??
           addDaysISO(
-            toPerthDateISO(sheetCreatedAt.get(occ.sheetId) ?? new Date()),
+            info?.sheetDate ?? toPerthDateISO(info?.createdAt ?? new Date()),
             row.dayOffset
           );
         if (resolvedDate < startISO || resolvedDate > endISO) continue;

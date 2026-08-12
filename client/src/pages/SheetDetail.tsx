@@ -275,7 +275,8 @@ function exportToPDF(
   operation: OperationMeta,
   sheetCinsRaw: string | null,
   sheetCreatedAt: Date,
-  targetFullName?: string | null
+  targetFullName?: string | null,
+  sheetDate?: string | null
 ) {
   const lockedBg = "#ffffff"; // White in PDF — dark green is screen-only via CSS class
   const cb = "border-right:1px solid #e2e9f6";
@@ -299,7 +300,9 @@ function exportToPDF(
 
   // ── Page header (repeats on every page) ─────────────────────────────────────
   const operationName = operation?.name ?? "";
-  const dateStr = format(new Date(sheetCreatedAt), "d MMMM yyyy");
+  const dateStr = sheetDate
+    ? format(new Date(`${sheetDate}T00:00:00`), "d MMMM yyyy")
+    : format(new Date(sheetCreatedAt), "d MMMM yyyy");
 
   // Derive the author CIN from the roster (isAuthor flag)
   const authorEntry = cinRoster.find(c => c.isAuthor);
@@ -484,6 +487,8 @@ function exportToPDF(
         let divLabel: string;
         if (rowOnDay?.rowDate) {
           divLabel = formatPerthDateLabel(rowOnDay.rowDate);
+        } else if (sheetDate) {
+          divLabel = formatPerthDateLabel(addDaysToYmd(sheetDate, day));
         } else {
           const divDate = new Date(sheetCreatedAt);
           divDate.setDate(divDate.getDate() + day);
@@ -2975,7 +2980,8 @@ export default function SheetDetail() {
         exportData.operation ?? null,
         exportData.sheet.sheetCins ?? null,
         exportData.sheet.createdAt,
-        exportData.targetFullName ?? null
+        exportData.targetFullName ?? null,
+        exportData.sheet.sheetDate ?? null
       );
       setPendingExportType(null);
     }
@@ -3945,6 +3951,10 @@ export default function SheetDetail() {
                               ) {
                                 label = formatPerthDateLabel(
                                   (rowOnLaterDay as any).rowDate as string
+                                );
+                              } else if (sheet?.sheetDate) {
+                                label = formatPerthDateLabel(
+                                  addDaysToYmd(sheet.sheetDate, laterDay)
                                 );
                               } else {
                                 const sheetStartMs = sheet?.createdAt

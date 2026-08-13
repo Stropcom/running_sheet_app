@@ -34,31 +34,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  X,
-  Target,
-  User,
-  Car,
-  MapPin,
-  Building2,
-  HelpCircle,
-  ChevronRight,
-  RefreshCw,
-  FileDown,
-} from "lucide-react";
-
-const NODE_ICONS: Record<string, React.ReactNode> = {
-  target: <Target className="w-3.5 h-3.5" />,
-  person: <User className="w-3.5 h-3.5" />,
-  vehicle: <Car className="w-3.5 h-3.5" />,
-  address: <MapPin className="w-3.5 h-3.5" />,
-  business: <Building2 className="w-3.5 h-3.5" />,
-  unknown: <HelpCircle className="w-3.5 h-3.5" />,
-};
+import { X, ChevronRight, RefreshCw, FileDown } from "lucide-react";
 
 /** Group headers for the focus-entity dropdown — matches the Intelligence
  * Folder's own tab label ("Locations") rather than ENTITY_LABELS' plural
- * "Addresses", which is used elsewhere (right panel, PDF export). */
+ * "Addresses", which is used elsewhere (the legend, PDF export). */
 const DROPDOWN_GROUP_LABELS: Record<string, string> = {
   ...ENTITY_LABELS,
   address: "Locations",
@@ -248,22 +228,21 @@ export default function EgoNetworkMap() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
 
-  // Desktop/laptop always gets the full-size rings — that layout already had
-  // enough canvas room and was correct as-is. Only compact (phone/iPad
-  // portrait) layouts scale the rings down together (keeping their
-  // proportions) so the outermost nodes — and their labels — stay within the
-  // canvas instead of running off the edge on a narrow screen.
+  // Rings are sized to whatever room the canvas actually has (min of its
+  // width/height, both of which are now always equal — see the canvas div
+  // below, which is a square: full width, height matching via aspect-square
+  // on desktop, or genuinely fills the compact panel). Full-size whenever
+  // that's at least RING2_RADIUS_MAX, scaled down together (keeping
+  // proportions) only when the canvas is smaller than that — e.g. a narrow
+  // phone — so the outermost nodes and their labels never run off the edge.
   const ringRadii = useMemo(() => {
-    if (!isCompact) {
-      return { ring1: RING1_RADIUS_MAX, ring2: RING2_RADIUS_MAX };
-    }
     const avail = Math.min(size.w, size.h) / 2 - RING_LABEL_MARGIN;
     const scale = Math.min(1, avail / RING2_RADIUS_MAX);
     return {
       ring1: Math.max(RING1_RADIUS_MIN, RING1_RADIUS_MAX * scale),
       ring2: Math.max(RING2_RADIUS_MIN, RING2_RADIUS_MAX * scale),
     };
-  }, [isCompact, size.w, size.h]);
+  }, [size.w, size.h]);
 
   const { data: operations } = trpc.operation.list.useQuery();
 
@@ -572,26 +551,6 @@ export default function EgoNetworkMap() {
             </div>
 
             {focusNode && (
-              <div className="px-3 py-2.5 border-b border-border">
-                <div className="flex items-center gap-1.5 mb-1">
-                  <span style={{ color: NODE_COLORS[focusNode.type] }}>
-                    {NODE_ICONS[focusNode.type]}
-                  </span>
-                  <span
-                    className="text-xs font-semibold uppercase tracking-wide"
-                    style={{ color: NODE_COLORS[focusNode.type] }}
-                  >
-                    {ENTITY_LABELS[focusNode.type] ?? focusNode.type}
-                  </span>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {focusNode.occurrences} occurrence
-                  {focusNode.occurrences !== 1 ? "s" : ""}
-                </p>
-              </div>
-            )}
-
-            {focusNode && (
               <div className="px-3 py-2 border-b border-border">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                   Direct links ({ring1Ids.length + hiddenRing1Count})
@@ -658,170 +617,187 @@ export default function EgoNetworkMap() {
         )}
 
         {/* ── Ring canvas ─────────────────────────────────────────────────── */}
+        {/* Square, not "fill whatever's left" — a wide-but-short desktop
+            viewport used to clip 2nd-hop nodes at the top/bottom while
+            leaving spare room left/right. On desktop this scrolls
+            vertically instead of clipping when the resulting square is
+            taller than the visible viewport; the compact (phone/iPad)
+            panel keeps its original fill-the-space behaviour since that
+            layout was never the problem. */}
         {(!isCompact || mobilePanel === "map") && (
           <div
-            ref={containerRef}
-            className="flex-1 relative overflow-hidden bg-[#0f1117]"
+            className={
+              isCompact
+                ? "flex-1 relative overflow-hidden bg-[#0f1117]"
+                : "flex-1 overflow-y-auto bg-[#0f1117]"
+            }
           >
-            {isLoading && (
-              <div className="absolute inset-0 flex items-center justify-center z-10">
-                <Spinner className="w-8 h-8 text-primary" />
-              </div>
-            )}
+            <div
+              ref={containerRef}
+              className={
+                isCompact ? "absolute inset-0" : "relative w-full aspect-square"
+              }
+            >
+              {isLoading && (
+                <div className="absolute inset-0 flex items-center justify-center z-10">
+                  <Spinner className="w-8 h-8 text-primary" />
+                </div>
+              )}
 
-            {!isLoading && !focusNode && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground">
-                <p className="text-sm">No entities available.</p>
-                <p className="text-xs">
-                  Pick a focus entity from the list once observations have been
-                  logged.
-                </p>
-              </div>
-            )}
+              {!isLoading && !focusNode && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground">
+                  <p className="text-sm">No entities available.</p>
+                  <p className="text-xs">
+                    Pick a focus entity from the list once observations have
+                    been logged.
+                  </p>
+                </div>
+              )}
 
-            {!isLoading && focusNode && (
-              <>
-                <svg
-                  width={size.w}
-                  height={size.h}
-                  className="absolute inset-0"
-                >
-                  {/* Hop-distance guides */}
-                  <circle
-                    cx={cx}
-                    cy={cy}
-                    r={ringRadii.ring1}
-                    fill="none"
-                    stroke="#262b36"
-                    strokeDasharray="4 4"
-                  />
-                  {hops === 2 && (
+              {!isLoading && focusNode && (
+                <>
+                  <svg
+                    width={size.w}
+                    height={size.h}
+                    className="absolute inset-0"
+                  >
+                    {/* Hop-distance guides */}
                     <circle
                       cx={cx}
                       cy={cy}
-                      r={ringRadii.ring2}
+                      r={ringRadii.ring1}
                       fill="none"
                       stroke="#262b36"
                       strokeDasharray="4 4"
                     />
-                  )}
-
-                  {/* Edges */}
-                  {edges.map((e, i) => {
-                    const x1 = e.from ? cx + e.from.x : cx;
-                    const y1 = e.from ? cy + e.from.y : cy;
-                    const x2 = cx + e.to.x;
-                    const y2 = cy + e.to.y;
-                    return (
-                      <line
-                        key={i}
-                        x1={x1}
-                        y1={y1}
-                        x2={x2}
-                        y2={y2}
-                        stroke={e.hop === 1 ? "#cbd5e1" : "#3f4653"}
-                        strokeWidth={
-                          e.hop === 1
-                            ? Math.max(1, Math.min(4, e.to.weight * 0.9))
-                            : 1.2
-                        }
-                        strokeOpacity={e.hop === 1 ? 0.85 : 0.5}
+                    {hops === 2 && (
+                      <circle
+                        cx={cx}
+                        cy={cy}
+                        r={ringRadii.ring2}
+                        fill="none"
+                        stroke="#262b36"
+                        strokeDasharray="4 4"
                       />
-                    );
-                  })}
+                    )}
 
-                  {/* Centre glow */}
-                  <circle
-                    cx={cx}
-                    cy={cy}
-                    r={30}
-                    fill={NODE_COLORS[focusNode.type] ?? NODE_COLORS.unknown}
-                    fillOpacity={0.16}
-                  />
-                </svg>
+                    {/* Edges */}
+                    {edges.map((e, i) => {
+                      const x1 = e.from ? cx + e.from.x : cx;
+                      const y1 = e.from ? cy + e.from.y : cy;
+                      const x2 = cx + e.to.x;
+                      const y2 = cy + e.to.y;
+                      return (
+                        <line
+                          key={i}
+                          x1={x1}
+                          y1={y1}
+                          x2={x2}
+                          y2={y2}
+                          stroke={e.hop === 1 ? "#cbd5e1" : "#3f4653"}
+                          strokeWidth={
+                            e.hop === 1
+                              ? Math.max(1, Math.min(4, e.to.weight * 0.9))
+                              : 1.2
+                          }
+                          strokeOpacity={e.hop === 1 ? 0.85 : 0.5}
+                        />
+                      );
+                    })}
 
-                {/* Centre node */}
-                <div
-                  className="absolute flex flex-col items-center gap-1.5 pointer-events-none"
-                  style={{
-                    left: cx,
-                    top: cy,
-                    transform: "translate(-50%, -50%)",
-                  }}
-                >
-                  <span
-                    className="rounded-full"
-                    style={{
-                      width: 44,
-                      height: 44,
-                      background:
-                        NODE_COLORS[focusNode.type] ?? NODE_COLORS.unknown,
-                    }}
-                  />
-                  <span className="text-xs font-bold text-white bg-[#0f1117]/80 px-2 py-0.5 rounded whitespace-nowrap max-w-[220px] truncate">
-                    {focusNode.label}
-                  </span>
-                </div>
-
-                {/* Ring nodes */}
-                {placed.map(p => (
-                  <button
-                    key={p.node.id}
-                    onClick={() => recenter(p.node.id)}
-                    title={`${p.node.label} — click to focus`}
-                    className="absolute flex flex-col items-center gap-1 group"
-                    style={{
-                      left: cx + p.x,
-                      top: cy + p.y,
-                      transform: "translate(-50%, -50%)",
-                    }}
-                  >
-                    <span
-                      className="rounded-full transition-transform group-hover:scale-125"
-                      style={{
-                        width: radiusFor(p.node, p.hop) * 2,
-                        height: radiusFor(p.node, p.hop) * 2,
-                        background:
-                          NODE_COLORS[p.node.type] ?? NODE_COLORS.unknown,
-                        opacity: p.hop === 1 ? 1 : 0.72,
-                      }}
+                    {/* Centre glow */}
+                    <circle
+                      cx={cx}
+                      cy={cy}
+                      r={30}
+                      fill={NODE_COLORS[focusNode.type] ?? NODE_COLORS.unknown}
+                      fillOpacity={0.16}
                     />
-                    <span
-                      className={`whitespace-nowrap px-1.5 py-0.5 rounded bg-[#0f1117]/75 max-w-[150px] truncate ${
-                        p.hop === 1
-                          ? "text-[10.5px] text-slate-200"
-                          : "text-[9.5px] text-slate-400"
-                      }`}
-                    >
-                      {p.node.label}
-                    </span>
-                  </button>
-                ))}
+                  </svg>
 
-                {/* "+N more" chip for a crowded inner ring */}
-                {hiddenRing1Count > 0 && (
-                  <button
-                    onClick={() => setExpandRing1(true)}
-                    className="absolute text-[10px] px-2 py-1 rounded-full border border-dashed border-slate-500 text-slate-300 hover:bg-slate-700/40 transition-colors"
+                  {/* Centre node */}
+                  <div
+                    className="absolute flex flex-col items-center gap-1.5 pointer-events-none"
                     style={{
                       left: cx,
-                      top: cy + ringRadii.ring1 + 34,
+                      top: cy,
                       transform: "translate(-50%, -50%)",
                     }}
                   >
-                    +{hiddenRing1Count} more direct
-                  </button>
-                )}
+                    <span
+                      className="rounded-full"
+                      style={{
+                        width: 44,
+                        height: 44,
+                        background:
+                          NODE_COLORS[focusNode.type] ?? NODE_COLORS.unknown,
+                      }}
+                    />
+                    <span className="text-xs font-bold text-white bg-[#0f1117]/80 px-2 py-0.5 rounded whitespace-nowrap max-w-[220px] truncate">
+                      {focusNode.label}
+                    </span>
+                  </div>
 
-                {/* Stats overlay */}
-                <div className="absolute bottom-3 left-3 text-xs text-slate-500 pointer-events-none">
-                  {ring1Placed.length} direct
-                  {hops === 2 &&
-                    ` · ${placed.length - ring1Placed.length} second-degree`}
-                  {hiddenRing2Count > 0 && ` · ${hiddenRing2Count} not shown`}
-                </div>
-              </>
-            )}
+                  {/* Ring nodes */}
+                  {placed.map(p => (
+                    <button
+                      key={p.node.id}
+                      onClick={() => recenter(p.node.id)}
+                      title={`${p.node.label} — click to focus`}
+                      className="absolute flex flex-col items-center gap-1 group"
+                      style={{
+                        left: cx + p.x,
+                        top: cy + p.y,
+                        transform: "translate(-50%, -50%)",
+                      }}
+                    >
+                      <span
+                        className="rounded-full transition-transform group-hover:scale-125"
+                        style={{
+                          width: radiusFor(p.node, p.hop) * 2,
+                          height: radiusFor(p.node, p.hop) * 2,
+                          background:
+                            NODE_COLORS[p.node.type] ?? NODE_COLORS.unknown,
+                          opacity: p.hop === 1 ? 1 : 0.72,
+                        }}
+                      />
+                      <span
+                        className={`whitespace-nowrap px-1.5 py-0.5 rounded bg-[#0f1117]/75 max-w-[150px] truncate ${
+                          p.hop === 1
+                            ? "text-[10.5px] text-slate-200"
+                            : "text-[9.5px] text-slate-400"
+                        }`}
+                      >
+                        {p.node.label}
+                      </span>
+                    </button>
+                  ))}
+
+                  {/* "+N more" chip for a crowded inner ring */}
+                  {hiddenRing1Count > 0 && (
+                    <button
+                      onClick={() => setExpandRing1(true)}
+                      className="absolute text-[10px] px-2 py-1 rounded-full border border-dashed border-slate-500 text-slate-300 hover:bg-slate-700/40 transition-colors"
+                      style={{
+                        left: cx,
+                        top: cy + ringRadii.ring1 + 34,
+                        transform: "translate(-50%, -50%)",
+                      }}
+                    >
+                      +{hiddenRing1Count} more direct
+                    </button>
+                  )}
+
+                  {/* Stats overlay */}
+                  <div className="absolute bottom-3 left-3 text-xs text-slate-500 pointer-events-none">
+                    {ring1Placed.length} direct
+                    {hops === 2 &&
+                      ` · ${placed.length - ring1Placed.length} second-degree`}
+                    {hiddenRing2Count > 0 && ` · ${hiddenRing2Count} not shown`}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         )}
       </div>

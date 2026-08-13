@@ -22,21 +22,20 @@ import {
   type EgoEdge,
   type EgoLayout,
 } from "@/lib/egoNetworkLayout";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
 import {
   X,
-  Search,
   Target,
   User,
   Car,
@@ -57,8 +56,13 @@ const NODE_ICONS: Record<string, React.ReactNode> = {
   unknown: <HelpCircle className="w-3.5 h-3.5" />,
 };
 
-
-
+/** Group headers for the focus-entity dropdown — matches the Intelligence
+ * Folder's own tab label ("Locations") rather than ENTITY_LABELS' plural
+ * "Addresses", which is used elsewhere (right panel, PDF export). */
+const DROPDOWN_GROUP_LABELS: Record<string, string> = {
+  ...ENTITY_LABELS,
+  address: "Locations",
+};
 
 function exportEgoNetworkPdf(params: {
   focusNode: EgoNode;
@@ -232,15 +236,12 @@ function useCompactLayout() {
 export default function EgoNetworkMap() {
   const [focusId, setFocusId] = useState<string | null>(null);
   const [hops, setHops] = useState<1 | 2>(1);
-  const [pickerSearch, setPickerSearch] = useState("");
   const [expandRing1, setExpandRing1] = useState(false);
   const isCompact = useCompactLayout();
   // Which single panel is shown in compact mode — defaults to the map since
-  // that's the point of the page; picking an entity from the list jumps
-  // here automatically so the officer isn't left staring at the list.
-  const [mobilePanel, setMobilePanel] = useState<"entities" | "map" | "details">(
-    "map"
-  );
+  // that's the point of the page; picking an entity from the dropdown jumps
+  // here automatically so the officer isn't left staring at the picker.
+  const [mobilePanel, setMobilePanel] = useState<"info" | "map">("map");
   // null = every operation. Scoping here narrows the whole view at once —
   // the graph, the focus-entity list, and the rings all come off this query.
   const [operationId, setOperationId] = useState<number | null>(null);
@@ -353,20 +354,36 @@ export default function EgoNetworkMap() {
   const cx = size.w / 2;
   const cy = size.h / 2;
 
-  const pickerResults = useMemo(() => {
+  // Grouped for the plain focus-entity dropdown — Targets, Associates,
+  // Vehicles, Locations, Businesses (ENTITY_TYPES' order), each sorted by
+  // connection count so the best-linked entities sit at the top of their
+  // group. Any type outside that fixed list (shouldn't normally occur) is
+  // appended under its own group rather than silently dropped.
+  const entityGroups = useMemo(() => {
     const all = (graphData?.nodes ?? []) as EgoNode[];
-    const q = pickerSearch.trim().toLowerCase();
-    const filtered = q
-      ? all.filter(n => n.label.toLowerCase().includes(q))
-      : all;
-    return [...filtered]
-      .sort(
-        (a, b) =>
-          (adjacency.get(b.id)?.length ?? 0) -
-          (adjacency.get(a.id)?.length ?? 0)
-      )
-      .slice(0, 60);
-  }, [graphData, pickerSearch, adjacency]);
+    const byType = new Map<string, EgoNode[]>();
+    for (const n of all) {
+      if (!byType.has(n.type)) byType.set(n.type, []);
+      byType.get(n.type)!.push(n);
+    }
+    const orderedTypes = [
+      ...ENTITY_TYPES,
+      ...Array.from(byType.keys()).filter(
+        t => !(ENTITY_TYPES as readonly string[]).includes(t)
+      ),
+    ];
+    return orderedTypes
+      .map(type => ({
+        type,
+        label: DROPDOWN_GROUP_LABELS[type] ?? type,
+        nodes: (byType.get(type) ?? []).sort(
+          (a, b) =>
+            (adjacency.get(b.id)?.length ?? 0) -
+            (adjacency.get(a.id)?.length ?? 0)
+        ),
+      }))
+      .filter(g => g.nodes.length > 0);
+  }, [graphData, adjacency]);
 
   const ring1Placed = placed.filter(p => p.hop === 1);
 
@@ -508,263 +525,54 @@ export default function EgoNetworkMap() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="entities">Focus entity list</SelectItem>
+              <SelectItem value="info">Focus entity</SelectItem>
               <SelectItem value="map">Map</SelectItem>
-              <SelectItem value="details" disabled={!focusNode}>
-                Direct links
-              </SelectItem>
             </SelectContent>
           </Select>
         </div>
       )}
 
       <div className="flex flex-1 overflow-hidden">
-        {/* ── Left: focus entity picker ──────────────────────────────────── */}
-        {(!isCompact || mobilePanel === "entities") && (
-        <div className={isCompact ? "w-full flex flex-col overflow-hidden" : "w-56 shrink-0 border-r border-border bg-card flex flex-col overflow-hidden"}>
-          <div className="px-3 py-2.5 border-b border-border">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-              Focus entity
-            </p>
-            <div className="relative">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-              <Input
-                className="pl-7 h-8 text-xs"
-                placeholder="Search entities…"
-                value={pickerSearch}
-                onChange={e => setPickerSearch(e.target.value)}
-              />
-            </div>
-          </div>
-          <ScrollArea className="flex-1">
-            <div className="p-2 space-y-0.5">
-              {pickerResults.length === 0 && (
-                <p className="text-xs text-muted-foreground px-1 py-2">
-                  No entities match that search.
-                </p>
-              )}
-              {pickerResults.map(n => (
-                <button
-                  key={n.id}
-                  onClick={() => {
-                    recenter(n.id);
-                    if (isCompact) setMobilePanel("map");
-                  }}
-                  className={`w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors ${
-                    n.id === focusId
-                      ? "bg-primary/15 text-primary font-medium"
-                      : "text-muted-foreground hover:bg-accent/30"
-                  }`}
-                >
-                  <span
-                    className="w-2 h-2 rounded-full shrink-0"
-                    style={{
-                      background: NODE_COLORS[n.type] ?? NODE_COLORS.unknown,
-                    }}
-                  />
-                  <span className="flex-1 min-w-0 text-xs truncate">
-                    {n.label}
-                  </span>
-                  <span className="text-[10px] text-muted-foreground shrink-0 font-mono">
-                    {adjacency.get(n.id)?.length ?? 0}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </ScrollArea>
-
-          <div className="border-t border-border p-3 space-y-1.5">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-              Legend
-            </p>
-            {ENTITY_TYPES.map(t => (
-              <div
-                key={t}
-                className="flex items-center gap-2 text-xs text-muted-foreground"
-              >
-                <span
-                  className="w-2.5 h-2.5 rounded-full shrink-0"
-                  style={{ background: NODE_COLORS[t] }}
-                />
-                {ENTITY_LABELS[t]}
-              </div>
-            ))}
-            <div className="mt-2 text-xs text-muted-foreground/60">
-              Inner ring = direct links. Outer ring = one step further.
-            </div>
-          </div>
-        </div>
-        )}
-
-        {/* ── Ring canvas ─────────────────────────────────────────────────── */}
-        {(!isCompact || mobilePanel === "map") && (
-        <div
-          ref={containerRef}
-          className="flex-1 relative overflow-hidden bg-[#0f1117]"
-        >
-          {isLoading && (
-            <div className="absolute inset-0 flex items-center justify-center z-10">
-              <Spinner className="w-8 h-8 text-primary" />
-            </div>
-          )}
-
-          {!isLoading && !focusNode && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground">
-              <p className="text-sm">No entities available.</p>
-              <p className="text-xs">
-                Pick a focus entity from the list once observations have been
-                logged.
+        {/* ── Left: focus entity picker, its details, and direct links ────── */}
+        {(!isCompact || mobilePanel === "info") && (
+          <div
+            className={
+              isCompact
+                ? "w-full flex flex-col overflow-hidden"
+                : "w-64 shrink-0 border-r border-border bg-card flex flex-col overflow-hidden"
+            }
+          >
+            <div className="px-3 py-2.5 border-b border-border">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                Focus entity
               </p>
-            </div>
-          )}
-
-          {!isLoading && focusNode && (
-            <>
-              <svg width={size.w} height={size.h} className="absolute inset-0">
-                {/* Hop-distance guides */}
-                <circle
-                  cx={cx}
-                  cy={cy}
-                  r={ringRadii.ring1}
-                  fill="none"
-                  stroke="#262b36"
-                  strokeDasharray="4 4"
-                />
-                {hops === 2 && (
-                  <circle
-                    cx={cx}
-                    cy={cy}
-                    r={ringRadii.ring2}
-                    fill="none"
-                    stroke="#262b36"
-                    strokeDasharray="4 4"
-                  />
-                )}
-
-                {/* Edges */}
-                {edges.map((e, i) => {
-                  const x1 = e.from ? cx + e.from.x : cx;
-                  const y1 = e.from ? cy + e.from.y : cy;
-                  const x2 = cx + e.to.x;
-                  const y2 = cy + e.to.y;
-                  return (
-                    <line
-                      key={i}
-                      x1={x1}
-                      y1={y1}
-                      x2={x2}
-                      y2={y2}
-                      stroke={e.hop === 1 ? "#cbd5e1" : "#3f4653"}
-                      strokeWidth={
-                        e.hop === 1
-                          ? Math.max(1, Math.min(4, e.to.weight * 0.9))
-                          : 1.2
-                      }
-                      strokeOpacity={e.hop === 1 ? 0.85 : 0.5}
-                    />
-                  );
-                })}
-
-                {/* Centre glow */}
-                <circle
-                  cx={cx}
-                  cy={cy}
-                  r={30}
-                  fill={NODE_COLORS[focusNode.type] ?? NODE_COLORS.unknown}
-                  fillOpacity={0.16}
-                />
-              </svg>
-
-              {/* Centre node */}
-              <div
-                className="absolute flex flex-col items-center gap-1.5 pointer-events-none"
-                style={{
-                  left: cx,
-                  top: cy,
-                  transform: "translate(-50%, -50%)",
+              <Select
+                value={focusId ?? undefined}
+                onValueChange={v => {
+                  recenter(v);
+                  if (isCompact) setMobilePanel("map");
                 }}
               >
-                <span
-                  className="rounded-full"
-                  style={{
-                    width: 44,
-                    height: 44,
-                    background:
-                      NODE_COLORS[focusNode.type] ?? NODE_COLORS.unknown,
-                  }}
-                />
-                <span className="text-xs font-bold text-white bg-[#0f1117]/80 px-2 py-0.5 rounded whitespace-nowrap max-w-[220px] truncate">
-                  {focusNode.label}
-                </span>
-              </div>
+                <SelectTrigger className="w-full h-8 text-xs">
+                  <SelectValue placeholder="Select an entity…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {entityGroups.map(g => (
+                    <SelectGroup key={g.type}>
+                      <SelectLabel>{g.label}</SelectLabel>
+                      {g.nodes.map(n => (
+                        <SelectItem key={n.id} value={n.id}>
+                          {n.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-              {/* Ring nodes */}
-              {placed.map(p => (
-                <button
-                  key={p.node.id}
-                  onClick={() => recenter(p.node.id)}
-                  title={`${p.node.label} — click to focus`}
-                  className="absolute flex flex-col items-center gap-1 group"
-                  style={{
-                    left: cx + p.x,
-                    top: cy + p.y,
-                    transform: "translate(-50%, -50%)",
-                  }}
-                >
-                  <span
-                    className="rounded-full transition-transform group-hover:scale-125"
-                    style={{
-                      width: radiusFor(p.node, p.hop) * 2,
-                      height: radiusFor(p.node, p.hop) * 2,
-                      background:
-                        NODE_COLORS[p.node.type] ?? NODE_COLORS.unknown,
-                      opacity: p.hop === 1 ? 1 : 0.72,
-                    }}
-                  />
-                  <span
-                    className={`whitespace-nowrap px-1.5 py-0.5 rounded bg-[#0f1117]/75 max-w-[150px] truncate ${
-                      p.hop === 1
-                        ? "text-[10.5px] text-slate-200"
-                        : "text-[9.5px] text-slate-400"
-                    }`}
-                  >
-                    {p.node.label}
-                  </span>
-                </button>
-              ))}
-
-              {/* "+N more" chip for a crowded inner ring */}
-              {hiddenRing1Count > 0 && (
-                <button
-                  onClick={() => setExpandRing1(true)}
-                  className="absolute text-[10px] px-2 py-1 rounded-full border border-dashed border-slate-500 text-slate-300 hover:bg-slate-700/40 transition-colors"
-                  style={{
-                    left: cx,
-                    top: cy + ringRadii.ring1 + 34,
-                    transform: "translate(-50%, -50%)",
-                  }}
-                >
-                  +{hiddenRing1Count} more direct
-                </button>
-              )}
-
-              {/* Stats overlay */}
-              <div className="absolute bottom-3 left-3 text-xs text-slate-500 pointer-events-none">
-                {ring1Placed.length} direct
-                {hops === 2 &&
-                  ` · ${placed.length - ring1Placed.length} second-degree`}
-                {hiddenRing2Count > 0 && ` · ${hiddenRing2Count} not shown`}
-              </div>
-            </>
-          )}
-        </div>
-        )}
-
-        {/* ── Right: focus detail ─────────────────────────────────────────── */}
-        {(!isCompact || mobilePanel === "details") && focusNode && (
-          <div className={isCompact ? "w-full flex flex-col overflow-hidden" : "w-64 shrink-0 border-l border-border bg-card flex flex-col overflow-hidden"}>
-            <div className="flex items-start justify-between px-3 py-3 border-b border-border">
-              <div className="flex-1 min-w-0">
+            {focusNode && (
+              <div className="px-3 py-2.5 border-b border-border">
                 <div className="flex items-center gap-1.5 mb-1">
                   <span style={{ color: NODE_COLORS[focusNode.type] }}>
                     {NODE_ICONS[focusNode.type]}
@@ -776,43 +584,23 @@ export default function EgoNetworkMap() {
                     {ENTITY_LABELS[focusNode.type] ?? focusNode.type}
                   </span>
                 </div>
-                <p className="text-sm font-bold text-foreground leading-tight break-words">
-                  {focusNode.label}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="text-xs text-muted-foreground">
                   {focusNode.occurrences} occurrence
                   {focusNode.occurrences !== 1 ? "s" : ""}
                 </p>
               </div>
-            </div>
-
-            {focusNode.operationNames.length > 0 && (
-              <div className="px-3 py-2 border-b border-border">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
-                  Operations
-                </p>
-                <div className="flex flex-wrap gap-1">
-                  {focusNode.operationNames.map((name, i) => (
-                    <Badge
-                      key={i}
-                      variant="outline"
-                      className="text-xs px-1.5 py-0.5"
-                    >
-                      {name}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
             )}
 
-            <div className="px-3 py-2 border-b border-border">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                Direct links ({ring1Ids.length + hiddenRing1Count})
-              </p>
-            </div>
+            {focusNode && (
+              <div className="px-3 py-2 border-b border-border">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Direct links ({ring1Ids.length + hiddenRing1Count})
+                </p>
+              </div>
+            )}
             <ScrollArea className="flex-1">
               <div className="p-2 space-y-0.5">
-                {placed.length === 0 && (
+                {focusNode && placed.length === 0 && (
                   <p className="text-xs text-muted-foreground px-1 py-2">
                     This entity has no recorded co-occurrences.
                   </p>
@@ -843,6 +631,197 @@ export default function EgoNetworkMap() {
                 ))}
               </div>
             </ScrollArea>
+
+            <div className="border-t border-border p-3 space-y-1.5">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                Legend
+              </p>
+              <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+                {ENTITY_TYPES.map(t => (
+                  <div
+                    key={t}
+                    className="flex items-center gap-2 text-xs text-muted-foreground"
+                  >
+                    <span
+                      className="w-2.5 h-2.5 rounded-full shrink-0"
+                      style={{ background: NODE_COLORS[t] }}
+                    />
+                    {ENTITY_LABELS[t]}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-2 text-xs text-muted-foreground/60">
+                Inner ring = direct links. Outer ring = one step further.
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Ring canvas ─────────────────────────────────────────────────── */}
+        {(!isCompact || mobilePanel === "map") && (
+          <div
+            ref={containerRef}
+            className="flex-1 relative overflow-hidden bg-[#0f1117]"
+          >
+            {isLoading && (
+              <div className="absolute inset-0 flex items-center justify-center z-10">
+                <Spinner className="w-8 h-8 text-primary" />
+              </div>
+            )}
+
+            {!isLoading && !focusNode && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground">
+                <p className="text-sm">No entities available.</p>
+                <p className="text-xs">
+                  Pick a focus entity from the list once observations have been
+                  logged.
+                </p>
+              </div>
+            )}
+
+            {!isLoading && focusNode && (
+              <>
+                <svg
+                  width={size.w}
+                  height={size.h}
+                  className="absolute inset-0"
+                >
+                  {/* Hop-distance guides */}
+                  <circle
+                    cx={cx}
+                    cy={cy}
+                    r={ringRadii.ring1}
+                    fill="none"
+                    stroke="#262b36"
+                    strokeDasharray="4 4"
+                  />
+                  {hops === 2 && (
+                    <circle
+                      cx={cx}
+                      cy={cy}
+                      r={ringRadii.ring2}
+                      fill="none"
+                      stroke="#262b36"
+                      strokeDasharray="4 4"
+                    />
+                  )}
+
+                  {/* Edges */}
+                  {edges.map((e, i) => {
+                    const x1 = e.from ? cx + e.from.x : cx;
+                    const y1 = e.from ? cy + e.from.y : cy;
+                    const x2 = cx + e.to.x;
+                    const y2 = cy + e.to.y;
+                    return (
+                      <line
+                        key={i}
+                        x1={x1}
+                        y1={y1}
+                        x2={x2}
+                        y2={y2}
+                        stroke={e.hop === 1 ? "#cbd5e1" : "#3f4653"}
+                        strokeWidth={
+                          e.hop === 1
+                            ? Math.max(1, Math.min(4, e.to.weight * 0.9))
+                            : 1.2
+                        }
+                        strokeOpacity={e.hop === 1 ? 0.85 : 0.5}
+                      />
+                    );
+                  })}
+
+                  {/* Centre glow */}
+                  <circle
+                    cx={cx}
+                    cy={cy}
+                    r={30}
+                    fill={NODE_COLORS[focusNode.type] ?? NODE_COLORS.unknown}
+                    fillOpacity={0.16}
+                  />
+                </svg>
+
+                {/* Centre node */}
+                <div
+                  className="absolute flex flex-col items-center gap-1.5 pointer-events-none"
+                  style={{
+                    left: cx,
+                    top: cy,
+                    transform: "translate(-50%, -50%)",
+                  }}
+                >
+                  <span
+                    className="rounded-full"
+                    style={{
+                      width: 44,
+                      height: 44,
+                      background:
+                        NODE_COLORS[focusNode.type] ?? NODE_COLORS.unknown,
+                    }}
+                  />
+                  <span className="text-xs font-bold text-white bg-[#0f1117]/80 px-2 py-0.5 rounded whitespace-nowrap max-w-[220px] truncate">
+                    {focusNode.label}
+                  </span>
+                </div>
+
+                {/* Ring nodes */}
+                {placed.map(p => (
+                  <button
+                    key={p.node.id}
+                    onClick={() => recenter(p.node.id)}
+                    title={`${p.node.label} — click to focus`}
+                    className="absolute flex flex-col items-center gap-1 group"
+                    style={{
+                      left: cx + p.x,
+                      top: cy + p.y,
+                      transform: "translate(-50%, -50%)",
+                    }}
+                  >
+                    <span
+                      className="rounded-full transition-transform group-hover:scale-125"
+                      style={{
+                        width: radiusFor(p.node, p.hop) * 2,
+                        height: radiusFor(p.node, p.hop) * 2,
+                        background:
+                          NODE_COLORS[p.node.type] ?? NODE_COLORS.unknown,
+                        opacity: p.hop === 1 ? 1 : 0.72,
+                      }}
+                    />
+                    <span
+                      className={`whitespace-nowrap px-1.5 py-0.5 rounded bg-[#0f1117]/75 max-w-[150px] truncate ${
+                        p.hop === 1
+                          ? "text-[10.5px] text-slate-200"
+                          : "text-[9.5px] text-slate-400"
+                      }`}
+                    >
+                      {p.node.label}
+                    </span>
+                  </button>
+                ))}
+
+                {/* "+N more" chip for a crowded inner ring */}
+                {hiddenRing1Count > 0 && (
+                  <button
+                    onClick={() => setExpandRing1(true)}
+                    className="absolute text-[10px] px-2 py-1 rounded-full border border-dashed border-slate-500 text-slate-300 hover:bg-slate-700/40 transition-colors"
+                    style={{
+                      left: cx,
+                      top: cy + ringRadii.ring1 + 34,
+                      transform: "translate(-50%, -50%)",
+                    }}
+                  >
+                    +{hiddenRing1Count} more direct
+                  </button>
+                )}
+
+                {/* Stats overlay */}
+                <div className="absolute bottom-3 left-3 text-xs text-slate-500 pointer-events-none">
+                  {ring1Placed.length} direct
+                  {hops === 2 &&
+                    ` · ${placed.length - ring1Placed.length} second-degree`}
+                  {hiddenRing2Count > 0 && ` · ${hiddenRing2Count} not shown`}
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>

@@ -3,7 +3,6 @@ import { trpc, trpcClient } from "@/lib/trpc";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 import {
   buildRollupSheetBlocksHtml,
-  formatRollupDate,
   parseRollupJsonArray,
   type RollupExportRow,
 } from "@/lib/rollupSection";
@@ -1256,6 +1255,29 @@ function RollupSection({
   );
 }
 
+/**
+ * "7 August 26" — card-only date format, distinct from formatRollupDate's
+ * "07-08-2026" (still used by the PDF export and Intel Packages page).
+ * sheetDate (when present) is a plain "yyyy-MM-dd" string with no time
+ * component — parsed via Date.UTC rather than round-tripping through a
+ * local-timezone-sensitive `new Date(ymd)` so the displayed day can't shift.
+ */
+function formatRollupCardDate(
+  sheetDate: string | null,
+  createdAt: Date | string
+): string {
+  const ymd = sheetDate ?? new Date(createdAt).toISOString().slice(0, 10);
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || !m || !d) return ymd;
+  const date = new Date(Date.UTC(y, m - 1, d));
+  const day = date.getUTCDate();
+  const month = date.toLocaleDateString("en-US", {
+    month: "long",
+    timeZone: "UTC",
+  });
+  return `${day} ${month} ${String(y).slice(-2)}`;
+}
+
 function DeploymentRollupCard({
   row: r,
   expanded,
@@ -1279,7 +1301,6 @@ function DeploymentRollupCard({
     r.criticalDecisions
   ).filter(c => c.trim());
   const hasIssues = !!(r.issues && r.issues.trim());
-  const isComplete = !!r.completedAt;
 
   const { data: entries, isLoading: entriesLoading } =
     trpc.summary.getEntries.useQuery(
@@ -1304,19 +1325,28 @@ function DeploymentRollupCard({
         onClick={onToggle}
         className="w-full text-left px-5 py-4 hover:bg-accent/20 transition-colors"
       >
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 min-w-0">
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
               <ChevronDown
                 className={`w-4 h-4 text-muted-foreground shrink-0 transition-transform ${expanded ? "" : "-rotate-90"}`}
               />
               <span className="text-base font-semibold text-foreground">
-                {formatRollupDate(r.sheetDate, r.createdAt)}
+                {formatRollupCardDate(r.sheetDate, r.createdAt)}
               </span>
-              {r.teamLabel && (
-                <span className="text-xs font-semibold uppercase tracking-wide px-2 py-1 rounded-md bg-primary/10 text-primary border border-primary/20">
-                  {r.teamLabel}
-                </span>
+            </div>
+            {r.teamLabel && (
+              <span className="shrink-0 text-xs font-semibold uppercase tracking-wide px-2 py-1 rounded-md bg-primary/10 text-primary border border-primary/20">
+                {r.teamLabel}
+              </span>
+            )}
+          </div>
+          {(r.targetName || r.startTime || r.finishTime) && (
+            <div className="pl-6 flex flex-col gap-0.5">
+              {r.targetName && (
+                <p className="text-sm font-bold text-foreground">
+                  {r.targetName}
+                </p>
               )}
               {(r.startTime || r.finishTime) && (
                 <span className="text-sm text-muted-foreground">
@@ -1324,21 +1354,7 @@ function DeploymentRollupCard({
                 </span>
               )}
             </div>
-            {r.targetName && (
-              <p className="text-sm font-bold text-foreground truncate pl-6 mt-1">
-                {r.targetName}
-              </p>
-            )}
-          </div>
-          <span
-            className={`shrink-0 text-xs font-semibold uppercase tracking-wide px-2 py-1 rounded-md border ${
-              isComplete
-                ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:text-emerald-400"
-                : "bg-amber-500/10 text-amber-600 border-amber-500/20 dark:text-amber-400"
-            }`}
-          >
-            {isComplete ? "Complete" : "Open"}
-          </span>
+          )}
         </div>
       </button>
 

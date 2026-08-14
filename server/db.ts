@@ -14,7 +14,7 @@ import {
 } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { createPool as createPromisePool } from "mysql2/promise";
-import { vaultEncrypt, vaultDecrypt } from "./wipcVault";
+import { vaultEncrypt, vaultDecrypt, fingerprintVaultKey } from "./wipcVault";
 import { cosineSimilarity } from "./faceRecognition";
 import { makeRequest, type GeocodingResult } from "./_core/map";
 import { formatIntelAddress, formatIntelVehicle } from "@shared/addressFormat";
@@ -61,6 +61,7 @@ import {
   wipcMembers,
   wipcOfficerProfiles,
   wipcAuditLog,
+  wipcVaultKeyCheck,
   WipcMemberRecord,
   WipcOfficerProfile,
   userLocations,
@@ -7139,6 +7140,49 @@ function decryptOfficer(o: Record<string, unknown>): Record<string, unknown> {
     if (typeof out[f] === "string") out[f] = vaultDecrypt(out[f] as string);
   }
   return out;
+}
+
+/**
+ * Guards against the WIPC vault silently swapping keys underneath existing
+ * data. A wrong/rotated WIPC_VAULT_KEY doesn't fail loudly on its own — it
+ * just makes vaultDecrypt() throw (or worse, on a key of the right shape,
+ * decrypt to garbage) the next time someone happens to open an existing
+ * record. Called once at server startup (see server/_core/index.ts) so a
+ * mismatch is caught before the app ever serves a request, not weeks later
+ * when an officer opens a real WIPC record.
+ *
+ * On the very first run with a given key (no canary row yet) it records a
+ * fingerprint of that key plus a small encrypted marker, so future startups
+ * have something to check against.
+ */
+export async function verifyWipcVaultKeyOrThrow(): Promise<void> {
+  if (!process.env.WIPC_VAULT_KEY) return; // vault not configured — nothing to check yet
+  const db = await getDb();
+  if (!db) return; // DB unavailable — let the normal DB connectivity checks surface this
+
+  const fingerprint = fingerprintVaultKey();
+  const [existing] = await db.select().from(wipcVaultKeyCheck).limit(1);
+
+  if (!existing) {
+    await db.insert(wipcVaultKeyCheck).values({
+      keyFingerprint: fingerprint,
+      canaryValue: vaultEncrypt("WIPC_VAULT_KEY_OK"),
+    });
+    return;
+  }
+
+  if (
+    existing.keyFingerprint !== fingerprint ||
+    vaultDecrypt(existing.canaryValue) !== "WIPC_VAULT_KEY_OK"
+  ) {
+    throw new Error(
+      "WIPC_VAULT_KEY does not match the key that encrypted the existing WIPC vault data. " +
+        "Refusing to start with a mismatched key — using it would make existing WIPC records " +
+        "permanently unreadable rather than just blocking new saves. If this key change is " +
+        "intentional (e.g. the old WIPC data is known-disposable test data), clear the " +
+        "wipc_officer_profiles, wipc_members and wipc_vault_key_check tables first, then restart."
+    );
+  }
 }
 
 /** Write an entry to the WIPC audit log */

@@ -853,6 +853,22 @@ export const wipcAuditLog = mysqlTable("wipc_audit_log", {
 export type WipcAuditEntry = typeof wipcAuditLog.$inferSelect;
 export type InsertWipcAuditEntry = typeof wipcAuditLog.$inferInsert;
 
+/**
+ * wipcVaultKeyCheck — a single-row canary used to detect a WIPC_VAULT_KEY
+ * mismatch at server startup (see verifyWipcVaultKeyOrThrow in db.ts). Holds
+ * a non-reversible fingerprint of the key that encrypted the existing WIPC
+ * vault data, plus a small known value encrypted with that same key. Never
+ * stores the key itself.
+ */
+export const wipcVaultKeyCheck = mysqlTable("wipc_vault_key_check", {
+  id: int("id").autoincrement().primaryKey(),
+  keyFingerprint: varchar("keyFingerprint", { length: 64 }).notNull(),
+  canaryValue: text("canaryValue").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type WipcVaultKeyCheck = typeof wipcVaultKeyCheck.$inferSelect;
+export type InsertWipcVaultKeyCheck = typeof wipcVaultKeyCheck.$inferInsert;
+
 // ─── Custom Map Markers ─────────────────────────────────────────────────────
 // User-placed markers on the intelligence map. Each marker has a position,
 // an icon (type + colour), optional label/address, and optional links to

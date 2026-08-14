@@ -34,7 +34,10 @@ export function vaultEncrypt(plaintext: string | null | undefined): string {
   const key = getKey();
   const iv = crypto.randomBytes(IV_LENGTH);
   const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
-  const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+  const encrypted = Buffer.concat([
+    cipher.update(plaintext, "utf8"),
+    cipher.final(),
+  ]);
   const authTag = cipher.getAuthTag();
   // Format: iv_hex:authTag_hex:ciphertext_base64
   return `${iv.toString("hex")}:${authTag.toString("hex")}:${encrypted.toString("base64")}`;
@@ -58,7 +61,10 @@ export function vaultDecrypt(encoded: string | null | undefined): string {
   const ciphertext = Buffer.from(ciphertextBase64, "base64");
   const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
   decipher.setAuthTag(authTag);
-  const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  const decrypted = Buffer.concat([
+    decipher.update(ciphertext),
+    decipher.final(),
+  ]);
   return decrypted.toString("utf8");
 }
 
@@ -95,4 +101,14 @@ export function vaultDecryptFields<T extends Record<string, unknown>>(
     }
   }
   return result;
+}
+
+/**
+ * A non-reversible fingerprint of the current WIPC_VAULT_KEY (sha256, truncated).
+ * Used to detect when the configured key doesn't match the key that encrypted
+ * existing vault data — without ever storing or logging the key itself.
+ */
+export function fingerprintVaultKey(): string {
+  const key = getKey();
+  return crypto.createHash("sha256").update(key).digest("hex").slice(0, 32);
 }

@@ -15,7 +15,11 @@ import { registerRawAttachmentUploadRoute } from "../attachmentUpload";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
-import { seedShortcutsIfEmpty, ensureDefaultShortcuts } from "../db";
+import {
+  seedShortcutsIfEmpty,
+  ensureDefaultShortcuts,
+  verifyWipcVaultKeyOrThrow,
+} from "../db";
 import { ENV } from "./env";
 
 // Fail fast rather than silently signing every session with an empty key.
@@ -23,6 +27,24 @@ if (!ENV.cookieSecret || ENV.cookieSecret.length < 32) {
   throw new Error(
     "JWT_SECRET is not set or is too short (must be at least 32 characters). " +
       "Refusing to start: an empty/weak secret would let anyone forge a valid login session."
+  );
+}
+
+// WIPC_VAULT_KEY is optional (the WIPC feature is opt-in), but if it's set
+// it must be well-formed — catch a truncated/mistyped key immediately at
+// startup rather than only discovering it when an officer tries to save a
+// WIPC record. Absence is allowed here; verifyWipcVaultKeyOrThrow (called
+// once the DB is up, below) does the deeper check against existing data.
+if (process.env.WIPC_VAULT_KEY && process.env.WIPC_VAULT_KEY.length !== 64) {
+  throw new Error(
+    "WIPC_VAULT_KEY is set but is not a valid 64-character hex string. " +
+      "Refusing to start: a malformed key would block or corrupt all WIPC vault operations."
+  );
+}
+if (!process.env.WIPC_VAULT_KEY) {
+  console.warn(
+    "[WIPC] WIPC_VAULT_KEY is not set — the WIPC (Witness Identity Protection Certificate) " +
+      "vault will be unavailable until it is configured (see server/wipcVault.ts)."
   );
 }
 
@@ -53,10 +75,15 @@ const authRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many requests, please try again later." },
-  skip: (req) => process.env.NODE_ENV === "test",
+  skip: req => process.env.NODE_ENV === "test",
 });
 
 async function startServer() {
+  // Detect a rotated/wrong WIPC_VAULT_KEY before serving any requests — see
+  // verifyWipcVaultKeyOrThrow in db.ts for why this can't just be caught by
+  // the format check above.
+  await verifyWipcVaultKeyOrThrow();
+
   const app = express();
   const server = createServer(app);
 
@@ -69,10 +96,12 @@ async function startServer() {
   app.set("trust proxy", 1);
 
   // ─── Security headers (Helmet — CSP excluded to avoid blocking app resources) ─
-  app.use(helmet({
-    contentSecurityPolicy: false,   // CSP requires careful per-app whitelisting — applied separately when ready
-    crossOriginEmbedderPolicy: false, // Allows Manus OAuth portal to embed resources
-  }));
+  app.use(
+    helmet({
+      contentSecurityPolicy: false, // CSP requires careful per-app whitelisting — applied separately when ready
+      crossOriginEmbedderPolicy: false, // Allows Manus OAuth portal to embed resources
+    })
+  );
 
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
@@ -89,7 +118,10 @@ async function startServer() {
   // real paths explicitly instead. Deliberately excludes auth.me/auth.logout,
   // which are innocuous and called far more than 20 times per 15 minutes in
   // normal use.
-  const RATE_LIMITED_TRPC_PATHS = ["/api/trpc/auth.login", "/api/trpc/auth.setNewPassword"];
+  const RATE_LIMITED_TRPC_PATHS = [
+    "/api/trpc/auth.login",
+    "/api/trpc/auth.setNewPassword",
+  ];
   app.use("/api/oauth", authRateLimiter);
   app.use((req, res, next) => {
     if (RATE_LIMITED_TRPC_PATHS.some(p => req.path.startsWith(p))) {
@@ -128,4 +160,7 @@ async function startServer() {
 
 startServer()
   .then(() => ensureDefaultShortcuts(1).catch(() => {}))
-  .catch(console.error);
+  .catch(err => {
+    console.error(err);
+    process.exit(1);
+  });

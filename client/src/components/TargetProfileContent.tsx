@@ -145,7 +145,22 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 
   <div class="section">
     <div class="section-title">Operations</div>
-    <div class="ops-list">${profile.operations.map(o => `<span class="op-badge">${esc(o.name)}</span>`).join("")}</div>
+    <div class="ops-list">${profile.operations.map(o => `<span class="op-badge">${esc(o.name)}</span>`).join("")}${(() => {
+      const linkedIds = new Set(profile.operations.map(o => o.id));
+      const mentionedOnly = Array.from(
+        new Map(
+          profile.mentionedSheets
+            .filter(s => !linkedIds.has(s.operationId))
+            .map(s => [s.operationId, s.operationName])
+        ).entries()
+      );
+      return mentionedOnly
+        .map(
+          ([id, name]) =>
+            `<span class="op-badge" style="opacity:0.65;border-style:dashed;">${esc(name)} <span style="font-size:8px;text-transform:uppercase;">(mentioned)</span></span>`
+        )
+        .join("");
+    })()}</div>
   </div>
 
   ${
@@ -314,6 +329,27 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
   const historyFor = (field: string) =>
     fieldHistory.filter(h => h.fieldName === field);
 
+  // Operations this target has actually been mentioned in (via
+  // mentionedSheets — the same name-matched data backing "Also Mentioned
+  // In") but isn't formally linked to via the Registry's own operation
+  // links. Kept separate from profile.operations for the same reason
+  // mentionedSheets is kept separate from linkedSheets: "formally on this
+  // operation" and "seen active during this operation" are different claims.
+  const mentionedOnlyOps = profile
+    ? Array.from(
+        new Map(
+          profile.mentionedSheets
+            .filter(
+              s => !profile.operations.some(op => op.id === s.operationId)
+            )
+            .map(s => [
+              s.operationId,
+              { id: s.operationId, name: s.operationName },
+            ])
+        ).values()
+      )
+    : [];
+
   function exportPdf() {
     if (!profile) return;
     const html = buildTargetProfileHtml(profile, photos, fieldHistory);
@@ -419,6 +455,20 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
                 >
                   <Folder className="w-3 h-3" />
                   {op.name}
+                </button>
+              ))}
+              {mentionedOnlyOps.map(op => (
+                <button
+                  key={`mentioned-${op.id}`}
+                  onClick={() => navigate(`/intelligence/operation/${op.id}`)}
+                  title="Not formally linked — this target was named in an observation on this operation"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-muted/20 text-muted-foreground border border-dashed border-border hover:bg-accent/10 transition-colors"
+                >
+                  <Folder className="w-3 h-3" />
+                  {op.name}
+                  <span className="text-[9px] uppercase tracking-wide opacity-70">
+                    mentioned
+                  </span>
                 </button>
               ))}
             </div>

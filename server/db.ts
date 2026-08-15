@@ -2172,10 +2172,60 @@ export async function updateTarget(
       | "vehType"
       | "extraAddresses"
     >
-  >
+  >,
+  /** Set when the officer has explicitly chosen "Add new HB/V1" over "Edit
+   * current HB/V1" — see TargetRegistry.tsx. Archives the target's current
+   * hbf/v1f into target_field_history (the same "Previous" record the
+   * duplicate-target merge flow already writes) before applying the new
+   * value, so a genuine change is preserved while a plain typo-fix isn't. */
+  options?: {
+    isNewAddress?: boolean;
+    isNewVehicle?: boolean;
+    byCIN?: string | null;
+  }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
+
+  if (options?.isNewAddress || options?.isNewVehicle) {
+    const current = await getTargetById(id);
+    if (current) {
+      const now = Date.now();
+      const historyRows: InsertTargetFieldHistory[] = [];
+      if (
+        options.isNewAddress &&
+        current.hbf &&
+        current.hbf.trim() &&
+        current.hbf.trim() !== (data.hbf ?? "").trim()
+      ) {
+        historyRows.push({
+          targetId: id,
+          fieldName: "hbf",
+          previousValue: current.hbf,
+          supersededAt: now,
+          supersededByCIN: options.byCIN ?? null,
+        });
+      }
+      if (
+        options.isNewVehicle &&
+        current.v1f &&
+        current.v1f.trim() &&
+        current.v1f.trim() !== (data.v1f ?? "").trim()
+      ) {
+        historyRows.push({
+          targetId: id,
+          fieldName: "v1f",
+          previousValue: current.v1f,
+          supersededAt: now,
+          supersededByCIN: options.byCIN ?? null,
+        });
+      }
+      if (historyRows.length > 0) {
+        await db.insert(targetFieldHistory).values(historyRows);
+      }
+    }
+  }
+
   await db.update(targets).set(data).where(eq(targets.id, id));
   return { id };
 }

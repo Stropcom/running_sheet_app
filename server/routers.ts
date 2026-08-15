@@ -2482,12 +2482,21 @@ export const appRouter = router({
             arr: z.string().optional().nullable(),
             extraVehicles: z.string().optional().nullable(),
             wildFields: z.string().optional().nullable(),
+            /** True when the officer chose "Add new HB" / "Add new V1" over
+             * "Edit current" — archives the current hbf/v1f as "Previous"
+             * before this update applies. See TargetRegistry.tsx. */
+            isNewAddress: z.boolean().optional(),
+            isNewVehicle: z.boolean().optional(),
             ...structuredTargetFieldsSchema,
           })
         )
-        .mutation(async ({ input }) => {
-          const { id, ...data } = input;
-          return updateTarget(id, data);
+        .mutation(async ({ input, ctx }) => {
+          const { id, isNewAddress, isNewVehicle, ...data } = input;
+          return updateTarget(id, data, {
+            isNewAddress,
+            isNewVehicle,
+            byCIN: ctx.user.cin ?? undefined,
+          });
         }),
 
       /** Delete a target from the registry (soft-delete → Recycle Bin) */

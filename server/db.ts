@@ -3278,8 +3278,7 @@ export function extractEntitiesFromText(text: string): Array<{
       // list ("Monaro"), multi-word makes ("Mercedes Benz"), etc. Instead,
       // keep the description exactly as the officer wrote it: everything
       // before the rego mention, minus the trailing "bearing WA
-      // registration"/"registration"/"rego"/"reg"/"plate" boilerplate clause
-      // (and a leading article, if any).
+      // registration"/"registration"/"rego"/"reg"/"plate" boilerplate clause.
 
       // Step 1: extract raw rego
       const rawRego = shortForm.replace(/^vehicle\s+/i, "").trim();
@@ -3306,7 +3305,33 @@ export function extractEntitiesFromText(text: string): Array<{
           ""
         )
         .replace(/[,;]\s*$/, "")
-        .replace(/^(a|an|the)\s+/i, "")
+        .trim();
+
+      // A real vehicle description is a short noun phrase (colour + make +
+      // model + trim + body, typically 2-5 words). When an officer embeds
+      // that same phrase in a longer narrative sentence instead of writing
+      // it tersely — "WINMAR and LOWE walked through the car park to a blue
+      // Mercedes Benz C250 sedan, bearing WA registration 1HFD521" — keeping
+      // the whole clause up to the rego drags the narrative prose in too.
+      // Cut at the LAST standalone article ("a"/"an"/"the") — that's
+      // reliably where the noun phrase describing the vehicle starts, since
+      // narrative lead-ins almost always end "...to a", "...into an",
+      // "...near the", etc. Falls back to a generous word-count cap when no
+      // article is present, as a backstop against unbounded narrative text
+      // with no article at all.
+      const articlePattern = /\b(?:a|an|the)\s+(?=\S)/gi;
+      let lastArticleEnd = -1;
+      let articleMatch: RegExpExecArray | null;
+      while ((articleMatch = articlePattern.exec(descSource)) !== null) {
+        lastArticleEnd = articleMatch.index + articleMatch[0].length;
+      }
+      if (lastArticleEnd >= 0) {
+        descSource = descSource.slice(lastArticleEnd);
+      } else {
+        const words = descSource.split(/\s+/).filter(Boolean);
+        if (words.length > 8) descSource = words.slice(-8).join(" ");
+      }
+      descSource = descSource
         .replace(/^vehicle\s+/i, "")
         .replace(/\s+/g, " ")
         .trim();

@@ -151,6 +151,10 @@ import {
   mergeEntities,
   unmergeEntity,
   listEntityMerges,
+  getKnownPersonNameCorrection,
+  checkPossibleTargetMatches,
+  confirmPersonNameMatch,
+  rejectPersonNameMatch,
   searchIntelligenceEntities,
   listShortcuts,
   createShortcut,
@@ -3027,6 +3031,67 @@ export const appRouter = router({
     listEntityMerges: protectedProcedure.query(async () => {
       return listEntityMerges();
     }),
+
+    /** Silent lookup: has this exact spelling already been confirmed against a Target/Associate? Backs auto-correcting a row's text on save without re-prompting. */
+    getKnownPersonNameCorrection: protectedProcedure
+      .input(z.object({ spelling: z.string().min(1) }))
+      .query(async ({ input }) => {
+        return getKnownPersonNameCorrection(input.spelling);
+      }),
+
+    /** Fuzzy-match a not-yet-saved person mention against the Target/Associate Registry — backs the save-time "is this an existing Target?" prompt. */
+    checkPossibleTargetMatches: protectedProcedure
+      .input(z.object({ label: z.string().min(1) }))
+      .query(async ({ input }) => {
+        return checkPossibleTargetMatches(input.label);
+      }),
+
+    /** Confirms a spelling belongs to an existing Target/Associate — this and future exact matches auto-correct silently from now on. */
+    confirmPersonNameMatch: protectedProcedure
+      .input(
+        z.object({
+          spelling: z.string().min(1),
+          targetId: z.number().optional(),
+          associateId: z.number().optional(),
+          correctSpelling: z.string().min(1),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        if (!input.targetId && !input.associateId) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Either targetId or associateId is required.",
+          });
+        }
+        await confirmPersonNameMatch({
+          ...input,
+          decidedByCIN: ctx.user.cin ?? undefined,
+        });
+        return { ok: true };
+      }),
+
+    /** Records "not the same person" so this exact pairing isn't asked about again. */
+    rejectPersonNameMatch: protectedProcedure
+      .input(
+        z.object({
+          spelling: z.string().min(1),
+          targetId: z.number().optional(),
+          associateId: z.number().optional(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        if (!input.targetId && !input.associateId) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Either targetId or associateId is required.",
+          });
+        }
+        await rejectPersonNameMatch({
+          ...input,
+          decidedByCIN: ctx.user.cin ?? undefined,
+        });
+        return { ok: true };
+      }),
 
     /** Substring search over existing entities of one type — backs the manual Merge Entities picker and the Target Registry autocomplete. */
     searchEntities: protectedProcedure

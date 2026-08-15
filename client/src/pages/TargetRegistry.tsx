@@ -718,11 +718,11 @@ function TargetCard({
               </p>
               {addressMode === "locked" ? (
                 <div className="flex flex-col">
-                  <div className="flex items-start justify-between gap-3">
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
                     <p className="text-sm text-foreground flex-1">
                       {target.hbf ?? target.hb}
                     </p>
-                    <div className="flex gap-1.5 shrink-0">
+                    <div className="flex gap-1.5 flex-wrap sm:shrink-0">
                       <Button
                         size="sm"
                         variant="outline"
@@ -775,11 +775,11 @@ function TargetCard({
               </p>
               {vehicleMode === "locked" ? (
                 <div className="flex flex-col">
-                  <div className="flex items-start justify-between gap-3">
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
                     <p className="text-sm text-foreground flex-1">
                       {target.v1f ?? target.v1}
                     </p>
-                    <div className="flex gap-1.5 shrink-0">
+                    <div className="flex gap-1.5 flex-wrap sm:shrink-0">
                       <Button
                         size="sm"
                         variant="outline"
@@ -850,7 +850,7 @@ function TargetCard({
                   </div>
                   {mode === "locked" ? (
                     <div className="flex flex-col">
-                      <div className="flex items-start justify-between gap-3">
+                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
                         <div className="flex-1">
                           {ea.label && (
                             <p className="text-xs text-muted-foreground">
@@ -859,7 +859,7 @@ function TargetCard({
                           )}
                           <p className="text-sm text-foreground">{ea.full}</p>
                         </div>
-                        <div className="flex gap-1.5 shrink-0">
+                        <div className="flex gap-1.5 flex-wrap sm:shrink-0">
                           <Button
                             size="sm"
                             variant="outline"
@@ -941,11 +941,11 @@ function TargetCard({
                   </div>
                   {mode === "locked" ? (
                     <div className="flex flex-col">
-                      <div className="flex items-start justify-between gap-3">
+                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
                         <p className="text-sm text-foreground flex-1">
                           {ev.full}
                         </p>
-                        <div className="flex gap-1.5 shrink-0">
+                        <div className="flex gap-1.5 flex-wrap sm:shrink-0">
                           <Button
                             size="sm"
                             variant="outline"

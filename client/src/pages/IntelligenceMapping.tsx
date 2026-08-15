@@ -4286,26 +4286,26 @@ export default function IntelligenceMapping() {
                 onClick={() => handleSharingToggle(!sharingEnabled)}
                 className={`flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 active:scale-[0.98] transition-all min-w-0 ${
                   sharingEnabled
-                    ? "border-emerald-500 bg-emerald-500 hover:bg-emerald-600 shadow-sm"
+                    ? "border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20"
                     : "border-border bg-card hover:bg-accent/40"
                 }`}
                 aria-pressed={sharingEnabled}
               >
                 <Radio
                   className={`h-3.5 w-3.5 flex-shrink-0 ${
-                    sharingEnabled ? "text-white" : "text-muted-foreground"
+                    sharingEnabled ? "text-emerald-500" : "text-muted-foreground"
                   }`}
                 />
                 <span
                   className={`text-xs font-semibold truncate flex-1 text-left ${
-                    sharingEnabled ? "text-white" : "text-foreground"
+                    sharingEnabled ? "text-emerald-500" : "text-foreground"
                   }`}
                 >
                   Show &amp; Share
                 </span>
                 <span
                   className={`text-[11px] font-bold uppercase tracking-wide flex-shrink-0 ${
-                    sharingEnabled ? "text-white" : "text-muted-foreground"
+                    sharingEnabled ? "text-emerald-500" : "text-muted-foreground"
                   }`}
                 >
                   {sharingEnabled ? "On" : "Off"}

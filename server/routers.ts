@@ -2487,14 +2487,28 @@ export const appRouter = router({
              * before this update applies. See TargetRegistry.tsx. */
             isNewAddress: z.boolean().optional(),
             isNewVehicle: z.boolean().optional(),
+            /** Stable `id`s (see ExtraAddress/ExtraVehicle) of extra
+             * address/vehicle entries where the officer chose "Add new"
+             * over "Edit current" — same archiving behaviour, per entry. */
+            newExtraAddressIds: z.array(z.string()).optional(),
+            newExtraVehicleIds: z.array(z.string()).optional(),
             ...structuredTargetFieldsSchema,
           })
         )
         .mutation(async ({ input, ctx }) => {
-          const { id, isNewAddress, isNewVehicle, ...data } = input;
+          const {
+            id,
+            isNewAddress,
+            isNewVehicle,
+            newExtraAddressIds,
+            newExtraVehicleIds,
+            ...data
+          } = input;
           return updateTarget(id, data, {
             isNewAddress,
             isNewVehicle,
+            newExtraAddressIds,
+            newExtraVehicleIds,
             byCIN: ctx.user.cin ?? undefined,
           });
         }),

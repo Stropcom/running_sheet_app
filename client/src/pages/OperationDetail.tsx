@@ -77,6 +77,7 @@ import {
   EMPTY_VEHICLE_PARTS,
   parseExtraVehicles,
   parseExtraAddresses,
+  makeExtraId,
   type ExtraVehicle,
   type ExtraAddress,
 } from "@/components/TargetStructuredFields";
@@ -188,7 +189,13 @@ function TargetCard({
   const addAddress = () => {
     setExtraAddresses(v => [
       ...v,
-      { ...EMPTY_ADDRESS_PARTS, label: "", full: "", short: "" },
+      {
+        ...EMPTY_ADDRESS_PARTS,
+        id: makeExtraId(),
+        label: "",
+        full: "",
+        short: "",
+      },
     ]);
     setDirty(true);
   };
@@ -205,7 +212,7 @@ function TargetCard({
   const addVehicle = () => {
     setExtraVehicles(v => [
       ...v,
-      { ...EMPTY_VEHICLE_PARTS, full: "", short: "" },
+      { ...EMPTY_VEHICLE_PARTS, id: makeExtraId(), full: "", short: "" },
     ]);
     setDirty(true);
   };

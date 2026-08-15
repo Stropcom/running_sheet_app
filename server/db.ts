@@ -2173,27 +2173,37 @@ export async function updateTarget(
       | "extraAddresses"
     >
   >,
-  /** Set when the officer has explicitly chosen "Add new HB/V1" over "Edit
-   * current HB/V1" — see TargetRegistry.tsx. Archives the target's current
-   * hbf/v1f into target_field_history (the same "Previous" record the
-   * duplicate-target merge flow already writes) before applying the new
-   * value, so a genuine change is preserved while a plain typo-fix isn't. */
+  /** Set when the officer has explicitly chosen "Add new" over "Edit
+   * current" for a given HB/V1/extra-address/extra-vehicle field — see
+   * TargetRegistry.tsx. Archives the current value into target_field_history
+   * (the same "Previous" record the duplicate-target merge flow already
+   * writes) before the new value applies, so a genuine change is preserved
+   * while a plain typo-fix isn't. Extra addresses/vehicles are matched by
+   * their stable `id` (see ExtraAddress/ExtraVehicle in
+   * TargetStructuredFields.tsx), not array position, since entries can be
+   * added/removed/reordered around them. */
   options?: {
     isNewAddress?: boolean;
     isNewVehicle?: boolean;
+    newExtraAddressIds?: string[];
+    newExtraVehicleIds?: string[];
     byCIN?: string | null;
   }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
 
-  if (options?.isNewAddress || options?.isNewVehicle) {
+  const hasExtraChanges =
+    (options?.newExtraAddressIds?.length ?? 0) > 0 ||
+    (options?.newExtraVehicleIds?.length ?? 0) > 0;
+
+  if (options?.isNewAddress || options?.isNewVehicle || hasExtraChanges) {
     const current = await getTargetById(id);
     if (current) {
       const now = Date.now();
       const historyRows: InsertTargetFieldHistory[] = [];
       if (
-        options.isNewAddress &&
+        options?.isNewAddress &&
         current.hbf &&
         current.hbf.trim() &&
         current.hbf.trim() !== (data.hbf ?? "").trim()
@@ -2207,7 +2217,7 @@ export async function updateTarget(
         });
       }
       if (
-        options.isNewVehicle &&
+        options?.isNewVehicle &&
         current.v1f &&
         current.v1f.trim() &&
         current.v1f.trim() !== (data.v1f ?? "").trim()
@@ -2220,6 +2230,61 @@ export async function updateTarget(
           supersededByCIN: options.byCIN ?? null,
         });
       }
+
+      const parseJsonArray = (
+        json: string | null | undefined
+      ): Array<{ id?: string; full?: string }> => {
+        if (!json) return [];
+        try {
+          return JSON.parse(json);
+        } catch {
+          return [];
+        }
+      };
+
+      if (options?.newExtraAddressIds?.length) {
+        const oldEntries = parseJsonArray(current.extraAddresses);
+        const newEntries = parseJsonArray(data.extraAddresses);
+        for (const entryId of options.newExtraAddressIds) {
+          const oldEntry = oldEntries.find(e => e.id === entryId);
+          const newEntry = newEntries.find(e => e.id === entryId);
+          if (
+            oldEntry?.full &&
+            oldEntry.full.trim() &&
+            oldEntry.full.trim() !== (newEntry?.full ?? "").trim()
+          ) {
+            historyRows.push({
+              targetId: id,
+              fieldName: `extraAddress:${entryId}`,
+              previousValue: oldEntry.full,
+              supersededAt: now,
+              supersededByCIN: options.byCIN ?? null,
+            });
+          }
+        }
+      }
+      if (options?.newExtraVehicleIds?.length) {
+        const oldEntries = parseJsonArray(current.extraVehicles);
+        const newEntries = parseJsonArray(data.extraVehicles);
+        for (const entryId of options.newExtraVehicleIds) {
+          const oldEntry = oldEntries.find(e => e.id === entryId);
+          const newEntry = newEntries.find(e => e.id === entryId);
+          if (
+            oldEntry?.full &&
+            oldEntry.full.trim() &&
+            oldEntry.full.trim() !== (newEntry?.full ?? "").trim()
+          ) {
+            historyRows.push({
+              targetId: id,
+              fieldName: `extraVehicle:${entryId}`,
+              previousValue: oldEntry.full,
+              supersededAt: now,
+              supersededByCIN: options.byCIN ?? null,
+            });
+          }
+        }
+      }
+
       if (historyRows.length > 0) {
         await db.insert(targetFieldHistory).values(historyRows);
       }

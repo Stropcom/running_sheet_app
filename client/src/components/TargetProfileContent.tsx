@@ -209,6 +209,18 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
   </div>
 
   ${
+    profile.mentionedSheets.length
+      ? `
+  <div class="section">
+    <div class="section-title">Also Mentioned In</div>
+    <div style="border:1px dashed ${GREY_BORDER};border-radius:6px;overflow:hidden">
+      ${profile.mentionedSheets.map(s => `<div class="sheet-item"><div class="sheet-dot"></div><span style="flex:1">${esc(s.title)}</span><span style="color:#64748b">${esc(s.operationName)}</span></div>`).join("")}
+    </div>
+  </div>`
+      : ""
+  }
+
+  ${
     profile.assocPersons.length ||
     profile.assocVehicles.length ||
     profile.assocLocations.length
@@ -525,6 +537,41 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
               </div>
             )}
           </div>
+
+          {/* Also Mentioned In — sheets this target isn't formally assigned
+              to (no runningSheets.targetId link) but whose observation text
+              names them, e.g. as a passenger on someone else's sheet. Kept
+              visually distinct from "Running Sheets" so it reads as
+              "elsewhere, not yours" rather than duplicating that list. */}
+          {profile.mentionedSheets.length > 0 && (
+            <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
+              <SectionHeading
+                label="Also Mentioned In"
+                count={profile.mentionedSheets.length}
+              />
+              <p className="text-xs text-muted-foreground mb-2">
+                Not formally assigned to this target — named in these sheets'
+                observation text.
+              </p>
+              <div className="space-y-1">
+                {profile.mentionedSheets.map(s => (
+                  <button
+                    key={s.id}
+                    onClick={() => navigate(`/sheet/${s.id}`)}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-border/60 bg-muted/10 hover:bg-accent/10 transition-colors text-left"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    <span className="text-xs font-medium text-foreground flex-1 truncate">
+                      {s.title}
+                    </span>
+                    <span className="text-xs text-muted-foreground shrink-0">
+                      {s.operationName}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Registered Associates — recorded directly on this target in the
               Target Registry, a guaranteed link rather than inferred from

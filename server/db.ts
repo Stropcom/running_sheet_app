@@ -7708,6 +7708,17 @@ export interface IntelTargetProfile {
     operationId: number;
     operationName: string;
   }>;
+  /** Sheets this target is NOT formally assigned to (no runningSheets.targetId
+   * link) but whose observation text mentions them by name — e.g. as a
+   * passenger/associate on someone else's running sheet. Sourced from the
+   * same name-matched entity data that already powers the Intelligence
+   * Folder and Ego Network, so it stays consistent with what those show. */
+  mentionedSheets: Array<{
+    id: number;
+    title: string;
+    operationId: number;
+    operationName: string;
+  }>;
   observationCount: number;
   assocPersons: IntelProfileEntity[];
   assocVehicles: IntelProfileEntity[];
@@ -7922,7 +7933,8 @@ async function buildTargetOperationalAssociations(
   targetId: number,
   targetLabel: string,
   targetName: string,
-  allEntities: IntelligenceEntity[]
+  allEntities: IntelligenceEntity[],
+  targetEntity: IntelligenceEntity | undefined
 ): Promise<{
   assocPersons: IntelProfileEntity[];
   assocVehicles: IntelProfileEntity[];
@@ -7938,16 +7950,29 @@ async function buildTargetOperationalAssociations(
       and(eq(runningSheets.targetId, targetId), isNull(runningSheets.deletedAt))
     );
 
-  if (!targetSheets.length)
-    return { assocPersons: [], assocVehicles: [], assocLocations: [] };
-
   const targetSheetIds = targetSheets.map(s => s.id);
-  const rows = await db
-    .select({ id: sheetRows.id })
-    .from(sheetRows)
-    .where(inArray(sheetRows.sheetId, targetSheetIds));
+  const rows = targetSheetIds.length
+    ? await db
+        .select({ id: sheetRows.id })
+        .from(sheetRows)
+        .where(inArray(sheetRows.sheetId, targetSheetIds))
+    : [];
 
+  // Rows this target is formally assigned to (via the sheet's targetId)...
   const targetRowIds = new Set(rows.map(r => r.id));
+  // ...UNION rows where the target's own name is mentioned in observation
+  // text elsewhere — the same occurrence data that already links them in the
+  // Intelligence Folder / Ego Network, so a target's profile shows the same
+  // co-occurring people/vehicles/locations those views already agree on,
+  // not just what's confined to sheets formally assigned to them.
+  if (targetEntity) {
+    for (const occ of targetEntity.occurrences) {
+      if (occ.rowId > 0) targetRowIds.add(occ.rowId);
+    }
+  }
+
+  if (!targetRowIds.size)
+    return { assocPersons: [], assocVehicles: [], assocLocations: [] };
   const targetLabelLower = targetLabel.toLowerCase();
   // Catches observation-derived person entities that are just the target's own
   // name in different wording (e.g. "Sighted JOHN SMITH" vs the target card's
@@ -8091,13 +8116,64 @@ export async function getIntelTargetProfile(
   }
 
   const allEntities = await getAllIntelligenceEntities();
+  const targetEntity = allEntities.find(
+    e => e.isTarget && e.targetId === targetId
+  );
+
+  // Sheets this target is mentioned in by name (per the same entity data the
+  // Intelligence Folder / Ego Network already use) but isn't formally
+  // assigned to — e.g. appearing as a passenger on someone else's sheet.
+  const linkedSheetIdSet = new Set(linkedSheetRows.map(s => s.id));
+  const mentionedSheetIds = Array.from(
+    new Set(
+      (targetEntity?.occurrences ?? [])
+        .filter(occ => occ.rowId > 0 && !linkedSheetIdSet.has(occ.sheetId))
+        .map(occ => occ.sheetId)
+    )
+  );
+  let mentionedSheets: IntelTargetProfile["mentionedSheets"] = [];
+  if (mentionedSheetIds.length) {
+    const mentionedSheetRows = await db
+      .select({
+        id: runningSheets.id,
+        title: runningSheets.title,
+        operationId: runningSheets.operationId,
+      })
+      .from(runningSheets)
+      .where(
+        and(
+          inArray(runningSheets.id, mentionedSheetIds),
+          isNull(runningSheets.deletedAt)
+        )
+      );
+    const extraOpIds2 = Array.from(
+      new Set(
+        mentionedSheetRows.map(s => s.operationId).filter(id => !opNames[id])
+      )
+    );
+    if (extraOpIds2.length) {
+      const extraOps2 = await db
+        .select({ id: operations.id, name: operations.name })
+        .from(operations)
+        .where(inArray(operations.id, extraOpIds2));
+      for (const op of extraOps2) opNames[op.id] = op.name;
+    }
+    mentionedSheets = mentionedSheetRows.map(s => ({
+      id: s.id,
+      title: s.title,
+      operationId: s.operationId,
+      operationName: opNames[s.operationId] ?? "Unknown",
+    }));
+  }
+
   const targetLabel = target.tgt ?? target.name;
   const { assocPersons, assocVehicles, assocLocations } =
     await buildTargetOperationalAssociations(
       targetId,
       targetLabel,
       target.name,
-      allEntities
+      allEntities,
+      targetEntity
     );
   await populateAssocPhotos(assocPersons, assocVehicles, assocLocations);
   markPreviousEntities(
@@ -8107,9 +8183,6 @@ export async function getIntelTargetProfile(
   );
 
   const registryAssociateRows = await getAssociatesForTarget(targetId);
-  const targetEntity = allEntities.find(
-    e => e.isTarget && e.targetId === targetId
-  );
   const associateEntityById = new Map(
     allEntities
       .filter(e => e.isAssociate && e.associateId != null)
@@ -8136,6 +8209,7 @@ export async function getIntelTargetProfile(
       operationId: s.operationId,
       operationName: opNames[s.operationId] ?? "Unknown",
     })),
+    mentionedSheets,
     observationCount,
     assocPersons,
     assocVehicles,
@@ -8196,16 +8270,21 @@ export async function getIntelOperationProfile(
         if (!target) return null;
         const targetLabel = target.tgt ?? target.name;
         const targetSheets = sheets.filter(s => s.targetId === targetId);
+        const targetEntity = allEntities.find(
+          e => e.isTarget && e.targetId === targetId
+        );
+        // Operation Profile is scoped to this operation's own sheets by
+        // design (it's summarizing the operation, not the target) — pass no
+        // targetEntity so associations stay confined to `targetSheets`,
+        // unlike the target's own profile page which widens app-wide.
         const { assocPersons, assocVehicles, assocLocations } =
           await buildTargetOperationalAssociations(
             targetId,
             targetLabel,
             target.name,
-            allEntities
+            allEntities,
+            undefined
           );
-        const targetEntity = allEntities.find(
-          e => e.isTarget && e.targetId === targetId
-        );
         return {
           targetId,
           name: target.name,

@@ -3264,69 +3264,59 @@ export function extractEntitiesFromText(text: string): Array<{
         }
       }
     } else if (type === "vehicle") {
-      // For vehicle entities: build a clean display name as "REGO colour make/model".
+      // For vehicle entities: build a display name as "REGO <description as written>".
       // The shortForm is typically "Vehicle REGO" (e.g. "Vehicle 1FBP509") or just the rego.
       // The fullDescription is the text immediately before the bracket, e.g.:
       //   "A white Toyota Landcruiser, bearing WA registration 1FBP509"
       //   "black Subaru WRX, bearing WA registration 1FDD444"
       //   "1HTU905" (bare rego, no description)
       //
-      // Strategy:
-      //   1. Extract the raw rego from shortForm (strip "Vehicle " prefix if present)
-      //   2. Find colour + make/model words in fullDescription that precede the rego mention
-      //   3. Build display as "REGO colour make/model" (e.g. "1FBP509 white Toyota Landcruiser")
+      // Previously this reconstructed the description by matching against
+      // hardcoded lists of car makes/models/body-types — which silently
+      // dropped anything not on those lists: motorcycle makes ("Harley
+      // Davidson"), motorcycle models ("Fatboy"), car models missing from the
+      // list ("Monaro"), multi-word makes ("Mercedes Benz"), etc. Instead,
+      // keep the description exactly as the officer wrote it: everything
+      // before the rego mention, minus the trailing "bearing WA
+      // registration"/"registration"/"rego"/"reg"/"plate" boilerplate clause
+      // (and a leading article, if any).
 
       // Step 1: extract raw rego
       const rawRego = shortForm.replace(/^vehicle\s+/i, "").trim();
 
-      // Step 2: scan fullDescription for vehicle description words before the rego
-      // Look for colour + make/model in the text
-      const COLOURS =
-        /\b(white|black|silver|grey|gray|red|blue|green|yellow|orange|purple|brown|gold|bronze|cream|beige|maroon|navy|dark|light|bright)\b/gi;
-      const MAKES_DISPLAY =
-        /\b(toyota|ford|holden|honda|mazda|nissan|mitsubishi|subaru|hyundai|kia|volkswagen|vw|bmw|mercedes|audi|lexus|volvo|jeep|dodge|land rover|range rover|defender|discovery|jaguar|porsche|mini|isuzu|suzuki|daihatsu|haval|gwm|mg|byd|tesla|great wall)\b/gi;
-      const BODY_TYPES =
-        /\b(landcruiser|land cruiser|hilux|ranger|triton|navara|amarok|colorado|dmax|d-max|fortuner|prado|patrol|pathfinder|rav4|crv|cr-v|cx-5|cx5|cx-3|cx3|tucson|santa fe|santafe|sportage|tiguan|forester|outback|wrx|impreza|levorg|liberty|brz|86|corolla|camry|yaris|kluger|tarago|hiace|hilux|falcon|commodore|cruze|captiva|trax|trailblazer|everest|territory|escape|focus|fiesta|mondeo|transit|connect|courier|f-150|f150|mustang|explorer|expedition|bronco|wrangler|cherokee|grand cherokee|compass|renegade|gladiator|durango|charger|challenger|ram|1500|2500|3500|sedan|hatchback|suv|wagon|coupe|ute|van|truck|4wd|4x4|bus|minivan|people mover)\b/gi;
-
-      // Find the portion of fullDescription that describes the vehicle
-      // (everything before any mention of the rego or "bearing"/"registration" keywords)
+      // Step 2: find the description text — everything before the rego
+      // mention. If the rego quoted in the text doesn't match the bracket's
+      // rego (e.g. a typo), regoIdx is -1 and the whole fullDescription is
+      // used instead — the boilerplate-stripping step below also swallows a
+      // trailing rego-shaped token in that case, so the mismatched number
+      // doesn't leak into the description either way.
       const regoIdx = fullDescription
         .toUpperCase()
         .indexOf(rawRego.toUpperCase());
-      const descSource =
+      let descSource =
         regoIdx > 0 ? fullDescription.slice(0, regoIdx) : fullDescription;
 
-      const colourMatches = Array.from(descSource.matchAll(COLOURS)).map(m =>
-        m[0].toLowerCase()
-      );
-      const makeMatches = Array.from(descSource.matchAll(MAKES_DISPLAY)).map(
-        m => m[0]
-      );
-      const bodyMatches = Array.from(descSource.matchAll(BODY_TYPES)).map(
-        m => m[0]
-      );
-
-      // Build description: colour + make + body (deduplicated, max 3 words)
-      const descParts: string[] = [];
-      if (colourMatches.length > 0)
-        descParts.push(colourMatches[colourMatches.length - 1]);
-      if (makeMatches.length > 0)
-        descParts.push(makeMatches[makeMatches.length - 1]);
-      if (bodyMatches.length > 0) {
-        const lastBody = bodyMatches[bodyMatches.length - 1];
-        // Don't duplicate if body type is same as make (e.g. "Toyota Toyota")
-        if (!descParts.some(p => p.toLowerCase() === lastBody.toLowerCase())) {
-          descParts.push(lastBody);
-        }
-      }
+      const STATE_CODES = "WA|NSW|VIC|QLD|SA|TAS|NT|ACT";
+      descSource = descSource
+        .replace(
+          new RegExp(
+            `[,;]?\\s*(?:bearing\\s+)?(?:(?:${STATE_CODES})\\s+)?(?:registration|rego|reg\\.?|plated?)\\s*:?\\s*(?:\\d[A-Za-z0-9]{2,7})?\\s*$`,
+            "i"
+          ),
+          ""
+        )
+        .replace(/[,;]\s*$/, "")
+        .replace(/^(a|an|the)\s+/i, "")
+        .replace(/^vehicle\s+/i, "")
+        .replace(/\s+/g, " ")
+        .trim();
 
       if (rawRego && rawRego !== shortForm) {
-        // Had "Vehicle REGO" format — use rego + description
-        displayName =
-          descParts.length > 0 ? `${rawRego} ${descParts.join(" ")}` : rawRego;
-      } else if (descParts.length > 0) {
+        // Had "Vehicle REGO" format — use rego + description as written
+        displayName = descSource ? `${rawRego} ${descSource}` : rawRego;
+      } else if (descSource) {
         // shortForm is already just the rego
-        displayName = `${rawRego} ${descParts.join(" ")}`;
+        displayName = `${rawRego} ${descSource}`;
       }
       // else: keep displayName = shortForm (bare rego, no description available)
     } else if (type === "person") {
@@ -4431,24 +4421,38 @@ export async function getAllIntelligenceEntities(): Promise<
     });
   }
 
-  // When two mentions of the same vehicle merge, prefer whichever is in the
-  // canonical "REGO description" form (matches how observation text gets
-  // formatted — see extractEntitiesFromText's vehicle branch) over a raw
-  // target-card field where the rego sits mid-sentence (e.g. "silver Hyundai
-  // Santa Fe, bearing WA registration 1ICW519") — otherwise a longer but
-  // awkwardly-worded raw field value would win on length alone.
-  const isCanonicalVehicleForm = (
+  // When two mentions of the same vehicle merge, prefer whichever actually
+  // carries more descriptive detail — not whichever happens to start with
+  // the rego. That used to be the tie-break (favouring the "REGO
+  // description" form observation text is built in, over a raw target-card
+  // field where the rego sits mid-sentence, e.g. "silver Hyundai Santa Fe,
+  // bearing WA registration 1ICW519") but it backfired badly: a bare
+  // "Vehicle 1GHH000" text mention starts with the rego and so counted as
+  // "canonical", letting it beat — and overwrite — a fully-detailed target
+  // card ("grey Ford Ranger Utility, bearing WA registration 1GHH000") that
+  // doesn't. Strip the rego out of both candidates first and compare what's
+  // actually left describing the vehicle; whichever has more wins,
+  // regardless of where the rego sits in the string.
+  const escapeRegExp = (s: string): string =>
+    s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const vehicleDescriptiveLength = (
     shortForm: string,
     regoKey: string
-  ): boolean => shortForm.toLowerCase().startsWith(regoKey);
+  ): number =>
+    shortForm
+      .toLowerCase()
+      .replace(new RegExp(`\\b${escapeRegExp(regoKey)}\\b`, "i"), "")
+      .replace(/[,;]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim().length;
   const preferVehicleShortForm = (
     existing: string,
     candidate: string,
     regoKey: string
   ): boolean => {
-    const existingCanonical = isCanonicalVehicleForm(existing, regoKey);
-    const candidateCanonical = isCanonicalVehicleForm(candidate, regoKey);
-    if (candidateCanonical !== existingCanonical) return candidateCanonical;
+    const existingLen = vehicleDescriptiveLength(existing, regoKey);
+    const candidateLen = vehicleDescriptiveLength(candidate, regoKey);
+    if (candidateLen !== existingLen) return candidateLen > existingLen;
     return candidate.length > existing.length;
   };
 

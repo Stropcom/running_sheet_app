@@ -439,6 +439,7 @@ function TargetCard({
       ...ev,
       ...composeVehicle(ev),
     }));
+    savedFieldPresence.current = { hasAddress: !!hbf, hasVehicle: !!v1f };
     update.mutate({
       id: target.id,
       name,
@@ -471,12 +472,23 @@ function TargetCard({
     });
   };
 
+  // Set right before update.mutate() so onSuccess knows whether the HB/V1
+  // just saved actually has a value — lock down when it does, drop back to
+  // free-edit when it was cleared to empty (nothing left to protect).
+  const savedFieldPresence = useRef({ hasAddress: false, hasVehicle: false });
+
   const update = trpc.target.registry.update.useMutation({
     onSuccess: () => {
       utils.target.registry.list.invalidate();
       utils.target.getById.invalidate({ id: target.id });
       utils.target.listAll.invalidate();
       setDirty(false);
+      // Lock HB/V1 back down immediately rather than waiting on the
+      // target.updatedAt-driven resync effect below — that only fires once
+      // the invalidated query actually refetches and this component
+      // re-renders with a new prop, which isn't reliably immediate.
+      setAddressMode(savedFieldPresence.current.hasAddress ? "locked" : "edit");
+      setVehicleMode(savedFieldPresence.current.hasVehicle ? "locked" : "edit");
       toast.success("Target saved");
     },
     onError: (e: { message: string }) => toast.error(e.message),

@@ -85,6 +85,15 @@ function buildTargetProfileHtml(
     timeStyle: "short",
   });
 
+  const linkedOpIds = new Set(profile.operations.map(o => o.id));
+  const mentionedOnlyOps = Array.from(
+    new Map(
+      profile.mentionedSheets
+        .filter(s => !linkedOpIds.has(s.operationId))
+        .map(s => [s.operationId, s.operationName])
+    ).entries()
+  );
+
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>RunLog Intelligence Profile — ${esc(profile.name)}</title>
 <style>
@@ -128,8 +137,8 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
   <div class="gen-time">Generated: ${generatedAt}</div>
 </div>
 <div class="stats-row">
-  <div class="stat-box"><div class="stat-num">${profile.operations.length}</div><div class="stat-label">Operations</div></div>
-  <div class="stat-box"><div class="stat-num">${profile.linkedSheets.length}</div><div class="stat-label">Running Sheets</div></div>
+  <div class="stat-box"><div class="stat-num">${profile.operations.length + mentionedOnlyOps.length}</div><div class="stat-label">Operations</div></div>
+  <div class="stat-box"><div class="stat-num">${profile.linkedSheets.length + profile.mentionedSheets.length}</div><div class="stat-label">Running Sheets</div></div>
   <div class="stat-box"><div class="stat-num">${profile.assocPersons.length + profile.assocVehicles.length + profile.assocLocations.length}</div><div class="stat-label">Associations</div></div>
   <div class="stat-box"><div class="stat-num">${profile.observationCount}</div><div class="stat-label">Observations</div></div>
 </div>
@@ -145,22 +154,12 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 
   <div class="section">
     <div class="section-title">Operations</div>
-    <div class="ops-list">${profile.operations.map(o => `<span class="op-badge">${esc(o.name)}</span>`).join("")}${(() => {
-      const linkedIds = new Set(profile.operations.map(o => o.id));
-      const mentionedOnly = Array.from(
-        new Map(
-          profile.mentionedSheets
-            .filter(s => !linkedIds.has(s.operationId))
-            .map(s => [s.operationId, s.operationName])
-        ).entries()
-      );
-      return mentionedOnly
-        .map(
-          ([id, name]) =>
-            `<span class="op-badge" style="opacity:0.65;border-style:dashed;">${esc(name)} <span style="font-size:8px;text-transform:uppercase;">(mentioned)</span></span>`
-        )
-        .join("");
-    })()}</div>
+    <div class="ops-list">${profile.operations.map(o => `<span class="op-badge">${esc(o.name)}</span>`).join("")}${mentionedOnlyOps
+      .map(
+        ([id, name]) =>
+          `<span class="op-badge" style="opacity:0.65;border-style:dashed;">${esc(name)} <span style="font-size:8px;text-transform:uppercase;">(mentioned)</span></span>`
+      )
+      .join("")}</div>
   </div>
 
   ${
@@ -415,8 +414,16 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
             {/* Stats */}
             <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-border/60 bg-blue-50/50 dark:bg-blue-950/20">
               {[
-                { label: "Operations", value: profile.operations.length },
-                { label: "Running Sheets", value: profile.linkedSheets.length },
+                {
+                  label: "Operations",
+                  value: profile.operations.length + mentionedOnlyOps.length,
+                },
+                {
+                  label: "Running Sheets",
+                  value:
+                    profile.linkedSheets.length +
+                    profile.mentionedSheets.length,
+                },
                 {
                   label: "Associations",
                   value:

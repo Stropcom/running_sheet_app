@@ -8476,6 +8476,18 @@ export async function getIntelTargetProfile(
       operationId: s.operationId,
       operationName: opNames[s.operationId] ?? "Unknown",
     }));
+
+    // Mentioned-only sheets aren't formally linked to this target, but the
+    // target still appears in their rows — count those rows too so the
+    // profile's Observations total matches "everywhere this target shows
+    // up", not just formally-assigned sheets.
+    for (const sheet of mentionedSheetRows) {
+      const cnt = await db
+        .select({ c: sql<number>`count(*)` })
+        .from(sheetRows)
+        .where(eq(sheetRows.sheetId, sheet.id));
+      observationCount += Number(cnt[0]?.c ?? 0);
+    }
   }
 
   const targetLabel = target.tgt ?? target.name;

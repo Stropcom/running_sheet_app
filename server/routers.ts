@@ -1030,14 +1030,10 @@ export const appRouter = router({
         // Reset operative section checkboxes — sheet has changed so they must be re-verified
         await upsertGovernanceRecord({
           sheetId: input.id,
-          savedAsWord: false,
-          savedAsPdf: false,
-          uploadedToPromis: false,
           savedInOpFolder: false,
-          savedAsWordCIN: null,
-          savedAsPdfCIN: null,
-          uploadedToPromisCIN: null,
+          savedInInvestigatorTransferDrive: false,
           savedInOpFolderCIN: null,
+          savedInInvestigatorTransferDriveCIN: null,
         });
         const cin = ctx.user.cin ?? ctx.user.name ?? "Unknown";
         await createAuditLog({
@@ -3215,11 +3211,9 @@ export const appRouter = router({
           dueDate: z.number().nullable().optional(),
           summaryNotification: z.boolean().optional(),
           sentToIO: z.boolean().optional(),
-          savedAsWord: z.boolean().optional(),
-          savedAsPdf: z.boolean().optional(),
-          uploadedToPromis: z.boolean().optional(),
           linked: z.boolean().optional(),
           savedInOpFolder: z.boolean().optional(),
+          savedInInvestigatorTransferDrive: z.boolean().optional(),
           imageryTaken: z.boolean().optional(),
           coverPage: z.boolean().optional(),
           // Which field was toggled (so server can attach CIN automatically)
@@ -3227,11 +3221,9 @@ export const appRouter = router({
             .enum([
               "summaryNotification",
               "sentToIO",
-              "savedAsWord",
-              "savedAsPdf",
-              "uploadedToPromis",
               "linked",
               "savedInOpFolder",
+              "savedInInvestigatorTransferDrive",
               "imageryTaken",
               "coverPage",
             ])
@@ -3263,22 +3255,20 @@ export const appRouter = router({
           const cinFieldMap: Record<string, keyof GovernanceUpsertInput> = {
             summaryNotification: "isurvCIN",
             sentToIO: "sentToIOCIN",
-            savedAsWord: "savedAsWordCIN",
-            savedAsPdf: "savedAsPdfCIN",
-            uploadedToPromis: "uploadedToPromisCIN",
             linked: "linkedCIN",
             savedInOpFolder: "savedInOpFolderCIN",
+            savedInInvestigatorTransferDrive:
+              "savedInInvestigatorTransferDriveCIN",
             imageryTaken: "imageryTakenCIN",
             coverPage: "coverPageCIN",
           };
           const nameFieldMap: Record<string, keyof GovernanceUpsertInput> = {
             summaryNotification: "isurvName",
             sentToIO: "sentToIOName",
-            savedAsWord: "savedAsWordName",
-            savedAsPdf: "savedAsPdfName",
-            uploadedToPromis: "uploadedToPromisName",
             linked: "linkedName",
             savedInOpFolder: "savedInOpFolderName",
+            savedInInvestigatorTransferDrive:
+              "savedInInvestigatorTransferDriveName",
             imageryTaken: "imageryTakenName",
             coverPage: "coverPageName",
           };

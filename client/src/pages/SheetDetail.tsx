@@ -2682,11 +2682,7 @@ export default function SheetDetail() {
     if (!govRecord) return false;
     const g = govRecord as Record<string, unknown>;
     const tlDone = !!g.summaryNotification && !!g.sentToIO;
-    const opDone =
-      !!g.savedAsWord &&
-      !!g.savedAsPdf &&
-      !!g.uploadedToPromis &&
-      !!g.savedInOpFolder;
+    const opDone = !!g.savedInOpFolder && !!g.savedInInvestigatorTransferDrive;
     return tlDone && opDone;
   }, [govRecord]);
 

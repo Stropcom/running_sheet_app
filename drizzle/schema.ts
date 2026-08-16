@@ -701,21 +701,23 @@ export const governanceRecords = mysqlTable("governance_records", {
   sentToIOCIN: varchar("sentToIOCIN", { length: 50 }),
   sentToIOName: varchar("sentToIOName", { length: 100 }),
   // ─ Operative / RS Author section ─
-  savedAsWord: boolean("savedAsWord").default(false).notNull(),
-  savedAsWordCIN: varchar("savedAsWordCIN", { length: 50 }),
-  savedAsWordName: varchar("savedAsWordName", { length: 100 }),
-  savedAsPdf: boolean("savedAsPdf").default(false).notNull(),
-  savedAsPdfCIN: varchar("savedAsPdfCIN", { length: 50 }),
-  savedAsPdfName: varchar("savedAsPdfName", { length: 100 }),
-  uploadedToPromis: boolean("uploadedToPromis").default(false).notNull(),
-  uploadedToPromisCIN: varchar("uploadedToPromisCIN", { length: 50 }),
-  uploadedToPromisName: varchar("uploadedToPromisName", { length: 100 }),
   linked: boolean("linked").default(false).notNull(),
   linkedCIN: varchar("linkedCIN", { length: 50 }),
   linkedName: varchar("linkedName", { length: 100 }),
   savedInOpFolder: boolean("savedInOpFolder").default(false).notNull(),
   savedInOpFolderCIN: varchar("savedInOpFolderCIN", { length: 50 }),
   savedInOpFolderName: varchar("savedInOpFolderName", { length: 100 }),
+  savedInInvestigatorTransferDrive: boolean("savedInInvestigatorTransferDrive")
+    .default(false)
+    .notNull(),
+  savedInInvestigatorTransferDriveCIN: varchar(
+    "savedInInvestigatorTransferDriveCIN",
+    { length: 50 }
+  ),
+  savedInInvestigatorTransferDriveName: varchar(
+    "savedInInvestigatorTransferDriveName",
+    { length: 100 }
+  ),
   // ─ Imagery section ─
   imageryTaken: boolean("imageryTaken").default(false).notNull(),
   imageryTakenCIN: varchar("imageryTakenCIN", { length: 50 }),

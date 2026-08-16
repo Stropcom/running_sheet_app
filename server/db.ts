@@ -4518,11 +4518,9 @@ export async function getWeeklyActivityReport(
   const govFields = [
     "isurv",
     "sentToIO",
-    "savedAsWord",
-    "savedAsPdf",
-    "uploadedToPromis",
     "linked",
     "savedInOpFolder",
+    "savedInInvestigatorTransferDrive",
     "imageryTaken",
     "coverPage",
   ] as const;
@@ -6156,21 +6154,15 @@ export interface GovernanceUpsertInput {
   sentToIO?: boolean;
   sentToIOCIN?: string | null;
   sentToIOName?: string | null;
-  savedAsWord?: boolean;
-  savedAsWordCIN?: string | null;
-  savedAsWordName?: string | null;
-  savedAsPdf?: boolean;
-  savedAsPdfCIN?: string | null;
-  savedAsPdfName?: string | null;
-  uploadedToPromis?: boolean;
-  uploadedToPromisCIN?: string | null;
-  uploadedToPromisName?: string | null;
   linked?: boolean;
   linkedCIN?: string | null;
   linkedName?: string | null;
   savedInOpFolder?: boolean;
   savedInOpFolderCIN?: string | null;
   savedInOpFolderName?: string | null;
+  savedInInvestigatorTransferDrive?: boolean;
+  savedInInvestigatorTransferDriveCIN?: string | null;
+  savedInInvestigatorTransferDriveName?: string | null;
   imageryTaken?: boolean;
   imageryTakenCIN?: string | null;
   imageryTakenName?: string | null;
@@ -6211,31 +6203,6 @@ export async function upsertGovernanceRecord(
         ...(input.sentToIOName !== undefined && {
           sentToIOName: input.sentToIOName,
         }),
-        ...(input.savedAsWord !== undefined && {
-          savedAsWord: input.savedAsWord,
-        }),
-        ...(input.savedAsWordCIN !== undefined && {
-          savedAsWordCIN: input.savedAsWordCIN,
-        }),
-        ...(input.savedAsWordName !== undefined && {
-          savedAsWordName: input.savedAsWordName,
-        }),
-        ...(input.savedAsPdf !== undefined && { savedAsPdf: input.savedAsPdf }),
-        ...(input.savedAsPdfCIN !== undefined && {
-          savedAsPdfCIN: input.savedAsPdfCIN,
-        }),
-        ...(input.savedAsPdfName !== undefined && {
-          savedAsPdfName: input.savedAsPdfName,
-        }),
-        ...(input.uploadedToPromis !== undefined && {
-          uploadedToPromis: input.uploadedToPromis,
-        }),
-        ...(input.uploadedToPromisCIN !== undefined && {
-          uploadedToPromisCIN: input.uploadedToPromisCIN,
-        }),
-        ...(input.uploadedToPromisName !== undefined && {
-          uploadedToPromisName: input.uploadedToPromisName,
-        }),
         ...(input.linked !== undefined && { linked: input.linked }),
         ...(input.linkedCIN !== undefined && { linkedCIN: input.linkedCIN }),
         ...(input.linkedName !== undefined && { linkedName: input.linkedName }),
@@ -6247,6 +6214,18 @@ export async function upsertGovernanceRecord(
         }),
         ...(input.savedInOpFolderName !== undefined && {
           savedInOpFolderName: input.savedInOpFolderName,
+        }),
+        ...(input.savedInInvestigatorTransferDrive !== undefined && {
+          savedInInvestigatorTransferDrive:
+            input.savedInInvestigatorTransferDrive,
+        }),
+        ...(input.savedInInvestigatorTransferDriveCIN !== undefined && {
+          savedInInvestigatorTransferDriveCIN:
+            input.savedInInvestigatorTransferDriveCIN,
+        }),
+        ...(input.savedInInvestigatorTransferDriveName !== undefined && {
+          savedInInvestigatorTransferDriveName:
+            input.savedInInvestigatorTransferDriveName,
         }),
         ...(input.imageryTaken !== undefined && {
           imageryTaken: input.imageryTaken,
@@ -6280,21 +6259,18 @@ export async function upsertGovernanceRecord(
       sentToIO: input.sentToIO ?? false,
       sentToIOCIN: input.sentToIOCIN ?? null,
       sentToIOName: input.sentToIOName ?? null,
-      savedAsWord: input.savedAsWord ?? false,
-      savedAsWordCIN: input.savedAsWordCIN ?? null,
-      savedAsWordName: input.savedAsWordName ?? null,
-      savedAsPdf: input.savedAsPdf ?? false,
-      savedAsPdfCIN: input.savedAsPdfCIN ?? null,
-      savedAsPdfName: input.savedAsPdfName ?? null,
-      uploadedToPromis: input.uploadedToPromis ?? false,
-      uploadedToPromisCIN: input.uploadedToPromisCIN ?? null,
-      uploadedToPromisName: input.uploadedToPromisName ?? null,
       linked: input.linked ?? false,
       linkedCIN: input.linkedCIN ?? null,
       linkedName: input.linkedName ?? null,
       savedInOpFolder: input.savedInOpFolder ?? false,
       savedInOpFolderCIN: input.savedInOpFolderCIN ?? null,
       savedInOpFolderName: input.savedInOpFolderName ?? null,
+      savedInInvestigatorTransferDrive:
+        input.savedInInvestigatorTransferDrive ?? false,
+      savedInInvestigatorTransferDriveCIN:
+        input.savedInInvestigatorTransferDriveCIN ?? null,
+      savedInInvestigatorTransferDriveName:
+        input.savedInInvestigatorTransferDriveName ?? null,
       imageryTaken: input.imageryTaken ?? false,
       imageryTakenCIN: input.imageryTakenCIN ?? null,
       imageryTakenName: input.imageryTakenName ?? null,
@@ -6340,10 +6316,8 @@ export function computeGovernancePercent(
   // ── Operative section (4 items, only countable when allSigned) ─────────────
   // If not all signed, these are all blocked — count them as incomplete
   const opFields: boolean[] = [
-    allSigned && !!rec.savedAsWord,
-    allSigned && !!rec.savedAsPdf,
-    allSigned && !!rec.uploadedToPromis,
     allSigned && !!rec.savedInOpFolder,
+    allSigned && !!rec.savedInInvestigatorTransferDrive,
   ];
 
   // ── Imagery section ────────────────────────────────────────────────────────
@@ -6388,7 +6362,7 @@ export async function getGovernanceRecordsBySheetIds(
 /**
  * Returns outstanding governance to-do items for a given CIN.
  * - If the CIN is the Team Leader on a sheet: returns TL items (summaryNotification, sentToIO) that are incomplete.
- * - If the CIN is the Author on a sheet: returns Operative items (savedAsWord, savedAsPdf, uploadedToPromis, savedInOpFolder)
+ * - If the CIN is the Author on a sheet: returns Operative items (savedInOpFolder, savedInInvestigatorTransferDrive)
  *   that are incomplete AND the sheet is fully certified.
  * allSigned is computed inline per sheet.
  */
@@ -6507,11 +6481,10 @@ export async function getGovernanceTodoForCin(cin: string): Promise<
       // Operative items only actionable once sheet is fully certified
       const outstanding: string[] = [];
       if (allSigned) {
-        if (!rec?.savedAsWord) outstanding.push("Saved as Word document");
-        if (!rec?.savedAsPdf) outstanding.push("Saved as PDF");
-        if (!rec?.uploadedToPromis) outstanding.push("Uploaded to PROMIS");
         if (!rec?.savedInOpFolder)
           outstanding.push("Saved in Operation folder");
+        if (!rec?.savedInInvestigatorTransferDrive)
+          outstanding.push("Saved in Investigator transfer drive");
         // Check imagery entries — any unsaved imagery rows are outstanding for the author
         if (rec?.imageryEntries) {
           try {

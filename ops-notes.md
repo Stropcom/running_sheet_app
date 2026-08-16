@@ -11,6 +11,25 @@ happen before."
 
 ---
 
+## 2026-08-16 — Droplet switched from tracking the feature branch to `main`
+
+Up to this point the droplet's working copy tracked `claude/claude-md-docs-o4trnz`
+directly — every deploy was `git pull` on that branch, `main` was never what
+was actually running in production. On 2026-08-16 all outstanding work on
+that branch was merged into `main` via PR #4, and the droplet was switched
+over: `git checkout main && git pull --ff-only origin main`, then the normal
+build/migrate/restart. Confirmed via `git log origin/main..origin/<branch>`
+showing zero commits — `main` is a strict superset of the branch (plus a
+few pre-existing `main`-only commits: a version bump to 1.0.4, a
+faceRecognition native-binary fallback fix, and a saved brand-guide asset).
+
+**Check which branch the droplet is actually on before assuming** —
+`git branch --show-current` in `/opt/runlog` — since this has changed at
+least once already and future work may or may not go straight to `main`
+depending on how the user wants to work going forward.
+
+---
+
 ## 2026-08-06 — Deploy procedure, and why `pnpm db:push` shouldn't run on the droplet
 
 The deploy that had been used routinely up to this point:

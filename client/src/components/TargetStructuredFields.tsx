@@ -43,15 +43,25 @@ import {
 // full/short strings, same convention as the primary address/vehicle.
 
 export type ExtraVehicle = StructuredVehicleParts & {
+  /** Stable identity for this entry, independent of its position in the
+   * list — lets "Add new" history (target_field_history) stay attached to
+   * the right entry even if others are added/removed/reordered around it.
+   * Backfilled on first parse for entries saved before this field existed. */
+  id: string;
   vehicleType: string;
   full: string;
   short: string;
 };
 export type ExtraAddress = StructuredAddressParts & {
+  id: string;
   label: string;
   full: string;
   short: string;
 };
+
+export function makeExtraId(): string {
+  return `x${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
 
 export function parseExtraVehicles(
   json: string | null | undefined
@@ -60,6 +70,7 @@ export function parseExtraVehicles(
   try {
     const arr = JSON.parse(json) as Partial<ExtraVehicle>[];
     return arr.map(v => ({
+      id: v.id || makeExtraId(),
       registration: v.registration ?? "",
       state: v.state ?? "WA",
       colour: v.colour ?? "",
@@ -81,6 +92,7 @@ export function parseExtraAddresses(
   try {
     const arr = JSON.parse(json) as Partial<ExtraAddress>[];
     return arr.map(a => ({
+      id: a.id || makeExtraId(),
       label: a.label ?? "",
       unitNo: a.unitNo ?? "",
       houseNo: a.houseNo ?? "",

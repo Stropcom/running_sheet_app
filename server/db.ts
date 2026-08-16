@@ -81,9 +81,11 @@ import {
   InsertEntityAlias,
   entityDedupDecisions,
   InsertEntityDedupDecision,
+  personNameMatchDecisions,
 } from "../drizzle/schema";
 import {
   findPossibleDuplicates,
+  comparePersonNames,
   type DedupType,
   type DedupCandidateEntity,
 } from "./entityDedup";
@@ -2170,10 +2172,125 @@ export async function updateTarget(
       | "vehType"
       | "extraAddresses"
     >
-  >
+  >,
+  /** Set when the officer has explicitly chosen "Add new" over "Edit
+   * current" for a given HB/V1/extra-address/extra-vehicle field — see
+   * TargetRegistry.tsx. Archives the current value into target_field_history
+   * (the same "Previous" record the duplicate-target merge flow already
+   * writes) before the new value applies, so a genuine change is preserved
+   * while a plain typo-fix isn't. Extra addresses/vehicles are matched by
+   * their stable `id` (see ExtraAddress/ExtraVehicle in
+   * TargetStructuredFields.tsx), not array position, since entries can be
+   * added/removed/reordered around them. */
+  options?: {
+    isNewAddress?: boolean;
+    isNewVehicle?: boolean;
+    newExtraAddressIds?: string[];
+    newExtraVehicleIds?: string[];
+    byCIN?: string | null;
+  }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
+
+  const hasExtraChanges =
+    (options?.newExtraAddressIds?.length ?? 0) > 0 ||
+    (options?.newExtraVehicleIds?.length ?? 0) > 0;
+
+  if (options?.isNewAddress || options?.isNewVehicle || hasExtraChanges) {
+    const current = await getTargetById(id);
+    if (current) {
+      const now = Date.now();
+      const historyRows: InsertTargetFieldHistory[] = [];
+      if (
+        options?.isNewAddress &&
+        current.hbf &&
+        current.hbf.trim() &&
+        current.hbf.trim() !== (data.hbf ?? "").trim()
+      ) {
+        historyRows.push({
+          targetId: id,
+          fieldName: "hbf",
+          previousValue: current.hbf,
+          supersededAt: now,
+          supersededByCIN: options.byCIN ?? null,
+        });
+      }
+      if (
+        options?.isNewVehicle &&
+        current.v1f &&
+        current.v1f.trim() &&
+        current.v1f.trim() !== (data.v1f ?? "").trim()
+      ) {
+        historyRows.push({
+          targetId: id,
+          fieldName: "v1f",
+          previousValue: current.v1f,
+          supersededAt: now,
+          supersededByCIN: options.byCIN ?? null,
+        });
+      }
+
+      const parseJsonArray = (
+        json: string | null | undefined
+      ): Array<{ id?: string; full?: string }> => {
+        if (!json) return [];
+        try {
+          return JSON.parse(json);
+        } catch {
+          return [];
+        }
+      };
+
+      if (options?.newExtraAddressIds?.length) {
+        const oldEntries = parseJsonArray(current.extraAddresses);
+        const newEntries = parseJsonArray(data.extraAddresses);
+        for (const entryId of options.newExtraAddressIds) {
+          const oldEntry = oldEntries.find(e => e.id === entryId);
+          const newEntry = newEntries.find(e => e.id === entryId);
+          if (
+            oldEntry?.full &&
+            oldEntry.full.trim() &&
+            oldEntry.full.trim() !== (newEntry?.full ?? "").trim()
+          ) {
+            historyRows.push({
+              targetId: id,
+              fieldName: `extraAddress:${entryId}`,
+              previousValue: oldEntry.full,
+              supersededAt: now,
+              supersededByCIN: options.byCIN ?? null,
+            });
+          }
+        }
+      }
+      if (options?.newExtraVehicleIds?.length) {
+        const oldEntries = parseJsonArray(current.extraVehicles);
+        const newEntries = parseJsonArray(data.extraVehicles);
+        for (const entryId of options.newExtraVehicleIds) {
+          const oldEntry = oldEntries.find(e => e.id === entryId);
+          const newEntry = newEntries.find(e => e.id === entryId);
+          if (
+            oldEntry?.full &&
+            oldEntry.full.trim() &&
+            oldEntry.full.trim() !== (newEntry?.full ?? "").trim()
+          ) {
+            historyRows.push({
+              targetId: id,
+              fieldName: `extraVehicle:${entryId}`,
+              previousValue: oldEntry.full,
+              supersededAt: now,
+              supersededByCIN: options.byCIN ?? null,
+            });
+          }
+        }
+      }
+
+      if (historyRows.length > 0) {
+        await db.insert(targetFieldHistory).values(historyRows);
+      }
+    }
+  }
+
   await db.update(targets).set(data).where(eq(targets.id, id));
   return { id };
 }
@@ -3264,69 +3381,84 @@ export function extractEntitiesFromText(text: string): Array<{
         }
       }
     } else if (type === "vehicle") {
-      // For vehicle entities: build a clean display name as "REGO colour make/model".
+      // For vehicle entities: build a display name as "REGO <description as written>".
       // The shortForm is typically "Vehicle REGO" (e.g. "Vehicle 1FBP509") or just the rego.
       // The fullDescription is the text immediately before the bracket, e.g.:
       //   "A white Toyota Landcruiser, bearing WA registration 1FBP509"
       //   "black Subaru WRX, bearing WA registration 1FDD444"
       //   "1HTU905" (bare rego, no description)
       //
-      // Strategy:
-      //   1. Extract the raw rego from shortForm (strip "Vehicle " prefix if present)
-      //   2. Find colour + make/model words in fullDescription that precede the rego mention
-      //   3. Build display as "REGO colour make/model" (e.g. "1FBP509 white Toyota Landcruiser")
+      // Previously this reconstructed the description by matching against
+      // hardcoded lists of car makes/models/body-types — which silently
+      // dropped anything not on those lists: motorcycle makes ("Harley
+      // Davidson"), motorcycle models ("Fatboy"), car models missing from the
+      // list ("Monaro"), multi-word makes ("Mercedes Benz"), etc. Instead,
+      // keep the description exactly as the officer wrote it: everything
+      // before the rego mention, minus the trailing "bearing WA
+      // registration"/"registration"/"rego"/"reg"/"plate" boilerplate clause.
 
       // Step 1: extract raw rego
       const rawRego = shortForm.replace(/^vehicle\s+/i, "").trim();
 
-      // Step 2: scan fullDescription for vehicle description words before the rego
-      // Look for colour + make/model in the text
-      const COLOURS =
-        /\b(white|black|silver|grey|gray|red|blue|green|yellow|orange|purple|brown|gold|bronze|cream|beige|maroon|navy|dark|light|bright)\b/gi;
-      const MAKES_DISPLAY =
-        /\b(toyota|ford|holden|honda|mazda|nissan|mitsubishi|subaru|hyundai|kia|volkswagen|vw|bmw|mercedes|audi|lexus|volvo|jeep|dodge|land rover|range rover|defender|discovery|jaguar|porsche|mini|isuzu|suzuki|daihatsu|haval|gwm|mg|byd|tesla|great wall)\b/gi;
-      const BODY_TYPES =
-        /\b(landcruiser|land cruiser|hilux|ranger|triton|navara|amarok|colorado|dmax|d-max|fortuner|prado|patrol|pathfinder|rav4|crv|cr-v|cx-5|cx5|cx-3|cx3|tucson|santa fe|santafe|sportage|tiguan|forester|outback|wrx|impreza|levorg|liberty|brz|86|corolla|camry|yaris|kluger|tarago|hiace|hilux|falcon|commodore|cruze|captiva|trax|trailblazer|everest|territory|escape|focus|fiesta|mondeo|transit|connect|courier|f-150|f150|mustang|explorer|expedition|bronco|wrangler|cherokee|grand cherokee|compass|renegade|gladiator|durango|charger|challenger|ram|1500|2500|3500|sedan|hatchback|suv|wagon|coupe|ute|van|truck|4wd|4x4|bus|minivan|people mover)\b/gi;
-
-      // Find the portion of fullDescription that describes the vehicle
-      // (everything before any mention of the rego or "bearing"/"registration" keywords)
+      // Step 2: find the description text — everything before the rego
+      // mention. If the rego quoted in the text doesn't match the bracket's
+      // rego (e.g. a typo), regoIdx is -1 and the whole fullDescription is
+      // used instead — the boilerplate-stripping step below also swallows a
+      // trailing rego-shaped token in that case, so the mismatched number
+      // doesn't leak into the description either way.
       const regoIdx = fullDescription
         .toUpperCase()
         .indexOf(rawRego.toUpperCase());
-      const descSource =
+      let descSource =
         regoIdx > 0 ? fullDescription.slice(0, regoIdx) : fullDescription;
 
-      const colourMatches = Array.from(descSource.matchAll(COLOURS)).map(m =>
-        m[0].toLowerCase()
-      );
-      const makeMatches = Array.from(descSource.matchAll(MAKES_DISPLAY)).map(
-        m => m[0]
-      );
-      const bodyMatches = Array.from(descSource.matchAll(BODY_TYPES)).map(
-        m => m[0]
-      );
+      const STATE_CODES = "WA|NSW|VIC|QLD|SA|TAS|NT|ACT";
+      descSource = descSource
+        .replace(
+          new RegExp(
+            `[,;]?\\s*(?:bearing\\s+)?(?:(?:${STATE_CODES})\\s+)?(?:registration|rego|reg\\.?|plated?)\\s*:?\\s*(?:\\d[A-Za-z0-9]{2,7})?\\s*$`,
+            "i"
+          ),
+          ""
+        )
+        .replace(/[,;]\s*$/, "")
+        .trim();
 
-      // Build description: colour + make + body (deduplicated, max 3 words)
-      const descParts: string[] = [];
-      if (colourMatches.length > 0)
-        descParts.push(colourMatches[colourMatches.length - 1]);
-      if (makeMatches.length > 0)
-        descParts.push(makeMatches[makeMatches.length - 1]);
-      if (bodyMatches.length > 0) {
-        const lastBody = bodyMatches[bodyMatches.length - 1];
-        // Don't duplicate if body type is same as make (e.g. "Toyota Toyota")
-        if (!descParts.some(p => p.toLowerCase() === lastBody.toLowerCase())) {
-          descParts.push(lastBody);
-        }
+      // A real vehicle description is a short noun phrase (colour + make +
+      // model + trim + body, typically 2-5 words). When an officer embeds
+      // that same phrase in a longer narrative sentence instead of writing
+      // it tersely — "WINMAR and LOWE walked through the car park to a blue
+      // Mercedes Benz C250 sedan, bearing WA registration 1HFD521" — keeping
+      // the whole clause up to the rego drags the narrative prose in too.
+      // Cut at the LAST standalone article ("a"/"an"/"the") — that's
+      // reliably where the noun phrase describing the vehicle starts, since
+      // narrative lead-ins almost always end "...to a", "...into an",
+      // "...near the", etc. Falls back to a generous word-count cap when no
+      // article is present, as a backstop against unbounded narrative text
+      // with no article at all.
+      const articlePattern = /\b(?:a|an|the)\s+(?=\S)/gi;
+      let lastArticleEnd = -1;
+      let articleMatch: RegExpExecArray | null;
+      while ((articleMatch = articlePattern.exec(descSource)) !== null) {
+        lastArticleEnd = articleMatch.index + articleMatch[0].length;
       }
+      if (lastArticleEnd >= 0) {
+        descSource = descSource.slice(lastArticleEnd);
+      } else {
+        const words = descSource.split(/\s+/).filter(Boolean);
+        if (words.length > 8) descSource = words.slice(-8).join(" ");
+      }
+      descSource = descSource
+        .replace(/^vehicle\s+/i, "")
+        .replace(/\s+/g, " ")
+        .trim();
 
       if (rawRego && rawRego !== shortForm) {
-        // Had "Vehicle REGO" format — use rego + description
-        displayName =
-          descParts.length > 0 ? `${rawRego} ${descParts.join(" ")}` : rawRego;
-      } else if (descParts.length > 0) {
+        // Had "Vehicle REGO" format — use rego + description as written
+        displayName = descSource ? `${rawRego} ${descSource}` : rawRego;
+      } else if (descSource) {
         // shortForm is already just the rego
-        displayName = `${rawRego} ${descParts.join(" ")}`;
+        displayName = `${rawRego} ${descSource}`;
       }
       // else: keep displayName = shortForm (bare rego, no description available)
     } else if (type === "person") {
@@ -4386,11 +4518,9 @@ export async function getWeeklyActivityReport(
   const govFields = [
     "isurv",
     "sentToIO",
-    "savedAsWord",
-    "savedAsPdf",
-    "uploadedToPromis",
     "linked",
     "savedInOpFolder",
+    "savedInInvestigatorTransferDrive",
     "imageryTaken",
     "coverPage",
   ] as const;
@@ -4431,24 +4561,38 @@ export async function getAllIntelligenceEntities(): Promise<
     });
   }
 
-  // When two mentions of the same vehicle merge, prefer whichever is in the
-  // canonical "REGO description" form (matches how observation text gets
-  // formatted — see extractEntitiesFromText's vehicle branch) over a raw
-  // target-card field where the rego sits mid-sentence (e.g. "silver Hyundai
-  // Santa Fe, bearing WA registration 1ICW519") — otherwise a longer but
-  // awkwardly-worded raw field value would win on length alone.
-  const isCanonicalVehicleForm = (
+  // When two mentions of the same vehicle merge, prefer whichever actually
+  // carries more descriptive detail — not whichever happens to start with
+  // the rego. That used to be the tie-break (favouring the "REGO
+  // description" form observation text is built in, over a raw target-card
+  // field where the rego sits mid-sentence, e.g. "silver Hyundai Santa Fe,
+  // bearing WA registration 1ICW519") but it backfired badly: a bare
+  // "Vehicle 1GHH000" text mention starts with the rego and so counted as
+  // "canonical", letting it beat — and overwrite — a fully-detailed target
+  // card ("grey Ford Ranger Utility, bearing WA registration 1GHH000") that
+  // doesn't. Strip the rego out of both candidates first and compare what's
+  // actually left describing the vehicle; whichever has more wins,
+  // regardless of where the rego sits in the string.
+  const escapeRegExp = (s: string): string =>
+    s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const vehicleDescriptiveLength = (
     shortForm: string,
     regoKey: string
-  ): boolean => shortForm.toLowerCase().startsWith(regoKey);
+  ): number =>
+    shortForm
+      .toLowerCase()
+      .replace(new RegExp(`\\b${escapeRegExp(regoKey)}\\b`, "i"), "")
+      .replace(/[,;]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim().length;
   const preferVehicleShortForm = (
     existing: string,
     candidate: string,
     regoKey: string
   ): boolean => {
-    const existingCanonical = isCanonicalVehicleForm(existing, regoKey);
-    const candidateCanonical = isCanonicalVehicleForm(candidate, regoKey);
-    if (candidateCanonical !== existingCanonical) return candidateCanonical;
+    const existingLen = vehicleDescriptiveLength(existing, regoKey);
+    const candidateLen = vehicleDescriptiveLength(candidate, regoKey);
+    if (candidateLen !== existingLen) return candidateLen > existingLen;
     return candidate.length > existing.length;
   };
 
@@ -5626,6 +5770,201 @@ export async function listEntityMerges() {
   return db.select().from(entityAliases).orderBy(desc(entityAliases.mergedAt));
 }
 
+// ─── Person Name Match (Target/Associate Registry spelling correction) ────
+// Distinct from the entityAliases merge system above: that links two ordinary
+// text-mined entities without touching the observation text. This checks a
+// not-yet-saved person mention against the formal Target/Associate Registry
+// and, when confirmed, corrects the row's own text to the registered
+// spelling before it's saved — see routers.ts row.update's use of this.
+
+export interface PersonTargetMatch {
+  targetId?: number;
+  associateId?: number;
+  name: string;
+  tgtAlias: string | null;
+  score: number;
+  reason: string;
+}
+
+/** Silent auto-correction lookup: has this exact spelling already been
+ * confirmed against a Target/Associate? Used to rewrite the observation text
+ * at save time without prompting again — the "remembered" half of the
+ * spellcheck-style flow the officer confirms once. */
+export async function getKnownPersonNameCorrection(spelling: string): Promise<{
+  correctSpelling: string;
+  targetId: number | null;
+  associateId: number | null;
+} | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const norm = spelling.trim().toUpperCase();
+  if (!norm) return null;
+  const rows = await db
+    .select()
+    .from(personNameMatchDecisions)
+    .where(
+      and(
+        eq(personNameMatchDecisions.decision, "confirmed"),
+        eq(personNameMatchDecisions.spelling, norm)
+      )
+    )
+    .limit(1);
+  if (!rows.length || !rows[0].correctSpelling) return null;
+  return {
+    correctSpelling: rows[0].correctSpelling,
+    targetId: rows[0].targetId,
+    associateId: rows[0].associateId,
+  };
+}
+
+/** Fuzzy-match a not-yet-saved person mention against the Target/Associate
+ * Registry — backs the save-time "is this an existing Target?" prompt.
+ * Excludes anything that already exactly matches a registered TGT/associate
+ * alias (that already auto-links silently via getAllIntelligenceEntities,
+ * nothing to ask) and anything with a prior decision recorded for this exact
+ * (spelling, target/associate) pairing, confirmed or rejected. */
+export async function checkPossibleTargetMatches(
+  label: string
+): Promise<PersonTargetMatch[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const labelUpper = label.trim().toUpperCase();
+  if (!labelUpper) return [];
+
+  const allEntities = await getAllIntelligenceEntities();
+  const registryEntities = allEntities.filter(e => e.isTarget || e.isAssociate);
+
+  // Already an exact alias match — the existing tgtAlias/associate-alias
+  // mechanism already folds this into the target/associate silently.
+  if (
+    registryEntities.some(
+      e => e.tgtAlias && e.tgtAlias.trim().toUpperCase() === labelUpper
+    )
+  ) {
+    return [];
+  }
+
+  const decisions = await db
+    .select()
+    .from(personNameMatchDecisions)
+    .where(eq(personNameMatchDecisions.spelling, labelUpper));
+  const decidedTargetIds = new Set(
+    decisions.filter(d => d.targetId != null).map(d => d.targetId)
+  );
+  const decidedAssociateIds = new Set(
+    decisions.filter(d => d.associateId != null).map(d => d.associateId)
+  );
+
+  const results: PersonTargetMatch[] = [];
+  for (const e of registryEntities) {
+    if (e.isTarget && e.targetId != null && decidedTargetIds.has(e.targetId))
+      continue;
+    if (
+      e.isAssociate &&
+      e.associateId != null &&
+      decidedAssociateIds.has(e.associateId)
+    )
+      continue;
+
+    const candidateNames = [e.shortForm, e.tgtAlias].filter(
+      (v): v is string => !!v && v.trim().length > 0
+    );
+    let best: { score: number; reason: string } | null = null;
+    for (const c of candidateNames) {
+      const cmp = comparePersonNames(label, c);
+      if (cmp && (!best || cmp.score > best.score)) best = cmp;
+    }
+    if (!best) continue;
+
+    results.push({
+      targetId: e.isTarget ? (e.targetId ?? undefined) : undefined,
+      associateId: e.isAssociate ? (e.associateId ?? undefined) : undefined,
+      name: e.shortForm,
+      tgtAlias: e.tgtAlias ?? null,
+      score: best.score,
+      reason: best.reason,
+    });
+  }
+
+  results.sort((a, b) => b.score - a.score);
+  return results.slice(0, 3);
+}
+
+async function upsertPersonNameMatchDecision(data: {
+  spelling: string;
+  targetId?: number;
+  associateId?: number;
+  correctSpelling?: string;
+  decidedByCIN: string | undefined;
+  decision: "confirmed" | "rejected";
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const norm = data.spelling.trim().toUpperCase();
+  const existing = await db
+    .select()
+    .from(personNameMatchDecisions)
+    .where(
+      and(
+        eq(personNameMatchDecisions.spelling, norm),
+        data.targetId != null
+          ? eq(personNameMatchDecisions.targetId, data.targetId)
+          : eq(personNameMatchDecisions.associateId, data.associateId!)
+      )
+    )
+    .limit(1);
+  if (existing.length > 0) {
+    await db
+      .update(personNameMatchDecisions)
+      .set({
+        decision: data.decision,
+        correctSpelling: data.correctSpelling ?? null,
+        decidedByCIN: data.decidedByCIN,
+        decidedAt: Date.now(),
+      })
+      .where(eq(personNameMatchDecisions.id, existing[0].id));
+  } else {
+    await db.insert(personNameMatchDecisions).values({
+      spelling: norm,
+      targetId: data.targetId ?? null,
+      associateId: data.associateId ?? null,
+      decision: data.decision,
+      correctSpelling: data.correctSpelling ?? null,
+      decidedByCIN: data.decidedByCIN,
+      decidedAt: Date.now(),
+    });
+  }
+}
+
+/** Records a confirmed spelling correction against a Target/Associate — this
+ * exact spelling auto-corrects silently on every future save from now on. */
+export async function confirmPersonNameMatch(data: {
+  spelling: string;
+  targetId?: number;
+  associateId?: number;
+  correctSpelling: string;
+  decidedByCIN: string | undefined;
+}): Promise<void> {
+  await upsertPersonNameMatchDecision({ ...data, decision: "confirmed" });
+}
+
+/** Records "not the same person" so this exact (spelling, target/associate)
+ * pairing isn't asked about again. */
+export async function rejectPersonNameMatch(data: {
+  spelling: string;
+  targetId?: number;
+  associateId?: number;
+  decidedByCIN: string | undefined;
+}): Promise<void> {
+  await upsertPersonNameMatchDecision({
+    spelling: data.spelling,
+    targetId: data.targetId,
+    associateId: data.associateId,
+    decidedByCIN: data.decidedByCIN,
+    decision: "rejected",
+  });
+}
+
 /**
  * Search existing entities of one type by substring — backs the manual Merge
  * Entities picker (excludeTargets: true, the default) and the Target
@@ -5815,21 +6154,15 @@ export interface GovernanceUpsertInput {
   sentToIO?: boolean;
   sentToIOCIN?: string | null;
   sentToIOName?: string | null;
-  savedAsWord?: boolean;
-  savedAsWordCIN?: string | null;
-  savedAsWordName?: string | null;
-  savedAsPdf?: boolean;
-  savedAsPdfCIN?: string | null;
-  savedAsPdfName?: string | null;
-  uploadedToPromis?: boolean;
-  uploadedToPromisCIN?: string | null;
-  uploadedToPromisName?: string | null;
   linked?: boolean;
   linkedCIN?: string | null;
   linkedName?: string | null;
   savedInOpFolder?: boolean;
   savedInOpFolderCIN?: string | null;
   savedInOpFolderName?: string | null;
+  savedInInvestigatorTransferDrive?: boolean;
+  savedInInvestigatorTransferDriveCIN?: string | null;
+  savedInInvestigatorTransferDriveName?: string | null;
   imageryTaken?: boolean;
   imageryTakenCIN?: string | null;
   imageryTakenName?: string | null;
@@ -5870,31 +6203,6 @@ export async function upsertGovernanceRecord(
         ...(input.sentToIOName !== undefined && {
           sentToIOName: input.sentToIOName,
         }),
-        ...(input.savedAsWord !== undefined && {
-          savedAsWord: input.savedAsWord,
-        }),
-        ...(input.savedAsWordCIN !== undefined && {
-          savedAsWordCIN: input.savedAsWordCIN,
-        }),
-        ...(input.savedAsWordName !== undefined && {
-          savedAsWordName: input.savedAsWordName,
-        }),
-        ...(input.savedAsPdf !== undefined && { savedAsPdf: input.savedAsPdf }),
-        ...(input.savedAsPdfCIN !== undefined && {
-          savedAsPdfCIN: input.savedAsPdfCIN,
-        }),
-        ...(input.savedAsPdfName !== undefined && {
-          savedAsPdfName: input.savedAsPdfName,
-        }),
-        ...(input.uploadedToPromis !== undefined && {
-          uploadedToPromis: input.uploadedToPromis,
-        }),
-        ...(input.uploadedToPromisCIN !== undefined && {
-          uploadedToPromisCIN: input.uploadedToPromisCIN,
-        }),
-        ...(input.uploadedToPromisName !== undefined && {
-          uploadedToPromisName: input.uploadedToPromisName,
-        }),
         ...(input.linked !== undefined && { linked: input.linked }),
         ...(input.linkedCIN !== undefined && { linkedCIN: input.linkedCIN }),
         ...(input.linkedName !== undefined && { linkedName: input.linkedName }),
@@ -5906,6 +6214,18 @@ export async function upsertGovernanceRecord(
         }),
         ...(input.savedInOpFolderName !== undefined && {
           savedInOpFolderName: input.savedInOpFolderName,
+        }),
+        ...(input.savedInInvestigatorTransferDrive !== undefined && {
+          savedInInvestigatorTransferDrive:
+            input.savedInInvestigatorTransferDrive,
+        }),
+        ...(input.savedInInvestigatorTransferDriveCIN !== undefined && {
+          savedInInvestigatorTransferDriveCIN:
+            input.savedInInvestigatorTransferDriveCIN,
+        }),
+        ...(input.savedInInvestigatorTransferDriveName !== undefined && {
+          savedInInvestigatorTransferDriveName:
+            input.savedInInvestigatorTransferDriveName,
         }),
         ...(input.imageryTaken !== undefined && {
           imageryTaken: input.imageryTaken,
@@ -5939,21 +6259,18 @@ export async function upsertGovernanceRecord(
       sentToIO: input.sentToIO ?? false,
       sentToIOCIN: input.sentToIOCIN ?? null,
       sentToIOName: input.sentToIOName ?? null,
-      savedAsWord: input.savedAsWord ?? false,
-      savedAsWordCIN: input.savedAsWordCIN ?? null,
-      savedAsWordName: input.savedAsWordName ?? null,
-      savedAsPdf: input.savedAsPdf ?? false,
-      savedAsPdfCIN: input.savedAsPdfCIN ?? null,
-      savedAsPdfName: input.savedAsPdfName ?? null,
-      uploadedToPromis: input.uploadedToPromis ?? false,
-      uploadedToPromisCIN: input.uploadedToPromisCIN ?? null,
-      uploadedToPromisName: input.uploadedToPromisName ?? null,
       linked: input.linked ?? false,
       linkedCIN: input.linkedCIN ?? null,
       linkedName: input.linkedName ?? null,
       savedInOpFolder: input.savedInOpFolder ?? false,
       savedInOpFolderCIN: input.savedInOpFolderCIN ?? null,
       savedInOpFolderName: input.savedInOpFolderName ?? null,
+      savedInInvestigatorTransferDrive:
+        input.savedInInvestigatorTransferDrive ?? false,
+      savedInInvestigatorTransferDriveCIN:
+        input.savedInInvestigatorTransferDriveCIN ?? null,
+      savedInInvestigatorTransferDriveName:
+        input.savedInInvestigatorTransferDriveName ?? null,
       imageryTaken: input.imageryTaken ?? false,
       imageryTakenCIN: input.imageryTakenCIN ?? null,
       imageryTakenName: input.imageryTakenName ?? null,
@@ -5999,10 +6316,8 @@ export function computeGovernancePercent(
   // ── Operative section (4 items, only countable when allSigned) ─────────────
   // If not all signed, these are all blocked — count them as incomplete
   const opFields: boolean[] = [
-    allSigned && !!rec.savedAsWord,
-    allSigned && !!rec.savedAsPdf,
-    allSigned && !!rec.uploadedToPromis,
     allSigned && !!rec.savedInOpFolder,
+    allSigned && !!rec.savedInInvestigatorTransferDrive,
   ];
 
   // ── Imagery section ────────────────────────────────────────────────────────
@@ -6047,7 +6362,7 @@ export async function getGovernanceRecordsBySheetIds(
 /**
  * Returns outstanding governance to-do items for a given CIN.
  * - If the CIN is the Team Leader on a sheet: returns TL items (summaryNotification, sentToIO) that are incomplete.
- * - If the CIN is the Author on a sheet: returns Operative items (savedAsWord, savedAsPdf, uploadedToPromis, savedInOpFolder)
+ * - If the CIN is the Author on a sheet: returns Operative items (savedInOpFolder, savedInInvestigatorTransferDrive)
  *   that are incomplete AND the sheet is fully certified.
  * allSigned is computed inline per sheet.
  */
@@ -6166,11 +6481,10 @@ export async function getGovernanceTodoForCin(cin: string): Promise<
       // Operative items only actionable once sheet is fully certified
       const outstanding: string[] = [];
       if (allSigned) {
-        if (!rec?.savedAsWord) outstanding.push("Saved as Word document");
-        if (!rec?.savedAsPdf) outstanding.push("Saved as PDF");
-        if (!rec?.uploadedToPromis) outstanding.push("Uploaded to PROMIS");
         if (!rec?.savedInOpFolder)
           outstanding.push("Saved in Operation folder");
+        if (!rec?.savedInInvestigatorTransferDrive)
+          outstanding.push("Saved in Investigator transfer drive");
         // Check imagery entries — any unsaved imagery rows are outstanding for the author
         if (rec?.imageryEntries) {
           try {
@@ -7679,6 +7993,17 @@ export interface IntelTargetProfile {
     operationId: number;
     operationName: string;
   }>;
+  /** Sheets this target is NOT formally assigned to (no runningSheets.targetId
+   * link) but whose observation text mentions them by name — e.g. as a
+   * passenger/associate on someone else's running sheet. Sourced from the
+   * same name-matched entity data that already powers the Intelligence
+   * Folder and Ego Network, so it stays consistent with what those show. */
+  mentionedSheets: Array<{
+    id: number;
+    title: string;
+    operationId: number;
+    operationName: string;
+  }>;
   observationCount: number;
   assocPersons: IntelProfileEntity[];
   assocVehicles: IntelProfileEntity[];
@@ -7893,7 +8218,8 @@ async function buildTargetOperationalAssociations(
   targetId: number,
   targetLabel: string,
   targetName: string,
-  allEntities: IntelligenceEntity[]
+  allEntities: IntelligenceEntity[],
+  targetEntity: IntelligenceEntity | undefined
 ): Promise<{
   assocPersons: IntelProfileEntity[];
   assocVehicles: IntelProfileEntity[];
@@ -7909,16 +8235,29 @@ async function buildTargetOperationalAssociations(
       and(eq(runningSheets.targetId, targetId), isNull(runningSheets.deletedAt))
     );
 
-  if (!targetSheets.length)
-    return { assocPersons: [], assocVehicles: [], assocLocations: [] };
-
   const targetSheetIds = targetSheets.map(s => s.id);
-  const rows = await db
-    .select({ id: sheetRows.id })
-    .from(sheetRows)
-    .where(inArray(sheetRows.sheetId, targetSheetIds));
+  const rows = targetSheetIds.length
+    ? await db
+        .select({ id: sheetRows.id })
+        .from(sheetRows)
+        .where(inArray(sheetRows.sheetId, targetSheetIds))
+    : [];
 
+  // Rows this target is formally assigned to (via the sheet's targetId)...
   const targetRowIds = new Set(rows.map(r => r.id));
+  // ...UNION rows where the target's own name is mentioned in observation
+  // text elsewhere — the same occurrence data that already links them in the
+  // Intelligence Folder / Ego Network, so a target's profile shows the same
+  // co-occurring people/vehicles/locations those views already agree on,
+  // not just what's confined to sheets formally assigned to them.
+  if (targetEntity) {
+    for (const occ of targetEntity.occurrences) {
+      if (occ.rowId > 0) targetRowIds.add(occ.rowId);
+    }
+  }
+
+  if (!targetRowIds.size)
+    return { assocPersons: [], assocVehicles: [], assocLocations: [] };
   const targetLabelLower = targetLabel.toLowerCase();
   // Catches observation-derived person entities that are just the target's own
   // name in different wording (e.g. "Sighted JOHN SMITH" vs the target card's
@@ -8062,13 +8401,76 @@ export async function getIntelTargetProfile(
   }
 
   const allEntities = await getAllIntelligenceEntities();
+  const targetEntity = allEntities.find(
+    e => e.isTarget && e.targetId === targetId
+  );
+
+  // Sheets this target is mentioned in by name (per the same entity data the
+  // Intelligence Folder / Ego Network already use) but isn't formally
+  // assigned to — e.g. appearing as a passenger on someone else's sheet.
+  const linkedSheetIdSet = new Set(linkedSheetRows.map(s => s.id));
+  const mentionedSheetIds = Array.from(
+    new Set(
+      (targetEntity?.occurrences ?? [])
+        .filter(occ => occ.rowId > 0 && !linkedSheetIdSet.has(occ.sheetId))
+        .map(occ => occ.sheetId)
+    )
+  );
+  let mentionedSheets: IntelTargetProfile["mentionedSheets"] = [];
+  if (mentionedSheetIds.length) {
+    const mentionedSheetRows = await db
+      .select({
+        id: runningSheets.id,
+        title: runningSheets.title,
+        operationId: runningSheets.operationId,
+      })
+      .from(runningSheets)
+      .where(
+        and(
+          inArray(runningSheets.id, mentionedSheetIds),
+          isNull(runningSheets.deletedAt)
+        )
+      );
+    const extraOpIds2 = Array.from(
+      new Set(
+        mentionedSheetRows.map(s => s.operationId).filter(id => !opNames[id])
+      )
+    );
+    if (extraOpIds2.length) {
+      const extraOps2 = await db
+        .select({ id: operations.id, name: operations.name })
+        .from(operations)
+        .where(inArray(operations.id, extraOpIds2));
+      for (const op of extraOps2) opNames[op.id] = op.name;
+    }
+    mentionedSheets = mentionedSheetRows.map(s => ({
+      id: s.id,
+      title: s.title,
+      operationId: s.operationId,
+      operationName: opNames[s.operationId] ?? "Unknown",
+    }));
+
+    // Mentioned-only sheets aren't formally linked to this target, but the
+    // target still appears in their rows — count those rows too so the
+    // profile's Observations total matches "everywhere this target shows
+    // up", not just formally-assigned sheets.
+    for (const sheet of mentionedSheetRows) {
+      const cnt = await db
+        .select({ c: sql<number>`count(*)` })
+        .from(sheetRows)
+        .where(eq(sheetRows.sheetId, sheet.id));
+      observationCount += Number(cnt[0]?.c ?? 0);
+    }
+  }
+
   const targetLabel = target.tgt ?? target.name;
   const { assocPersons, assocVehicles, assocLocations } =
     await buildTargetOperationalAssociations(
       targetId,
       targetLabel,
       target.name,
-      allEntities
+      allEntities,
+      targetEntity
     );
   await populateAssocPhotos(assocPersons, assocVehicles, assocLocations);
   markPreviousEntities(
@@ -8078,9 +8480,6 @@ export async function getIntelTargetProfile(
   );
 
   const registryAssociateRows = await getAssociatesForTarget(targetId);
-  const targetEntity = allEntities.find(
-    e => e.isTarget && e.targetId === targetId
-  );
   const associateEntityById = new Map(
     allEntities
       .filter(e => e.isAssociate && e.associateId != null)
@@ -8107,6 +8506,7 @@ export async function getIntelTargetProfile(
       operationId: s.operationId,
       operationName: opNames[s.operationId] ?? "Unknown",
     })),
+    mentionedSheets,
     observationCount,
     assocPersons,
     assocVehicles,
@@ -8167,16 +8567,21 @@ export async function getIntelOperationProfile(
         if (!target) return null;
         const targetLabel = target.tgt ?? target.name;
         const targetSheets = sheets.filter(s => s.targetId === targetId);
+        const targetEntity = allEntities.find(
+          e => e.isTarget && e.targetId === targetId
+        );
+        // Operation Profile is scoped to this operation's own sheets by
+        // design (it's summarizing the operation, not the target) — pass no
+        // targetEntity so associations stay confined to `targetSheets`,
+        // unlike the target's own profile page which widens app-wide.
         const { assocPersons, assocVehicles, assocLocations } =
           await buildTargetOperationalAssociations(
             targetId,
             targetLabel,
             target.name,
-            allEntities
+            allEntities,
+            undefined
           );
-        const targetEntity = allEntities.find(
-          e => e.isTarget && e.targetId === targetId
-        );
         return {
           targetId,
           name: target.name,

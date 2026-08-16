@@ -3786,7 +3786,7 @@ export default function IntelligenceMapping() {
            z-index above the overlays' z-20 (nothing paints over it either),
            giving it the same "full vision" the left pane already has. */}
       <div
-        className={`relative flex h-full flex-col border-l-2 border-border bg-card shadow-2xl flex-shrink-0 ${
+        className={`relative flex h-full flex-col border-l-[3px] border-primary/40 bg-card shadow-2xl flex-shrink-0 ${
           rsActionsPaneOpen ? "z-30" : ""
         } ${
           paneResizeDraggingRef.current ? "" : "transition-all duration-200"
@@ -3867,7 +3867,7 @@ export default function IntelligenceMapping() {
         )}
 
         {/* Pane Header */}
-        <div className="flex items-center justify-between px-4 py-3.5 border-b-2 border-border flex-shrink-0 bg-muted/20">
+        <div className="flex items-center justify-between px-4 py-3.5 border-b-2 border-primary/20 flex-shrink-0 bg-primary/[0.06]">
           {paneTargetProfileId !== null ? (
             <button
               onClick={() => setPaneTargetProfileId(null)}
@@ -4284,7 +4284,11 @@ export default function IntelligenceMapping() {
               </span>
               <button
                 onClick={() => handleSharingToggle(!sharingEnabled)}
-                className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-border bg-card hover:bg-accent/40 active:scale-[0.98] transition-all min-w-0"
+                className={`flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 active:scale-[0.98] transition-all min-w-0 ${
+                  sharingEnabled
+                    ? "border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20"
+                    : "border-border bg-card hover:bg-accent/40"
+                }`}
                 aria-pressed={sharingEnabled}
               >
                 <Radio
@@ -4292,7 +4296,11 @@ export default function IntelligenceMapping() {
                     sharingEnabled ? "text-emerald-500" : "text-muted-foreground"
                   }`}
                 />
-                <span className="text-xs font-semibold text-foreground truncate flex-1 text-left">
+                <span
+                  className={`text-xs font-semibold truncate flex-1 text-left ${
+                    sharingEnabled ? "text-emerald-500" : "text-foreground"
+                  }`}
+                >
                   Show &amp; Share
                 </span>
                 <span

@@ -19,9 +19,10 @@ export const NOT_ADMIN_ERR_MSG = "You do not have required permission (10002)";
 // rest are full alternate directions.
 export const COLOR_PALETTES = [
   { id: "steel-blue", label: "Steel Blue" },
-  { id: "phosphor", label: "Phosphor" },
-  { id: "amber", label: "Amber Console" },
   { id: "federal-navy", label: "Federal Navy" },
+  { id: "graphite", label: "Graphite" },
+  { id: "phosphor", label: "Phosphor" },
+  { id: "amber-console", label: "Amber Console" },
   { id: "case-file", label: "Case File" },
 ] as const;
 export type ColorPalette = (typeof COLOR_PALETTES)[number]["id"];

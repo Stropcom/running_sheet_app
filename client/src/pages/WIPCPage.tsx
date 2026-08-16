@@ -48,15 +48,23 @@ function dateToDDMMYYYY(d: Date) {
 
 // ─── Step indicator ───────────────────────────────────────────────────────────
 
-function StepBadge({ n, active, done }: { n: number; active: boolean; done: boolean }) {
+function StepBadge({
+  n,
+  active,
+  done,
+}: {
+  n: number;
+  active: boolean;
+  done: boolean;
+}) {
   return (
     <div
       className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold shrink-0 transition-colors ${
         done
           ? "bg-emerald-500 text-white"
           : active
-          ? "bg-primary text-primary-foreground"
-          : "bg-muted text-muted-foreground"
+            ? "bg-primary text-primary-foreground"
+            : "bg-muted text-muted-foreground"
       }`}
     >
       {done ? "✓" : n}
@@ -89,12 +97,16 @@ function DocTypeCard({
           : "border-border bg-card hover:bg-muted/40 text-foreground"
       }`}
     >
-      <FileText className={`w-5 h-5 mt-0.5 shrink-0 ${selected ? "text-primary" : "text-muted-foreground"}`} />
+      <FileText
+        className={`w-5 h-5 mt-0.5 shrink-0 ${selected ? "text-primary" : "text-muted-foreground"}`}
+      />
       <div>
         <p className="font-medium">{title}</p>
         <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
       </div>
-      {selected && <ChevronRight className="w-4 h-4 text-primary ml-auto mt-1 shrink-0" />}
+      {selected && (
+        <ChevronRight className="w-4 h-4 text-primary ml-auto mt-1 shrink-0" />
+      )}
     </button>
   );
 }
@@ -103,7 +115,7 @@ function DocTypeCard({
 
 interface WipcMember {
   fullName: string;
-  dob: string;       // ISO yyyy-MM-dd (for date input)
+  dob: string; // ISO yyyy-MM-dd (for date input)
   afpId: string;
   isUco: boolean;
   isOco: boolean;
@@ -112,7 +124,7 @@ interface WipcMember {
   aiInitials: string;
   aiKnownAs: string;
   deploymentStart: string; // ISO
-  deploymentEnd: string;   // ISO
+  deploymentEnd: string; // ISO
 }
 
 function emptyMember(): WipcMember {
@@ -151,9 +163,16 @@ function MemberCard({
   return (
     <div className="border border-border rounded-lg p-4 flex flex-col gap-3 bg-card">
       <div className="flex items-center justify-between">
-        <p className="text-sm font-semibold text-foreground">Member {index + 1}</p>
+        <p className="text-sm font-semibold text-foreground">
+          Member {index + 1}
+        </p>
         {canRemove && (
-          <Button variant="ghost" size="icon" onClick={onRemove} className="h-7 w-7 text-destructive hover:text-destructive">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onRemove}
+            className="h-7 w-7 text-destructive hover:text-destructive"
+          >
             <Trash2 className="w-4 h-4" />
           </Button>
         )}
@@ -163,14 +182,17 @@ function MemberCard({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="flex flex-col gap-1.5">
           <Label>Full Name</Label>
-          <Input value={member.fullName} onChange={(e) => set("fullName", e.target.value)} />
+          <Input
+            value={member.fullName}
+            onChange={e => set("fullName", e.target.value)}
+          />
         </div>
         <div className="flex flex-col gap-1.5">
           <Label>Date of Birth</Label>
           <Input
             type="date"
             value={member.dob}
-            onChange={(e) => set("dob", e.target.value)}
+            onChange={e => set("dob", e.target.value)}
           />
         </div>
       </div>
@@ -179,28 +201,43 @@ function MemberCard({
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="flex flex-col gap-1.5">
           <Label>AFP ID</Label>
-          <Input value={member.afpId} onChange={(e) => set("afpId", e.target.value)} />
+          <Input
+            value={member.afpId}
+            onChange={e => set("afpId", e.target.value)}
+          />
         </div>
         <div className="flex flex-col gap-1.5">
           <Label>Type</Label>
           <div className="flex items-center gap-4 h-10">
             <label className="flex items-center gap-1.5 text-sm cursor-pointer">
-              <Checkbox checked={member.isUco} onCheckedChange={(v) => set("isUco", !!v)} />
+              <Checkbox
+                checked={member.isUco}
+                onCheckedChange={v => set("isUco", !!v)}
+              />
               UCO
             </label>
             <label className="flex items-center gap-1.5 text-sm cursor-pointer">
-              <Checkbox checked={member.isOco} onCheckedChange={(v) => set("isOco", !!v)} />
+              <Checkbox
+                checked={member.isOco}
+                onCheckedChange={v => set("isOco", !!v)}
+              />
               OCO
             </label>
             <label className="flex items-center gap-1.5 text-sm cursor-pointer">
-              <Checkbox checked={member.isCin} onCheckedChange={(v) => set("isCin", !!v)} />
+              <Checkbox
+                checked={member.isCin}
+                onCheckedChange={v => set("isCin", !!v)}
+              />
               CIN
             </label>
           </div>
         </div>
         <div className="flex flex-col gap-1.5">
           <Label>CIN Number</Label>
-          <Input value={member.cinNumber} onChange={(e) => set("cinNumber", e.target.value)} />
+          <Input
+            value={member.cinNumber}
+            onChange={e => set("cinNumber", e.target.value)}
+          />
         </div>
       </div>
 
@@ -208,11 +245,17 @@ function MemberCard({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="flex flex-col gap-1.5">
           <Label>AI Initials</Label>
-          <Input value={member.aiInitials} onChange={(e) => set("aiInitials", e.target.value)} />
+          <Input
+            value={member.aiInitials}
+            onChange={e => set("aiInitials", e.target.value)}
+          />
         </div>
         <div className="flex flex-col gap-1.5">
           <Label>AI Known As</Label>
-          <Input value={member.aiKnownAs} onChange={(e) => set("aiKnownAs", e.target.value)} />
+          <Input
+            value={member.aiKnownAs}
+            onChange={e => set("aiKnownAs", e.target.value)}
+          />
         </div>
       </div>
 
@@ -223,7 +266,7 @@ function MemberCard({
           <Input
             type="date"
             value={member.deploymentStart}
-            onChange={(e) => set("deploymentStart", e.target.value)}
+            onChange={e => set("deploymentStart", e.target.value)}
           />
         </div>
         <div className="flex flex-col gap-1.5">
@@ -231,7 +274,7 @@ function MemberCard({
           <Input
             type="date"
             value={member.deploymentEnd}
-            onChange={(e) => set("deploymentEnd", e.target.value)}
+            onChange={e => set("deploymentEnd", e.target.value)}
           />
         </div>
       </div>
@@ -256,13 +299,13 @@ export default function WIPCPage() {
   // Store as ISO for date input, display as DD/MM/YYYY in document
   const [declarationDateIso, setDeclarationDateIso] = useState(() => {
     const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   });
 
   // ── WIPC Request fields ──────────────────────────────────────────────────────
   const [courtDateIso, setCourtDateIso] = useState(() => {
     const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   });
   const [courtLocation, setCourtLocation] = useState("");
   const [requestingCommander, setRequestingCommander] = useState("COLLIE");
@@ -271,7 +314,8 @@ export default function WIPCPage() {
   const [operationDetails, setOperationDetails] = useState("");
   const [officerFullName, setOfficerFullName] = useState("");
   const [officerAfpId, setOfficerAfpId] = useState("");
-  const [officerWorkLocation, setOfficerWorkLocation] = useState("WC Surveillance");
+  const [officerWorkLocation, setOfficerWorkLocation] =
+    useState("WC Surveillance");
   const [officerPortfolio, setOfficerPortfolio] = useState("CTO");
   const [officerContact, setOfficerContact] = useState("");
 
@@ -281,15 +325,25 @@ export default function WIPCPage() {
   const [showMemberSearch, setShowMemberSearch] = useState(false);
 
   function addMember() {
-    setMembers((prev) => [...prev, emptyMember()]);
+    setMembers(prev => [...prev, emptyMember()]);
   }
   function removeMember(idx: number) {
-    setMembers((prev) => prev.filter((_, i) => i !== idx));
+    setMembers(prev => prev.filter((_, i) => i !== idx));
   }
   function updateMember(idx: number, updated: WipcMember) {
-    setMembers((prev) => prev.map((m, i) => (i === idx ? updated : m)));
+    setMembers(prev => prev.map((m, i) => (i === idx ? updated : m)));
   }
-  function addMemberFromRegistry(saved: { fullName: string; dob?: string | null; afpId: string; isUco: boolean; isOco: boolean; isCin: boolean; cinNumber?: string | null; aiInitials?: string | null; aiKnownAs?: string | null }) {
+  function addMemberFromRegistry(saved: {
+    fullName: string;
+    dob?: string | null;
+    afpId: string;
+    isUco: boolean;
+    isOco: boolean;
+    isCin: boolean;
+    cinNumber?: string | null;
+    aiInitials?: string | null;
+    aiKnownAs?: string | null;
+  }) {
     const m: WipcMember = {
       fullName: saved.fullName,
       dob: saved.dob || "",
@@ -303,7 +357,7 @@ export default function WIPCPage() {
       deploymentStart: "",
       deploymentEnd: "",
     };
-    setMembers((prev) => {
+    setMembers(prev => {
       const last = prev[prev.length - 1];
       if (last && !last.fullName && !last.afpId) {
         return [...prev.slice(0, -1), m];
@@ -316,9 +370,10 @@ export default function WIPCPage() {
 
   // ── Data fetching ──────────────────────────────────────────────────────────
 
-  const { data: operations, isLoading: opsLoading } = trpc.operation.list.useQuery(undefined, {
-    enabled: isAuthenticated,
-  });
+  const { data: operations, isLoading: opsLoading } =
+    trpc.operation.list.useQuery(undefined, {
+      enabled: isAuthenticated,
+    });
 
   // Fetch first/last sheet dates for the selected operation to auto-fill deployment dates
   const { data: sheetDates } = trpc.wipc.getOperationSheetDates.useQuery(
@@ -327,7 +382,9 @@ export default function WIPCPage() {
   );
 
   // Fetch saved member registry (vault)
-  const { data: savedMembers } = trpc.wipc.listMembers.useQuery(undefined, { enabled: isAuthenticated });
+  const { data: savedMembers } = trpc.wipc.listMembers.useQuery(undefined, {
+    enabled: isAuthenticated,
+  });
 
   // Filtered members for search dropdown
   const filteredSavedMembers = useMemo(() => {
@@ -335,7 +392,7 @@ export default function WIPCPage() {
     const q = memberSearch.toLowerCase();
     if (!q) return savedMembers;
     return savedMembers.filter(
-      (m) =>
+      m =>
         m.fullName.toLowerCase().includes(q) ||
         m.afpId.toLowerCase().includes(q) ||
         (m.aiKnownAs && m.aiKnownAs.toLowerCase().includes(q))
@@ -354,13 +411,13 @@ export default function WIPCPage() {
   });
 
   // Fetch saved officer profile (vault)
-  const { data: savedOfficerProfile, isLoading: profileLoading } = trpc.wipc.getOfficerProfile.useQuery(
-    undefined,
-    { enabled: isAuthenticated }
-  );
+  const { data: savedOfficerProfile, isLoading: profileLoading } =
+    trpc.wipc.getOfficerProfile.useQuery(undefined, {
+      enabled: isAuthenticated,
+    });
 
   const selectedOp = useMemo(
-    () => operations?.find((o) => o.id === selectedOpId) ?? null,
+    () => operations?.find(o => o.id === selectedOpId) ?? null,
     [operations, selectedOpId]
   );
 
@@ -369,11 +426,16 @@ export default function WIPCPage() {
   useEffect(() => {
     if (savedOfficerProfile && !profileLoaded) {
       setProfileLoaded(true);
-      if (savedOfficerProfile.fullName) setOfficerFullName(savedOfficerProfile.fullName as string);
-      if (savedOfficerProfile.afpId) setOfficerAfpId(savedOfficerProfile.afpId as string);
-      if (savedOfficerProfile.workLocation) setOfficerWorkLocation(savedOfficerProfile.workLocation as string);
-      if (savedOfficerProfile.portfolio) setOfficerPortfolio(savedOfficerProfile.portfolio as string);
-      if (savedOfficerProfile.contactNumber) setOfficerContact(savedOfficerProfile.contactNumber as string);
+      if (savedOfficerProfile.fullName)
+        setOfficerFullName(savedOfficerProfile.fullName as string);
+      if (savedOfficerProfile.afpId)
+        setOfficerAfpId(savedOfficerProfile.afpId as string);
+      if (savedOfficerProfile.workLocation)
+        setOfficerWorkLocation(savedOfficerProfile.workLocation as string);
+      if (savedOfficerProfile.portfolio)
+        setOfficerPortfolio(savedOfficerProfile.portfolio as string);
+      if (savedOfficerProfile.contactNumber)
+        setOfficerContact(savedOfficerProfile.contactNumber as string);
     }
   }, [savedOfficerProfile, profileLoaded]);
 
@@ -383,8 +445,8 @@ export default function WIPCPage() {
     if (sheetDates && selectedOpId && selectedOpId !== lastAutoFillOpId) {
       setLastAutoFillOpId(selectedOpId);
       if (sheetDates.start || sheetDates.end) {
-        setMembers((prev) =>
-          prev.map((m) => ({
+        setMembers(prev =>
+          prev.map(m => ({
             ...m,
             deploymentStart: m.deploymentStart || sheetDates.start || "",
             deploymentEnd: m.deploymentEnd || sheetDates.end || "",
@@ -427,7 +489,11 @@ export default function WIPCPage() {
 
   const generateStatDecMutation = trpc.wipc.generateStatDec.useMutation({
     onSuccess(data) {
-      downloadBase64File(data.base64, data.filename, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+      downloadBase64File(
+        data.base64,
+        data.filename,
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      );
       toast.success("Statutory Declaration generated");
       setIsGenerating(false);
     },
@@ -437,17 +503,23 @@ export default function WIPCPage() {
     },
   });
 
-  const generateWipcRequestMutation = trpc.wipc.generateWipcRequest.useMutation({
-    onSuccess(data) {
-      downloadBase64File(data.base64, data.filename, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-      toast.success("WIPC Request generated");
-      setIsGenerating(false);
-    },
-    onError(err) {
-      toast.error(`Failed to generate: ${err.message}`);
-      setIsGenerating(false);
-    },
-  });
+  const generateWipcRequestMutation = trpc.wipc.generateWipcRequest.useMutation(
+    {
+      onSuccess(data) {
+        downloadBase64File(
+          data.base64,
+          data.filename,
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        );
+        toast.success("WIPC Request generated");
+        setIsGenerating(false);
+      },
+      onError(err) {
+        toast.error(`Failed to generate: ${err.message}`);
+        setIsGenerating(false);
+      },
+    }
+  );
 
   // ── Validation ─────────────────────────────────────────────────────────────
 
@@ -500,7 +572,7 @@ export default function WIPCPage() {
         requestingOfficerWorkLocation: officerWorkLocation,
         requestingOfficerPortfolio: officerPortfolio,
         requestingOfficerContact: officerContact,
-        members: members.map((m) => ({
+        members: members.map(m => ({
           fullName: m.fullName,
           dob: isoToDDMMYYYY(m.dob),
           afpId: m.afpId,
@@ -527,13 +599,24 @@ export default function WIPCPage() {
           <ShieldCheck className="w-7 h-7 text-primary shrink-0 mt-0.5" />
           <div className="flex-1">
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl font-bold text-foreground">WIPC Documents</h1>
+              <h1 className="text-xl font-bold text-foreground">
+                WIPC Documents
+              </h1>
               <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30">
                 <Lock className="w-3 h-3" />
                 AES-256 Encrypted Vault
               </span>
             </div>
-            <p className="text-sm text-muted-foreground mt-0.5">Generate Witness Identity Protection Certificate documents — all officer and member data is encrypted at rest</p>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Generate Witness Identity Protection Certificate documents — all
+              officer and member data is encrypted at rest
+            </p>
+            <p className="text-xs text-muted-foreground/80 mt-1">
+              Encrypted at rest means names, dates of birth and IDs are
+              scrambled before they're stored, so they can't be read directly
+              from the database — only this app can unscramble them when you
+              view a record.
+            </p>
           </div>
         </div>
 
@@ -552,9 +635,11 @@ export default function WIPCPage() {
                 <Skeleton className="h-12 w-full" />
               </>
             ) : !operations || operations.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No operations found.</p>
+              <p className="text-sm text-muted-foreground">
+                No operations found.
+              </p>
             ) : (
-              operations.map((op) => (
+              operations.map(op => (
                 <button
                   key={op.id}
                   onClick={() => {
@@ -582,7 +667,9 @@ export default function WIPCPage() {
           <section className="flex flex-col gap-4">
             <div className="flex items-center gap-3">
               <StepBadge n={2} active={step === 2} done={step > 2} />
-              <h2 className="font-semibold text-foreground">Choose Document Type</h2>
+              <h2 className="font-semibold text-foreground">
+                Choose Document Type
+              </h2>
             </div>
 
             <div className="pl-10 flex flex-col gap-2">
@@ -609,7 +696,9 @@ export default function WIPCPage() {
           <section className="flex flex-col gap-4">
             <div className="flex items-center gap-3">
               <StepBadge n={3} active={step === 3} done={false} />
-              <h2 className="font-semibold text-foreground">Statutory Declaration Details</h2>
+              <h2 className="font-semibold text-foreground">
+                Statutory Declaration Details
+              </h2>
             </div>
 
             <div className="pl-10 flex flex-col gap-4">
@@ -618,7 +707,7 @@ export default function WIPCPage() {
                 <Input
                   id="declarant-name"
                   value={declarantFullName}
-                  onChange={(e) => setDeclarantFullName(e.target.value)}
+                  onChange={e => setDeclarantFullName(e.target.value)}
                 />
               </div>
 
@@ -627,9 +716,11 @@ export default function WIPCPage() {
                 <Input
                   id="witness-name"
                   value={witnessFullName}
-                  onChange={(e) => setWitnessFullName(e.target.value)}
+                  onChange={e => setWitnessFullName(e.target.value)}
                 />
-                <p className="text-xs text-muted-foreground">Federal Agent — 1120 Hay Street, WEST PERTH</p>
+                <p className="text-xs text-muted-foreground">
+                  Federal Agent — 1120 Hay Street, WEST PERTH
+                </p>
               </div>
 
               <div className="flex flex-col gap-1.5">
@@ -638,7 +729,7 @@ export default function WIPCPage() {
                   id="decl-date"
                   type="date"
                   value={declarationDateIso}
-                  onChange={(e) => setDeclarationDateIso(e.target.value)}
+                  onChange={e => setDeclarationDateIso(e.target.value)}
                 />
               </div>
 
@@ -665,7 +756,9 @@ export default function WIPCPage() {
           <section className="flex flex-col gap-4">
             <div className="flex items-center gap-3">
               <StepBadge n={3} active={step === 3} done={false} />
-              <h2 className="font-semibold text-foreground">WIPC Request Details</h2>
+              <h2 className="font-semibold text-foreground">
+                WIPC Request Details
+              </h2>
             </div>
 
             <div className="pl-10 flex flex-col gap-4">
@@ -674,9 +767,12 @@ export default function WIPCPage() {
                 <Checkbox
                   id="urgent"
                   checked={isUrgent}
-                  onCheckedChange={(v) => setIsUrgent(!!v)}
+                  onCheckedChange={v => setIsUrgent(!!v)}
                 />
-                <Label htmlFor="urgent" className="cursor-pointer font-semibold text-amber-400">
+                <Label
+                  htmlFor="urgent"
+                  className="cursor-pointer font-semibold text-amber-400"
+                >
                   URGENT — Mark this request as urgent
                 </Label>
               </div>
@@ -689,7 +785,7 @@ export default function WIPCPage() {
                     id="court-date"
                     type="date"
                     value={courtDateIso}
-                    onChange={(e) => setCourtDateIso(e.target.value)}
+                    onChange={e => setCourtDateIso(e.target.value)}
                   />
                 </div>
                 <div className="flex flex-col gap-1.5">
@@ -697,7 +793,7 @@ export default function WIPCPage() {
                   <Input
                     id="court-location"
                     value={courtLocation}
-                    onChange={(e) => setCourtLocation(e.target.value)}
+                    onChange={e => setCourtLocation(e.target.value)}
                   />
                 </div>
               </div>
@@ -709,15 +805,17 @@ export default function WIPCPage() {
                   <Input
                     id="req-commander"
                     value={requestingCommander}
-                    onChange={(e) => setRequestingCommander(e.target.value)}
+                    onChange={e => setRequestingCommander(e.target.value)}
                   />
                 </div>
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="asst-commissioner">Assistant Commissioner</Label>
+                  <Label htmlFor="asst-commissioner">
+                    Assistant Commissioner
+                  </Label>
                   <Input
                     id="asst-commissioner"
                     value={assistantCommissioner}
-                    onChange={(e) => setAssistantCommissioner(e.target.value)}
+                    onChange={e => setAssistantCommissioner(e.target.value)}
                   />
                 </div>
               </div>
@@ -729,7 +827,7 @@ export default function WIPCPage() {
                   id="op-details"
                   rows={3}
                   value={operationDetails}
-                  onChange={(e) => setOperationDetails(e.target.value)}
+                  onChange={e => setOperationDetails(e.target.value)}
                 />
               </div>
 
@@ -737,14 +835,18 @@ export default function WIPCPage() {
               <div className="border-t border-border pt-4">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
-                    <p className="text-sm font-semibold text-foreground">Requesting Officer Details</p>
+                    <p className="text-sm font-semibold text-foreground">
+                      Requesting Officer Details
+                    </p>
                     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
                       <Lock className="w-2.5 h-2.5" />
                       Vault
                     </span>
                   </div>
                   {profileLoading ? (
-                    <span className="text-xs text-muted-foreground">Loading saved profile…</span>
+                    <span className="text-xs text-muted-foreground">
+                      Loading saved profile…
+                    </span>
                   ) : savedOfficerProfile ? (
                     <span className="inline-flex items-center gap-1 text-xs text-emerald-400">
                       <UserCheck className="w-3 h-3" />
@@ -758,7 +860,7 @@ export default function WIPCPage() {
                     <Input
                       id="officer-name"
                       value={officerFullName}
-                      onChange={(e) => setOfficerFullName(e.target.value)}
+                      onChange={e => setOfficerFullName(e.target.value)}
                     />
                   </div>
 
@@ -768,7 +870,7 @@ export default function WIPCPage() {
                       <Input
                         id="officer-afpid"
                         value={officerAfpId}
-                        onChange={(e) => setOfficerAfpId(e.target.value)}
+                        onChange={e => setOfficerAfpId(e.target.value)}
                       />
                     </div>
                     <div className="flex flex-col gap-1.5">
@@ -776,7 +878,7 @@ export default function WIPCPage() {
                       <Input
                         id="officer-location"
                         value={officerWorkLocation}
-                        onChange={(e) => setOfficerWorkLocation(e.target.value)}
+                        onChange={e => setOfficerWorkLocation(e.target.value)}
                       />
                     </div>
                   </div>
@@ -787,7 +889,7 @@ export default function WIPCPage() {
                       <Input
                         id="officer-portfolio"
                         value={officerPortfolio}
-                        onChange={(e) => setOfficerPortfolio(e.target.value)}
+                        onChange={e => setOfficerPortfolio(e.target.value)}
                       />
                     </div>
                     <div className="flex flex-col gap-1.5">
@@ -795,7 +897,7 @@ export default function WIPCPage() {
                       <Input
                         id="officer-contact"
                         value={officerContact}
-                        onChange={(e) => setOfficerContact(e.target.value)}
+                        onChange={e => setOfficerContact(e.target.value)}
                       />
                     </div>
                   </div>
@@ -805,13 +907,22 @@ export default function WIPCPage() {
                     variant="outline"
                     size="sm"
                     onClick={handleSaveOfficerProfile}
-                    disabled={isSavingProfile || !officerFullName.trim() || !officerAfpId.trim()}
+                    disabled={
+                      isSavingProfile ||
+                      !officerFullName.trim() ||
+                      !officerAfpId.trim()
+                    }
                     className="w-full sm:w-auto gap-2 border-amber-500/40 text-amber-400 hover:bg-amber-500/10"
                   >
                     {isSavingProfile ? (
-                      <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…</>
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…
+                      </>
                     ) : (
-                      <><Save className="w-3.5 h-3.5" /> Save Officer Profile to Vault</>
+                      <>
+                        <Save className="w-3.5 h-3.5" /> Save Officer Profile to
+                        Vault
+                      </>
                     )}
                   </Button>
                 </div>
@@ -821,13 +932,17 @@ export default function WIPCPage() {
               <div className="border-t border-border pt-4">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
-                    <p className="text-sm font-semibold text-foreground">Members Requiring WIPC</p>
+                    <p className="text-sm font-semibold text-foreground">
+                      Members Requiring WIPC
+                    </p>
                     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
                       <Lock className="w-2.5 h-2.5" />
                       Vault
                     </span>
                   </div>
-                  <span className="text-xs text-muted-foreground">Page 3 of document</span>
+                  <span className="text-xs text-muted-foreground">
+                    Page 3 of document
+                  </span>
                 </div>
 
                 {/* Saved member search / recall */}
@@ -840,14 +955,17 @@ export default function WIPCPage() {
                     <div className="relative">
                       <Input
                         value={memberSearch}
-                        onChange={(e) => { setMemberSearch(e.target.value); setShowMemberSearch(true); }}
+                        onChange={e => {
+                          setMemberSearch(e.target.value);
+                          setShowMemberSearch(true);
+                        }}
                         onFocus={() => setShowMemberSearch(true)}
                         placeholder="Search by name, AFP ID or AI known as…"
                         className="text-sm"
                       />
                       {showMemberSearch && filteredSavedMembers.length > 0 && (
                         <div className="absolute z-20 top-full mt-1 left-0 right-0 bg-popover border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                          {filteredSavedMembers.map((sm) => (
+                          {filteredSavedMembers.map(sm => (
                             <button
                               key={sm.id}
                               type="button"
@@ -856,7 +974,8 @@ export default function WIPCPage() {
                             >
                               <span className="font-medium">{sm.fullName}</span>
                               <span className="text-xs text-muted-foreground">
-                                {sm.afpId}{sm.aiKnownAs ? ` · ${sm.aiKnownAs}` : ""}
+                                {sm.afpId}
+                                {sm.aiKnownAs ? ` · ${sm.aiKnownAs}` : ""}
                               </span>
                             </button>
                           ))}
@@ -872,7 +991,7 @@ export default function WIPCPage() {
                       <MemberCard
                         index={idx}
                         member={member}
-                        onChange={(updated) => updateMember(idx, updated)}
+                        onChange={updated => updateMember(idx, updated)}
                         onRemove={() => removeMember(idx)}
                         canRemove={members.length > 1}
                       />
@@ -881,17 +1000,19 @@ export default function WIPCPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => saveMemberMutation.mutate({
-                            fullName: member.fullName,
-                            afpId: member.afpId,
-                            dob: member.dob || undefined,
-                            isUco: member.isUco,
-                            isOco: member.isOco,
-                            isCin: member.isCin,
-                            cinNumber: member.cinNumber || undefined,
-                            aiInitials: member.aiInitials || undefined,
-                            aiKnownAs: member.aiKnownAs || undefined,
-                          })}
+                          onClick={() =>
+                            saveMemberMutation.mutate({
+                              fullName: member.fullName,
+                              afpId: member.afpId,
+                              dob: member.dob || undefined,
+                              isUco: member.isUco,
+                              isOco: member.isOco,
+                              isCin: member.isCin,
+                              cinNumber: member.cinNumber || undefined,
+                              aiInitials: member.aiInitials || undefined,
+                              aiKnownAs: member.aiKnownAs || undefined,
+                            })
+                          }
                           className="self-end gap-1.5 text-xs text-amber-400 hover:bg-amber-500/10 h-7"
                         >
                           <Save className="w-3 h-3" />

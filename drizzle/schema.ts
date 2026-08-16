@@ -341,6 +341,49 @@ export type EntityDedupDecision = typeof entityDedupDecisions.$inferSelect;
 export type InsertEntityDedupDecision =
   typeof entityDedupDecisions.$inferInsert;
 
+// ─── Person Name Match Decisions (Target/Associate spelling corrections) ──
+// Unlike entityAliases (which links two ordinary text-mined entities without
+// touching the observation text itself), this records a decision about a
+// person's name against the formal Target/Associate Registry, and — when
+// confirmed — the observation text of the row being saved is corrected to
+// the registered spelling before it's stored (see registerPersonNameMatch /
+// updateRow's use of it in routers.ts). "spelling" is the as-typed bracket
+// short-form the officer wrote (e.g. "LOCKET"); "correctSpelling" is the
+// registered alias it was corrected to (e.g. "LOCKETT"). Only set for
+// "confirmed" rows — a "rejected" row just stops the prompt asking about
+// this exact (spelling, target/associate) pair again. Exactly one of
+// targetId/associateId is set per row.
+export const personNameMatchDecisions = mysqlTable(
+  "person_name_match_decisions",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    targetId: int("targetId"),
+    associateId: int("associateId"),
+    spelling: varchar("spelling", { length: 120 }).notNull(),
+    decision: mysqlEnum("decision", ["confirmed", "rejected"]).notNull(),
+    correctSpelling: varchar("correctSpelling", { length: 120 }),
+    decidedByCIN: varchar("decidedByCIN", { length: 64 }),
+    decidedAt: bigint("decidedAt", { mode: "number" }).notNull(),
+  },
+  table => ({
+    // One decision per (spelling, target) / (spelling, associate) pair —
+    // a fresh decision overwrites the previous one rather than duplicating.
+    targetPairIdx: uniqueIndex("person_name_match_target_idx").on(
+      table.spelling,
+      table.targetId
+    ),
+    associatePairIdx: uniqueIndex("person_name_match_associate_idx").on(
+      table.spelling,
+      table.associateId
+    ),
+  })
+);
+
+export type PersonNameMatchDecision =
+  typeof personNameMatchDecisions.$inferSelect;
+export type InsertPersonNameMatchDecision =
+  typeof personNameMatchDecisions.$inferInsert;
+
 // ─── Intelligence Geocode Cache ─────────────────────────────────────────────
 // Caches lat/lng for addresses extracted from observation text, keyed by the
 // same normalized label used to group/dedup intel entities elsewhere
@@ -658,21 +701,23 @@ export const governanceRecords = mysqlTable("governance_records", {
   sentToIOCIN: varchar("sentToIOCIN", { length: 50 }),
   sentToIOName: varchar("sentToIOName", { length: 100 }),
   // ─ Operative / RS Author section ─
-  savedAsWord: boolean("savedAsWord").default(false).notNull(),
-  savedAsWordCIN: varchar("savedAsWordCIN", { length: 50 }),
-  savedAsWordName: varchar("savedAsWordName", { length: 100 }),
-  savedAsPdf: boolean("savedAsPdf").default(false).notNull(),
-  savedAsPdfCIN: varchar("savedAsPdfCIN", { length: 50 }),
-  savedAsPdfName: varchar("savedAsPdfName", { length: 100 }),
-  uploadedToPromis: boolean("uploadedToPromis").default(false).notNull(),
-  uploadedToPromisCIN: varchar("uploadedToPromisCIN", { length: 50 }),
-  uploadedToPromisName: varchar("uploadedToPromisName", { length: 100 }),
   linked: boolean("linked").default(false).notNull(),
   linkedCIN: varchar("linkedCIN", { length: 50 }),
   linkedName: varchar("linkedName", { length: 100 }),
   savedInOpFolder: boolean("savedInOpFolder").default(false).notNull(),
   savedInOpFolderCIN: varchar("savedInOpFolderCIN", { length: 50 }),
   savedInOpFolderName: varchar("savedInOpFolderName", { length: 100 }),
+  savedInInvestigatorTransferDrive: boolean("savedInInvestigatorTransferDrive")
+    .default(false)
+    .notNull(),
+  savedInInvestigatorTransferDriveCIN: varchar(
+    "savedInInvestigatorTransferDriveCIN",
+    { length: 50 }
+  ),
+  savedInInvestigatorTransferDriveName: varchar(
+    "savedInInvestigatorTransferDriveName",
+    { length: 100 }
+  ),
   // ─ Imagery section ─
   imageryTaken: boolean("imageryTaken").default(false).notNull(),
   imageryTakenCIN: varchar("imageryTakenCIN", { length: 50 }),

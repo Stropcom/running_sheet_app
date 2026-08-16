@@ -85,6 +85,15 @@ function buildTargetProfileHtml(
     timeStyle: "short",
   });
 
+  const linkedOpIds = new Set(profile.operations.map(o => o.id));
+  const mentionedOnlyOps = Array.from(
+    new Map(
+      profile.mentionedSheets
+        .filter(s => !linkedOpIds.has(s.operationId))
+        .map(s => [s.operationId, s.operationName])
+    ).entries()
+  );
+
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>RunLog Intelligence Profile — ${esc(profile.name)}</title>
 <style>
@@ -128,8 +137,8 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
   <div class="gen-time">Generated: ${generatedAt}</div>
 </div>
 <div class="stats-row">
-  <div class="stat-box"><div class="stat-num">${profile.operations.length}</div><div class="stat-label">Operations</div></div>
-  <div class="stat-box"><div class="stat-num">${profile.linkedSheets.length}</div><div class="stat-label">Running Sheets</div></div>
+  <div class="stat-box"><div class="stat-num">${profile.operations.length + mentionedOnlyOps.length}</div><div class="stat-label">Operations</div></div>
+  <div class="stat-box"><div class="stat-num">${profile.linkedSheets.length + profile.mentionedSheets.length}</div><div class="stat-label">Running Sheets</div></div>
   <div class="stat-box"><div class="stat-num">${profile.assocPersons.length + profile.assocVehicles.length + profile.assocLocations.length}</div><div class="stat-label">Associations</div></div>
   <div class="stat-box"><div class="stat-num">${profile.observationCount}</div><div class="stat-label">Observations</div></div>
 </div>
@@ -145,7 +154,12 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 
   <div class="section">
     <div class="section-title">Operations</div>
-    <div class="ops-list">${profile.operations.map(o => `<span class="op-badge">${esc(o.name)}</span>`).join("")}</div>
+    <div class="ops-list">${profile.operations.map(o => `<span class="op-badge">${esc(o.name)}</span>`).join("")}${mentionedOnlyOps
+      .map(
+        ([id, name]) =>
+          `<span class="op-badge" style="opacity:0.65;border-style:dashed;">${esc(name)} <span style="font-size:8px;text-transform:uppercase;">(mentioned)</span></span>`
+      )
+      .join("")}</div>
   </div>
 
   ${
@@ -207,6 +221,18 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
       ${profile.linkedSheets.map(s => `<div class="sheet-item"><div class="sheet-dot"></div><span style="flex:1">${esc(s.title)}</span><span style="color:#64748b">${esc(s.operationName)}</span></div>`).join("") || `<div class="sheet-item"><span style="color:#94a3b8">No linked running sheets</span></div>`}
     </div>
   </div>
+
+  ${
+    profile.mentionedSheets.length
+      ? `
+  <div class="section">
+    <div class="section-title">Also Mentioned In</div>
+    <div style="border:1px dashed ${GREY_BORDER};border-radius:6px;overflow:hidden">
+      ${profile.mentionedSheets.map(s => `<div class="sheet-item"><div class="sheet-dot"></div><span style="flex:1">${esc(s.title)}</span><span style="color:#64748b">${esc(s.operationName)}</span></div>`).join("")}
+    </div>
+  </div>`
+      : ""
+  }
 
   ${
     profile.assocPersons.length ||
@@ -302,6 +328,27 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
   const historyFor = (field: string) =>
     fieldHistory.filter(h => h.fieldName === field);
 
+  // Operations this target has actually been mentioned in (via
+  // mentionedSheets — the same name-matched data backing "Also Mentioned
+  // In") but isn't formally linked to via the Registry's own operation
+  // links. Kept separate from profile.operations for the same reason
+  // mentionedSheets is kept separate from linkedSheets: "formally on this
+  // operation" and "seen active during this operation" are different claims.
+  const mentionedOnlyOps = profile
+    ? Array.from(
+        new Map(
+          profile.mentionedSheets
+            .filter(
+              s => !profile.operations.some(op => op.id === s.operationId)
+            )
+            .map(s => [
+              s.operationId,
+              { id: s.operationId, name: s.operationName },
+            ])
+        ).values()
+      )
+    : [];
+
   function exportPdf() {
     if (!profile) return;
     const html = buildTargetProfileHtml(profile, photos, fieldHistory);
@@ -367,8 +414,16 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
             {/* Stats */}
             <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-border/60 bg-blue-50/50 dark:bg-blue-950/20">
               {[
-                { label: "Operations", value: profile.operations.length },
-                { label: "Running Sheets", value: profile.linkedSheets.length },
+                {
+                  label: "Operations",
+                  value: profile.operations.length + mentionedOnlyOps.length,
+                },
+                {
+                  label: "Running Sheets",
+                  value:
+                    profile.linkedSheets.length +
+                    profile.mentionedSheets.length,
+                },
                 {
                   label: "Associations",
                   value:
@@ -407,6 +462,20 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
                 >
                   <Folder className="w-3 h-3" />
                   {op.name}
+                </button>
+              ))}
+              {mentionedOnlyOps.map(op => (
+                <button
+                  key={`mentioned-${op.id}`}
+                  onClick={() => navigate(`/intelligence/operation/${op.id}`)}
+                  title="Not formally linked — this target was named in an observation on this operation"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-muted/20 text-muted-foreground border border-dashed border-border hover:bg-accent/10 transition-colors"
+                >
+                  <Folder className="w-3 h-3" />
+                  {op.name}
+                  <span className="text-[9px] uppercase tracking-wide opacity-70">
+                    mentioned
+                  </span>
                 </button>
               ))}
             </div>
@@ -525,6 +594,41 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
               </div>
             )}
           </div>
+
+          {/* Also Mentioned In — sheets this target isn't formally assigned
+              to (no runningSheets.targetId link) but whose observation text
+              names them, e.g. as a passenger on someone else's sheet. Kept
+              visually distinct from "Running Sheets" so it reads as
+              "elsewhere, not yours" rather than duplicating that list. */}
+          {profile.mentionedSheets.length > 0 && (
+            <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
+              <SectionHeading
+                label="Also Mentioned In"
+                count={profile.mentionedSheets.length}
+              />
+              <p className="text-xs text-muted-foreground mb-2">
+                Not formally assigned to this target — named in these sheets'
+                observation text.
+              </p>
+              <div className="space-y-1">
+                {profile.mentionedSheets.map(s => (
+                  <button
+                    key={s.id}
+                    onClick={() => navigate(`/sheet/${s.id}`)}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-border/60 bg-muted/10 hover:bg-accent/10 transition-colors text-left"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    <span className="text-xs font-medium text-foreground flex-1 truncate">
+                      {s.title}
+                    </span>
+                    <span className="text-xs text-muted-foreground shrink-0">
+                      {s.operationName}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Registered Associates — recorded directly on this target in the
               Target Registry, a guaranteed link rather than inferred from

@@ -38,6 +38,7 @@ import {
   EMPTY_NAME_PARTS,
   EMPTY_ADDRESS_PARTS,
   EMPTY_VEHICLE_PARTS,
+  makeExtraId,
   type ExtraAddress,
   type ExtraVehicle,
 } from "@/components/TargetStructuredFields";
@@ -391,7 +392,13 @@ export function AddTargetDialog({
               onClick={() =>
                 setExtraAddresses(v => [
                   ...v,
-                  { ...EMPTY_ADDRESS_PARTS, label: "", full: "", short: "" },
+                  {
+                    ...EMPTY_ADDRESS_PARTS,
+                    id: makeExtraId(),
+                    label: "",
+                    full: "",
+                    short: "",
+                  },
                 ])
               }
             >
@@ -438,7 +445,12 @@ export function AddTargetDialog({
               onClick={() =>
                 setExtraVehicles(v => [
                   ...v,
-                  { ...EMPTY_VEHICLE_PARTS, full: "", short: "" },
+                  {
+                    ...EMPTY_VEHICLE_PARTS,
+                    id: makeExtraId(),
+                    full: "",
+                    short: "",
+                  },
                 ])
               }
             >

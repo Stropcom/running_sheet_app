@@ -151,6 +151,10 @@ import {
   mergeEntities,
   unmergeEntity,
   listEntityMerges,
+  getKnownPersonNameCorrection,
+  checkPossibleTargetMatches,
+  confirmPersonNameMatch,
+  rejectPersonNameMatch,
   searchIntelligenceEntities,
   listShortcuts,
   createShortcut,
@@ -1026,14 +1030,10 @@ export const appRouter = router({
         // Reset operative section checkboxes — sheet has changed so they must be re-verified
         await upsertGovernanceRecord({
           sheetId: input.id,
-          savedAsWord: false,
-          savedAsPdf: false,
-          uploadedToPromis: false,
           savedInOpFolder: false,
-          savedAsWordCIN: null,
-          savedAsPdfCIN: null,
-          uploadedToPromisCIN: null,
+          savedInInvestigatorTransferDrive: false,
           savedInOpFolderCIN: null,
+          savedInInvestigatorTransferDriveCIN: null,
         });
         const cin = ctx.user.cin ?? ctx.user.name ?? "Unknown";
         await createAuditLog({
@@ -2478,12 +2478,35 @@ export const appRouter = router({
             arr: z.string().optional().nullable(),
             extraVehicles: z.string().optional().nullable(),
             wildFields: z.string().optional().nullable(),
+            /** True when the officer chose "Add new HB" / "Add new V1" over
+             * "Edit current" — archives the current hbf/v1f as "Previous"
+             * before this update applies. See TargetRegistry.tsx. */
+            isNewAddress: z.boolean().optional(),
+            isNewVehicle: z.boolean().optional(),
+            /** Stable `id`s (see ExtraAddress/ExtraVehicle) of extra
+             * address/vehicle entries where the officer chose "Add new"
+             * over "Edit current" — same archiving behaviour, per entry. */
+            newExtraAddressIds: z.array(z.string()).optional(),
+            newExtraVehicleIds: z.array(z.string()).optional(),
             ...structuredTargetFieldsSchema,
           })
         )
-        .mutation(async ({ input }) => {
-          const { id, ...data } = input;
-          return updateTarget(id, data);
+        .mutation(async ({ input, ctx }) => {
+          const {
+            id,
+            isNewAddress,
+            isNewVehicle,
+            newExtraAddressIds,
+            newExtraVehicleIds,
+            ...data
+          } = input;
+          return updateTarget(id, data, {
+            isNewAddress,
+            isNewVehicle,
+            newExtraAddressIds,
+            newExtraVehicleIds,
+            byCIN: ctx.user.cin ?? undefined,
+          });
         }),
 
       /** Delete a target from the registry (soft-delete → Recycle Bin) */
@@ -3028,6 +3051,67 @@ export const appRouter = router({
       return listEntityMerges();
     }),
 
+    /** Silent lookup: has this exact spelling already been confirmed against a Target/Associate? Backs auto-correcting a row's text on save without re-prompting. */
+    getKnownPersonNameCorrection: protectedProcedure
+      .input(z.object({ spelling: z.string().min(1) }))
+      .query(async ({ input }) => {
+        return getKnownPersonNameCorrection(input.spelling);
+      }),
+
+    /** Fuzzy-match a not-yet-saved person mention against the Target/Associate Registry — backs the save-time "is this an existing Target?" prompt. */
+    checkPossibleTargetMatches: protectedProcedure
+      .input(z.object({ label: z.string().min(1) }))
+      .query(async ({ input }) => {
+        return checkPossibleTargetMatches(input.label);
+      }),
+
+    /** Confirms a spelling belongs to an existing Target/Associate — this and future exact matches auto-correct silently from now on. */
+    confirmPersonNameMatch: protectedProcedure
+      .input(
+        z.object({
+          spelling: z.string().min(1),
+          targetId: z.number().optional(),
+          associateId: z.number().optional(),
+          correctSpelling: z.string().min(1),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        if (!input.targetId && !input.associateId) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Either targetId or associateId is required.",
+          });
+        }
+        await confirmPersonNameMatch({
+          ...input,
+          decidedByCIN: ctx.user.cin ?? undefined,
+        });
+        return { ok: true };
+      }),
+
+    /** Records "not the same person" so this exact pairing isn't asked about again. */
+    rejectPersonNameMatch: protectedProcedure
+      .input(
+        z.object({
+          spelling: z.string().min(1),
+          targetId: z.number().optional(),
+          associateId: z.number().optional(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        if (!input.targetId && !input.associateId) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Either targetId or associateId is required.",
+          });
+        }
+        await rejectPersonNameMatch({
+          ...input,
+          decidedByCIN: ctx.user.cin ?? undefined,
+        });
+        return { ok: true };
+      }),
+
     /** Substring search over existing entities of one type — backs the manual Merge Entities picker and the Target Registry autocomplete. */
     searchEntities: protectedProcedure
       .input(
@@ -3127,11 +3211,9 @@ export const appRouter = router({
           dueDate: z.number().nullable().optional(),
           summaryNotification: z.boolean().optional(),
           sentToIO: z.boolean().optional(),
-          savedAsWord: z.boolean().optional(),
-          savedAsPdf: z.boolean().optional(),
-          uploadedToPromis: z.boolean().optional(),
           linked: z.boolean().optional(),
           savedInOpFolder: z.boolean().optional(),
+          savedInInvestigatorTransferDrive: z.boolean().optional(),
           imageryTaken: z.boolean().optional(),
           coverPage: z.boolean().optional(),
           // Which field was toggled (so server can attach CIN automatically)
@@ -3139,11 +3221,9 @@ export const appRouter = router({
             .enum([
               "summaryNotification",
               "sentToIO",
-              "savedAsWord",
-              "savedAsPdf",
-              "uploadedToPromis",
               "linked",
               "savedInOpFolder",
+              "savedInInvestigatorTransferDrive",
               "imageryTaken",
               "coverPage",
             ])
@@ -3175,22 +3255,20 @@ export const appRouter = router({
           const cinFieldMap: Record<string, keyof GovernanceUpsertInput> = {
             summaryNotification: "isurvCIN",
             sentToIO: "sentToIOCIN",
-            savedAsWord: "savedAsWordCIN",
-            savedAsPdf: "savedAsPdfCIN",
-            uploadedToPromis: "uploadedToPromisCIN",
             linked: "linkedCIN",
             savedInOpFolder: "savedInOpFolderCIN",
+            savedInInvestigatorTransferDrive:
+              "savedInInvestigatorTransferDriveCIN",
             imageryTaken: "imageryTakenCIN",
             coverPage: "coverPageCIN",
           };
           const nameFieldMap: Record<string, keyof GovernanceUpsertInput> = {
             summaryNotification: "isurvName",
             sentToIO: "sentToIOName",
-            savedAsWord: "savedAsWordName",
-            savedAsPdf: "savedAsPdfName",
-            uploadedToPromis: "uploadedToPromisName",
             linked: "linkedName",
             savedInOpFolder: "savedInOpFolderName",
+            savedInInvestigatorTransferDrive:
+              "savedInInvestigatorTransferDriveName",
             imageryTaken: "imageryTakenName",
             coverPage: "coverPageName",
           };

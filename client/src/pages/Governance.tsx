@@ -268,10 +268,8 @@ export default function GovernancePage() {
     if (prev === true && allSigned === false) {
       updateMutation.mutate({
         sheetId,
-        savedAsWord: false,
-        savedAsPdf: false,
-        uploadedToPromis: false,
         savedInOpFolder: false,
+        savedInInvestigatorTransferDrive: false,
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -379,10 +377,8 @@ export default function GovernancePage() {
   type BoolField =
     | "sentToIO"
     | "summaryNotification"
-    | "savedAsWord"
-    | "savedAsPdf"
-    | "uploadedToPromis"
     | "savedInOpFolder"
+    | "savedInInvestigatorTransferDrive"
     | "imageryTaken"
     | "coverPage";
 
@@ -466,13 +462,11 @@ export default function GovernancePage() {
       ])
     : 0;
 
-  // Operative section: 4 items — all blocked (false) until allSigned
+  // Operative section: 2 items — all blocked (false) until allSigned
   const opPercent = gov
     ? completionPercent([
-        allSigned && gov.savedAsWord,
-        allSigned && gov.savedAsPdf,
-        allSigned && gov.uploadedToPromis,
         allSigned && gov.savedInOpFolder,
+        allSigned && gov.savedInInvestigatorTransferDrive,
       ])
     : 0;
 
@@ -542,10 +536,8 @@ export default function GovernancePage() {
         ((gov as Record<string, unknown>).summaryNotification as boolean) ??
           false,
         gov.sentToIO,
-        allSigned && gov.savedAsWord,
-        allSigned && gov.savedAsPdf,
-        allSigned && gov.uploadedToPromis,
         allSigned && gov.savedInOpFolder,
+        allSigned && gov.savedInInvestigatorTransferDrive,
         ...(hasAnyImageryData
           ? displayImagery.map(e => e.saved && e.allLinked)
           : []),
@@ -776,54 +768,6 @@ export default function GovernancePage() {
               )}
 
               <CheckRow
-                label="Saved as Word document"
-                checked={allSigned && gov.savedAsWord}
-                onToggle={() => toggle("savedAsWord")}
-                disabled={!allSigned}
-                cin={
-                  (gov as Record<string, unknown>).savedAsWordCIN as
-                    | string
-                    | null
-                }
-                tickedByName={
-                  (gov as Record<string, unknown>).savedAsWordName as
-                    | string
-                    | null
-                }
-              />
-              <CheckRow
-                label="Saved as PDF"
-                checked={allSigned && gov.savedAsPdf}
-                onToggle={() => toggle("savedAsPdf")}
-                disabled={!allSigned}
-                cin={
-                  (gov as Record<string, unknown>).savedAsPdfCIN as
-                    | string
-                    | null
-                }
-                tickedByName={
-                  (gov as Record<string, unknown>).savedAsPdfName as
-                    | string
-                    | null
-                }
-              />
-              <CheckRow
-                label="Uploaded to PROMIS"
-                checked={allSigned && gov.uploadedToPromis}
-                onToggle={() => toggle("uploadedToPromis")}
-                disabled={!allSigned}
-                cin={
-                  (gov as Record<string, unknown>).uploadedToPromisCIN as
-                    | string
-                    | null
-                }
-                tickedByName={
-                  (gov as Record<string, unknown>).uploadedToPromisName as
-                    | string
-                    | null
-                }
-              />
-              <CheckRow
                 label="Saved in Operation folder"
                 checked={allSigned && gov.savedInOpFolder}
                 onToggle={() => toggle("savedInOpFolder")}
@@ -837,6 +781,20 @@ export default function GovernancePage() {
                   (gov as Record<string, unknown>).savedInOpFolderName as
                     | string
                     | null
+                }
+              />
+              <CheckRow
+                label="Saved in Investigator transfer drive"
+                checked={allSigned && gov.savedInInvestigatorTransferDrive}
+                onToggle={() => toggle("savedInInvestigatorTransferDrive")}
+                disabled={!allSigned}
+                cin={
+                  (gov as Record<string, unknown>)
+                    .savedInInvestigatorTransferDriveCIN as string | null
+                }
+                tickedByName={
+                  (gov as Record<string, unknown>)
+                    .savedInInvestigatorTransferDriveName as string | null
                 }
               />
             </div>

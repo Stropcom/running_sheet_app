@@ -24,6 +24,10 @@ import {
   type DedupType,
 } from "@/components/EntityDuplicateDialog";
 import {
+  TargetMatchDialog,
+  type TargetMatchCandidate,
+} from "@/components/TargetMatchDialog";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -2154,8 +2158,9 @@ export default function SheetDetail() {
   // Before an edited observation actually saves, extract its entities the same
   // way the Intelligence folder does and fuzzy-check each one against every
   // existing entity. Any near-miss matches are queued and shown one at a time
-  // via EntityDuplicateDialog; the real save only fires once the queue (which
-  // may be empty) is drained, so this never silently loses an edit.
+  // via EntityDuplicateDialog (other text-mined entities) or TargetMatchDialog
+  // (the formal Target/Associate Registry) — the real save only fires once the
+  // queue (which may be empty) is drained, so this never silently loses an edit.
   type RowSaveInput = {
     id: number;
     time?: string;
@@ -2164,17 +2169,40 @@ export default function SheetDetail() {
     rowDate?: string;
     observation?: string;
   };
-  interface PendingDupe {
-    type: DedupType;
-    label: string;
-    match: { label: string; rowCount: number; reason: string };
-  }
+  type PendingDupe =
+    | {
+        kind: "generic";
+        type: DedupType;
+        label: string;
+        match: { label: string; rowCount: number; reason: string };
+      }
+    | {
+        kind: "target";
+        /** The exact bracket text as typed, e.g. "LOCKET" — this is what
+         * gets replaced in the observation text on confirm. */
+        rawShortForm: string;
+        match: TargetMatchCandidate;
+      };
   const [dupeQueue, setDupeQueue] = useState<PendingDupe[]>([]);
   const [dupeIndex, setDupeIndex] = useState(0);
   const [dupeDialogOpen, setDupeDialogOpen] = useState(false);
-  const [pendingSaveInput, setPendingSaveInput] = useState<RowSaveInput | null>(
-    null
-  );
+  // A ref, not state: only ever read/written synchronously within the
+  // dedupe-resolution handlers below, never rendered — a ref avoids the
+  // stale-closure trap of reading state that was just set in the same tick
+  // (e.g. applying a spelling correction, then immediately saving).
+  const pendingSaveInputRef = useRef<RowSaveInput | null>(null);
+
+  function applyBracketCorrection(
+    text: string,
+    rawShortForm: string,
+    correctSpelling: string
+  ): string {
+    const escaped = rawShortForm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return text.replace(
+      new RegExp(`\\(${escaped}\\)`, "g"),
+      `(${correctSpelling})`
+    );
+  }
 
   const updateRowWithDupeCheck = useCallback(
     async (input: RowSaveInput) => {
@@ -2190,10 +2218,44 @@ export default function SheetDetail() {
         const relevant = extracted.filter(e => e.type !== "unknown");
         const queue: PendingDupe[] = [];
         const seen = new Set<string>();
+        let correctedObservation = input.observation;
+
         for (const e of relevant) {
           const dedupeKey = `${e.type}::${e.shortForm.toLowerCase()}`;
           if (seen.has(dedupeKey)) continue;
           seen.add(dedupeKey);
+
+          if (e.type === "person") {
+            // Already confirmed before (the "spellcheck remembers" case) —
+            // silently correct the text, no prompt.
+            const known =
+              await utils.intelligence.getKnownPersonNameCorrection.fetch({
+                spelling: e.rawShortForm,
+              });
+            if (known) {
+              correctedObservation = applyBracketCorrection(
+                correctedObservation,
+                e.rawShortForm,
+                known.correctSpelling
+              );
+              continue;
+            }
+            // Close-but-not-exact match to an existing Target/Associate —
+            // ask, rather than silently linking or silently missing it.
+            const targetMatches =
+              await utils.intelligence.checkPossibleTargetMatches.fetch({
+                label: e.shortForm,
+              });
+            if (targetMatches.length > 0) {
+              queue.push({
+                kind: "target",
+                rawShortForm: e.rawShortForm,
+                match: targetMatches[0],
+              });
+              continue;
+            }
+          }
+
           const matches =
             await utils.intelligence.checkPossibleDuplicates.fetch({
               type: e.type as DedupType,
@@ -2201,17 +2263,20 @@ export default function SheetDetail() {
             });
           if (matches.length > 0) {
             queue.push({
+              kind: "generic",
               type: e.type as DedupType,
               label: e.shortForm,
               match: matches[0],
             });
           }
         }
+
+        const correctedInput = { ...input, observation: correctedObservation };
         if (queue.length === 0) {
-          updateRow.mutate(input);
+          updateRow.mutate(correctedInput);
           return;
         }
-        setPendingSaveInput(input);
+        pendingSaveInputRef.current = correctedInput;
         setDupeQueue(queue);
         setDupeIndex(0);
         setDupeDialogOpen(true);
@@ -2223,6 +2288,23 @@ export default function SheetDetail() {
     [isOnline, updateRow, utils]
   );
 
+  function handleTargetMatchResolved(
+    rawShortForm: string,
+    correctSpelling: string | undefined
+  ) {
+    if (correctSpelling && pendingSaveInputRef.current?.observation) {
+      pendingSaveInputRef.current = {
+        ...pendingSaveInputRef.current,
+        observation: applyBracketCorrection(
+          pendingSaveInputRef.current.observation,
+          rawShortForm,
+          correctSpelling
+        ),
+      };
+    }
+    handleDupeDialogResolved();
+  }
+
   function handleDupeDialogResolved() {
     const nextIndex = dupeIndex + 1;
     if (nextIndex < dupeQueue.length) {
@@ -2232,9 +2314,9 @@ export default function SheetDetail() {
       setDupeDialogOpen(false);
       setDupeQueue([]);
       setDupeIndex(0);
-      if (pendingSaveInput) {
-        updateRow.mutate(pendingSaveInput);
-        setPendingSaveInput(null);
+      if (pendingSaveInputRef.current) {
+        updateRow.mutate(pendingSaveInputRef.current);
+        pendingSaveInputRef.current = null;
       }
     }
   }
@@ -2600,11 +2682,7 @@ export default function SheetDetail() {
     if (!govRecord) return false;
     const g = govRecord as Record<string, unknown>;
     const tlDone = !!g.summaryNotification && !!g.sentToIO;
-    const opDone =
-      !!g.savedAsWord &&
-      !!g.savedAsPdf &&
-      !!g.uploadedToPromis &&
-      !!g.savedInOpFolder;
+    const opDone = !!g.savedInOpFolder && !!g.savedInInvestigatorTransferDrive;
     return tlDone && opDone;
   }, [govRecord]);
 
@@ -4849,22 +4927,43 @@ export default function SheetDetail() {
         </DialogContent>
       </Dialog>
 
-      {dupeQueue.length > 0 && dupeQueue[dupeIndex] && (
-        <EntityDuplicateDialog
-          key={dupeIndex}
-          open={dupeDialogOpen}
-          onOpenChange={setDupeDialogOpen}
-          type={dupeQueue[dupeIndex].type}
-          mode="auto"
-          candidate={{ label: dupeQueue[dupeIndex].label, rowCount: 0 }}
-          existing={{
-            label: dupeQueue[dupeIndex].match.label,
-            rowCount: dupeQueue[dupeIndex].match.rowCount,
-          }}
-          reason={dupeQueue[dupeIndex].match.reason}
-          onResolved={handleDupeDialogResolved}
-        />
-      )}
+      {(() => {
+        const currentDupe = dupeQueue[dupeIndex];
+        if (!currentDupe) return null;
+        if (currentDupe.kind === "generic") {
+          return (
+            <EntityDuplicateDialog
+              key={dupeIndex}
+              open={dupeDialogOpen}
+              onOpenChange={setDupeDialogOpen}
+              type={currentDupe.type}
+              mode="auto"
+              candidate={{ label: currentDupe.label, rowCount: 0 }}
+              existing={{
+                label: currentDupe.match.label,
+                rowCount: currentDupe.match.rowCount,
+              }}
+              reason={currentDupe.match.reason}
+              onResolved={handleDupeDialogResolved}
+            />
+          );
+        }
+        return (
+          <TargetMatchDialog
+            key={dupeIndex}
+            open={dupeDialogOpen}
+            onOpenChange={setDupeDialogOpen}
+            spelling={currentDupe.rawShortForm}
+            match={currentDupe.match}
+            onResolved={correctSpelling =>
+              handleTargetMatchResolved(
+                currentDupe.rawShortForm,
+                correctSpelling
+              )
+            }
+          />
+        );
+      })()}
     </DashboardLayout>
   );
 }

@@ -81,7 +81,7 @@ function nameTokens(name: string): string[] {
     .filter(w => w.length > 0 && !NAME_NOISE_WORDS.has(w.toLowerCase()));
 }
 
-function comparePersonNames(
+export function comparePersonNames(
   a: string,
   b: string
 ): { score: number; reason: string } | null {

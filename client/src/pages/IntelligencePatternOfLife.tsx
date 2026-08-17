@@ -36,9 +36,7 @@ interface PatternOfLifeData {
   geocodedObservationCount: number;
   sufficientData: boolean;
   confidence: "low" | "moderate" | "high";
-  timeBuckets6: string[];
-  timeBuckets8: string[];
-  timeBuckets12: string[];
+  timeBuckets: string[];
   dayLabels: string[];
   dayTimeGrid: number[][];
   mostActiveDayIndices: number[];
@@ -88,23 +86,6 @@ function formatRanges(
     .join(" · ");
 }
 
-/** Joins tied "most active" day labels — contiguous runs as "TUE–THU",
- * scattered ties as "MON, FRI". */
-function formatDayQualifier(
-  indices: number[],
-  dayLabels: string[]
-): string | null {
-  if (indices.length === 0 || indices.length > 3) return null;
-  const sorted = [...indices].sort((a, b) => a - b);
-  const isContiguous = sorted.every(
-    (v, i) => i === 0 || v === sorted[i - 1] + 1
-  );
-  if (isContiguous && sorted.length > 1) {
-    return `${dayLabels[sorted[0]]}–${dayLabels[sorted[sorted.length - 1]]}`;
-  }
-  return sorted.map(i => dayLabels[i]).join(", ");
-}
-
 const CONFIDENCE_LABEL: Record<string, string> = {
   low: "Low confidence — based on very few observations",
   moderate: "Moderate confidence — improves as more observations are certified",
@@ -130,13 +111,6 @@ function buildPatternOfLifeHtml(data: PatternOfLifeData): string {
   });
 
   const peak = data.peakCell;
-  const dayQualifier = formatDayQualifier(
-    data.mostActiveDayIndices,
-    data.dayLabels
-  );
-  const headline = peak
-    ? `${esc(peak.label)} · ${data.timeBuckets6[peak.bucketIndex]}${dayQualifier ? ` · especially ${dayQualifier}` : ""}`
-    : "Not enough data yet";
 
   const cellHtml = (count: number, max: number, ring: boolean) => {
     const alpha = count === 0 ? 0 : 0.14 + (count / max) * 0.76;
@@ -149,7 +123,7 @@ function buildPatternOfLifeHtml(data: PatternOfLifeData): string {
     return `<td style="background:${bg};color:${color};text-align:center;font-size:10px;font-weight:700;padding:6px 4px;border-radius:4px;${border}">${count || ""}${ring ? " ★" : ""}</td>`;
   };
   const timeHeaderRow = (leadColLabel: string, trailColLabel?: string) =>
-    `<tr><td style="font-size:9px;font-weight:700;color:#64748b">${esc(leadColLabel)}</td>${data.timeBuckets6
+    `<tr><td style="font-size:9px;font-weight:700;color:#64748b">${esc(leadColLabel)}</td>${data.timeBuckets
       .map(
         l =>
           `<td style="font-size:9px;font-weight:700;color:#64748b;text-align:center;text-transform:uppercase">${l}</td>`
@@ -189,18 +163,6 @@ function buildPatternOfLifeHtml(data: PatternOfLifeData): string {
     })
     .join("");
 
-  const homeStateCellHtml = (
-    homePct: number,
-    awayPct: number,
-    unknownPct: number
-  ) => {
-    if (homePct >= awayPct && homePct >= unknownPct)
-      return `<td style="background:rgba(37,99,235,${(0.2 + (homePct / 100) * 0.7).toFixed(2)});color:${homePct > 55 ? "#fff" : BLUE_DARK};text-align:center;font-size:8px;font-weight:700;padding:5px 2px;border-radius:3px">H ${homePct}%</td>`;
-    if (awayPct >= unknownPct)
-      return `<td style="background:#e2e8f0;color:#475569;text-align:center;font-size:8px;font-weight:700;padding:5px 2px;border-radius:3px">A ${awayPct}%</td>`;
-    return `<td style="background:#f8fafc;color:#94a3b8;text-align:center;font-size:8px;font-weight:600;padding:5px 2px;border-radius:3px;border:1px dashed #cbd5e1">? ${unknownPct}%</td>`;
-  };
-
   let homeSectionBody: string;
   if (!data.homeAddressKnown) {
     homeSectionBody = "";
@@ -216,15 +178,6 @@ function buildPatternOfLifeHtml(data: PatternOfLifeData): string {
       <p style="font-size:10px;color:#64748b;background:#f8fafc;border:1px solid ${GREY_BORDER};border-radius:6px;padding:8px 10px">${esc(reason)}</p>
     </div>`;
   } else {
-    const timelineHeader = data.timeBuckets12
-      .map(
-        l =>
-          `<td style="font-size:8px;font-weight:700;color:#64748b;text-align:center;text-transform:uppercase">${l}</td>`
-      )
-      .join("<td style='width:2px'></td>");
-    const timelineCells = data.homePresence
-      .map(p => homeStateCellHtml(p.home, p.away, p.unknown))
-      .join("<td style='width:2px'></td>");
     homeSectionBody = `<div style="margin-bottom:16px">
       <div class="section-title">Home Presence</div>
       <p style="font-size:10px;color:#64748b;margin-bottom:8px">${esc(data.homeAddressLabel)} (registered home address)</p>
@@ -232,13 +185,11 @@ function buildPatternOfLifeHtml(data: PatternOfLifeData): string {
         ${formatRanges(data.homeLikelyRanges, 12) ? `<strong style="color:${BLUE_DARK}">Likely home</strong> ${formatRanges(data.homeLikelyRanges, 12)}` : ""}
         ${formatRanges(data.homeAwayRanges, 12) ? ` &middot; <strong style="color:#64748b">likely away</strong> ${formatRanges(data.homeAwayRanges, 12)}` : ""}
       </p>
-      <p style="font-size:9px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#64748b;margin-bottom:4px">Typical day</p>
-      <table><tr>${timelineHeader}</tr><tr>${timelineCells}</tr></table>
       <p style="font-size:9px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#64748b;margin:10px 0 4px">Typical departure &amp; return times</p>
       <p style="font-size:10px;color:${GREY_TEXT}">
-        ${data.peakDepartureBucket != null ? `<strong>Departs</strong> usually ${data.timeBuckets8[data.peakDepartureBucket]}` : "Departure time not yet clear"}
+        ${data.peakDepartureBucket != null ? `<strong>Departs</strong> usually ${data.timeBuckets[data.peakDepartureBucket]}` : "Departure time not yet clear"}
         &middot;
-        ${data.peakArrivalBucket != null ? `<strong>Returns</strong> usually ${data.timeBuckets8[data.peakArrivalBucket]}` : "Return time not yet clear"}
+        ${data.peakArrivalBucket != null ? `<strong>Returns</strong> usually ${data.timeBuckets[data.peakArrivalBucket]}` : "Return time not yet clear"}
       </p>
     </div>`;
   }
@@ -249,7 +200,6 @@ function buildPatternOfLifeHtml(data: PatternOfLifeData): string {
 .cover-header { background:${BLUE_DARK} !important; color:#fff !important; padding:28px 32px 22px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 .brand-label { font-size:10px; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; color:${BLUE_MID} !important; margin-bottom:14px; }
 .entity-name { font-size:22px; font-weight:700; } .gen-time { font-size:9px; opacity:0.6; margin-top:12px; }
-.headline { background:linear-gradient(to right, ${BLUE_DARK}, #1e40af) !important; color:#fff !important; padding:14px 18px; border-radius:8px; margin:20px 32px 0; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 .content { padding:20px 32px; } .section-title { font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${BLUE_DARK} !important; padding:6px 10px; background:${BLUE_LIGHT} !important; border-left:3px solid ${BLUE_MID}; margin-bottom:10px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 .footer { margin-top:32px; padding-top:12px; border-top:1px solid ${GREY_BORDER}; display:flex; justify-content:space-between; font-size:9px; color:#94a3b8; }
 table { border-collapse:collapse; width:100%; }
@@ -260,10 +210,6 @@ table { border-collapse:collapse; width:100%; }
   <div class="entity-name">${esc(data.targetName)}</div>
   <div style="font-size:12px;opacity:0.75;margin-top:4px">${esc(data.operationName)}</div>
   <div class="gen-time">Generated: ${generatedAt} &middot; ${data.observationCount} observations analyzed (${data.geocodedObservationCount} geocoded)</div>
-</div>
-<div class="headline">
-  <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;opacity:0.75;margin-bottom:4px">Most predictable pattern</div>
-  <div style="font-size:15px;font-weight:700">${headline}</div>
 </div>
 <div class="content">
   <div style="margin-bottom:16px">
@@ -339,33 +285,26 @@ export default function IntelligencePatternOfLife() {
     setTimeout(() => win.print(), 600);
   }
 
-  const dayQualifier = data
-    ? formatDayQualifier(data.mostActiveDayIndices, data.dayLabels)
-    : null;
   const likelyHome = data ? formatRanges(data.homeLikelyRanges, 12) : null;
   const likelyAway = data ? formatRanges(data.homeAwayRanges, 12) : null;
 
   return (
     <div className="flex flex-col">
-      {/* ── Header: who this report is about, and the export action ── */}
-      <div className="flex items-start justify-between gap-3 px-1 pt-2 pb-2 mb-2">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="p-2.5 rounded-lg bg-blue-500/10 border border-blue-500/20 shrink-0">
-            <Activity className="w-5 h-5 text-blue-500" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-              Pattern of Life
+      {/* ── Header: who this report is about, and the export action,
+          combined into one banner ── */}
+      <div className="rounded-lg bg-gradient-to-r from-blue-900 to-blue-800 flex items-start justify-between gap-3 px-4 py-3.5 mb-4 mx-1">
+        <div className="min-w-0">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-blue-200 mb-1">
+            Pattern of Life
+          </p>
+          <h1 className="text-xl font-bold text-white truncate">
+            {data ? data.targetName : "Select a target"}
+          </h1>
+          {data && (
+            <p className="text-xs text-blue-200 mt-0.5 truncate">
+              {data.operationName}
             </p>
-            <h1 className="text-xl font-semibold text-foreground truncate">
-              {data ? data.targetName : "Select a target"}
-            </h1>
-            {data && (
-              <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                {data.operationName}
-              </p>
-            )}
-          </div>
+          )}
         </div>
 
         <Button
@@ -373,7 +312,7 @@ export default function IntelligencePatternOfLife() {
           size="sm"
           onClick={exportPdf}
           disabled={!data}
-          className="shrink-0"
+          className="shrink-0 border-blue-300/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
         >
           <FileDown className="w-4 h-4 mr-1.5" /> Export PDF
         </Button>
@@ -473,26 +412,6 @@ export default function IntelligencePatternOfLife() {
             </span>
           </div>
 
-          {data.peakCell && (
-            <div className="rounded-lg bg-gradient-to-r from-blue-900 to-blue-800 px-4 py-3.5 mb-5 mx-1">
-              <p className="text-[9px] font-bold uppercase tracking-wider text-blue-200 mb-1">
-                Most predictable pattern
-              </p>
-              <p className="text-base font-bold text-white leading-snug">
-                {data.peakCell.label}{" "}
-                <span className="font-normal text-blue-200">·</span>{" "}
-                {data.timeBuckets6[data.peakCell.bucketIndex]}
-                {dayQualifier && (
-                  <>
-                    {" "}
-                    <span className="font-normal text-blue-200">·</span>{" "}
-                    especially {dayQualifier}
-                  </>
-                )}
-              </p>
-            </div>
-          )}
-
           {/* Section A — general activity */}
           <div className="rounded-xl border border-border/60 bg-card p-4 mb-4 mx-1">
             <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
@@ -502,27 +421,27 @@ export default function IntelligencePatternOfLife() {
               When this target is generally active, across every location
             </p>
             <div className="overflow-x-auto">
-              <div className="min-w-[560px]">
-                <div className="flex items-center gap-1 mb-1.5">
-                  <div className="w-10 shrink-0" />
-                  {data.timeBuckets6.map(label => (
+              <div className="min-w-[700px]">
+                <div className="flex items-center gap-0.5 mb-1.5">
+                  <div className="w-8 shrink-0" />
+                  {data.timeBuckets.map(label => (
                     <div
                       key={label}
-                      className="flex-1 text-center text-[9px] font-semibold uppercase tracking-wide text-muted-foreground"
+                      className="flex-1 text-center text-[7.5px] font-semibold uppercase tracking-wide text-muted-foreground"
                     >
                       {label}
                     </div>
                   ))}
                 </div>
                 {data.dayLabels.map((day, dayIdx) => (
-                  <div key={day} className="flex items-center gap-1 mb-1">
-                    <div className="w-10 shrink-0 text-[10px] font-bold text-muted-foreground">
+                  <div key={day} className="flex items-center gap-0.5 mb-1">
+                    <div className="w-8 shrink-0 text-[10px] font-bold text-muted-foreground">
                       {day}
                     </div>
                     {data.dayTimeGrid[dayIdx].map((count, bucketIdx) => (
                       <div key={bucketIdx} className="flex-1">
                         <div
-                          className={`h-8 rounded-md flex items-center justify-center text-[11px] font-bold ${cellTextClass(count, dayTimeMax)}`}
+                          className={`h-6 rounded flex items-center justify-center text-[9px] font-bold ${cellTextClass(count, dayTimeMax)}`}
                           style={cellFillStyle(count, dayTimeMax)}
                         >
                           {count > 0 ? count : ""}
@@ -574,13 +493,13 @@ export default function IntelligencePatternOfLife() {
               </p>
             ) : (
               <div className="overflow-x-auto">
-                <div className="min-w-[620px]">
-                  <div className="flex items-center gap-1 mb-1.5">
-                    <div className="w-44 shrink-0" />
-                    {data.timeBuckets6.map(label => (
+                <div className="min-w-[900px]">
+                  <div className="flex items-center gap-0.5 mb-1.5">
+                    <div className="w-36 shrink-0" />
+                    {data.timeBuckets.map(label => (
                       <div
                         key={label}
-                        className="flex-1 text-center text-[9px] font-semibold uppercase tracking-wide text-muted-foreground"
+                        className="flex-1 text-center text-[7.5px] font-semibold uppercase tracking-wide text-muted-foreground"
                       >
                         {label}
                       </div>
@@ -590,10 +509,10 @@ export default function IntelligencePatternOfLife() {
                   {data.locationTimeGrid.map(row => (
                     <div
                       key={row.entityKey}
-                      className="flex items-center gap-1 mb-1"
+                      className="flex items-center gap-0.5 mb-1"
                     >
                       <div
-                        className="w-44 shrink-0 text-[11px] text-foreground truncate pr-2"
+                        className="w-36 shrink-0 text-[11px] text-foreground truncate pr-2"
                         title={row.label}
                       >
                         {row.label}
@@ -605,13 +524,13 @@ export default function IntelligencePatternOfLife() {
                         return (
                           <div key={bucketIdx} className="flex-1 relative">
                             <div
-                              className={`h-8 rounded-md flex items-center justify-center text-[11px] font-bold ${cellTextClass(count, locMax)} ${isPeak ? "ring-2 ring-blue-700 ring-offset-1 ring-offset-background" : ""}`}
+                              className={`h-6 rounded flex items-center justify-center text-[9px] font-bold ${cellTextClass(count, locMax)} ${isPeak ? "ring-2 ring-blue-700 ring-offset-1 ring-offset-background" : ""}`}
                               style={cellFillStyle(count, locMax)}
                             >
                               {count > 0 ? count : ""}
                             </div>
                             {isPeak && (
-                              <span className="absolute -top-1.5 -right-1.5 text-blue-600">
+                              <span className="absolute -top-1.5 -right-1.5 text-blue-600 text-[10px]">
                                 ★
                               </span>
                             )}
@@ -677,74 +596,12 @@ export default function IntelligencePatternOfLife() {
                     </div>
                   )}
 
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">
-                    Typical day
-                  </p>
-                  <div className="overflow-x-auto mb-2">
-                    <div className="flex items-end gap-1.5 min-w-[520px]">
-                      {data.homePresence.map((p, i) => (
-                        <div
-                          key={i}
-                          className="flex flex-col items-center flex-1"
-                        >
-                          <div className="w-full max-w-9 h-[90px] rounded overflow-hidden flex flex-col border border-border/40">
-                            <div
-                              className="w-full"
-                              style={{
-                                height: `${p.unknown}%`,
-                                background:
-                                  "repeating-linear-gradient(135deg, rgba(148,163,184,0.35) 0px, rgba(148,163,184,0.35) 3px, rgba(226,232,240,0.5) 3px, rgba(226,232,240,0.5) 6px)",
-                              }}
-                            />
-                            <div
-                              className="w-full bg-slate-300 dark:bg-slate-600"
-                              style={{ height: `${p.away}%` }}
-                            />
-                            <div
-                              className="w-full bg-blue-600"
-                              style={{ height: `${p.home}%` }}
-                            />
-                          </div>
-                          <span className="text-[8.5px] font-semibold text-muted-foreground mt-1">
-                            {data.timeBuckets12[i]}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4 mb-6">
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-2.5 h-2.5 rounded-sm bg-blue-600 inline-block" />
-                      <span className="text-[9px] text-muted-foreground">
-                        Home
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-2.5 h-2.5 rounded-sm bg-slate-300 dark:bg-slate-600 inline-block" />
-                      <span className="text-[9px] text-muted-foreground">
-                        Away
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span
-                        className="w-2.5 h-2.5 rounded-sm inline-block"
-                        style={{
-                          background:
-                            "repeating-linear-gradient(135deg, rgba(148,163,184,0.35) 0px, rgba(148,163,184,0.35) 3px, rgba(226,232,240,0.5) 3px, rgba(226,232,240,0.5) 6px)",
-                        }}
-                      />
-                      <span className="text-[9px] text-muted-foreground">
-                        Unknown / no data
-                      </span>
-                    </div>
-                  </div>
-
                   {(data.departureHistogram || data.arrivalHistogram) && (
                     <>
                       <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-3">
                         Typical departure &amp; return times
                       </p>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="flex flex-col gap-4">
                         <div>
                           <p className="text-[10px] text-muted-foreground mb-2">
                             Departs home
@@ -752,23 +609,23 @@ export default function IntelligencePatternOfLife() {
                               <span className="font-bold text-blue-700 dark:text-blue-400">
                                 {" "}
                                 — usually{" "}
-                                {data.timeBuckets8[data.peakDepartureBucket]}
+                                {data.timeBuckets[data.peakDepartureBucket]}
                               </span>
                             )}
                           </p>
-                          <div className="flex items-end gap-1 h-20">
+                          <div className="flex items-end gap-0.5 h-16">
                             {(data.departureHistogram ?? []).map((v, i) => (
                               <div
                                 key={i}
                                 className="flex flex-col items-center flex-1 gap-1"
                               >
-                                <span className="text-[8px] font-bold text-foreground h-2.5">
+                                <span className="text-[7px] font-bold text-foreground h-2.5">
                                   {v > 0 ? v : ""}
                                 </span>
                                 <div
                                   className={`w-full rounded-t ${i === data.peakDepartureBucket ? "ring-2 ring-blue-700" : ""}`}
                                   style={{
-                                    height: `${v === 0 ? 2 : Math.round((v / depMax) * 40) + 6}px`,
+                                    height: `${v === 0 ? 2 : Math.round((v / depMax) * 32) + 5}px`,
                                     backgroundColor:
                                       i === data.peakDepartureBucket
                                         ? "#2563eb"
@@ -778,11 +635,11 @@ export default function IntelligencePatternOfLife() {
                               </div>
                             ))}
                           </div>
-                          <div className="flex gap-1 mt-1">
-                            {data.timeBuckets8.map(l => (
+                          <div className="flex gap-0.5 mt-1">
+                            {data.timeBuckets.map(l => (
                               <span
                                 key={l}
-                                className="text-[7px] text-muted-foreground flex-1 text-center"
+                                className="text-[6px] text-muted-foreground flex-1 text-center"
                               >
                                 {l}
                               </span>
@@ -799,23 +656,23 @@ export default function IntelligencePatternOfLife() {
                               >
                                 {" "}
                                 — usually{" "}
-                                {data.timeBuckets8[data.peakArrivalBucket]}
+                                {data.timeBuckets[data.peakArrivalBucket]}
                               </span>
                             )}
                           </p>
-                          <div className="flex items-end gap-1 h-20">
+                          <div className="flex items-end gap-0.5 h-16">
                             {(data.arrivalHistogram ?? []).map((v, i) => (
                               <div
                                 key={i}
                                 className="flex flex-col items-center flex-1 gap-1"
                               >
-                                <span className="text-[8px] font-bold text-foreground h-2.5">
+                                <span className="text-[7px] font-bold text-foreground h-2.5">
                                   {v > 0 ? v : ""}
                                 </span>
                                 <div
                                   className={`w-full rounded-t ${i === data.peakArrivalBucket ? "ring-2" : ""}`}
                                   style={{
-                                    height: `${v === 0 ? 2 : Math.round((v / arrMax) * 40) + 6}px`,
+                                    height: `${v === 0 ? 2 : Math.round((v / arrMax) * 32) + 5}px`,
                                     backgroundColor:
                                       i === data.peakArrivalBucket
                                         ? "#0d9488"
@@ -825,11 +682,11 @@ export default function IntelligencePatternOfLife() {
                               </div>
                             ))}
                           </div>
-                          <div className="flex gap-1 mt-1">
-                            {data.timeBuckets8.map(l => (
+                          <div className="flex gap-0.5 mt-1">
+                            {data.timeBuckets.map(l => (
                               <span
                                 key={l}
-                                className="text-[7px] text-muted-foreground flex-1 text-center"
+                                className="text-[6px] text-muted-foreground flex-1 text-center"
                               >
                                 {l}
                               </span>

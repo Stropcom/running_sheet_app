@@ -4202,12 +4202,12 @@ export interface IntelPatternOfLifeResponse {
   geocodedObservationCount: number;
   sufficientData: boolean;
   confidence: ConfidenceTier;
-  timeBuckets6: string[];
-  timeBuckets8: string[];
-  timeBuckets12: string[];
+  // Every time-bucketed chart in this report shares one 2-hourly (12-bucket)
+  // granularity so they read consistently side by side.
+  timeBuckets: string[];
   dayLabels: string[];
   // Section A — general activity, any location
-  dayTimeGrid: number[][]; // [dayIndex][bucket6Index]
+  dayTimeGrid: number[][]; // [dayIndex][bucketIndex]
   mostActiveDayIndices: number[];
   // Section B — where & when
   locationTimeGrid: IntelPatternOfLifeLocationRow[];
@@ -4224,8 +4224,8 @@ export interface IntelPatternOfLifeResponse {
   homePresence: HomePresencePercent[] | null; // length 12
   homeLikelyRanges: Array<{ startBucket: number; endBucket: number }> | null;
   homeAwayRanges: Array<{ startBucket: number; endBucket: number }> | null;
-  departureHistogram: number[] | null; // length 8
-  arrivalHistogram: number[] | null; // length 8
+  departureHistogram: number[] | null; // length 12
+  arrivalHistogram: number[] | null; // length 12
   peakDepartureBucket: number | null;
   peakArrivalBucket: number | null;
 }
@@ -4320,11 +4320,9 @@ export async function getIntelTargetPatternOfLife(
       geocodedObservationCount: 0,
       sufficientData: false,
       confidence: confidenceTier(0),
-      timeBuckets6: timeBucketLabels(6),
-      timeBuckets8: timeBucketLabels(8),
-      timeBuckets12: timeBucketLabels(12),
+      timeBuckets: timeBucketLabels(12),
       dayLabels: DAY_LABELS,
-      dayTimeGrid: Array.from({ length: 7 }, () => new Array(6).fill(0)),
+      dayTimeGrid: Array.from({ length: 7 }, () => new Array(12).fill(0)),
       mostActiveDayIndices: [],
       locationTimeGrid: [],
       peakCell: null,
@@ -4403,7 +4401,7 @@ export async function getIntelTargetPatternOfLife(
       dateISO: resolveDateISO(r),
       timeMinutes: r.timeMinutes!,
     })),
-    6
+    12
   );
   const mostActiveDayIndices = mostActiveDays(dayTimeGrid);
 
@@ -4492,7 +4490,7 @@ export async function getIntelTargetPatternOfLife(
       });
     }
   }
-  const locationTimeGrid = buildLocationTimeGrid(visitEvents, 6, 6);
+  const locationTimeGrid = buildLocationTimeGrid(visitEvents, 12, 6);
   const peakCell = findPeakCell(locationTimeGrid);
 
   // ── Section C: home presence — the target's registered HBF is merged by
@@ -4562,8 +4560,8 @@ export async function getIntelTargetPatternOfLife(
       homePresence = buckets.map(toHomePresencePercent);
       homeLikelyRanges = dominantRanges(homePresence, "home", 12);
       homeAwayRanges = dominantRanges(homePresence, "away", 12);
-      departureHistogram = buildDirectionHistogram(homeEvents, "departed", 8);
-      arrivalHistogram = buildDirectionHistogram(homeEvents, "arrived", 8);
+      departureHistogram = buildDirectionHistogram(homeEvents, "departed", 12);
+      arrivalHistogram = buildDirectionHistogram(homeEvents, "arrived", 12);
       peakDepartureBucket = peakBucketIndex(departureHistogram);
       peakArrivalBucket = peakBucketIndex(arrivalHistogram);
     }
@@ -4576,9 +4574,7 @@ export async function getIntelTargetPatternOfLife(
     geocodedObservationCount,
     sufficientData: observationCount >= MIN_OBSERVATIONS_FOR_PATTERN,
     confidence: confidenceTier(geocodedObservationCount),
-    timeBuckets6: timeBucketLabels(6),
-    timeBuckets8: timeBucketLabels(8),
-    timeBuckets12: timeBucketLabels(12),
+    timeBuckets: timeBucketLabels(12),
     dayLabels: DAY_LABELS,
     dayTimeGrid,
     mostActiveDayIndices,

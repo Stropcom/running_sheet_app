@@ -4328,10 +4328,13 @@ export async function getIntelTargetPatternOfLife(
       mostActiveDayIndices: [],
       locationTimeGrid: [],
       peakCell: null,
-      homeAddressKnown: !!target.hbf,
+      homeAddressKnown: !!(target.hbf || target.hb),
       homeAddressGeocoded: false,
       homeAddressMentioned: false,
-      homeAddressLabel: target.hbf ? formatIntelAddress(target.hbf) : null,
+      homeAddressLabel:
+        target.hbf || target.hb
+          ? formatIntelAddress((target.hbf || target.hb) ?? "")
+          : null,
       homePresence: null,
       homeLikelyRanges: null,
       homeAwayRanges: null,
@@ -4492,12 +4495,32 @@ export async function getIntelTargetPatternOfLife(
   const locationTimeGrid = buildLocationTimeGrid(visitEvents, 6, 6);
   const peakCell = findPeakCell(locationTimeGrid);
 
-  // ── Section C: home presence — the target's registered HBF is merged
-  // into the same entity as any text-mined mention of it via
-  // addressBracketKey, exactly like getAllIntelligenceEntities already
-  // does for HBF/V1F/V2F, so no separate fuzzy address match is needed. ───
-  const homeEntityKey = target.hbf
-    ? normalizeEntityLabel(addressBracketKey(target.hbf))
+  // ── Section C: home presence — the target's registered HBF is merged by
+  // getAllIntelligenceEntities into the same entity as any text-mined
+  // mention of it, keyed internally on addressBracketKey — but that
+  // internal key is never exposed on the IntelligenceEntity objects we get
+  // back (only the display-friendly, non-bracketed .shortForm is). Trying
+  // to recompute that internal key ourselves (normalizeEntityLabel(
+  // addressBracketKey(target.hbf))) doesn't match normalizeEntityLabel(
+  // entity.shortForm) — the key scheme every OTHER entityKey in this
+  // function uses — so it silently never found the entity. Instead, find
+  // the actual merged entity directly via the synthetic rowId=0 occurrence
+  // getAllIntelligenceEntities seeds specifically for this target's HBF
+  // field, then key off *that* entity's own shortForm like everything else
+  // here does.
+  const homeSnippet = `Target card — ${target.name} [HBF]`;
+  const homeEntity =
+    target.hbf || target.hb
+      ? allEntities.find(
+          e =>
+            (e.type === "address" || e.type === "business") &&
+            e.occurrences.some(
+              occ => occ.rowId === 0 && occ.observationSnippet === homeSnippet
+            )
+        )
+      : undefined;
+  const homeEntityKey = homeEntity
+    ? normalizeEntityLabel(homeEntity.shortForm)
     : null;
   let homePresence: HomePresencePercent[] | null = null;
   let homeLikelyRanges: Array<{
@@ -4511,15 +4534,19 @@ export async function getIntelTargetPatternOfLife(
   let peakDepartureBucket: number | null = null;
   let peakArrivalBucket: number | null = null;
 
-  const homeAddressKnown = !!target.hbf;
+  const homeAddressKnown = !!(target.hbf || target.hb);
   const homeAddressMentioned =
     !!homeEntityKey && distinctKeys.has(homeEntityKey);
   const homeAddressGeocoded = !!homeEntityKey && geocodable.has(homeEntityKey);
   // Fall back to the raw registered address so the client can still name it
-  // in an explanatory message even when there's no chart data yet.
-  let homeAddressLabel: string | null = homeAddressKnown
-    ? formatIntelAddress(target.hbf ?? "")
-    : null;
+  // in an explanatory message even when there's no chart data yet. Prefer
+  // the matched entity's own (already-canonical) shortForm when we have
+  // one, since it's the same text the grids above already show.
+  let homeAddressLabel: string | null = homeEntity
+    ? homeEntity.shortForm
+    : homeAddressKnown
+      ? formatIntelAddress((target.hbf || target.hb) ?? "")
+      : null;
 
   if (homeEntityKey && homeAddressGeocoded) {
     const homeEvents: HomeEvent[] = geocodedQualifying

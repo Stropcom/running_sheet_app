@@ -346,13 +346,9 @@ export default function IntelligencePatternOfLife() {
   const likelyAway = data ? formatRanges(data.homeAwayRanges, 12) : null;
 
   return (
-    <div className="flex flex-col h-full overflow-y-auto">
-      {/* ── Header: who this report is about, and the export action — kept
-          as its own row so it can never collide with the selector or
-          confidence rows below it. relative z-10 + an explicit background
-          so it always paints above the tab bar / any sticky chrome above
-          it, rather than risking being covered by it. ── */}
-      <div className="relative z-10 bg-background flex items-start justify-between gap-3 px-1 pt-2 pb-2 mb-2">
+    <div className="flex flex-col">
+      {/* ── Header: who this report is about, and the export action ── */}
+      <div className="flex items-start justify-between gap-3 px-1 pt-2 pb-2 mb-2">
         <div className="flex items-center gap-3 min-w-0">
           <div className="p-2.5 rounded-lg bg-blue-500/10 border border-blue-500/20 shrink-0">
             <Activity className="w-5 h-5 text-blue-500" />

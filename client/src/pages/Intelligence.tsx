@@ -1711,15 +1711,13 @@ export default function IntelligencePage() {
           </div>
         )}
 
-        {/* Pattern of Life tab content */}
-        {activeTab === "patternOfLife" && (
-          <div
-            className="-mx-4 -mb-4 flex-1"
-            style={{ height: "calc(100vh - 260px)" }}
-          >
-            <IntelligencePatternOfLife />
-          </div>
-        )}
+        {/* Pattern of Life tab content — unlike Heat Map/Ego Network/Packages
+            this isn't a canvas that needs to fill the viewport, it's a
+            variable-length report (sometimes just an empty state, sometimes
+            several chart sections), so it renders inline and lets the page
+            scroll normally instead of being boxed into a fixed-height inner
+            scroll region. */}
+        {activeTab === "patternOfLife" && <IntelligencePatternOfLife />}
 
         {/* Ego Network tab content */}
         {activeTab === "egonet" && (

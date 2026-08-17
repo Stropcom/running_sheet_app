@@ -1273,6 +1273,11 @@ const REPORT_TAB_OPTIONS: Array<{
   icon: React.ReactNode;
 }> = [
   {
+    value: "egonet",
+    label: "Ego Network",
+    icon: <Radar className="w-3.5 h-3.5" />,
+  },
+  {
     value: "heatmap",
     label: "Heat Map",
     icon: <Flame className="w-3.5 h-3.5" />,
@@ -1281,11 +1286,6 @@ const REPORT_TAB_OPTIONS: Array<{
     value: "patternOfLife",
     label: "Pattern of Life",
     icon: <Activity className="w-3.5 h-3.5" />,
-  },
-  {
-    value: "egonet",
-    label: "Ego Network",
-    icon: <Radar className="w-3.5 h-3.5" />,
   },
   {
     value: "packages",

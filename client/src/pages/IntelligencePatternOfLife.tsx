@@ -1,0 +1,761 @@
+import { useEffect, useMemo, useState } from "react";
+import { trpc } from "@/lib/trpc";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Activity, FileDown, Info } from "lucide-react";
+import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
+
+interface PatternOfLifeLocationRow {
+  entityKey: string;
+  label: string;
+  counts: number[];
+  total: number;
+}
+interface PeakCell {
+  entityKey: string;
+  label: string;
+  bucketIndex: number;
+  count: number;
+}
+interface HomePresencePercent {
+  home: number;
+  away: number;
+  unknown: number;
+}
+interface PatternOfLifeData {
+  targetName: string;
+  operationName: string;
+  observationCount: number;
+  geocodedObservationCount: number;
+  sufficientData: boolean;
+  confidence: "low" | "moderate" | "high";
+  timeBuckets6: string[];
+  timeBuckets8: string[];
+  timeBuckets12: string[];
+  dayLabels: string[];
+  dayTimeGrid: number[][];
+  mostActiveDayIndices: number[];
+  locationTimeGrid: PatternOfLifeLocationRow[];
+  peakCell: PeakCell | null;
+  homeAddressLabel: string | null;
+  homePresence: HomePresencePercent[] | null;
+  homeLikelyRanges: Array<{ startBucket: number; endBucket: number }> | null;
+  homeAwayRanges: Array<{ startBucket: number; endBucket: number }> | null;
+  departureHistogram: number[] | null;
+  arrivalHistogram: number[] | null;
+  peakDepartureBucket: number | null;
+  peakArrivalBucket: number | null;
+}
+
+// ── Colour + formatting helpers ─────────────────────────────────────────────
+
+function cellFillStyle(count: number, max: number): React.CSSProperties {
+  if (count === 0) return { backgroundColor: "rgba(148,163,184,0.10)" };
+  const alpha = 0.14 + (count / Math.max(1, max)) * 0.76;
+  return { backgroundColor: `rgba(37,99,235,${alpha.toFixed(2)})` };
+}
+function cellTextClass(count: number, max: number): string {
+  const alpha = 0.14 + (count / Math.max(1, max)) * 0.76;
+  return count > 0 && alpha > 0.55 ? "text-white" : "text-blue-900";
+}
+
+/** Bucket index -> its start hour, given the bucket count (e.g. bucket 9 of
+ * 12 two-hour buckets starts at 18:00). */
+function bucketStartHour(bucketIndex: number, bucketCount: number): number {
+  return Math.round((bucketIndex * 24) / bucketCount);
+}
+function formatRanges(
+  ranges: Array<{ startBucket: number; endBucket: number }> | null,
+  bucketCount: number
+): string | null {
+  if (!ranges || ranges.length === 0) return null;
+  return ranges
+    .map(r => {
+      const start = bucketStartHour(r.startBucket, bucketCount);
+      const end = bucketStartHour(r.endBucket, bucketCount);
+      return `${String(start).padStart(2, "0")}:00–${String(end).padStart(2, "0")}:00`;
+    })
+    .join(" · ");
+}
+
+/** Joins tied "most active" day labels — contiguous runs as "TUE–THU",
+ * scattered ties as "MON, FRI". */
+function formatDayQualifier(
+  indices: number[],
+  dayLabels: string[]
+): string | null {
+  if (indices.length === 0 || indices.length > 3) return null;
+  const sorted = [...indices].sort((a, b) => a - b);
+  const isContiguous = sorted.every(
+    (v, i) => i === 0 || v === sorted[i - 1] + 1
+  );
+  if (isContiguous && sorted.length > 1) {
+    return `${dayLabels[sorted[0]]}–${dayLabels[sorted[sorted.length - 1]]}`;
+  }
+  return sorted.map(i => dayLabels[i]).join(", ");
+}
+
+const CONFIDENCE_LABEL: Record<string, string> = {
+  low: "Low confidence — based on very few observations",
+  moderate: "Moderate confidence — improves as more observations are certified",
+  high: "High confidence",
+};
+
+// ── PDF export ───────────────────────────────────────────────────────────────
+
+function buildPatternOfLifeHtml(data: PatternOfLifeData): string {
+  const esc = (s: string | null | undefined) =>
+    (s ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  const BLUE_DARK = "#1e3a8a";
+  const BLUE_MID = "#93c5fd";
+  const BLUE_LIGHT = "#dbeafe";
+  const GREY_TEXT = "#1e293b";
+  const GREY_BORDER = "#e2e8f0";
+  const generatedAt = new Date().toLocaleString("en-AU", {
+    dateStyle: "long",
+    timeStyle: "short",
+  });
+
+  const peak = data.peakCell;
+  const dayQualifier = formatDayQualifier(
+    data.mostActiveDayIndices,
+    data.dayLabels
+  );
+  const headline = peak
+    ? `${esc(peak.label)} · ${data.timeBuckets6[peak.bucketIndex]}${dayQualifier ? ` · especially ${dayQualifier}` : ""}`
+    : "Not enough data yet";
+
+  const dayTimeMax = Math.max(1, ...data.dayTimeGrid.flat());
+  const dayTimeRows = data.dayLabels
+    .map((day, dayIdx) => {
+      const cells = data.dayTimeGrid[dayIdx]
+        .map(count => {
+          const alpha = count === 0 ? 0 : 0.14 + (count / dayTimeMax) * 0.76;
+          const bg =
+            count === 0
+              ? "rgba(148,163,184,0.10)"
+              : `rgba(37,99,235,${alpha.toFixed(2)})`;
+          const color = alpha > 0.55 ? "#fff" : BLUE_DARK;
+          return `<td style="background:${bg};color:${color};text-align:center;font-size:10px;font-weight:700;padding:6px 4px;border-radius:4px">${count || ""}</td>`;
+        })
+        .join("<td style='width:4px'></td>");
+      return `<tr><td style="font-size:9px;font-weight:700;color:#64748b;padding-right:6px">${day}</td>${cells}</tr>`;
+    })
+    .join("");
+
+  const locMax = Math.max(1, ...data.locationTimeGrid.flatMap(r => r.counts));
+  const locRows = data.locationTimeGrid
+    .map(row => {
+      const cells = row.counts
+        .map(count => {
+          const alpha = count === 0 ? 0 : 0.14 + (count / locMax) * 0.76;
+          const bg =
+            count === 0
+              ? "rgba(148,163,184,0.10)"
+              : `rgba(37,99,235,${alpha.toFixed(2)})`;
+          const color = alpha > 0.55 ? "#fff" : BLUE_DARK;
+          return `<td style="background:${bg};color:${color};text-align:center;font-size:10px;font-weight:700;padding:6px 4px;border-radius:4px">${count || ""}</td>`;
+        })
+        .join("<td style='width:4px'></td>");
+      return `<tr><td style="font-size:10px;color:${GREY_TEXT};padding-right:6px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(row.label)}</td>${cells}<td style="font-size:10px;font-weight:700;text-align:right;padding-left:6px">${row.total}</td></tr>`;
+    })
+    .join("");
+
+  const homeSection =
+    data.homePresence && data.homeAddressLabel
+      ? `<div style="margin-bottom:16px">
+        <div class="section-title">Home Presence</div>
+        <p style="font-size:10px;color:#64748b;margin-bottom:6px">${esc(data.homeAddressLabel)} (registered home address)</p>
+        <p style="font-size:11px;margin-bottom:8px">
+          ${formatRanges(data.homeLikelyRanges, 12) ? `<strong style="color:${BLUE_DARK}">Likely home</strong> ${formatRanges(data.homeLikelyRanges, 12)}` : ""}
+          ${formatRanges(data.homeAwayRanges, 12) ? ` &middot; <strong style="color:#64748b">likely away</strong> ${formatRanges(data.homeAwayRanges, 12)}` : ""}
+        </p>
+        <p style="font-size:10px;color:#64748b">
+          ${data.peakDepartureBucket != null ? `Usually departs ${data.timeBuckets8[data.peakDepartureBucket]}` : ""}
+          ${data.peakArrivalBucket != null ? ` &middot; usually returns ${data.timeBuckets8[data.peakArrivalBucket]}` : ""}
+        </p>
+      </div>`
+      : "";
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>RunLog — Pattern of Life: ${esc(data.targetName)}</title>
+<style>* { box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; } body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.6; color:${GREY_TEXT}; background:#fff; }
+.cover-header { background:${BLUE_DARK} !important; color:#fff !important; padding:28px 32px 22px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+.brand-label { font-size:10px; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; color:${BLUE_MID} !important; margin-bottom:14px; }
+.entity-name { font-size:22px; font-weight:700; } .gen-time { font-size:9px; opacity:0.6; margin-top:12px; }
+.headline { background:linear-gradient(to right, ${BLUE_DARK}, #1e40af) !important; color:#fff !important; padding:14px 18px; border-radius:8px; margin:20px 32px 0; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+.content { padding:20px 32px; } .section-title { font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${BLUE_DARK} !important; padding:6px 10px; background:${BLUE_LIGHT} !important; border-left:3px solid ${BLUE_MID}; margin-bottom:10px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+.footer { margin-top:32px; padding-top:12px; border-top:1px solid ${GREY_BORDER}; display:flex; justify-content:space-between; font-size:9px; color:#94a3b8; }
+table { border-collapse:collapse; width:100%; }
+@media print { * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; } }
+</style></head><body>
+<div class="cover-header">
+  <div class="brand-label">RunLog Intelligence — Pattern of Life</div>
+  <div class="entity-name">${esc(data.targetName)}</div>
+  <div style="font-size:12px;opacity:0.75;margin-top:4px">${esc(data.operationName)}</div>
+  <div class="gen-time">Generated: ${generatedAt} &middot; ${data.observationCount} observations analyzed (${data.geocodedObservationCount} geocoded)</div>
+</div>
+<div class="headline">
+  <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;opacity:0.75;margin-bottom:4px">Most predictable pattern</div>
+  <div style="font-size:15px;font-weight:700">${headline}</div>
+</div>
+<div class="content">
+  <div style="margin-bottom:16px">
+    <div class="section-title">Activity by Day &amp; Time</div>
+    <table>${dayTimeRows}</table>
+  </div>
+  <div style="margin-bottom:16px">
+    <div class="section-title">Where &amp; When</div>
+    <table>${locRows}</table>
+  </div>
+  ${homeSection}
+  <div class="footer"><span>RunLog — Pattern of Life Report</span><span>SENSITIVE — FOR OFFICIAL USE ONLY — ${generatedAt}</span></div>
+</div>
+${buildExportPreviewCloseBar()}
+</body></html>`;
+}
+
+// ── Main component ──────────────────────────────────────────────────────────
+
+export default function IntelligencePatternOfLife() {
+  const [operationId, setOperationId] = useState<number | null>(null);
+  const [targetId, setTargetId] = useState<number | null>(null);
+
+  const { data: operations } = trpc.operation.list.useQuery();
+  const { data: targets } = trpc.target.list.useQuery(
+    { operationId: operationId! },
+    { enabled: operationId != null }
+  );
+
+  useEffect(() => {
+    setTargetId(null);
+  }, [operationId]);
+
+  const {
+    data: rawData,
+    isLoading,
+    isFetching,
+  } = trpc.intelligence.getPatternOfLife.useQuery(
+    { operationId: operationId!, targetId: targetId! },
+    { enabled: operationId != null && targetId != null }
+  );
+  const data = rawData as PatternOfLifeData | undefined;
+
+  const dayTimeMax = useMemo(
+    () => Math.max(1, ...(data?.dayTimeGrid.flat() ?? [0])),
+    [data]
+  );
+  const locMax = useMemo(
+    () =>
+      Math.max(1, ...(data?.locationTimeGrid.flatMap(r => r.counts) ?? [0])),
+    [data]
+  );
+  const depMax = useMemo(
+    () => Math.max(1, ...(data?.departureHistogram ?? [0])),
+    [data]
+  );
+  const arrMax = useMemo(
+    () => Math.max(1, ...(data?.arrivalHistogram ?? [0])),
+    [data]
+  );
+
+  function exportPdf() {
+    if (!data) return;
+    const html = buildPatternOfLifeHtml(data);
+    const win = window.open("", "_blank");
+    if (!win) return;
+    win.document.write(html);
+    win.document.close();
+    setTimeout(() => win.print(), 600);
+  }
+
+  const dayQualifier = data
+    ? formatDayQualifier(data.mostActiveDayIndices, data.dayLabels)
+    : null;
+  const likelyHome = data ? formatRanges(data.homeLikelyRanges, 12) : null;
+  const likelyAway = data ? formatRanges(data.homeAwayRanges, 12) : null;
+
+  return (
+    <div className="flex flex-col h-full overflow-y-auto">
+      {/* ── Selector ── */}
+      <div className="flex flex-wrap items-start justify-between gap-3 px-1 pb-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Operation
+            </span>
+            <Select
+              value={operationId != null ? String(operationId) : undefined}
+              onValueChange={v => setOperationId(Number(v))}
+            >
+              <SelectTrigger className="w-48 h-9 text-xs">
+                <SelectValue placeholder="Select an operation…" />
+              </SelectTrigger>
+              <SelectContent>
+                {(operations ?? []).map(op => (
+                  <SelectItem key={op.id} value={String(op.id)}>
+                    {op.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Target
+            </span>
+            <Select
+              value={targetId != null ? String(targetId) : undefined}
+              onValueChange={v => setTargetId(Number(v))}
+              disabled={operationId == null}
+            >
+              <SelectTrigger className="w-48 h-9 text-xs">
+                <SelectValue placeholder="Select a target…" />
+              </SelectTrigger>
+              <SelectContent>
+                {(targets ?? []).map(t => (
+                  <SelectItem key={t.id} value={String(t.id)}>
+                    {t.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={exportPdf}
+          disabled={!data}
+          className="mt-[18px]"
+        >
+          <FileDown className="w-4 h-4 mr-1.5" /> Export PDF
+        </Button>
+      </div>
+
+      {operationId == null || targetId == null ? (
+        <div className="flex-1 flex items-center justify-center py-16 text-center">
+          <div>
+            <Activity className="w-8 h-8 text-muted-foreground/50 mx-auto mb-3" />
+            <p className="text-sm text-muted-foreground">
+              Select an operation and a target to see their pattern of life.
+            </p>
+          </div>
+        </div>
+      ) : isLoading || isFetching ? (
+        <div className="space-y-3">
+          {[...Array(4)].map((_, i) => (
+            <Skeleton key={i} className="h-24 w-full rounded-xl" />
+          ))}
+        </div>
+      ) : !data || !data.sufficientData ? (
+        <div className="flex-1 flex items-center justify-center py-16 text-center">
+          <div>
+            <Activity className="w-8 h-8 text-muted-foreground/50 mx-auto mb-3" />
+            <p className="text-sm text-muted-foreground">
+              Not enough certified observations yet
+              {data ? ` (${data.observationCount} so far)` : ""} — a meaningful
+              pattern needs at least a handful of sightings. This improves
+              automatically as more running sheets are certified.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center gap-2 mb-4 px-1">
+            <span className="text-xs text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">
+              {data.geocodedObservationCount} of {data.observationCount}{" "}
+              observations geocoded
+            </span>
+            <span
+              className={`inline-flex items-center gap-1 text-xs font-semibold px-1.5 py-0.5 rounded border ${
+                data.confidence === "high"
+                  ? "text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800"
+                  : data.confidence === "moderate"
+                    ? "text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800"
+                    : "text-muted-foreground bg-muted/40 border-border/50"
+              }`}
+            >
+              <Info className="w-3 h-3" />
+              {CONFIDENCE_LABEL[data.confidence]}
+            </span>
+          </div>
+
+          {data.peakCell && (
+            <div className="rounded-lg bg-gradient-to-r from-blue-900 to-blue-800 px-4 py-3.5 mb-5 mx-1">
+              <p className="text-[9px] font-bold uppercase tracking-wider text-blue-200 mb-1">
+                Most predictable pattern
+              </p>
+              <p className="text-base font-bold text-white leading-snug">
+                {data.peakCell.label}{" "}
+                <span className="font-normal text-blue-200">·</span>{" "}
+                {data.timeBuckets6[data.peakCell.bucketIndex]}
+                {dayQualifier && (
+                  <>
+                    {" "}
+                    <span className="font-normal text-blue-200">·</span>{" "}
+                    especially {dayQualifier}
+                  </>
+                )}
+              </p>
+            </div>
+          )}
+
+          {/* Section A — general activity */}
+          <div className="rounded-xl border border-border/60 bg-card p-4 mb-4 mx-1">
+            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
+              Activity by day &amp; time
+            </p>
+            <p className="text-[11px] text-muted-foreground mb-3">
+              When this target is generally active, across every location
+            </p>
+            <div className="overflow-x-auto">
+              <div className="min-w-[560px]">
+                <div className="flex items-center gap-1 mb-1.5">
+                  <div className="w-10 shrink-0" />
+                  {data.timeBuckets6.map(label => (
+                    <div
+                      key={label}
+                      className="flex-1 text-center text-[9px] font-semibold uppercase tracking-wide text-muted-foreground"
+                    >
+                      {label}
+                    </div>
+                  ))}
+                </div>
+                {data.dayLabels.map((day, dayIdx) => (
+                  <div key={day} className="flex items-center gap-1 mb-1">
+                    <div className="w-10 shrink-0 text-[10px] font-bold text-muted-foreground">
+                      {day}
+                    </div>
+                    {data.dayTimeGrid[dayIdx].map((count, bucketIdx) => (
+                      <div key={bucketIdx} className="flex-1">
+                        <div
+                          className={`h-8 rounded-md flex items-center justify-center text-[11px] font-bold ${cellTextClass(count, dayTimeMax)}`}
+                          style={cellFillStyle(count, dayTimeMax)}
+                        >
+                          {count > 0 ? count : ""}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 mt-2">
+              <span className="text-[9px] text-muted-foreground">Fewer</span>
+              <div
+                className="w-28 h-2 rounded"
+                style={{
+                  background:
+                    "linear-gradient(to right, rgba(37,99,235,0.10), rgba(37,99,235,0.9))",
+                }}
+              />
+              <span className="text-[9px] text-muted-foreground">More</span>
+            </div>
+          </div>
+
+          {/* Section B — where & when */}
+          <div className="rounded-xl border border-border/60 bg-card p-4 mb-4 mx-1">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                Where &amp; when
+              </p>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[9px] text-muted-foreground">Fewer</span>
+                <div
+                  className="w-20 h-[7px] rounded"
+                  style={{
+                    background:
+                      "linear-gradient(to right, rgba(37,99,235,0.14), rgba(37,99,235,0.9))",
+                  }}
+                />
+                <span className="text-[9px] text-muted-foreground">More</span>
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground mb-3">
+              Which specific location, at which time
+            </p>
+            {data.locationTimeGrid.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                No geocoded locations recognised in this target's observations
+                yet.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <div className="min-w-[620px]">
+                  <div className="flex items-center gap-1 mb-1.5">
+                    <div className="w-44 shrink-0" />
+                    {data.timeBuckets6.map(label => (
+                      <div
+                        key={label}
+                        className="flex-1 text-center text-[9px] font-semibold uppercase tracking-wide text-muted-foreground"
+                      >
+                        {label}
+                      </div>
+                    ))}
+                    <div className="w-8 shrink-0" />
+                  </div>
+                  {data.locationTimeGrid.map(row => (
+                    <div
+                      key={row.entityKey}
+                      className="flex items-center gap-1 mb-1"
+                    >
+                      <div
+                        className="w-44 shrink-0 text-[11px] text-foreground truncate pr-2"
+                        title={row.label}
+                      >
+                        {row.label}
+                      </div>
+                      {row.counts.map((count, bucketIdx) => {
+                        const isPeak =
+                          data.peakCell?.entityKey === row.entityKey &&
+                          data.peakCell.bucketIndex === bucketIdx;
+                        return (
+                          <div key={bucketIdx} className="flex-1 relative">
+                            <div
+                              className={`h-8 rounded-md flex items-center justify-center text-[11px] font-bold ${cellTextClass(count, locMax)} ${isPeak ? "ring-2 ring-blue-700 ring-offset-1 ring-offset-background" : ""}`}
+                              style={cellFillStyle(count, locMax)}
+                            >
+                              {count > 0 ? count : ""}
+                            </div>
+                            {isPeak && (
+                              <span className="absolute -top-1.5 -right-1.5 text-blue-600">
+                                ★
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                      <div className="w-8 shrink-0 text-right text-[11px] font-bold text-foreground">
+                        {row.total}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Section C — home presence */}
+          {data.homePresence && data.homeAddressLabel && (
+            <div className="rounded-xl border border-border/60 bg-card p-4 mb-4 mx-1">
+              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                Home presence
+              </p>
+              <p className="text-[11px] text-muted-foreground mb-3">
+                {data.homeAddressLabel} (registered home address)
+              </p>
+
+              {(likelyHome || likelyAway) && (
+                <div className="rounded-lg bg-muted/10 border border-border/40 px-3 py-2.5 mb-3">
+                  <p className="text-xs text-foreground">
+                    {likelyHome && (
+                      <>
+                        <span className="font-bold text-blue-700 dark:text-blue-400">
+                          Likely home
+                        </span>{" "}
+                        {likelyHome}
+                      </>
+                    )}
+                    {likelyHome && likelyAway && (
+                      <span className="text-muted-foreground"> · </span>
+                    )}
+                    {likelyAway && (
+                      <>
+                        <span className="font-bold text-slate-500">
+                          likely away
+                        </span>{" "}
+                        {likelyAway}
+                      </>
+                    )}
+                  </p>
+                </div>
+              )}
+
+              <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">
+                Typical day
+              </p>
+              <div className="overflow-x-auto mb-2">
+                <div className="flex items-end gap-1.5 min-w-[520px]">
+                  {data.homePresence.map((p, i) => (
+                    <div key={i} className="flex flex-col items-center flex-1">
+                      <div className="w-full max-w-9 h-[90px] rounded overflow-hidden flex flex-col border border-border/40">
+                        <div
+                          className="w-full"
+                          style={{
+                            height: `${p.unknown}%`,
+                            background:
+                              "repeating-linear-gradient(135deg, rgba(148,163,184,0.35) 0px, rgba(148,163,184,0.35) 3px, rgba(226,232,240,0.5) 3px, rgba(226,232,240,0.5) 6px)",
+                          }}
+                        />
+                        <div
+                          className="w-full bg-slate-300 dark:bg-slate-600"
+                          style={{ height: `${p.away}%` }}
+                        />
+                        <div
+                          className="w-full bg-blue-600"
+                          style={{ height: `${p.home}%` }}
+                        />
+                      </div>
+                      <span className="text-[8.5px] font-semibold text-muted-foreground mt-1">
+                        {data.timeBuckets12[i]}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="flex items-center gap-4 mb-6">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-sm bg-blue-600 inline-block" />
+                  <span className="text-[9px] text-muted-foreground">Home</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-sm bg-slate-300 dark:bg-slate-600 inline-block" />
+                  <span className="text-[9px] text-muted-foreground">Away</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className="w-2.5 h-2.5 rounded-sm inline-block"
+                    style={{
+                      background:
+                        "repeating-linear-gradient(135deg, rgba(148,163,184,0.35) 0px, rgba(148,163,184,0.35) 3px, rgba(226,232,240,0.5) 3px, rgba(226,232,240,0.5) 6px)",
+                    }}
+                  />
+                  <span className="text-[9px] text-muted-foreground">
+                    Unknown / no data
+                  </span>
+                </div>
+              </div>
+
+              {(data.departureHistogram || data.arrivalHistogram) && (
+                <>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-3">
+                    Typical departure &amp; return times
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-[10px] text-muted-foreground mb-2">
+                        Departs home
+                        {data.peakDepartureBucket != null && (
+                          <span className="font-bold text-blue-700 dark:text-blue-400">
+                            {" "}
+                            — usually{" "}
+                            {data.timeBuckets8[data.peakDepartureBucket]}
+                          </span>
+                        )}
+                      </p>
+                      <div className="flex items-end gap-1 h-20">
+                        {(data.departureHistogram ?? []).map((v, i) => (
+                          <div
+                            key={i}
+                            className="flex flex-col items-center flex-1 gap-1"
+                          >
+                            <span className="text-[8px] font-bold text-foreground h-2.5">
+                              {v > 0 ? v : ""}
+                            </span>
+                            <div
+                              className={`w-full rounded-t ${i === data.peakDepartureBucket ? "ring-2 ring-blue-700" : ""}`}
+                              style={{
+                                height: `${v === 0 ? 2 : Math.round((v / depMax) * 40) + 6}px`,
+                                backgroundColor:
+                                  i === data.peakDepartureBucket
+                                    ? "#2563eb"
+                                    : "#93c5fd",
+                              }}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex gap-1 mt-1">
+                        {data.timeBuckets8.map(l => (
+                          <span
+                            key={l}
+                            className="text-[7px] text-muted-foreground flex-1 text-center"
+                          >
+                            {l}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-muted-foreground mb-2">
+                        Returns home
+                        {data.peakArrivalBucket != null && (
+                          <span
+                            className="font-bold"
+                            style={{ color: "#0d9488" }}
+                          >
+                            {" "}
+                            — usually{" "}
+                            {data.timeBuckets8[data.peakArrivalBucket]}
+                          </span>
+                        )}
+                      </p>
+                      <div className="flex items-end gap-1 h-20">
+                        {(data.arrivalHistogram ?? []).map((v, i) => (
+                          <div
+                            key={i}
+                            className="flex flex-col items-center flex-1 gap-1"
+                          >
+                            <span className="text-[8px] font-bold text-foreground h-2.5">
+                              {v > 0 ? v : ""}
+                            </span>
+                            <div
+                              className={`w-full rounded-t ${i === data.peakArrivalBucket ? "ring-2" : ""}`}
+                              style={{
+                                height: `${v === 0 ? 2 : Math.round((v / arrMax) * 40) + 6}px`,
+                                backgroundColor:
+                                  i === data.peakArrivalBucket
+                                    ? "#0d9488"
+                                    : "#5eead4",
+                              }}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex gap-1 mt-1">
+                        {data.timeBuckets8.map(l => (
+                          <span
+                            key={l}
+                            className="text-[7px] text-muted-foreground flex-1 text-center"
+                          >
+                            {l}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-muted/20 border border-border/40 mx-1 mb-4">
+            <Info className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
+            <p className="text-[11px] text-muted-foreground">
+              Based on {data.observationCount} certified observations (
+              {data.geocodedObservationCount} geocoded) for this target within{" "}
+              {data.operationName}. Home presence is inferred between
+              consecutive departed/arrived observations, not directly observed
+              every hour; hours with no bracketing observation on the same day
+              are marked Unknown. A matching departed/arrived pair at the same
+              address counts as a single visit. Reliability grows with the
+              number of certified observations.
+            </p>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

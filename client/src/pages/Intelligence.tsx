@@ -35,6 +35,7 @@ import {
   LayoutGrid,
   Camera,
   Flame,
+  Activity,
   Radar,
   PackageOpen,
 } from "lucide-react";
@@ -43,13 +44,24 @@ import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
 import { MergeEntitiesButton } from "@/components/MergeEntitiesButton";
 import { IndicesBadge } from "@/components/IndicesBadge";
 import IntelligenceHeatMap from "@/pages/IntelligenceHeatMap";
+import IntelligencePatternOfLife from "@/pages/IntelligencePatternOfLife";
 import EgoNetworkMap from "@/pages/EgoNetworkMap";
 import IntelPackages from "@/pages/IntelPackages";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type EntityType = "person" | "vehicle" | "address" | "business" | "unknown";
-type TabView = "operations" | "targets" | "associates" | "vehicle" | "locations" | "all" | "heatmap" | "egonet" | "packages";
+type TabView =
+  | "operations"
+  | "targets"
+  | "associates"
+  | "vehicle"
+  | "locations"
+  | "all"
+  | "heatmap"
+  | "patternOfLife"
+  | "egonet"
+  | "packages";
 
 interface Occurrence {
   sheetId: number;
@@ -100,23 +112,28 @@ const TYPE_ICONS: Record<EntityType, React.ReactNode> = {
 };
 
 const TYPE_COLORS: Record<EntityType, string> = {
-  person:   "bg-blue-500/10 text-blue-600 border-blue-500/30 dark:text-blue-400",
-  vehicle:  "bg-amber-500/10 text-amber-600 border-amber-500/30 dark:text-amber-400",
-  address:  "bg-emerald-500/10 text-emerald-600 border-emerald-500/30 dark:text-emerald-400",
-  business: "bg-purple-500/10 text-purple-600 border-purple-500/30 dark:text-purple-400",
-  unknown:  "bg-muted text-muted-foreground border-border",
+  person: "bg-blue-500/10 text-blue-600 border-blue-500/30 dark:text-blue-400",
+  vehicle:
+    "bg-amber-500/10 text-amber-600 border-amber-500/30 dark:text-amber-400",
+  address:
+    "bg-emerald-500/10 text-emerald-600 border-emerald-500/30 dark:text-emerald-400",
+  business:
+    "bg-purple-500/10 text-purple-600 border-purple-500/30 dark:text-purple-400",
+  unknown: "bg-muted text-muted-foreground border-border",
 };
 
 function formatTime(minutes: number | null): string {
   if (minutes === null) return "";
-  const h = Math.floor(minutes / 60).toString().padStart(2, "0");
+  const h = Math.floor(minutes / 60)
+    .toString()
+    .padStart(2, "0");
   const m = (minutes % 60).toString().padStart(2, "0");
   return `${h}:${m}`;
 }
 
 function uniqueSheets(occurrences: Occurrence[]) {
   const seen = new Set<number>();
-  return occurrences.filter((o) => {
+  return occurrences.filter(o => {
     if (seen.has(o.sheetId)) return false;
     seen.add(o.sheetId);
     return true;
@@ -126,42 +143,66 @@ function uniqueSheets(occurrences: Occurrence[]) {
 // ─── PDF Export ───────────────────────────────────────────────────────────────
 
 function buildProfileHtml(entity: Entity, allEntities: Entity[]) {
-  const mySheetIds = new Set(entity.occurrences.map((o) => o.sheetId));
+  const mySheetIds = new Set(entity.occurrences.map(o => o.sheetId));
 
-  const relatedVehicles   = allEntities.filter((e) => e.type === "vehicle"  && e.occurrences.some((o) => mySheetIds.has(o.sheetId)));
-  const relatedAddresses  = allEntities.filter((e) => e.type === "address"  && e.occurrences.some((o) => mySheetIds.has(o.sheetId)));
-  const relatedBusinesses = allEntities.filter((e) => e.type === "business" && e.occurrences.some((o) => mySheetIds.has(o.sheetId)));
-  const relatedPersons    = allEntities.filter((e) => e.type === "person"   && e.shortForm !== entity.shortForm && e.occurrences.some((o) => mySheetIds.has(o.sheetId)));
+  const relatedVehicles = allEntities.filter(
+    e =>
+      e.type === "vehicle" && e.occurrences.some(o => mySheetIds.has(o.sheetId))
+  );
+  const relatedAddresses = allEntities.filter(
+    e =>
+      e.type === "address" && e.occurrences.some(o => mySheetIds.has(o.sheetId))
+  );
+  const relatedBusinesses = allEntities.filter(
+    e =>
+      e.type === "business" &&
+      e.occurrences.some(o => mySheetIds.has(o.sheetId))
+  );
+  const relatedPersons = allEntities.filter(
+    e =>
+      e.type === "person" &&
+      e.shortForm !== entity.shortForm &&
+      e.occurrences.some(o => mySheetIds.has(o.sheetId))
+  );
 
-  const sheets    = uniqueSheets(entity.occurrences);
+  const sheets = uniqueSheets(entity.occurrences);
   const firstSeen = entity.occurrences[0];
-  const lastSeen  = entity.occurrences[entity.occurrences.length - 1];
-  const generatedAt = new Date().toLocaleString("en-AU", { dateStyle: "long", timeStyle: "short" });
+  const lastSeen = entity.occurrences[entity.occurrences.length - 1];
+  const generatedAt = new Date().toLocaleString("en-AU", {
+    dateStyle: "long",
+    timeStyle: "short",
+  });
 
-  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const esc = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
   // Blue palette for RunLog Intelligence Profile
-  const BLUE       = "#1d4ed8";  // primary blue
-  const BLUE_DARK  = "#1e3a8a";  // dark blue for header bg
-  const BLUE_LIGHT = "#dbeafe";  // very light blue for section header bg
-  const BLUE_MID   = "#93c5fd";  // mid blue for accent borders
-  const GREY_TEXT  = "#1e293b";  // body text (darker for readability)
-  const GREY_LIGHT = "#f8fafc";  // alternate row bg
-  const GREY_BORDER= "#e2e8f0";  // subtle borders
+  const BLUE = "#1d4ed8"; // primary blue
+  const BLUE_DARK = "#1e3a8a"; // dark blue for header bg
+  const BLUE_LIGHT = "#dbeafe"; // very light blue for section header bg
+  const BLUE_MID = "#93c5fd"; // mid blue for accent borders
+  const GREY_TEXT = "#1e293b"; // body text (darker for readability)
+  const GREY_LIGHT = "#f8fafc"; // alternate row bg
+  const GREY_BORDER = "#e2e8f0"; // subtle borders
   // Aliases so the rest of the template uses the same variable names
-  const TEAL       = BLUE;
-  const TEAL_DARK  = BLUE_DARK;
+  const TEAL = BLUE;
+  const TEAL_DARK = BLUE_DARK;
   const TEAL_LIGHT = BLUE_LIGHT;
-  const TEAL_MID   = BLUE_MID;
+  const TEAL_MID = BLUE_MID;
 
   const typeLabel = esc(TYPE_LABELS[entity.type]);
   // Strip leading 'a ' or 'A ' from vehicle descriptions
   const stripVehicleA = (s: string, type: string) =>
     type === "vehicle" ? s.replace(/^[aA]\s+/, "") : s;
   const entityName = esc(
-    entity.type === "vehicle" ? formatIntelVehicle(entity.shortForm, entity.occurrences[0]?.fullDescription)
-    : (entity.type === "address" || entity.type === "business") ? formatIntelAddress(entity.shortForm)
-    : entity.shortForm
+    entity.type === "vehicle"
+      ? formatIntelVehicle(
+          entity.shortForm,
+          entity.occurrences[0]?.fullDescription
+        )
+      : entity.type === "address" || entity.type === "business"
+        ? formatIntelAddress(entity.shortForm)
+        : entity.shortForm
   );
 
   let html = `<!DOCTYPE html>
@@ -494,10 +535,12 @@ function buildProfileHtml(entity: Entity, allEntities: Entity[]) {
 
   // Operations section — list unique operations this entity appears in
   const uniqueOps = Array.from(
-    entity.occurrences.reduce((map, o) => {
-      if (!map.has(o.operationId)) map.set(o.operationId, o.operationName);
-      return map;
-    }, new Map<number, string>()).values()
+    entity.occurrences
+      .reduce((map, o) => {
+        if (!map.has(o.operationId)) map.set(o.operationId, o.operationName);
+        return map;
+      }, new Map<number, string>())
+      .values()
   );
   html += `
 <div class="section-heading">
@@ -598,8 +641,8 @@ ${sheets.map(sheet => `<span class="assoc-chip">${esc(sheet.sheetTitle)}</span>`
 function printProfilePdf(entity: Entity, allEntities: Entity[]) {
   const html = buildProfileHtml(entity, allEntities);
   const blob = new Blob([html], { type: "text/html" });
-  const url  = URL.createObjectURL(blob);
-  const win  = window.open(url, "_blank");
+  const url = URL.createObjectURL(blob);
+  const win = window.open(url, "_blank");
   if (win) {
     win.onload = () => {
       win.print();
@@ -622,12 +665,48 @@ function ProfileDialog({
   onNavigate: (e: Entity) => void;
 }) {
   const [, navigate] = useLocation();
-  const mySheetIds = useMemo(() => new Set(entity.occurrences.map((o) => o.sheetId)), [entity]);
+  const mySheetIds = useMemo(
+    () => new Set(entity.occurrences.map(o => o.sheetId)),
+    [entity]
+  );
 
-  const relatedVehicles   = useMemo(() => allEntities.filter((e) => e.type === "vehicle"  && e.occurrences.some((o) => mySheetIds.has(o.sheetId))), [allEntities, mySheetIds]);
-  const relatedAddresses  = useMemo(() => allEntities.filter((e) => e.type === "address"  && e.occurrences.some((o) => mySheetIds.has(o.sheetId))), [allEntities, mySheetIds]);
-  const relatedBusinesses = useMemo(() => allEntities.filter((e) => e.type === "business" && e.occurrences.some((o) => mySheetIds.has(o.sheetId))), [allEntities, mySheetIds]);
-  const relatedPersons    = useMemo(() => allEntities.filter((e) => e.type === "person"   && e.shortForm !== entity.shortForm && e.occurrences.some((o) => mySheetIds.has(o.sheetId))), [allEntities, mySheetIds, entity.shortForm]);
+  const relatedVehicles = useMemo(
+    () =>
+      allEntities.filter(
+        e =>
+          e.type === "vehicle" &&
+          e.occurrences.some(o => mySheetIds.has(o.sheetId))
+      ),
+    [allEntities, mySheetIds]
+  );
+  const relatedAddresses = useMemo(
+    () =>
+      allEntities.filter(
+        e =>
+          e.type === "address" &&
+          e.occurrences.some(o => mySheetIds.has(o.sheetId))
+      ),
+    [allEntities, mySheetIds]
+  );
+  const relatedBusinesses = useMemo(
+    () =>
+      allEntities.filter(
+        e =>
+          e.type === "business" &&
+          e.occurrences.some(o => mySheetIds.has(o.sheetId))
+      ),
+    [allEntities, mySheetIds]
+  );
+  const relatedPersons = useMemo(
+    () =>
+      allEntities.filter(
+        e =>
+          e.type === "person" &&
+          e.shortForm !== entity.shortForm &&
+          e.occurrences.some(o => mySheetIds.has(o.sheetId))
+      ),
+    [allEntities, mySheetIds, entity.shortForm]
+  );
 
   const sheets = useMemo(() => uniqueSheets(entity.occurrences), [entity]);
 
@@ -636,38 +715,65 @@ function ProfileDialog({
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border ${TYPE_COLORS[entity.type]}`}>
+            <span
+              className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border ${TYPE_COLORS[entity.type]}`}
+            >
               {TYPE_ICONS[entity.type]}
               {TYPE_LABELS[entity.type]}
             </span>
-            <span className="font-mono text-lg">{entity.type === "vehicle" ? formatIntelVehicle(entity.shortForm, entity.occurrences[0]?.fullDescription) : (entity.type === "address" || entity.type === "business") ? formatIntelAddress(entity.shortForm) : entity.shortForm}</span>
+            <span className="font-mono text-lg">
+              {entity.type === "vehicle"
+                ? formatIntelVehicle(
+                    entity.shortForm,
+                    entity.occurrences[0]?.fullDescription
+                  )
+                : entity.type === "address" || entity.type === "business"
+                  ? formatIntelAddress(entity.shortForm)
+                  : entity.shortForm}
+            </span>
           </DialogTitle>
         </DialogHeader>
 
         {/* Summary stats */}
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Appearances</p>
-            <p className="font-semibold text-foreground">{entity.occurrences.length} observation{entity.occurrences.length !== 1 ? "s" : ""}</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">
+              Appearances
+            </p>
+            <p className="font-semibold text-foreground">
+              {entity.occurrences.length} observation
+              {entity.occurrences.length !== 1 ? "s" : ""}
+            </p>
           </div>
           <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Running Sheets</p>
-            <p className="font-semibold text-foreground">{sheets.length} sheet{sheets.length !== 1 ? "s" : ""}</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">
+              Running Sheets
+            </p>
+            <p className="font-semibold text-foreground">
+              {sheets.length} sheet{sheets.length !== 1 ? "s" : ""}
+            </p>
           </div>
         </div>
 
         {/* Running sheets — clickable titles only, moved up */}
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Running Sheets</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+            Running Sheets
+          </p>
           <div className="space-y-1">
-            {sheets.map((sheet) => (
+            {sheets.map(sheet => (
               <button
                 key={sheet.sheetId}
-                onClick={() => { onClose(); setTimeout(() => navigate(`/sheet/${sheet.sheetId}`), 0); }}
+                onClick={() => {
+                  onClose();
+                  setTimeout(() => navigate(`/sheet/${sheet.sheetId}`), 0);
+                }}
                 className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border/60 bg-muted/20 hover:bg-accent/10 transition-colors text-left"
               >
                 <Calendar className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                <span className="text-xs font-medium text-foreground break-words min-w-0 flex-1">{sheet.sheetTitle}</span>
+                <span className="text-xs font-medium text-foreground break-words min-w-0 flex-1">
+                  {sheet.sheetTitle}
+                </span>
                 <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0 ml-auto" />
               </button>
             ))}
@@ -679,15 +785,22 @@ function ProfileDialog({
         {/* Vehicles — clickable pills */}
         {relatedVehicles.length > 0 && (
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Associated Vehicles</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+              Associated Vehicles
+            </p>
             <div className="flex flex-wrap gap-2">
-              {relatedVehicles.map((v) => (
+              {relatedVehicles.map(v => (
                 <button
                   key={v.shortForm}
                   onClick={() => onNavigate(v)}
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity ${TYPE_COLORS.vehicle}`}
                 >
-                  <Car className="w-3 h-3" />{formatIntelVehicle(v.shortForm, v.occurrences[0]?.fullDescription)}<span className="opacity-60">×{v.occurrences.length}</span>
+                  <Car className="w-3 h-3" />
+                  {formatIntelVehicle(
+                    v.shortForm,
+                    v.occurrences[0]?.fullDescription
+                  )}
+                  <span className="opacity-60">×{v.occurrences.length}</span>
                 </button>
               ))}
             </div>
@@ -697,15 +810,19 @@ function ProfileDialog({
         {/* Addresses — clickable pills */}
         {relatedAddresses.length > 0 && (
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Associated Addresses</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+              Associated Addresses
+            </p>
             <div className="flex flex-wrap gap-2">
-              {relatedAddresses.map((a) => (
+              {relatedAddresses.map(a => (
                 <button
                   key={a.shortForm}
                   onClick={() => onNavigate(a)}
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity ${TYPE_COLORS.address}`}
                 >
-                  <MapPin className="w-3 h-3" />{formatIntelAddress(a.shortForm)}<span className="opacity-60">×{a.occurrences.length}</span>
+                  <MapPin className="w-3 h-3" />
+                  {formatIntelAddress(a.shortForm)}
+                  <span className="opacity-60">×{a.occurrences.length}</span>
                 </button>
               ))}
             </div>
@@ -715,15 +832,19 @@ function ProfileDialog({
         {/* Associated Persons — clickable pills */}
         {relatedPersons.length > 0 && (
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Associated Persons</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+              Associated Persons
+            </p>
             <div className="flex flex-wrap gap-2">
-              {relatedPersons.map((p) => (
+              {relatedPersons.map(p => (
                 <button
                   key={p.shortForm}
                   onClick={() => onNavigate(p)}
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity ${TYPE_COLORS.person}`}
                 >
-                  <User className="w-3 h-3" />{p.shortForm}<span className="opacity-60">×{p.occurrences.length}</span>
+                  <User className="w-3 h-3" />
+                  {p.shortForm}
+                  <span className="opacity-60">×{p.occurrences.length}</span>
                 </button>
               ))}
             </div>
@@ -733,15 +854,19 @@ function ProfileDialog({
         {/* Businesses — clickable pills */}
         {relatedBusinesses.length > 0 && (
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Associated Businesses</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+              Associated Businesses
+            </p>
             <div className="flex flex-wrap gap-2">
-              {relatedBusinesses.map((b) => (
+              {relatedBusinesses.map(b => (
                 <button
                   key={b.shortForm}
                   onClick={() => onNavigate(b)}
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity ${TYPE_COLORS.business}`}
                 >
-                  <Building2 className="w-3 h-3" />{formatIntelAddress(b.shortForm)}<span className="opacity-60">×{b.occurrences.length}</span>
+                  <Building2 className="w-3 h-3" />
+                  {formatIntelAddress(b.shortForm)}
+                  <span className="opacity-60">×{b.occurrences.length}</span>
                 </button>
               ))}
             </div>
@@ -751,7 +876,10 @@ function ProfileDialog({
         <Separator />
 
         {/* Single export button at the bottom */}
-        <Button onClick={() => printProfilePdf(entity, allEntities)} className="w-full gap-2">
+        <Button
+          onClick={() => printProfilePdf(entity, allEntities)}
+          className="w-full gap-2"
+        >
           <FileDown className="w-4 h-4" />
           Export Profile to PDF
         </Button>
@@ -807,7 +935,11 @@ function OperationsTab({
         }
         const op = opMap.get(occ.operationId)!;
         // Add entity to this op if not already present
-        if (!op.entities.find((e) => e.type === entity.type && e.shortForm === entity.shortForm)) {
+        if (
+          !op.entities.find(
+            e => e.type === entity.type && e.shortForm === entity.shortForm
+          )
+        ) {
           op.entities.push(entity);
           op.entityCount += 1;
         }
@@ -815,7 +947,7 @@ function OperationsTab({
     }
     // Compute unique sheet count per operation
     const opList: OperationSummary[] = [];
-    opMap.forEach((op) => {
+    opMap.forEach(op => {
       const sheetIds = new Set<number>();
       for (const e of op.entities) {
         for (const occ of e.occurrences) {
@@ -829,19 +961,21 @@ function OperationsTab({
     // from this folder list entirely; it's not a real operation.
     const isRegistry = (op: OperationSummary) =>
       op.operationId === 0 || op.operationName === "(Registry)";
-    const normal = opList.filter((op) => !isRegistry(op));
+    const normal = opList.filter(op => !isRegistry(op));
     // Get latest sheet title across all entities in an operation (used for recency sort)
     const getLatestSheet = (op: OperationSummary) => {
       let best = "";
       for (const e of op.entities) {
         for (const occ of e.occurrences) {
-          if (occ.operationId === op.operationId && occ.sheetTitle > best) best = occ.sheetTitle;
+          if (occ.operationId === op.operationId && occ.sheetTitle > best)
+            best = occ.sheetTitle;
         }
       }
       return best;
     };
     return [...normal].sort((a, b) => {
-      if (sortOrder === "recent") return getLatestSheet(b).localeCompare(getLatestSheet(a));
+      if (sortOrder === "recent")
+        return getLatestSheet(b).localeCompare(getLatestSheet(a));
       return a.operationName.localeCompare(b.operationName); // az (default)
     });
   }, [entities, allOps, sortOrder]);
@@ -850,9 +984,9 @@ function OperationsTab({
     if (!search) return operations;
     const q = search.toLowerCase();
     return operations.filter(
-      (op) =>
+      op =>
         op.operationName.toLowerCase().includes(q) ||
-        op.entities.some((e) => e.shortForm.toLowerCase().includes(q))
+        op.entities.some(e => e.shortForm.toLowerCase().includes(q))
     );
   }, [operations, search]);
 
@@ -868,31 +1002,44 @@ function OperationsTab({
   if (tileView) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filtered.map((op) => (
+        {filtered.map(op => (
           <div
             key={op.operationId}
             className="group flex flex-col gap-3 p-5 rounded-xl border border-border bg-card hover:bg-accent/20 hover:border-primary/30 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 cursor-pointer"
-            onClick={() => navigate(`/intelligence/operation/${op.operationId}`)}
+            onClick={() =>
+              navigate(`/intelligence/operation/${op.operationId}`)
+            }
           >
             <div className="flex items-start justify-between gap-2">
               <div className="p-2.5 rounded-lg bg-violet-400/10 border border-violet-400/20 shrink-0">
                 <Folder className="w-5 h-5 text-violet-400" />
               </div>
               <button
-                onClick={(e) => { e.stopPropagation(); navigate(`/intelligence/operation/${op.operationId}`); }}
+                onClick={e => {
+                  e.stopPropagation();
+                  navigate(`/intelligence/operation/${op.operationId}`);
+                }}
                 className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-500/10 border border-blue-500/20 hover:bg-blue-500/20 transition-colors shrink-0"
               >
                 <FileText className="w-3 h-3" />
                 <span>Profile</span>
               </button>
             </div>
-            <p className="font-semibold text-foreground leading-tight line-clamp-2">{op.operationName}</p>
+            <p className="font-semibold text-foreground leading-tight line-clamp-2">
+              {op.operationName}
+            </p>
             <div className="flex gap-3 mt-auto">
               <span className="text-xs text-muted-foreground">
-                <span className="font-semibold text-foreground">{op.entityCount}</span> {op.entityCount === 1 ? "entity" : "entities"}
+                <span className="font-semibold text-foreground">
+                  {op.entityCount}
+                </span>{" "}
+                {op.entityCount === 1 ? "entity" : "entities"}
               </span>
               <span className="text-xs text-muted-foreground">
-                <span className="font-semibold text-foreground">{op.sheetCount}</span> {op.sheetCount === 1 ? "sheet" : "sheets"}
+                <span className="font-semibold text-foreground">
+                  {op.sheetCount}
+                </span>{" "}
+                {op.sheetCount === 1 ? "sheet" : "sheets"}
               </span>
             </div>
           </div>
@@ -903,7 +1050,7 @@ function OperationsTab({
 
   return (
     <div className="space-y-3">
-      {filtered.map((op) => {
+      {filtered.map(op => {
         const isExpanded = expandedOpId === op.operationId;
         // Group entities by type for display
         const byType: Partial<Record<EntityType, Entity[]>> = {};
@@ -913,22 +1060,34 @@ function OperationsTab({
         }
 
         return (
-          <div key={op.operationId} className="rounded-xl border border-border/60 overflow-hidden bg-card">
+          <div
+            key={op.operationId}
+            className="rounded-xl border border-border/60 overflow-hidden bg-card"
+          >
             <button
-              onClick={() => setExpandedOpId(isExpanded ? null : op.operationId)}
+              onClick={() =>
+                setExpandedOpId(isExpanded ? null : op.operationId)
+              }
               className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-accent/10 transition-colors"
             >
               <div className="p-2.5 rounded-lg bg-violet-400/10 border border-violet-400/20 shrink-0">
                 <Folder className="w-5 h-5 text-violet-400" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-foreground truncate">{op.operationName}</p>
+                <p className="text-sm font-semibold text-foreground truncate">
+                  {op.operationName}
+                </p>
                 <p className="text-xs text-muted-foreground">
-                  {op.entityCount} {op.entityCount === 1 ? "entity" : "entities"} · {op.sheetCount} {op.sheetCount === 1 ? "sheet" : "sheets"}
+                  {op.entityCount}{" "}
+                  {op.entityCount === 1 ? "entity" : "entities"} ·{" "}
+                  {op.sheetCount} {op.sheetCount === 1 ? "sheet" : "sheets"}
                 </p>
               </div>
               <button
-                onClick={(e) => { e.stopPropagation(); navigate(`/intelligence/operation/${op.operationId}`); }}
+                onClick={e => {
+                  e.stopPropagation();
+                  navigate(`/intelligence/operation/${op.operationId}`);
+                }}
                 title="View Operation Profile"
                 className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-500/10 border border-blue-500/20 hover:bg-blue-500/20 transition-colors shrink-0"
               >
@@ -942,36 +1101,67 @@ function OperationsTab({
 
             {isExpanded && (
               <div className="border-t border-border/40 px-4 pb-4 pt-3 space-y-3">
-                {(["person", "vehicle", "address", "business", "unknown"] as EntityType[]).map((type) => {
+                {(
+                  [
+                    "person",
+                    "vehicle",
+                    "address",
+                    "business",
+                    "unknown",
+                  ] as EntityType[]
+                ).map(type => {
                   const group = byType[type];
                   if (!group || group.length === 0) return null;
                   return (
                     <div key={type}>
                       <div className="flex items-center gap-1.5 mb-2">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${TYPE_COLORS[type]}`}>
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${TYPE_COLORS[type]}`}
+                        >
                           {TYPE_ICONS[type]}
                           {TYPE_LABELS[type]}s
                         </span>
-                        <span className="text-xs text-muted-foreground">{group.length}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {group.length}
+                        </span>
                       </div>
                       <div className="rounded-lg border border-border/40 overflow-hidden">
                         {group.map((entity, idx) => {
-                          const opOccs = entity.occurrences.filter((o) => o.operationId === op.operationId);
+                          const opOccs = entity.occurrences.filter(
+                            o => o.operationId === op.operationId
+                          );
                           const opSheets = uniqueSheets(opOccs);
                           return (
                             <div
                               key={`${entity.type}::${entity.shortForm}`}
                               className={`flex items-center gap-3 px-3 py-2.5 ${idx < group.length - 1 ? "border-b border-border/30" : ""}`}
                             >
-                              <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full border ${TYPE_COLORS[type]} shrink-0`}>
+                              <span
+                                className={`inline-flex items-center justify-center w-6 h-6 rounded-full border ${TYPE_COLORS[type]} shrink-0`}
+                              >
                                 {TYPE_ICONS[type]}
                               </span>
                               <div className="flex-1 min-w-0">
-                                <p className="font-mono text-xs font-medium text-foreground truncate">{entity.type === "vehicle" ? formatIntelVehicle(entity.shortForm, entity.occurrences[0]?.fullDescription) : (entity.type === "address" || entity.type === "business") ? formatIntelAddress(entity.shortForm) : entity.shortForm}</p>
+                                <p className="font-mono text-xs font-medium text-foreground truncate">
+                                  {entity.type === "vehicle"
+                                    ? formatIntelVehicle(
+                                        entity.shortForm,
+                                        entity.occurrences[0]?.fullDescription
+                                      )
+                                    : entity.type === "address" ||
+                                        entity.type === "business"
+                                      ? formatIntelAddress(entity.shortForm)
+                                      : entity.shortForm}
+                                </p>
                               </div>
                               <div className="text-right shrink-0">
-                                <p className="text-xs font-medium text-foreground">{opOccs.length}×</p>
-                                <p className="text-xs text-muted-foreground">{opSheets.length} sheet{opSheets.length !== 1 ? "s" : ""}</p>
+                                <p className="text-xs font-medium text-foreground">
+                                  {opOccs.length}×
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {opSheets.length} sheet
+                                  {opSheets.length !== 1 ? "s" : ""}
+                                </p>
                               </div>
                             </div>
                           );
@@ -994,68 +1184,158 @@ function OperationsTab({
 type DatePreset = "all" | "1w" | "1m" | "3m" | "6m" | "custom";
 
 const DATE_PRESETS: Array<{ value: DatePreset; label: string }> = [
-  { value: "all",    label: "All time" },
-  { value: "1w",     label: "1 week" },
-  { value: "1m",     label: "1 month" },
-  { value: "3m",     label: "3 months" },
-  { value: "6m",     label: "6 months" },
+  { value: "all", label: "All time" },
+  { value: "1w", label: "1 week" },
+  { value: "1m", label: "1 month" },
+  { value: "3m", label: "3 months" },
+  { value: "6m", label: "6 months" },
   { value: "custom", label: "Custom range" },
 ];
 
-function presetToRange(preset: DatePreset, customFrom: string, customTo: string): { from: Date | null; to: Date | null } {
+function presetToRange(
+  preset: DatePreset,
+  customFrom: string,
+  customTo: string
+): { from: Date | null; to: Date | null } {
   const now = new Date();
   if (preset === "all") return { from: null, to: null };
-  if (preset === "1w") { const d = new Date(now); d.setDate(d.getDate() - 7); return { from: d, to: now }; }
-  if (preset === "1m") { const d = new Date(now); d.setMonth(d.getMonth() - 1); return { from: d, to: now }; }
-  if (preset === "3m") { const d = new Date(now); d.setMonth(d.getMonth() - 3); return { from: d, to: now }; }
-  if (preset === "6m") { const d = new Date(now); d.setMonth(d.getMonth() - 6); return { from: d, to: now }; }
+  if (preset === "1w") {
+    const d = new Date(now);
+    d.setDate(d.getDate() - 7);
+    return { from: d, to: now };
+  }
+  if (preset === "1m") {
+    const d = new Date(now);
+    d.setMonth(d.getMonth() - 1);
+    return { from: d, to: now };
+  }
+  if (preset === "3m") {
+    const d = new Date(now);
+    d.setMonth(d.getMonth() - 3);
+    return { from: d, to: now };
+  }
+  if (preset === "6m") {
+    const d = new Date(now);
+    d.setMonth(d.getMonth() - 6);
+    return { from: d, to: now };
+  }
   if (preset === "custom") {
     return {
       from: customFrom ? new Date(customFrom) : null,
-      to:   customTo   ? new Date(customTo + "T23:59:59") : null,
+      to: customTo ? new Date(customTo + "T23:59:59") : null,
     };
   }
   return { from: null, to: null };
 }
 
 // ─── Tab nav config ───────────────────────────────────────────────────────────
+// Split into two groups, rendered as two rows on desktop: entity tabs (filter
+// the list below) and report tabs (replace the whole content area with their
+// own full-page view). Kept as one combined TAB_OPTIONS for the mobile
+// dropdown and the tabCounts lookup, since mobile collapses both groups into
+// a single flat list.
 
-const TAB_OPTIONS: Array<{ value: TabView; label: string; icon: React.ReactNode }> = [
-  { value: "operations", label: "Operations", icon: <Folder className="w-3.5 h-3.5" /> },
-  { value: "targets",    label: "Targets",    icon: <User className="w-3.5 h-3.5" /> },
-  { value: "associates", label: "Associates", icon: <User className="w-3.5 h-3.5" /> },
-  { value: "vehicle",    label: "Vehicles",   icon: <Car className="w-3.5 h-3.5" /> },
-  { value: "locations",  label: "Locations",  icon: <MapPin className="w-3.5 h-3.5" /> },
-  { value: "heatmap",    label: "Heat Map",    icon: <Flame className="w-3.5 h-3.5" /> },
-  { value: "egonet",     label: "Ego Network", icon: <Radar className="w-3.5 h-3.5" /> },
-  { value: "packages",   label: "Packages",    icon: <PackageOpen className="w-3.5 h-3.5" /> },
+const ENTITY_TAB_OPTIONS: Array<{
+  value: TabView;
+  label: string;
+  icon: React.ReactNode;
+}> = [
+  {
+    value: "operations",
+    label: "Operations",
+    icon: <Folder className="w-3.5 h-3.5" />,
+  },
+  {
+    value: "targets",
+    label: "Targets",
+    icon: <User className="w-3.5 h-3.5" />,
+  },
+  {
+    value: "associates",
+    label: "Associates",
+    icon: <User className="w-3.5 h-3.5" />,
+  },
+  {
+    value: "vehicle",
+    label: "Vehicles",
+    icon: <Car className="w-3.5 h-3.5" />,
+  },
+  {
+    value: "locations",
+    label: "Locations",
+    icon: <MapPin className="w-3.5 h-3.5" />,
+  },
 ];
+
+const REPORT_TAB_OPTIONS: Array<{
+  value: TabView;
+  label: string;
+  icon: React.ReactNode;
+}> = [
+  {
+    value: "heatmap",
+    label: "Heat Map",
+    icon: <Flame className="w-3.5 h-3.5" />,
+  },
+  {
+    value: "patternOfLife",
+    label: "Pattern of Life",
+    icon: <Activity className="w-3.5 h-3.5" />,
+  },
+  {
+    value: "egonet",
+    label: "Ego Network",
+    icon: <Radar className="w-3.5 h-3.5" />,
+  },
+  {
+    value: "packages",
+    label: "Packages",
+    icon: <PackageOpen className="w-3.5 h-3.5" />,
+  },
+];
+
+const TAB_OPTIONS: Array<{
+  value: TabView;
+  label: string;
+  icon: React.ReactNode;
+}> = [...ENTITY_TAB_OPTIONS, ...REPORT_TAB_OPTIONS];
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function IntelligencePage() {
   const { viewMode } = useViewMode();
-  const { data: entities, isLoading } = trpc.intelligence.getEntities.useQuery();
+  const { data: entities, isLoading } =
+    trpc.intelligence.getEntities.useQuery();
   const { data: allOps } = trpc.operation.list.useQuery();
-  const { data: entityLinkCounts } = trpc.attachment.entityLinkCounts.useQuery();
+  const { data: entityLinkCounts } =
+    trpc.attachment.entityLinkCounts.useQuery();
   const photoCountByKey = useMemo(() => {
     const map = new Map<string, number>();
     for (const l of entityLinkCounts ?? []) {
-      const key = l.category === "target" ? `target::${l.targetId}` : `${l.category}::${l.entityKey}`;
+      const key =
+        l.category === "target"
+          ? `target::${l.targetId}`
+          : `${l.category}::${l.entityKey}`;
       map.set(key, l.count);
     }
     return map;
   }, [entityLinkCounts]);
-  const photoCountForEntity = (entity: { isTarget?: boolean; targetId?: number | null; type: string; shortForm: string }): number => {
-    const key = entity.isTarget && entity.targetId
-      ? `target::${entity.targetId}`
-      : `${entity.type === "vehicle" ? "vehicle" : entity.type === "address" || entity.type === "business" ? "location" : "associate"}::${entity.shortForm.toLowerCase().replace(/\s+/g, " ").trim()}`;
+  const photoCountForEntity = (entity: {
+    isTarget?: boolean;
+    targetId?: number | null;
+    type: string;
+    shortForm: string;
+  }): number => {
+    const key =
+      entity.isTarget && entity.targetId
+        ? `target::${entity.targetId}`
+        : `${entity.type === "vehicle" ? "vehicle" : entity.type === "address" || entity.type === "business" ? "location" : "associate"}::${entity.shortForm.toLowerCase().replace(/\s+/g, " ").trim()}`;
     return photoCountByKey.get(key) ?? 0;
   };
   const [, navigate] = useLocation();
   const isMobile = useIsMobile();
-  const [search, setSearch]         = useState("");
-  const [activeTab, setActiveTab]   = useState<TabView>("operations");
+  const [search, setSearch] = useState("");
+  const [activeTab, setActiveTab] = useState<TabView>("operations");
   // The map tabs render a full-bleed canvas with their own filter chrome and
   // their own data fetch — none of the entity-list scaffolding (search/sort
   // bar, skeleton loader, entity grid) applies to them. Kept as one derived
@@ -1065,14 +1345,15 @@ export default function IntelligencePage() {
   // applies to them.
   const isMapTab =
     activeTab === "heatmap" ||
+    activeTab === "patternOfLife" ||
     activeTab === "egonet" ||
     activeTab === "packages";
-  const [selected, setSelected]     = useState<Entity | null>(null);
+  const [selected, setSelected] = useState<Entity | null>(null);
 
   // Date filter state
   const [datePreset, setDatePreset] = useState<DatePreset>("all");
   const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo]     = useState("");
+  const [customTo, setCustomTo] = useState("");
 
   // Sort order (entity tabs)
   type SortOrder = "frequency" | "az" | "za" | "recent" | "oldest";
@@ -1091,45 +1372,61 @@ export default function IntelligencePage() {
   const filteredEntities = useMemo(() => {
     if (!entities) return [];
     return entities
-      .map((e) => {
+      .map(e => {
         let occs = e.occurrences;
         if (dateRange.from || dateRange.to) {
-          occs = occs.filter((o) => {
+          occs = occs.filter(o => {
             const match = o.sheetTitle.match(/^(\d{4})(\d{2})(\d{2})/);
             if (!match) return true;
             const sheetDate = new Date(`${match[1]}-${match[2]}-${match[3]}`);
             if (dateRange.from && sheetDate < dateRange.from) return false;
-            if (dateRange.to   && sheetDate > dateRange.to)   return false;
+            if (dateRange.to && sheetDate > dateRange.to) return false;
             return true;
           });
         }
         return { ...e, occurrences: occs };
       })
-      .filter((e) => e.occurrences.length > 0);
+      .filter(e => e.occurrences.length > 0);
   }, [entities, dateRange]);
 
   // Sort helper: registry entities (all occurrences from operationId=0 / operationName="(Registry)") pinned to bottom
   const sortedByTab = useMemo(() => {
     const isRegistryOnly = (e: Entity) =>
-      e.occurrences.length > 0 && e.occurrences.every((o) => o.operationId === 0 || o.operationName === "(Registry)");
+      e.occurrences.length > 0 &&
+      e.occurrences.every(
+        o => o.operationId === 0 || o.operationName === "(Registry)"
+      );
     const getLatestTime = (e: Entity) =>
-      Math.max(...e.occurrences.map((o) => o.timeMinutes ?? 0));
+      Math.max(...e.occurrences.map(o => o.timeMinutes ?? 0));
     const getLatestSheet = (e: Entity) =>
-      e.occurrences.reduce((best, o) => (o.sheetTitle > best ? o.sheetTitle : best), "");
+      e.occurrences.reduce(
+        (best, o) => (o.sheetTitle > best ? o.sheetTitle : best),
+        ""
+      );
 
     return (list: Entity[]) => {
       const registry = list.filter(isRegistryOnly);
-      const normal   = list.filter((e) => !isRegistryOnly(e));
+      const normal = list.filter(e => !isRegistryOnly(e));
       const sorted = [...normal].sort((a, b) => {
-        if (sortOrder === "az")      return a.shortForm.localeCompare(b.shortForm);
-        if (sortOrder === "za")      return b.shortForm.localeCompare(a.shortForm);
-        if (sortOrder === "recent")  return getLatestSheet(b).localeCompare(getLatestSheet(a)) || getLatestTime(b) - getLatestTime(a);
-        if (sortOrder === "oldest")  return getLatestSheet(a).localeCompare(getLatestSheet(b)) || getLatestTime(a) - getLatestTime(b);
+        if (sortOrder === "az") return a.shortForm.localeCompare(b.shortForm);
+        if (sortOrder === "za") return b.shortForm.localeCompare(a.shortForm);
+        if (sortOrder === "recent")
+          return (
+            getLatestSheet(b).localeCompare(getLatestSheet(a)) ||
+            getLatestTime(b) - getLatestTime(a)
+          );
+        if (sortOrder === "oldest")
+          return (
+            getLatestSheet(a).localeCompare(getLatestSheet(b)) ||
+            getLatestTime(a) - getLatestTime(b)
+          );
         // default: frequency
         return b.occurrences.length - a.occurrences.length;
       });
       // Registry entries sorted A-Z within themselves, always at bottom
-      const sortedRegistry = [...registry].sort((a, b) => a.shortForm.localeCompare(b.shortForm));
+      const sortedRegistry = [...registry].sort((a, b) =>
+        a.shortForm.localeCompare(b.shortForm)
+      );
       return [...sorted, ...sortedRegistry];
     };
   }, [sortOrder]);
@@ -1142,14 +1439,27 @@ export default function IntelligencePage() {
       !search ||
       e.shortForm.toLowerCase().includes(q) ||
       (e.tgtAlias ?? "").toLowerCase().includes(q) ||
-      e.occurrences.some((o) =>
-        o.observationSnippet.toLowerCase().includes(q) ||
-        o.fullDescription.toLowerCase().includes(q)
+      e.occurrences.some(
+        o =>
+          o.observationSnippet.toLowerCase().includes(q) ||
+          o.fullDescription.toLowerCase().includes(q)
       );
-    if (activeTab === "targets")    return filteredEntities.filter((e) => e.isTarget === true && matchesSearch(e));
-    if (activeTab === "associates") return filteredEntities.filter((e) => e.type === "person" && !e.isTarget && matchesSearch(e));
-    if (activeTab === "vehicle")    return filteredEntities.filter((e) => e.type === "vehicle" && matchesSearch(e));
-    if (activeTab === "locations")  return filteredEntities.filter((e) => (e.type === "address" || e.type === "business") && matchesSearch(e));
+    if (activeTab === "targets")
+      return filteredEntities.filter(
+        e => e.isTarget === true && matchesSearch(e)
+      );
+    if (activeTab === "associates")
+      return filteredEntities.filter(
+        e => e.type === "person" && !e.isTarget && matchesSearch(e)
+      );
+    if (activeTab === "vehicle")
+      return filteredEntities.filter(
+        e => e.type === "vehicle" && matchesSearch(e)
+      );
+    if (activeTab === "locations")
+      return filteredEntities.filter(
+        e => (e.type === "address" || e.type === "business") && matchesSearch(e)
+      );
     return filteredEntities.filter(matchesSearch);
   }, [filteredEntities, activeTab, search]);
 
@@ -1160,13 +1470,23 @@ export default function IntelligencePage() {
     // Count all operations: entity-derived + any with no entities yet
     // (excludes the operationId=0 "(Registry)" pseudo-operation — not a real op)
     const opIds = new Set<number>();
-    for (const e of filteredEntities) for (const o of e.occurrences) if (o.operationId !== 0) opIds.add(o.operationId);
+    for (const e of filteredEntities)
+      for (const o of e.occurrences)
+        if (o.operationId !== 0) opIds.add(o.operationId);
     const allOpCount = Math.max(opIds.size, allOps?.length ?? 0);
-    counts["operations"]  = allOpCount;
-    counts["targets"]     = filteredEntities.filter((e) => e.isTarget === true).length;
-    counts["associates"]  = filteredEntities.filter((e) => e.type === "person" && !e.isTarget).length;
-    counts["vehicle"]     = filteredEntities.filter((e) => e.type === "vehicle").length;
-    counts["locations"]   = filteredEntities.filter((e) => e.type === "address" || e.type === "business").length;
+    counts["operations"] = allOpCount;
+    counts["targets"] = filteredEntities.filter(
+      e => e.isTarget === true
+    ).length;
+    counts["associates"] = filteredEntities.filter(
+      e => e.type === "person" && !e.isTarget
+    ).length;
+    counts["vehicle"] = filteredEntities.filter(
+      e => e.type === "vehicle"
+    ).length;
+    counts["locations"] = filteredEntities.filter(
+      e => e.type === "address" || e.type === "business"
+    ).length;
     return counts;
   }, [filteredEntities]);
 
@@ -1181,10 +1501,14 @@ export default function IntelligencePage() {
             <FileText className="w-5 h-5 text-violet-400" />
           </div>
           <div className="flex-1">
-            <h1 className="text-xl font-semibold text-foreground">Intelligence Folder</h1>
+            <h1 className="text-xl font-semibold text-foreground">
+              Intelligence Folder
+            </h1>
             {!isMobile && (
               <p className="text-xs text-muted-foreground mt-0.5">
-                {isLoading ? "Loading…" : `${totalEntities} entities extracted from observation records`}
+                {isLoading
+                  ? "Loading…"
+                  : `${totalEntities} entities extracted from observation records`}
               </p>
             )}
           </div>
@@ -1194,12 +1518,15 @@ export default function IntelligencePage() {
         {/* Date filter */}
         <div className="mb-4">
           {isMobile ? (
-            <Select value={datePreset} onValueChange={(v) => setDatePreset(v as DatePreset)}>
+            <Select
+              value={datePreset}
+              onValueChange={v => setDatePreset(v as DatePreset)}
+            >
               <SelectTrigger className="w-full h-9 text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {DATE_PRESETS.map((p) => (
+                {DATE_PRESETS.map(p => (
                   <SelectItem key={p.value} value={p.value}>
                     {p.label}
                   </SelectItem>
@@ -1208,7 +1535,7 @@ export default function IntelligencePage() {
             </Select>
           ) : (
             <div className="flex gap-1.5 flex-wrap mb-2">
-              {DATE_PRESETS.map((p) => (
+              {DATE_PRESETS.map(p => (
                 <button
                   key={p.value}
                   onClick={() => setDatePreset(p.value)}
@@ -1229,14 +1556,14 @@ export default function IntelligencePage() {
               <input
                 type="date"
                 value={customFrom}
-                onChange={(e) => setCustomFrom(e.target.value)}
+                onChange={e => setCustomFrom(e.target.value)}
                 className="border border-border/60 rounded-md px-2 py-1 text-xs bg-background text-foreground"
               />
               <span className="text-xs text-muted-foreground">to</span>
               <input
                 type="date"
                 value={customTo}
-                onChange={(e) => setCustomTo(e.target.value)}
+                onChange={e => setCustomTo(e.target.value)}
                 className="border border-border/60 rounded-md px-2 py-1 text-xs bg-background text-foreground"
               />
             </div>
@@ -1246,12 +1573,15 @@ export default function IntelligencePage() {
         {/* Tab nav */}
         {isMobile ? (
           <div className="mb-5">
-            <Select value={activeTab} onValueChange={(v) => setActiveTab(v as TabView)}>
+            <Select
+              value={activeTab}
+              onValueChange={v => setActiveTab(v as TabView)}
+            >
               <SelectTrigger className="w-full h-9 text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {TAB_OPTIONS.map((tab) => {
+                {TAB_OPTIONS.map(tab => {
                   const count = tabCounts[tab.value];
                   return (
                     <SelectItem key={tab.value} value={tab.value}>
@@ -1264,32 +1594,62 @@ export default function IntelligencePage() {
             </Select>
           </div>
         ) : (
-          <div className="flex gap-1 flex-wrap mb-5 border-b border-border/40 pb-0">
-            {TAB_OPTIONS.map((tab) => {
-              const count = tabCounts[tab.value];
-              const isActive = activeTab === tab.value;
-              return (
-                <button
-                  key={tab.value}
-                  onClick={() => setActiveTab(tab.value)}
-                  className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors -mb-px ${
-                    isActive
-                      ? "border-primary text-foreground"
-                      : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
-                  }`}
-                >
-                  {tab.icon}
-                  {tab.label}
-                  {count !== undefined && count > 0 && (
-                    <span className={`ml-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
-                      isActive ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
-                    }`}>
-                      {count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+          <div className="mb-5">
+            <div className="flex gap-1 flex-wrap border-b border-border/40 pb-0">
+              {ENTITY_TAB_OPTIONS.map(tab => {
+                const count = tabCounts[tab.value];
+                const isActive = activeTab === tab.value;
+                return (
+                  <button
+                    key={tab.value}
+                    onClick={() => setActiveTab(tab.value)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors -mb-px ${
+                      isActive
+                        ? "border-primary text-foreground"
+                        : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+                    }`}
+                  >
+                    {tab.icon}
+                    {tab.label}
+                    {count !== undefined && count > 0 && (
+                      <span
+                        className={`ml-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
+                          isActive
+                            ? "bg-primary/15 text-primary"
+                            : "bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        {count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 mt-3">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground shrink-0">
+                Reports
+              </span>
+              <div className="flex items-center gap-1 p-1 rounded-lg bg-muted/40 border border-border/50 flex-wrap">
+                {REPORT_TAB_OPTIONS.map(tab => {
+                  const isActive = activeTab === tab.value;
+                  return (
+                    <button
+                      key={tab.value}
+                      onClick={() => setActiveTab(tab.value)}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                        isActive
+                          ? "bg-primary text-primary-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground hover:bg-background/60"
+                      }`}
+                    >
+                      {tab.icon}
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         )}
 
@@ -1302,18 +1662,20 @@ export default function IntelligencePage() {
                 className="pl-9"
                 placeholder="Search entities, descriptions, observations…"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={e => setSearch(e.target.value)}
               />
             </div>
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-xs text-muted-foreground mr-1">Sort:</span>
-              {([
-                { value: "frequency", label: "Most frequent" },
-                { value: "az",        label: "A → Z" },
-                { value: "za",        label: "Z → A" },
-                { value: "recent",    label: "Most recent" },
-                { value: "oldest",    label: "Oldest first" },
-              ] as const).map((opt) => (
+              {(
+                [
+                  { value: "frequency", label: "Most frequent" },
+                  { value: "az", label: "A → Z" },
+                  { value: "za", label: "Z → A" },
+                  { value: "recent", label: "Most recent" },
+                  { value: "oldest", label: "Oldest first" },
+                ] as const
+              ).map(opt => (
                 <button
                   key={opt.value}
                   onClick={() => setSortOrder(opt.value)}
@@ -1341,21 +1703,40 @@ export default function IntelligencePage() {
 
         {/* Heat Map tab content */}
         {activeTab === "heatmap" && (
-          <div className="-mx-4 -mb-4 flex-1" style={{ height: "calc(100vh - 260px)" }}>
+          <div
+            className="-mx-4 -mb-4 flex-1"
+            style={{ height: "calc(100vh - 260px)" }}
+          >
             <IntelligenceHeatMap />
+          </div>
+        )}
+
+        {/* Pattern of Life tab content */}
+        {activeTab === "patternOfLife" && (
+          <div
+            className="-mx-4 -mb-4 flex-1"
+            style={{ height: "calc(100vh - 260px)" }}
+          >
+            <IntelligencePatternOfLife />
           </div>
         )}
 
         {/* Ego Network tab content */}
         {activeTab === "egonet" && (
-          <div className="-mx-4 -mb-4 flex-1" style={{ height: "calc(100vh - 260px)" }}>
+          <div
+            className="-mx-4 -mb-4 flex-1"
+            style={{ height: "calc(100vh - 260px)" }}
+          >
             <EgoNetworkMap />
           </div>
         )}
 
         {/* Packages tab content */}
         {activeTab === "packages" && (
-          <div className="-mx-4 -mb-4 flex-1" style={{ height: "calc(100vh - 260px)" }}>
+          <div
+            className="-mx-4 -mb-4 flex-1"
+            style={{ height: "calc(100vh - 260px)" }}
+          >
             <IntelPackages />
           </div>
         )}
@@ -1371,15 +1752,17 @@ export default function IntelligencePage() {
                   className="pl-9"
                   placeholder="Search operations…"
                   value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  onChange={e => setSearch(e.target.value)}
                 />
               </div>
               <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-xs text-muted-foreground mr-1">Sort:</span>
-                {([
-                  { value: "az" as const,     label: "A → Z" },
+                <span className="text-xs text-muted-foreground mr-1">
+                  Sort:
+                </span>
+                {[
+                  { value: "az" as const, label: "A → Z" },
                   { value: "recent" as const, label: "Most recent" },
-                ] ).map((opt) => (
+                ].map(opt => (
                   <button
                     key={opt.value}
                     onClick={() => setOpSortOrder(opt.value)}
@@ -1395,9 +1778,20 @@ export default function IntelligencePage() {
               </div>
             </div>
             {viewMode === "tile" ? (
-              <OperationsTab entities={filteredEntities} allOps={allOps} search={search} sortOrder={opSortOrder} tileView />
+              <OperationsTab
+                entities={filteredEntities}
+                allOps={allOps}
+                search={search}
+                sortOrder={opSortOrder}
+                tileView
+              />
             ) : (
-              <OperationsTab entities={filteredEntities} allOps={allOps} search={search} sortOrder={opSortOrder} />
+              <OperationsTab
+                entities={filteredEntities}
+                allOps={allOps}
+                search={search}
+                sortOrder={opSortOrder}
+              />
             )}
           </>
         )}
@@ -1423,21 +1817,43 @@ export default function IntelligencePage() {
               </div>
             ) : viewMode === "tile" ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {sortedByTab(filteredByTab).map((entity) => {
-                  const iconColor = entity.isTarget ? TYPE_COLORS.person : TYPE_COLORS[entity.type];
-                  const icon = entity.type === "address" || entity.type === "business"
-                    ? <MapPin className="w-3.5 h-3.5" />
-                    : TYPE_ICONS[entity.type];
-                  const displayShortForm = entity.type === "vehicle"
-                    ? formatIntelVehicle(entity.shortForm, entity.occurrences[0]?.fullDescription)
-                    : (entity.type === "address" || entity.type === "business")
-                    ? formatIntelAddress(entity.shortForm)
-                    : entity.shortForm;
+                {sortedByTab(filteredByTab).map(entity => {
+                  const iconColor = entity.isTarget
+                    ? TYPE_COLORS.person
+                    : TYPE_COLORS[entity.type];
+                  const icon =
+                    entity.type === "address" || entity.type === "business" ? (
+                      <MapPin className="w-3.5 h-3.5" />
+                    ) : (
+                      TYPE_ICONS[entity.type]
+                    );
+                  const displayShortForm =
+                    entity.type === "vehicle"
+                      ? formatIntelVehicle(
+                          entity.shortForm,
+                          entity.occurrences[0]?.fullDescription
+                        )
+                      : entity.type === "address" || entity.type === "business"
+                        ? formatIntelAddress(entity.shortForm)
+                        : entity.shortForm;
                   const handleClick = () => {
-                    if (entity.isTarget && entity.targetId) navigate(`/intelligence/target/${entity.targetId}`);
-                    else if (entity.type === "vehicle") navigate(`/intelligence/vehicle/${encodeURIComponent(entity.shortForm)}`);
-                    else if (entity.type === "address" || entity.type === "business") navigate(`/intelligence/location/${encodeURIComponent(entity.shortForm)}`);
-                    else navigate(`/intelligence/associate/${encodeURIComponent(entity.shortForm)}`);
+                    if (entity.isTarget && entity.targetId)
+                      navigate(`/intelligence/target/${entity.targetId}`);
+                    else if (entity.type === "vehicle")
+                      navigate(
+                        `/intelligence/vehicle/${encodeURIComponent(entity.shortForm)}`
+                      );
+                    else if (
+                      entity.type === "address" ||
+                      entity.type === "business"
+                    )
+                      navigate(
+                        `/intelligence/location/${encodeURIComponent(entity.shortForm)}`
+                      );
+                    else
+                      navigate(
+                        `/intelligence/associate/${encodeURIComponent(entity.shortForm)}`
+                      );
                   };
                   return (
                     <button
@@ -1446,16 +1862,27 @@ export default function IntelligencePage() {
                       className="group flex flex-col gap-3 p-5 rounded-xl border border-border bg-card hover:bg-accent/20 hover:border-primary/30 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 text-left w-full"
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full border ${iconColor} shrink-0`}>
+                        <span
+                          className={`inline-flex items-center justify-center w-8 h-8 rounded-full border ${iconColor} shrink-0`}
+                        >
                           {icon}
                         </span>
                         <div className="text-right shrink-0">
-                          <p className="text-xs font-semibold text-foreground">{entity.occurrences.length}×</p>
-                          <p className="text-[10px] text-muted-foreground">{uniqueSheets(entity.occurrences).length} sheet{uniqueSheets(entity.occurrences).length !== 1 ? "s" : ""}</p>
+                          <p className="text-xs font-semibold text-foreground">
+                            {entity.occurrences.length}×
+                          </p>
+                          <p className="text-[10px] text-muted-foreground">
+                            {uniqueSheets(entity.occurrences).length} sheet
+                            {uniqueSheets(entity.occurrences).length !== 1
+                              ? "s"
+                              : ""}
+                          </p>
                         </div>
                       </div>
                       <div className="flex-1">
-                        <p className="font-mono text-sm font-semibold text-foreground line-clamp-2">{displayShortForm}</p>
+                        <p className="font-mono text-sm font-semibold text-foreground line-clamp-2">
+                          {displayShortForm}
+                        </p>
                         <div className="flex flex-wrap items-center gap-1 mt-1">
                           {entity.tgtAlias && (
                             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
@@ -1470,7 +1897,10 @@ export default function IntelligencePage() {
                           {TYPE_LABELS[entity.type]}
                         </p>
                         {photoCountForEntity(entity) > 0 && (
-                          <span title={`${photoCountForEntity(entity)} linked photo${photoCountForEntity(entity) === 1 ? "" : "s"}`} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-pink-500/10 text-pink-500 border border-pink-500/30 shrink-0">
+                          <span
+                            title={`${photoCountForEntity(entity)} linked photo${photoCountForEntity(entity) === 1 ? "" : "s"}`}
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-pink-500/10 text-pink-500 border border-pink-500/30 shrink-0"
+                          >
                             <Camera className="w-3 h-3" />
                             {photoCountForEntity(entity)}
                           </span>
@@ -1482,69 +1912,105 @@ export default function IntelligencePage() {
               </div>
             ) : (
               <div className="rounded-xl border border-border/60 overflow-hidden bg-card">
-                {sortedByTab(filteredByTab)
-                  .map((entity, idx) => {
-                    const iconColor = entity.isTarget ? TYPE_COLORS.person : TYPE_COLORS[entity.type];
-                    const icon = entity.type === "address" || entity.type === "business"
-                      ? <MapPin className="w-3.5 h-3.5" />
-                      : TYPE_ICONS[entity.type];
-                    const displayShortForm = entity.type === "vehicle"
-                      ? formatIntelVehicle(entity.shortForm, entity.occurrences[0]?.fullDescription)
-                      : (entity.type === "address" || entity.type === "business")
-                      ? formatIntelAddress(entity.shortForm)
-                      : entity.shortForm;
-                    return (
-                      <button
-                        key={`${entity.isTarget ? "target" : entity.type}::${entity.shortForm}`}
-                        data-entity={entity.shortForm}
-                        onClick={() => {
-                          if (entity.isTarget && entity.targetId) {
-                            navigate(`/intelligence/target/${entity.targetId}`);
-                          } else if (entity.type === "vehicle") {
-                            navigate(`/intelligence/vehicle/${encodeURIComponent(entity.shortForm)}`);
-                          } else if (entity.type === "address" || entity.type === "business") {
-                            navigate(`/intelligence/location/${encodeURIComponent(entity.shortForm)}`);
-                          } else {
-                            navigate(`/intelligence/associate/${encodeURIComponent(entity.shortForm)}`);
-                          }
-                        }}
-                        className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-accent/10 transition-colors ${
-                          idx < filteredByTab.length - 1 ? "border-b border-border/40" : ""
-                        }`}
-                      >
-                        <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full border ${iconColor} shrink-0`}>
-                          {icon}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="font-mono text-sm font-medium text-foreground truncate">{displayShortForm}</p>
-                            {entity.tgtAlias && (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 shrink-0">
-                                TGT: {entity.tgtAlias}
-                              </span>
-                            )}
-                            {entity.lowConfidence && (
-                              <span title="Low confidence — classification may need review" className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-yellow-400/15 text-yellow-600 dark:text-yellow-400 border border-yellow-400/30 shrink-0">
-                                ?
-                              </span>
-                            )}
-                            {entity.isIndicesOnly && <IndicesBadge />}
-                          </div>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <p className="text-xs font-medium text-foreground">{entity.occurrences.length}×</p>
-                          <p className="text-xs text-muted-foreground">{uniqueSheets(entity.occurrences).length} sheet{uniqueSheets(entity.occurrences).length !== 1 ? "s" : ""}</p>
-                        </div>
-                        {photoCountForEntity(entity) > 0 && (
-                          <span title={`${photoCountForEntity(entity)} linked photo${photoCountForEntity(entity) === 1 ? "" : "s"}`} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-pink-500/10 text-pink-500 border border-pink-500/30 shrink-0">
-                            <Camera className="w-3 h-3" />
-                            {photoCountForEntity(entity)}
-                          </span>
-                        )}
-                        <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-                      </button>
+                {sortedByTab(filteredByTab).map((entity, idx) => {
+                  const iconColor = entity.isTarget
+                    ? TYPE_COLORS.person
+                    : TYPE_COLORS[entity.type];
+                  const icon =
+                    entity.type === "address" || entity.type === "business" ? (
+                      <MapPin className="w-3.5 h-3.5" />
+                    ) : (
+                      TYPE_ICONS[entity.type]
                     );
-                  })}
+                  const displayShortForm =
+                    entity.type === "vehicle"
+                      ? formatIntelVehicle(
+                          entity.shortForm,
+                          entity.occurrences[0]?.fullDescription
+                        )
+                      : entity.type === "address" || entity.type === "business"
+                        ? formatIntelAddress(entity.shortForm)
+                        : entity.shortForm;
+                  return (
+                    <button
+                      key={`${entity.isTarget ? "target" : entity.type}::${entity.shortForm}`}
+                      data-entity={entity.shortForm}
+                      onClick={() => {
+                        if (entity.isTarget && entity.targetId) {
+                          navigate(`/intelligence/target/${entity.targetId}`);
+                        } else if (entity.type === "vehicle") {
+                          navigate(
+                            `/intelligence/vehicle/${encodeURIComponent(entity.shortForm)}`
+                          );
+                        } else if (
+                          entity.type === "address" ||
+                          entity.type === "business"
+                        ) {
+                          navigate(
+                            `/intelligence/location/${encodeURIComponent(entity.shortForm)}`
+                          );
+                        } else {
+                          navigate(
+                            `/intelligence/associate/${encodeURIComponent(entity.shortForm)}`
+                          );
+                        }
+                      }}
+                      className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-accent/10 transition-colors ${
+                        idx < filteredByTab.length - 1
+                          ? "border-b border-border/40"
+                          : ""
+                      }`}
+                    >
+                      <span
+                        className={`inline-flex items-center justify-center w-7 h-7 rounded-full border ${iconColor} shrink-0`}
+                      >
+                        {icon}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="font-mono text-sm font-medium text-foreground truncate">
+                            {displayShortForm}
+                          </p>
+                          {entity.tgtAlias && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 shrink-0">
+                              TGT: {entity.tgtAlias}
+                            </span>
+                          )}
+                          {entity.lowConfidence && (
+                            <span
+                              title="Low confidence — classification may need review"
+                              className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-yellow-400/15 text-yellow-600 dark:text-yellow-400 border border-yellow-400/30 shrink-0"
+                            >
+                              ?
+                            </span>
+                          )}
+                          {entity.isIndicesOnly && <IndicesBadge />}
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-xs font-medium text-foreground">
+                          {entity.occurrences.length}×
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {uniqueSheets(entity.occurrences).length} sheet
+                          {uniqueSheets(entity.occurrences).length !== 1
+                            ? "s"
+                            : ""}
+                        </p>
+                      </div>
+                      {photoCountForEntity(entity) > 0 && (
+                        <span
+                          title={`${photoCountForEntity(entity)} linked photo${photoCountForEntity(entity) === 1 ? "" : "s"}`}
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-pink-500/10 text-pink-500 border border-pink-500/30 shrink-0"
+                        >
+                          <Camera className="w-3 h-3" />
+                          {photoCountForEntity(entity)}
+                        </span>
+                      )}
+                      <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                    </button>
+                  );
+                })}
               </div>
             )}
           </>
@@ -1557,7 +2023,7 @@ export default function IntelligencePage() {
           entity={selected}
           allEntities={entities}
           onClose={() => setSelected(null)}
-          onNavigate={(e) => setSelected(e)}
+          onNavigate={e => setSelected(e)}
         />
       )}
     </DashboardLayout>

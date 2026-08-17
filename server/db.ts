@@ -19,6 +19,28 @@ import { cosineSimilarity } from "./faceRecognition";
 import { makeRequest, type GeocodingResult } from "./_core/map";
 import { formatIntelAddress, formatIntelVehicle } from "@shared/addressFormat";
 import {
+  classifyVisitDirection,
+  timeBucketLabels,
+  DAY_LABELS,
+  buildLocationTimeGrid,
+  findPeakCell,
+  buildDayTimeGrid,
+  mostActiveDays,
+  computeHomePresenceByBucket,
+  toHomePresencePercent,
+  dominantRanges,
+  buildDirectionHistogram,
+  peakBucketIndex,
+  confidenceTier,
+  MIN_OBSERVATIONS_FOR_PATTERN,
+  type VisitDirection,
+  type LocationVisitEvent,
+  type HomeEvent,
+  type HomePresencePercent,
+  type PeakCell,
+  type ConfidenceTier,
+} from "./patternOfLife";
+import {
   auditLogs,
   certifications,
   InsertAuditLog,
@@ -4158,6 +4180,375 @@ export async function geocodeAddressList(
   return results.filter(
     (r): r is { address: string; lat: number; lng: number } => r !== null
   );
+}
+
+// ─── Pattern of Life ────────────────────────────────────────────────────────
+// Time/location analysis for one target within one operation — reuses the
+// same entity extraction, "qualifying mention" gating, and same-address
+// visit-collapsing as the Heat Map above, plus the pure bucketing/interval
+// functions in ./patternOfLife.ts, rather than re-deriving any of it.
+
+export interface IntelPatternOfLifeLocationRow {
+  entityKey: string;
+  label: string;
+  counts: number[];
+  total: number;
+}
+
+export interface IntelPatternOfLifeResponse {
+  targetName: string;
+  operationName: string;
+  observationCount: number;
+  geocodedObservationCount: number;
+  sufficientData: boolean;
+  confidence: ConfidenceTier;
+  timeBuckets6: string[];
+  timeBuckets8: string[];
+  timeBuckets12: string[];
+  dayLabels: string[];
+  // Section A — general activity, any location
+  dayTimeGrid: number[][]; // [dayIndex][bucket6Index]
+  mostActiveDayIndices: number[];
+  // Section B — where & when
+  locationTimeGrid: IntelPatternOfLifeLocationRow[];
+  peakCell: PeakCell | null;
+  // Section C — home presence (null when the target has no registered home
+  // address, or it never resolved to a real coordinate)
+  homeAddressLabel: string | null;
+  homePresence: HomePresencePercent[] | null; // length 12
+  homeLikelyRanges: Array<{ startBucket: number; endBucket: number }> | null;
+  homeAwayRanges: Array<{ startBucket: number; endBucket: number }> | null;
+  departureHistogram: number[] | null; // length 8
+  arrivalHistogram: number[] | null; // length 8
+  peakDepartureBucket: number | null;
+  peakArrivalBucket: number | null;
+}
+
+export async function getIntelTargetPatternOfLife(
+  operationId: number,
+  targetId: number
+): Promise<IntelPatternOfLifeResponse | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const [operation] = await db
+    .select({ id: operations.id, name: operations.name })
+    .from(operations)
+    .where(and(eq(operations.id, operationId), isNull(operations.deletedAt)))
+    .limit(1);
+  const target = await getTargetById(targetId);
+  if (!operation || !target) return null;
+
+  // ── Resolve this target's own rows within this operation — formally
+  // assigned sheets UNION sheets where the target is text-mentioned,
+  // exactly like buildTargetOperationalAssociations, but scoped to the one
+  // operation this report is for. ──────────────────────────────────────────
+  const targetSheets = await db
+    .select({
+      id: runningSheets.id,
+      createdAt: runningSheets.createdAt,
+      sheetDate: runningSheets.sheetDate,
+    })
+    .from(runningSheets)
+    .where(
+      and(
+        eq(runningSheets.operationId, operationId),
+        eq(runningSheets.targetId, targetId),
+        isNull(runningSheets.deletedAt)
+      )
+    );
+  const sheetDateInfo = new Map<
+    number,
+    { createdAt: Date; sheetDate: string | null }
+  >();
+  for (const s of targetSheets)
+    sheetDateInfo.set(s.id, { createdAt: s.createdAt, sheetDate: s.sheetDate });
+  const targetSheetIds = new Set(targetSheets.map(s => s.id));
+
+  const allEntities = await getAllIntelligenceEntities();
+  const targetEntity = allEntities.find(
+    e => e.isTarget && e.targetId === targetId
+  );
+
+  let targetRowIds = new Set<number>();
+  if (targetSheetIds.size) {
+    const rows = await db
+      .select({ id: sheetRows.id })
+      .from(sheetRows)
+      .where(inArray(sheetRows.sheetId, Array.from(targetSheetIds)));
+    targetRowIds = new Set(rows.map(r => r.id));
+  }
+  if (targetEntity) {
+    for (const occ of targetEntity.occurrences) {
+      if (occ.rowId > 0 && occ.operationId === operationId) {
+        targetRowIds.add(occ.rowId);
+        targetSheetIds.add(occ.sheetId);
+      }
+    }
+  }
+  // Mentioned-only sheets need their own date-resolution info too.
+  const missingSheetIds = Array.from(targetSheetIds).filter(
+    id => !sheetDateInfo.has(id)
+  );
+  if (missingSheetIds.length) {
+    const extraSheets = await db
+      .select({
+        id: runningSheets.id,
+        createdAt: runningSheets.createdAt,
+        sheetDate: runningSheets.sheetDate,
+      })
+      .from(runningSheets)
+      .where(inArray(runningSheets.id, missingSheetIds));
+    for (const s of extraSheets)
+      sheetDateInfo.set(s.id, {
+        createdAt: s.createdAt,
+        sheetDate: s.sheetDate,
+      });
+  }
+
+  if (!targetRowIds.size) {
+    return {
+      targetName: target.name,
+      operationName: operation.name,
+      observationCount: 0,
+      geocodedObservationCount: 0,
+      sufficientData: false,
+      confidence: confidenceTier(0),
+      timeBuckets6: timeBucketLabels(6),
+      timeBuckets8: timeBucketLabels(8),
+      timeBuckets12: timeBucketLabels(12),
+      dayLabels: DAY_LABELS,
+      dayTimeGrid: Array.from({ length: 7 }, () => new Array(6).fill(0)),
+      mostActiveDayIndices: [],
+      locationTimeGrid: [],
+      peakCell: null,
+      homeAddressLabel: null,
+      homePresence: null,
+      homeLikelyRanges: null,
+      homeAwayRanges: null,
+      departureHistogram: null,
+      arrivalHistogram: null,
+      peakDepartureBucket: null,
+      peakArrivalBucket: null,
+    };
+  }
+
+  const rows = await db
+    .select({
+      id: sheetRows.id,
+      sheetId: sheetRows.sheetId,
+      rowDate: sheetRows.rowDate,
+      dayOffset: sheetRows.dayOffset,
+      observation: sheetRows.observation,
+      timeMinutes: sheetRows.timeMinutes,
+      rowNumber: sheetRows.rowNumber,
+    })
+    .from(sheetRows)
+    .where(inArray(sheetRows.id, Array.from(targetRowIds)))
+    .orderBy(sheetRows.sheetId, sheetRows.timeMinutes, sheetRows.rowNumber);
+  const rowById = new Map(rows.map(r => [r.id, r]));
+
+  const rowsBySheetOrdered = new Map<number, typeof rows>();
+  for (const row of rows) {
+    if (!rowsBySheetOrdered.has(row.sheetId))
+      rowsBySheetOrdered.set(row.sheetId, []);
+    rowsBySheetOrdered.get(row.sheetId)!.push(row);
+  }
+  const previousObservationByRowId = new Map<number, string | null>();
+  const rowOrderIndex = new Map<number, number>();
+  for (const sheetRowList of Array.from(rowsBySheetOrdered.values())) {
+    sheetRowList.forEach((r, i) => {
+      previousObservationByRowId.set(
+        r.id,
+        i > 0 ? (sheetRowList[i - 1].observation ?? null) : null
+      );
+      rowOrderIndex.set(r.id, i);
+    });
+  }
+
+  const resolveDateISO = (row: (typeof rows)[number]): string => {
+    if (row.rowDate) return row.rowDate;
+    const info = sheetDateInfo.get(row.sheetId);
+    return addDaysISO(
+      info?.sheetDate ?? toPerthDateISO(info?.createdAt ?? new Date()),
+      row.dayOffset
+    );
+  };
+
+  // ── General activity (Section A): every real observation row, regardless
+  // of whether it mentions a location. ────────────────────────────────────
+  const generalRows = rows.filter(
+    r =>
+      r.timeMinutes != null &&
+      !isNonObservationRow(
+        r.observation ?? "",
+        previousObservationByRowId.get(r.id) ?? null
+      )
+  );
+  const observationCount = generalRows.length;
+  const dayTimeGrid = buildDayTimeGrid(
+    generalRows.map(r => ({
+      dateISO: resolveDateISO(r),
+      timeMinutes: r.timeMinutes!,
+    })),
+    6
+  );
+  const mostActiveDayIndices = mostActiveDays(dayTimeGrid);
+
+  // ── Qualifying address mentions (Section B + C) — same gating as the Heat
+  // Map (isNonObservationRow + OBSERVATION_SIGNAL_RE), plus direction and
+  // resolved date/time so they can be bucketed and, for the home address,
+  // used as interval-bounding events. ─────────────────────────────────────
+  type QualifyingMention = {
+    entityKey: string;
+    label: string;
+    sheetId: number;
+    order: number;
+    timeMinutes: number;
+    dateISO: string;
+    direction: VisitDirection;
+  };
+  const qualifying: QualifyingMention[] = [];
+  for (const entity of allEntities) {
+    if (entity.type !== "address" && entity.type !== "business") continue;
+    for (const occ of entity.occurrences) {
+      if (occ.rowId === 0 || !targetRowIds.has(occ.rowId)) continue;
+      const row = rowById.get(occ.rowId);
+      if (!row?.observation || row.timeMinutes == null) continue;
+      if (
+        isNonObservationRow(
+          row.observation,
+          previousObservationByRowId.get(occ.rowId) ?? null
+        )
+      )
+        continue;
+      if (!OBSERVATION_SIGNAL_RE.test(row.observation)) continue;
+      qualifying.push({
+        entityKey: normalizeEntityLabel(entity.shortForm),
+        label: entity.shortForm,
+        sheetId: occ.sheetId,
+        order: rowOrderIndex.get(occ.rowId) ?? 0,
+        timeMinutes: row.timeMinutes,
+        dateISO: resolveDateISO(row),
+        direction: classifyVisitDirection(row.observation),
+      });
+    }
+  }
+
+  // Geocode every distinct address mentioned — only geocodable addresses
+  // count toward the location-based sections, same quality bar as the Heat
+  // Map (an address-shaped mention that doesn't resolve to a real place
+  // isn't reliable enough to plot).
+  const distinctKeys = new Map<string, string>();
+  for (const m of qualifying)
+    if (!distinctKeys.has(m.entityKey)) distinctKeys.set(m.entityKey, m.label);
+  const geocodable = new Set<string>();
+  await Promise.all(
+    Array.from(distinctKeys.entries()).map(async ([key, label]) => {
+      const coords = await resolveLatLng(key, label);
+      if (coords) geocodable.add(key);
+    })
+  );
+  const geocodedQualifying = qualifying.filter(m =>
+    geocodable.has(m.entityKey)
+  );
+  const geocodedObservationCount = new Set(
+    geocodedQualifying.map(m => `${m.sheetId}::${m.order}`)
+  ).size;
+
+  // ── Section B: collapse consecutive same-address mentions (within a
+  // sheet, in row order) into one visit — "arrived at X" then "departed X"
+  // is one visit to X, not two. Keep the first mention's time as the
+  // visit's representative time. Same rule the Heat Map already applies. ──
+  const qualifyingBySheet = new Map<number, QualifyingMention[]>();
+  for (const m of geocodedQualifying) {
+    if (!qualifyingBySheet.has(m.sheetId)) qualifyingBySheet.set(m.sheetId, []);
+    qualifyingBySheet.get(m.sheetId)!.push(m);
+  }
+  const visitEvents: LocationVisitEvent[] = [];
+  for (const mentions of Array.from(qualifyingBySheet.values())) {
+    mentions.sort((a, b) => a.order - b.order);
+    let lastEntityKey: string | null = null;
+    for (const m of mentions) {
+      if (m.entityKey === lastEntityKey) continue; // still the same visit
+      lastEntityKey = m.entityKey;
+      visitEvents.push({
+        entityKey: m.entityKey,
+        label: m.label,
+        timeMinutes: m.timeMinutes,
+        dateISO: m.dateISO,
+      });
+    }
+  }
+  const locationTimeGrid = buildLocationTimeGrid(visitEvents, 6, 6);
+  const peakCell = findPeakCell(locationTimeGrid);
+
+  // ── Section C: home presence — the target's registered HBF is merged
+  // into the same entity as any text-mined mention of it via
+  // addressBracketKey, exactly like getAllIntelligenceEntities already
+  // does for HBF/V1F/V2F, so no separate fuzzy address match is needed. ───
+  const homeEntityKey = target.hbf
+    ? normalizeEntityLabel(addressBracketKey(target.hbf))
+    : null;
+  let homePresence: HomePresencePercent[] | null = null;
+  let homeLikelyRanges: Array<{
+    startBucket: number;
+    endBucket: number;
+  }> | null = null;
+  let homeAwayRanges: Array<{ startBucket: number; endBucket: number }> | null =
+    null;
+  let departureHistogram: number[] | null = null;
+  let arrivalHistogram: number[] | null = null;
+  let peakDepartureBucket: number | null = null;
+  let peakArrivalBucket: number | null = null;
+  let homeAddressLabel: string | null = null;
+
+  if (homeEntityKey && geocodable.has(homeEntityKey)) {
+    const homeEvents: HomeEvent[] = geocodedQualifying
+      .filter(m => m.entityKey === homeEntityKey && m.direction !== "neutral")
+      .map(m => ({
+        dateISO: m.dateISO,
+        timeMinutes: m.timeMinutes,
+        direction: m.direction as "arrived" | "departed",
+      }));
+    if (homeEvents.length) {
+      homeAddressLabel =
+        distinctKeys.get(homeEntityKey) ?? formatIntelAddress(target.hbf ?? "");
+      const buckets = computeHomePresenceByBucket(homeEvents, 12);
+      homePresence = buckets.map(toHomePresencePercent);
+      homeLikelyRanges = dominantRanges(homePresence, "home", 12);
+      homeAwayRanges = dominantRanges(homePresence, "away", 12);
+      departureHistogram = buildDirectionHistogram(homeEvents, "departed", 8);
+      arrivalHistogram = buildDirectionHistogram(homeEvents, "arrived", 8);
+      peakDepartureBucket = peakBucketIndex(departureHistogram);
+      peakArrivalBucket = peakBucketIndex(arrivalHistogram);
+    }
+  }
+
+  return {
+    targetName: target.name,
+    operationName: operation.name,
+    observationCount,
+    geocodedObservationCount,
+    sufficientData: observationCount >= MIN_OBSERVATIONS_FOR_PATTERN,
+    confidence: confidenceTier(geocodedObservationCount),
+    timeBuckets6: timeBucketLabels(6),
+    timeBuckets8: timeBucketLabels(8),
+    timeBuckets12: timeBucketLabels(12),
+    dayLabels: DAY_LABELS,
+    dayTimeGrid,
+    mostActiveDayIndices,
+    locationTimeGrid,
+    peakCell,
+    homeAddressLabel,
+    homePresence,
+    homeLikelyRanges,
+    homeAwayRanges,
+    departureHistogram,
+    arrivalHistogram,
+    peakDepartureBucket,
+    peakArrivalBucket,
+  };
 }
 
 // ─── Weekly Activity Report ─────────────────────────────────────────────────

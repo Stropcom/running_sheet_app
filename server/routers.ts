@@ -145,6 +145,7 @@ import {
   deepSearchOperations,
   getAllIntelligenceEntities,
   getIntelligenceHeatMapLocations,
+  getIntelTargetPatternOfLife,
   extractEntitiesFromText,
   checkPossibleDuplicates,
   markEntitiesNotDuplicate,
@@ -2787,6 +2788,24 @@ export const appRouter = router({
       )
       .query(async ({ input }) => {
         return getIntelligenceHeatMapLocations(input);
+      }),
+
+    /** Pattern of Life: time/location analysis for one target within one
+     * operation — activity by day & time, where & when (location × time),
+     * and home presence/departure-return times. */
+    getPatternOfLife: protectedProcedure
+      .input(z.object({ operationId: z.number(), targetId: z.number() }))
+      .query(async ({ input }) => {
+        const result = await getIntelTargetPatternOfLife(
+          input.operationId,
+          input.targetId
+        );
+        if (!result)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Operation or target not found.",
+          });
+        return result;
       }),
 
     /** Association graph — nodes and weighted edges from entity co-occurrence */

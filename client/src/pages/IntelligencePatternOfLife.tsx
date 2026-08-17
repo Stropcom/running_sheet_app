@@ -138,19 +138,36 @@ function buildPatternOfLifeHtml(data: PatternOfLifeData): string {
     ? `${esc(peak.label)} · ${data.timeBuckets6[peak.bucketIndex]}${dayQualifier ? ` · especially ${dayQualifier}` : ""}`
     : "Not enough data yet";
 
+  const cellHtml = (count: number, max: number, ring: boolean) => {
+    const alpha = count === 0 ? 0 : 0.14 + (count / max) * 0.76;
+    const bg =
+      count === 0
+        ? "rgba(148,163,184,0.10)"
+        : `rgba(37,99,235,${alpha.toFixed(2)})`;
+    const color = alpha > 0.55 ? "#fff" : BLUE_DARK;
+    const border = ring ? `border:2px solid ${BLUE_DARK};` : "";
+    return `<td style="background:${bg};color:${color};text-align:center;font-size:10px;font-weight:700;padding:6px 4px;border-radius:4px;${border}">${count || ""}${ring ? " ★" : ""}</td>`;
+  };
+  const timeHeaderRow = (leadColLabel: string, trailColLabel?: string) =>
+    `<tr><td style="font-size:9px;font-weight:700;color:#64748b">${esc(leadColLabel)}</td>${data.timeBuckets6
+      .map(
+        l =>
+          `<td style="font-size:9px;font-weight:700;color:#64748b;text-align:center;text-transform:uppercase">${l}</td>`
+      )
+      .join(
+        "<td style='width:4px'></td>"
+      )}${trailColLabel ? `<td style="font-size:9px;font-weight:700;color:#64748b;text-align:right">${esc(trailColLabel)}</td>` : ""}</tr>`;
+  const legendHtml = `<div style="display:flex;align-items:center;gap:6px;margin-top:6px">
+    <span style="font-size:9px;color:#64748b">Fewer</span>
+    <div style="width:100px;height:7px;border-radius:4px;background:linear-gradient(to right, rgba(37,99,235,0.14), rgba(37,99,235,0.9))"></div>
+    <span style="font-size:9px;color:#64748b">More</span>
+  </div>`;
+
   const dayTimeMax = Math.max(1, ...data.dayTimeGrid.flat());
   const dayTimeRows = data.dayLabels
     .map((day, dayIdx) => {
       const cells = data.dayTimeGrid[dayIdx]
-        .map(count => {
-          const alpha = count === 0 ? 0 : 0.14 + (count / dayTimeMax) * 0.76;
-          const bg =
-            count === 0
-              ? "rgba(148,163,184,0.10)"
-              : `rgba(37,99,235,${alpha.toFixed(2)})`;
-          const color = alpha > 0.55 ? "#fff" : BLUE_DARK;
-          return `<td style="background:${bg};color:${color};text-align:center;font-size:10px;font-weight:700;padding:6px 4px;border-radius:4px">${count || ""}</td>`;
-        })
+        .map(count => cellHtml(count, dayTimeMax, false))
         .join("<td style='width:4px'></td>");
       return `<tr><td style="font-size:9px;font-weight:700;color:#64748b;padding-right:6px">${day}</td>${cells}</tr>`;
     })
@@ -160,35 +177,72 @@ function buildPatternOfLifeHtml(data: PatternOfLifeData): string {
   const locRows = data.locationTimeGrid
     .map(row => {
       const cells = row.counts
-        .map(count => {
-          const alpha = count === 0 ? 0 : 0.14 + (count / locMax) * 0.76;
-          const bg =
-            count === 0
-              ? "rgba(148,163,184,0.10)"
-              : `rgba(37,99,235,${alpha.toFixed(2)})`;
-          const color = alpha > 0.55 ? "#fff" : BLUE_DARK;
-          return `<td style="background:${bg};color:${color};text-align:center;font-size:10px;font-weight:700;padding:6px 4px;border-radius:4px">${count || ""}</td>`;
-        })
+        .map((count, bucketIdx) =>
+          cellHtml(
+            count,
+            locMax,
+            peak?.entityKey === row.entityKey && peak.bucketIndex === bucketIdx
+          )
+        )
         .join("<td style='width:4px'></td>");
       return `<tr><td style="font-size:10px;color:${GREY_TEXT};padding-right:6px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(row.label)}</td>${cells}<td style="font-size:10px;font-weight:700;text-align:right;padding-left:6px">${row.total}</td></tr>`;
     })
     .join("");
 
-  const homeSection =
-    data.homePresence && data.homeAddressLabel
-      ? `<div style="margin-bottom:16px">
-        <div class="section-title">Home Presence</div>
-        <p style="font-size:10px;color:#64748b;margin-bottom:6px">${esc(data.homeAddressLabel)} (registered home address)</p>
-        <p style="font-size:11px;margin-bottom:8px">
-          ${formatRanges(data.homeLikelyRanges, 12) ? `<strong style="color:${BLUE_DARK}">Likely home</strong> ${formatRanges(data.homeLikelyRanges, 12)}` : ""}
-          ${formatRanges(data.homeAwayRanges, 12) ? ` &middot; <strong style="color:#64748b">likely away</strong> ${formatRanges(data.homeAwayRanges, 12)}` : ""}
-        </p>
-        <p style="font-size:10px;color:#64748b">
-          ${data.peakDepartureBucket != null ? `Usually departs ${data.timeBuckets8[data.peakDepartureBucket]}` : ""}
-          ${data.peakArrivalBucket != null ? ` &middot; usually returns ${data.timeBuckets8[data.peakArrivalBucket]}` : ""}
-        </p>
-      </div>`
-      : "";
+  const homeStateCellHtml = (
+    homePct: number,
+    awayPct: number,
+    unknownPct: number
+  ) => {
+    if (homePct >= awayPct && homePct >= unknownPct)
+      return `<td style="background:rgba(37,99,235,${(0.2 + (homePct / 100) * 0.7).toFixed(2)});color:${homePct > 55 ? "#fff" : BLUE_DARK};text-align:center;font-size:8px;font-weight:700;padding:5px 2px;border-radius:3px">H ${homePct}%</td>`;
+    if (awayPct >= unknownPct)
+      return `<td style="background:#e2e8f0;color:#475569;text-align:center;font-size:8px;font-weight:700;padding:5px 2px;border-radius:3px">A ${awayPct}%</td>`;
+    return `<td style="background:#f8fafc;color:#94a3b8;text-align:center;font-size:8px;font-weight:600;padding:5px 2px;border-radius:3px;border:1px dashed #cbd5e1">? ${unknownPct}%</td>`;
+  };
+
+  let homeSectionBody: string;
+  if (!data.homeAddressKnown) {
+    homeSectionBody = "";
+  } else if (!data.homePresence) {
+    const reason = !data.homeAddressMentioned
+      ? "This address hasn't been narrated as a visit in any certified observation yet — it only appears on the target's registry card so far."
+      : !data.homeAddressGeocoded
+        ? "Mentioned in observations, but the address couldn't be geocoded yet."
+        : `Mentioned in observations, but none of them use clear arrival/departure language yet (e.g. "arrived at", "departed") — this fills in as more are certified.`;
+    homeSectionBody = `<div style="margin-bottom:16px">
+      <div class="section-title">Home Presence</div>
+      <p style="font-size:10px;color:#64748b;margin-bottom:6px">${esc(data.homeAddressLabel)} (registered home address)</p>
+      <p style="font-size:10px;color:#64748b;background:#f8fafc;border:1px solid ${GREY_BORDER};border-radius:6px;padding:8px 10px">${esc(reason)}</p>
+    </div>`;
+  } else {
+    const timelineHeader = data.timeBuckets12
+      .map(
+        l =>
+          `<td style="font-size:8px;font-weight:700;color:#64748b;text-align:center;text-transform:uppercase">${l}</td>`
+      )
+      .join("<td style='width:2px'></td>");
+    const timelineCells = data.homePresence
+      .map(p => homeStateCellHtml(p.home, p.away, p.unknown))
+      .join("<td style='width:2px'></td>");
+    homeSectionBody = `<div style="margin-bottom:16px">
+      <div class="section-title">Home Presence</div>
+      <p style="font-size:10px;color:#64748b;margin-bottom:8px">${esc(data.homeAddressLabel)} (registered home address)</p>
+      <p style="font-size:11px;margin-bottom:8px">
+        ${formatRanges(data.homeLikelyRanges, 12) ? `<strong style="color:${BLUE_DARK}">Likely home</strong> ${formatRanges(data.homeLikelyRanges, 12)}` : ""}
+        ${formatRanges(data.homeAwayRanges, 12) ? ` &middot; <strong style="color:#64748b">likely away</strong> ${formatRanges(data.homeAwayRanges, 12)}` : ""}
+      </p>
+      <p style="font-size:9px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#64748b;margin-bottom:4px">Typical day</p>
+      <table><tr>${timelineHeader}</tr><tr>${timelineCells}</tr></table>
+      <p style="font-size:9px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#64748b;margin:10px 0 4px">Typical departure &amp; return times</p>
+      <p style="font-size:10px;color:${GREY_TEXT}">
+        ${data.peakDepartureBucket != null ? `<strong>Departs</strong> usually ${data.timeBuckets8[data.peakDepartureBucket]}` : "Departure time not yet clear"}
+        &middot;
+        ${data.peakArrivalBucket != null ? `<strong>Returns</strong> usually ${data.timeBuckets8[data.peakArrivalBucket]}` : "Return time not yet clear"}
+      </p>
+    </div>`;
+  }
+  const homeSection = homeSectionBody;
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>RunLog — Pattern of Life: ${esc(data.targetName)}</title>
 <style>* { box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; } body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.6; color:${GREY_TEXT}; background:#fff; }
@@ -214,11 +268,15 @@ table { border-collapse:collapse; width:100%; }
 <div class="content">
   <div style="margin-bottom:16px">
     <div class="section-title">Activity by Day &amp; Time</div>
-    <table>${dayTimeRows}</table>
+    <p style="font-size:10px;color:#64748b;margin-bottom:6px">When this target is generally active, across every location</p>
+    <table>${timeHeaderRow("")}${dayTimeRows}</table>
+    ${legendHtml}
   </div>
   <div style="margin-bottom:16px">
     <div class="section-title">Where &amp; When</div>
-    <table>${locRows}</table>
+    <p style="font-size:10px;color:#64748b;margin-bottom:6px">Which specific location, at which time (★ = peak)</p>
+    <table>${timeHeaderRow("", "Total")}${locRows}</table>
+    ${legendHtml}
   </div>
   ${homeSection}
   <div class="footer"><span>RunLog — Pattern of Life Report</span><span>SENSITIVE — FOR OFFICIAL USE ONLY — ${generatedAt}</span></div>
@@ -291,8 +349,10 @@ export default function IntelligencePatternOfLife() {
     <div className="flex flex-col h-full overflow-y-auto">
       {/* ── Header: who this report is about, and the export action — kept
           as its own row so it can never collide with the selector or
-          confidence rows below it. ── */}
-      <div className="flex items-start justify-between gap-3 px-1 mb-4">
+          confidence rows below it. relative z-10 + an explicit background
+          so it always paints above the tab bar / any sticky chrome above
+          it, rather than risking being covered by it. ── */}
+      <div className="relative z-10 bg-background flex items-start justify-between gap-3 px-1 pt-2 pb-2 mb-2">
         <div className="flex items-center gap-3 min-w-0">
           <div className="p-2.5 rounded-lg bg-blue-500/10 border border-blue-500/20 shrink-0">
             <Activity className="w-5 h-5 text-blue-500" />

@@ -3157,14 +3157,22 @@ export function extractEntitiesFromText(text: string): Array<{
       ) ||
       /,\s*Australia\s*$/.test(shortForm) ||
       /,\s*Australia\s*$/.test(fullDescription) ||
-      // Airport terminals, train stations, bus stops, ports, gates, platforms
+      // Airport terminals, train stations, bus stops, ports, gates, platforms.
+      // "station" is excluded when it's followed by "wagon"/"sedan" — that's
+      // the vehicle body-style term ("station wagon"/"station sedan"), not a
+      // transit station, and would otherwise misclassify a vehicle mention
+      // like "...Passat station sedan, bearing WA registration 1DHY084
+      // (Vehicle 1DHY084)..." as an address before the vehicle keywords
+      // ("registration", "Vehicle") are even considered — address detection
+      // runs first, so this exclusion has to live here rather than being
+      // resolved by the vehicle-keyword check further down.
       /\b(terminal|gate|platform|pier|bay|berth|concourse|departure|arrival|lounge)\s+\d/i.test(
         shortForm
       ) ||
-      /\b(airport|station|terminus|port|wharf|depot|interchange|shopping centre|shopping center|shopping mall|mall|plaza|precinct)\b/i.test(
+      /\b(airport|station(?!\s+(?:wagon|sedan)\b)|terminus|port|wharf|depot|interchange|shopping centre|shopping center|shopping mall|mall|plaza|precinct)\b/i.test(
         shortForm
       ) ||
-      /\b(airport|station|terminus|port|wharf|depot|interchange)\b/i.test(
+      /\b(airport|station(?!\s+(?:wagon|sedan)\b)|terminus|port|wharf|depot|interchange)\b/i.test(
         fullDescription
       );
 

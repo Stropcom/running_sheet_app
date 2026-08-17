@@ -3417,6 +3417,7 @@ export const appRouter = router({
             sheetId: number;
             startTime?: string | null;
             finishTime?: string | null;
+            location?: string | null;
           } = { sheetId: input.sheetId };
           if (
             !record.startTimeEdited &&
@@ -3430,7 +3431,22 @@ export const appRouter = router({
           ) {
             patch.finishTime = derivedFinishTime;
           }
-          if (patch.startTime !== undefined || patch.finishTime !== undefined) {
+          // Location has no "edited" flag (unlike start/finish time), so
+          // once it has any value — auto-derived or typed by a supervisor —
+          // further RS edits never silently overwrite it. But if it's still
+          // empty (e.g. this summary was first opened, and so auto-created,
+          // before the "surveillance commenced" row was logged), pick the
+          // location up as soon as that row exists rather than leaving it
+          // blank forever.
+          if (!record.location) {
+            const derivedLocation = extractSummaryLocation(rows);
+            if (derivedLocation) patch.location = derivedLocation;
+          }
+          if (
+            patch.startTime !== undefined ||
+            patch.finishTime !== undefined ||
+            patch.location !== undefined
+          ) {
             record = await upsertSheetSummary(patch);
           }
         }

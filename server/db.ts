@@ -4212,8 +4212,14 @@ export interface IntelPatternOfLifeResponse {
   // Section B — where & when
   locationTimeGrid: IntelPatternOfLifeLocationRow[];
   peakCell: PeakCell | null;
-  // Section C — home presence (null when the target has no registered home
-  // address, or it never resolved to a real coordinate)
+  // Section C — home presence. homeAddressKnown/homeAddressGeocoded/
+  // homeAddressMentioned let the client explain WHY the charts are missing
+  // (no HB on file vs. never geocoded vs. mentioned but no clear
+  // arrived/departed language yet) instead of just silently omitting the
+  // section, which reads as a bug rather than an honest "not enough data."
+  homeAddressKnown: boolean;
+  homeAddressGeocoded: boolean;
+  homeAddressMentioned: boolean;
   homeAddressLabel: string | null;
   homePresence: HomePresencePercent[] | null; // length 12
   homeLikelyRanges: Array<{ startBucket: number; endBucket: number }> | null;
@@ -4322,7 +4328,10 @@ export async function getIntelTargetPatternOfLife(
       mostActiveDayIndices: [],
       locationTimeGrid: [],
       peakCell: null,
-      homeAddressLabel: null,
+      homeAddressKnown: !!target.hbf,
+      homeAddressGeocoded: false,
+      homeAddressMentioned: false,
+      homeAddressLabel: target.hbf ? formatIntelAddress(target.hbf) : null,
       homePresence: null,
       homeLikelyRanges: null,
       homeAwayRanges: null,
@@ -4501,9 +4510,18 @@ export async function getIntelTargetPatternOfLife(
   let arrivalHistogram: number[] | null = null;
   let peakDepartureBucket: number | null = null;
   let peakArrivalBucket: number | null = null;
-  let homeAddressLabel: string | null = null;
 
-  if (homeEntityKey && geocodable.has(homeEntityKey)) {
+  const homeAddressKnown = !!target.hbf;
+  const homeAddressMentioned =
+    !!homeEntityKey && distinctKeys.has(homeEntityKey);
+  const homeAddressGeocoded = !!homeEntityKey && geocodable.has(homeEntityKey);
+  // Fall back to the raw registered address so the client can still name it
+  // in an explanatory message even when there's no chart data yet.
+  let homeAddressLabel: string | null = homeAddressKnown
+    ? formatIntelAddress(target.hbf ?? "")
+    : null;
+
+  if (homeEntityKey && homeAddressGeocoded) {
     const homeEvents: HomeEvent[] = geocodedQualifying
       .filter(m => m.entityKey === homeEntityKey && m.direction !== "neutral")
       .map(m => ({
@@ -4512,8 +4530,7 @@ export async function getIntelTargetPatternOfLife(
         direction: m.direction as "arrived" | "departed",
       }));
     if (homeEvents.length) {
-      homeAddressLabel =
-        distinctKeys.get(homeEntityKey) ?? formatIntelAddress(target.hbf ?? "");
+      homeAddressLabel = distinctKeys.get(homeEntityKey) ?? homeAddressLabel;
       const buckets = computeHomePresenceByBucket(homeEvents, 12);
       homePresence = buckets.map(toHomePresencePercent);
       homeLikelyRanges = dominantRanges(homePresence, "home", 12);
@@ -4540,6 +4557,9 @@ export async function getIntelTargetPatternOfLife(
     mostActiveDayIndices,
     locationTimeGrid,
     peakCell,
+    homeAddressKnown,
+    homeAddressGeocoded,
+    homeAddressMentioned,
     homeAddressLabel,
     homePresence,
     homeLikelyRanges,

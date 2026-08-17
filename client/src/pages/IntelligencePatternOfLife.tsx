@@ -44,6 +44,9 @@ interface PatternOfLifeData {
   mostActiveDayIndices: number[];
   locationTimeGrid: PatternOfLifeLocationRow[];
   peakCell: PeakCell | null;
+  homeAddressKnown: boolean;
+  homeAddressGeocoded: boolean;
+  homeAddressMentioned: boolean;
   homeAddressLabel: string | null;
   homePresence: HomePresencePercent[] | null;
   homeLikelyRanges: Array<{ startBucket: number; endBucket: number }> | null;
@@ -286,50 +289,26 @@ export default function IntelligencePatternOfLife() {
 
   return (
     <div className="flex flex-col h-full overflow-y-auto">
-      {/* ── Selector ── */}
-      <div className="flex flex-wrap items-start justify-between gap-3 px-1 pb-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Operation
-            </span>
-            <Select
-              value={operationId != null ? String(operationId) : undefined}
-              onValueChange={v => setOperationId(Number(v))}
-            >
-              <SelectTrigger className="w-48 h-9 text-xs">
-                <SelectValue placeholder="Select an operation…" />
-              </SelectTrigger>
-              <SelectContent>
-                {(operations ?? []).map(op => (
-                  <SelectItem key={op.id} value={String(op.id)}>
-                    {op.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+      {/* ── Header: who this report is about, and the export action — kept
+          as its own row so it can never collide with the selector or
+          confidence rows below it. ── */}
+      <div className="flex items-start justify-between gap-3 px-1 mb-4">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="p-2.5 rounded-lg bg-blue-500/10 border border-blue-500/20 shrink-0">
+            <Activity className="w-5 h-5 text-blue-500" />
           </div>
-
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Target
-            </span>
-            <Select
-              value={targetId != null ? String(targetId) : undefined}
-              onValueChange={v => setTargetId(Number(v))}
-              disabled={operationId == null}
-            >
-              <SelectTrigger className="w-48 h-9 text-xs">
-                <SelectValue placeholder="Select a target…" />
-              </SelectTrigger>
-              <SelectContent>
-                {(targets ?? []).map(t => (
-                  <SelectItem key={t.id} value={String(t.id)}>
-                    {t.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+              Pattern of Life
+            </p>
+            <h1 className="text-xl font-semibold text-foreground truncate">
+              {data ? data.targetName : "Select a target"}
+            </h1>
+            {data && (
+              <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                {data.operationName}
+              </p>
+            )}
           </div>
         </div>
 
@@ -338,10 +317,56 @@ export default function IntelligencePatternOfLife() {
           size="sm"
           onClick={exportPdf}
           disabled={!data}
-          className="mt-[18px]"
+          className="shrink-0"
         >
           <FileDown className="w-4 h-4 mr-1.5" /> Export PDF
         </Button>
+      </div>
+
+      {/* ── Selector ── */}
+      <div className="flex flex-wrap items-center gap-3 px-1 mb-4">
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Operation
+          </span>
+          <Select
+            value={operationId != null ? String(operationId) : undefined}
+            onValueChange={v => setOperationId(Number(v))}
+          >
+            <SelectTrigger className="w-48 h-9 text-xs">
+              <SelectValue placeholder="Select an operation…" />
+            </SelectTrigger>
+            <SelectContent>
+              {(operations ?? []).map(op => (
+                <SelectItem key={op.id} value={String(op.id)}>
+                  {op.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Target
+          </span>
+          <Select
+            value={targetId != null ? String(targetId) : undefined}
+            onValueChange={v => setTargetId(Number(v))}
+            disabled={operationId == null}
+          >
+            <SelectTrigger className="w-48 h-9 text-xs">
+              <SelectValue placeholder="Select a target…" />
+            </SelectTrigger>
+            <SelectContent>
+              {(targets ?? []).map(t => (
+                <SelectItem key={t.id} value={String(t.id)}>
+                  {t.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {operationId == null || targetId == null ? (
@@ -548,7 +573,7 @@ export default function IntelligencePatternOfLife() {
           </div>
 
           {/* Section C — home presence */}
-          {data.homePresence && data.homeAddressLabel && (
+          {data.homeAddressKnown && (
             <div className="rounded-xl border border-border/60 bg-card p-4 mb-4 mx-1">
               <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
                 Home presence
@@ -557,185 +582,207 @@ export default function IntelligencePatternOfLife() {
                 {data.homeAddressLabel} (registered home address)
               </p>
 
-              {(likelyHome || likelyAway) && (
-                <div className="rounded-lg bg-muted/10 border border-border/40 px-3 py-2.5 mb-3">
-                  <p className="text-xs text-foreground">
-                    {likelyHome && (
-                      <>
-                        <span className="font-bold text-blue-700 dark:text-blue-400">
-                          Likely home
-                        </span>{" "}
-                        {likelyHome}
-                      </>
-                    )}
-                    {likelyHome && likelyAway && (
-                      <span className="text-muted-foreground"> · </span>
-                    )}
-                    {likelyAway && (
-                      <>
-                        <span className="font-bold text-slate-500">
-                          likely away
-                        </span>{" "}
-                        {likelyAway}
-                      </>
-                    )}
+              {!data.homePresence ? (
+                <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-muted/20 border border-border/40">
+                  <Info className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                  <p className="text-xs text-muted-foreground">
+                    {!data.homeAddressMentioned
+                      ? "This address hasn't been narrated as a visit in any certified observation yet — it only appears on the target's registry card so far."
+                      : !data.homeAddressGeocoded
+                        ? "Mentioned in observations, but the address couldn't be geocoded yet."
+                        : `Mentioned in observations, but none of them use clear arrival/departure language yet (e.g. "arrived at", "departed") — this fills in as more are certified.`}
                   </p>
                 </div>
-              )}
-
-              <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">
-                Typical day
-              </p>
-              <div className="overflow-x-auto mb-2">
-                <div className="flex items-end gap-1.5 min-w-[520px]">
-                  {data.homePresence.map((p, i) => (
-                    <div key={i} className="flex flex-col items-center flex-1">
-                      <div className="w-full max-w-9 h-[90px] rounded overflow-hidden flex flex-col border border-border/40">
-                        <div
-                          className="w-full"
-                          style={{
-                            height: `${p.unknown}%`,
-                            background:
-                              "repeating-linear-gradient(135deg, rgba(148,163,184,0.35) 0px, rgba(148,163,184,0.35) 3px, rgba(226,232,240,0.5) 3px, rgba(226,232,240,0.5) 6px)",
-                          }}
-                        />
-                        <div
-                          className="w-full bg-slate-300 dark:bg-slate-600"
-                          style={{ height: `${p.away}%` }}
-                        />
-                        <div
-                          className="w-full bg-blue-600"
-                          style={{ height: `${p.home}%` }}
-                        />
-                      </div>
-                      <span className="text-[8.5px] font-semibold text-muted-foreground mt-1">
-                        {data.timeBuckets12[i]}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="flex items-center gap-4 mb-6">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-sm bg-blue-600 inline-block" />
-                  <span className="text-[9px] text-muted-foreground">Home</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-sm bg-slate-300 dark:bg-slate-600 inline-block" />
-                  <span className="text-[9px] text-muted-foreground">Away</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span
-                    className="w-2.5 h-2.5 rounded-sm inline-block"
-                    style={{
-                      background:
-                        "repeating-linear-gradient(135deg, rgba(148,163,184,0.35) 0px, rgba(148,163,184,0.35) 3px, rgba(226,232,240,0.5) 3px, rgba(226,232,240,0.5) 6px)",
-                    }}
-                  />
-                  <span className="text-[9px] text-muted-foreground">
-                    Unknown / no data
-                  </span>
-                </div>
-              </div>
-
-              {(data.departureHistogram || data.arrivalHistogram) && (
+              ) : (
                 <>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-3">
-                    Typical departure &amp; return times
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-[10px] text-muted-foreground mb-2">
-                        Departs home
-                        {data.peakDepartureBucket != null && (
-                          <span className="font-bold text-blue-700 dark:text-blue-400">
-                            {" "}
-                            — usually{" "}
-                            {data.timeBuckets8[data.peakDepartureBucket]}
-                          </span>
+                  {(likelyHome || likelyAway) && (
+                    <div className="rounded-lg bg-muted/10 border border-border/40 px-3 py-2.5 mb-3">
+                      <p className="text-xs text-foreground">
+                        {likelyHome && (
+                          <>
+                            <span className="font-bold text-blue-700 dark:text-blue-400">
+                              Likely home
+                            </span>{" "}
+                            {likelyHome}
+                          </>
+                        )}
+                        {likelyHome && likelyAway && (
+                          <span className="text-muted-foreground"> · </span>
+                        )}
+                        {likelyAway && (
+                          <>
+                            <span className="font-bold text-slate-500">
+                              likely away
+                            </span>{" "}
+                            {likelyAway}
+                          </>
                         )}
                       </p>
-                      <div className="flex items-end gap-1 h-20">
-                        {(data.departureHistogram ?? []).map((v, i) => (
-                          <div
-                            key={i}
-                            className="flex flex-col items-center flex-1 gap-1"
-                          >
-                            <span className="text-[8px] font-bold text-foreground h-2.5">
-                              {v > 0 ? v : ""}
-                            </span>
-                            <div
-                              className={`w-full rounded-t ${i === data.peakDepartureBucket ? "ring-2 ring-blue-700" : ""}`}
-                              style={{
-                                height: `${v === 0 ? 2 : Math.round((v / depMax) * 40) + 6}px`,
-                                backgroundColor:
-                                  i === data.peakDepartureBucket
-                                    ? "#2563eb"
-                                    : "#93c5fd",
-                              }}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                      <div className="flex gap-1 mt-1">
-                        {data.timeBuckets8.map(l => (
-                          <span
-                            key={l}
-                            className="text-[7px] text-muted-foreground flex-1 text-center"
-                          >
-                            {l}
-                          </span>
-                        ))}
-                      </div>
                     </div>
-                    <div>
-                      <p className="text-[10px] text-muted-foreground mb-2">
-                        Returns home
-                        {data.peakArrivalBucket != null && (
-                          <span
-                            className="font-bold"
-                            style={{ color: "#0d9488" }}
-                          >
-                            {" "}
-                            — usually{" "}
-                            {data.timeBuckets8[data.peakArrivalBucket]}
-                          </span>
-                        )}
-                      </p>
-                      <div className="flex items-end gap-1 h-20">
-                        {(data.arrivalHistogram ?? []).map((v, i) => (
-                          <div
-                            key={i}
-                            className="flex flex-col items-center flex-1 gap-1"
-                          >
-                            <span className="text-[8px] font-bold text-foreground h-2.5">
-                              {v > 0 ? v : ""}
-                            </span>
+                  )}
+
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">
+                    Typical day
+                  </p>
+                  <div className="overflow-x-auto mb-2">
+                    <div className="flex items-end gap-1.5 min-w-[520px]">
+                      {data.homePresence.map((p, i) => (
+                        <div
+                          key={i}
+                          className="flex flex-col items-center flex-1"
+                        >
+                          <div className="w-full max-w-9 h-[90px] rounded overflow-hidden flex flex-col border border-border/40">
                             <div
-                              className={`w-full rounded-t ${i === data.peakArrivalBucket ? "ring-2" : ""}`}
+                              className="w-full"
                               style={{
-                                height: `${v === 0 ? 2 : Math.round((v / arrMax) * 40) + 6}px`,
-                                backgroundColor:
-                                  i === data.peakArrivalBucket
-                                    ? "#0d9488"
-                                    : "#5eead4",
+                                height: `${p.unknown}%`,
+                                background:
+                                  "repeating-linear-gradient(135deg, rgba(148,163,184,0.35) 0px, rgba(148,163,184,0.35) 3px, rgba(226,232,240,0.5) 3px, rgba(226,232,240,0.5) 6px)",
                               }}
                             />
+                            <div
+                              className="w-full bg-slate-300 dark:bg-slate-600"
+                              style={{ height: `${p.away}%` }}
+                            />
+                            <div
+                              className="w-full bg-blue-600"
+                              style={{ height: `${p.home}%` }}
+                            />
                           </div>
-                        ))}
-                      </div>
-                      <div className="flex gap-1 mt-1">
-                        {data.timeBuckets8.map(l => (
-                          <span
-                            key={l}
-                            className="text-[7px] text-muted-foreground flex-1 text-center"
-                          >
-                            {l}
+                          <span className="text-[8.5px] font-semibold text-muted-foreground mt-1">
+                            {data.timeBuckets12[i]}
                           </span>
-                        ))}
-                      </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
+                  <div className="flex items-center gap-4 mb-6">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-sm bg-blue-600 inline-block" />
+                      <span className="text-[9px] text-muted-foreground">
+                        Home
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-sm bg-slate-300 dark:bg-slate-600 inline-block" />
+                      <span className="text-[9px] text-muted-foreground">
+                        Away
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className="w-2.5 h-2.5 rounded-sm inline-block"
+                        style={{
+                          background:
+                            "repeating-linear-gradient(135deg, rgba(148,163,184,0.35) 0px, rgba(148,163,184,0.35) 3px, rgba(226,232,240,0.5) 3px, rgba(226,232,240,0.5) 6px)",
+                        }}
+                      />
+                      <span className="text-[9px] text-muted-foreground">
+                        Unknown / no data
+                      </span>
+                    </div>
+                  </div>
+
+                  {(data.departureHistogram || data.arrivalHistogram) && (
+                    <>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-3">
+                        Typical departure &amp; return times
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-[10px] text-muted-foreground mb-2">
+                            Departs home
+                            {data.peakDepartureBucket != null && (
+                              <span className="font-bold text-blue-700 dark:text-blue-400">
+                                {" "}
+                                — usually{" "}
+                                {data.timeBuckets8[data.peakDepartureBucket]}
+                              </span>
+                            )}
+                          </p>
+                          <div className="flex items-end gap-1 h-20">
+                            {(data.departureHistogram ?? []).map((v, i) => (
+                              <div
+                                key={i}
+                                className="flex flex-col items-center flex-1 gap-1"
+                              >
+                                <span className="text-[8px] font-bold text-foreground h-2.5">
+                                  {v > 0 ? v : ""}
+                                </span>
+                                <div
+                                  className={`w-full rounded-t ${i === data.peakDepartureBucket ? "ring-2 ring-blue-700" : ""}`}
+                                  style={{
+                                    height: `${v === 0 ? 2 : Math.round((v / depMax) * 40) + 6}px`,
+                                    backgroundColor:
+                                      i === data.peakDepartureBucket
+                                        ? "#2563eb"
+                                        : "#93c5fd",
+                                  }}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                          <div className="flex gap-1 mt-1">
+                            {data.timeBuckets8.map(l => (
+                              <span
+                                key={l}
+                                className="text-[7px] text-muted-foreground flex-1 text-center"
+                              >
+                                {l}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-muted-foreground mb-2">
+                            Returns home
+                            {data.peakArrivalBucket != null && (
+                              <span
+                                className="font-bold"
+                                style={{ color: "#0d9488" }}
+                              >
+                                {" "}
+                                — usually{" "}
+                                {data.timeBuckets8[data.peakArrivalBucket]}
+                              </span>
+                            )}
+                          </p>
+                          <div className="flex items-end gap-1 h-20">
+                            {(data.arrivalHistogram ?? []).map((v, i) => (
+                              <div
+                                key={i}
+                                className="flex flex-col items-center flex-1 gap-1"
+                              >
+                                <span className="text-[8px] font-bold text-foreground h-2.5">
+                                  {v > 0 ? v : ""}
+                                </span>
+                                <div
+                                  className={`w-full rounded-t ${i === data.peakArrivalBucket ? "ring-2" : ""}`}
+                                  style={{
+                                    height: `${v === 0 ? 2 : Math.round((v / arrMax) * 40) + 6}px`,
+                                    backgroundColor:
+                                      i === data.peakArrivalBucket
+                                        ? "#0d9488"
+                                        : "#5eead4",
+                                  }}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                          <div className="flex gap-1 mt-1">
+                            {data.timeBuckets8.map(l => (
+                              <span
+                                key={l}
+                                className="text-[7px] text-muted-foreground flex-1 text-center"
+                              >
+                                {l}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </div>

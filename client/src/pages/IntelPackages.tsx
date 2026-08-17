@@ -263,7 +263,17 @@ export default function IntelPackages() {
       .map(t => byId.get(t.id))
       .filter((t): t is NonNullable<typeof t> => !!t)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .map(t => buildProfileTargetBlockHtml(t as any));
+      .map((t, i) => {
+        const html = buildProfileTargetBlockHtml(t as any);
+        // buildProfileTargetBlockHtml deliberately styles inline rather than
+        // with classes (see profileSection.ts), so the page break between
+        // targets is added here rather than via a shared CSS rule. The
+        // first target doesn't need one — the section itself already
+        // starts on a fresh page.
+        return i === 0
+          ? html
+          : `<div style="page-break-before:always;break-before:page">${html}</div>`;
+      });
     if (!blocks.length) return null;
     return {
       title: scope === "target" ? "Target Profile" : "Operation Profile",

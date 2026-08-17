@@ -136,6 +136,21 @@ function buildPatternOfLifeHtml(data: PatternOfLifeData): string {
     <div style="width:100px;height:7px;border-radius:4px;background:linear-gradient(to right, rgba(37,99,235,0.14), rgba(37,99,235,0.9))"></div>
     <span style="font-size:9px;color:#64748b">More</span>
   </div>`;
+  const tealCellHtml = (count: number, max: number, ring: boolean) => {
+    const alpha = count === 0 ? 0 : 0.14 + (count / max) * 0.76;
+    const bg =
+      count === 0
+        ? "rgba(148,163,184,0.10)"
+        : `rgba(13,148,136,${alpha.toFixed(2)})`;
+    const color = alpha > 0.55 ? "#fff" : "#0f766e";
+    const border = ring ? "border:2px solid #0d9488;" : "";
+    return `<td style="background:${bg};color:${color};text-align:center;font-size:10px;font-weight:700;padding:6px 4px;border-radius:4px;${border}">${count || ""}</td>`;
+  };
+  const tealLegendHtml = `<div style="display:flex;align-items:center;gap:6px;margin-top:6px">
+    <span style="font-size:9px;color:#64748b">Fewer</span>
+    <div style="width:100px;height:7px;border-radius:4px;background:linear-gradient(to right, rgba(13,148,136,0.14), rgba(13,148,136,0.9))"></div>
+    <span style="font-size:9px;color:#64748b">More</span>
+  </div>`;
 
   const dayTimeMax = Math.max(1, ...data.dayTimeGrid.flat());
   const dayTimeRows = data.dayLabels
@@ -178,19 +193,33 @@ function buildPatternOfLifeHtml(data: PatternOfLifeData): string {
       <p style="font-size:10px;color:#64748b;background:#f8fafc;border:1px solid ${GREY_BORDER};border-radius:6px;padding:8px 10px">${esc(reason)}</p>
     </div>`;
   } else {
+    const depMax = Math.max(1, ...(data.departureHistogram ?? []));
+    const arrMax = Math.max(1, ...(data.arrivalHistogram ?? []));
+    const departCells = (data.departureHistogram ?? [])
+      .map((count, i) =>
+        cellHtml(count, depMax, i === data.peakDepartureBucket)
+      )
+      .join("<td style='width:4px'></td>");
+    const arriveCells = (data.arrivalHistogram ?? [])
+      .map((count, i) =>
+        tealCellHtml(count, arrMax, i === data.peakArrivalBucket)
+      )
+      .join("<td style='width:4px'></td>");
     homeSectionBody = `<div style="margin-bottom:16px">
       <div class="section-title">Home Presence</div>
       <p style="font-size:10px;color:#64748b;margin-bottom:8px">${esc(data.homeAddressLabel)} (registered home address)</p>
-      <p style="font-size:11px;margin-bottom:8px">
+      <p style="font-size:11px;margin-bottom:12px">
         ${formatRanges(data.homeLikelyRanges, 12) ? `<strong style="color:${BLUE_DARK}">Likely home</strong> ${formatRanges(data.homeLikelyRanges, 12)}` : ""}
         ${formatRanges(data.homeAwayRanges, 12) ? ` &middot; <strong style="color:#64748b">likely away</strong> ${formatRanges(data.homeAwayRanges, 12)}` : ""}
       </p>
-      <p style="font-size:9px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#64748b;margin:10px 0 4px">Typical departure &amp; return times</p>
-      <p style="font-size:10px;color:${GREY_TEXT}">
-        ${data.peakDepartureBucket != null ? `<strong>Departs</strong> usually ${data.timeBuckets[data.peakDepartureBucket]}` : "Departure time not yet clear"}
-        &middot;
-        ${data.peakArrivalBucket != null ? `<strong>Returns</strong> usually ${data.timeBuckets[data.peakArrivalBucket]}` : "Return time not yet clear"}
-      </p>
+      <p style="font-size:9px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#64748b;margin-bottom:4px">Departs home</p>
+      <p style="font-size:10px;color:${GREY_TEXT};margin-bottom:6px">${data.peakDepartureBucket != null ? `<strong>Usually ${data.timeBuckets[data.peakDepartureBucket]}</strong>` : "Not yet clear"}</p>
+      <table>${timeHeaderRow("")}<tr><td></td>${departCells}</tr></table>
+      ${legendHtml}
+      <p style="font-size:9px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#64748b;margin:12px 0 4px">Returns home</p>
+      <p style="font-size:10px;color:${GREY_TEXT};margin-bottom:6px">${data.peakArrivalBucket != null ? `<strong>Usually ${data.timeBuckets[data.peakArrivalBucket]}</strong>` : "Not yet clear"}</p>
+      <table>${timeHeaderRow("")}<tr><td></td>${arriveCells}</tr></table>
+      ${tealLegendHtml}
     </div>`;
   }
   const homeSection = homeSectionBody;

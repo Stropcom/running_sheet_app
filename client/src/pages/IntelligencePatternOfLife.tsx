@@ -214,13 +214,13 @@ table { border-collapse:collapse; width:100%; }
 <div class="content">
   <div style="margin-bottom:16px">
     <div class="section-title">Activity by Day &amp; Time</div>
-    <p style="font-size:10px;color:#64748b;margin-bottom:6px">When this target is generally active, across every location</p>
+    <p style="font-size:10px;color:#64748b;margin-bottom:6px">Every observation of the target in a running sheet</p>
     <table>${timeHeaderRow("")}${dayTimeRows}</table>
     ${legendHtml}
   </div>
   <div style="margin-bottom:16px">
     <div class="section-title">Where &amp; When</div>
-    <p style="font-size:10px;color:#64748b;margin-bottom:6px">Which specific location, at which time (★ = peak)</p>
+    <p style="font-size:10px;color:#64748b;margin-bottom:6px">Specifically where and when the target is recorded in a running sheet present at a location (★ = peak)</p>
     <table>${timeHeaderRow("", "Total")}${locRows}</table>
     ${legendHtml}
   </div>
@@ -418,7 +418,7 @@ export default function IntelligencePatternOfLife() {
               Activity by day &amp; time
             </p>
             <p className="text-[11px] text-muted-foreground mb-3">
-              When this target is generally active, across every location
+              Every observation of the target in a running sheet
             </p>
             <div className="overflow-x-auto">
               <div className="min-w-[700px]">
@@ -484,7 +484,8 @@ export default function IntelligencePatternOfLife() {
               </div>
             </div>
             <p className="text-[11px] text-muted-foreground mb-3">
-              Which specific location, at which time
+              Specifically where and when the target is recorded in a running
+              sheet present at a location
             </p>
             {data.locationTimeGrid.length === 0 ? (
               <p className="text-xs text-muted-foreground">

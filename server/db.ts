@@ -5295,6 +5295,18 @@ export async function getAllIntelligenceEntities(): Promise<
             ? addressBracketKey(shortForm)
             : shortForm.toLowerCase().replace(/\s+/g, " ").trim();
       const key = `${field.type}::${normKey}`;
+      // Same problem the vehicle branch above solves, now for addresses: a
+      // registry address field is stored exactly as typed, still carrying its
+      // state suffix and its own trailing bracket code. Unformatted it is
+      // always the longest candidate, so it won the "prefer longer" merge
+      // below and became the display label everywhere — Home Presence read
+      // "101 Eric Street, COTTESLOE WA (101 Eric Street)", bracket and all,
+      // while every text-mined address rendered cleanly.
+      //
+      // Deliberately applied AFTER normKey is computed above: addresses key
+      // on the raw value's trailing bracket, so formatting first would change
+      // the key and re-partition existing entities. Display only.
+      if (field.type === "address") shortForm = formatIntelAddress(shortForm);
       if (!entityMap.has(key)) {
         entityMap.set(key, { shortForm, type: field.type, occurrences: [] });
       } else {
@@ -5482,6 +5494,10 @@ export async function getAllIntelligenceEntities(): Promise<
             ? addressBracketKey(shortForm)
             : shortForm.toLowerCase().replace(/\s+/g, " ").trim();
       const key = `${field.type}::${normKey}`;
+      // See the matching comment on the target locationFields loop above —
+      // tidy the registry address for display, after the key is computed
+      // from the raw value so entity keying is unaffected.
+      if (field.type === "address") shortForm = formatIntelAddress(shortForm);
       if (!entityMap.has(key)) {
         entityMap.set(key, { shortForm, type: field.type, occurrences: [] });
       } else {

@@ -3885,8 +3885,24 @@ export function addDaysISO(dateISO: string, days: number): string {
 // departure, not an arrival — an address mentioned in the same row as
 // "continued via" is the point they just left, i.e. still part of the same
 // visit, not a new one.
-const OBSERVATION_SIGNAL_RE =
-  /\b(arriv\w*|depart\w*|left|enter\w*|exit\w*|park\w*|observ\w*|seen|saw|see|met|meet\w*|attend\w*|pull\w*\s+(?:into|up)|stopp?\w*|wait\w*|remain\w*|stationary|revers\w*\s+from\s+the\s+driveway|continu\w*\s+via|vicinity\s+of|driveway\s+of|driv(?:e|es|ing|ove)\s+(?:into|through)|travell?\w*\s+through)\b/i;
+//
+// The second group below (walk/stood/return/approach/knock/sat, "out of
+// sight", and the front door/yard/driveway nouns) covers presence narrated
+// without an arrival or departure verb. Officers write what the target is
+// *doing*, not only that they got somewhere: "SANDWICH and CAT walked from
+// 81 Redmond Road and stood in conversation in the front yard" is as clear a
+// sighting at that address as "arrived at", but matched nothing here. The
+// effect was perverse — in the same sheet an associate's "CAT arrived at 81
+// Redmond Road" was counted while the target standing in the same front yard
+// three hours later was not.
+export const OBSERVATION_SIGNAL_RE =
+  /\b(arriv\w*|depart\w*|left|enter\w*|exit\w*|park\w*|observ\w*|seen|saw|see|met|meet\w*|attend\w*|walk\w*|stood|stand\w*|return\w*|approach\w*|knock\w*|sat|sitting|out\s+of\s+sight|front\s+(?:door|yard|gate)|driveway|pull\w*\s+(?:into|up)|stopp?\w*|wait\w*|remain\w*|stationary|revers\w*\s+from\s+the\s+driveway|continu\w*\s+via|vicinity\s+of|driv(?:e|es|ing|ove)\s+(?:into|through)|travell?\w*\s+through)\b/i;
+
+/** Does this observation narrate a presence at a place, as opposed to merely
+ * naming one? Exported for testing — see observationSignal.test.ts. */
+export function hasObservationSignal(observation: string): boolean {
+  return OBSERVATION_SIGNAL_RE.test(observation);
+}
 
 /** Rows that only mark surveillance team activity or a travelled-via street
  * list, not a sighting of the target — same classification the Court

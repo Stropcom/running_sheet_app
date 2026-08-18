@@ -9953,11 +9953,23 @@ export async function getIntelMappingLocations(
   }
 
   for (const locEntity of locationEntities) {
-    const loc = ensureLocation(locEntity.shortForm);
     // Collect all rowIds for this location entity
     const locRowIds = new Set(
       locEntity.occurrences.filter(o => o.rowId > 0).map(o => o.rowId)
     );
+    // An entity with no real (rowId > 0) occurrence has never actually been
+    // observed — it exists only because it's typed into a registry card
+    // (isIndicesOnly). Registering it here would create a spurious
+    // "observation" pin for a place nobody has ever been seen at. This
+    // matters especially for a target's own home address: before registry
+    // addresses were tidied for display (17e2229), this entity's shortForm
+    // was the same raw HBF text Step 1 keys the "target_address" pin on, so
+    // ensureLocation's string-keyed dedup happened to collapse them into
+    // one. Tidying formatted the two labels differently, so they now key
+    // apart — producing a second, phantom "OBSERVED LOCATION" card for the
+    // exact same address with nothing behind it.
+    if (locRowIds.size === 0) continue;
+    const loc = ensureLocation(locEntity.shortForm);
     for (const rowId of Array.from(locRowIds)) {
       const coEntities = rowEntityMap.get(rowId) ?? [];
       for (const co of coEntities) {

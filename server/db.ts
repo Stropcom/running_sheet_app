@@ -5256,6 +5256,19 @@ export async function getAllIntelligenceEntities(): Promise<
       // derived key (which never includes the bracket code in the shortForm).
       if (field.type === "vehicle") {
         shortForm = shortForm.replace(/\s*\([^)]{1,40}\)\s*$/, "").trim();
+        // Registry vehicle fields are stored exactly as typed — often
+        // "<description>, bearing WA registration <REGO>", never reordered
+        // into the Intelligence "REGO description" display form the way an
+        // RS-mined mention already is (see the type==="vehicle" branch in
+        // extractEntitiesFromText). Left unformatted, this raw text's own
+        // unstripped "bearing WA registration" boilerplate inflated its
+        // apparent descriptive length enough to always win the "prefer
+        // longer" merge below against a properly-formatted RS mention of
+        // the same rego, overwriting a clean "1CWY970 silver Hyundai Getz"
+        // with the raw "silver Hyundai Getz, bearing WA registration
+        // 1CWY970". Reformat first so both candidates are compared, and
+        // ultimately displayed, on the same footing.
+        shortForm = formatIntelVehicle(shortForm);
       }
       if (!shortForm) continue;
       // Normalise whitespace so minor spacing differences don't create duplicate keys.
@@ -5443,6 +5456,11 @@ export async function getAllIntelligenceEntities(): Promise<
       let shortForm = field.value.trim();
       if (field.type === "vehicle") {
         shortForm = shortForm.replace(/\s*\([^)]{1,40}\)\s*$/, "").trim();
+        // See the matching comment on the target locationFields loop above —
+        // reformat to "REGO description" before this competes in the
+        // "prefer longer" merge, or its own unstripped boilerplate can beat
+        // and overwrite a clean RS-mined mention of the same vehicle.
+        shortForm = formatIntelVehicle(shortForm);
       }
       if (!shortForm) continue;
       const normKey =

@@ -29,6 +29,19 @@ export interface TargetMatchCandidate {
   reason: string;
 }
 
+/**
+ * A Target/Associate's registered name is "Full Name, born DATE (BRACKET)" —
+ * when there's no explicit TGT alias, the bracket code an officer's row text
+ * should be corrected to is that trailing bracket segment, not the whole
+ * name. Using the whole name would nest a bracket inside the bracket it's
+ * replacing, e.g. "Basil CAT (CAT)" becoming "Basil CAT (Basil CAT, born
+ * 2 June 2005 (CAT))" instead of staying "Basil CAT (CAT)".
+ */
+export function bracketCodeFromRegisteredName(name: string): string {
+  const m = name.match(/\(([^()]+)\)\s*$/);
+  return m ? m[1] : name;
+}
+
 interface TargetMatchDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -53,7 +66,8 @@ export function TargetMatchDialog({
     trpc.intelligence.confirmPersonNameMatch.useMutation();
   const rejectMutation = trpc.intelligence.rejectPersonNameMatch.useMutation();
 
-  const correctSpelling = match.tgtAlias || match.name;
+  const correctSpelling =
+    match.tgtAlias || bracketCodeFromRegisteredName(match.name);
 
   async function handleYes() {
     setBusy(true);

@@ -26,6 +26,7 @@ import {
 import {
   TargetMatchDialog,
   type TargetMatchCandidate,
+  bracketCodeFromRegisteredName,
 } from "@/components/TargetMatchDialog";
 import {
   Dialog,
@@ -2197,10 +2198,17 @@ export default function SheetDetail() {
     rawShortForm: string,
     correctSpelling: string
   ): string {
+    // Defensive: a "remembered" correction (getKnownPersonNameCorrection)
+    // might still be a full "Name, born DATE (BRACKET)" saved before
+    // TargetMatchDialog started reducing it to just the bracket code — never
+    // let a bracket nest inside the bracket it's replacing.
+    const safeSpelling = correctSpelling.includes("(")
+      ? bracketCodeFromRegisteredName(correctSpelling)
+      : correctSpelling;
     const escaped = rawShortForm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     return text.replace(
       new RegExp(`\\(${escaped}\\)`, "g"),
-      `(${correctSpelling})`
+      `(${safeSpelling})`
     );
   }
 

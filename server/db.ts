@@ -4063,18 +4063,26 @@ export async function getIntelligenceHeatMapLocations(params: {
   // bracket-only pass undercounts to a single visit.
   const allEntities = await getAllIntelligenceEntities();
 
-  // When filtering to a target, restrict to rows that target is actually
-  // mentioned in (see the sheet-scoping note above). An empty set is a real
-  // answer, not a failure: a target never named in any observation has no
-  // mapped locations, however many sheets were opened in their name.
-  let targetRowIds: Set<number> | null = null;
-  if (params.targetId) {
-    const targetEntity = allEntities.find(
-      e => e.isTarget && e.targetId === params.targetId
-    );
-    targetRowIds = attributedRowIds(targetEntity?.occurrences, {
-      sheetIds: sheetIdSet,
-    });
+  // The heat map plots TARGET movement — always, not only when one target is
+  // picked out. "All Targets" means every target on the operation, not every
+  // entity on it: an associate's or a third party's addresses are theirs, and
+  // mapping them under the operation's targets misrepresents where the
+  // targets have been. So restrict to rows a target is actually mentioned in,
+  // either the one selected or any of them.
+  //
+  // An empty set is a real answer, not a failure: a target never named in any
+  // observation has no mapped locations, however many sheets were opened in
+  // their name.
+  const targetRowIds = new Set<number>();
+  for (const entity of allEntities) {
+    if (!entity.isTarget) continue;
+    if (params.targetId != null && entity.targetId !== params.targetId)
+      continue;
+    for (const rowId of Array.from(
+      attributedRowIds(entity.occurrences, { sheetIds: sheetIdSet })
+    )) {
+      targetRowIds.add(rowId);
+    }
   }
 
   // A "mention" of an address isn't the same as a "visit" — a target's home
@@ -4099,9 +4107,9 @@ export async function getIntelligenceHeatMapLocations(params: {
       // never a real sighting.
       if (occ.rowId === 0) continue;
       if (!sheetIdSet.has(occ.sheetId)) continue;
-      // Target filter: the address must be mentioned in a row the target is
-      // themselves mentioned in.
-      if (targetRowIds && !targetRowIds.has(occ.rowId)) continue;
+      // The address must be mentioned in a row a target is themselves
+      // mentioned in.
+      if (!targetRowIds.has(occ.rowId)) continue;
 
       const row = rowById.get(occ.rowId);
       if (!row?.observation) continue;

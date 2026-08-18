@@ -3687,6 +3687,124 @@ export interface IntelligenceEntity {
   }>;
 }
 
+/**
+ * Merges address/vehicle entities of one type where one shortForm is a
+ * strict prefix of another (e.g. "1 Smith Street" absorbed into "1 Smith
+ * Street, FREMANTLE WA", or "ABC 123" into "ABC 123 White Hilux") — the same
+ * real-world thing recognised twice: once from a registry card, once from
+ * observation text, under two different labels. Exported and pure (no DB)
+ * so this can be tested directly — see entityMerge.test.ts.
+ *
+ * IMPORTANT constraints:
+ *   - Only meaningful for "address" and "vehicle" types (NOT persons or
+ *     businesses) because person names share common prefixes legitimately
+ *     (SMITH vs SMITH JONES) — callers should only invoke this for a group
+ *     that's already been filtered to one of those two types.
+ *   - isTarget entities are never passed to this pass.
+ *   - The shorter form must end at a natural word boundary in the longer
+ *     form (space, comma, semicolon, dash, or slash) to avoid false merges.
+ *
+ * `absorbed` is tracked by entity object, not by shortForm string: when a
+ * registry entity and a text-mined entity for the same place format to the
+ * exact same label — the normal case once registry addresses are tidied for
+ * display (see 17e2229) — a string-keyed set can't tell "the entity that got
+ * absorbed" from "the entity it was absorbed into"; they're the same string.
+ * That collision used to silently drop the merged survivor (all its
+ * occurrences included) from the output entirely, precisely whenever a
+ * registry card and an observation-derived mention of the same address
+ * coincided — the case that matters most.
+ */
+export function mergeContainedEntities(
+  group: IntelligenceEntity[],
+  entityType: "address" | "vehicle"
+): IntelligenceEntity[] {
+  // Sort by shortForm length descending so longer (fuller) versions come first
+  const sorted = [...group].sort(
+    (a, b) => b.shortForm.length - a.shortForm.length
+  );
+  const absorbed = new Set<IntelligenceEntity>();
+  const survivors: IntelligenceEntity[] = [];
+
+  for (let i = 0; i < sorted.length; i++) {
+    const longer = sorted[i];
+    const longerLower = longer.shortForm.toLowerCase().trim();
+    if (absorbed.has(longer)) continue;
+
+    for (let j = i + 1; j < sorted.length; j++) {
+      const shorter = sorted[j];
+      const shorterLower = shorter.shortForm.toLowerCase().trim();
+      if (absorbed.has(shorter)) continue;
+
+      // For vehicles: also absorb when the shorter shortForm appears ANYWHERE inside
+      // the longer (e.g. "ABC 123" inside "silver Toyota Hilux bearing ABC 123").
+      // For addresses: keep the original prefix-only rule.
+      const isContained =
+        entityType === "vehicle"
+          ? (() => {
+              const idx = longerLower.indexOf(shorterLower);
+              if (idx === -1) return false;
+              // Must be at a word boundary on both sides
+              const before =
+                idx === 0 || /[\s,;\-/(]/.test(longerLower[idx - 1]);
+              const after =
+                idx + shorterLower.length === longerLower.length ||
+                /[\s,;\-/)]/.test(longerLower[idx + shorterLower.length]);
+              return before && after;
+            })()
+          : longerLower.startsWith(shorterLower) &&
+            (longerLower.length === shorterLower.length ||
+              /^[\s,;\-/]/.test(longerLower.slice(shorterLower.length)));
+      if (isContained) {
+        // Merge shorter's occurrences into longer, deduplicating by sheetId+rowId+snippet
+        const existingKeys = new Set(
+          longer.occurrences.map(
+            (o: IntelligenceEntity["occurrences"][0]) =>
+              `${o.sheetId}::${o.rowId}::${o.observationSnippet}`
+          )
+        );
+        for (const occ of shorter.occurrences) {
+          const occKey = `${occ.sheetId}::${occ.rowId}::${occ.observationSnippet}`;
+          if (!existingKeys.has(occKey)) {
+            longer.occurrences.push(occ);
+            existingKeys.add(occKey);
+          }
+        }
+        if (shorter.aliasLabels?.length) {
+          longer.aliasLabels = longer.aliasLabels ?? [];
+          for (const label of shorter.aliasLabels) {
+            if (!longer.aliasLabels.includes(label))
+              longer.aliasLabels.push(label);
+          }
+        }
+        // For vehicles: when merging, prefer the entity with a richer display name
+        // (one that includes colour/make/model) over a bare rego or "Vehicle REGO" form.
+        // The longer entity (sorted by shortForm length) is usually richer, so we keep it.
+        // Exception: if the longer entity is actually a bare rego and the shorter has
+        // a richer description (colour+make), swap them.
+        if (entityType === "vehicle") {
+          const longerHasDesc = /[a-z]/i.test(
+            longer.shortForm.replace(/^\d[A-Z]{2,3}\d{3}\s*/i, "")
+          );
+          const shorterHasDesc = /[a-z]/i.test(
+            shorter.shortForm.replace(/^\d[A-Z]{2,3}\d{3}\s*/i, "")
+          );
+          if (!longerHasDesc && shorterHasDesc) {
+            longer.shortForm = shorter.shortForm;
+          }
+        }
+        absorbed.add(shorter);
+      }
+    }
+
+    // Only keep this entity if it was NOT itself absorbed by a longer one
+    if (!absorbed.has(longer)) {
+      survivors.push(longer);
+    }
+  }
+
+  return survivors;
+}
+
 // Vehicles are uniquely identified by their registration, not by whatever
 // descriptive text happens to surround it in a given mention. The same car
 // can show up as "1ADF124" (bare), "Vehicle 1ADF124" (chip insert),
@@ -5949,13 +6067,7 @@ export async function getAllIntelligenceEntities(): Promise<
   // ── 4. Post-process: merge address and vehicle entities where one shortForm is a
   //       strict prefix of another (e.g. "1 Smith Street" absorbed into
   //       "1 Smith Street, FREMANTLE WA", or "ABC 123" into "ABC 123 White Hilux").
-  //
-  //       IMPORTANT constraints:
-  //         - Only applies to "address" and "vehicle" types (NOT persons or businesses)
-  //           because person names share common prefixes legitimately (SMITH vs SMITH JONES)
-  //         - isTarget entities are never touched by this pass
-  //         - The shorter form must end at a natural word boundary in the longer form
-  //           (space, comma, semicolon, dash, or slash) to avoid false merges
+  //       See mergeContainedEntities above for the algorithm itself.
   // ─────────────────────────────────────────────────────────────────────────────
 
   // Separate target entities (keyed as target::) from non-target entities
@@ -5988,88 +6100,9 @@ export async function getAllIntelligenceEntities(): Promise<
       continue;
     }
 
-    // Sort by shortForm length descending so longer (fuller) versions come first
-    const sorted = [...group].sort(
-      (a, b) => b.shortForm.length - a.shortForm.length
-    );
-    const absorbed = new Set<string>(); // lowercase shortForms that have been merged away
-
-    for (let i = 0; i < sorted.length; i++) {
-      const longer = sorted[i];
-      const longerLower = longer.shortForm.toLowerCase().trim();
-      if (absorbed.has(longerLower)) continue;
-
-      for (let j = i + 1; j < sorted.length; j++) {
-        const shorter = sorted[j];
-        const shorterLower = shorter.shortForm.toLowerCase().trim();
-        if (absorbed.has(shorterLower)) continue;
-
-        // For vehicles: also absorb when the shorter shortForm appears ANYWHERE inside
-        // the longer (e.g. "ABC 123" inside "silver Toyota Hilux bearing ABC 123").
-        // For addresses: keep the original prefix-only rule.
-        const isContained =
-          entityType === "vehicle"
-            ? (() => {
-                const idx = longerLower.indexOf(shorterLower);
-                if (idx === -1) return false;
-                // Must be at a word boundary on both sides
-                const before =
-                  idx === 0 || /[\s,;\-/(]/.test(longerLower[idx - 1]);
-                const after =
-                  idx + shorterLower.length === longerLower.length ||
-                  /[\s,;\-/)]/.test(longerLower[idx + shorterLower.length]);
-                return before && after;
-              })()
-            : longerLower.startsWith(shorterLower) &&
-              (longerLower.length === shorterLower.length ||
-                /^[\s,;\-/]/.test(longerLower.slice(shorterLower.length)));
-        if (isContained) {
-          // Merge shorter's occurrences into longer, deduplicating by sheetId+rowId+snippet
-          const existingKeys = new Set(
-            longer.occurrences.map(
-              (o: IntelligenceEntity["occurrences"][0]) =>
-                `${o.sheetId}::${o.rowId}::${o.observationSnippet}`
-            )
-          );
-          for (const occ of shorter.occurrences) {
-            const occKey = `${occ.sheetId}::${occ.rowId}::${occ.observationSnippet}`;
-            if (!existingKeys.has(occKey)) {
-              longer.occurrences.push(occ);
-              existingKeys.add(occKey);
-            }
-          }
-          if (shorter.aliasLabels?.length) {
-            longer.aliasLabels = longer.aliasLabels ?? [];
-            for (const label of shorter.aliasLabels) {
-              if (!longer.aliasLabels.includes(label))
-                longer.aliasLabels.push(label);
-            }
-          }
-          // For vehicles: when merging, prefer the entity with a richer display name
-          // (one that includes colour/make/model) over a bare rego or "Vehicle REGO" form.
-          // The longer entity (sorted by shortForm length) is usually richer, so we keep it.
-          // Exception: if the longer entity is actually a bare rego and the shorter has
-          // a richer description (colour+make), swap them.
-          if (entityType === "vehicle") {
-            const longerHasDesc = /[a-z]/i.test(
-              longer.shortForm.replace(/^\d[A-Z]{2,3}\d{3}\s*/i, "")
-            );
-            const shorterHasDesc = /[a-z]/i.test(
-              shorter.shortForm.replace(/^\d[A-Z]{2,3}\d{3}\s*/i, "")
-            );
-            if (!longerHasDesc && shorterHasDesc) {
-              longer.shortForm = shorter.shortForm;
-            }
-          }
-          absorbed.add(shorterLower);
-        }
-      }
-
-      // Only add to mergedMap if this entity was NOT itself absorbed by a longer one
-      if (!absorbed.has(longerLower)) {
-        const mergeKey = `${longer.type}::${longerLower}`;
-        mergedMap.set(mergeKey, longer);
-      }
+    for (const survivor of mergeContainedEntities(group, entityType)) {
+      const mergeKey = `${survivor.type}::${survivor.shortForm.toLowerCase().trim()}`;
+      mergedMap.set(mergeKey, survivor);
     }
   }
 

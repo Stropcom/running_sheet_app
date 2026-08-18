@@ -66,6 +66,33 @@ describe("extractEntitiesFromText — vehicle vs address disambiguation", () => 
     expect(wtq304?.type).toBe("vehicle");
   });
 
+  it("classifies a short all-caps bracket code as a person, not a rego (the Basil CAT bug)", () => {
+    // A short (2-3 letter) all-caps bracket code with no digits is an
+    // ordinary short surname — but it also matches WA_REGO's personalised-
+    // plate catch-all (`^[A-Z0-9]{2,7}$`), and the guard meant to exclude
+    // all-caps names from that branch only excluded names of 4+ letters.
+    // A person misclassified as a vehicle silently skips the person-only
+    // fuzzy-match against the Target/Associate Registry (see
+    // checkPossibleTargetMatches), so the "possible duplicate" prompt never
+    // fires even for an already-registered exact name match.
+    for (const surname of ["CAT", "FOX", "LEE", "COX", "IVY", "OLD"]) {
+      const entities = extractEntitiesFromText(`John ${surname} (${surname})`);
+      const person = entities.find(e => e.rawShortForm === surname);
+      expect(person?.type).toBe("person");
+    }
+  });
+
+  it("still classifies a genuine bare rego mention as a vehicle", () => {
+    // Non-regression: a rego that actually contains digits must still
+    // classify as a vehicle even with no "vehicle"/"registration" keyword
+    // nearby — shortFormLooksLikeName requires no digits, so this is
+    // unaffected by the person-code fix above.
+    const text = "Parked outside the address (1FAT004).";
+    const entities = extractEntitiesFromText(text);
+    const vehicle = entities.find(e => e.rawShortForm === "1FAT004");
+    expect(vehicle?.type).toBe("vehicle");
+  });
+
   it("still classifies a real address after a leading sentence correctly", () => {
     // Non-regression: the address check must still fire for an address
     // whose own street-type words are in the same sentence as the bracket,

@@ -3255,8 +3255,21 @@ export function extractEntitiesFromText(text: string): Array<{
       else confidence = "medium";
     }
     // WA rego plate in shortForm — strong vehicle signal
-    else if (WA_REGO && !/^[A-Z]{4,}$/.test(shortForm)) {
-      // Only treat as rego if it doesn't look like an all-caps name (4+ letters)
+    else if (WA_REGO && !shortFormLooksLikeName) {
+      // Only treat as rego if it doesn't look like an all-caps name. This used
+      // to require 4+ letters to count as "looks like a name", which let any
+      // short (2-3 letter) all-caps bracket code — a perfectly ordinary short
+      // surname like "CAT", "FOX", "LEE", "COX" — fall through and match the
+      // personalised-plate branch of WA_REGO (`^[A-Z0-9]{2,7}$`) instead of
+      // being classified as a person. That misclassification was silent but
+      // significant: a person entity classified as a vehicle never runs
+      // through the person-specific fuzzy-match check against the Target/
+      // Associate Registry (see checkPossibleTargetMatches / SheetDetail's
+      // updateRowWithDupeCheck), so the "possible duplicate" prompt never
+      // fired even for an exact match. Reusing shortFormLooksLikeName (already
+      // used one branch up for the same purpose) excludes any all-caps,
+      // digit-free bracket code regardless of length, which is what "looks
+      // like a name" actually means here.
       type = "vehicle";
       confidence = "medium";
     }

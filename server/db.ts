@@ -116,6 +116,7 @@ import {
   type DedupType,
   type DedupCandidateEntity,
 } from "./entityDedup";
+import { attributedRowIds, collapseToVisits } from "./entityAttribution";
 import { buildRunningSheetTitle } from "../shared/runningSheetTitle";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -3964,12 +3965,16 @@ export async function getIntelligenceHeatMapLocations(params: {
       sheetDate: sheet[0].sheetDate,
     });
   } else {
+    // Deliberately NOT narrowed by runningSheets.targetId. A target filter
+    // means "rows this target is mentioned in" (applied per-row below), not
+    // "sheets assigned to this target" — assignment records who the team set
+    // out to watch, not who they actually saw. Scoping by sheet both credited
+    // the target with everyone else's movements on their sheets and missed
+    // their own mentions on other sheets in the operation.
     const conditions = [
       eq(runningSheets.operationId, params.operationId),
       isNull(runningSheets.deletedAt),
     ];
-    if (params.targetId)
-      conditions.push(eq(runningSheets.targetId, params.targetId));
     const sheets = await db
       .select({
         id: runningSheets.id,
@@ -4058,6 +4063,20 @@ export async function getIntelligenceHeatMapLocations(params: {
   // bracket-only pass undercounts to a single visit.
   const allEntities = await getAllIntelligenceEntities();
 
+  // When filtering to a target, restrict to rows that target is actually
+  // mentioned in (see the sheet-scoping note above). An empty set is a real
+  // answer, not a failure: a target never named in any observation has no
+  // mapped locations, however many sheets were opened in their name.
+  let targetRowIds: Set<number> | null = null;
+  if (params.targetId) {
+    const targetEntity = allEntities.find(
+      e => e.isTarget && e.targetId === params.targetId
+    );
+    targetRowIds = attributedRowIds(targetEntity?.occurrences, {
+      sheetIds: sheetIdSet,
+    });
+  }
+
   // A "mention" of an address isn't the same as a "visit" — a target's home
   // address sitting on their target card, a Surveillance Commenced/Ceased
   // marker, a Travelled Via street list, or an address mentioned without any
@@ -4080,6 +4099,9 @@ export async function getIntelligenceHeatMapLocations(params: {
       // never a real sighting.
       if (occ.rowId === 0) continue;
       if (!sheetIdSet.has(occ.sheetId)) continue;
+      // Target filter: the address must be mentioned in a row the target is
+      // themselves mentioned in.
+      if (targetRowIds && !targetRowIds.has(occ.rowId)) continue;
 
       const row = rowById.get(occ.rowId);
       if (!row?.observation) continue;
@@ -4118,24 +4140,10 @@ export async function getIntelligenceHeatMapLocations(params: {
   // appears in between, or the sheet changes. Walk each sheet's qualifying
   // mentions in row order and count address transitions, not raw mentions.
   const grouped = new Map<string, { label: string; count: number }>();
-  const qualifyingBySheet = new Map<number, QualifyingMention[]>();
-  for (const m of qualifying) {
-    if (!qualifyingBySheet.has(m.sheetId)) qualifyingBySheet.set(m.sheetId, []);
-    qualifyingBySheet.get(m.sheetId)!.push(m);
-  }
-  for (const mentions of Array.from(qualifyingBySheet.values())) {
-    mentions.sort((a, b) => a.order - b.order);
-    let lastEntityKey: string | null = null;
-    for (const m of mentions) {
-      if (m.entityKey === lastEntityKey) {
-        lastEntityKey = m.entityKey;
-        continue; // still the same visit
-      }
-      lastEntityKey = m.entityKey;
-      const existing = grouped.get(m.entityKey);
-      if (existing) existing.count++;
-      else grouped.set(m.entityKey, { label: m.label, count: 1 });
-    }
+  for (const visit of collapseToVisits(qualifying)) {
+    const existing = grouped.get(visit.entityKey);
+    if (existing) existing.count++;
+    else grouped.set(visit.entityKey, { label: visit.label, count: 1 });
   }
 
   const results = await Promise.all(
@@ -4318,21 +4326,13 @@ export async function getIntelTargetPatternOfLife(
     e => e.isTarget && e.targetId === targetId
   );
 
-  let targetRowIds = new Set<number>();
-  if (targetSheetIds.size) {
-    const rows = await db
-      .select({ id: sheetRows.id })
-      .from(sheetRows)
-      .where(inArray(sheetRows.sheetId, Array.from(targetSheetIds)));
-    targetRowIds = new Set(rows.map(r => r.id));
-  }
-  if (targetEntity) {
-    for (const occ of targetEntity.occurrences) {
-      if (occ.rowId > 0 && occ.operationId === operationId) {
-        targetRowIds.add(occ.rowId);
-        targetSheetIds.add(occ.sheetId);
-      }
-    }
+  // Only rows the target is actually mentioned in — see entityAttribution.ts
+  // for why a sheet assignment isn't sufficient.
+  const targetRowIds = attributedRowIds(targetEntity?.occurrences, {
+    operationId,
+  });
+  for (const occ of targetEntity?.occurrences ?? []) {
+    if (targetRowIds.has(occ.rowId)) targetSheetIds.add(occ.sheetId);
   }
   // Mentioned-only sheets need their own date-resolution info too.
   const missingSheetIds = Array.from(targetSheetIds).filter(
@@ -4385,7 +4385,12 @@ export async function getIntelTargetPatternOfLife(
     };
   }
 
-  const rows = await db
+  // Every row of the sheets in scope — not just the target's own rows. The
+  // target's rows are picked out below via targetRowIds; the full set is
+  // needed so "previous row" (which isNonObservationRow uses to spot a
+  // continued-via / whereat street list) and row ordering stay true to the
+  // sheet as written, rather than to whichever subset mentions the target.
+  const allSheetRows = await db
     .select({
       id: sheetRows.id,
       sheetId: sheetRows.sheetId,
@@ -4396,12 +4401,13 @@ export async function getIntelTargetPatternOfLife(
       rowNumber: sheetRows.rowNumber,
     })
     .from(sheetRows)
-    .where(inArray(sheetRows.id, Array.from(targetRowIds)))
+    .where(inArray(sheetRows.sheetId, Array.from(targetSheetIds)))
     .orderBy(sheetRows.sheetId, sheetRows.timeMinutes, sheetRows.rowNumber);
+  const rows = allSheetRows.filter(r => targetRowIds.has(r.id));
   const rowById = new Map(rows.map(r => [r.id, r]));
 
-  const rowsBySheetOrdered = new Map<number, typeof rows>();
-  for (const row of rows) {
+  const rowsBySheetOrdered = new Map<number, typeof allSheetRows>();
+  for (const row of allSheetRows) {
     if (!rowsBySheetOrdered.has(row.sheetId))
       rowsBySheetOrdered.set(row.sheetId, []);
     rowsBySheetOrdered.get(row.sheetId)!.push(row);
@@ -4512,26 +4518,14 @@ export async function getIntelTargetPatternOfLife(
   // sheet, in row order) into one visit — "arrived at X" then "departed X"
   // is one visit to X, not two. Keep the first mention's time as the
   // visit's representative time. Same rule the Heat Map already applies. ──
-  const qualifyingBySheet = new Map<number, QualifyingMention[]>();
-  for (const m of geocodedQualifying) {
-    if (!qualifyingBySheet.has(m.sheetId)) qualifyingBySheet.set(m.sheetId, []);
-    qualifyingBySheet.get(m.sheetId)!.push(m);
-  }
-  const visitEvents: LocationVisitEvent[] = [];
-  for (const mentions of Array.from(qualifyingBySheet.values())) {
-    mentions.sort((a, b) => a.order - b.order);
-    let lastEntityKey: string | null = null;
-    for (const m of mentions) {
-      if (m.entityKey === lastEntityKey) continue; // still the same visit
-      lastEntityKey = m.entityKey;
-      visitEvents.push({
-        entityKey: m.entityKey,
-        label: m.label,
-        timeMinutes: m.timeMinutes,
-        dateISO: m.dateISO,
-      });
-    }
-  }
+  const visitEvents: LocationVisitEvent[] = collapseToVisits(
+    geocodedQualifying
+  ).map(m => ({
+    entityKey: m.entityKey,
+    label: m.label,
+    timeMinutes: m.timeMinutes,
+    dateISO: m.dateISO,
+  }));
   const locationTimeGrid = buildLocationTimeGrid(visitEvents, 12, 6);
   const peakCell = findPeakCell(locationTimeGrid);
 
@@ -8763,42 +8757,30 @@ async function buildTargetOperationalAssociations(
   targetLabel: string,
   targetName: string,
   allEntities: IntelligenceEntity[],
-  targetEntity: IntelligenceEntity | undefined
+  targetEntity: IntelligenceEntity | undefined,
+  /** Restrict to mentions on these sheets. Omitted = app-wide (the target's
+   * own profile); the Operation Profile passes its own sheets so it stays a
+   * summary of that operation rather than of the target everywhere. */
+  scopeSheetIds?: Set<number>
 ): Promise<{
   assocPersons: IntelProfileEntity[];
   assocVehicles: IntelProfileEntity[];
   assocLocations: IntelProfileEntity[];
 }> {
-  const db = await getDb();
-  if (!db) return { assocPersons: [], assocVehicles: [], assocLocations: [] };
-
-  const targetSheets = await db
-    .select({ id: runningSheets.id })
-    .from(runningSheets)
-    .where(
-      and(eq(runningSheets.targetId, targetId), isNull(runningSheets.deletedAt))
-    );
-
-  const targetSheetIds = targetSheets.map(s => s.id);
-  const rows = targetSheetIds.length
-    ? await db
-        .select({ id: sheetRows.id })
-        .from(sheetRows)
-        .where(inArray(sheetRows.sheetId, targetSheetIds))
-    : [];
-
-  // Rows this target is formally assigned to (via the sheet's targetId)...
-  const targetRowIds = new Set(rows.map(r => r.id));
-  // ...UNION rows where the target's own name is mentioned in observation
-  // text elsewhere — the same occurrence data that already links them in the
-  // Intelligence Folder / Ego Network, so a target's profile shows the same
-  // co-occurring people/vehicles/locations those views already agree on,
-  // not just what's confined to sheets formally assigned to them.
-  if (targetEntity) {
-    for (const occ of targetEntity.occurrences) {
-      if (occ.rowId > 0) targetRowIds.add(occ.rowId);
-    }
-  }
+  // Rows where this target is actually mentioned — the same occurrence data
+  // that links them in the Intelligence Folder / Ego Network, so a target's
+  // profile shows the co-occurring people/vehicles/locations those views
+  // already agree on.
+  //
+  // Every row of a formally-assigned sheet used to be included as well. That
+  // was wrong: a sheet assignment says who the team set out to watch, not who
+  // they saw. On a shift spent watching a house the target never leaves, the
+  // associates and vehicles that do come and go were all being listed as the
+  // target's own associations. An entity only associates with the target
+  // where both are named in the same observation.
+  const targetRowIds = attributedRowIds(targetEntity?.occurrences, {
+    sheetIds: scopeSheetIds,
+  });
 
   if (!targetRowIds.size)
     return { assocPersons: [], assocVehicles: [], assocLocations: [] };
@@ -9103,6 +9085,7 @@ export async function getIntelOperationProfile(
     .where(eq(operationTargetLinks.operationId, operationId));
 
   const allEntities = await getAllIntelligenceEntities();
+  const operationSheetIds = new Set(sheets.map(s => s.id));
 
   const targetProfiles = (
     await Promise.all(
@@ -9115,16 +9098,19 @@ export async function getIntelOperationProfile(
           e => e.isTarget && e.targetId === targetId
         );
         // Operation Profile is scoped to this operation's own sheets by
-        // design (it's summarizing the operation, not the target) — pass no
-        // targetEntity so associations stay confined to `targetSheets`,
-        // unlike the target's own profile page which widens app-wide.
+        // design (it's summarizing the operation, not the target), unlike the
+        // target's own profile page which widens app-wide. That scoping is
+        // now expressed as an explicit sheet scope rather than by withholding
+        // targetEntity — associations are the rows the target is mentioned
+        // in, and withholding the entity would leave nothing to match on.
         const { assocPersons, assocVehicles, assocLocations } =
           await buildTargetOperationalAssociations(
             targetId,
             targetLabel,
             target.name,
             allEntities,
-            undefined
+            targetEntity,
+            operationSheetIds
           );
         return {
           targetId,

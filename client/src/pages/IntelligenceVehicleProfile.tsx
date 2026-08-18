@@ -96,7 +96,7 @@ function buildVehicleProfileHtml(
 <div class="cover-header">
   <div class="brand-label">RunLog Intelligence Profile — Vehicle</div>
   <div class="entity-name">${esc(displayLabel)}${profile.isIndicesOnly ? `<span style="display:inline-block;margin-left:10px;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:0.05em;vertical-align:middle;background:rgba(129,140,248,0.25);border:1px solid rgba(199,210,254,0.5);color:#e0e7ff">INDICES</span>` : ""}</div>
-  ${profile.linkedTarget ? `<div style="font-size:11px;opacity:0.75;margin-top:4px">Registered to: ${esc(profile.linkedTarget.name)}</div>` : ""}
+  ${profile.linkedTarget ? `<div style="font-size:11px;opacity:0.75;margin-top:4px">Linked to: ${esc(profile.linkedTarget.name)}</div>` : ""}
   ${profile.isPrevious ? `<div style="display:inline-block;margin-top:6px;padding:2px 8px;border-radius:3px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;background:rgba(255,255,255,0.15);color:#fff">Previous</div>` : ""}
   <div class="gen-time">Generated: ${generatedAt}</div>
 </div>
@@ -199,7 +199,7 @@ export default function IntelligenceVehicleProfile() {
                     </h1>
                     {profile.linkedTarget && (
                       <p className="text-sm opacity-75 mt-1">
-                        Registered to: {profile.linkedTarget.name}
+                        Linked to: {profile.linkedTarget.name}
                       </p>
                     )}
                     {profile.isPrevious && (

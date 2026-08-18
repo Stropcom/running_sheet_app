@@ -1792,6 +1792,8 @@ interface PersonMentionSuggestion {
   displayName: string;
   bracketCode: string;
   rowCount: number;
+  targetId: number | null;
+  associateId: number | null;
 }
 
 function EditableCell({
@@ -1840,6 +1842,12 @@ function EditableCell({
     );
   const mentionSuggestions: PersonMentionSuggestion[] =
     mentionQuery.trim().length >= 2 ? (mentionResults ?? []) : [];
+  // Picking a suggestion here is at least as deliberate a confirmation as
+  // clicking "Yes" on the save-time TargetMatchDialog prompt — recording
+  // the same decision immediately means that prompt doesn't fire again for
+  // a person the officer just identified by name.
+  const confirmPersonMatch =
+    trpc.intelligence.confirmPersonNameMatch.useMutation();
 
   function closeMentionDropdown() {
     setMentionWord(null);
@@ -1883,6 +1891,14 @@ function EditableCell({
       insertText +
       draft.slice(mentionWord.wordEnd);
     setDraft(newDraft);
+    if (s.targetId != null || s.associateId != null) {
+      confirmPersonMatch.mutate({
+        spelling: s.bracketCode,
+        targetId: s.targetId ?? undefined,
+        associateId: s.associateId ?? undefined,
+        correctSpelling: s.bracketCode,
+      });
+    }
     closeMentionDropdown();
     const newPos = mentionWord.wordStart + insertText.length;
     requestAnimationFrame(() => {

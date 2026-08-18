@@ -6498,6 +6498,13 @@ export interface PersonMentionSuggestion {
   /** The bracket code to write it with, e.g. "CAT". */
   bracketCode: string;
   rowCount: number;
+  /** Exactly one of these is set — which Registry record this suggestion is,
+   * so selecting it can immediately record the same confirmed link
+   * checkPossibleTargetMatches' save-time prompt would otherwise still ask
+   * for, rather than asking again for a person the officer just picked by
+   * name. */
+  targetId: number | null;
+  associateId: number | null;
 }
 
 /**
@@ -6527,6 +6534,8 @@ export async function searchRegisteredPersonMentions(
       displayName: nameWithoutBornClause(e.shortForm),
       bracketCode: bracketCodeFromRegisteredName(e.shortForm),
       rowCount: e.occurrences.filter(o => o.rowId > 0).length,
+      targetId: e.isTarget ? (e.targetId ?? null) : null,
+      associateId: e.isAssociate ? (e.associateId ?? null) : null,
     }))
     .sort((a, b) => b.rowCount - a.rowCount)
     .slice(0, 8);

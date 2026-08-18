@@ -3121,6 +3121,22 @@ export function extractEntitiesFromText(text: string): Array<{
       fullDescription.split(/[,;]/).pop() ?? fullDescription
     ).trim();
     const lowerLastClause = lastClause.toLowerCase();
+    // Address detection (below) is scoped to the last SENTENCE before the
+    // bracket, not the whole fullDescription — a legitimate address
+    // routinely spans a comma ("44 Smith Street, PALMYRA WA"), so it can't
+    // be scoped as tightly as the clause-level vehicle check above, but it
+    // should never span a full stop into an unrelated earlier sentence.
+    // Without this, a row that opens with a plain-prose address statement
+    // and no bracket of its own ("Vehicles visible at 81 Redmond Road.")
+    // followed by the row's first bracketed entity — e.g. a vehicle,
+    // "A green Toyota Prado, bearing WA registration WTQ304 (Vehicle
+    // WTQ304)" — lets the regex's fullDescription capture balloon backward
+    // across the sentence boundary (nothing bounds it until it hits the
+    // opening "(" or the 120-char cap), and the leading sentence's address
+    // pattern gets misapplied to the vehicle.
+    const lastSentence = (
+      fullDescription.split(/(?<=[.!?])\s+/).pop() ?? fullDescription
+    ).trim();
 
     let type: "person" | "vehicle" | "address" | "business" | "unknown" =
       "unknown";
@@ -3136,27 +3152,27 @@ export function extractEntitiesFromText(text: string): Array<{
       /\b(st|street|rd|road|ave|avenue|dr|drive|way|ct|court|pl|place|cl|close|cres|crescent|blvd|boulevard|hwy|highway|fwy|freeway|ln|lane|tce|terrace|pde|parade|cct|circuit|gr|grove|rise|loop|link|walk|track|row|mews|quay|esplanade|promenade)\b/i;
     const addressInFull =
       /\b\d{1,5}[A-Za-z]?\s+\w[\w\s]*(street|road|ave|avenue|drive|way|court|place|close|crescent|boulevard|highway|freeway|lane|terrace|parade|circuit)\b/i.test(
-        fullDescription
+        lastSentence
       ) ||
       STREET_TYPES.test(shortForm) ||
       /^\d{1,5}\s/.test(shortForm) ||
       // cnr / corner of addresses: "cnr Smith St and Jones Ave"
       /^(cnr|corner of|corner)\b/i.test(shortForm) ||
-      /^(cnr|corner of|corner)\b/i.test(fullDescription) ||
+      /^(cnr|corner of|corner)\b/i.test(lastSentence) ||
       // Lot numbers: "Lot 42 Smith Road"
       /^lot\s+\d+/i.test(shortForm) ||
       // Google Maps formatted addresses: "131 Lakey St, Southern River WA 6110, Australia"
       // Pattern: number + street name + suburb + STATE + postcode (+ optional ", Australia")
       /\b\d{1,5}[A-Za-z]?\/\d{1,5}\s/.test(shortForm) || // unit/number e.g. "3/12 Smith St"
-      /\b\d{1,5}[A-Za-z]?\/\d{1,5}\s/.test(fullDescription) ||
+      /\b\d{1,5}[A-Za-z]?\/\d{1,5}\s/.test(lastSentence) ||
       /,\s*[A-Za-z][\w\s]+\s+(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\s+\d{4}/.test(
         shortForm
       ) ||
       /,\s*[A-Za-z][\w\s]+\s+(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\s+\d{4}/.test(
-        fullDescription
+        lastSentence
       ) ||
       /,\s*Australia\s*$/.test(shortForm) ||
-      /,\s*Australia\s*$/.test(fullDescription) ||
+      /,\s*Australia\s*$/.test(lastSentence) ||
       // Airport terminals, train stations, bus stops, ports, gates, platforms.
       // "station" is excluded when it's followed by "wagon"/"sedan" — that's
       // the vehicle body-style term ("station wagon"/"station sedan"), not a
@@ -3173,7 +3189,7 @@ export function extractEntitiesFromText(text: string): Array<{
         shortForm
       ) ||
       /\b(airport|station(?!\s+(?:wagon|sedan)\b)|terminus|port|wharf|depot|interchange)\b/i.test(
-        fullDescription
+        lastSentence
       );
 
     // ── WA vehicle registration patterns ─────────────────────────────────────

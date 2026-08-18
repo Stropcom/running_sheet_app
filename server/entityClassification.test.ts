@@ -49,4 +49,31 @@ describe("extractEntitiesFromText — vehicle vs address disambiguation", () => 
     );
     expect(address?.type).toBe("address");
   });
+
+  it("classifies the first vehicle in a row even after a leading, bracket-less address sentence (the WTQ304 bug)", () => {
+    // The regex that pairs preceding text with a bracket has nothing to
+    // anchor its start once it reaches the very first bracket in a row —
+    // if that row opens with a plain-prose address statement and no
+    // bracket of its own ("Vehicles visible at 81 Redmond Road."), the
+    // whole leading sentence bleeds into the first bracketed entity's
+    // fullDescription. Address detection used to scan the entire
+    // fullDescription, so "81 Redmond Road" from the unrelated leading
+    // sentence misclassified the vehicle that followed it.
+    const text =
+      "Vehicles visible at 81 Redmond Road. A green Toyota Prado, bearing WA registration WTQ304 (Vehicle WTQ304), a silver Hyundai Getz, bearing WA registration 1CWY970 (Vehicle 1CWY970) parked and unattended on the driveway.";
+    const entities = extractEntitiesFromText(text);
+    const wtq304 = entities.find(e => e.rawShortForm === "Vehicle WTQ304");
+    expect(wtq304?.type).toBe("vehicle");
+  });
+
+  it("still classifies a real address after a leading sentence correctly", () => {
+    // Non-regression: the address check must still fire for an address
+    // whose own street-type words are in the same sentence as the bracket,
+    // even with an earlier, unrelated sentence before it.
+    const text =
+      "Vehicles visible nearby. TGT (TGT) departed and arrived at 44 Elvira Street, PALMYRA WA (44 Elvira Street).";
+    const entities = extractEntitiesFromText(text);
+    const address = entities.find(e => e.rawShortForm === "44 Elvira Street");
+    expect(address?.type).toBe("address");
+  });
 });

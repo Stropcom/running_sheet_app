@@ -3885,8 +3885,24 @@ export function addDaysISO(dateISO: string, days: number): string {
 // departure, not an arrival — an address mentioned in the same row as
 // "continued via" is the point they just left, i.e. still part of the same
 // visit, not a new one.
-const OBSERVATION_SIGNAL_RE =
-  /\b(arriv\w*|depart\w*|left|enter\w*|exit\w*|park\w*|observ\w*|seen|saw|see|met|meet\w*|attend\w*|pull\w*\s+(?:into|up)|stopp?\w*|wait\w*|remain\w*|stationary|revers\w*\s+from\s+the\s+driveway|continu\w*\s+via|vicinity\s+of|driveway\s+of|driv(?:e|es|ing|ove)\s+(?:into|through)|travell?\w*\s+through)\b/i;
+//
+// The second group below (walk/stood/return/approach/knock/sat, "out of
+// sight", and the front door/yard/driveway nouns) covers presence narrated
+// without an arrival or departure verb. Officers write what the target is
+// *doing*, not only that they got somewhere: "SANDWICH and CAT walked from
+// 81 Redmond Road and stood in conversation in the front yard" is as clear a
+// sighting at that address as "arrived at", but matched nothing here. The
+// effect was perverse — in the same sheet an associate's "CAT arrived at 81
+// Redmond Road" was counted while the target standing in the same front yard
+// three hours later was not.
+export const OBSERVATION_SIGNAL_RE =
+  /\b(arriv\w*|depart\w*|left|enter\w*|exit\w*|park\w*|observ\w*|seen|saw|see|met|meet\w*|attend\w*|walk\w*|stood|stand\w*|return\w*|approach\w*|knock\w*|sat|sitting|out\s+of\s+sight|front\s+(?:door|yard|gate)|driveway|pull\w*\s+(?:into|up)|stopp?\w*|wait\w*|remain\w*|stationary|revers\w*\s+from\s+the\s+driveway|continu\w*\s+via|vicinity\s+of|driv(?:e|es|ing|ove)\s+(?:into|through)|travell?\w*\s+through)\b/i;
+
+/** Does this observation narrate a presence at a place, as opposed to merely
+ * naming one? Exported for testing — see observationSignal.test.ts. */
+export function hasObservationSignal(observation: string): boolean {
+  return OBSERVATION_SIGNAL_RE.test(observation);
+}
 
 /** Rows that only mark surveillance team activity or a travelled-via street
  * list, not a sighting of the target — same classification the Court
@@ -4063,18 +4079,26 @@ export async function getIntelligenceHeatMapLocations(params: {
   // bracket-only pass undercounts to a single visit.
   const allEntities = await getAllIntelligenceEntities();
 
-  // When filtering to a target, restrict to rows that target is actually
-  // mentioned in (see the sheet-scoping note above). An empty set is a real
-  // answer, not a failure: a target never named in any observation has no
-  // mapped locations, however many sheets were opened in their name.
-  let targetRowIds: Set<number> | null = null;
-  if (params.targetId) {
-    const targetEntity = allEntities.find(
-      e => e.isTarget && e.targetId === params.targetId
-    );
-    targetRowIds = attributedRowIds(targetEntity?.occurrences, {
-      sheetIds: sheetIdSet,
-    });
+  // The heat map plots TARGET movement — always, not only when one target is
+  // picked out. "All Targets" means every target on the operation, not every
+  // entity on it: an associate's or a third party's addresses are theirs, and
+  // mapping them under the operation's targets misrepresents where the
+  // targets have been. So restrict to rows a target is actually mentioned in,
+  // either the one selected or any of them.
+  //
+  // An empty set is a real answer, not a failure: a target never named in any
+  // observation has no mapped locations, however many sheets were opened in
+  // their name.
+  const targetRowIds = new Set<number>();
+  for (const entity of allEntities) {
+    if (!entity.isTarget) continue;
+    if (params.targetId != null && entity.targetId !== params.targetId)
+      continue;
+    for (const rowId of Array.from(
+      attributedRowIds(entity.occurrences, { sheetIds: sheetIdSet })
+    )) {
+      targetRowIds.add(rowId);
+    }
   }
 
   // A "mention" of an address isn't the same as a "visit" — a target's home
@@ -4099,9 +4123,9 @@ export async function getIntelligenceHeatMapLocations(params: {
       // never a real sighting.
       if (occ.rowId === 0) continue;
       if (!sheetIdSet.has(occ.sheetId)) continue;
-      // Target filter: the address must be mentioned in a row the target is
-      // themselves mentioned in.
-      if (targetRowIds && !targetRowIds.has(occ.rowId)) continue;
+      // The address must be mentioned in a row a target is themselves
+      // mentioned in.
+      if (!targetRowIds.has(occ.rowId)) continue;
 
       const row = rowById.get(occ.rowId);
       if (!row?.observation) continue;
@@ -5295,6 +5319,18 @@ export async function getAllIntelligenceEntities(): Promise<
             ? addressBracketKey(shortForm)
             : shortForm.toLowerCase().replace(/\s+/g, " ").trim();
       const key = `${field.type}::${normKey}`;
+      // Same problem the vehicle branch above solves, now for addresses: a
+      // registry address field is stored exactly as typed, still carrying its
+      // state suffix and its own trailing bracket code. Unformatted it is
+      // always the longest candidate, so it won the "prefer longer" merge
+      // below and became the display label everywhere — Home Presence read
+      // "101 Eric Street, COTTESLOE WA (101 Eric Street)", bracket and all,
+      // while every text-mined address rendered cleanly.
+      //
+      // Deliberately applied AFTER normKey is computed above: addresses key
+      // on the raw value's trailing bracket, so formatting first would change
+      // the key and re-partition existing entities. Display only.
+      if (field.type === "address") shortForm = formatIntelAddress(shortForm);
       if (!entityMap.has(key)) {
         entityMap.set(key, { shortForm, type: field.type, occurrences: [] });
       } else {
@@ -5482,6 +5518,10 @@ export async function getAllIntelligenceEntities(): Promise<
             ? addressBracketKey(shortForm)
             : shortForm.toLowerCase().replace(/\s+/g, " ").trim();
       const key = `${field.type}::${normKey}`;
+      // See the matching comment on the target locationFields loop above —
+      // tidy the registry address for display, after the key is computed
+      // from the raw value so entity keying is unaffected.
+      if (field.type === "address") shortForm = formatIntelAddress(shortForm);
       if (!entityMap.has(key)) {
         entityMap.set(key, { shortForm, type: field.type, occurrences: [] });
       } else {

@@ -41,7 +41,7 @@ cd /opt/runlog && git pull && pnpm install && pnpm db:push && pnpm build && pm2 
 It works, but `db:push` is `drizzle-kit generate && drizzle-kit migrate`
 (see `package.json`), and the **`generate` half should never run on a
 server**. It compares `drizzle/schema.ts` against the committed snapshots
-and *writes a new migration file* when they differ. Normally both come from
+and _writes a new migration file_ when they differ. Normally both come from
 git so it's a no-op — but if a schema change is ever committed without its
 migration, the droplet authors one itself. That file then exists only on the
 droplet, with a random name that won't match the one a developer generates
@@ -190,11 +190,11 @@ the way:
    base64-encoded upload body outright, returning nginx's own HTML error
    page — the tRPC client then failed to parse that HTML as JSON,
    producing the cryptic error. Fixed by adding `client_max_body_size
-   30M;` to the `server {}` block in `/etc/nginx/sites-available/runlog`
+30M;` to the `server {}` block in `/etc/nginx/sites-available/runlog`
    (droplet-only config, not in this repo) and reloading nginx.
 2. That fix alone didn't resolve it — `pm2 logs runlog` showed the real
    cause: `Error: ENOENT: no such file or directory, open
-   '/opt/runlog/dist/models/eng.traineddata.gz'`. The production build
+'/opt/runlog/dist/models/eng.traineddata.gz'`. The production build
    script only copied `server/faceRecognition/models` into `dist/models`,
    never `server/externalIntel/models` (the OCR feature's vendored
    Tesseract trained-data file) — esbuild bundles the whole server into
@@ -231,7 +231,7 @@ the entire duration. That exactly matches the symptom: 100% CPU, server
 unresponsive to all other requests, until restarted.
 
 The default "Check" scope (`main`, no date range selected) queries a
-member's *entire* shift history with no date filter, so this was easy to
+member's _entire_ shift history with no date filter, so this was easy to
 trigger without realizing it — no unusual input needed, just an
 above-average shift history length for one member.
 
@@ -245,7 +245,7 @@ the old code would have run). Pushed to `claude/claude-md-docs-o4trnz`.
 droplet access from this session) and `pm2 restart runlog` if it's still
 hung when this lands.
 
-Worth noting: this doesn't explain the *previous* unexplained hang logged
+Worth noting: this doesn't explain the _previous_ unexplained hang logged
 below (2026-07-30, no request traffic in logs at all that time) — that
 one had zero `[Auth]` entries since the prior deploy, meaning nothing hit
 the server, so it can't be this same request-triggered bug. Two separate
@@ -263,10 +263,11 @@ at ~23:32 UTC. Confirmed via `curl localhost:3000` hanging indefinitely —
 the Node event loop was fully blocked, not just under heavy load.
 
 **Investigation:**
+
 - `pm2 status` showed the process at 0% CPU while `top` showed 99.9% —
   PM2's own CPU column can be stale/lagged; `top` is the trustworthy source.
 - Confirmed via `pm2 pid runlog` + `ss -ltnp | grep :3000` that the spiking
-  PID *was* the real, live app (not an orphaned duplicate process — that
+  PID _was_ the real, live app (not an orphaned duplicate process — that
   was our first, wrong theory).
 - `pm2 logs runlog --lines 80` showed nothing: no errors, no new log lines
   at all after the 16:39 deploy startup sequence, and critically **no
@@ -287,9 +288,10 @@ the Node event loop was fully blocked, not just under heavy load.
 **Root cause: unresolved.** No smoking gun in static code review, and a
 silent hang with zero logged activity is very hard to diagnose after the
 fact. If this happens again:
+
 1. Don't just restart immediately if you can spare a couple of minutes —
-   grab `pm2 status`, `top -bn1`, and ideally a CPU profile *while it's
-   still hanging*, since that's the only way to actually identify what's
+   grab `pm2 status`, `top -bn1`, and ideally a CPU profile _while it's
+   still hanging_, since that's the only way to actually identify what's
    looping.
 2. Check `free -h` / `top`'s memory line for signs of GC thrashing
    (V8 pinning CPU near 100% under memory pressure) — memory looked normal
@@ -304,3 +306,66 @@ Droplet was resized from 1GB to 2GB RAM at some point; the hostname
 (`...1gb-35gb...`) was never updated by DigitalOcean and still reads the
 old size. Not a bug, just a label mismatch — don't mistake it for the
 droplet still being under-provisioned.
+
+## 2026-08-18 — "APP DID NOT COME UP" is usually a false alarm
+
+`deploy.sh` printed `APP DID NOT COME UP` on two consecutive deploys.
+Both times the app was **fine** — `curl` returned 200 immediately after,
+`pm2 list` showed `online`, and the logs showed the usual clean startup
+(`Server running on http://localhost:3000/`, shortcuts seeded, DB pool
+created).
+
+**Cause:** the health check curls `localhost:3000` with no startup grace
+period, firing the instant `pm2 restart` returns. The failure line gives
+it away — `Failed to connect to localhost port 3000 after 0 ms` / `after
+1 ms`. The server needs several seconds to bind (it loads TensorFlow and
+builds the DB pool first), so the check is simply racing the boot.
+
+**Before investigating an "outage", confirm it's real:**
+
+```bash
+curl -sS -o /dev/null -w 'HTTP %{http_code}\n' http://localhost:3000/
+pm2 list
+```
+
+A 200 means the deploy succeeded and the message was noise.
+
+**Red herrings in the logs when you go looking:**
+
+- `Error: ENOENT ... dist/public/index.html` — timestamped from an
+  _earlier_ run, logged while `dist` was mid-rebuild. Check the
+  timestamp before treating it as current.
+- `[OAuth] ERROR: OAUTH_SERVER_URL is not configured!` — expected and
+  harmless. Auth is local username/password against the `users` table;
+  the OAuth scaffolding is dead Manus template code (see CLAUDE.md).
+- `[Auth] Missing session cookie` — normal for unauthenticated requests.
+
+**Fix (not yet applied — `deploy.sh` is not tracked in this repo, it
+lives only on the droplet):** replace the single curl with a retry loop
+so a genuine failure actually means something:
+
+```bash
+for i in $(seq 1 30); do
+  if curl -sf -o /dev/null http://localhost:3000/; then
+    echo "APP UP (after ${i}s)"; break
+  fi
+  [ "$i" = 30 ] && { echo "APP DID NOT COME UP"; pm2 logs runlog --lines 30 --nostream; exit 1; }
+  sleep 1
+done
+```
+
+## 2026-08-18 — Droplet deploy key is read-only
+
+`git push` from `/opt/runlog` fails with _"The key you are authenticating
+with has been marked as read only."_ That is deliberate — the droplet
+pulls, it never pushes. Merges to `main` have to happen on GitHub (or
+from a machine with a write key), and the droplet only ever runs:
+
+```bash
+git checkout main && git pull --ff-only origin main
+```
+
+A related trap: `git merge` there also fails first with _"Committer
+identity unknown"_ because git has no `user.email`/`user.name` on the
+droplet. Don't fix that identity error and retry — the push would fail
+anyway. Merge somewhere else.

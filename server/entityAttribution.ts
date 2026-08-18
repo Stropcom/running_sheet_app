@@ -62,3 +62,53 @@ export function attributedRowIds(
   }
   return rowIds;
 }
+
+// ─── Visits ─────────────────────────────────────────────────────────────────
+
+/** One mention of a location, positioned within its sheet. `order` is the
+ * row's index in the sheet as written — not its index among the mentions
+ * being collapsed — so interleaved rows belonging to other entities don't
+ * disturb the sequence. */
+export interface LocationMention {
+  entityKey: string;
+  sheetId: number;
+  order: number;
+}
+
+/**
+ * Collapses consecutive mentions of the same location into a single visit,
+ * returning the first mention of each — which carries that visit's time.
+ *
+ * A presence at a location is one visit however many rows narrate it:
+ *
+ *   seen arriving, then departing  → 1
+ *   seen departing only            → 1
+ *   seen arriving only             → 1
+ *
+ * A new visit is only counted once a *different* location appears in between,
+ * or the sheet changes. Rows belonging to other entities are already filtered
+ * out before this runs (see attributedRowIds) and are simply absent from the
+ * sequence — so a target seen arriving, an associate seen leaving, and the
+ * target then seen departing is still one visit by the target, not two.
+ */
+export function collapseToVisits<T extends LocationMention>(
+  mentions: readonly T[]
+): T[] {
+  const bySheet = new Map<number, T[]>();
+  for (const m of mentions) {
+    if (!bySheet.has(m.sheetId)) bySheet.set(m.sheetId, []);
+    bySheet.get(m.sheetId)!.push(m);
+  }
+
+  const visits: T[] = [];
+  for (const sheetMentions of Array.from(bySheet.values())) {
+    const ordered = [...sheetMentions].sort((a, b) => a.order - b.order);
+    let lastEntityKey: string | null = null;
+    for (const m of ordered) {
+      if (m.entityKey === lastEntityKey) continue; // still the same visit
+      lastEntityKey = m.entityKey;
+      visits.push(m);
+    }
+  }
+  return visits;
+}

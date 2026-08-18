@@ -13,6 +13,7 @@
 import { describe, it, expect } from "vitest";
 import {
   attributedRowIds,
+  collapseToVisits,
   type AttributableOccurrence,
 } from "./entityAttribution";
 
@@ -79,6 +80,71 @@ describe("attributedRowIds — scoping", () => {
   it("is app-wide when no scope is given", () => {
     const rowIds = attributedRowIds([occ(1, 1, 10), occ(2, 2, 20)]);
     expect(Array.from(rowIds).sort((a, b) => a - b)).toEqual([1, 2]);
+  });
+});
+
+describe("collapseToVisits — one presence is one visit", () => {
+  const at = (entityKey: string, order: number, sheetId = 1) => ({
+    entityKey,
+    sheetId,
+    order,
+  });
+
+  it("counts arriving then departing as one visit", () => {
+    const visits = collapseToVisits([at("redmond", 0), at("redmond", 1)]);
+    expect(visits).toHaveLength(1);
+    // The first mention is kept — it carries the visit's time.
+    expect(visits[0].order).toBe(0);
+  });
+
+  it("counts departing only as one visit", () => {
+    expect(collapseToVisits([at("redmond", 3)])).toHaveLength(1);
+  });
+
+  it("counts arriving only as one visit", () => {
+    expect(collapseToVisits([at("redmond", 3)])).toHaveLength(1);
+  });
+
+  it("counts a return to the same address as a second visit", () => {
+    // Redmond → Lou's → Redmond is three visits: a different location in
+    // between ends the first one.
+    const visits = collapseToVisits([
+      at("redmond", 0),
+      at("lous", 1),
+      at("redmond", 2),
+    ]);
+    expect(visits.map(v => v.entityKey)).toEqual([
+      "redmond",
+      "lous",
+      "redmond",
+    ]);
+  });
+
+  it("does not merge the same address across different sheets", () => {
+    // Two shifts, each with one visit — not one visit spanning both.
+    const visits = collapseToVisits([at("redmond", 0, 1), at("redmond", 0, 2)]);
+    expect(visits).toHaveLength(2);
+  });
+
+  it("collapses across rows belonging to other entities in between", () => {
+    // The interleaved row (order 1) is an associate's, already filtered out
+    // by attributedRowIds, so the target's arrival (0) and departure (2) are
+    // still consecutive *for the target* — one visit, not two.
+    const visits = collapseToVisits([at("redmond", 0), at("redmond", 2)]);
+    expect(visits).toHaveLength(1);
+  });
+
+  it("orders by the row's position in the sheet, not input order", () => {
+    const visits = collapseToVisits([
+      at("lous", 5),
+      at("redmond", 1),
+      at("redmond", 2),
+    ]);
+    expect(visits.map(v => v.entityKey)).toEqual(["redmond", "lous"]);
+  });
+
+  it("returns nothing for an entity with no qualifying mentions", () => {
+    expect(collapseToVisits([])).toHaveLength(0);
   });
 });
 

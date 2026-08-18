@@ -116,7 +116,7 @@ import {
   type DedupType,
   type DedupCandidateEntity,
 } from "./entityDedup";
-import { attributedRowIds } from "./entityAttribution";
+import { attributedRowIds, collapseToVisits } from "./entityAttribution";
 import { buildRunningSheetTitle } from "../shared/runningSheetTitle";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -4140,24 +4140,10 @@ export async function getIntelligenceHeatMapLocations(params: {
   // appears in between, or the sheet changes. Walk each sheet's qualifying
   // mentions in row order and count address transitions, not raw mentions.
   const grouped = new Map<string, { label: string; count: number }>();
-  const qualifyingBySheet = new Map<number, QualifyingMention[]>();
-  for (const m of qualifying) {
-    if (!qualifyingBySheet.has(m.sheetId)) qualifyingBySheet.set(m.sheetId, []);
-    qualifyingBySheet.get(m.sheetId)!.push(m);
-  }
-  for (const mentions of Array.from(qualifyingBySheet.values())) {
-    mentions.sort((a, b) => a.order - b.order);
-    let lastEntityKey: string | null = null;
-    for (const m of mentions) {
-      if (m.entityKey === lastEntityKey) {
-        lastEntityKey = m.entityKey;
-        continue; // still the same visit
-      }
-      lastEntityKey = m.entityKey;
-      const existing = grouped.get(m.entityKey);
-      if (existing) existing.count++;
-      else grouped.set(m.entityKey, { label: m.label, count: 1 });
-    }
+  for (const visit of collapseToVisits(qualifying)) {
+    const existing = grouped.get(visit.entityKey);
+    if (existing) existing.count++;
+    else grouped.set(visit.entityKey, { label: visit.label, count: 1 });
   }
 
   const results = await Promise.all(
@@ -4532,26 +4518,14 @@ export async function getIntelTargetPatternOfLife(
   // sheet, in row order) into one visit — "arrived at X" then "departed X"
   // is one visit to X, not two. Keep the first mention's time as the
   // visit's representative time. Same rule the Heat Map already applies. ──
-  const qualifyingBySheet = new Map<number, QualifyingMention[]>();
-  for (const m of geocodedQualifying) {
-    if (!qualifyingBySheet.has(m.sheetId)) qualifyingBySheet.set(m.sheetId, []);
-    qualifyingBySheet.get(m.sheetId)!.push(m);
-  }
-  const visitEvents: LocationVisitEvent[] = [];
-  for (const mentions of Array.from(qualifyingBySheet.values())) {
-    mentions.sort((a, b) => a.order - b.order);
-    let lastEntityKey: string | null = null;
-    for (const m of mentions) {
-      if (m.entityKey === lastEntityKey) continue; // still the same visit
-      lastEntityKey = m.entityKey;
-      visitEvents.push({
-        entityKey: m.entityKey,
-        label: m.label,
-        timeMinutes: m.timeMinutes,
-        dateISO: m.dateISO,
-      });
-    }
-  }
+  const visitEvents: LocationVisitEvent[] = collapseToVisits(
+    geocodedQualifying
+  ).map(m => ({
+    entityKey: m.entityKey,
+    label: m.label,
+    timeMinutes: m.timeMinutes,
+    dateISO: m.dateISO,
+  }));
   const locationTimeGrid = buildLocationTimeGrid(visitEvents, 12, 6);
   const peakCell = findPeakCell(locationTimeGrid);
 

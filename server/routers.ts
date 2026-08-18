@@ -157,6 +157,7 @@ import {
   confirmPersonNameMatch,
   rejectPersonNameMatch,
   searchIntelligenceEntities,
+  searchRegisteredPersonMentions,
   listShortcuts,
   createShortcut,
   updateShortcut,
@@ -3146,6 +3147,14 @@ export const appRouter = router({
           input.query,
           input.excludeTargets
         );
+      }),
+
+    /** Live suggestions for the observation field's inline mention
+     * autocomplete — registered Target/Associate Registry people only. */
+    searchPersonMentions: protectedProcedure
+      .input(z.object({ query: z.string() }))
+      .query(async ({ input }) => {
+        return searchRegisteredPersonMentions(input.query);
       }),
   }),
 

@@ -211,3 +211,26 @@ export function formatIntelVehicle(
   // No description available — return just the registration
   return rego;
 }
+
+/**
+ * A Target/Associate's registered name is "Full Name, born DATE (BRACKET)" —
+ * this pulls out just the trailing bracket code, e.g.
+ * "Basil CAT, born 2 June 2005 (CAT)" -> "CAT". Falls back to the input
+ * unchanged when it doesn't look like a registered name at all (no trailing
+ * bracket), so it's safe to call on a bare, unregistered short form too.
+ */
+export function bracketCodeFromRegisteredName(name: string): string {
+  const m = name.match(/\(([^()]+)\)\s*$/);
+  return m ? m[1] : name;
+}
+
+/**
+ * The display-name portion of a Target/Associate's registered name, with
+ * the ", born DATE (BRACKET)" clause dropped, e.g.
+ * "Basil CAT, born 2 June 2005 (CAT)" -> "Basil CAT". Falls back to the
+ * input unchanged when there's no comma to split on.
+ */
+export function nameWithoutBornClause(name: string): string {
+  const commaIdx = name.indexOf(",");
+  return commaIdx > 0 ? name.slice(0, commaIdx).trim() : name.trim();
+}

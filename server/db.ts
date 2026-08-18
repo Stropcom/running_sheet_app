@@ -17,7 +17,12 @@ import { createPool as createPromisePool } from "mysql2/promise";
 import { vaultEncrypt, vaultDecrypt, fingerprintVaultKey } from "./wipcVault";
 import { cosineSimilarity } from "./faceRecognition";
 import { makeRequest, type GeocodingResult } from "./_core/map";
-import { formatIntelAddress, formatIntelVehicle } from "@shared/addressFormat";
+import {
+  formatIntelAddress,
+  formatIntelVehicle,
+  bracketCodeFromRegisteredName,
+  nameWithoutBornClause,
+} from "@shared/addressFormat";
 import {
   classifyVisitDirection,
   timeBucketLabels,
@@ -6484,6 +6489,47 @@ export async function searchIntelligenceEntities(
     }))
     .sort((a, b) => b.rowCount - a.rowCount)
     .slice(0, 25);
+}
+
+export interface PersonMentionSuggestion {
+  key: string;
+  /** The name portion an officer would write before the bracket, e.g. "Basil CAT". */
+  displayName: string;
+  /** The bracket code to write it with, e.g. "CAT". */
+  bracketCode: string;
+  rowCount: number;
+}
+
+/**
+ * Live "as you type" suggestions for the observation field's inline mention
+ * autocomplete — scoped to registered Target/Associate Registry people only
+ * (not bare text-mined mentions), since only a registry entry reliably
+ * carries a clean "Name, born DATE (BRACKET)" shape to split into a display
+ * name and bracket code. A bare text-mined person's bracket code isn't
+ * recoverable from the merged entity alone, and registry entries are also
+ * exactly the ones worth proactively linking to as an officer types.
+ */
+export async function searchRegisteredPersonMentions(
+  query: string
+): Promise<PersonMentionSuggestion[]> {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  const allEntities = await getAllIntelligenceEntities();
+  return allEntities
+    .filter(
+      e =>
+        e.type === "person" &&
+        (e.isTarget || e.isAssociate) &&
+        e.shortForm.toLowerCase().includes(q)
+    )
+    .map(e => ({
+      key: computeEntityKey("person", e.shortForm),
+      displayName: nameWithoutBornClause(e.shortForm),
+      bracketCode: bracketCodeFromRegisteredName(e.shortForm),
+      rowCount: e.occurrences.filter(o => o.rowId > 0).length,
+    }))
+    .sort((a, b) => b.rowCount - a.rowCount)
+    .slice(0, 8);
 }
 
 // ─── Association Graph ───────────────────────────────────────────────────────

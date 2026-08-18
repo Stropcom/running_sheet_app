@@ -26,7 +26,6 @@ import {
 import {
   TargetMatchDialog,
   type TargetMatchCandidate,
-  bracketCodeFromRegisteredName,
 } from "@/components/TargetMatchDialog";
 import {
   Dialog,
@@ -63,6 +62,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Tag,
+  User,
 } from "lucide-react";
 import {
   Select,
@@ -83,6 +83,10 @@ import {
   convertGoogleAddresses,
   extractShortAddress,
 } from "@/lib/addressFormat";
+import {
+  bracketCodeFromRegisteredName,
+  nameWithoutBornClause,
+} from "@shared/addressFormat";
 import { compressAttachmentImage } from "@/lib/imageCompress";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 import {
@@ -1673,6 +1677,123 @@ function TimePickerCell({
 
 // ─── Editable Cell ────────────────────────────────────────────────────────────
 
+/** CSS properties that affect text layout/wrapping — copied onto the mirror
+ * element getCaretPixelPosition uses to measure where the caret actually
+ * falls, so a caret on a wrapped second line doesn't get reported at the
+ * end of a single long line. */
+const CARET_MIRROR_STYLE_PROPS: (keyof CSSStyleDeclaration)[] = [
+  "boxSizing",
+  "width",
+  "borderTopWidth",
+  "borderRightWidth",
+  "borderBottomWidth",
+  "borderLeftWidth",
+  "borderStyle",
+  "paddingTop",
+  "paddingRight",
+  "paddingBottom",
+  "paddingLeft",
+  "fontStyle",
+  "fontVariant",
+  "fontWeight",
+  "fontSize",
+  "lineHeight",
+  "fontFamily",
+  "textAlign",
+  "textTransform",
+  "textIndent",
+  "letterSpacing",
+  "wordSpacing",
+  "tabSize",
+  "wordBreak",
+];
+
+/** Pixel position of the caret within a <textarea>, relative to the
+ * viewport — used to anchor the mention-suggestion dropdown right under
+ * where the officer is typing rather than under the whole field. Standard
+ * "mirror element" technique: render the same text in an identically-styled
+ * hidden div, then read the offset of a marker span inserted at the caret. */
+function getCaretPixelPosition(
+  textarea: HTMLTextAreaElement,
+  position: number
+): { top: number; left: number } {
+  const div = document.createElement("div");
+  const computed = window.getComputedStyle(textarea);
+  const style = div.style;
+  style.position = "absolute";
+  style.visibility = "hidden";
+  style.whiteSpace = "pre-wrap";
+  style.wordWrap = "break-word";
+  style.overflowWrap = "break-word";
+  for (const prop of CARET_MIRROR_STYLE_PROPS) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (style as any)[prop] = computed[prop];
+  }
+  document.body.appendChild(div);
+  div.textContent = textarea.value.slice(0, position);
+  const span = document.createElement("span");
+  span.textContent = textarea.value.slice(position) || ".";
+  div.appendChild(span);
+
+  const textareaRect = textarea.getBoundingClientRect();
+  const divRect = div.getBoundingClientRect();
+  // The span holds ALL remaining text, which itself wraps across however
+  // many lines are left — getBoundingClientRect() on it would return the
+  // union of every wrapped fragment (so .left collapses to whichever
+  // fragment starts furthest left, almost always the line-wrap position,
+  // not the caret). getClientRects()[0] is just the first fragment, i.e.
+  // exactly where the caret actually is.
+  const spanRect = span.getClientRects()[0] ?? span.getBoundingClientRect();
+  const lineHeight =
+    parseFloat(computed.lineHeight) || parseFloat(computed.fontSize) * 1.2;
+  const top =
+    textareaRect.top +
+    (spanRect.top - divRect.top) -
+    textarea.scrollTop +
+    lineHeight;
+  const left =
+    textareaRect.left + (spanRect.left - divRect.left) - textarea.scrollLeft;
+
+  document.body.removeChild(div);
+  return { top, left };
+}
+
+/**
+ * Where a mention autocomplete should trigger: the officer is typing the
+ * FIRST word of a capitalised name (e.g. "Basil" in "Basil CAT"), and that
+ * word isn't already a bracket code used elsewhere in this sheet (already
+ * an established person here — re-suggesting on every later bare mention,
+ * e.g. typing "CAT" alone in a later row, would just be noise). Returns
+ * null when none of that holds, in which case the caller shows no dropdown
+ * and the officer just keeps typing normally.
+ */
+function detectMentionTrigger(
+  text: string,
+  cursorPos: number,
+  usedBracketCodes: Set<string>
+): { word: string; wordStart: number } | null {
+  const textBefore = text.slice(0, cursorPos);
+  const wordMatch = textBefore.match(/([A-Za-z][A-Za-z'-]*)$/);
+  if (!wordMatch) return null;
+  const word = wordMatch[1];
+  if (word.length < 2 || !/^[A-Z]/.test(word)) return null;
+  const wordStart = cursorPos - word.length;
+  const beforeWord = textBefore.slice(0, wordStart);
+  // A capitalised word immediately before this one (single space between,
+  // no intervening punctuation/newline) means this is the second+ word of
+  // a name already being typed — the surname — not where the search fires.
+  if (/[A-Z][A-Za-z'-]*\s$/.test(beforeWord)) return null;
+  if (usedBracketCodes.has(word.toUpperCase())) return null;
+  return { word, wordStart };
+}
+
+interface PersonMentionSuggestion {
+  key: string;
+  displayName: string;
+  bracketCode: string;
+  rowCount: number;
+}
+
 function EditableCell({
   value,
   locked,
@@ -1680,6 +1801,7 @@ function EditableCell({
   placeholder,
   onSave,
   shortcuts,
+  usedBracketCodes,
 }: {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   value: string | null;
@@ -1688,11 +1810,86 @@ function EditableCell({
   placeholder?: string;
   onSave: (val: string) => void;
   shortcuts?: Record<string, string>;
+  /** Bracket codes already used elsewhere in this sheet — enables the
+   * inline name-mention autocomplete when provided (multiline only). */
+  usedBracketCodes?: Set<string>;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value ?? "");
   const { notifyObservationFocus, notifyObservationBlur } =
     useObservationFocus();
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // ── Inline mention autocomplete ─────────────────────────────────────────
+  const [mentionWord, setMentionWord] = useState<{
+    word: string;
+    wordStart: number;
+    wordEnd: number;
+  } | null>(null);
+  const [mentionAnchor, setMentionAnchor] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
+  const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
+  const mentionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [mentionQuery, setMentionQuery] = useState("");
+  const { data: mentionResults } =
+    trpc.intelligence.searchPersonMentions.useQuery(
+      { query: mentionQuery },
+      { enabled: mentionQuery.trim().length >= 2 }
+    );
+  const mentionSuggestions: PersonMentionSuggestion[] =
+    mentionQuery.trim().length >= 2 ? (mentionResults ?? []) : [];
+
+  function closeMentionDropdown() {
+    setMentionWord(null);
+    setMentionAnchor(null);
+    setMentionQuery("");
+    setMentionActiveIndex(0);
+    if (mentionDebounceRef.current) clearTimeout(mentionDebounceRef.current);
+  }
+
+  function handleObservationInput(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const val = e.target.value;
+    setDraft(val);
+    if (!usedBracketCodes) return;
+    const cursorPos = e.target.selectionStart ?? val.length;
+    const trigger = detectMentionTrigger(val, cursorPos, usedBracketCodes);
+    if (!trigger) {
+      closeMentionDropdown();
+      return;
+    }
+    setMentionWord({
+      word: trigger.word,
+      wordStart: trigger.wordStart,
+      wordEnd: cursorPos,
+    });
+    setMentionActiveIndex(0);
+    setMentionAnchor(getCaretPixelPosition(e.target, cursorPos));
+    if (mentionDebounceRef.current) clearTimeout(mentionDebounceRef.current);
+    mentionDebounceRef.current = setTimeout(() => {
+      setMentionQuery(trigger.word);
+    }, 250);
+  }
+
+  function selectMentionSuggestion(
+    s: PersonMentionSuggestion,
+    textarea: HTMLTextAreaElement
+  ) {
+    if (!mentionWord) return;
+    const insertText = `${s.displayName} (${s.bracketCode})`;
+    const newDraft =
+      draft.slice(0, mentionWord.wordStart) +
+      insertText +
+      draft.slice(mentionWord.wordEnd);
+    setDraft(newDraft);
+    closeMentionDropdown();
+    const newPos = mentionWord.wordStart + insertText.length;
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(newPos, newPos);
+    });
+  }
 
   // Sync draft with incoming value prop whenever the cell is not being edited.
   // This ensures that after an external update (e.g. TV auto-fill saving new text),
@@ -1747,47 +1944,126 @@ function EditableCell({
   if (editing) {
     if (multiline) {
       return (
-        <Textarea
-          autoFocus
-          value={draft}
-          onChange={e => setDraft(e.target.value)}
-          onPaste={e => {
-            // Auto-convert Google Maps addresses pasted into the observation field
-            const pasted = e.clipboardData.getData("text");
-            const converted = convertGoogleAddresses(pasted);
-            if (converted !== pasted) {
-              e.preventDefault();
-              const ta = e.currentTarget;
-              const start = ta.selectionStart ?? draft.length;
-              const end = ta.selectionEnd ?? draft.length;
-              const newText =
-                draft.slice(0, start) + converted + draft.slice(end);
-              setDraft(newText);
-            }
-          }}
-          onFocus={notifyObservationFocus}
-          onBlur={() => {
-            notifyObservationBlur();
-            const conv = convertGoogleAddresses(draft);
-            if (conv !== draft) {
-              setDraft(conv);
-              commit(conv);
-            } else {
-              commit(draft);
-            }
-          }}
-          onKeyDown={e => {
-            handleShortcutKeyDown(
-              e as React.KeyboardEvent<HTMLTextAreaElement>
-            );
-            if (e.key === "Escape") {
-              setDraft(value ?? "");
-              setEditing(false);
-            }
-          }}
-          className="text-sm min-h-[60px] resize-none"
-          placeholder={placeholder}
-        />
+        <>
+          <Textarea
+            ref={textareaRef}
+            autoFocus
+            value={draft}
+            onChange={handleObservationInput}
+            onPaste={e => {
+              // Auto-convert Google Maps addresses pasted into the observation field
+              const pasted = e.clipboardData.getData("text");
+              const converted = convertGoogleAddresses(pasted);
+              if (converted !== pasted) {
+                e.preventDefault();
+                const ta = e.currentTarget;
+                const start = ta.selectionStart ?? draft.length;
+                const end = ta.selectionEnd ?? draft.length;
+                const newText =
+                  draft.slice(0, start) + converted + draft.slice(end);
+                setDraft(newText);
+              }
+            }}
+            onFocus={notifyObservationFocus}
+            onBlur={() => {
+              // A click on a suggestion fires its own onMouseDown (which
+              // preventDefault's) before this blur — so by the time blur
+              // actually runs here, mentionWord is only still set if focus
+              // left for some other reason, in which case the dropdown
+              // should just close rather than block the save.
+              closeMentionDropdown();
+              notifyObservationBlur();
+              const conv = convertGoogleAddresses(draft);
+              if (conv !== draft) {
+                setDraft(conv);
+                commit(conv);
+              } else {
+                commit(draft);
+              }
+            }}
+            onKeyDown={e => {
+              if (mentionWord && mentionSuggestions.length > 0) {
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setMentionActiveIndex(
+                    i => (i + 1) % mentionSuggestions.length
+                  );
+                  return;
+                }
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setMentionActiveIndex(
+                    i =>
+                      (i - 1 + mentionSuggestions.length) %
+                      mentionSuggestions.length
+                  );
+                  return;
+                }
+                if (e.key === "Enter" || e.key === "Tab") {
+                  e.preventDefault();
+                  selectMentionSuggestion(
+                    mentionSuggestions[mentionActiveIndex],
+                    e.currentTarget
+                  );
+                  return;
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  closeMentionDropdown();
+                  return;
+                }
+              }
+              handleShortcutKeyDown(
+                e as React.KeyboardEvent<HTMLTextAreaElement>
+              );
+              if (e.key === "Escape") {
+                setDraft(value ?? "");
+                setEditing(false);
+              }
+            }}
+            className="text-sm min-h-[60px] resize-none"
+            placeholder={placeholder}
+          />
+          {mentionWord && mentionAnchor && mentionSuggestions.length > 0 && (
+            <div
+              className="fixed z-50 w-64 rounded-lg border border-border bg-popover shadow-lg overflow-hidden"
+              style={{
+                top: mentionAnchor.top,
+                left: mentionAnchor.left,
+                maxHeight: "220px",
+                overflowY: "auto",
+              }}
+            >
+              {mentionSuggestions.map((s, i) => (
+                <button
+                  key={s.key}
+                  type="button"
+                  className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-2 border-b border-border/50 last:border-0 transition-colors ${
+                    i === mentionActiveIndex
+                      ? "bg-accent text-accent-foreground"
+                      : "text-popover-foreground hover:bg-accent hover:text-accent-foreground"
+                  }`}
+                  onMouseEnter={() => setMentionActiveIndex(i)}
+                  onMouseDown={e => {
+                    // mousedown fires before the textarea's blur, so this
+                    // beats the onBlur close/save above.
+                    e.preventDefault();
+                    if (textareaRef.current)
+                      selectMentionSuggestion(s, textareaRef.current);
+                  }}
+                >
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <User className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    <span className="truncate">{s.displayName}</span>
+                  </span>
+                  <span className="text-xs text-muted-foreground shrink-0">
+                    {s.rowCount} obs.
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </>
       );
     }
     return (
@@ -3001,6 +3277,24 @@ export default function SheetDetail() {
       map[s.trigger.toLowerCase()] = s.expansion;
     return map;
   }, [shortcutsData, targetShortcutsData, assignedTarget]);
+
+  // Bracket codes already introduced somewhere in this sheet — feeds the
+  // observation field's inline mention autocomplete (see EditableCell /
+  // detectMentionTrigger above): a bare re-mention of an already-linked
+  // person shouldn't keep re-triggering the suggestion dropdown.
+  const usedBracketCodes = useMemo(() => {
+    const codes = new Set<string>();
+    const bracketRe = /\(([A-Z][A-Za-z'.\s-]{0,39})\)/g;
+    for (const r of rows ?? []) {
+      if (!r.observation) continue;
+      let m: RegExpExecArray | null;
+      bracketRe.lastIndex = 0;
+      while ((m = bracketRe.exec(r.observation)) !== null) {
+        codes.add(m[1].trim().toUpperCase());
+      }
+    }
+    return codes;
+  }, [rows]);
 
   // Edit roster state
   const [editRosterOpen, setEditRosterOpen] = useState(false);
@@ -4371,6 +4665,7 @@ export default function SheetDetail() {
                                     });
                                   }}
                                   shortcuts={shortcutMap}
+                                  usedBracketCodes={usedBracketCodes}
                                 />
                               )}
                               <ObservationAttachments

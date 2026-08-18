@@ -44,8 +44,30 @@ import {
   buildHeatMapLocationsTableHtml,
   fetchHeatMapStaticImage,
 } from "@/lib/heatMapSection";
+import { buildPatternOfLifeGridsHtml } from "@/lib/patternOfLifeSection";
 
 type PackageScope = "operation" | "target";
+
+type SectionKey = "profile" | "rollup" | "ego" | "heatmap" | "patternOfLife";
+
+/** Display order for both the contents checklist and the built document —
+ * profile/context first, then the deployment record, then the analytical
+ * reports. */
+const SECTION_ORDER: SectionKey[] = [
+  "profile",
+  "rollup",
+  "ego",
+  "heatmap",
+  "patternOfLife",
+];
+
+const SECTION_DESCRIPTIONS: Record<SectionKey, string> = {
+  profile: "Registered details, photos, sheets and associations",
+  rollup: "Every Supervisor Summary in scope",
+  ego: "One diagram per included target, that target centred",
+  heatmap: "All-time location activity, mapped and ranked",
+  patternOfLife: "One time/location report per included target",
+};
 
 /** Hops used for every diagram in a package — direct links only. Second-degree
  * rings make each diagram much larger, and a package already carries one per
@@ -59,6 +81,11 @@ export default function IntelPackages() {
   /** null = every target (the default); a Set = an explicit subset. */
   const [selectedTargetIds, setSelectedTargetIds] =
     useState<Set<number> | null>(null);
+  /** Every section is included by default; officers can drop ones they don't
+   * need for a particular package. */
+  const [enabledSections, setEnabledSections] = useState<Set<SectionKey>>(
+    new Set(SECTION_ORDER)
+  );
   const [isBuilding, setIsBuilding] = useState(false);
 
   const { data: me } = trpc.auth.me.useQuery(undefined, { retry: false });
@@ -136,6 +163,15 @@ export default function IntelPackages() {
   const allSelected =
     selectedTargetIds === null ||
     (targets ?? []).every(t => selectedTargetIds.has(t.id));
+
+  const toggleSection = (key: SectionKey) => {
+    setEnabledSections(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   // ── Section builders ────────────────────────────────────────────────────
 
@@ -227,7 +263,17 @@ export default function IntelPackages() {
       .map(t => byId.get(t.id))
       .filter((t): t is NonNullable<typeof t> => !!t)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .map(t => buildProfileTargetBlockHtml(t as any));
+      .map((t, i) => {
+        const html = buildProfileTargetBlockHtml(t as any);
+        // buildProfileTargetBlockHtml deliberately styles inline rather than
+        // with classes (see profileSection.ts), so the page break between
+        // targets is added here rather than via a shared CSS rule. The
+        // first target doesn't need one — the section itself already
+        // starts on a fresh page.
+        return i === 0
+          ? html
+          : `<div style="page-break-before:always;break-before:page">${html}</div>`;
+      });
     if (!blocks.length) return null;
     return {
       title: scope === "target" ? "Target Profile" : "Operation Profile",
@@ -273,6 +319,48 @@ export default function IntelPackages() {
         <div class="section-title">Top Locations</div>
         <div class="section-body">${buildHeatMapLocationsTableHtml(rows)}</div>
       </div>`,
+    };
+  }
+
+  /** Pattern of Life — one report per included target, same as Ego Network.
+   * Unlike the other sections this needs its own server round-trip per
+   * target (the association graph and rollup are already fetched whole), so
+   * it's only called when the section is actually enabled. */
+  async function buildPatternOfLifeSection(): Promise<PackageSection | null> {
+    if (!chosenTargets.length || operationId == null) return null;
+
+    const results = await Promise.all(
+      chosenTargets.map(t =>
+        trpcClient.intelligence.getPatternOfLife.query({
+          operationId: operationId!,
+          targetId: t.id,
+        })
+      )
+    );
+
+    const blocks: string[] = [];
+    const missing: string[] = [];
+    chosenTargets.forEach((t, i) => {
+      const data = results[i];
+      if (!data.sufficientData) {
+        missing.push(t.name);
+        return;
+      }
+      blocks.push(`<div class="sub-block">
+        <p class="sub-head">${escHtml(t.name)}</p>
+        ${buildPatternOfLifeGridsHtml(data)}
+      </div>`);
+    });
+
+    if (!blocks.length && !missing.length) return null;
+
+    const missingNote = missing.length
+      ? `<p class="muted-note">Not enough certified observations yet for: ${escHtml(missing.join(", "))}.</p>`
+      : "";
+
+    return {
+      title: "Pattern of Life",
+      html: `${blocks.join("\n")}${missingNote}`,
     };
   }
 
@@ -344,6 +432,10 @@ export default function IntelPackages() {
       toast.error("Select at least one target to include.");
       return;
     }
+    if (enabledSections.size === 0) {
+      toast.error("Select at least one section to include.");
+      return;
+    }
 
     setIsBuilding(true);
     try {
@@ -362,17 +454,30 @@ export default function IntelPackages() {
 
       const sections: PackageSection[] = [];
 
-      const profile = buildProfileSection();
-      if (profile) sections.push(profile);
+      if (enabledSections.has("profile")) {
+        const profile = buildProfileSection();
+        if (profile) sections.push(profile);
+      }
 
-      const rollup = buildRollupSection(rollupRows);
-      if (rollup) sections.push(rollup);
+      if (enabledSections.has("rollup")) {
+        const rollup = buildRollupSection(rollupRows);
+        if (rollup) sections.push(rollup);
+      }
 
-      const heat = await buildHeatMapSection(heatLocations);
-      if (heat) sections.push(heat);
+      if (enabledSections.has("ego")) {
+        const ego = buildEgoSection();
+        if (ego) sections.push(ego);
+      }
 
-      const ego = buildEgoSection();
-      if (ego) sections.push(ego);
+      if (enabledSections.has("heatmap")) {
+        const heat = await buildHeatMapSection(heatLocations);
+        if (heat) sections.push(heat);
+      }
+
+      if (enabledSections.has("patternOfLife")) {
+        const pol = await buildPatternOfLifeSection();
+        if (pol) sections.push(pol);
+      }
 
       if (!sections.length) {
         toast.error("Nothing to export for this selection yet.");
@@ -535,22 +640,44 @@ export default function IntelPackages() {
           </div>
         )}
 
-        {/* Contents preview */}
-        <div className="rounded-lg border border-border bg-muted/30 p-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">
+        {/* Contents — selectable so a package can be tailored to what's
+            actually needed rather than always carrying everything. */}
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
             Package contents
           </p>
-          <ul className="text-xs text-muted-foreground list-disc list-inside space-y-0.5">
-            <li>
-              {scope === "target" ? "Target Profile" : "Operation Profile"} —
-              registered details, photos, sheets and associations
-            </li>
-            <li>Deployment Rollup — every Supervisor Summary in scope</li>
-            <li>Heat Map — all-time location activity, mapped and ranked</li>
-            <li>
-              Ego Network — one diagram per included target, that target centred
-            </li>
-          </ul>
+          <div className="rounded-lg border border-border divide-y divide-border/60">
+            {SECTION_ORDER.map(key => (
+              <label
+                key={key}
+                className="flex items-start gap-2.5 px-3 py-2 text-sm cursor-pointer"
+              >
+                <Checkbox
+                  className="mt-0.5"
+                  checked={enabledSections.has(key)}
+                  onCheckedChange={() => toggleSection(key)}
+                />
+                <div className="min-w-0">
+                  <div className="font-medium">
+                    {key === "profile"
+                      ? scope === "target"
+                        ? "Target Profile"
+                        : "Operation Profile"
+                      : key === "rollup"
+                        ? "Deployment Rollup"
+                        : key === "ego"
+                          ? "Ego Network"
+                          : key === "heatmap"
+                            ? "Heat Map"
+                            : "Pattern of Life"}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {SECTION_DESCRIPTIONS[key]}
+                  </div>
+                </div>
+              </label>
+            ))}
+          </div>
         </div>
 
         <Button

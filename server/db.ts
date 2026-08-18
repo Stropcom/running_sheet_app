@@ -17,7 +17,34 @@ import { createPool as createPromisePool } from "mysql2/promise";
 import { vaultEncrypt, vaultDecrypt, fingerprintVaultKey } from "./wipcVault";
 import { cosineSimilarity } from "./faceRecognition";
 import { makeRequest, type GeocodingResult } from "./_core/map";
-import { formatIntelAddress, formatIntelVehicle } from "@shared/addressFormat";
+import {
+  formatIntelAddress,
+  formatIntelVehicle,
+  bracketCodeFromRegisteredName,
+  nameWithoutBornClause,
+} from "@shared/addressFormat";
+import {
+  classifyVisitDirection,
+  timeBucketLabels,
+  DAY_LABELS,
+  buildLocationTimeGrid,
+  findPeakCell,
+  buildDayTimeGrid,
+  mostActiveDays,
+  computeHomePresenceByBucket,
+  toHomePresencePercent,
+  dominantRanges,
+  buildDirectionHistogram,
+  peakBucketIndex,
+  confidenceTier,
+  MIN_OBSERVATIONS_FOR_PATTERN,
+  type VisitDirection,
+  type LocationVisitEvent,
+  type HomeEvent,
+  type HomePresencePercent,
+  type PeakCell,
+  type ConfidenceTier,
+} from "./patternOfLife";
 import {
   auditLogs,
   certifications,
@@ -3099,6 +3126,22 @@ export function extractEntitiesFromText(text: string): Array<{
       fullDescription.split(/[,;]/).pop() ?? fullDescription
     ).trim();
     const lowerLastClause = lastClause.toLowerCase();
+    // Address detection (below) is scoped to the last SENTENCE before the
+    // bracket, not the whole fullDescription — a legitimate address
+    // routinely spans a comma ("44 Smith Street, PALMYRA WA"), so it can't
+    // be scoped as tightly as the clause-level vehicle check above, but it
+    // should never span a full stop into an unrelated earlier sentence.
+    // Without this, a row that opens with a plain-prose address statement
+    // and no bracket of its own ("Vehicles visible at 81 Redmond Road.")
+    // followed by the row's first bracketed entity — e.g. a vehicle,
+    // "A green Toyota Prado, bearing WA registration WTQ304 (Vehicle
+    // WTQ304)" — lets the regex's fullDescription capture balloon backward
+    // across the sentence boundary (nothing bounds it until it hits the
+    // opening "(" or the 120-char cap), and the leading sentence's address
+    // pattern gets misapplied to the vehicle.
+    const lastSentence = (
+      fullDescription.split(/(?<=[.!?])\s+/).pop() ?? fullDescription
+    ).trim();
 
     let type: "person" | "vehicle" | "address" | "business" | "unknown" =
       "unknown";
@@ -3114,36 +3157,44 @@ export function extractEntitiesFromText(text: string): Array<{
       /\b(st|street|rd|road|ave|avenue|dr|drive|way|ct|court|pl|place|cl|close|cres|crescent|blvd|boulevard|hwy|highway|fwy|freeway|ln|lane|tce|terrace|pde|parade|cct|circuit|gr|grove|rise|loop|link|walk|track|row|mews|quay|esplanade|promenade)\b/i;
     const addressInFull =
       /\b\d{1,5}[A-Za-z]?\s+\w[\w\s]*(street|road|ave|avenue|drive|way|court|place|close|crescent|boulevard|highway|freeway|lane|terrace|parade|circuit)\b/i.test(
-        fullDescription
+        lastSentence
       ) ||
       STREET_TYPES.test(shortForm) ||
       /^\d{1,5}\s/.test(shortForm) ||
       // cnr / corner of addresses: "cnr Smith St and Jones Ave"
       /^(cnr|corner of|corner)\b/i.test(shortForm) ||
-      /^(cnr|corner of|corner)\b/i.test(fullDescription) ||
+      /^(cnr|corner of|corner)\b/i.test(lastSentence) ||
       // Lot numbers: "Lot 42 Smith Road"
       /^lot\s+\d+/i.test(shortForm) ||
       // Google Maps formatted addresses: "131 Lakey St, Southern River WA 6110, Australia"
       // Pattern: number + street name + suburb + STATE + postcode (+ optional ", Australia")
       /\b\d{1,5}[A-Za-z]?\/\d{1,5}\s/.test(shortForm) || // unit/number e.g. "3/12 Smith St"
-      /\b\d{1,5}[A-Za-z]?\/\d{1,5}\s/.test(fullDescription) ||
+      /\b\d{1,5}[A-Za-z]?\/\d{1,5}\s/.test(lastSentence) ||
       /,\s*[A-Za-z][\w\s]+\s+(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\s+\d{4}/.test(
         shortForm
       ) ||
       /,\s*[A-Za-z][\w\s]+\s+(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\s+\d{4}/.test(
-        fullDescription
+        lastSentence
       ) ||
       /,\s*Australia\s*$/.test(shortForm) ||
-      /,\s*Australia\s*$/.test(fullDescription) ||
-      // Airport terminals, train stations, bus stops, ports, gates, platforms
+      /,\s*Australia\s*$/.test(lastSentence) ||
+      // Airport terminals, train stations, bus stops, ports, gates, platforms.
+      // "station" is excluded when it's followed by "wagon"/"sedan" — that's
+      // the vehicle body-style term ("station wagon"/"station sedan"), not a
+      // transit station, and would otherwise misclassify a vehicle mention
+      // like "...Passat station sedan, bearing WA registration 1DHY084
+      // (Vehicle 1DHY084)..." as an address before the vehicle keywords
+      // ("registration", "Vehicle") are even considered — address detection
+      // runs first, so this exclusion has to live here rather than being
+      // resolved by the vehicle-keyword check further down.
       /\b(terminal|gate|platform|pier|bay|berth|concourse|departure|arrival|lounge)\s+\d/i.test(
         shortForm
       ) ||
-      /\b(airport|station|terminus|port|wharf|depot|interchange|shopping centre|shopping center|shopping mall|mall|plaza|precinct)\b/i.test(
+      /\b(airport|station(?!\s+(?:wagon|sedan)\b)|terminus|port|wharf|depot|interchange|shopping centre|shopping center|shopping mall|mall|plaza|precinct)\b/i.test(
         shortForm
       ) ||
-      /\b(airport|station|terminus|port|wharf|depot|interchange)\b/i.test(
-        fullDescription
+      /\b(airport|station(?!\s+(?:wagon|sedan)\b)|terminus|port|wharf|depot|interchange)\b/i.test(
+        lastSentence
       );
 
     // ── WA vehicle registration patterns ─────────────────────────────────────
@@ -3209,8 +3260,21 @@ export function extractEntitiesFromText(text: string): Array<{
       else confidence = "medium";
     }
     // WA rego plate in shortForm — strong vehicle signal
-    else if (WA_REGO && !/^[A-Z]{4,}$/.test(shortForm)) {
-      // Only treat as rego if it doesn't look like an all-caps name (4+ letters)
+    else if (WA_REGO && !shortFormLooksLikeName) {
+      // Only treat as rego if it doesn't look like an all-caps name. This used
+      // to require 4+ letters to count as "looks like a name", which let any
+      // short (2-3 letter) all-caps bracket code — a perfectly ordinary short
+      // surname like "CAT", "FOX", "LEE", "COX" — fall through and match the
+      // personalised-plate branch of WA_REGO (`^[A-Z0-9]{2,7}$`) instead of
+      // being classified as a person. That misclassification was silent but
+      // significant: a person entity classified as a vehicle never runs
+      // through the person-specific fuzzy-match check against the Target/
+      // Associate Registry (see checkPossibleTargetMatches / SheetDetail's
+      // updateRowWithDupeCheck), so the "possible duplicate" prompt never
+      // fired even for an exact match. Reusing shortFormLooksLikeName (already
+      // used one branch up for the same purpose) excludes any all-caps,
+      // digit-free bracket code regardless of length, which is what "looks
+      // like a name" actually means here.
       type = "vehicle";
       confidence = "medium";
     }
@@ -4160,6 +4224,418 @@ export async function geocodeAddressList(
   );
 }
 
+// ─── Pattern of Life ────────────────────────────────────────────────────────
+// Time/location analysis for one target within one operation — reuses the
+// same entity extraction, "qualifying mention" gating, and same-address
+// visit-collapsing as the Heat Map above, plus the pure bucketing/interval
+// functions in ./patternOfLife.ts, rather than re-deriving any of it.
+
+export interface IntelPatternOfLifeLocationRow {
+  entityKey: string;
+  label: string;
+  counts: number[];
+  total: number;
+}
+
+export interface IntelPatternOfLifeResponse {
+  targetName: string;
+  operationName: string;
+  observationCount: number;
+  geocodedObservationCount: number;
+  sufficientData: boolean;
+  confidence: ConfidenceTier;
+  // Every time-bucketed chart in this report shares one 2-hourly (12-bucket)
+  // granularity so they read consistently side by side.
+  timeBuckets: string[];
+  dayLabels: string[];
+  // Section A — general activity, any location
+  dayTimeGrid: number[][]; // [dayIndex][bucketIndex]
+  mostActiveDayIndices: number[];
+  // Section B — where & when
+  locationTimeGrid: IntelPatternOfLifeLocationRow[];
+  peakCell: PeakCell | null;
+  // Section C — home presence. homeAddressKnown/homeAddressGeocoded/
+  // homeAddressMentioned let the client explain WHY the charts are missing
+  // (no HB on file vs. never geocoded vs. mentioned but no clear
+  // arrived/departed language yet) instead of just silently omitting the
+  // section, which reads as a bug rather than an honest "not enough data."
+  homeAddressKnown: boolean;
+  homeAddressGeocoded: boolean;
+  homeAddressMentioned: boolean;
+  homeAddressLabel: string | null;
+  homePresence: HomePresencePercent[] | null; // length 12
+  homeLikelyRanges: Array<{ startBucket: number; endBucket: number }> | null;
+  homeAwayRanges: Array<{ startBucket: number; endBucket: number }> | null;
+  departureHistogram: number[] | null; // length 12
+  arrivalHistogram: number[] | null; // length 12
+  peakDepartureBucket: number | null;
+  peakArrivalBucket: number | null;
+}
+
+export async function getIntelTargetPatternOfLife(
+  operationId: number,
+  targetId: number
+): Promise<IntelPatternOfLifeResponse | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const [operation] = await db
+    .select({ id: operations.id, name: operations.name })
+    .from(operations)
+    .where(and(eq(operations.id, operationId), isNull(operations.deletedAt)))
+    .limit(1);
+  const target = await getTargetById(targetId);
+  if (!operation || !target) return null;
+
+  // ── Resolve this target's own rows within this operation — formally
+  // assigned sheets UNION sheets where the target is text-mentioned,
+  // exactly like buildTargetOperationalAssociations, but scoped to the one
+  // operation this report is for. ──────────────────────────────────────────
+  const targetSheets = await db
+    .select({
+      id: runningSheets.id,
+      createdAt: runningSheets.createdAt,
+      sheetDate: runningSheets.sheetDate,
+    })
+    .from(runningSheets)
+    .where(
+      and(
+        eq(runningSheets.operationId, operationId),
+        eq(runningSheets.targetId, targetId),
+        isNull(runningSheets.deletedAt)
+      )
+    );
+  const sheetDateInfo = new Map<
+    number,
+    { createdAt: Date; sheetDate: string | null }
+  >();
+  for (const s of targetSheets)
+    sheetDateInfo.set(s.id, { createdAt: s.createdAt, sheetDate: s.sheetDate });
+  const targetSheetIds = new Set(targetSheets.map(s => s.id));
+
+  const allEntities = await getAllIntelligenceEntities();
+  const targetEntity = allEntities.find(
+    e => e.isTarget && e.targetId === targetId
+  );
+
+  let targetRowIds = new Set<number>();
+  if (targetSheetIds.size) {
+    const rows = await db
+      .select({ id: sheetRows.id })
+      .from(sheetRows)
+      .where(inArray(sheetRows.sheetId, Array.from(targetSheetIds)));
+    targetRowIds = new Set(rows.map(r => r.id));
+  }
+  if (targetEntity) {
+    for (const occ of targetEntity.occurrences) {
+      if (occ.rowId > 0 && occ.operationId === operationId) {
+        targetRowIds.add(occ.rowId);
+        targetSheetIds.add(occ.sheetId);
+      }
+    }
+  }
+  // Mentioned-only sheets need their own date-resolution info too.
+  const missingSheetIds = Array.from(targetSheetIds).filter(
+    id => !sheetDateInfo.has(id)
+  );
+  if (missingSheetIds.length) {
+    const extraSheets = await db
+      .select({
+        id: runningSheets.id,
+        createdAt: runningSheets.createdAt,
+        sheetDate: runningSheets.sheetDate,
+      })
+      .from(runningSheets)
+      .where(inArray(runningSheets.id, missingSheetIds));
+    for (const s of extraSheets)
+      sheetDateInfo.set(s.id, {
+        createdAt: s.createdAt,
+        sheetDate: s.sheetDate,
+      });
+  }
+
+  if (!targetRowIds.size) {
+    return {
+      targetName: target.name,
+      operationName: operation.name,
+      observationCount: 0,
+      geocodedObservationCount: 0,
+      sufficientData: false,
+      confidence: confidenceTier(0),
+      timeBuckets: timeBucketLabels(12),
+      dayLabels: DAY_LABELS,
+      dayTimeGrid: Array.from({ length: 7 }, () => new Array(12).fill(0)),
+      mostActiveDayIndices: [],
+      locationTimeGrid: [],
+      peakCell: null,
+      homeAddressKnown: !!(target.hbf || target.hb),
+      homeAddressGeocoded: false,
+      homeAddressMentioned: false,
+      homeAddressLabel:
+        target.hbf || target.hb
+          ? formatIntelAddress((target.hbf || target.hb) ?? "")
+          : null,
+      homePresence: null,
+      homeLikelyRanges: null,
+      homeAwayRanges: null,
+      departureHistogram: null,
+      arrivalHistogram: null,
+      peakDepartureBucket: null,
+      peakArrivalBucket: null,
+    };
+  }
+
+  const rows = await db
+    .select({
+      id: sheetRows.id,
+      sheetId: sheetRows.sheetId,
+      rowDate: sheetRows.rowDate,
+      dayOffset: sheetRows.dayOffset,
+      observation: sheetRows.observation,
+      timeMinutes: sheetRows.timeMinutes,
+      rowNumber: sheetRows.rowNumber,
+    })
+    .from(sheetRows)
+    .where(inArray(sheetRows.id, Array.from(targetRowIds)))
+    .orderBy(sheetRows.sheetId, sheetRows.timeMinutes, sheetRows.rowNumber);
+  const rowById = new Map(rows.map(r => [r.id, r]));
+
+  const rowsBySheetOrdered = new Map<number, typeof rows>();
+  for (const row of rows) {
+    if (!rowsBySheetOrdered.has(row.sheetId))
+      rowsBySheetOrdered.set(row.sheetId, []);
+    rowsBySheetOrdered.get(row.sheetId)!.push(row);
+  }
+  const previousObservationByRowId = new Map<number, string | null>();
+  const rowOrderIndex = new Map<number, number>();
+  for (const sheetRowList of Array.from(rowsBySheetOrdered.values())) {
+    sheetRowList.forEach((r, i) => {
+      previousObservationByRowId.set(
+        r.id,
+        i > 0 ? (sheetRowList[i - 1].observation ?? null) : null
+      );
+      rowOrderIndex.set(r.id, i);
+    });
+  }
+
+  const resolveDateISO = (row: (typeof rows)[number]): string => {
+    if (row.rowDate) return row.rowDate;
+    const info = sheetDateInfo.get(row.sheetId);
+    return addDaysISO(
+      info?.sheetDate ?? toPerthDateISO(info?.createdAt ?? new Date()),
+      row.dayOffset
+    );
+  };
+
+  // ── General activity (Section A): every real observation row, regardless
+  // of whether it mentions a location. ────────────────────────────────────
+  const generalRows = rows.filter(
+    r =>
+      r.timeMinutes != null &&
+      !isNonObservationRow(
+        r.observation ?? "",
+        previousObservationByRowId.get(r.id) ?? null
+      )
+  );
+  const observationCount = generalRows.length;
+  const dayTimeGrid = buildDayTimeGrid(
+    generalRows.map(r => ({
+      dateISO: resolveDateISO(r),
+      timeMinutes: r.timeMinutes!,
+    })),
+    12
+  );
+  const mostActiveDayIndices = mostActiveDays(dayTimeGrid);
+
+  // ── Qualifying address mentions (Section B + C) — same gating as the Heat
+  // Map (isNonObservationRow + OBSERVATION_SIGNAL_RE), plus direction and
+  // resolved date/time so they can be bucketed and, for the home address,
+  // used as interval-bounding events. ─────────────────────────────────────
+  type QualifyingMention = {
+    entityKey: string;
+    label: string;
+    sheetId: number;
+    order: number;
+    timeMinutes: number;
+    dateISO: string;
+    direction: VisitDirection;
+  };
+  const qualifying: QualifyingMention[] = [];
+  for (const entity of allEntities) {
+    if (entity.type !== "address" && entity.type !== "business") continue;
+    for (const occ of entity.occurrences) {
+      if (occ.rowId === 0 || !targetRowIds.has(occ.rowId)) continue;
+      const row = rowById.get(occ.rowId);
+      if (!row?.observation || row.timeMinutes == null) continue;
+      if (
+        isNonObservationRow(
+          row.observation,
+          previousObservationByRowId.get(occ.rowId) ?? null
+        )
+      )
+        continue;
+      if (!OBSERVATION_SIGNAL_RE.test(row.observation)) continue;
+      qualifying.push({
+        entityKey: normalizeEntityLabel(entity.shortForm),
+        label: entity.shortForm,
+        sheetId: occ.sheetId,
+        order: rowOrderIndex.get(occ.rowId) ?? 0,
+        timeMinutes: row.timeMinutes,
+        dateISO: resolveDateISO(row),
+        direction: classifyVisitDirection(row.observation),
+      });
+    }
+  }
+
+  // Geocode every distinct address mentioned — only geocodable addresses
+  // count toward the location-based sections, same quality bar as the Heat
+  // Map (an address-shaped mention that doesn't resolve to a real place
+  // isn't reliable enough to plot).
+  const distinctKeys = new Map<string, string>();
+  for (const m of qualifying)
+    if (!distinctKeys.has(m.entityKey)) distinctKeys.set(m.entityKey, m.label);
+  const geocodable = new Set<string>();
+  await Promise.all(
+    Array.from(distinctKeys.entries()).map(async ([key, label]) => {
+      const coords = await resolveLatLng(key, label);
+      if (coords) geocodable.add(key);
+    })
+  );
+  const geocodedQualifying = qualifying.filter(m =>
+    geocodable.has(m.entityKey)
+  );
+  const geocodedObservationCount = new Set(
+    geocodedQualifying.map(m => `${m.sheetId}::${m.order}`)
+  ).size;
+
+  // ── Section B: collapse consecutive same-address mentions (within a
+  // sheet, in row order) into one visit — "arrived at X" then "departed X"
+  // is one visit to X, not two. Keep the first mention's time as the
+  // visit's representative time. Same rule the Heat Map already applies. ──
+  const qualifyingBySheet = new Map<number, QualifyingMention[]>();
+  for (const m of geocodedQualifying) {
+    if (!qualifyingBySheet.has(m.sheetId)) qualifyingBySheet.set(m.sheetId, []);
+    qualifyingBySheet.get(m.sheetId)!.push(m);
+  }
+  const visitEvents: LocationVisitEvent[] = [];
+  for (const mentions of Array.from(qualifyingBySheet.values())) {
+    mentions.sort((a, b) => a.order - b.order);
+    let lastEntityKey: string | null = null;
+    for (const m of mentions) {
+      if (m.entityKey === lastEntityKey) continue; // still the same visit
+      lastEntityKey = m.entityKey;
+      visitEvents.push({
+        entityKey: m.entityKey,
+        label: m.label,
+        timeMinutes: m.timeMinutes,
+        dateISO: m.dateISO,
+      });
+    }
+  }
+  const locationTimeGrid = buildLocationTimeGrid(visitEvents, 12, 6);
+  const peakCell = findPeakCell(locationTimeGrid);
+
+  // ── Section C: home presence — the target's registered HBF is merged by
+  // getAllIntelligenceEntities into the same entity as any text-mined
+  // mention of it, keyed internally on addressBracketKey — but that
+  // internal key is never exposed on the IntelligenceEntity objects we get
+  // back (only the display-friendly, non-bracketed .shortForm is). Trying
+  // to recompute that internal key ourselves (normalizeEntityLabel(
+  // addressBracketKey(target.hbf))) doesn't match normalizeEntityLabel(
+  // entity.shortForm) — the key scheme every OTHER entityKey in this
+  // function uses — so it silently never found the entity. Instead, find
+  // the actual merged entity directly via the synthetic rowId=0 occurrence
+  // getAllIntelligenceEntities seeds specifically for this target's HBF
+  // field, then key off *that* entity's own shortForm like everything else
+  // here does.
+  const homeSnippet = `Target card — ${target.name} [HBF]`;
+  const homeEntity =
+    target.hbf || target.hb
+      ? allEntities.find(
+          e =>
+            (e.type === "address" || e.type === "business") &&
+            e.occurrences.some(
+              occ => occ.rowId === 0 && occ.observationSnippet === homeSnippet
+            )
+        )
+      : undefined;
+  const homeEntityKey = homeEntity
+    ? normalizeEntityLabel(homeEntity.shortForm)
+    : null;
+  let homePresence: HomePresencePercent[] | null = null;
+  let homeLikelyRanges: Array<{
+    startBucket: number;
+    endBucket: number;
+  }> | null = null;
+  let homeAwayRanges: Array<{ startBucket: number; endBucket: number }> | null =
+    null;
+  let departureHistogram: number[] | null = null;
+  let arrivalHistogram: number[] | null = null;
+  let peakDepartureBucket: number | null = null;
+  let peakArrivalBucket: number | null = null;
+
+  const homeAddressKnown = !!(target.hbf || target.hb);
+  const homeAddressMentioned =
+    !!homeEntityKey && distinctKeys.has(homeEntityKey);
+  const homeAddressGeocoded = !!homeEntityKey && geocodable.has(homeEntityKey);
+  // Fall back to the raw registered address so the client can still name it
+  // in an explanatory message even when there's no chart data yet. Prefer
+  // the matched entity's own (already-canonical) shortForm when we have
+  // one, since it's the same text the grids above already show.
+  let homeAddressLabel: string | null = homeEntity
+    ? homeEntity.shortForm
+    : homeAddressKnown
+      ? formatIntelAddress((target.hbf || target.hb) ?? "")
+      : null;
+
+  if (homeEntityKey && homeAddressGeocoded) {
+    const homeEvents: HomeEvent[] = geocodedQualifying
+      .filter(m => m.entityKey === homeEntityKey && m.direction !== "neutral")
+      .map(m => ({
+        dateISO: m.dateISO,
+        timeMinutes: m.timeMinutes,
+        direction: m.direction as "arrived" | "departed",
+      }));
+    if (homeEvents.length) {
+      homeAddressLabel = distinctKeys.get(homeEntityKey) ?? homeAddressLabel;
+      const buckets = computeHomePresenceByBucket(homeEvents, 12);
+      homePresence = buckets.map(toHomePresencePercent);
+      homeLikelyRanges = dominantRanges(homePresence, "home", 12);
+      homeAwayRanges = dominantRanges(homePresence, "away", 12);
+      departureHistogram = buildDirectionHistogram(homeEvents, "departed", 12);
+      arrivalHistogram = buildDirectionHistogram(homeEvents, "arrived", 12);
+      peakDepartureBucket = peakBucketIndex(departureHistogram);
+      peakArrivalBucket = peakBucketIndex(arrivalHistogram);
+    }
+  }
+
+  return {
+    targetName: target.name,
+    operationName: operation.name,
+    observationCount,
+    geocodedObservationCount,
+    sufficientData: observationCount >= MIN_OBSERVATIONS_FOR_PATTERN,
+    confidence: confidenceTier(geocodedObservationCount),
+    timeBuckets: timeBucketLabels(12),
+    dayLabels: DAY_LABELS,
+    dayTimeGrid,
+    mostActiveDayIndices,
+    locationTimeGrid,
+    peakCell,
+    homeAddressKnown,
+    homeAddressGeocoded,
+    homeAddressMentioned,
+    homeAddressLabel,
+    homePresence,
+    homeLikelyRanges,
+    homeAwayRanges,
+    departureHistogram,
+    arrivalHistogram,
+    peakDepartureBucket,
+    peakArrivalBucket,
+  };
+}
+
 // ─── Weekly Activity Report ─────────────────────────────────────────────────
 // "What the unit did this week" — operations coverage, newly-gathered
 // intelligence, target visit activity, and governance completed, all for a
@@ -4798,6 +5274,19 @@ export async function getAllIntelligenceEntities(): Promise<
       // derived key (which never includes the bracket code in the shortForm).
       if (field.type === "vehicle") {
         shortForm = shortForm.replace(/\s*\([^)]{1,40}\)\s*$/, "").trim();
+        // Registry vehicle fields are stored exactly as typed — often
+        // "<description>, bearing WA registration <REGO>", never reordered
+        // into the Intelligence "REGO description" display form the way an
+        // RS-mined mention already is (see the type==="vehicle" branch in
+        // extractEntitiesFromText). Left unformatted, this raw text's own
+        // unstripped "bearing WA registration" boilerplate inflated its
+        // apparent descriptive length enough to always win the "prefer
+        // longer" merge below against a properly-formatted RS mention of
+        // the same rego, overwriting a clean "1CWY970 silver Hyundai Getz"
+        // with the raw "silver Hyundai Getz, bearing WA registration
+        // 1CWY970". Reformat first so both candidates are compared, and
+        // ultimately displayed, on the same footing.
+        shortForm = formatIntelVehicle(shortForm);
       }
       if (!shortForm) continue;
       // Normalise whitespace so minor spacing differences don't create duplicate keys.
@@ -4985,6 +5474,11 @@ export async function getAllIntelligenceEntities(): Promise<
       let shortForm = field.value.trim();
       if (field.type === "vehicle") {
         shortForm = shortForm.replace(/\s*\([^)]{1,40}\)\s*$/, "").trim();
+        // See the matching comment on the target locationFields loop above —
+        // reformat to "REGO description" before this competes in the
+        // "prefer longer" merge, or its own unstripped boilerplate can beat
+        // and overwrite a clean RS-mined mention of the same vehicle.
+        shortForm = formatIntelVehicle(shortForm);
       }
       if (!shortForm) continue;
       const normKey =
@@ -5995,6 +6489,56 @@ export async function searchIntelligenceEntities(
     }))
     .sort((a, b) => b.rowCount - a.rowCount)
     .slice(0, 25);
+}
+
+export interface PersonMentionSuggestion {
+  key: string;
+  /** The name portion an officer would write before the bracket, e.g. "Basil CAT". */
+  displayName: string;
+  /** The bracket code to write it with, e.g. "CAT". */
+  bracketCode: string;
+  rowCount: number;
+  /** Exactly one of these is set — which Registry record this suggestion is,
+   * so selecting it can immediately record the same confirmed link
+   * checkPossibleTargetMatches' save-time prompt would otherwise still ask
+   * for, rather than asking again for a person the officer just picked by
+   * name. */
+  targetId: number | null;
+  associateId: number | null;
+}
+
+/**
+ * Live "as you type" suggestions for the observation field's inline mention
+ * autocomplete — scoped to registered Target/Associate Registry people only
+ * (not bare text-mined mentions), since only a registry entry reliably
+ * carries a clean "Name, born DATE (BRACKET)" shape to split into a display
+ * name and bracket code. A bare text-mined person's bracket code isn't
+ * recoverable from the merged entity alone, and registry entries are also
+ * exactly the ones worth proactively linking to as an officer types.
+ */
+export async function searchRegisteredPersonMentions(
+  query: string
+): Promise<PersonMentionSuggestion[]> {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  const allEntities = await getAllIntelligenceEntities();
+  return allEntities
+    .filter(
+      e =>
+        e.type === "person" &&
+        (e.isTarget || e.isAssociate) &&
+        e.shortForm.toLowerCase().includes(q)
+    )
+    .map(e => ({
+      key: computeEntityKey("person", e.shortForm),
+      displayName: nameWithoutBornClause(e.shortForm),
+      bracketCode: bracketCodeFromRegisteredName(e.shortForm),
+      rowCount: e.occurrences.filter(o => o.rowId > 0).length,
+      targetId: e.isTarget ? (e.targetId ?? null) : null,
+      associateId: e.isAssociate ? (e.associateId ?? null) : null,
+    }))
+    .sort((a, b) => b.rowCount - a.rowCount)
+    .slice(0, 8);
 }
 
 // ─── Association Graph ───────────────────────────────────────────────────────

@@ -145,6 +145,7 @@ import {
   deepSearchOperations,
   getAllIntelligenceEntities,
   getIntelligenceHeatMapLocations,
+  getIntelTargetPatternOfLife,
   extractEntitiesFromText,
   checkPossibleDuplicates,
   markEntitiesNotDuplicate,
@@ -156,6 +157,7 @@ import {
   confirmPersonNameMatch,
   rejectPersonNameMatch,
   searchIntelligenceEntities,
+  searchRegisteredPersonMentions,
   listShortcuts,
   createShortcut,
   updateShortcut,
@@ -2789,6 +2791,24 @@ export const appRouter = router({
         return getIntelligenceHeatMapLocations(input);
       }),
 
+    /** Pattern of Life: time/location analysis for one target within one
+     * operation — activity by day & time, where & when (location × time),
+     * and home presence/departure-return times. */
+    getPatternOfLife: protectedProcedure
+      .input(z.object({ operationId: z.number(), targetId: z.number() }))
+      .query(async ({ input }) => {
+        const result = await getIntelTargetPatternOfLife(
+          input.operationId,
+          input.targetId
+        );
+        if (!result)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Operation or target not found.",
+          });
+        return result;
+      }),
+
     /** Association graph — nodes and weighted edges from entity co-occurrence */
     getAssociationGraph: protectedProcedure
       .input(
@@ -3128,6 +3148,14 @@ export const appRouter = router({
           input.excludeTargets
         );
       }),
+
+    /** Live suggestions for the observation field's inline mention
+     * autocomplete — registered Target/Associate Registry people only. */
+    searchPersonMentions: protectedProcedure
+      .input(z.object({ query: z.string() }))
+      .query(async ({ input }) => {
+        return searchRegisteredPersonMentions(input.query);
+      }),
   }),
 
   /** RS Governance Folder */
@@ -3398,6 +3426,7 @@ export const appRouter = router({
             sheetId: number;
             startTime?: string | null;
             finishTime?: string | null;
+            location?: string | null;
           } = { sheetId: input.sheetId };
           if (
             !record.startTimeEdited &&
@@ -3411,7 +3440,22 @@ export const appRouter = router({
           ) {
             patch.finishTime = derivedFinishTime;
           }
-          if (patch.startTime !== undefined || patch.finishTime !== undefined) {
+          // Location has no "edited" flag (unlike start/finish time), so
+          // once it has any value — auto-derived or typed by a supervisor —
+          // further RS edits never silently overwrite it. But if it's still
+          // empty (e.g. this summary was first opened, and so auto-created,
+          // before the "surveillance commenced" row was logged), pick the
+          // location up as soon as that row exists rather than leaving it
+          // blank forever.
+          if (!record.location) {
+            const derivedLocation = extractSummaryLocation(rows);
+            if (derivedLocation) patch.location = derivedLocation;
+          }
+          if (
+            patch.startTime !== undefined ||
+            patch.finishTime !== undefined ||
+            patch.location !== undefined
+          ) {
             record = await upsertSheetSummary(patch);
           }
         }

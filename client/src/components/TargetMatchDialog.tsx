@@ -11,6 +11,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { UserCheck } from "lucide-react";
+import { bracketCodeFromRegisteredName } from "@shared/addressFormat";
 
 // Shown at row-save time when a newly-typed person name closely resembles an
 // existing Target/Associate but doesn't exactly match their registered
@@ -53,7 +54,8 @@ export function TargetMatchDialog({
     trpc.intelligence.confirmPersonNameMatch.useMutation();
   const rejectMutation = trpc.intelligence.rejectPersonNameMatch.useMutation();
 
-  const correctSpelling = match.tgtAlias || match.name;
+  const correctSpelling =
+    match.tgtAlias || bracketCodeFromRegisteredName(match.name);
 
   async function handleYes() {
     setBusy(true);

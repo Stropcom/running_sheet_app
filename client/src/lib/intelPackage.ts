@@ -121,6 +121,11 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 /* ── Sub-heading used between repeated blocks (e.g. one per target) ── */
 .sub-head { font-size:13px; font-weight:700; color:${PKG_GREY_TEXT}; margin:0 0 10px; padding-bottom:6px; border-bottom:2px solid ${PKG_BLUE_MID}; }
 .sub-block { margin-bottom:22px; break-inside:avoid-page; }
+/* Each target's block within a repeated section (Ego Network, Pattern of
+   Life) starts on its own page rather than flowing straight into the next
+   target's — but not the first one, which already starts on a fresh page
+   because the section itself does. */
+.sub-block + .sub-block { page-break-before:always; break-before:page; }
 /* A package carries one diagram per target, so cap each one — left to scale
    with the page width a single wide graph would run over a whole page. */
 .sub-block svg { max-height:520px; }

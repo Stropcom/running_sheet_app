@@ -276,17 +276,19 @@ export default function GovernancePage() {
   }, [allSigned]);
 
   // Auto-derive imagery entries:
-  //   Start with all CINs that have hasImages=true from team details.
-  //   Then enrich each CIN with rowTime + type from rows containing PHOTOGRAPH phrases.
+  //   One entry per (row, cin) pair for every row containing a PHOTOGRAPH
+  //   phrase — an officer can have several separate PT observations on the
+  //   same sheet, and each one needs its own checklist row, not just the
+  //   first (previously this deduped to one entry per CIN, silently
+  //   dropping every PT after an officer's first one on the sheet).
+  //   Officers flagged hasImages=true on team details but with no PT row of
+  //   their own still get a single placeholder entry.
   //   Sort by rowTime ascending.
   const autoImagery = useMemo<ImageryEntry[]>(() => {
     const rows = exportData?.rows ?? [];
 
-    // Build a map: cin -> { rowTime, type } from photo-phrase rows
-    const photoRowMap = new Map<
-      string,
-      { rowTime: string; type: "photo" | "video" | "" }
-    >();
+    const photoEntries: ImageryEntry[] = [];
+    const photoCins = new Set<string>();
     for (const row of rows) {
       const obs = (row.observation ?? "").toUpperCase();
       const hasPhrase = PHOTO_PHRASES.some(p => obs.includes(p));
@@ -299,37 +301,29 @@ export default function GovernancePage() {
       const isVideo = obs.includes("VIDEO");
       const type: "photo" | "video" = isVideo ? "video" : "photo";
       if (rowCins.length === 0) {
-        // No CIN on row — store under "Unknown"
-        if (!photoRowMap.has("Unknown")) {
-          photoRowMap.set("Unknown", { rowTime: time, type });
-        }
+        // No CIN on row — record under "Unknown"
+        photoEntries.push({
+          cin: "Unknown",
+          rowTime: time,
+          type,
+          saved: false,
+        });
+        photoCins.add("Unknown");
       } else {
         for (const cin of rowCins) {
-          if (!photoRowMap.has(cin)) {
-            photoRowMap.set(cin, { rowTime: time, type });
-          }
+          photoEntries.push({ cin, rowTime: time, type, saved: false });
+          photoCins.add(cin);
         }
       }
     }
 
-    // Start with all hasImages CINs from team details
-    const imageCins = sheetCins.filter(c => c.hasImages).map(c => c.cin);
+    // Officers flagged hasImages on team details but with no PT-phrase row
+    // of their own get one placeholder entry (no row time), as before.
+    const flaggedOnly: ImageryEntry[] = sheetCins
+      .filter(c => c.hasImages && !photoCins.has(c.cin))
+      .map(c => ({ cin: c.cin, rowTime: "", type: "" as const, saved: false }));
 
-    // Also include any CINs found in photo rows not already in the list
-    for (const cin of Array.from(photoRowMap.keys())) {
-      if (!imageCins.includes(cin)) imageCins.push(cin);
-    }
-
-    // Build entries, enriching with row data where available
-    const entries: ImageryEntry[] = imageCins.map(cin => {
-      const rowData = photoRowMap.get(cin);
-      return {
-        cin,
-        rowTime: rowData?.rowTime ?? "",
-        type: rowData?.type ?? "",
-        saved: false,
-      };
-    });
+    const entries = [...photoEntries, ...flaggedOnly];
 
     // Sort by rowTime ascending (empty times go to end)
     entries.sort((a, b) => {
@@ -477,10 +471,38 @@ export default function GovernancePage() {
   const imageryTakenChecked = !!(gov as Record<string, unknown> | undefined)
     ?.imageryTaken;
 
-  // Per-CIN photo/entity-link stats — pooled across every row that CIN appears
-  // on, since the auto-derived imagery entry only tracks the first
-  // photo-phrase row's time per CIN while the actual attachments can sit on
-  // any row that CIN is a member of.
+  // Photo/entity-link stats scoped to the exact (cin, rowTime) a PT entry
+  // came from — each separate PT observation is checked against only its
+  // own row's attachments, so one PT's linked photos can't cover for
+  // another PT's unlinked ones now that a CIN can have several entries.
+  const rowPhotoStats = useMemo(() => {
+    const rows = exportData?.rows ?? [];
+    const map = new Map<
+      string,
+      { attachmentCount: number; linkedCount: number }
+    >();
+    for (const row of rows) {
+      const atts = (row.attachments ?? []) as Array<{ linkedCount?: number }>;
+      if (atts.length === 0) continue;
+      const rowCins = (row.members ?? []).map(
+        (m: { memberName: string }) => m.memberName
+      );
+      const linkedCount = atts.filter(a => (a.linkedCount ?? 0) > 0).length;
+      for (const cin of rowCins) {
+        const key = cin + "||" + (row.time ?? "");
+        const stat = map.get(key) ?? { attachmentCount: 0, linkedCount: 0 };
+        stat.attachmentCount += atts.length;
+        stat.linkedCount += linkedCount;
+        map.set(key, stat);
+      }
+    }
+    return map;
+  }, [exportData]);
+
+  // Per-CIN photo/entity-link stats — pooled across every row that CIN
+  // appears on. Only used as a fallback for the "flagged hasImages, no PT
+  // row of their own" placeholder entries, which have no specific row to
+  // scope to.
   const cinPhotoStats = useMemo(() => {
     const rows = exportData?.rows ?? [];
     const map = new Map<
@@ -504,13 +526,16 @@ export default function GovernancePage() {
   }, [exportData]);
 
   // Build display imagery: autoImagery is the source of truth for which entries exist;
-  // merge saved flags from stored imagery, and entity-link stats from cinPhotoStats.
-  // If autoImagery is empty, no imagery to show.
+  // merge saved flags from stored imagery, and entity-link stats scoped to
+  // each entry's own row (falling back to the pooled per-CIN stats for
+  // placeholder entries with no row of their own).
   const displayImagery = useMemo<DisplayImageryEntry[]>(() => {
     if (autoImagery.length === 0) return [];
     const savedMap = new Map(imagery.map(e => [e.cin + e.rowTime, e.saved]));
     return autoImagery.map(e => {
-      const stat = cinPhotoStats.get(e.cin);
+      const stat = e.rowTime
+        ? rowPhotoStats.get(e.cin + "||" + e.rowTime)
+        : cinPhotoStats.get(e.cin);
       const attachmentCount = stat?.attachmentCount ?? 0;
       const linkedCount = stat?.linkedCount ?? 0;
       return {
@@ -521,7 +546,7 @@ export default function GovernancePage() {
         allLinked: attachmentCount > 0 && linkedCount === attachmentCount,
       };
     });
-  }, [autoImagery, imagery, cinPhotoStats]);
+  }, [autoImagery, imagery, cinPhotoStats, rowPhotoStats]);
   const hasAnyImageryData =
     hasAnyImagery || autoImagery.length > 0 || imagery.length > 0;
   // A row only counts toward completion once it's both marked saved AND every

@@ -36,6 +36,15 @@ Tests live under `server/*.test.ts` (vitest, `environment: "node"`, see `vitest.
 
 Package manager is **pnpm** (see `packageManager` field in `package.json`); don't use npm/yarn. `wouter` is patched via `patches/wouter@3.7.1.patch` (pnpm applies it automatically on install).
 
+## Versioning — bump on every merge to `main` (non-negotiable)
+
+**Every PR merged into `main` must bump the version number**, in both places, kept in sync:
+
+- `package.json`'s `"version"` field
+- `shared/const.ts`'s `export const APP_VERSION`
+
+This applies to all merges to `main` — features, fixes, docs, refactors — not just user-facing changes. There is no size/significance exception: even a small change gets at least a patch bump. Do the bump as part of the same PR being merged (or as a final standalone "Bump version to X.Y.Z" commit immediately before merging), not as a follow-up. Before merging any branch into `main`, check whether the version has already been bumped on that branch; if not, bump it before merging.
+
 ## Architecture
 
 **Stack:** Express + tRPC (v11) server, React 19 + Vite client, Drizzle ORM over MySQL, wouter for client routing, TanStack Query via `@trpc/react-query`, Tailwind v4 + shadcn/radix components, PWA (workbox) with an IndexedDB offline draft layer.

@@ -9862,11 +9862,22 @@ export async function getIntelMappingLocations(
   // Build location map: label (lowercase) -> IntelMapLocation
   const locationMap = new Map<string, IntelMapLocation>();
 
+  // Every caller runs its label through here before keying, so a target's
+  // raw registry text ("101 Eric Street, COTTESLOE WA (101 Eric Street)")
+  // and an already-formatted observation-derived label ("101 Eric Street,
+  // COTTESLOE") converge on the identical key instead of producing two
+  // separate pins for the same real place — formatIntelAddress is
+  // idempotent, so normalizing an already-clean label is a no-op. Without
+  // this, a target's home address (registry) and its own text-mined
+  // mentions (observation) key apart and never merge — the "double-stacked
+  // popup" bug: a red TARGET ADDRESS card and a purple OBSERVED LOCATION
+  // card both pinned at the exact same address.
   const ensureLocation = (label: string): IntelMapLocation => {
-    const key = label.toLowerCase().trim();
+    const normalized = formatIntelAddress(label) || label.trim();
+    const key = normalized.toLowerCase().trim();
     if (!locationMap.has(key)) {
       locationMap.set(key, {
-        label: label.trim(),
+        label: normalized,
         type: "observation",
         linkedTargets: [],
         assocPersons: [],

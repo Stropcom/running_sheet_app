@@ -378,6 +378,243 @@ const structuredTargetFieldsSchema = {
   extraAddresses: z.string().optional().nullable(), // JSON array of {label?,unitNo,houseNo,streetName,streetType,suburb,state,full,short}
 };
 
+// ─── Sheet Summary — shared resolvers ──────────────────────────────────────
+// Extracted out of the summary.getBySheet procedure (rather than left
+// inline there) so the Supervisor Summary PDF export can call it directly.
+// Deliberately NOT called via a tRPC caller (appRouter.createCaller) from
+// inside another procedure's handler — appRouter's own type depends on
+// inferring every procedure's return type, so a procedure that references
+// appRouter while it's still being constructed is a genuine circular type,
+// not just a circular call at runtime, and silently collapses the whole
+// router's exported type to `any` (breaking every trpc.* usage client-wide).
+async function resolveSheetSummaryRecord(sheetId: number) {
+  const sheet = await getRunningSheetById(sheetId);
+  if (!sheet) throw new TRPCError({ code: "NOT_FOUND" });
+  let record = await getSheetSummary(sheetId);
+
+  // Start/finish time track the RS's own first/last timed row until
+  // the supervisor manually edits one — same "sync until touched"
+  // rule as sheetSummaryEntries.edited.
+  const rows = await getRowsBySheetId(sheetId);
+  const timedRows = rows
+    .filter(r => r.time)
+    .sort((a, b) => (a.timeMinutes ?? 0) - (b.timeMinutes ?? 0));
+  const derivedStartTime = timedRows[0]?.time ?? null;
+  const derivedFinishTime = timedRows[timedRows.length - 1]?.time ?? null;
+
+  if (!record) {
+    const operation = sheet.operationId
+      ? await getOperationById(sheet.operationId)
+      : null;
+    const target = sheet.targetId ? await getTargetById(sheet.targetId) : null;
+    let cinRoster: { cin: string; isTeamLeader?: boolean }[] = [];
+    try {
+      cinRoster = sheet.sheetCins ? JSON.parse(sheet.sheetCins) : [];
+    } catch {
+      cinRoster = [];
+    }
+
+    // Team label: derived from CTO Roster team membership by CIN —
+    // "Team 1"/"Team 2" if every CIN on the sheet belongs to the same
+    // roster team, "Blended" if they span more than one, null if none
+    // of the CINs are found on the roster at all.
+    const [rosterMembers, rosterTeams] = await Promise.all([
+      getAllCtoRosterMembers(),
+      getAllCtoRosterTeams(),
+    ]);
+    const teamNameByCin = new Map(
+      rosterMembers.map(m => [
+        m.cin,
+        rosterTeams.find(t => t.id === m.teamId)?.name,
+      ])
+    );
+    const matchedTeamNames = new Set(
+      cinRoster
+        .map(c => teamNameByCin.get(c.cin))
+        .filter((n): n is string => !!n)
+    );
+    const teamLabel =
+      matchedTeamNames.size === 1
+        ? Array.from(matchedTeamNames)[0]
+        : matchedTeamNames.size > 1
+          ? "Blended"
+          : null;
+
+    // Carry forward Investigator, Intel Support, Special Projects and
+    // Objectives from the most recent summary for the SAME target on
+    // this Operation (falls back to the most recent summary on the
+    // Operation when this sheet has no target) — everything else
+    // (including the Communication section) starts fresh on a new
+    // summary.
+    const priorSummary = sheet.operationId
+      ? await getMostRecentSheetSummaryForOperation(
+          sheet.operationId,
+          sheetId,
+          sheet.targetId ?? null
+        )
+      : null;
+
+    record = await upsertSheetSummary({
+      sheetId,
+      teamLabel,
+      teamCins: orderTeamCins(cinRoster).join(", ") || null,
+      operationName: operation?.name ?? null,
+      dayDate: sheet.sheetDate
+        ? format(new Date(`${sheet.sheetDate}T00:00:00`), "d MMMM yyyy")
+        : format(new Date(sheet.createdAt), "d MMMM yyyy"),
+      startTime: derivedStartTime,
+      finishTime: derivedFinishTime,
+      targetName: target?.name ?? sheet.targetName ?? null,
+      location: extractSummaryLocation(rows),
+      ioSupport: priorSummary?.ioSupport ?? null,
+      intelSupport: priorSummary?.intelSupport ?? null,
+      specialProjects: priorSummary?.specialProjects ?? null,
+      objectives: priorSummary?.objectives ?? null,
+    });
+  } else {
+    const patch: {
+      sheetId: number;
+      startTime?: string | null;
+      finishTime?: string | null;
+      location?: string | null;
+    } = { sheetId };
+    if (!record.startTimeEdited && record.startTime !== derivedStartTime) {
+      patch.startTime = derivedStartTime;
+    }
+    if (!record.finishTimeEdited && record.finishTime !== derivedFinishTime) {
+      patch.finishTime = derivedFinishTime;
+    }
+    // Location has no "edited" flag (unlike start/finish time), so
+    // once it has any value — auto-derived or typed by a supervisor —
+    // further RS edits never silently overwrite it. But if it's still
+    // empty (e.g. this summary was first opened, and so auto-created,
+    // before the "surveillance commenced" row was logged), pick the
+    // location up as soon as that row exists rather than leaving it
+    // blank forever.
+    if (!record.location) {
+      const derivedLocation = extractSummaryLocation(rows);
+      if (derivedLocation) patch.location = derivedLocation;
+    }
+    if (
+      patch.startTime !== undefined ||
+      patch.finishTime !== undefined ||
+      patch.location !== undefined
+    ) {
+      record = await upsertSheetSummary(patch);
+    }
+  }
+  return record;
+}
+
+/** Computed (never stored) vehicle list for a sheet's Supervisor Summary:
+ * Target Registry vehicles + RS-mentioned vehicles, minus dismissed. Shared
+ * by summary.getVehicles and the PDF export — see resolveSheetSummaryRecord
+ * above for why this isn't called via appRouter.createCaller instead. */
+async function resolveSheetSummaryVehicles(sheetId: number) {
+  const sheet = await getRunningSheetById(sheetId);
+  if (!sheet) throw new TRPCError({ code: "NOT_FOUND" });
+  const [target, rows, record] = await Promise.all([
+    sheet.targetId ? getTargetById(sheet.targetId) : null,
+    getRowsBySheetId(sheetId),
+    getSheetSummary(sheetId),
+  ]);
+  let dismissed: string[] = [];
+  try {
+    dismissed = record?.dismissedVehicleKeys
+      ? JSON.parse(record.dismissedVehicleKeys)
+      : [];
+  } catch {
+    dismissed = [];
+  }
+  return computeSheetSummaryVehicles(target ?? null, rows, dismissed);
+}
+
+interface StaticMapImageParams {
+  waypoints: {
+    lat: number;
+    lng: number;
+    index: number;
+    colour?: string;
+    label?: string;
+    size?: "tiny" | "small" | "mid";
+  }[];
+  center?: { lat: number; lng: number };
+  zoom?: number;
+  size?: string;
+  routePath?: string;
+}
+
+/** Renders a Google Static Maps image and returns it as a data: URL — shared
+ * by rsMapping.getStaticMapImage and the Supervisor Summary PDF export. See
+ * resolveSheetSummaryRecord above for why this isn't called via
+ * appRouter.createCaller instead. */
+async function buildStaticMapImageDataUrl(
+  input: StaticMapImageParams
+): Promise<{ dataUrl: string }> {
+  const { ENV } = await import("./_core/env");
+  // A directly-owned Google Maps Platform key takes priority over the
+  // Manus forge proxy, so this works outside the Manus hosting environment.
+  const url = ENV.googleMapsApiKey
+    ? new URL("https://maps.googleapis.com/maps/api/staticmap")
+    : new URL(
+        `${ENV.forgeApiUrl.replace(/\/+$/, "")}/v1/maps/proxy/maps/api/staticmap`
+      );
+  url.searchParams.append("key", ENV.googleMapsApiKey || ENV.forgeApiKey);
+
+  // Size defaults to 800x500 landscape for PDF
+  const size = input.size ?? "800x500";
+  url.searchParams.append("size", size);
+  url.searchParams.append("maptype", "roadmap");
+  url.searchParams.append("scale", "2");
+
+  // Center / zoom — auto-fit if not provided
+  if (input.center) {
+    url.searchParams.append(
+      "center",
+      `${input.center.lat},${input.center.lng}`
+    );
+  }
+  if (input.zoom !== undefined) {
+    url.searchParams.append("zoom", String(input.zoom));
+  }
+
+  // Add route polyline path if provided
+  if (input.routePath) {
+    url.searchParams.append(
+      "path",
+      `color:0x1E88E5C0|weight:3|${input.routePath}`
+    );
+  }
+
+  // Add markers for each waypoint. Static Maps' `label` only accepts a
+  // single character — silently truncating a longer label (e.g. index
+  // "14" → "1") is misleading, so it's only sent when it's already
+  // exactly one character; otherwise the marker is drawn unlabelled.
+  for (const wp of input.waypoints) {
+    const colour = wp.colour ? wp.colour.replace("#", "0x") : "0x6366f1";
+    const sizePart = wp.size ? `size:${wp.size}|` : "";
+    const labelPart =
+      wp.label && wp.label.length === 1 ? `label:${wp.label}|` : "";
+    const markerSpec = `${sizePart}color:${colour}|${labelPart}${wp.lat},${wp.lng}`;
+    url.searchParams.append("markers", markerSpec);
+  }
+
+  const response = await fetch(url.toString());
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: `Static Maps API failed: ${response.status} ${errText.slice(0, 200)}`,
+    });
+  }
+
+  const contentType = response.headers.get("content-type") ?? "image/png";
+  const arrayBuffer = await response.arrayBuffer();
+  const base64 = Buffer.from(arrayBuffer).toString("base64");
+  const dataUrl = `data:${contentType};base64,${base64}`;
+  return { dataUrl };
+}
+
 // ─── App Router ───────────────────────────────────────────────────────────────
 
 export const appRouter = router({
@@ -3335,132 +3572,7 @@ export const appRouter = router({
     /** Get (or auto-create, prepopulated from the sheet) the summary for a sheet */
     getBySheet: protectedProcedure
       .input(z.object({ sheetId: z.number() }))
-      .query(async ({ input }) => {
-        const sheet = await getRunningSheetById(input.sheetId);
-        if (!sheet) throw new TRPCError({ code: "NOT_FOUND" });
-        let record = await getSheetSummary(input.sheetId);
-
-        // Start/finish time track the RS's own first/last timed row until
-        // the supervisor manually edits one — same "sync until touched"
-        // rule as sheetSummaryEntries.edited.
-        const rows = await getRowsBySheetId(input.sheetId);
-        const timedRows = rows
-          .filter(r => r.time)
-          .sort((a, b) => (a.timeMinutes ?? 0) - (b.timeMinutes ?? 0));
-        const derivedStartTime = timedRows[0]?.time ?? null;
-        const derivedFinishTime = timedRows[timedRows.length - 1]?.time ?? null;
-
-        if (!record) {
-          const operation = sheet.operationId
-            ? await getOperationById(sheet.operationId)
-            : null;
-          const target = sheet.targetId
-            ? await getTargetById(sheet.targetId)
-            : null;
-          let cinRoster: { cin: string; isTeamLeader?: boolean }[] = [];
-          try {
-            cinRoster = sheet.sheetCins ? JSON.parse(sheet.sheetCins) : [];
-          } catch {
-            cinRoster = [];
-          }
-
-          // Team label: derived from CTO Roster team membership by CIN —
-          // "Team 1"/"Team 2" if every CIN on the sheet belongs to the same
-          // roster team, "Blended" if they span more than one, null if none
-          // of the CINs are found on the roster at all.
-          const [rosterMembers, rosterTeams] = await Promise.all([
-            getAllCtoRosterMembers(),
-            getAllCtoRosterTeams(),
-          ]);
-          const teamNameByCin = new Map(
-            rosterMembers.map(m => [
-              m.cin,
-              rosterTeams.find(t => t.id === m.teamId)?.name,
-            ])
-          );
-          const matchedTeamNames = new Set(
-            cinRoster
-              .map(c => teamNameByCin.get(c.cin))
-              .filter((n): n is string => !!n)
-          );
-          const teamLabel =
-            matchedTeamNames.size === 1
-              ? Array.from(matchedTeamNames)[0]
-              : matchedTeamNames.size > 1
-                ? "Blended"
-                : null;
-
-          // Carry forward Investigator, Intel Support, Special Projects and
-          // Objectives from the most recent summary for the SAME target on
-          // this Operation (falls back to the most recent summary on the
-          // Operation when this sheet has no target) — everything else
-          // (including the Communication section) starts fresh on a new
-          // summary.
-          const priorSummary = sheet.operationId
-            ? await getMostRecentSheetSummaryForOperation(
-                sheet.operationId,
-                input.sheetId,
-                sheet.targetId ?? null
-              )
-            : null;
-
-          record = await upsertSheetSummary({
-            sheetId: input.sheetId,
-            teamLabel,
-            teamCins: orderTeamCins(cinRoster).join(", ") || null,
-            operationName: operation?.name ?? null,
-            dayDate: sheet.sheetDate
-              ? format(new Date(`${sheet.sheetDate}T00:00:00`), "d MMMM yyyy")
-              : format(new Date(sheet.createdAt), "d MMMM yyyy"),
-            startTime: derivedStartTime,
-            finishTime: derivedFinishTime,
-            targetName: target?.name ?? sheet.targetName ?? null,
-            location: extractSummaryLocation(rows),
-            ioSupport: priorSummary?.ioSupport ?? null,
-            intelSupport: priorSummary?.intelSupport ?? null,
-            specialProjects: priorSummary?.specialProjects ?? null,
-            objectives: priorSummary?.objectives ?? null,
-          });
-        } else {
-          const patch: {
-            sheetId: number;
-            startTime?: string | null;
-            finishTime?: string | null;
-            location?: string | null;
-          } = { sheetId: input.sheetId };
-          if (
-            !record.startTimeEdited &&
-            record.startTime !== derivedStartTime
-          ) {
-            patch.startTime = derivedStartTime;
-          }
-          if (
-            !record.finishTimeEdited &&
-            record.finishTime !== derivedFinishTime
-          ) {
-            patch.finishTime = derivedFinishTime;
-          }
-          // Location has no "edited" flag (unlike start/finish time), so
-          // once it has any value — auto-derived or typed by a supervisor —
-          // further RS edits never silently overwrite it. But if it's still
-          // empty (e.g. this summary was first opened, and so auto-created,
-          // before the "surveillance commenced" row was logged), pick the
-          // location up as soon as that row exists rather than leaving it
-          // blank forever.
-          if (!record.location) {
-            const derivedLocation = extractSummaryLocation(rows);
-            if (derivedLocation) patch.location = derivedLocation;
-          }
-          if (
-            patch.startTime !== undefined ||
-            patch.finishTime !== undefined ||
-            patch.location !== undefined
-          ) {
-            record = await upsertSheetSummary(patch);
-          }
-        }
-        return record;
-      }),
+      .query(async ({ input }) => resolveSheetSummaryRecord(input.sheetId)),
 
     /** Every sheet's Supervisor Summary for an operation, newest first — the Deployment Rollup tab */
     listByOperation: protectedProcedure
@@ -3620,24 +3732,7 @@ export const appRouter = router({
     /** Computed (never stored) vehicle list: Target Registry vehicles + RS-mentioned vehicles, minus dismissed */
     getVehicles: protectedProcedure
       .input(z.object({ sheetId: z.number() }))
-      .query(async ({ input }) => {
-        const sheet = await getRunningSheetById(input.sheetId);
-        if (!sheet) throw new TRPCError({ code: "NOT_FOUND" });
-        const [target, rows, record] = await Promise.all([
-          sheet.targetId ? getTargetById(sheet.targetId) : null,
-          getRowsBySheetId(input.sheetId),
-          getSheetSummary(input.sheetId),
-        ]);
-        let dismissed: string[] = [];
-        try {
-          dismissed = record?.dismissedVehicleKeys
-            ? JSON.parse(record.dismissedVehicleKeys)
-            : [];
-        } catch {
-          dismissed = [];
-        }
-        return computeSheetSummaryVehicles(target ?? null, rows, dismissed);
-      }),
+      .query(async ({ input }) => resolveSheetSummaryVehicles(input.sheetId)),
 
     /** Dismiss one computed vehicle entry so it stops reappearing on this sheet's Summary tab */
     dismissVehicle: protectedProcedure
@@ -3753,6 +3848,103 @@ export const appRouter = router({
         }
         await deleteSheetSummaryEntry(input.id);
         return { success: true };
+      }),
+
+    /**
+     * Generates a real, downloadable .pdf of the Supervisor Summary —
+     * server-side, so it works on devices where printing (and therefore
+     * "Save as PDF") is disabled by device management. Reuses the exact same
+     * data sources the browser print export reads from (via createCaller,
+     * so nothing here re-implements that logic) and the same static-map
+     * image, so the two exports never drift apart on content, only on exact
+     * pixel layout. See supervisorSummaryPdfGenerator.ts.
+     */
+    exportPdf: protectedProcedure
+      .input(z.object({ sheetId: z.number() }))
+      .mutation(async ({ input }) => {
+        const [sheet, record, vehicles, entries] = await Promise.all([
+          getRunningSheetById(input.sheetId),
+          resolveSheetSummaryRecord(input.sheetId),
+          resolveSheetSummaryVehicles(input.sheetId),
+          getSheetSummaryEntries(input.sheetId),
+        ]);
+        // resolveSheetSummaryRecord always finds-or-creates a record; this
+        // is just to satisfy the type (its `let record` starts nullable
+        // internally), not a real "missing" case.
+        if (!record) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Could not resolve the Supervisor Summary record.",
+          });
+        }
+
+        let mapImageDataUrl: string | null = null;
+        const addresses = Array.from(
+          new Set(
+            entries
+              .map(e => e.location?.trim())
+              .filter((loc): loc is string => !!loc)
+          )
+        );
+        if (addresses.length > 0) {
+          try {
+            const geocoded = await geocodeAddressList(addresses);
+            if (geocoded.length > 0) {
+              const waypoints = geocoded.map((g, i) => ({
+                lat: g.lat,
+                lng: g.lng,
+                index: i,
+                colour: "#dc2626",
+                label: i < 9 ? String(i + 1) : undefined,
+              }));
+              const result = await buildStaticMapImageDataUrl({
+                waypoints,
+                size: "800x500",
+              });
+              mapImageDataUrl = result.dataUrl;
+            }
+          } catch {
+            // Same as the print export: fall back to no map rather than fail the whole export.
+          }
+        }
+
+        const { generateSupervisorSummaryPdf } = await import(
+          "./supervisorSummaryPdfGenerator"
+        );
+        const buf = await generateSupervisorSummaryPdf({
+          sheetTitle: sheet?.title ?? "Running Sheet",
+          form: {
+            teamLabel: record.teamLabel ?? "",
+            teamCins: record.teamCins ?? "",
+            operationName: record.operationName ?? "",
+            dayDate: record.dayDate ?? "",
+            startTime: record.startTime ?? "",
+            finishTime: record.finishTime ?? "",
+            targetName: record.targetName ?? "",
+            location: record.location ?? "",
+            ioSupport: record.ioSupport ?? "",
+            intelSupport: record.intelSupport ?? "",
+            specialProjects: record.specialProjects ?? "",
+            ioContactTiming: record.ioContactTiming ?? "",
+            ioContactMethod: record.ioContactMethod ?? "",
+            objectives: record.objectives ?? "",
+            criticalDecisions: record.criticalDecisions ?? "",
+            issues: record.issues ?? "",
+          },
+          vehicles,
+          entries,
+          record,
+          mapImageDataUrl,
+        });
+
+        const safeSheetTitle = (sheet?.title ?? "RunningSheet").replace(
+          /[^a-zA-Z0-9]/g,
+          "_"
+        );
+        return {
+          filename: `SupervisorSummary_${safeSheetTitle}.pdf`,
+          base64: buf.toString("base64"),
+        };
       }),
   }),
 
@@ -4755,70 +4947,7 @@ export const appRouter = router({
           routePath: z.string().optional(), // pipe-separated lat,lng pairs for route polyline
         })
       )
-      .query(async ({ input }) => {
-        const { ENV } = await import("./_core/env");
-        // A directly-owned Google Maps Platform key takes priority over the
-        // Manus forge proxy, so this works outside the Manus hosting environment.
-        const url = ENV.googleMapsApiKey
-          ? new URL("https://maps.googleapis.com/maps/api/staticmap")
-          : new URL(
-              `${ENV.forgeApiUrl.replace(/\/+$/, "")}/v1/maps/proxy/maps/api/staticmap`
-            );
-        url.searchParams.append("key", ENV.googleMapsApiKey || ENV.forgeApiKey);
-
-        // Size defaults to 800x500 landscape for PDF
-        const size = input.size ?? "800x500";
-        url.searchParams.append("size", size);
-        url.searchParams.append("maptype", "roadmap");
-        url.searchParams.append("scale", "2");
-
-        // Center / zoom — auto-fit if not provided
-        if (input.center) {
-          url.searchParams.append(
-            "center",
-            `${input.center.lat},${input.center.lng}`
-          );
-        }
-        if (input.zoom !== undefined) {
-          url.searchParams.append("zoom", String(input.zoom));
-        }
-
-        // Add route polyline path if provided
-        if (input.routePath) {
-          url.searchParams.append(
-            "path",
-            `color:0x1E88E5C0|weight:3|${input.routePath}`
-          );
-        }
-
-        // Add markers for each waypoint. Static Maps' `label` only accepts a
-        // single character — silently truncating a longer label (e.g. index
-        // "14" → "1") is misleading, so it's only sent when it's already
-        // exactly one character; otherwise the marker is drawn unlabelled.
-        for (const wp of input.waypoints) {
-          const colour = wp.colour ? wp.colour.replace("#", "0x") : "0x6366f1";
-          const sizePart = wp.size ? `size:${wp.size}|` : "";
-          const labelPart =
-            wp.label && wp.label.length === 1 ? `label:${wp.label}|` : "";
-          const markerSpec = `${sizePart}color:${colour}|${labelPart}${wp.lat},${wp.lng}`;
-          url.searchParams.append("markers", markerSpec);
-        }
-
-        const response = await fetch(url.toString());
-        if (!response.ok) {
-          const errText = await response.text();
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: `Static Maps API failed: ${response.status} ${errText.slice(0, 200)}`,
-          });
-        }
-
-        const contentType = response.headers.get("content-type") ?? "image/png";
-        const arrayBuffer = await response.arrayBuffer();
-        const base64 = Buffer.from(arrayBuffer).toString("base64");
-        const dataUrl = `data:${contentType};base64,${base64}`;
-        return { dataUrl };
-      }),
+      .query(async ({ input }) => buildStaticMapImageDataUrl(input)),
 
     /** Geocodes a plain list of address strings (cache-first, same geocoder
      * as the Heat Map) — used by the Supervisor Summary export to plot its

@@ -23,6 +23,7 @@ import {
   Lock,
   Unlock,
   Download,
+  Printer,
   Clock,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -30,6 +31,7 @@ import { useParams, useLocation } from "wouter";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
+import { downloadBase64File } from "@/lib/downloadFile";
 import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
 import { EntityAutocompleteInput } from "@/components/EntityAutocompleteInput";
 import { useOffline } from "@/contexts/OfflineContext";
@@ -950,6 +952,17 @@ export default function SheetSummaryPage() {
     }
   }
 
+  // ── Real PDF download (server-generated file, no OS print dialog) ─────────
+  // For devices where printing — and therefore "Save as PDF" — is disabled
+  // by device management (e.g. an MDM-managed iPad). This is a genuine file
+  // download, so it's unaffected by that restriction.
+  const exportPdfMutation = trpc.summary.exportPdf.useMutation({
+    onError: e => toast.error(e.message || "Failed to generate PDF"),
+    onSuccess: async data => {
+      await downloadBase64File(data.base64, data.filename, "application/pdf");
+    },
+  });
+
   return (
     <DashboardLayout>
       <div className="max-w-3xl mx-auto px-4 py-6">
@@ -1000,14 +1013,25 @@ export default function SheetSummaryPage() {
               </p>
             </div>
           </div>
-          <button
-            onClick={handleExportPdf}
-            disabled={exportingPdf}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border bg-card text-sm font-medium text-foreground hover:bg-muted/50 transition-colors shrink-0 disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            <Download className="w-4 h-4" />
-            {exportingPdf ? "Exporting…" : "Export PDF"}
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={handleExportPdf}
+              disabled={exportingPdf}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border bg-card text-sm font-medium text-foreground hover:bg-muted/50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              <Printer className="w-4 h-4" />
+              {exportingPdf ? "Opening…" : "Print"}
+            </button>
+            <button
+              onClick={() => exportPdfMutation.mutate({ sheetId })}
+              disabled={exportPdfMutation.isPending}
+              title="Downloads a PDF file directly — use this if Print / Save as PDF is blocked on your device"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border bg-card text-sm font-medium text-foreground hover:bg-muted/50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              <Download className="w-4 h-4" />
+              {exportPdfMutation.isPending ? "Building…" : "Download PDF"}
+            </button>
+          </div>
         </div>
 
         {sheetIsClosed && (

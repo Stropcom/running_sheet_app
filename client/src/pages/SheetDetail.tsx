@@ -2539,23 +2539,29 @@ export default function SheetDetail() {
           // Independent of the near-duplicate checks below (and of whichever
           // branch they take) — always runs, for every entity type: is this
           // exact entity already a real sighting on a different operation?
+          // Its own try/catch, deliberately separate from the outer one:
+          // a failure here must never skip the person/generic checks below
+          // for the rest of this row's entities.
           if (sheet?.operationId) {
-            const crossOp =
-              await utils.intelligence.checkCrossOperationEntity.fetch({
-                type: e.type as DedupType,
-                label: e.shortForm,
-                operationId: sheet.operationId,
-              });
-            if (crossOp) {
-              queue.push({
-                kind: "crossOp",
-                type: e.type as DedupType,
-                label: e.shortForm,
-                operationNames: crossOp.operationNames,
-              });
+            try {
+              const crossOp =
+                await utils.intelligence.checkCrossOperationEntity.fetch({
+                  type: e.type as DedupType,
+                  label: e.shortForm,
+                  operationId: sheet.operationId,
+                });
+              if (crossOp) {
+                queue.push({
+                  kind: "crossOp",
+                  type: e.type as DedupType,
+                  label: e.shortForm,
+                  operationNames: crossOp.operationNames,
+                });
+              }
+            } catch (err) {
+              console.warn("checkCrossOperationEntity failed", err);
             }
           }
-
           if (e.type === "person") {
             // Already confirmed before (the "spellcheck remembers" case) —
             // silently correct the text, no prompt.

@@ -148,6 +148,7 @@ import {
   getIntelTargetPatternOfLife,
   extractEntitiesFromText,
   checkPossibleDuplicates,
+  checkCrossOperationEntity,
   markEntitiesNotDuplicate,
   mergeEntities,
   unmergeEntity,
@@ -3006,6 +3007,26 @@ export const appRouter = router({
       )
       .query(async ({ input }) => {
         return checkPossibleDuplicates(input.type, input.label);
+      }),
+
+    /** Is this exact entity already a real (non-registry-only) sighting on a
+     * different operation? Separate from checkPossibleDuplicates — that one
+     * deliberately skips exact matches (they already auto-merge); this is
+     * the informational warning for that exact-match case. */
+    checkCrossOperationEntity: protectedProcedure
+      .input(
+        z.object({
+          type: z.enum(["person", "vehicle", "address", "business"]),
+          label: z.string().min(1),
+          operationId: z.number(),
+        })
+      )
+      .query(async ({ input }) => {
+        return checkCrossOperationEntity(
+          input.type,
+          input.label,
+          input.operationId
+        );
       }),
 
     /** Records "these are NOT the same entity" so the prompt never asks about this pair again. */

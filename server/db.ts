@@ -116,7 +116,11 @@ import {
   type DedupType,
   type DedupCandidateEntity,
 } from "./entityDedup";
-import { attributedRowIds, collapseToVisits } from "./entityAttribution";
+import {
+  attributedRowIds,
+  collapseToVisits,
+  crossOperationNames,
+} from "./entityAttribution";
 import { buildRunningSheetTitle } from "../shared/runningSheetTitle";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -6202,6 +6206,50 @@ export async function checkPossibleDuplicates(
   );
 
   return findPossibleDuplicates(label, type, candidateCombinedKey, filtered);
+}
+
+export interface CrossOperationMatch {
+  /** Every other operation (not the one the officer is currently working in)
+   * that has a real observation of this exact entity. */
+  operationNames: string[];
+}
+
+/**
+ * Does this exact entity — not a near-miss, the same normalized key —
+ * already have a real observation on a DIFFERENT operation? Deliberately the
+ * opposite case findPossibleDuplicates excludes: an exact match silently
+ * collapses into one shared entity via getAllIntelligenceEntities' key
+ * normalization, which is correct for recognition, but means nobody is ever
+ * told about it. On a surveillance operation, "the same address the team is
+ * about to sit on is already a known entity under Operation X" is exactly
+ * the kind of thing that must surface, not silently merge.
+ *
+ * Deliberately independent of findPossibleDuplicates/checkPossibleDuplicates
+ * — a separate, additive check, not a variant of the near-duplicate prompt.
+ * rowId > 0 only: a registry-only ("Indices") occurrence isn't a real
+ * sighting anywhere, so it shouldn't trigger a cross-operation warning.
+ */
+export async function checkCrossOperationEntity(
+  type: DedupType,
+  label: string,
+  currentOperationId: number
+): Promise<CrossOperationMatch | null> {
+  const allEntities = await getAllIntelligenceEntities();
+  const candidateKey = computeEntityKey(type, label);
+  const entity = allEntities.find(
+    e =>
+      !e.isTarget &&
+      e.type === type &&
+      computeEntityKey(type, e.shortForm) === candidateKey
+  );
+  if (!entity) return null;
+
+  const operationNames = crossOperationNames(
+    entity.occurrences,
+    currentOperationId
+  );
+  if (!operationNames.length) return null;
+  return { operationNames };
 }
 
 /** Records a confirmed "these are NOT the same entity" decision so the prompt never asks about this pair again. */

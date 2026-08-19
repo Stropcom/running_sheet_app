@@ -27,6 +27,7 @@ import {
   TargetMatchDialog,
   type TargetMatchCandidate,
 } from "@/components/TargetMatchDialog";
+import { CrossOperationEntityAlert } from "@/components/CrossOperationEntityAlert";
 import {
   Dialog,
   DialogContent,
@@ -2475,6 +2476,16 @@ export default function SheetDetail() {
          * gets replaced in the observation text on confirm. */
         rawShortForm: string;
         match: TargetMatchCandidate;
+      }
+    | {
+        /** Informational only — this exact entity is already a real
+         * sighting on a different operation. See checkCrossOperationEntity;
+         * deliberately independent of the "generic"/"target" near-duplicate
+         * checks above, not a variant of them. */
+        kind: "crossOp";
+        type: DedupType;
+        label: string;
+        operationNames: string[];
       };
   const [dupeQueue, setDupeQueue] = useState<PendingDupe[]>([]);
   const [dupeIndex, setDupeIndex] = useState(0);
@@ -2525,6 +2536,32 @@ export default function SheetDetail() {
           if (seen.has(dedupeKey)) continue;
           seen.add(dedupeKey);
 
+          // Independent of the near-duplicate checks below (and of whichever
+          // branch they take) — always runs, for every entity type: is this
+          // exact entity already a real sighting on a different operation?
+          // Its own try/catch, deliberately separate from the outer one:
+          // a failure here must never skip the person/generic checks below
+          // for the rest of this row's entities.
+          if (sheet?.operationId) {
+            try {
+              const crossOp =
+                await utils.intelligence.checkCrossOperationEntity.fetch({
+                  type: e.type as DedupType,
+                  label: e.shortForm,
+                  operationId: sheet.operationId,
+                });
+              if (crossOp) {
+                queue.push({
+                  kind: "crossOp",
+                  type: e.type as DedupType,
+                  label: e.shortForm,
+                  operationNames: crossOp.operationNames,
+                });
+              }
+            } catch (err) {
+              console.warn("checkCrossOperationEntity failed", err);
+            }
+          }
           if (e.type === "person") {
             // Already confirmed before (the "spellcheck remembers" case) —
             // silently correct the text, no prompt.
@@ -2585,7 +2622,7 @@ export default function SheetDetail() {
         updateRow.mutate(input);
       }
     },
-    [isOnline, updateRow, utils]
+    [isOnline, updateRow, utils, sheet?.operationId]
   );
 
   function handleTargetMatchResolved(
@@ -5264,6 +5301,23 @@ export default function SheetDetail() {
               }}
               reason={currentDupe.match.reason}
               onResolved={handleDupeDialogResolved}
+            />
+          );
+        }
+        if (currentDupe.kind === "crossOp") {
+          return (
+            <CrossOperationEntityAlert
+              key={dupeIndex}
+              warning={
+                dupeDialogOpen
+                  ? {
+                      type: currentDupe.type,
+                      label: currentDupe.label,
+                      operationNames: currentDupe.operationNames,
+                    }
+                  : null
+              }
+              onAcknowledge={handleDupeDialogResolved}
             />
           );
         }

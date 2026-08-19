@@ -63,6 +63,48 @@ export function attributedRowIds(
   return rowIds;
 }
 
+// ─── Cross-operation awareness ─────────────────────────────────────────────
+// findPossibleDuplicates (entityDedup.ts) deliberately skips exact-key
+// matches — those already collapse into one shared entity via
+// getAllIntelligenceEntities, so from a *recognition* standpoint there is
+// nothing to ask about. But that silence is exactly the problem on an
+// evidentiary surveillance system: an address, vehicle, or person already
+// known from a real observation on a different operation should surface to
+// the officer, not merge invisibly. This is that check.
+
+/** The fields of an occurrence a cross-operation check actually needs. */
+export interface CrossOperationOccurrence {
+  /** 0 marks a synthetic registry-card occurrence — never a real sighting,
+   * so never grounds for a cross-operation warning. */
+  rowId: number;
+  operationId: number;
+  operationName: string;
+}
+
+/**
+ * Every OTHER operation (not `currentOperationId`) that has a real
+ * observation of this entity, deduplicated and in first-seen order.
+ *
+ * An empty result is a real answer: an entity only ever observed on the
+ * current operation (or only known from a registry card) has nothing to
+ * warn about.
+ */
+export function crossOperationNames(
+  occurrences: readonly CrossOperationOccurrence[] | undefined,
+  currentOperationId: number
+): string[] {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const occ of occurrences ?? []) {
+    if (occ.rowId <= 0) continue;
+    if (occ.operationId === currentOperationId) continue;
+    if (seen.has(occ.operationName)) continue;
+    seen.add(occ.operationName);
+    names.push(occ.operationName);
+  }
+  return names;
+}
+
 // ─── Visits ─────────────────────────────────────────────────────────────────
 
 /** One mention of a location, positioned within its sheet. `order` is the

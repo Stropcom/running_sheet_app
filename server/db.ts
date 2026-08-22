@@ -11825,13 +11825,15 @@ export async function softDeleteStosecBriefing(id: number, cin: string) {
 
 /**
  * Explicit, audited "I have seen this" — deliberately not the same thing as
- * opening the notification. First acknowledgement wins; reopening never
- * overwrites the original acknowledgedAt.
+ * opening the notification. Scoped to a revision: an edit + re-post is a
+ * new revision, and a prior revision's acknowledgement doesn't carry
+ * forward, so this is "first acknowledgement of THIS revision wins".
  */
 export async function acknowledgeStosecBriefing(
   briefingId: number,
   userId: number,
-  cin: string
+  cin: string,
+  revision: number
 ): Promise<StosecAcknowledgement> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -11841,7 +11843,8 @@ export async function acknowledgeStosecBriefing(
     .where(
       and(
         eq(stosecAcknowledgements.briefingId, briefingId),
-        eq(stosecAcknowledgements.userId, userId)
+        eq(stosecAcknowledgements.userId, userId),
+        eq(stosecAcknowledgements.revision, revision)
       )
     )
     .limit(1);
@@ -11852,14 +11855,16 @@ export async function acknowledgeStosecBriefing(
     briefingId,
     userId,
     cin,
+    revision,
     acknowledgedAt,
   });
-  return { id: 0, briefingId, userId, cin, acknowledgedAt };
+  return { id: 0, briefingId, userId, cin, revision, acknowledgedAt };
 }
 
 export async function getStosecAcknowledgementForUser(
   briefingId: number,
-  userId: number
+  userId: number,
+  revision: number
 ): Promise<StosecAcknowledgement | undefined> {
   const db = await getDb();
   if (!db) return undefined;
@@ -11869,22 +11874,30 @@ export async function getStosecAcknowledgementForUser(
     .where(
       and(
         eq(stosecAcknowledgements.briefingId, briefingId),
-        eq(stosecAcknowledgements.userId, userId)
+        eq(stosecAcknowledgements.userId, userId),
+        eq(stosecAcknowledgements.revision, revision)
       )
     )
     .limit(1);
   return row;
 }
 
+/** Acknowledgements for the given revision only — a prior revision's don't count. */
 export async function getStosecAcknowledgements(
-  briefingId: number
+  briefingId: number,
+  revision: number
 ): Promise<StosecAcknowledgement[]> {
   const db = await getDb();
   if (!db) return [];
   return db
     .select()
     .from(stosecAcknowledgements)
-    .where(eq(stosecAcknowledgements.briefingId, briefingId))
+    .where(
+      and(
+        eq(stosecAcknowledgements.briefingId, briefingId),
+        eq(stosecAcknowledgements.revision, revision)
+      )
+    )
     .orderBy(asc(stosecAcknowledgements.acknowledgedAt));
 }
 

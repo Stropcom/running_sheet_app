@@ -1612,9 +1612,21 @@ export const stosecAcknowledgements = mysqlTable(
     briefingId: int("briefingId").notNull(),
     userId: int("userId").notNull(),
     cin: varchar("cin", { length: 64 }).notNull(),
+    // Which revision of the briefing this acknowledged — an edit + re-post
+    // bumps stosecBriefings.revision, and a prior revision's acknowledgement
+    // does not carry forward, so each new revision needs its own. Default 1
+    // only matters for backfilling existing rows from before this column
+    // existed; the app always sets it explicitly on insert.
+    revision: int("revision").default(1).notNull(),
     acknowledgedAt: bigint("acknowledgedAt", { mode: "number" }).notNull(),
   },
-  t => [uniqueIndex("stosec_ack_briefing_user_idx").on(t.briefingId, t.userId)]
+  t => [
+    uniqueIndex("stosec_ack_briefing_user_rev_idx").on(
+      t.briefingId,
+      t.userId,
+      t.revision
+    ),
+  ]
 );
 
 export type StosecAcknowledgement = typeof stosecAcknowledgements.$inferSelect;

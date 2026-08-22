@@ -2216,8 +2216,12 @@ export const appRouter = router({
         const [operation, target, myAck, acks] = await Promise.all([
           getOperationById(briefing.operationId),
           briefing.targetId ? getTargetById(briefing.targetId) : null,
-          getStosecAcknowledgementForUser(briefing.id, ctx.user.id),
-          getStosecAcknowledgements(briefing.id),
+          getStosecAcknowledgementForUser(
+            briefing.id,
+            ctx.user.id,
+            briefing.revision
+          ),
+          getStosecAcknowledgements(briefing.id, briefing.revision),
         ]);
         return {
           ...briefing,
@@ -2306,10 +2310,17 @@ export const appRouter = router({
     acknowledge: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
+        const briefing = await getStosecBriefingById(input.id);
+        if (!briefing)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Briefing not found.",
+          });
         const ack = await acknowledgeStosecBriefing(
           input.id,
           ctx.user.id,
-          ctx.user.cin ?? "Unknown"
+          ctx.user.cin ?? "Unknown",
+          briefing.revision
         );
         return ack;
       }),

@@ -404,11 +404,7 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
                   className={`h-8 text-xs font-medium rounded-full border w-full ${INTEL_CHIP_CLASSES.person}`}
                 >
                   <User className="h-3 w-3 mr-1 shrink-0" />
-                  <SelectValue placeholder="None linked" className="truncate">
-                    {selectedTarget
-                      ? selectedTarget.tgt || selectedTarget.name
-                      : undefined}
-                  </SelectValue>
+                  <SelectValue placeholder="None linked" className="truncate" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">None linked</SelectItem>
@@ -443,15 +439,7 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
                   className={`h-8 text-xs font-medium rounded-full border w-full ${INTEL_CHIP_CLASSES.vehicle}`}
                 >
                   <Car className="h-3 w-3 mr-1 shrink-0" />
-                  <SelectValue placeholder="None" className="truncate">
-                    {(() => {
-                      const raw =
-                        voiOverride ||
-                        selectedTarget?.v1f ||
-                        selectedTarget?.v1;
-                      return raw ? formatIntelVehicle(raw) : undefined;
-                    })()}
-                  </SelectValue>
+                  <SelectValue placeholder="None" className="truncate" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__default__">
@@ -490,13 +478,7 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
                   className={`h-8 text-xs font-medium rounded-full border w-full ${INTEL_CHIP_CLASSES.address}`}
                 >
                   <MapPin className="h-3 w-3 mr-1 shrink-0" />
-                  <SelectValue placeholder="None" className="truncate">
-                    {(() => {
-                      const raw =
-                        hbOverride || selectedTarget?.hbf || selectedTarget?.hb;
-                      return raw ? formatIntelAddress(raw) : undefined;
-                    })()}
-                  </SelectValue>
+                  <SelectValue placeholder="None" className="truncate" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__default__">

@@ -13,8 +13,10 @@
  * from here — this panel is read + acknowledge only.
  */
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { INTEL_CHIP_CLASSES } from "@/components/IntelEntityChip";
@@ -25,6 +27,7 @@ import {
   MapPin,
   Check,
   ShieldAlert,
+  Pencil,
   Car,
   User,
   Users,
@@ -39,6 +42,8 @@ export function StosecMapOverlay({
   briefingId: number;
   onClose: () => void;
 }) {
+  const { user } = useAuth();
+  const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
   // Polled while open so a team member's pill turns green for everyone
   // watching as acknowledgements come in, not just on their own action.
@@ -76,6 +81,18 @@ export function StosecMapOverlay({
             Rev {briefing.revision}
           </span>
         )}
+        {user?.role === "admin" && briefing && (
+          <button
+            onClick={() =>
+              setLocation(`/administration/stosec/${briefing.id}/edit`)
+            }
+            className="p-1.5 rounded-md text-muted-foreground hover:bg-accent transition-colors shrink-0"
+            aria-label="Edit briefing"
+            title="Edit briefing"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
+        )}
         <button
           onClick={onClose}
           className="p-1.5 rounded-md text-muted-foreground hover:bg-accent transition-colors shrink-0"
@@ -102,10 +119,12 @@ export function StosecMapOverlay({
               {briefing.acknowledgedCount} acknowledged
             </span>
 
-            {/* SITUATION */}
-            <div className="space-y-2.5">
-              <SmeacLabel letter="S" label="Situation" />
-              {briefing.target && (
+            {/* TARGET — precedes SMEAC, not part of it */}
+            {briefing.target && (
+              <div className="space-y-1.5">
+                <h3 className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+                  Target
+                </h3>
                 <div className="flex flex-wrap gap-1.5">
                   <span
                     className={`inline-flex items-center gap-1.5 max-w-full px-3 py-1.5 rounded-full text-xs font-medium border truncate ${INTEL_CHIP_CLASSES.person}`}
@@ -134,11 +153,16 @@ export function StosecMapOverlay({
                     </span>
                   )}
                 </div>
-              )}
-              {briefing.situation && (
+              </div>
+            )}
+
+            {/* SITUATION */}
+            {briefing.situation && (
+              <div className="space-y-1.5">
+                <SmeacLabel letter="S" label="Situation" />
                 <p className="text-sm">{briefing.situation}</p>
-              )}
-            </div>
+              </div>
+            )}
 
             {/* MISSION */}
             {briefing.mission && (

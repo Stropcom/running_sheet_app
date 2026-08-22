@@ -558,7 +558,8 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
                   setLocationSearch("");
                   locationSearchRef.current = "";
                 }}
-                placeholder="Search an address to add…"
+                searchScope="any"
+                placeholder="Search an address, place, or business…"
                 inputClassName="h-8 text-sm"
               />
             </Field>

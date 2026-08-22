@@ -40,9 +40,12 @@ export function StosecMapOverlay({
   onClose: () => void;
 }) {
   const utils = trpc.useUtils();
-  const { data: briefing, isLoading } = trpc.stosecBriefing.getById.useQuery({
-    id: briefingId,
-  });
+  // Polled while open so a team member's pill turns green for everyone
+  // watching as acknowledgements come in, not just on their own action.
+  const { data: briefing, isLoading } = trpc.stosecBriefing.getById.useQuery(
+    { id: briefingId },
+    { refetchInterval: 8000 }
+  );
   const [acknowledgedAt, setAcknowledgedAt] = useState<number | null>(null);
 
   const acknowledge = trpc.stosecBriefing.acknowledge.useMutation({
@@ -174,29 +177,53 @@ export function StosecMapOverlay({
                       Surveillance team
                     </p>
                     <div className="space-y-2">
-                      {briefing.teamSlots.map((slot, i) => (
-                        <div
-                          key={i}
-                          className="p-2.5 rounded-lg border border-border bg-background"
-                        >
-                          <div className="flex items-center gap-1.5 mb-1.5">
-                            <span className="text-sm font-medium">
-                              {slot.name}
-                            </span>
-                            {slot.isTeamLeader && (
-                              <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400">
-                                TL
+                      {briefing.teamSlots.map((slot, i) => {
+                        const acked =
+                          !!slot.cin &&
+                          briefing.acknowledgedCins.includes(slot.cin);
+                        const pillClass = !slot.cin
+                          ? "bg-muted text-muted-foreground border-border"
+                          : acked
+                            ? "bg-emerald-500/15 text-emerald-700 border-emerald-500/40 dark:text-emerald-400"
+                            : "bg-red-500/15 text-red-700 border-red-500/40 dark:text-red-400";
+                        return (
+                          <div
+                            key={i}
+                            className="p-2.5 rounded-lg border border-border bg-background"
+                          >
+                            <div className="flex items-center gap-1.5 mb-1.5">
+                              <span
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm font-medium border transition-colors ${pillClass}`}
+                                title={
+                                  !slot.cin
+                                    ? "Not linked to a user — acknowledgement can't be tracked"
+                                    : acked
+                                      ? "Acknowledged"
+                                      : "Not yet acknowledged"
+                                }
+                              >
+                                {slot.cin && (
+                                  <span
+                                    className={`h-1.5 w-1.5 rounded-full shrink-0 ${acked ? "bg-emerald-500" : "bg-red-500"}`}
+                                  />
+                                )}
+                                {slot.name}
                               </span>
-                            )}
+                              {slot.isTeamLeader && (
+                                <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400">
+                                  TL
+                                </span>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                              <TeamField label="Vehicle" value={slot.vehicle} />
+                              <TeamField label="Foot" value={slot.foot} />
+                              <TeamField label="Skill" value={slot.skill} />
+                              <TeamField label="Kit" value={slot.kit} />
+                            </div>
                           </div>
-                          <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                            <TeamField label="Vehicle" value={slot.vehicle} />
-                            <TeamField label="Foot" value={slot.foot} />
-                            <TeamField label="Skill" value={slot.skill} />
-                            <TeamField label="Kit" value={slot.kit} />
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}

@@ -392,6 +392,7 @@ const structuredTargetFieldsSchema = {
 
 const stosecTeamSlotSchema = z.object({
   name: z.string(),
+  cin: z.string().optional().nullable(),
   vehicle: z.string(),
   foot: z.string(),
   skill: z.string(),
@@ -2224,6 +2225,9 @@ export const appRouter = router({
           target: target ?? null,
           myAcknowledgedAt: myAck?.acknowledgedAt ?? null,
           acknowledgedCount: acks.length,
+          // CINs are unique per user, so this doubles as a per-slot lookup
+          // for the "which team member pills have acknowledged" display.
+          acknowledgedCins: acks.map(a => a.cin),
         };
       }),
 

@@ -11631,6 +11631,11 @@ export async function purgeExpiredNotifications() {
 
 export interface StosecTeamSlot {
   name: string;
+  // Only set when this slot came from a real roster CIN (via
+  // getStosecRosterPrefill) — lets the acknowledgement view match this slot
+  // to a real acknowledgement. A manually-typed team member has no cin and
+  // so can't show an acknowledged/not-acknowledged state, only "unlinked".
+  cin?: string | null;
   vehicle: string;
   foot: string;
   skill: string;
@@ -11900,6 +11905,7 @@ export async function getStosecRosterPrefill(
   const byCin = new Map(allUsers.map(u => [u.cin, u.name]));
   return cins.map(({ cin }) => ({
     name: byCin.get(cin) ?? cin,
+    cin,
     vehicle: "",
     foot: "",
     skill: "",

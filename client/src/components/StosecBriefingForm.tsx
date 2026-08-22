@@ -40,6 +40,10 @@ import {
 
 interface TeamSlot {
   name: string;
+  // Only set when this slot came from "Populate from roster" — lets the
+  // acknowledgement view match this member to a real acknowledgement. A
+  // manually-typed name has no cin and can't show an ack/not-ack state.
+  cin?: string | null;
   vehicle: string;
   foot: string;
   skill: string;
@@ -49,6 +53,7 @@ interface TeamSlot {
 
 const EMPTY_SLOT: TeamSlot = {
   name: "",
+  cin: null,
   vehicle: "",
   foot: "",
   skill: "",

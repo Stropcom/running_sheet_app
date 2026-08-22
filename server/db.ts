@@ -11643,7 +11643,7 @@ export interface StosecTeamSlot {
   isTeamLeader: boolean;
 }
 
-function parseStosecObjectives(raw: string | null): string[] {
+function parseStosecStringArray(raw: string | null): string[] {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
@@ -11671,16 +11671,18 @@ function parseStosecTeamSlots(raw: string | null): StosecTeamSlot[] {
 }
 
 export interface StosecBriefingView
-  extends Omit<StosecBriefing, "objectives" | "teamSlots"> {
+  extends Omit<StosecBriefing, "objectives" | "teamSlots" | "extraLocations"> {
   objectives: string[];
   teamSlots: StosecTeamSlot[];
+  extraLocations: string[];
 }
 
 function toStosecBriefingView(row: StosecBriefing): StosecBriefingView {
   return {
     ...row,
-    objectives: parseStosecObjectives(row.objectives),
+    objectives: parseStosecStringArray(row.objectives),
     teamSlots: parseStosecTeamSlots(row.teamSlots),
+    extraLocations: parseStosecStringArray(row.extraLocations),
   };
 }
 
@@ -11690,6 +11692,7 @@ export interface UpsertStosecBriefingInput {
   targetId?: number | null;
   voiOverride?: string | null;
   hbOverride?: string | null;
+  extraLocations?: string[];
   situation?: string | null;
   mission?: string | null;
   objectives?: string[];
@@ -11713,6 +11716,7 @@ export async function createStosecBriefingDraft(
     targetId: data.targetId ?? null,
     voiOverride: data.voiOverride ?? null,
     hbOverride: data.hbOverride ?? null,
+    extraLocations: JSON.stringify(data.extraLocations ?? []),
     situation: data.situation ?? null,
     mission: data.mission ?? null,
     objectives: JSON.stringify(data.objectives ?? []),
@@ -11747,6 +11751,7 @@ export async function updateStosecBriefing(
       targetId: data.targetId ?? null,
       voiOverride: data.voiOverride ?? null,
       hbOverride: data.hbOverride ?? null,
+      extraLocations: JSON.stringify(data.extraLocations ?? []),
       situation: data.situation ?? null,
       mission: data.mission ?? null,
       objectives: JSON.stringify(data.objectives ?? []),

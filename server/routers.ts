@@ -406,6 +406,7 @@ const stosecBriefingFieldsSchema = {
   targetId: z.number().optional().nullable(),
   voiOverride: z.string().optional().nullable(),
   hbOverride: z.string().optional().nullable(),
+  extraLocations: z.array(z.string()).optional(),
   situation: z.string().optional().nullable(),
   mission: z.string().optional().nullable(),
   objectives: z.array(z.string()).optional(),

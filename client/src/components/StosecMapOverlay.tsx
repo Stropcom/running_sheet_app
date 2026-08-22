@@ -120,18 +120,20 @@ export function StosecMapOverlay({
             </span>
 
             {/* TARGET — precedes SMEAC, not part of it */}
-            {briefing.target && (
+            {(briefing.target || briefing.extraLocations.length > 0) && (
               <div className="space-y-1.5">
                 <h3 className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
                   Target
                 </h3>
                 <div className="flex flex-wrap gap-1.5">
-                  <span
-                    className={`inline-flex items-center gap-1.5 max-w-full px-3 py-1.5 rounded-full text-xs font-medium border truncate ${INTEL_CHIP_CLASSES.person}`}
-                  >
-                    <User className="w-3 h-3 shrink-0" />
-                    <span className="truncate">{briefing.target.name}</span>
-                  </span>
+                  {briefing.target && (
+                    <span
+                      className={`inline-flex items-center gap-1.5 max-w-full px-3 py-1.5 rounded-full text-xs font-medium border truncate ${INTEL_CHIP_CLASSES.person}`}
+                    >
+                      <User className="w-3 h-3 shrink-0" />
+                      <span className="truncate">{briefing.target.name}</span>
+                    </span>
+                  )}
                   {rawVehicle && (
                     <span
                       className={`inline-flex items-center gap-1.5 max-w-full px-3 py-1.5 rounded-full text-xs font-medium border truncate ${INTEL_CHIP_CLASSES.vehicle}`}
@@ -152,6 +154,17 @@ export function StosecMapOverlay({
                       </span>
                     </span>
                   )}
+                  {briefing.extraLocations.map((loc, i) => (
+                    <span
+                      key={i}
+                      className={`inline-flex items-center gap-1.5 max-w-full px-3 py-1.5 rounded-full text-xs font-medium border truncate ${INTEL_CHIP_CLASSES.address}`}
+                    >
+                      <MapPin className="w-3 h-3 shrink-0" />
+                      <span className="truncate">
+                        {formatIntelAddress(loc)}
+                      </span>
+                    </span>
+                  ))}
                 </div>
               </div>
             )}

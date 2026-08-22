@@ -1571,6 +1571,9 @@ export const stosecBriefings = mysqlTable("stosec_briefings", {
   // means "use the linked target's own vehicle/address".
   voiOverride: varchar("voiOverride", { length: 500 }),
   hbOverride: varchar("hbOverride", { length: 500 }),
+  // JSON array of strings — additional addresses added via the map search
+  // box, beyond the linked target's own location/hbOverride above.
+  extraLocations: text("extraLocations"),
 
   situation: text("situation"),
   mission: text("mission"),

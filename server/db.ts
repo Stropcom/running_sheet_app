@@ -109,6 +109,11 @@ import {
   entityDedupDecisions,
   InsertEntityDedupDecision,
   personNameMatchDecisions,
+  stosecBriefings,
+  StosecBriefing,
+  InsertStosecBriefing,
+  stosecAcknowledgements,
+  StosecAcknowledgement,
 } from "../drizzle/schema";
 import {
   findPossibleDuplicates,
@@ -11617,6 +11622,280 @@ export async function purgeExpiredNotifications() {
         new Date(Date.now() - NOTIFICATION_MAX_AGE_MS)
       )
     );
+}
+
+// ─── STOSEC Briefings ───────────────────────────────────────────────────────
+// See drizzle/schema.ts for the "exceptional use only" framing. A draft is
+// only visible to its creator; posting is the one-way action that notifies
+// every user and makes it visible to everyone.
+
+export interface StosecTeamSlot {
+  name: string;
+  vehicle: string;
+  foot: string;
+  skill: string;
+  kit: string;
+  isTeamLeader: boolean;
+}
+
+function parseStosecObjectives(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseStosecTeamSlots(raw: string | null): StosecTeamSlot[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export interface StosecBriefingView
+  extends Omit<StosecBriefing, "objectives" | "teamSlots"> {
+  objectives: string[];
+  teamSlots: StosecTeamSlot[];
+}
+
+function toStosecBriefingView(row: StosecBriefing): StosecBriefingView {
+  return {
+    ...row,
+    objectives: parseStosecObjectives(row.objectives),
+    teamSlots: parseStosecTeamSlots(row.teamSlots),
+  };
+}
+
+export interface UpsertStosecBriefingInput {
+  operationId: number;
+  sheetId?: number | null;
+  targetId?: number | null;
+  situation?: string | null;
+  mission?: string | null;
+  objectives?: string[];
+  legalAuthArrest?: string | null;
+  afpOrders?: string | null;
+  warrant?: string | null;
+  commsPrimary?: string | null;
+  commsSecondary?: string | null;
+  teamSlots?: StosecTeamSlot[];
+}
+
+export async function createStosecBriefingDraft(
+  data: UpsertStosecBriefingInput,
+  createdBy: number
+): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(stosecBriefings).values({
+    operationId: data.operationId,
+    sheetId: data.sheetId ?? null,
+    targetId: data.targetId ?? null,
+    situation: data.situation ?? null,
+    mission: data.mission ?? null,
+    objectives: JSON.stringify(data.objectives ?? []),
+    legalAuthArrest: data.legalAuthArrest ?? null,
+    afpOrders: data.afpOrders ?? null,
+    warrant: data.warrant ?? null,
+    commsPrimary: data.commsPrimary ?? null,
+    commsSecondary: data.commsSecondary ?? null,
+    teamSlots: JSON.stringify(data.teamSlots ?? []),
+    status: "draft",
+    createdBy,
+  });
+  return result.insertId as number;
+}
+
+/** Only valid while the briefing is still a draft — a posted briefing is a fixed record. */
+export async function updateStosecBriefingDraft(
+  id: number,
+  data: UpsertStosecBriefingInput
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .update(stosecBriefings)
+    .set({
+      operationId: data.operationId,
+      sheetId: data.sheetId ?? null,
+      targetId: data.targetId ?? null,
+      situation: data.situation ?? null,
+      mission: data.mission ?? null,
+      objectives: JSON.stringify(data.objectives ?? []),
+      legalAuthArrest: data.legalAuthArrest ?? null,
+      afpOrders: data.afpOrders ?? null,
+      warrant: data.warrant ?? null,
+      commsPrimary: data.commsPrimary ?? null,
+      commsSecondary: data.commsSecondary ?? null,
+      teamSlots: JSON.stringify(data.teamSlots ?? []),
+    })
+    .where(
+      and(eq(stosecBriefings.id, id), eq(stosecBriefings.status, "draft"))
+    );
+}
+
+export async function getStosecBriefingById(
+  id: number
+): Promise<StosecBriefingView | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const [row] = await db
+    .select()
+    .from(stosecBriefings)
+    .where(and(eq(stosecBriefings.id, id), isNull(stosecBriefings.deletedAt)))
+    .limit(1);
+  return row ? toStosecBriefingView(row) : undefined;
+}
+
+export async function listStosecBriefings(): Promise<StosecBriefingView[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select()
+    .from(stosecBriefings)
+    .where(isNull(stosecBriefings.deletedAt))
+    .orderBy(desc(stosecBriefings.createdAt));
+  return rows.map(toStosecBriefingView);
+}
+
+/**
+ * Posts a draft — the one-way action that makes it visible to everyone and
+ * notifies every user. Returns the id list notified, or undefined if the
+ * briefing wasn't a postable draft (already posted / doesn't exist).
+ */
+export async function postStosecBriefing(
+  id: number,
+  postedByCIN: string,
+  notifyBody: { title: string; body: string; url: string }
+): Promise<number[] | undefined> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [existing] = await db
+    .select()
+    .from(stosecBriefings)
+    .where(and(eq(stosecBriefings.id, id), eq(stosecBriefings.status, "draft")))
+    .limit(1);
+  if (!existing) return undefined;
+
+  await db
+    .update(stosecBriefings)
+    .set({ status: "posted", postedAt: Date.now(), postedByCIN })
+    .where(eq(stosecBriefings.id, id));
+
+  const allUsers = await getAllUsers();
+  const userIds = allUsers.map(u => u.id);
+  await createNotificationsForUsers(userIds, {
+    title: notifyBody.title,
+    body: notifyBody.body,
+    url: notifyBody.url,
+    sourceModule: "stosecBriefing",
+  });
+  return userIds;
+}
+
+export async function softDeleteStosecBriefing(id: number, cin: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .update(stosecBriefings)
+    .set({ deletedAt: Date.now(), deletedByCIN: cin })
+    .where(eq(stosecBriefings.id, id));
+}
+
+/**
+ * Explicit, audited "I have seen this" — deliberately not the same thing as
+ * opening the notification. First acknowledgement wins; reopening never
+ * overwrites the original acknowledgedAt.
+ */
+export async function acknowledgeStosecBriefing(
+  briefingId: number,
+  userId: number,
+  cin: string
+): Promise<StosecAcknowledgement> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [existing] = await db
+    .select()
+    .from(stosecAcknowledgements)
+    .where(
+      and(
+        eq(stosecAcknowledgements.briefingId, briefingId),
+        eq(stosecAcknowledgements.userId, userId)
+      )
+    )
+    .limit(1);
+  if (existing) return existing;
+
+  const acknowledgedAt = Date.now();
+  await db.insert(stosecAcknowledgements).values({
+    briefingId,
+    userId,
+    cin,
+    acknowledgedAt,
+  });
+  return { id: 0, briefingId, userId, cin, acknowledgedAt };
+}
+
+export async function getStosecAcknowledgementForUser(
+  briefingId: number,
+  userId: number
+): Promise<StosecAcknowledgement | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const [row] = await db
+    .select()
+    .from(stosecAcknowledgements)
+    .where(
+      and(
+        eq(stosecAcknowledgements.briefingId, briefingId),
+        eq(stosecAcknowledgements.userId, userId)
+      )
+    )
+    .limit(1);
+  return row;
+}
+
+export async function getStosecAcknowledgements(
+  briefingId: number
+): Promise<StosecAcknowledgement[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(stosecAcknowledgements)
+    .where(eq(stosecAcknowledgements.briefingId, briefingId))
+    .orderBy(asc(stosecAcknowledgements.acknowledgedAt));
+}
+
+/** Today's sheet roster (CIN -> display name) to pre-fill the team grid when raising a briefing from a running sheet. */
+export async function getStosecRosterPrefill(
+  sheetId: number
+): Promise<StosecTeamSlot[]> {
+  const sheet = await getRunningSheetById(sheetId);
+  if (!sheet || !sheet.sheetCins) return [];
+  let cins: { cin: string }[] = [];
+  try {
+    const parsed = JSON.parse(sheet.sheetCins);
+    if (Array.isArray(parsed)) cins = parsed;
+  } catch {
+    return [];
+  }
+  const allUsers = await getAllUsers();
+  const byCin = new Map(allUsers.map(u => [u.cin, u.name]));
+  return cins.map(({ cin }) => ({
+    name: byCin.get(cin) ?? cin,
+    vehicle: "",
+    foot: "",
+    skill: "",
+    kit: "",
+    isTeamLeader: false,
+  }));
 }
 
 // ─── Witness List ───────────────────────────────────────────────────────────

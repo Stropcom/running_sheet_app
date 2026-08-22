@@ -91,6 +91,7 @@ import {
   RefreshCw,
   TrendingUp,
   CalendarClock,
+  ShieldAlert,
 } from "lucide-react";
 import React, {
   CSSProperties,
@@ -687,7 +688,9 @@ function SortableNavItem({
           <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
             <button
               onClick={() => setLocation("/reports/outstanding-actions")}
-              className={subItemClass(location === "/reports/outstanding-actions")}
+              className={subItemClass(
+                location === "/reports/outstanding-actions"
+              )}
             >
               <ClipboardCheck className="h-3.5 w-3.5 shrink-0" />
               Outstanding Actions
@@ -854,8 +857,14 @@ function SortableNavTile({
   unlinkedImagesCount: number;
   govCount: number;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id });
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -884,7 +893,8 @@ function SortableNavTile({
   }
 
   if (id === "governance") {
-    const isActive = location === "/governance" || location.startsWith("/governance");
+    const isActive =
+      location === "/governance" || location.startsWith("/governance");
     return (
       <NavTileShell
         setNodeRef={setNodeRef}
@@ -901,7 +911,9 @@ function SortableNavTile({
 
   if (id === "todo") {
     const isActive =
-      location === "/todo" || location === "/todo/images" || location === "/todo/governance";
+      location === "/todo" ||
+      location === "/todo/images" ||
+      location === "/todo/governance";
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -925,28 +937,43 @@ function SortableNavTile({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-56">
           <DropdownMenuItem onClick={() => setLocation("/todo")}>
-            <Shield className={`h-4 w-4 mr-2 ${certifyCount > 0 ? "text-red-400" : "text-emerald-400"}`} />
+            <Shield
+              className={`h-4 w-4 mr-2 ${certifyCount > 0 ? "text-red-400" : "text-emerald-400"}`}
+            />
             Certify
             {certifyCount > 0 && (
-              <Badge variant="outline" className="ml-auto text-[10px] border-red-500/40 bg-red-500/10 text-red-400">
+              <Badge
+                variant="outline"
+                className="ml-auto text-[10px] border-red-500/40 bg-red-500/10 text-red-400"
+              >
                 {certifyCount}
               </Badge>
             )}
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => setLocation("/todo/images")}>
-            <Link2 className={`h-4 w-4 mr-2 ${unlinkedImagesCount > 0 ? "text-amber-400" : "text-emerald-400"}`} />
+            <Link2
+              className={`h-4 w-4 mr-2 ${unlinkedImagesCount > 0 ? "text-amber-400" : "text-emerald-400"}`}
+            />
             Link Images
             {unlinkedImagesCount > 0 && (
-              <Badge variant="outline" className="ml-auto text-[10px] border-amber-500/40 bg-amber-500/10 text-amber-400">
+              <Badge
+                variant="outline"
+                className="ml-auto text-[10px] border-amber-500/40 bg-amber-500/10 text-amber-400"
+              >
                 {unlinkedImagesCount}
               </Badge>
             )}
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => setLocation("/todo/governance")}>
-            <GovIcon className={`h-4 w-4 mr-2 ${govCount > 0 ? "text-blue-400" : "text-emerald-400"}`} />
+            <GovIcon
+              className={`h-4 w-4 mr-2 ${govCount > 0 ? "text-blue-400" : "text-emerald-400"}`}
+            />
             RS Governance
             {govCount > 0 && (
-              <Badge variant="outline" className="ml-auto text-[10px] border-blue-500/40 bg-blue-500/10 text-blue-400">
+              <Badge
+                variant="outline"
+                className="ml-auto text-[10px] border-blue-500/40 bg-blue-500/10 text-blue-400"
+              >
                 {govCount}
               </Badge>
             )}
@@ -1009,7 +1036,9 @@ function SortableNavTile({
         gripListeners={gripListeners}
         icon={<Zap className="h-5 w-5 text-yellow-400" />}
         label="Shortcuts"
-        isActive={location === "/shortcuts" || location.startsWith("/shortcuts")}
+        isActive={
+          location === "/shortcuts" || location.startsWith("/shortcuts")
+        }
         activeBorderClass="data-[active=true]:border-yellow-400/60"
         onClick={() => setLocation("/shortcuts")}
       />
@@ -1026,7 +1055,8 @@ function SortableNavTile({
         label="Intelligence"
         isActive={
           location === "/intelligence" ||
-          (location.startsWith("/intelligence") && !location.startsWith("/intelligence/mapping"))
+          (location.startsWith("/intelligence") &&
+            !location.startsWith("/intelligence/mapping"))
         }
         activeBorderClass="data-[active=true]:border-violet-400/60"
         onClick={() => setLocation("/intelligence")}
@@ -1042,7 +1072,10 @@ function SortableNavTile({
         gripListeners={gripListeners}
         icon={<BookOpen className="h-5 w-5 text-rose-400" />}
         label="Target Registry"
-        isActive={location === "/target-registry" || location.startsWith("/target-registry")}
+        isActive={
+          location === "/target-registry" ||
+          location.startsWith("/target-registry")
+        }
         activeBorderClass="data-[active=true]:border-rose-400/60"
         onClick={() => setLocation("/target-registry")}
       />
@@ -1051,7 +1084,8 @@ function SortableNavTile({
 
   if (id === "operationManager") {
     const isActive =
-      location.startsWith("/operation-manager") || location.startsWith("/cto-roster");
+      location.startsWith("/operation-manager") ||
+      location.startsWith("/cto-roster");
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -1083,27 +1117,39 @@ function SortableNavTile({
                 <Users className="h-4 w-4 mr-2" />
                 Roster
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setLocation("/cto-roster/my-shifts")}>
+              <DropdownMenuItem
+                onClick={() => setLocation("/cto-roster/my-shifts")}
+              >
                 <Users className="h-4 w-4 mr-2" />
                 My Shifts
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setLocation("/cto-roster/outlook")}>
+              <DropdownMenuItem
+                onClick={() => setLocation("/cto-roster/outlook")}
+              >
                 <Binoculars className="h-4 w-4 mr-2" />
                 Outlook
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setLocation("/cto-roster/drafts")}>
+              <DropdownMenuItem
+                onClick={() => setLocation("/cto-roster/drafts")}
+              >
                 <FileEdit className="h-4 w-4 mr-2" />
                 Drafts
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setLocation("/cto-roster/saved-rosters")}>
+              <DropdownMenuItem
+                onClick={() => setLocation("/cto-roster/saved-rosters")}
+              >
                 <BookOpen className="h-4 w-4 mr-2" />
                 Saved Rosters
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setLocation("/cto-roster/ea-compliance")}>
+              <DropdownMenuItem
+                onClick={() => setLocation("/cto-roster/ea-compliance")}
+              >
                 <ShieldCheck className="h-4 w-4 mr-2" />
                 EA Compliance
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setLocation("/cto-roster/audit")}>
+              <DropdownMenuItem
+                onClick={() => setLocation("/cto-roster/audit")}
+              >
                 <ScrollText className="h-4 w-4 mr-2" />
                 Audit Log
               </DropdownMenuItem>
@@ -1133,15 +1179,21 @@ function SortableNavTile({
           </div>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-56">
-          <DropdownMenuItem onClick={() => setLocation("/reports/outstanding-actions")}>
+          <DropdownMenuItem
+            onClick={() => setLocation("/reports/outstanding-actions")}
+          >
             <ClipboardCheck className="h-4 w-4 mr-2" />
             Outstanding Actions
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setLocation("/reports/weekly-activity")}>
+          <DropdownMenuItem
+            onClick={() => setLocation("/reports/weekly-activity")}
+          >
             <TrendingUp className="h-4 w-4 mr-2" />
             Weekly Activity
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setLocation("/reports/weekly-tasking")}>
+          <DropdownMenuItem
+            onClick={() => setLocation("/reports/weekly-tasking")}
+          >
             <CalendarClock className="h-4 w-4 mr-2" />
             Weekly Tasking
           </DropdownMenuItem>
@@ -1204,6 +1256,7 @@ function AdminNavTile({
     location === "/draft" ||
     location === "/operation-management" ||
     location === "/recycle-bin" ||
+    location.startsWith("/administration/stosec") ||
     location === "/help";
   return (
     <DropdownMenu>
@@ -1234,6 +1287,10 @@ function AdminNavTile({
         <DropdownMenuItem onClick={() => setLocation("/recycle-bin")}>
           <Trash2 className="h-4 w-4 mr-2" />
           Recycle Bin
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setLocation("/administration/stosec")}>
+          <ShieldAlert className="h-4 w-4 mr-2" />
+          STOSEC Briefings
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => setLocation("/help")}>
           <HelpCircle className="h-4 w-4 mr-2" />
@@ -1730,6 +1787,7 @@ function DashboardLayoutContent({
       "/recycle-bin",
       "/help",
       "/reports",
+      "/administration/stosec",
     ];
     if (adminPaths.some(p => location === p || location.startsWith(p))) {
       setAdminFolderExpanded(true);
@@ -1849,7 +1907,9 @@ function DashboardLayoutContent({
                       ? "text-blue-700 border-blue-700/50 bg-blue-700/10 hover:bg-blue-700/20 cursor-pointer"
                       : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"
                   }`}
-                  title={activeRsId ? "Go to Active RS" : "No active RS selected"}
+                  title={
+                    activeRsId ? "Go to Active RS" : "No active RS selected"
+                  }
                 >
                   <ClipboardList className="h-6 w-6" />
                   <span>Active RS</span>
@@ -1886,467 +1946,485 @@ function DashboardLayoutContent({
       {/* The banner sits above this row, so the folder menu and the page share
           what's left of the viewport height. */}
       <div className="flex w-full flex-1 min-h-0">
-      <div className="relative print:hidden" ref={sidebarRef}>
-        <Sidebar
-          collapsible="icon"
-          className={`border-r border-sidebar-border rounded-r-2xl shadow-2xl overflow-hidden ${
-            isMobile
-              ? ""
-              : "top-14 h-[calc(var(--app-vh,100svh)-3.5rem)]"
-          }`}
-          disableTransition={isResizing}
-        >
-          {/* The shield/wordmark, refresh, bell and the folder-menu toggle all
+        <div className="relative print:hidden" ref={sidebarRef}>
+          <Sidebar
+            collapsible="icon"
+            className={`border-r border-sidebar-border rounded-r-2xl shadow-2xl overflow-hidden ${
+              isMobile ? "" : "top-14 h-[calc(var(--app-vh,100svh)-3.5rem)]"
+            }`}
+            disableTransition={isResizing}
+          >
+            {/* The shield/wordmark, refresh, bell and the folder-menu toggle all
               live in the app banner above now — on phones they're in the
               compact mobile header instead — so this header would otherwise be
               an empty 64px band above the nav. Kept only as a small spacer so
               the first folder isn't jammed against the banner. */}
-          <SidebarHeader className="h-2 p-0" />
+            <SidebarHeader className="h-2 p-0" />
 
-          {/* Navigation */}
-          <SidebarContent
-            className="gap-0 pt-2 pb-2"
-            ref={sidebarScrollRef}
-            onScroll={e => {
-              lastSidebarScrollTop = e.currentTarget.scrollTop;
-            }}
-          >
-            {viewMode === "tile" && !isCollapsed ? (
-              <div className="grid grid-cols-2 gap-2 px-2">
-                <DndContext
-                  sensors={sensors}
-                  collisionDetection={pointerWithin}
-                  onDragEnd={handleDragEnd}
-                >
-                  <SortableContext items={navOrder} strategy={rectSortingStrategy}>
-                    {navOrder.map(key => (
-                      <SortableNavTile
-                        key={key}
-                        id={key}
-                        location={location}
-                        setLocation={setLocation}
-                        todoCount={todoCount}
-                        certifyCount={certifyCount}
-                        unlinkedImagesCount={unlinkedImagesCount}
-                        govCount={govCount}
-                      />
-                    ))}
-                  </SortableContext>
-                </DndContext>
-                <AdminNavTile location={location} setLocation={setLocation} />
-                <UserMgmtNavTile setLocation={setLocation} isAdmin={user?.role === "admin"} />
-              </div>
-            ) : (
-            <SidebarMenu className="px-2 gap-1.5">
-              {/* ── Draggable main nav items ── */}
-              <DndContext
-                sensors={sensors}
-                collisionDetection={pointerWithin}
-                onDragEnd={handleDragEnd}
-              >
-                <SortableContext
-                  items={navOrder}
-                  strategy={verticalListSortingStrategy}
-                >
-                  {navOrder.map(key => (
-                    <SortableNavItem
-                      key={key}
-                      id={key}
-                      isCollapsed={isCollapsed}
-                      location={location}
-                      setLocation={setLocation}
-                      todoCount={todoCount}
-                      certifyCount={certifyCount}
-                      unlinkedImagesCount={unlinkedImagesCount}
-                      govCount={govCount}
-                      todoExpanded={todoExpanded}
-                      setTodoExpanded={setTodoExpanded}
-                      opManagerExpanded={opManagerExpanded}
-                      setOpManagerExpanded={setOpManagerExpanded}
-                      ctoRosterSubExpanded={ctoRosterSubExpanded}
-                      setCtoRosterSubExpanded={setCtoRosterSubExpanded}
-                      reportsExpanded={reportsExpanded}
-                      setReportsExpanded={setReportsExpanded}
-                      courtExpanded={courtExpanded}
-                      setCourtExpanded={setCourtExpanded}
-                      shortcutsItemRef={shortcutsItemRef}
-                      isObservationFocused={isObservationFocused}
-                      setShortcutsPanelOpen={setShortcutsPanelOpen}
-                      subItemClass={subItemClass}
-                      sidebarScrollRef={sidebarScrollRef}
-                    />
-                  ))}
-                </SortableContext>
-              </DndContext>
-
-              {/* ── Administration (expandable, all users) ── */}
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={
-                    adminFolderExpanded && !isCollapsed
-                      ? false
-                      : location === "/audit" ||
-                        location === "/draft" ||
-                        location === "/operation-management" ||
-                        location === "/recycle-bin" ||
-                        location === "/help"
-                  }
-                  onClick={() => setAdminFolderExpanded(v => !v)}
-                  tooltip="Administration"
-                  className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-slate-400/50 shadow-sm"
-                >
-                  <Settings className="h-4 w-4 text-slate-400" />
-                  <span
-                    className={`flex-1 ${
-                      location === "/audit" ||
-                      location === "/draft" ||
-                      location === "/operation-management" ||
-                      location === "/recycle-bin" ||
-                      location === "/help"
-                        ? "text-sidebar-foreground font-medium"
-                        : "text-sidebar-foreground/80"
-                    }`}
+            {/* Navigation */}
+            <SidebarContent
+              className="gap-0 pt-2 pb-2"
+              ref={sidebarScrollRef}
+              onScroll={e => {
+                lastSidebarScrollTop = e.currentTarget.scrollTop;
+              }}
+            >
+              {viewMode === "tile" && !isCollapsed ? (
+                <div className="grid grid-cols-2 gap-2 px-2">
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={pointerWithin}
+                    onDragEnd={handleDragEnd}
                   >
-                    Administration
-                  </span>
-                  {!isCollapsed &&
-                    (adminFolderExpanded ? (
-                      <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />
-                    ) : (
-                      <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />
-                    ))}
-                </SidebarMenuButton>
-
-                {adminFolderExpanded && !isCollapsed && (
-                  <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
-                    {/* Audit Log */}
-                    <button
-                      onClick={() => setLocation("/audit")}
-                      className={subItemClass(location === "/audit")}
+                    <SortableContext
+                      items={navOrder}
+                      strategy={rectSortingStrategy}
                     >
-                      <ScrollText className="h-3.5 w-3.5 shrink-0 text-foreground" />
-                      Audit Log
-                    </button>
-
-                    {/* Draft Mode */}
-                    <button
-                      onClick={() => setLocation("/draft")}
-                      className={subItemClass(location === "/draft")}
-                    >
-                      <WifiOff
-                        className={`h-3.5 w-3.5 shrink-0 ${draftCounts.total > 0 ? "text-blue-400" : "text-foreground"}`}
-                      />
-                      <span className="flex-1">Draft Mode</span>
-                      {draftCounts.total > 0 && (
-                        <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[9px] font-bold bg-blue-500/20 border border-blue-500/40 text-blue-400">
-                          {draftCounts.total}
-                        </span>
-                      )}
-                    </button>
-
-                    {/* Archive (was Operation Management) */}
-                    <button
-                      onClick={() => setLocation("/operation-management")}
-                      className={subItemClass(
-                        location === "/operation-management"
-                      )}
-                    >
-                      <ArrowRightLeft className="h-3.5 w-3.5 shrink-0 text-foreground" />
-                      Archive
-                    </button>
-
-                    {/* Recycle Bin */}
-                    <button
-                      onClick={() => setLocation("/recycle-bin")}
-                      className={subItemClass(location === "/recycle-bin")}
-                    >
-                      <Trash2 className="h-3.5 w-3.5 shrink-0 text-foreground" />
-                      Recycle Bin
-                    </button>
-
-                    {/* Help */}
-                    <button
-                      onClick={() => setLocation("/help")}
-                      className={subItemClass(location === "/help")}
-                    >
-                      <HelpCircle className="h-3.5 w-3.5 shrink-0 text-foreground" />
-                      Help
-                    </button>
-                  </div>
-                )}
-              </SidebarMenuItem>
-
-              {/* ── User Management (expandable, all users see it, Access Management is admin-only inside) ── */}
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={false}
-                  onClick={() => setUserMgmtFolderExpanded(v => !v)}
-                  tooltip="User Management"
-                  className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-blue-400/50 shadow-sm"
-                >
-                  <UserCog className="h-4 w-4 text-blue-400" />
-                  <span
-                    className={`flex-1 ${location === "/profile" || location === "/admin" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}
+                      {navOrder.map(key => (
+                        <SortableNavTile
+                          key={key}
+                          id={key}
+                          location={location}
+                          setLocation={setLocation}
+                          todoCount={todoCount}
+                          certifyCount={certifyCount}
+                          unlinkedImagesCount={unlinkedImagesCount}
+                          govCount={govCount}
+                        />
+                      ))}
+                    </SortableContext>
+                  </DndContext>
+                  <AdminNavTile location={location} setLocation={setLocation} />
+                  <UserMgmtNavTile
+                    setLocation={setLocation}
+                    isAdmin={user?.role === "admin"}
+                  />
+                </div>
+              ) : (
+                <SidebarMenu className="px-2 gap-1.5">
+                  {/* ── Draggable main nav items ── */}
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={pointerWithin}
+                    onDragEnd={handleDragEnd}
                   >
-                    User Management
-                  </span>
-                  {!isCollapsed &&
-                    (userMgmtFolderExpanded ? (
-                      <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />
-                    ) : (
-                      <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />
-                    ))}
-                </SidebarMenuButton>
-
-                {userMgmtFolderExpanded && !isCollapsed && (
-                  <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
-                    {/* My Profile */}
-                    <button
-                      onClick={() => setLocation("/profile")}
-                      className={subItemClass(location === "/profile")}
+                    <SortableContext
+                      items={navOrder}
+                      strategy={verticalListSortingStrategy}
                     >
-                      <User className="h-3.5 w-3.5 shrink-0 text-foreground" />
-                      My Profile
-                    </button>
-                    {/* Access Management — admin only */}
-                    {user?.role === "admin" && (
-                      <button
-                        onClick={() => setLocation("/admin")}
-                        className={subItemClass(location === "/admin")}
+                      {navOrder.map(key => (
+                        <SortableNavItem
+                          key={key}
+                          id={key}
+                          isCollapsed={isCollapsed}
+                          location={location}
+                          setLocation={setLocation}
+                          todoCount={todoCount}
+                          certifyCount={certifyCount}
+                          unlinkedImagesCount={unlinkedImagesCount}
+                          govCount={govCount}
+                          todoExpanded={todoExpanded}
+                          setTodoExpanded={setTodoExpanded}
+                          opManagerExpanded={opManagerExpanded}
+                          setOpManagerExpanded={setOpManagerExpanded}
+                          ctoRosterSubExpanded={ctoRosterSubExpanded}
+                          setCtoRosterSubExpanded={setCtoRosterSubExpanded}
+                          reportsExpanded={reportsExpanded}
+                          setReportsExpanded={setReportsExpanded}
+                          courtExpanded={courtExpanded}
+                          setCourtExpanded={setCourtExpanded}
+                          shortcutsItemRef={shortcutsItemRef}
+                          isObservationFocused={isObservationFocused}
+                          setShortcutsPanelOpen={setShortcutsPanelOpen}
+                          subItemClass={subItemClass}
+                          sidebarScrollRef={sidebarScrollRef}
+                        />
+                      ))}
+                    </SortableContext>
+                  </DndContext>
+
+                  {/* ── Administration (expandable, all users) ── */}
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      isActive={
+                        adminFolderExpanded && !isCollapsed
+                          ? false
+                          : location === "/audit" ||
+                            location === "/draft" ||
+                            location === "/operation-management" ||
+                            location === "/recycle-bin" ||
+                            location.startsWith("/administration/stosec") ||
+                            location === "/help"
+                      }
+                      onClick={() => setAdminFolderExpanded(v => !v)}
+                      tooltip="Administration"
+                      className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-slate-400/50 shadow-sm"
+                    >
+                      <Settings className="h-4 w-4 text-slate-400" />
+                      <span
+                        className={`flex-1 ${
+                          location === "/audit" ||
+                          location === "/draft" ||
+                          location === "/operation-management" ||
+                          location === "/recycle-bin" ||
+                          location.startsWith("/administration/stosec") ||
+                          location === "/help"
+                            ? "text-sidebar-foreground font-medium"
+                            : "text-sidebar-foreground/80"
+                        }`}
                       >
-                        <Users className="h-3.5 w-3.5 shrink-0 text-foreground" />
-                        Access Management
-                      </button>
-                    )}
-                  </div>
-                )}
-              </SidebarMenuItem>
-            </SidebarMenu>
-            )}
-          </SidebarContent>
+                        Administration
+                      </span>
+                      {!isCollapsed &&
+                        (adminFolderExpanded ? (
+                          <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />
+                        ) : (
+                          <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />
+                        ))}
+                    </SidebarMenuButton>
 
-          {/* Footer */}
-          <SidebarFooter className="p-3 border-t border-sidebar-border">
-            <div className="flex items-center gap-2">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-sidebar-accent transition-colors flex-1 min-w-0 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                    <Avatar className="h-8 w-8 border border-sidebar-border shrink-0">
-                      <AvatarFallback className="text-xs font-semibold bg-sidebar-primary/20 text-sidebar-primary">
-                        {user?.name?.charAt(0).toUpperCase() ?? "?"}
-                      </AvatarFallback>
-                    </Avatar>
-                    {!isCollapsed && (
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-sidebar-foreground truncate leading-none">
-                          {user?.name ?? "—"}
-                        </p>
-                        <div className="flex items-center gap-1 mt-1.5">
-                          {(() => {
-                            const roleConf =
-                              ROLE_CONFIG[
-                                (user?.role as keyof typeof ROLE_CONFIG) ??
-                                  "observer"
-                              ];
-                            const RoleIcon = roleConf?.icon ?? Eye;
-                            return (
-                              <>
-                                <RoleIcon
-                                  className={`w-3 h-3 ${roleConf?.color}`}
-                                />
-                                <span
-                                  className={`text-xs ${roleConf?.color}`}
-                                >
-                                  {roleConf?.label}
-                                </span>
+                    {adminFolderExpanded && !isCollapsed && (
+                      <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
+                        {/* Audit Log */}
+                        <button
+                          onClick={() => setLocation("/audit")}
+                          className={subItemClass(location === "/audit")}
+                        >
+                          <ScrollText className="h-3.5 w-3.5 shrink-0 text-foreground" />
+                          Audit Log
+                        </button>
 
-                              </>
-                            );
-                          })()}
-                        </div>
+                        {/* Draft Mode */}
+                        <button
+                          onClick={() => setLocation("/draft")}
+                          className={subItemClass(location === "/draft")}
+                        >
+                          <WifiOff
+                            className={`h-3.5 w-3.5 shrink-0 ${draftCounts.total > 0 ? "text-blue-400" : "text-foreground"}`}
+                          />
+                          <span className="flex-1">Draft Mode</span>
+                          {draftCounts.total > 0 && (
+                            <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[9px] font-bold bg-blue-500/20 border border-blue-500/40 text-blue-400">
+                              {draftCounts.total}
+                            </span>
+                          )}
+                        </button>
+
+                        {/* Archive (was Operation Management) */}
+                        <button
+                          onClick={() => setLocation("/operation-management")}
+                          className={subItemClass(
+                            location === "/operation-management"
+                          )}
+                        >
+                          <ArrowRightLeft className="h-3.5 w-3.5 shrink-0 text-foreground" />
+                          Archive
+                        </button>
+
+                        {/* Recycle Bin */}
+                        <button
+                          onClick={() => setLocation("/recycle-bin")}
+                          className={subItemClass(location === "/recycle-bin")}
+                        >
+                          <Trash2 className="h-3.5 w-3.5 shrink-0 text-foreground" />
+                          Recycle Bin
+                        </button>
+
+                        {/* STOSEC Briefings — exceptional use only */}
+                        <button
+                          onClick={() => setLocation("/administration/stosec")}
+                          className={subItemClass(
+                            location.startsWith("/administration/stosec")
+                          )}
+                        >
+                          <ShieldAlert className="h-3.5 w-3.5 shrink-0 text-foreground" />
+                          STOSEC Briefings
+                        </button>
+
+                        {/* Help */}
+                        <button
+                          onClick={() => setLocation("/help")}
+                          className={subItemClass(location === "/help")}
+                        >
+                          <HelpCircle className="h-3.5 w-3.5 shrink-0 text-foreground" />
+                          Help
+                        </button>
                       </div>
                     )}
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-52">
-                  <div className="px-2 py-1.5">
-                    <p className="text-sm font-medium">{user?.name}</p>
-                    <p className="text-xs text-muted-foreground font-mono">
-                      {(user as any)?.cin
-                        ? `CIN: ${(user as any).cin}`
-                        : ((user as any)?.username ?? "")}
-                    </p>
-                    {(user as any)?.unit && (
-                      <p className="text-xs text-muted-foreground">
-                        {(user as any).unit}
-                      </p>
-                    )}
-                    {(() => {
-                      const roleConf =
-                        ROLE_CONFIG[
-                          (user?.role as keyof typeof ROLE_CONFIG) ??
-                            "observer"
-                        ];
-                      const RoleIcon = roleConf?.icon ?? Eye;
-                      return (
-                        <Badge
-                          variant="outline"
-                          className={`mt-1.5 text-xs gap-1 ${roleConf?.badge}`}
+                  </SidebarMenuItem>
+
+                  {/* ── User Management (expandable, all users see it, Access Management is admin-only inside) ── */}
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      isActive={false}
+                      onClick={() => setUserMgmtFolderExpanded(v => !v)}
+                      tooltip="User Management"
+                      className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-blue-400/50 shadow-sm"
+                    >
+                      <UserCog className="h-4 w-4 text-blue-400" />
+                      <span
+                        className={`flex-1 ${location === "/profile" || location === "/admin" ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}
+                      >
+                        User Management
+                      </span>
+                      {!isCollapsed &&
+                        (userMgmtFolderExpanded ? (
+                          <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />
+                        ) : (
+                          <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />
+                        ))}
+                    </SidebarMenuButton>
+
+                    {userMgmtFolderExpanded && !isCollapsed && (
+                      <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
+                        {/* My Profile */}
+                        <button
+                          onClick={() => setLocation("/profile")}
+                          className={subItemClass(location === "/profile")}
                         >
-                          <RoleIcon className="w-3 h-3" />
-                          {roleConf?.label}
-                        </Badge>
-                      );
-                    })()}
-                  </div>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={() => setLocation("/profile")}
-                    className="cursor-pointer"
-                  >
-                    <UserCircle className="mr-2 h-4 w-4" />
-                    My Profile
-                  </DropdownMenuItem>
-                  {toggleTheme && (
+                          <User className="h-3.5 w-3.5 shrink-0 text-foreground" />
+                          My Profile
+                        </button>
+                        {/* Access Management — admin only */}
+                        {user?.role === "admin" && (
+                          <button
+                            onClick={() => setLocation("/admin")}
+                            className={subItemClass(location === "/admin")}
+                          >
+                            <Users className="h-3.5 w-3.5 shrink-0 text-foreground" />
+                            Access Management
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </SidebarMenuItem>
+                </SidebarMenu>
+              )}
+            </SidebarContent>
+
+            {/* Footer */}
+            <SidebarFooter className="p-3 border-t border-sidebar-border">
+              <div className="flex items-center gap-2">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-sidebar-accent transition-colors flex-1 min-w-0 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                      <Avatar className="h-8 w-8 border border-sidebar-border shrink-0">
+                        <AvatarFallback className="text-xs font-semibold bg-sidebar-primary/20 text-sidebar-primary">
+                          {user?.name?.charAt(0).toUpperCase() ?? "?"}
+                        </AvatarFallback>
+                      </Avatar>
+                      {!isCollapsed && (
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-sidebar-foreground truncate leading-none">
+                            {user?.name ?? "—"}
+                          </p>
+                          <div className="flex items-center gap-1 mt-1.5">
+                            {(() => {
+                              const roleConf =
+                                ROLE_CONFIG[
+                                  (user?.role as keyof typeof ROLE_CONFIG) ??
+                                    "observer"
+                                ];
+                              const RoleIcon = roleConf?.icon ?? Eye;
+                              return (
+                                <>
+                                  <RoleIcon
+                                    className={`w-3 h-3 ${roleConf?.color}`}
+                                  />
+                                  <span
+                                    className={`text-xs ${roleConf?.color}`}
+                                  >
+                                    {roleConf?.label}
+                                  </span>
+                                </>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      )}
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-52">
+                    <div className="px-2 py-1.5">
+                      <p className="text-sm font-medium">{user?.name}</p>
+                      <p className="text-xs text-muted-foreground font-mono">
+                        {(user as any)?.cin
+                          ? `CIN: ${(user as any).cin}`
+                          : ((user as any)?.username ?? "")}
+                      </p>
+                      {(user as any)?.unit && (
+                        <p className="text-xs text-muted-foreground">
+                          {(user as any).unit}
+                        </p>
+                      )}
+                      {(() => {
+                        const roleConf =
+                          ROLE_CONFIG[
+                            (user?.role as keyof typeof ROLE_CONFIG) ??
+                              "observer"
+                          ];
+                        const RoleIcon = roleConf?.icon ?? Eye;
+                        return (
+                          <Badge
+                            variant="outline"
+                            className={`mt-1.5 text-xs gap-1 ${roleConf?.badge}`}
+                          >
+                            <RoleIcon className="w-3 h-3" />
+                            {roleConf?.label}
+                          </Badge>
+                        );
+                      })()}
+                    </div>
+                    <DropdownMenuSeparator />
                     <DropdownMenuItem
-                      onClick={toggleTheme}
+                      onClick={() => setLocation("/profile")}
                       className="cursor-pointer"
                     >
-                      {theme === "dark" ? (
-                        <>
-                          <Sun className="mr-2 h-4 w-4" />
-                          Switch to Light Mode
-                        </>
-                      ) : (
-                        <>
-                          <Moon className="mr-2 h-4 w-4" />
-                          Switch to Dark Mode
-                        </>
-                      )}
+                      <UserCircle className="mr-2 h-4 w-4" />
+                      My Profile
                     </DropdownMenuItem>
-                  )}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={logout}
-                    className="cursor-pointer text-destructive focus:text-destructive"
-                  >
-                    <LogOut className="mr-2 h-4 w-4" />
-                    Sign out
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-              {!isCollapsed && (
-                <div className="text-right shrink-0 pr-1">
-                  <p className="text-[10px] uppercase tracking-wider text-sidebar-foreground/40 leading-none">
-                    Version
-                  </p>
-                  <p className="text-xs font-mono text-sidebar-foreground/60 leading-none mt-1">
-                    {APP_VERSION}
-                  </p>
-                </div>
-              )}
-            </div>
-          </SidebarFooter>
-        </Sidebar>
+                    {toggleTheme && (
+                      <DropdownMenuItem
+                        onClick={toggleTheme}
+                        className="cursor-pointer"
+                      >
+                        {theme === "dark" ? (
+                          <>
+                            <Sun className="mr-2 h-4 w-4" />
+                            Switch to Light Mode
+                          </>
+                        ) : (
+                          <>
+                            <Moon className="mr-2 h-4 w-4" />
+                            Switch to Dark Mode
+                          </>
+                        )}
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={logout}
+                      className="cursor-pointer text-destructive focus:text-destructive"
+                    >
+                      <LogOut className="mr-2 h-4 w-4" />
+                      Sign out
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                {!isCollapsed && (
+                  <div className="text-right shrink-0 pr-1">
+                    <p className="text-[10px] uppercase tracking-wider text-sidebar-foreground/40 leading-none">
+                      Version
+                    </p>
+                    <p className="text-xs font-mono text-sidebar-foreground/60 leading-none mt-1">
+                      {APP_VERSION}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </SidebarFooter>
+          </Sidebar>
 
-        {/* Resize handle */}
-        {!isCollapsed && (
-          <div
-            className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-primary/30 transition-colors"
-            style={{ zIndex: 50 }}
-            onMouseDown={() => setIsResizing(true)}
-          />
-        )}
-      </div>
+          {/* Resize handle */}
+          {!isCollapsed && (
+            <div
+              className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-primary/30 transition-colors"
+              style={{ zIndex: 50 }}
+              onMouseDown={() => setIsResizing(true)}
+            />
+          )}
+        </div>
 
-      <SidebarInset
-        className={fillViewport ? "min-h-0 overflow-hidden" : undefined}
-      >
-        {/* Section colour accent bar */}
-        <SectionAccentBar />
-        {isMobile && (
-          <div className="flex border-b border-border h-14 items-center justify-between bg-background/95 px-3 backdrop-blur sticky top-0 z-40">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={toggleSidebar}
-                className="flex items-center justify-center h-11 w-11 rounded-lg text-foreground hover:bg-accent transition-colors"
-                aria-label="Toggle navigation"
-              >
-                <PanelLeft className="h-6 w-6" />
-              </button>
-              <span className="text-base font-semibold text-foreground">
-                RunLog
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <NotificationBell
-                className="h-11 w-11 hover:bg-accent"
-                iconClassName="h-6 w-6 text-muted-foreground"
-              />
-              <ViewToggle />
-              {/* Active RS quick-link (mobile) */}
-              <button
-                onClick={() => {
-                  if (activeRsId) setLocation(`/sheet/${activeRsId}`);
-                }}
-                className={`flex items-center justify-center h-11 w-11 rounded-lg transition-all ${
-                  activeRsId
-                    ? "text-emerald-500 hover:bg-emerald-500/10 cursor-pointer"
-                    : "text-muted-foreground/30 cursor-default"
-                }`}
-                title={activeRsId ? "Go to Active RS" : "No active RS selected"}
-              >
-                <ClipboardList className="h-6 w-6" />
-              </button>
-              {/* Map quick-link (mobile) */}
-              {location !== "/intelligence/mapping" && (
+        <SidebarInset
+          className={fillViewport ? "min-h-0 overflow-hidden" : undefined}
+        >
+          {/* Section colour accent bar */}
+          <SectionAccentBar />
+          {isMobile && (
+            <div className="flex border-b border-border h-14 items-center justify-between bg-background/95 px-3 backdrop-blur sticky top-0 z-40">
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setLocation("/intelligence/mapping")}
-                  className="flex items-center justify-center h-11 w-11 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
-                  title="Back to Map"
+                  onClick={toggleSidebar}
+                  className="flex items-center justify-center h-11 w-11 rounded-lg text-foreground hover:bg-accent transition-colors"
+                  aria-label="Toggle navigation"
                 >
-                  <Map className="h-6 w-6" />
+                  <PanelLeft className="h-6 w-6" />
                 </button>
-              )}
-              {/* Right pane folder-expander (page-specific, e.g. Map's RS Actions pane) */}
-              {rightPaneToggle && (
+                <span className="text-base font-semibold text-foreground">
+                  RunLog
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <NotificationBell
+                  className="h-11 w-11 hover:bg-accent"
+                  iconClassName="h-6 w-6 text-muted-foreground"
+                />
+                <ViewToggle />
+                {/* Active RS quick-link (mobile) */}
                 <button
-                  onClick={rightPaneToggle.onToggle}
-                  className={`flex items-center justify-center h-11 w-11 rounded-lg transition-colors ${
-                    rightPaneToggle.isOpen
-                      ? "text-primary bg-primary/10"
-                      : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                  onClick={() => {
+                    if (activeRsId) setLocation(`/sheet/${activeRsId}`);
+                  }}
+                  className={`flex items-center justify-center h-11 w-11 rounded-lg transition-all ${
+                    activeRsId
+                      ? "text-emerald-500 hover:bg-emerald-500/10 cursor-pointer"
+                      : "text-muted-foreground/30 cursor-default"
                   }`}
-                  aria-label="Toggle side panel"
-                  title="Toggle side panel"
+                  title={
+                    activeRsId ? "Go to Active RS" : "No active RS selected"
+                  }
                 >
-                  <PanelRight className="h-6 w-6" />
+                  <ClipboardList className="h-6 w-6" />
                 </button>
-              )}
+                {/* Map quick-link (mobile) */}
+                {location !== "/intelligence/mapping" && (
+                  <button
+                    onClick={() => setLocation("/intelligence/mapping")}
+                    className="flex items-center justify-center h-11 w-11 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+                    title="Back to Map"
+                  >
+                    <Map className="h-6 w-6" />
+                  </button>
+                )}
+                {/* Right pane folder-expander (page-specific, e.g. Map's RS Actions pane) */}
+                {rightPaneToggle && (
+                  <button
+                    onClick={rightPaneToggle.onToggle}
+                    className={`flex items-center justify-center h-11 w-11 rounded-lg transition-colors ${
+                      rightPaneToggle.isOpen
+                        ? "text-primary bg-primary/10"
+                        : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                    }`}
+                    aria-label="Toggle side panel"
+                    title="Toggle side panel"
+                  >
+                    <PanelRight className="h-6 w-6" />
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-        )}
-        {/* min-h-0 (not min-h-screen): this sits below the mobile header bar
+          )}
+          {/* min-h-0 (not min-h-screen): this sits below the mobile header bar
             in the same flex column, so a 100vh floor here always overflows
             the actual viewport by the header's height — that's what caused
             the whole page to scroll slightly, hiding the Map page's fixed
             top/bottom overlays. flex-1 alone already fills the remaining
             space for short pages; min-h-0 just lets it shrink correctly
             instead of forcing more height than is actually available. */}
-        {/* app-canvas: the page ground. Carries the soft background wash (see
+          {/* app-canvas: the page ground. Carries the soft background wash (see
             index.css) — it has to live here rather than on <body>, because this
             element's bg-background/90 and SidebarInset's bg-background would
             paint straight over anything set further up. */}
-        <main
-          className={`app-canvas flex-1 min-h-0 bg-background/90 ${
-            fillViewport ? "overflow-hidden" : ""
-          }`}
-        >
-          <PullToRefresh disabled={location === "/intelligence/mapping"}>
-            {children}
-          </PullToRefresh>
-        </main>
-      </SidebarInset>
+          <main
+            className={`app-canvas flex-1 min-h-0 bg-background/90 ${
+              fillViewport ? "overflow-hidden" : ""
+            }`}
+          >
+            <PullToRefresh disabled={location === "/intelligence/mapping"}>
+              {children}
+            </PullToRefresh>
+          </main>
+        </SidebarInset>
       </div>
       {/* end sidebar + page row */}
 

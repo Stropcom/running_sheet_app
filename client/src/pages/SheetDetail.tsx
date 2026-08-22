@@ -90,6 +90,7 @@ import {
 } from "@shared/addressFormat";
 import { compressAttachmentImage } from "@/lib/imageCompress";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
+import { setLastActiveContext } from "@/lib/lastActiveContext";
 import {
   DndContext,
   closestCenter,
@@ -2219,6 +2220,14 @@ export default function SheetDetail() {
     { id: sheetId },
     { enabled: isAuthenticated && !!sheetId }
   );
+
+  // Remembers this as the officer's most recent operation/sheet context —
+  // used only to pre-fill the New STOSEC Briefing form, nothing else reads it.
+  useEffect(() => {
+    if (sheet?.operationId) {
+      setLastActiveContext({ operationId: sheet.operationId, sheetId });
+    }
+  }, [sheet?.operationId, sheetId]);
 
   const { data: rows, isLoading: rowsLoading } = trpc.row.list.useQuery(
     { sheetId },

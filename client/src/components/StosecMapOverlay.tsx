@@ -170,10 +170,44 @@ export function StosecMapOverlay({
             )}
 
             {/* SITUATION */}
-            {briefing.situation && (
-              <div className="space-y-1.5">
+            {(briefing.backgroundIntel ||
+              briefing.knownRisks ||
+              briefing.otherAgencies.length > 0) && (
+              <div className="space-y-2.5">
                 <SmeacLabel letter="S" label="Situation" />
-                <p className="text-sm">{briefing.situation}</p>
+                {briefing.backgroundIntel && (
+                  <div>
+                    <p className="text-[11px] font-semibold text-muted-foreground mb-1">
+                      Background / intelligence
+                    </p>
+                    <p className="text-sm">{briefing.backgroundIntel}</p>
+                  </div>
+                )}
+                {briefing.knownRisks && (
+                  <div>
+                    <p className="text-[11px] font-semibold text-muted-foreground mb-1">
+                      Known risks or threats
+                    </p>
+                    <p className="text-sm">{briefing.knownRisks}</p>
+                  </div>
+                )}
+                {briefing.otherAgencies.length > 0 && (
+                  <div>
+                    <p className="text-[11px] font-semibold text-muted-foreground mb-1">
+                      Other agencies / teams
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {briefing.otherAgencies.map((a, i) => (
+                        <span
+                          key={i}
+                          className="px-2.5 py-1 rounded-full text-xs font-medium border border-border bg-muted"
+                        >
+                          {a}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -186,10 +220,37 @@ export function StosecMapOverlay({
             )}
 
             {/* EXECUTION */}
-            {(briefing.objectives.length > 0 ||
+            {(briefing.overallPlan ||
+              briefing.actionsOn ||
+              briefing.situationChange ||
+              briefing.objectives.length > 0 ||
               briefing.teamSlots.length > 0) && (
               <div className="space-y-3">
                 <SmeacLabel letter="E" label="Execution" />
+                {briefing.overallPlan && (
+                  <div>
+                    <p className="text-[11px] font-semibold text-muted-foreground mb-1">
+                      Overall plan
+                    </p>
+                    <p className="text-sm">{briefing.overallPlan}</p>
+                  </div>
+                )}
+                {briefing.actionsOn && (
+                  <div>
+                    <p className="text-[11px] font-semibold text-muted-foreground mb-1">
+                      Actions on
+                    </p>
+                    <p className="text-sm">{briefing.actionsOn}</p>
+                  </div>
+                )}
+                {briefing.situationChange && (
+                  <div>
+                    <p className="text-[11px] font-semibold text-muted-foreground mb-1">
+                      Situation change
+                    </p>
+                    <p className="text-sm">{briefing.situationChange}</p>
+                  </div>
+                )}
                 {briefing.objectives.length > 0 && (
                   <div>
                     <p className="text-[11px] font-semibold text-muted-foreground mb-1.5">
@@ -270,8 +331,11 @@ export function StosecMapOverlay({
             {/* ADMINISTRATION & LOGISTICS */}
             {(briefing.legalAuthArrest ||
               briefing.afpOrders ||
-              briefing.warrant) && (
-              <div className="space-y-2">
+              briefing.warrant ||
+              briefing.accoutrements.length > 0 ||
+              briefing.covertIdentifiers.length > 0 ||
+              !briefing.firstAidAllVehicles) && (
+              <div className="space-y-2.5">
                 <SmeacLabel letter="A" label="Administration & Logistics" />
                 <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
                   {briefing.legalAuthArrest && (
@@ -287,13 +351,82 @@ export function StosecMapOverlay({
                     <AdminField label="Warrant" value={briefing.warrant} />
                   )}
                 </div>
+                {briefing.accoutrements.length > 0 && (
+                  <div>
+                    <p className="text-[11px] font-semibold text-muted-foreground mb-1">
+                      Accoutrements
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {briefing.accoutrements.map((a, i) => (
+                        <span
+                          key={i}
+                          className="px-2.5 py-1 rounded-full text-xs font-medium border border-border bg-muted"
+                        >
+                          {a}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {briefing.covertIdentifiers.length > 0 && (
+                  <div>
+                    <p className="text-[11px] font-semibold text-muted-foreground mb-1">
+                      Covert police identifier
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {briefing.covertIdentifiers.map((a, i) => (
+                        <span
+                          key={i}
+                          className="px-2.5 py-1 rounded-full text-xs font-medium border border-border bg-muted"
+                        >
+                          {a}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <p className="text-xs">
+                  {briefing.firstAidAllVehicles
+                    ? "First aid kit confirmed in all vehicles"
+                    : `First aid held by ${briefing.firstAidMemberName || "—"}`}
+                </p>
               </div>
             )}
 
             {/* COMMAND & SIGNAL */}
-            {(briefing.commsPrimary || briefing.commsSecondary) && (
-              <div className="space-y-2">
+            {(briefing.commsPrimary ||
+              briefing.commsSecondary ||
+              briefing.locationOfTeamLeader ||
+              briefing.reportingProcedures ||
+              briefing.teamSlots.some(s => s.isTeamLeader)) && (
+              <div className="space-y-2.5">
                 <SmeacLabel letter="C" label="Command & Signal" icon={Radio} />
+                {briefing.teamSlots.some(s => s.isTeamLeader) && (
+                  <div>
+                    <p className="text-[11px] font-semibold text-muted-foreground mb-1">
+                      Team leader
+                    </p>
+                    <p className="text-sm">
+                      {briefing.teamSlots.find(s => s.isTeamLeader)?.name}
+                    </p>
+                  </div>
+                )}
+                {briefing.locationOfTeamLeader && (
+                  <div>
+                    <p className="text-[11px] font-semibold text-muted-foreground mb-1">
+                      Location of team leader
+                    </p>
+                    <p className="text-sm">{briefing.locationOfTeamLeader}</p>
+                  </div>
+                )}
+                {briefing.reportingProcedures && (
+                  <div>
+                    <p className="text-[11px] font-semibold text-muted-foreground mb-1">
+                      Reporting procedures
+                    </p>
+                    <p className="text-sm">{briefing.reportingProcedures}</p>
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
                   {briefing.commsPrimary && (
                     <AdminField

@@ -15,6 +15,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Spinner } from "@/components/ui/spinner";
+import { Checkbox } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
   SelectContent,
@@ -62,6 +64,16 @@ const EMPTY_SLOT: TeamSlot = {
   isTeamLeader: false,
 };
 
+const ACCOUTREMENT_OPTIONS = [
+  "Firearm",
+  "Taser",
+  "OC",
+  "Baton",
+  "Handcuffs",
+  "BRSV",
+];
+const COVERT_ID_OPTIONS = ["Hat", "Beanie", "Gaiter/snood", "Jacket"];
+
 export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
@@ -99,14 +111,30 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
   );
 
   const [situation, setSituation] = useState("");
+  const [backgroundIntel, setBackgroundIntel] = useState("");
+  const [knownRisks, setKnownRisks] = useState("");
+  const [otherAgencies, setOtherAgencies] = useState<string[]>([""]);
+
   const [mission, setMission] = useState("");
+
+  const [overallPlan, setOverallPlan] = useState("");
+  const [actionsOn, setActionsOn] = useState("");
+  const [situationChange, setSituationChange] = useState("");
   const [objectives, setObjectives] = useState<string[]>([""]);
 
   const [legalAuthArrest, setLegalAuthArrest] = useState("Crimes Act 1914");
   const [afpOrders, setAfpOrders] = useState("");
   const [warrant, setWarrant] = useState("");
+  const [accoutrements, setAccoutrements] = useState<string[]>([]);
+  const [covertIdentifiers, setCovertIdentifiers] = useState<string[]>([]);
+  const [firstAidAllVehicles, setFirstAidAllVehicles] = useState(true);
+  const [firstAidMemberName, setFirstAidMemberName] = useState<string | null>(
+    null
+  );
   const [commsPrimary, setCommsPrimary] = useState("");
   const [commsSecondary, setCommsSecondary] = useState("");
+  const [locationOfTeamLeader, setLocationOfTeamLeader] = useState("");
+  const [reportingProcedures, setReportingProcedures] = useState("");
 
   const [teamSlots, setTeamSlots] = useState<TeamSlot[]>([]);
 
@@ -126,13 +154,25 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
       setHbOverride(b.hbOverride ?? "");
       setExtraLocations(b.extraLocations ?? []);
       setSituation(b.situation ?? "");
+      setBackgroundIntel(b.backgroundIntel ?? "");
+      setKnownRisks(b.knownRisks ?? "");
+      setOtherAgencies(b.otherAgencies.length > 0 ? b.otherAgencies : [""]);
       setMission(b.mission ?? "");
+      setOverallPlan(b.overallPlan ?? "");
+      setActionsOn(b.actionsOn ?? "");
+      setSituationChange(b.situationChange ?? "");
       setObjectives(b.objectives.length > 0 ? b.objectives : [""]);
       setLegalAuthArrest(b.legalAuthArrest ?? "");
       setAfpOrders(b.afpOrders ?? "");
       setWarrant(b.warrant ?? "");
+      setAccoutrements(b.accoutrements ?? []);
+      setCovertIdentifiers(b.covertIdentifiers ?? []);
+      setFirstAidAllVehicles(b.firstAidAllVehicles ?? true);
+      setFirstAidMemberName(b.firstAidMemberName ?? null);
       setCommsPrimary(b.commsPrimary ?? "");
       setCommsSecondary(b.commsSecondary ?? "");
+      setLocationOfTeamLeader(b.locationOfTeamLeader ?? "");
+      setReportingProcedures(b.reportingProcedures ?? "");
       setTeamSlots(b.teamSlots.length > 0 ? b.teamSlots : []);
       initializedRef.current = true;
     } else {
@@ -222,13 +262,25 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
     hbOverride: hbOverride.trim() || null,
     extraLocations,
     situation: situation.trim() || null,
+    backgroundIntel: backgroundIntel.trim() || null,
+    knownRisks: knownRisks.trim() || null,
+    otherAgencies: otherAgencies.map(a => a.trim()).filter(Boolean),
     mission: mission.trim() || null,
+    overallPlan: overallPlan.trim() || null,
+    actionsOn: actionsOn.trim() || null,
+    situationChange: situationChange.trim() || null,
     objectives: objectives.map(o => o.trim()).filter(Boolean),
     legalAuthArrest: legalAuthArrest.trim() || null,
     afpOrders: afpOrders.trim() || null,
     warrant: warrant.trim() || null,
+    accoutrements,
+    covertIdentifiers,
+    firstAidAllVehicles,
+    firstAidMemberName: firstAidAllVehicles ? null : firstAidMemberName,
     commsPrimary: commsPrimary.trim() || null,
     commsSecondary: commsSecondary.trim() || null,
+    locationOfTeamLeader: locationOfTeamLeader.trim() || null,
+    reportingProcedures: reportingProcedures.trim() || null,
     teamSlots,
   });
 
@@ -570,14 +622,63 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
       {/* SITUATION */}
       <div className="p-4 rounded-xl bg-card border border-border space-y-3">
         <SmeacLabel letter="S" label="Situation" />
-        <Field label="Situation" compact>
+        <Field label="Background / intelligence" compact>
           <Textarea
-            value={situation}
-            onChange={e => setSituation(e.target.value)}
-            placeholder="Brief the circumstances that make this urgent…"
+            value={backgroundIntel}
+            onChange={e => setBackgroundIntel(e.target.value)}
+            placeholder="Relevant history, prior intelligence, pattern of behaviour…"
             className="min-h-[70px] text-sm"
           />
         </Field>
+        <Field label="Known risks or threats" compact>
+          <Textarea
+            value={knownRisks}
+            onChange={e => setKnownRisks(e.target.value)}
+            placeholder="Weapons, violence history, counter-surveillance awareness…"
+            className="min-h-[70px] text-sm"
+          />
+        </Field>
+        <div>
+          <label className="text-xs font-semibold block mb-2">
+            Other agencies or teams involved
+          </label>
+          <div className="space-y-2">
+            {otherAgencies.map((agency, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <span className="h-5 w-5 rounded-full bg-muted text-[11px] font-bold flex items-center justify-center shrink-0">
+                  {i + 1}
+                </span>
+                <Input
+                  value={agency}
+                  onChange={e => {
+                    const next = [...otherAgencies];
+                    next[i] = e.target.value;
+                    setOtherAgencies(next);
+                  }}
+                  placeholder="Add other agency or team…"
+                  className="h-8 text-sm"
+                />
+                {otherAgencies.length > 1 && (
+                  <button
+                    onClick={() =>
+                      setOtherAgencies(otherAgencies.filter((_, j) => j !== i))
+                    }
+                    className="text-muted-foreground hover:text-destructive shrink-0"
+                    aria-label="Remove agency or team"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            ))}
+            <button
+              onClick={() => setOtherAgencies([...otherAgencies, ""])}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground border border-dashed border-border rounded-md px-2.5 py-1.5 hover:bg-accent ml-7"
+            >
+              <Plus className="h-3 w-3" /> Add other agency or team
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* MISSION */}
@@ -594,6 +695,31 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
       {/* EXECUTION */}
       <div className="p-4 rounded-xl bg-card border border-border space-y-4">
         <SmeacLabel letter="E" label="Execution" />
+
+        <Field label="Overall plan" compact>
+          <Textarea
+            value={overallPlan}
+            onChange={e => setOverallPlan(e.target.value)}
+            placeholder="The plan in narrative form…"
+            className="min-h-[70px] text-sm"
+          />
+        </Field>
+        <Field label="Actions on" compact>
+          <Textarea
+            value={actionsOn}
+            onChange={e => setActionsOn(e.target.value)}
+            placeholder="Actions on sighting, contact, loss, compromise…"
+            className="min-h-[70px] text-sm"
+          />
+        </Field>
+        <Field label="Situation change" compact>
+          <Textarea
+            value={situationChange}
+            onChange={e => setSituationChange(e.target.value)}
+            placeholder="What happens if circumstances change mid-operation…"
+            className="min-h-[70px] text-sm"
+          />
+        </Field>
 
         <div>
           <label className="text-xs font-semibold block mb-2">Objectives</label>
@@ -759,11 +885,170 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
             />
           </Field>
         </div>
+
+        <div>
+          <label className="text-xs font-semibold block mb-2">
+            Accoutrements
+          </label>
+          <div className="flex flex-wrap gap-1.5">
+            <CheckChip
+              label="All"
+              dashed
+              checked={accoutrements.length === ACCOUTREMENT_OPTIONS.length}
+              onCheckedChange={checked =>
+                setAccoutrements(checked ? [...ACCOUTREMENT_OPTIONS] : [])
+              }
+            />
+            {ACCOUTREMENT_OPTIONS.map(opt => (
+              <CheckChip
+                key={opt}
+                label={opt}
+                checked={accoutrements.includes(opt)}
+                onCheckedChange={checked =>
+                  setAccoutrements(
+                    checked
+                      ? [...accoutrements, opt]
+                      : accoutrements.filter(a => a !== opt)
+                  )
+                }
+              />
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold block mb-2">
+            Covert police identifier
+          </label>
+          <div className="flex flex-wrap gap-1.5">
+            <CheckChip
+              label="Any"
+              dashed
+              checked={covertIdentifiers.length === COVERT_ID_OPTIONS.length}
+              onCheckedChange={checked =>
+                setCovertIdentifiers(checked ? [...COVERT_ID_OPTIONS] : [])
+              }
+            />
+            {COVERT_ID_OPTIONS.map(opt => (
+              <CheckChip
+                key={opt}
+                label={opt}
+                checked={covertIdentifiers.includes(opt)}
+                onCheckedChange={checked =>
+                  setCovertIdentifiers(
+                    checked
+                      ? [...covertIdentifiers, opt]
+                      : covertIdentifiers.filter(a => a !== opt)
+                  )
+                }
+              />
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold block mb-2">First aid</label>
+          <RadioGroup
+            value={firstAidAllVehicles ? "all" : "member"}
+            onValueChange={val => setFirstAidAllVehicles(val === "all")}
+            className="grid grid-cols-1 sm:grid-cols-2 gap-2"
+          >
+            <label className="flex items-center gap-2 text-sm px-3 py-2 rounded-md border border-border cursor-pointer">
+              <RadioGroupItem value="all" />
+              All vehicles carry first aid
+            </label>
+            <label className="flex items-center gap-2 text-sm px-3 py-2 rounded-md border border-border cursor-pointer">
+              <RadioGroupItem value="member" />
+              Nominate a team member
+            </label>
+          </RadioGroup>
+          {!firstAidAllVehicles && (
+            <div className="mt-2">
+              <Select
+                value={firstAidMemberName ?? ""}
+                onValueChange={val => setFirstAidMemberName(val)}
+                disabled={teamSlots.length === 0}
+              >
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue
+                    placeholder={
+                      teamSlots.length === 0
+                        ? "Add team members first"
+                        : "Choose team member…"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {teamSlots
+                    .filter(slot => slot.name.trim())
+                    .map((slot, i) => (
+                      <SelectItem key={i} value={slot.name}>
+                        {slot.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* COMMAND & SIGNAL */}
       <div className="p-4 rounded-xl bg-card border border-border space-y-3">
         <SmeacLabel letter="C" label="Command & Signal" icon={Radio} />
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <Field label="Team leader" compact>
+            <Select
+              value={String(teamSlots.findIndex(s => s.isTeamLeader))}
+              onValueChange={val => {
+                const idx = Number(val);
+                setTeamSlots(
+                  teamSlots.map((s, i) => ({ ...s, isTeamLeader: i === idx }))
+                );
+              }}
+              disabled={teamSlots.length === 0}
+            >
+              <SelectTrigger className="h-9 text-sm">
+                <SelectValue
+                  placeholder={
+                    teamSlots.length === 0
+                      ? "Add team members first"
+                      : "Choose team leader…"
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {teamSlots.map((slot, i) => (
+                  <SelectItem key={i} value={String(i)}>
+                    {slot.name || `Member ${i + 1}`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[10.5px] text-muted-foreground mt-1">
+              Synced with the Surveillance team's TL toggle above
+            </p>
+          </Field>
+          <Field label="Location of team leader" compact>
+            <Input
+              value={locationOfTeamLeader}
+              onChange={e => setLocationOfTeamLeader(e.target.value)}
+              placeholder="e.g. Static, cnr Rowe Ave / Kooyong Rd"
+              className="h-9 text-sm"
+            />
+          </Field>
+        </div>
+
+        <Field label="Reporting procedures" compact>
+          <Textarea
+            value={reportingProcedures}
+            onChange={e => setReportingProcedures(e.target.value)}
+            placeholder="Sitreps, escalation, who to call and when…"
+            className="min-h-[70px] text-sm"
+          />
+        </Field>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           <Field label="Comms Primary" compact>
             <Input
@@ -844,5 +1129,36 @@ function Field({
       </label>
       {children}
     </div>
+  );
+}
+
+function CheckChip({
+  label,
+  checked,
+  onCheckedChange,
+  dashed,
+}: {
+  label: string;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  dashed?: boolean;
+}) {
+  return (
+    <label
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs cursor-pointer transition-colors ${
+        dashed ? "border-dashed font-bold" : ""
+      } ${
+        checked
+          ? "border-amber-500/50 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+          : "border-border text-muted-foreground hover:bg-accent"
+      }`}
+    >
+      <Checkbox
+        checked={checked}
+        onCheckedChange={c => onCheckedChange(c === true)}
+        className="h-3.5 w-3.5"
+      />
+      {label}
+    </label>
   );
 }

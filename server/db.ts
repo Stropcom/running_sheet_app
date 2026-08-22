@@ -11671,10 +11671,21 @@ function parseStosecTeamSlots(raw: string | null): StosecTeamSlot[] {
 }
 
 export interface StosecBriefingView
-  extends Omit<StosecBriefing, "objectives" | "teamSlots" | "extraLocations"> {
+  extends Omit<
+    StosecBriefing,
+    | "objectives"
+    | "teamSlots"
+    | "extraLocations"
+    | "otherAgencies"
+    | "accoutrements"
+    | "covertIdentifiers"
+  > {
   objectives: string[];
   teamSlots: StosecTeamSlot[];
   extraLocations: string[];
+  otherAgencies: string[];
+  accoutrements: string[];
+  covertIdentifiers: string[];
 }
 
 function toStosecBriefingView(row: StosecBriefing): StosecBriefingView {
@@ -11683,6 +11694,9 @@ function toStosecBriefingView(row: StosecBriefing): StosecBriefingView {
     objectives: parseStosecStringArray(row.objectives),
     teamSlots: parseStosecTeamSlots(row.teamSlots),
     extraLocations: parseStosecStringArray(row.extraLocations),
+    otherAgencies: parseStosecStringArray(row.otherAgencies),
+    accoutrements: parseStosecStringArray(row.accoutrements),
+    covertIdentifiers: parseStosecStringArray(row.covertIdentifiers),
   };
 }
 
@@ -11694,13 +11708,25 @@ export interface UpsertStosecBriefingInput {
   hbOverride?: string | null;
   extraLocations?: string[];
   situation?: string | null;
+  backgroundIntel?: string | null;
+  knownRisks?: string | null;
+  otherAgencies?: string[];
   mission?: string | null;
+  overallPlan?: string | null;
+  actionsOn?: string | null;
+  situationChange?: string | null;
   objectives?: string[];
   legalAuthArrest?: string | null;
   afpOrders?: string | null;
   warrant?: string | null;
+  accoutrements?: string[];
+  covertIdentifiers?: string[];
+  firstAidAllVehicles?: boolean;
+  firstAidMemberName?: string | null;
   commsPrimary?: string | null;
   commsSecondary?: string | null;
+  locationOfTeamLeader?: string | null;
+  reportingProcedures?: string | null;
   teamSlots?: StosecTeamSlot[];
 }
 
@@ -11718,13 +11744,25 @@ export async function createStosecBriefingDraft(
     hbOverride: data.hbOverride ?? null,
     extraLocations: JSON.stringify(data.extraLocations ?? []),
     situation: data.situation ?? null,
+    backgroundIntel: data.backgroundIntel ?? null,
+    knownRisks: data.knownRisks ?? null,
+    otherAgencies: JSON.stringify(data.otherAgencies ?? []),
     mission: data.mission ?? null,
+    overallPlan: data.overallPlan ?? null,
+    actionsOn: data.actionsOn ?? null,
+    situationChange: data.situationChange ?? null,
     objectives: JSON.stringify(data.objectives ?? []),
     legalAuthArrest: data.legalAuthArrest ?? null,
     afpOrders: data.afpOrders ?? null,
     warrant: data.warrant ?? null,
+    accoutrements: JSON.stringify(data.accoutrements ?? []),
+    covertIdentifiers: JSON.stringify(data.covertIdentifiers ?? []),
+    firstAidAllVehicles: data.firstAidAllVehicles ?? true,
+    firstAidMemberName: data.firstAidMemberName ?? null,
     commsPrimary: data.commsPrimary ?? null,
     commsSecondary: data.commsSecondary ?? null,
+    locationOfTeamLeader: data.locationOfTeamLeader ?? null,
+    reportingProcedures: data.reportingProcedures ?? null,
     teamSlots: JSON.stringify(data.teamSlots ?? []),
     status: "draft",
     createdBy,
@@ -11753,13 +11791,25 @@ export async function updateStosecBriefing(
       hbOverride: data.hbOverride ?? null,
       extraLocations: JSON.stringify(data.extraLocations ?? []),
       situation: data.situation ?? null,
+      backgroundIntel: data.backgroundIntel ?? null,
+      knownRisks: data.knownRisks ?? null,
+      otherAgencies: JSON.stringify(data.otherAgencies ?? []),
       mission: data.mission ?? null,
+      overallPlan: data.overallPlan ?? null,
+      actionsOn: data.actionsOn ?? null,
+      situationChange: data.situationChange ?? null,
       objectives: JSON.stringify(data.objectives ?? []),
       legalAuthArrest: data.legalAuthArrest ?? null,
       afpOrders: data.afpOrders ?? null,
       warrant: data.warrant ?? null,
+      accoutrements: JSON.stringify(data.accoutrements ?? []),
+      covertIdentifiers: JSON.stringify(data.covertIdentifiers ?? []),
+      firstAidAllVehicles: data.firstAidAllVehicles ?? true,
+      firstAidMemberName: data.firstAidMemberName ?? null,
       commsPrimary: data.commsPrimary ?? null,
       commsSecondary: data.commsSecondary ?? null,
+      locationOfTeamLeader: data.locationOfTeamLeader ?? null,
+      reportingProcedures: data.reportingProcedures ?? null,
       teamSlots: JSON.stringify(data.teamSlots ?? []),
       revision: sql`${stosecBriefings.revision} + 1`,
     })

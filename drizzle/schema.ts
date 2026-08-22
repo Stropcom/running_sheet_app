@@ -1575,16 +1575,39 @@ export const stosecBriefings = mysqlTable("stosec_briefings", {
   // box, beyond the linked target's own location/hbOverride above.
   extraLocations: text("extraLocations"),
 
+  // situation is the general free-text field; backgroundIntel/knownRisks
+  // are the more specific SMEAC sub-fields split out from it.
   situation: text("situation"),
+  backgroundIntel: text("backgroundIntel"),
+  knownRisks: text("knownRisks"),
+  // JSON array of strings.
+  otherAgencies: text("otherAgencies"),
+
   mission: text("mission"),
+
+  overallPlan: text("overallPlan"),
+  actionsOn: text("actionsOn"),
+  situationChange: text("situationChange"),
   // JSON array of strings — dynamic length, not a fixed 1-4.
   objectives: text("objectives"),
 
   legalAuthArrest: varchar("legalAuthArrest", { length: 255 }),
   afpOrders: varchar("afpOrders", { length: 255 }),
   warrant: varchar("warrant", { length: 255 }),
+  // JSON array of strings, e.g. ["Firearm", "Taser", "Baton"].
+  accoutrements: text("accoutrements"),
+  // JSON array of strings, e.g. ["Hat", "Jacket"].
+  covertIdentifiers: text("covertIdentifiers"),
+  // First aid location: either every vehicle carries one, or it's held by
+  // one nominated team member — picked from teamSlots below, snapshotted as
+  // a display name (not a FK; a manually-typed team member has no CIN).
+  firstAidAllVehicles: boolean("firstAidAllVehicles").default(true).notNull(),
+  firstAidMemberName: varchar("firstAidMemberName", { length: 255 }),
+
   commsPrimary: varchar("commsPrimary", { length: 255 }),
   commsSecondary: varchar("commsSecondary", { length: 255 }),
+  locationOfTeamLeader: varchar("locationOfTeamLeader", { length: 500 }),
+  reportingProcedures: text("reportingProcedures"),
 
   // JSON array of { name, vehicle, foot, skill, kit, isTeamLeader }
   teamSlots: text("teamSlots"),

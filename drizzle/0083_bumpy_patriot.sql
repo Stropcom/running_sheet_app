@@ -1,0 +1,1 @@
+ALTER TABLE `stosec_briefings` ADD `revision` int DEFAULT 1 NOT NULL;

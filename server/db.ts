@@ -11744,6 +11744,7 @@ export async function updateStosecBriefing(
       commsPrimary: data.commsPrimary ?? null,
       commsSecondary: data.commsSecondary ?? null,
       teamSlots: JSON.stringify(data.teamSlots ?? []),
+      revision: sql`${stosecBriefings.revision} + 1`,
     })
     .where(eq(stosecBriefings.id, id));
 }

@@ -17,7 +17,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, ShieldAlert, Check, Trash2 } from "lucide-react";
+import { Plus, ShieldAlert, Check, Trash2, Pencil } from "lucide-react";
 
 export default function StosecBriefingListPage() {
   const { user } = useAuth();
@@ -98,6 +98,9 @@ export default function StosecBriefingListPage() {
                         {operationName(b.operationId)}
                       </p>
                       <StatusBadge status={b.status} />
+                      <span className="text-[10px] font-mono text-muted-foreground shrink-0">
+                        Rev {b.revision}
+                      </span>
                     </div>
                     <p className="text-xs text-muted-foreground truncate">
                       {b.situation || "No situation summary"}
@@ -110,14 +113,26 @@ export default function StosecBriefingListPage() {
                   </span>
                 </button>
                 {user?.role === "admin" && (
-                  <button
-                    onClick={() => setConfirmDeleteId(b.id)}
-                    className="shrink-0 h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors mr-2"
-                    aria-label="Delete briefing"
-                    title="Delete briefing"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  <div className="flex items-center gap-0.5 shrink-0 mr-2">
+                    <button
+                      onClick={() =>
+                        setLocation(`/administration/stosec/${b.id}/edit`)
+                      }
+                      className="h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                      aria-label="Edit briefing"
+                      title="Edit briefing"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={() => setConfirmDeleteId(b.id)}
+                      className="h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                      aria-label="Delete briefing"
+                      title="Delete briefing"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 )}
               </div>
             ))}

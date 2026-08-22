@@ -2263,7 +2263,7 @@ export const appRouter = router({
             body:
               briefing.situation?.slice(0, 160) ||
               "An urgent briefing has been posted.",
-            url: `/administration/stosec/${input.id}`,
+            url: `/intelligence/mapping?stosec=${input.id}`,
           }
         );
         if (!notified)

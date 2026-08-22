@@ -22,16 +22,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { INTEL_CHIP_CLASSES } from "@/components/IntelEntityChip";
 import {
   ShieldAlert,
   Plus,
   X,
   User,
   Car,
-  Home,
+  MapPin,
   Send,
   Save,
   Users,
+  Radio,
 } from "lucide-react";
 
 interface TeamSlot {
@@ -285,7 +287,7 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
   }
 
   return (
-    <div className="max-w-5xl mx-auto p-4 md:p-6 space-y-5">
+    <div className="max-w-2xl mx-auto p-4 md:p-6 space-y-5">
       <div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
           <span>Administration</span>
@@ -308,6 +310,11 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
             <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
             Exceptional use only
           </span>
+          {isEdit && existing.data && (
+            <span className="text-[10px] font-mono font-medium text-muted-foreground border border-border rounded px-1.5 py-0.5">
+              Rev {existing.data.revision}
+            </span>
+          )}
         </div>
       </div>
 
@@ -322,12 +329,9 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
         </div>
       </div>
 
-      {/* Operation / Sheet context */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 rounded-xl bg-card border border-border">
-        <div>
-          <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground block mb-1.5">
-            Operation
-          </label>
+      {/* Operation */}
+      <div className="p-4 rounded-xl bg-card border border-border space-y-3">
+        <Field label="Operation" compact>
           <Select
             value={operationId != null ? String(operationId) : ""}
             onValueChange={val => {
@@ -349,14 +353,8 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
               ))}
             </SelectContent>
           </Select>
-        </div>
-        <div>
-          <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground block mb-1.5">
-            Running sheet{" "}
-            <span className="normal-case font-normal">
-              (used to pull today's team roster)
-            </span>
-          </label>
+        </Field>
+        <Field label="Running sheet (used to pull today's team roster)" compact>
           <Select
             value={sheetId != null ? String(sheetId) : ""}
             onValueChange={val => setSheetId(Number(val))}
@@ -373,285 +371,263 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
               ))}
             </SelectContent>
           </Select>
-        </div>
+        </Field>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1.7fr_1fr] gap-4 items-start">
-        {/* Main column */}
-        <div className="space-y-4">
-          <div className="p-4 rounded-xl bg-card border border-border space-y-4">
-            <Field label="Situation">
-              <Textarea
-                value={situation}
-                onChange={e => setSituation(e.target.value)}
-                placeholder="Brief the circumstances that make this urgent…"
-                className="min-h-[70px] text-sm"
-              />
-            </Field>
-            <Field label="Mission">
-              <Textarea
-                value={mission}
-                onChange={e => setMission(e.target.value)}
-                placeholder="State the mission in one or two sentences…"
-                className="min-h-[70px] text-sm"
-              />
-            </Field>
-            <div>
-              <label className="text-xs font-semibold block mb-2">
-                Objectives
-              </label>
-              <div className="space-y-2">
-                {objectives.map((obj, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <span className="h-5 w-5 rounded-full bg-muted text-[11px] font-bold flex items-center justify-center shrink-0">
-                      {i + 1}
-                    </span>
-                    <Input
-                      value={obj}
-                      onChange={e => {
-                        const next = [...objectives];
-                        next[i] = e.target.value;
-                        setObjectives(next);
-                      }}
-                      placeholder="Add an objective…"
-                      className="h-8 text-sm"
-                    />
-                    {objectives.length > 1 && (
-                      <button
-                        onClick={() =>
-                          setObjectives(objectives.filter((_, j) => j !== i))
-                        }
-                        className="text-muted-foreground hover:text-destructive shrink-0"
-                        aria-label="Remove objective"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
-                ))}
-                <button
-                  onClick={() => setObjectives([...objectives, ""])}
-                  className="flex items-center gap-1.5 text-xs text-muted-foreground border border-dashed border-border rounded-md px-2.5 py-1.5 hover:bg-accent ml-7"
+      {/* SITUATION */}
+      <div className="p-4 rounded-xl bg-card border border-border space-y-3">
+        <SmeacLabel letter="S" label="Situation" />
+
+        {operationId == null ? (
+          <p className="text-xs text-muted-foreground">
+            Choose an operation to see its targets, vehicles, and locations.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <Field label="Person of interest" compact>
+              <Select
+                value={targetId != null ? String(targetId) : "__none__"}
+                onValueChange={val => {
+                  setTargetId(val === "__none__" ? null : Number(val));
+                  setVoiOverride("");
+                  setHbOverride("");
+                }}
+              >
+                <SelectTrigger
+                  className={`h-8 text-xs font-medium rounded-full border ${INTEL_CHIP_CLASSES.person}`}
                 >
-                  <Plus className="h-3 w-3" /> Add objective
-                </button>
-              </div>
-            </div>
+                  <User className="h-3 w-3 mr-1 shrink-0" />
+                  <SelectValue placeholder="None linked" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">None linked</SelectItem>
+                  {opTargets.map(t => (
+                    <SelectItem key={t.id} value={String(t.id)}>
+                      {t.tgt || t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+
+            <Field label="Vehicle of interest" compact>
+              <Select
+                value={
+                  voiOverride
+                    ? (vehicleOptions.find(o => o.label === voiOverride)
+                        ?.value ?? "__default__")
+                    : "__default__"
+                }
+                onValueChange={val => {
+                  if (val === "__default__") {
+                    setVoiOverride("");
+                    return;
+                  }
+                  const opt = vehicleOptions.find(o => o.value === val);
+                  if (opt) setVoiOverride(opt.label);
+                }}
+                disabled={vehicleOptions.length === 0}
+              >
+                <SelectTrigger
+                  className={`h-8 text-xs font-medium rounded-full border ${INTEL_CHIP_CLASSES.vehicle}`}
+                >
+                  <Car className="h-3 w-3 mr-1 shrink-0" />
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__default__">
+                    {selectedTarget && (selectedTarget.v1f || selectedTarget.v1)
+                      ? `Target's own — ${selectedTarget.v1f || selectedTarget.v1}`
+                      : "None"}
+                  </SelectItem>
+                  {vehicleOptions.map(o => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label} ({o.sourceLabel})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+
+            <Field label="Location" compact>
+              <Select
+                value={
+                  hbOverride
+                    ? (locationOptions.find(o => o.label === hbOverride)
+                        ?.value ?? "__default__")
+                    : "__default__"
+                }
+                onValueChange={val => {
+                  if (val === "__default__") {
+                    setHbOverride("");
+                    return;
+                  }
+                  const opt = locationOptions.find(o => o.value === val);
+                  if (opt) setHbOverride(opt.label);
+                }}
+                disabled={locationOptions.length === 0}
+              >
+                <SelectTrigger
+                  className={`h-8 text-xs font-medium rounded-full border ${INTEL_CHIP_CLASSES.address}`}
+                >
+                  <MapPin className="h-3 w-3 mr-1 shrink-0" />
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__default__">
+                    {selectedTarget && (selectedTarget.hbf || selectedTarget.hb)
+                      ? `Target's own — ${selectedTarget.hbf || selectedTarget.hb}`
+                      : "None"}
+                  </SelectItem>
+                  {locationOptions.map(o => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label} ({o.sourceLabel})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
           </div>
-        </div>
+        )}
 
-        {/* Sidebar */}
-        <div className="space-y-4">
-          <div className="p-4 rounded-xl bg-card border border-border space-y-3">
-            <h3 className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-              Target references
-            </h3>
-            {operationId == null ? (
-              <p className="text-xs text-muted-foreground">
-                Choose an operation to see its targets, vehicles, and locations.
-              </p>
-            ) : (
-              <>
-                <Field label="Person of interest" compact>
-                  <Select
-                    value={targetId != null ? String(targetId) : "__none__"}
-                    onValueChange={val => {
-                      setTargetId(val === "__none__" ? null : Number(val));
-                      setVoiOverride("");
-                      setHbOverride("");
-                    }}
-                  >
-                    <SelectTrigger className="h-8 text-sm">
-                      <User className="h-3.5 w-3.5 text-muted-foreground mr-1" />
-                      <SelectValue placeholder="None linked" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">None linked</SelectItem>
-                      {opTargets.map(t => (
-                        <SelectItem key={t.id} value={String(t.id)}>
-                          {t.tgt || t.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-
-                <Field label="Vehicle of interest" compact>
-                  <Select
-                    value={
-                      voiOverride
-                        ? (vehicleOptions.find(o => o.label === voiOverride)
-                            ?.value ?? "__default__")
-                        : "__default__"
-                    }
-                    onValueChange={val => {
-                      if (val === "__default__") {
-                        setVoiOverride("");
-                        return;
-                      }
-                      const opt = vehicleOptions.find(o => o.value === val);
-                      if (opt) setVoiOverride(opt.label);
-                    }}
-                    disabled={vehicleOptions.length === 0}
-                  >
-                    <SelectTrigger className="h-8 text-sm">
-                      <Car className="h-3.5 w-3.5 text-muted-foreground mr-1" />
-                      <SelectValue placeholder="No vehicles under this operation" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__default__">
-                        {selectedTarget &&
-                        (selectedTarget.v1f || selectedTarget.v1)
-                          ? `Target's own — ${selectedTarget.v1f || selectedTarget.v1}`
-                          : "None"}
-                      </SelectItem>
-                      {vehicleOptions.map(o => (
-                        <SelectItem key={o.value} value={o.value}>
-                          {o.label} ({o.sourceLabel})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-
-                <Field label="Location" compact>
-                  <Select
-                    value={
-                      hbOverride
-                        ? (locationOptions.find(o => o.label === hbOverride)
-                            ?.value ?? "__default__")
-                        : "__default__"
-                    }
-                    onValueChange={val => {
-                      if (val === "__default__") {
-                        setHbOverride("");
-                        return;
-                      }
-                      const opt = locationOptions.find(o => o.value === val);
-                      if (opt) setHbOverride(opt.label);
-                    }}
-                    disabled={locationOptions.length === 0}
-                  >
-                    <SelectTrigger className="h-8 text-sm">
-                      <Home className="h-3.5 w-3.5 text-muted-foreground mr-1" />
-                      <SelectValue placeholder="No locations under this operation" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__default__">
-                        {selectedTarget &&
-                        (selectedTarget.hbf || selectedTarget.hb)
-                          ? `Target's own — ${selectedTarget.hbf || selectedTarget.hb}`
-                          : "None"}
-                      </SelectItem>
-                      {locationOptions.map(o => (
-                        <SelectItem key={o.value} value={o.value}>
-                          {o.label} ({o.sourceLabel})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-              </>
-            )}
-          </div>
-
-          <div className="p-4 rounded-xl bg-card border border-border space-y-3">
-            <h3 className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-              Admin &amp; log
-            </h3>
-            <div className="grid grid-cols-2 gap-2.5">
-              <Field label="Legal auth — arrest" compact>
-                <Input
-                  value={legalAuthArrest}
-                  onChange={e => setLegalAuthArrest(e.target.value)}
-                  className="h-8 text-sm"
-                />
-              </Field>
-              <Field label="AFP Orders" compact>
-                <Input
-                  value={afpOrders}
-                  onChange={e => setAfpOrders(e.target.value)}
-                  className="h-8 text-sm"
-                />
-              </Field>
-              <Field label="Warrant" compact>
-                <Input
-                  value={warrant}
-                  onChange={e => setWarrant(e.target.value)}
-                  className="h-8 text-sm"
-                />
-              </Field>
-              <Field label="Comms Primary" compact>
-                <Input
-                  value={commsPrimary}
-                  onChange={e => setCommsPrimary(e.target.value)}
-                  className="h-8 text-sm"
-                />
-              </Field>
-              <div className="col-span-2">
-                <Field label="Comms Secondary" compact>
-                  <Input
-                    value={commsSecondary}
-                    onChange={e => setCommsSecondary(e.target.value)}
-                    className="h-8 text-sm"
-                  />
-                </Field>
-              </div>
-            </div>
-          </div>
-        </div>
+        <Field label="Situation" compact>
+          <Textarea
+            value={situation}
+            onChange={e => setSituation(e.target.value)}
+            placeholder="Brief the circumstances that make this urgent…"
+            className="min-h-[70px] text-sm"
+          />
+        </Field>
       </div>
 
-      {/* Team roster */}
-      <div className="p-4 rounded-xl bg-card border border-border">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
-            <Users className="h-3.5 w-3.5" />
-            Surveillance team
-          </h3>
-          <button
-            onClick={() => {
-              if (!sheetId) return;
-              utils.stosecBriefing.getRosterPrefill
-                .fetch({ sheetId })
-                .then(slots => setTeamSlots(slots))
-                .catch(() => toast.error("Couldn't load roster"));
-            }}
-            disabled={!sheetId}
-            className="text-xs text-primary font-medium disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            Populate from roster
-          </button>
+      {/* MISSION */}
+      <div className="p-4 rounded-xl bg-card border border-border space-y-3">
+        <SmeacLabel letter="M" label="Mission" />
+        <Textarea
+          value={mission}
+          onChange={e => setMission(e.target.value)}
+          placeholder="State the mission in one or two sentences…"
+          className="min-h-[70px] text-sm"
+        />
+      </div>
+
+      {/* EXECUTION */}
+      <div className="p-4 rounded-xl bg-card border border-border space-y-4">
+        <SmeacLabel letter="E" label="Execution" />
+
+        <div>
+          <label className="text-xs font-semibold block mb-2">Objectives</label>
+          <div className="space-y-2">
+            {objectives.map((obj, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <span className="h-5 w-5 rounded-full bg-muted text-[11px] font-bold flex items-center justify-center shrink-0">
+                  {i + 1}
+                </span>
+                <Input
+                  value={obj}
+                  onChange={e => {
+                    const next = [...objectives];
+                    next[i] = e.target.value;
+                    setObjectives(next);
+                  }}
+                  placeholder="Add an objective…"
+                  className="h-8 text-sm"
+                />
+                {objectives.length > 1 && (
+                  <button
+                    onClick={() =>
+                      setObjectives(objectives.filter((_, j) => j !== i))
+                    }
+                    className="text-muted-foreground hover:text-destructive shrink-0"
+                    aria-label="Remove objective"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            ))}
+            <button
+              onClick={() => setObjectives([...objectives, ""])}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground border border-dashed border-border rounded-md px-2.5 py-1.5 hover:bg-accent ml-7"
+            >
+              <Plus className="h-3 w-3" /> Add objective
+            </button>
+          </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[560px]">
-            <thead>
-              <tr className="text-left text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                <th className="pb-2 pr-2">Member</th>
-                <th className="pb-2 px-2">Vehicle</th>
-                <th className="pb-2 px-2">Foot</th>
-                <th className="pb-2 px-2">Skill</th>
-                <th className="pb-2 px-2">Kit</th>
-                <th className="pb-2 pl-2 w-8" />
-              </tr>
-            </thead>
-            <tbody>
-              {teamSlots.map((slot, i) => (
-                <tr key={i} className="border-t border-border">
-                  <td className="py-1.5 pr-2">
-                    <Input
-                      value={slot.name}
-                      onChange={e => {
-                        const next = [...teamSlots];
-                        next[i] = { ...next[i], name: e.target.value };
-                        setTeamSlots(next);
-                      }}
-                      placeholder="Name"
-                      className="h-7 text-xs"
-                    />
-                  </td>
+
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-xs font-semibold flex items-center gap-1.5">
+              <Users className="h-3.5 w-3.5" />
+              Surveillance team
+            </label>
+            <button
+              onClick={() => {
+                if (!sheetId) return;
+                utils.stosecBriefing.getRosterPrefill
+                  .fetch({ sheetId })
+                  .then(slots => setTeamSlots(slots))
+                  .catch(() => toast.error("Couldn't load roster"));
+              }}
+              disabled={!sheetId}
+              className="text-xs text-primary font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Populate from roster
+            </button>
+          </div>
+
+          <div className="space-y-2">
+            {teamSlots.map((slot, i) => (
+              <div
+                key={i}
+                className="p-3 rounded-lg border border-border bg-background space-y-2"
+              >
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={slot.name}
+                    onChange={e => {
+                      const next = [...teamSlots];
+                      next[i] = { ...next[i], name: e.target.value };
+                      setTeamSlots(next);
+                    }}
+                    placeholder="Name"
+                    className="h-8 text-sm font-medium flex-1"
+                  />
+                  <button
+                    onClick={() => {
+                      const next = [...teamSlots];
+                      next[i] = {
+                        ...next[i],
+                        isTeamLeader: !next[i].isTeamLeader,
+                      };
+                      setTeamSlots(next);
+                    }}
+                    className={`shrink-0 h-8 px-2.5 rounded-md text-[10px] font-bold uppercase tracking-wide border transition-colors ${
+                      slot.isTeamLeader
+                        ? "bg-amber-500/15 text-amber-600 border-amber-500/40 dark:text-amber-400"
+                        : "text-muted-foreground border-border hover:bg-accent"
+                    }`}
+                    title="Toggle Team Leader"
+                  >
+                    TL
+                  </button>
+                  <button
+                    onClick={() =>
+                      setTeamSlots(teamSlots.filter((_, j) => j !== i))
+                    }
+                    className="shrink-0 text-muted-foreground hover:text-destructive"
+                    aria-label="Remove team member"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {(["vehicle", "foot", "skill", "kit"] as const).map(field => (
-                    <td key={field} className="py-1.5 px-2">
+                    <Field
+                      key={field}
+                      label={field[0].toUpperCase() + field.slice(1)}
+                      compact
+                    >
                       <Input
                         value={slot[field]}
                         onChange={e => {
@@ -660,32 +636,70 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
                           setTeamSlots(next);
                         }}
                         placeholder="—"
-                        className="h-7 text-xs"
+                        className="h-8 text-sm"
                       />
-                    </td>
+                    </Field>
                   ))}
-                  <td className="py-1.5 pl-2">
-                    <button
-                      onClick={() =>
-                        setTeamSlots(teamSlots.filter((_, j) => j !== i))
-                      }
-                      className="text-muted-foreground hover:text-destructive"
-                      aria-label="Remove team member"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                </div>
+              </div>
+            ))}
+          </div>
+          <button
+            onClick={() => setTeamSlots([...teamSlots, { ...EMPTY_SLOT }])}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground border border-dashed border-border rounded-md px-2.5 py-1.5 hover:bg-accent mt-2"
+          >
+            <Plus className="h-3 w-3" /> Add team member
+          </button>
         </div>
-        <button
-          onClick={() => setTeamSlots([...teamSlots, { ...EMPTY_SLOT }])}
-          className="flex items-center gap-1.5 text-xs text-muted-foreground border border-dashed border-border rounded-md px-2.5 py-1.5 hover:bg-accent mt-3"
-        >
-          <Plus className="h-3 w-3" /> Add team member
-        </button>
+      </div>
+
+      {/* ADMINISTRATION & LOGISTICS */}
+      <div className="p-4 rounded-xl bg-card border border-border space-y-3">
+        <SmeacLabel letter="A" label="Administration & Logistics" />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+          <Field label="Legal auth — arrest" compact>
+            <Input
+              value={legalAuthArrest}
+              onChange={e => setLegalAuthArrest(e.target.value)}
+              className="h-8 text-sm"
+            />
+          </Field>
+          <Field label="AFP Orders" compact>
+            <Input
+              value={afpOrders}
+              onChange={e => setAfpOrders(e.target.value)}
+              className="h-8 text-sm"
+            />
+          </Field>
+          <Field label="Warrant" compact>
+            <Input
+              value={warrant}
+              onChange={e => setWarrant(e.target.value)}
+              className="h-8 text-sm"
+            />
+          </Field>
+        </div>
+      </div>
+
+      {/* COMMAND & SIGNAL */}
+      <div className="p-4 rounded-xl bg-card border border-border space-y-3">
+        <SmeacLabel letter="C" label="Command & Signal" icon={Radio} />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <Field label="Comms Primary" compact>
+            <Input
+              value={commsPrimary}
+              onChange={e => setCommsPrimary(e.target.value)}
+              className="h-8 text-sm"
+            />
+          </Field>
+          <Field label="Comms Secondary" compact>
+            <Input
+              value={commsSecondary}
+              onChange={e => setCommsSecondary(e.target.value)}
+              className="h-8 text-sm"
+            />
+          </Field>
+        </div>
       </div>
 
       {/* Post bar */}
@@ -724,6 +738,31 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// SMEAC — the standard briefing structure: Situation, Mission, Execution,
+// Administration & Logistics, Command & Signal. The letter is a fixed
+// reference point regardless of what this particular section is titled.
+function SmeacLabel({
+  letter,
+  label,
+  icon: Icon,
+}: {
+  letter: string;
+  label: string;
+  icon?: React.ElementType;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="h-5 w-5 rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[11px] font-bold flex items-center justify-center shrink-0">
+        {letter}
+      </span>
+      <h3 className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+        {Icon && <Icon className="h-3.5 w-3.5" />}
+        {label}
+      </h3>
     </div>
   );
 }

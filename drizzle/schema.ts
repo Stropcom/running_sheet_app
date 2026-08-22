@@ -1587,6 +1587,9 @@ export const stosecBriefings = mysqlTable("stosec_briefings", {
   teamSlots: text("teamSlots"),
 
   status: mysqlEnum("status", ["draft", "posted"]).default("draft").notNull(),
+  // Bumped on every content save, so "which version am I looking at" has a
+  // concrete answer once a briefing has been edited and re-posted.
+  revision: int("revision").default(1).notNull(),
   postedAt: bigint("postedAt", { mode: "number" }),
   postedByCIN: varchar("postedByCIN", { length: 64 }),
 

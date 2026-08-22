@@ -2266,7 +2266,9 @@ export const appRouter = router({
       }),
 
     post: adminProcedure
-      .input(z.object({ id: z.number() }))
+      .input(
+        z.object({ id: z.number(), userIds: z.array(z.number()).optional() })
+      )
       .mutation(async ({ ctx, input }) => {
         const briefing = await getStosecBriefingById(input.id);
         if (!briefing)
@@ -2285,7 +2287,8 @@ export const appRouter = router({
               briefing.situation?.slice(0, 160) ||
               "An urgent briefing has been posted.",
             url: `/intelligence/mapping?stosec=${input.id}`,
-          }
+          },
+          input.userIds
         );
         if (!notified)
           throw new TRPCError({

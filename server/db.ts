@@ -11849,7 +11849,10 @@ export async function listStosecBriefings(): Promise<StosecBriefingView[]> {
 export async function postStosecBriefing(
   id: number,
   postedByCIN: string,
-  notifyBody: { title: string; body: string; url: string }
+  notifyBody: { title: string; body: string; url: string },
+  // Explicit recipient list (e.g. from the "who to notify" picker) — falls
+  // back to every registered user when omitted or empty, same as before.
+  targetUserIds?: number[]
 ): Promise<number[] | undefined> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -11865,8 +11868,14 @@ export async function postStosecBriefing(
     .set({ status: "posted", postedAt: Date.now(), postedByCIN })
     .where(eq(stosecBriefings.id, id));
 
-  const allUsers = await getAllUsers();
-  const userIds = allUsers.map(u => u.id);
+  // Distinguish "no list passed" (default: everyone, back-compat for any
+  // caller that doesn't offer a picker) from "explicitly an empty list"
+  // (the picker's Select All was cleared — notify no one, don't silently
+  // fall back to everyone).
+  const userIds =
+    targetUserIds !== undefined
+      ? targetUserIds
+      : (await getAllUsers()).map(u => u.id);
   await createNotificationsForUsers(userIds, {
     title: notifyBody.title,
     body: notifyBody.body,

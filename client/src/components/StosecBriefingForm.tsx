@@ -24,6 +24,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { INTEL_CHIP_CLASSES } from "@/components/IntelEntityChip";
 import { SmeacLabel } from "@/components/SmeacLabel";
 import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
@@ -137,6 +145,12 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
   const [reportingProcedures, setReportingProcedures] = useState("");
 
   const [teamSlots, setTeamSlots] = useState<TeamSlot[]>([]);
+
+  const usersQuery = trpc.opManager.listUsers.useQuery();
+  const [notifyDialogOpen, setNotifyDialogOpen] = useState(false);
+  const [selectedUserIds, setSelectedUserIds] = useState<Set<number>>(
+    new Set()
+  );
 
   // Only apply defaults / server data once, so a background refetch never
   // clobbers what the officer is actively typing.
@@ -318,7 +332,7 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
     }
   };
 
-  const postBriefing = async () => {
+  const postBriefing = async (userIds: number[]) => {
     if (!operationId) {
       toast.error("Choose an operation first");
       return;
@@ -335,7 +349,7 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
         const created = await createMutation.mutateAsync(buildPayload());
         id = created.id;
       }
-      const result = await postMutation.mutateAsync({ id: id! });
+      const result = await postMutation.mutateAsync({ id: id!, userIds });
       toast.success(
         `${isPosted ? "Re-posted" : "Posted"} — notified ${result.notified} users`
       );
@@ -345,6 +359,21 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
     } finally {
       setSaving(false);
     }
+  };
+
+  const openNotifyDialog = () => {
+    if (!operationId) {
+      toast.error("Choose an operation first");
+      return;
+    }
+    // Pre-select all users, same default as the CTO tasking notify picker.
+    setSelectedUserIds(new Set((usersQuery.data ?? []).map(u => u.id)));
+    setNotifyDialogOpen(true);
+  };
+
+  const handleConfirmNotify = () => {
+    setNotifyDialogOpen(false);
+    postBriefing(Array.from(selectedUserIds));
   };
 
   if (isEdit && existing.isLoading) {
@@ -1074,13 +1103,13 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
           <div>
             <h3 className="text-sm font-bold">
               {isPosted
-                ? "Save changes, or re-notify everyone"
-                : "Post & notify all users"}
+                ? "Save changes, or re-notify"
+                : "Post & choose who to notify"}
             </h3>
             <p className="text-xs text-muted-foreground max-w-md">
               {isPosted
-                ? "Save changes quietly, or re-post to send everyone a fresh alert with the updated content."
-                : "Every signed-in user receives an immediate alert and can acknowledge it from their notifications. This can't be undone once posted."}
+                ? "Save changes quietly, or re-post to send a fresh alert to whoever you choose."
+                : "Choose who receives an immediate alert; they can acknowledge it from their notifications. This can't be undone once posted."}
             </p>
           </div>
         </div>
@@ -1090,7 +1119,7 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
             {isPosted ? "Save changes" : "Save as draft"}
           </Button>
           <Button
-            onClick={postBriefing}
+            onClick={openNotifyDialog}
             disabled={saving}
             className="bg-amber-600 hover:bg-amber-700 text-white"
           >
@@ -1103,6 +1132,90 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
           </Button>
         </div>
       </div>
+
+      <Dialog open={notifyDialogOpen} onOpenChange={setNotifyDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Select who to notify</DialogTitle>
+          </DialogHeader>
+          <div className="py-2 space-y-1 max-h-72 overflow-y-auto">
+            <div className="flex items-center gap-2 pb-2 border-b border-border/50">
+              <Checkbox
+                id="stosec-notify-all"
+                checked={
+                  (usersQuery.data ?? []).length > 0 &&
+                  selectedUserIds.size === (usersQuery.data ?? []).length
+                }
+                onCheckedChange={checked => {
+                  if (checked) {
+                    setSelectedUserIds(
+                      new Set((usersQuery.data ?? []).map(u => u.id))
+                    );
+                  } else {
+                    setSelectedUserIds(new Set());
+                  }
+                }}
+              />
+              <Label
+                htmlFor="stosec-notify-all"
+                className="font-semibold cursor-pointer"
+              >
+                Select All
+              </Label>
+            </div>
+            {[...(usersQuery.data ?? [])]
+              .sort((a, b) =>
+                (a.cin ?? "").localeCompare(b.cin ?? "", undefined, {
+                  numeric: true,
+                })
+              )
+              .map(u => (
+                <div key={u.id} className="flex items-center gap-2 py-1">
+                  <Checkbox
+                    id={`stosec-notify-user-${u.id}`}
+                    checked={selectedUserIds.has(u.id)}
+                    onCheckedChange={checked => {
+                      setSelectedUserIds(prev => {
+                        const next = new Set(prev);
+                        if (checked) next.add(u.id);
+                        else next.delete(u.id);
+                        return next;
+                      });
+                    }}
+                  />
+                  <Label
+                    htmlFor={`stosec-notify-user-${u.id}`}
+                    className="cursor-pointer flex items-center gap-2"
+                  >
+                    <span className="font-mono text-xs text-muted-foreground w-10">
+                      {u.cin ?? "—"}
+                    </span>
+                    <span>{u.name}</span>
+                  </Label>
+                </div>
+              ))}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setNotifyDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleConfirmNotify}
+              disabled={saving}
+              className="gap-1 bg-amber-600 hover:bg-amber-700 text-white"
+            >
+              <Send className="h-3.5 w-3.5" />
+              {isPosted ? "Update & Re-notify" : "Post STOSEC"} (
+              {selectedUserIds.size})
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

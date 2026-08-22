@@ -1558,9 +1558,19 @@ export const stosecBriefings = mysqlTable("stosec_briefings", {
   operationId: int("operationId").notNull(),
   // The running sheet this was raised from, if any — informational only.
   sheetId: int("sheetId"),
-  // Linked Target Registry record: POI/VOI/HB are rendered live from its
-  // tgt/v1(f)/hb(f) fields rather than copied, so they never go stale.
+  // Linked Target Registry record: POI is rendered live from its tgt/name
+  // field. VOI/HB default to this same target's v1(f)/hb(f) too, but can be
+  // overridden below to a different vehicle/address under the same
+  // operation (e.g. an associate's car, a different target's address) —
+  // the operation can have several targets, each with several vehicles and
+  // addresses, and the urgent detail isn't always the primary target's own.
   targetId: int("targetId"),
+  // Free-text snapshot (not a FK — vehicle/address entries are embedded
+  // JSON on a target, not their own rows) of the chosen vehicle/address
+  // when it differs from the linked target's primary v1(f)/hb(f). Null
+  // means "use the linked target's own vehicle/address".
+  voiOverride: varchar("voiOverride", { length: 500 }),
+  hbOverride: varchar("hbOverride", { length: 500 }),
 
   situation: text("situation"),
   mission: text("mission"),

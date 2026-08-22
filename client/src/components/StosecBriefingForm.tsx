@@ -1,9 +1,10 @@
 /**
- * The STOSEC Briefing create/edit form — used for both a brand-new draft
- * (no briefingId) and re-opening an existing, not-yet-posted draft
- * (briefingId set). A posted briefing is a fixed record and is never routed
- * back through this component — see StosecBriefingDetailPage, which renders
- * StosecAcknowledgeView instead once status is "posted".
+ * The STOSEC Briefing create/edit form — used for a brand-new draft (no
+ * briefingId), a not-yet-posted draft (briefingId set, status "draft"), and
+ * re-editing an already-posted briefing (briefingId set, status "posted",
+ * reached via the /edit route). Editing a posted briefing never re-notifies
+ * on its own — "Save changes" only updates content; re-notifying everyone
+ * is the separate, deliberate "Update & Re-notify" action.
  */
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -25,7 +26,6 @@ import {
   ShieldAlert,
   Plus,
   X,
-  Search,
   User,
   Car,
   Home,
@@ -71,9 +71,15 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
   const [sheetId, setSheetId] = useState<number | null>(null);
 
   const [targetId, setTargetId] = useState<number | null>(null);
-  const [targetSearch, setTargetSearch] = useState("");
-  const [targetPickerOpen, setTargetPickerOpen] = useState(false);
-  const { data: allTargets } = trpc.target.listAll.useQuery();
+  const [voiOverride, setVoiOverride] = useState("");
+  const [hbOverride, setHbOverride] = useState("");
+  // Targets, vehicles, and locations are all scoped to the chosen operation
+  // — an operation can have several targets, each with several vehicles and
+  // addresses, and the urgent detail isn't always the primary target's own.
+  const { data: opTargetsData } = trpc.target.list.useQuery(
+    { operationId: operationId! },
+    { enabled: operationId !== null }
+  );
 
   const [situation, setSituation] = useState("");
   const [mission, setMission] = useState("");
@@ -99,6 +105,8 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
       setOperationId(b.operationId);
       setSheetId(b.sheetId ?? null);
       setTargetId(b.targetId ?? null);
+      setVoiOverride(b.voiOverride ?? "");
+      setHbOverride(b.hbOverride ?? "");
       setSituation(b.situation ?? "");
       setMission(b.mission ?? "");
       setObjectives(b.objectives.length > 0 ? b.objectives : [""]);
@@ -136,22 +144,53 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
 
   const activeSheets =
     (sheetsData as any[] | undefined)?.filter(s => !s.deletedAt) ?? [];
-  const selectedTarget = (allTargets as any[] | undefined)?.find(
-    t => t.id === targetId
-  );
-  const targetMatches =
-    targetSearch.trim().length === 0
-      ? []
-      : ((allTargets as any[] | undefined) ?? [])
-          .filter(t => {
-            const q = targetSearch.toLowerCase();
-            return (
-              t.name?.toLowerCase().includes(q) ||
-              t.tgt?.toLowerCase().includes(q) ||
-              t.operationName?.toLowerCase().includes(q)
-            );
-          })
-          .slice(0, 8);
+  const opTargets = (opTargetsData as any[] | undefined) ?? [];
+  const selectedTarget = opTargets.find(t => t.id === targetId);
+
+  interface FlatOption {
+    value: string;
+    label: string;
+    sourceLabel: string;
+  }
+  function parseJsonArray(raw: string | null | undefined): any[] {
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  const vehicleOptions: FlatOption[] = [];
+  const locationOptions: FlatOption[] = [];
+  opTargets.forEach(t => {
+    const vehicles = [
+      ...(t.v1f || t.v1 ? [{ full: t.v1f, short: t.v1 }] : []),
+      ...parseJsonArray(t.extraVehicles),
+    ];
+    vehicles.forEach((v, i) => {
+      const label = v.full || v.short;
+      if (!label) return;
+      vehicleOptions.push({
+        value: `${t.id}__${i}__${label}`,
+        label,
+        sourceLabel: t.name,
+      });
+    });
+    const addresses = [
+      ...(t.hbf || t.hb ? [{ full: t.hbf, short: t.hb }] : []),
+      ...parseJsonArray(t.extraAddresses),
+    ];
+    addresses.forEach((a, i) => {
+      const label = a.full || a.short;
+      if (!label) return;
+      locationOptions.push({
+        value: `${t.id}__${i}__${label}`,
+        label,
+        sourceLabel: t.name,
+      });
+    });
+  });
 
   const createMutation = trpc.stosecBriefing.create.useMutation();
   const updateMutation = trpc.stosecBriefing.update.useMutation();
@@ -161,6 +200,8 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
     operationId: operationId!,
     sheetId,
     targetId,
+    voiOverride: voiOverride.trim() || null,
+    hbOverride: hbOverride.trim() || null,
     situation: situation.trim() || null,
     mission: mission.trim() || null,
     objectives: objectives.map(o => o.trim()).filter(Boolean),
@@ -173,6 +214,7 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
   });
 
   const [saving, setSaving] = useState(false);
+  const isPosted = isEdit && existing.data?.status === "posted";
 
   const saveDraft = async () => {
     if (!operationId) {
@@ -186,8 +228,13 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
           id: briefingId!,
           ...buildPayload(),
         });
-        toast.success("Draft saved");
-        utils.stosecBriefing.getById.invalidate({ id: briefingId! });
+        if (isPosted) {
+          toast.success("Changes saved");
+          setLocation(`/administration/stosec/${briefingId}`);
+        } else {
+          toast.success("Draft saved");
+          utils.stosecBriefing.getById.invalidate({ id: briefingId! });
+        }
       } else {
         const { id } = await createMutation.mutateAsync(buildPayload());
         toast.success("Draft saved");
@@ -218,7 +265,9 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
         id = created.id;
       }
       const result = await postMutation.mutateAsync({ id: id! });
-      toast.success(`Posted — notified ${result.notified} users`);
+      toast.success(
+        `${isPosted ? "Re-posted" : "Posted"} — notified ${result.notified} users`
+      );
       setLocation(`/administration/stosec/${id}`);
     } catch (e: any) {
       toast.error(e.message ?? "Failed to post");
@@ -244,12 +293,16 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
           <span>STOSEC Briefings</span>
           <span>/</span>
           <span className="text-foreground font-medium">
-            {isEdit ? "Edit draft" : "New"}
+            {isPosted ? "Edit" : isEdit ? "Edit draft" : "New"}
           </span>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           <h1 className="text-xl font-bold">
-            {isEdit ? "STOSEC Briefing (draft)" : "New STOSEC Briefing"}
+            {isPosted
+              ? "Edit STOSEC Briefing"
+              : isEdit
+                ? "STOSEC Briefing (draft)"
+                : "New STOSEC Briefing"}
           </h1>
           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-amber-500/10 text-amber-600 border border-amber-500/30">
             <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
@@ -280,6 +333,9 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
             onValueChange={val => {
               setOperationId(Number(val));
               setSheetId(null);
+              setTargetId(null);
+              setVoiOverride("");
+              setHbOverride("");
             }}
           >
             <SelectTrigger className="h-9 text-sm">
@@ -388,80 +444,114 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
         <div className="space-y-4">
           <div className="p-4 rounded-xl bg-card border border-border space-y-3">
             <h3 className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-              Target reference
+              Target references
             </h3>
-            {selectedTarget ? (
-              <div className="flex items-start gap-2.5 p-2.5 rounded-lg border border-border bg-background">
-                <User className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold truncate">
-                    {selectedTarget.name}
-                  </p>
-                  {selectedTarget.tgt && (
-                    <p className="text-xs text-muted-foreground truncate">
-                      POI: {selectedTarget.tgt}
-                    </p>
-                  )}
-                  {(selectedTarget.v1f || selectedTarget.v1) && (
-                    <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
-                      <Car className="h-3 w-3 shrink-0" />
-                      {selectedTarget.v1f || selectedTarget.v1}
-                    </p>
-                  )}
-                  {(selectedTarget.hbf || selectedTarget.hb) && (
-                    <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
-                      <Home className="h-3 w-3 shrink-0" />
-                      {selectedTarget.hbf || selectedTarget.hb}
-                    </p>
-                  )}
-                </div>
-                <button
-                  onClick={() => setTargetId(null)}
-                  className="text-muted-foreground hover:text-destructive shrink-0"
-                  aria-label="Unlink target"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
+            {operationId == null ? (
+              <p className="text-xs text-muted-foreground">
+                Choose an operation to see its targets, vehicles, and locations.
+              </p>
             ) : (
-              <div className="relative">
-                <div className="flex items-center gap-2 border border-border rounded-md px-2.5 h-9">
-                  <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                  <input
-                    value={targetSearch}
-                    onChange={e => {
-                      setTargetSearch(e.target.value);
-                      setTargetPickerOpen(true);
+              <>
+                <Field label="Person of interest" compact>
+                  <Select
+                    value={targetId != null ? String(targetId) : "__none__"}
+                    onValueChange={val => {
+                      setTargetId(val === "__none__" ? null : Number(val));
+                      setVoiOverride("");
+                      setHbOverride("");
                     }}
-                    onFocus={() => setTargetPickerOpen(true)}
-                    placeholder="Search Target Registry…"
-                    className="flex-1 bg-transparent text-sm outline-none min-w-0"
-                  />
-                </div>
-                {targetPickerOpen && targetMatches.length > 0 && (
-                  <div className="absolute z-10 mt-1 w-full max-h-56 overflow-y-auto rounded-md border border-border bg-card shadow-lg">
-                    {targetMatches.map(t => (
-                      <button
-                        key={t.id}
-                        onClick={() => {
-                          setTargetId(t.id);
-                          setTargetSearch("");
-                          setTargetPickerOpen(false);
-                        }}
-                        className="w-full text-left px-3 py-2 hover:bg-accent border-b border-border last:border-b-0"
-                      >
-                        <p className="text-sm font-medium">{t.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {t.tgt && <span className="mr-2">POI: {t.tgt}</span>}
-                          {t.operationName && (
-                            <span>Op: {t.operationName}</span>
-                          )}
-                        </p>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+                  >
+                    <SelectTrigger className="h-8 text-sm">
+                      <User className="h-3.5 w-3.5 text-muted-foreground mr-1" />
+                      <SelectValue placeholder="None linked" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">None linked</SelectItem>
+                      {opTargets.map(t => (
+                        <SelectItem key={t.id} value={String(t.id)}>
+                          {t.tgt || t.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+
+                <Field label="Vehicle of interest" compact>
+                  <Select
+                    value={
+                      voiOverride
+                        ? (vehicleOptions.find(o => o.label === voiOverride)
+                            ?.value ?? "__default__")
+                        : "__default__"
+                    }
+                    onValueChange={val => {
+                      if (val === "__default__") {
+                        setVoiOverride("");
+                        return;
+                      }
+                      const opt = vehicleOptions.find(o => o.value === val);
+                      if (opt) setVoiOverride(opt.label);
+                    }}
+                    disabled={vehicleOptions.length === 0}
+                  >
+                    <SelectTrigger className="h-8 text-sm">
+                      <Car className="h-3.5 w-3.5 text-muted-foreground mr-1" />
+                      <SelectValue placeholder="No vehicles under this operation" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__default__">
+                        {selectedTarget &&
+                        (selectedTarget.v1f || selectedTarget.v1)
+                          ? `Target's own — ${selectedTarget.v1f || selectedTarget.v1}`
+                          : "None"}
+                      </SelectItem>
+                      {vehicleOptions.map(o => (
+                        <SelectItem key={o.value} value={o.value}>
+                          {o.label} ({o.sourceLabel})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+
+                <Field label="Location" compact>
+                  <Select
+                    value={
+                      hbOverride
+                        ? (locationOptions.find(o => o.label === hbOverride)
+                            ?.value ?? "__default__")
+                        : "__default__"
+                    }
+                    onValueChange={val => {
+                      if (val === "__default__") {
+                        setHbOverride("");
+                        return;
+                      }
+                      const opt = locationOptions.find(o => o.value === val);
+                      if (opt) setHbOverride(opt.label);
+                    }}
+                    disabled={locationOptions.length === 0}
+                  >
+                    <SelectTrigger className="h-8 text-sm">
+                      <Home className="h-3.5 w-3.5 text-muted-foreground mr-1" />
+                      <SelectValue placeholder="No locations under this operation" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__default__">
+                        {selectedTarget &&
+                        (selectedTarget.hbf || selectedTarget.hb)
+                          ? `Target's own — ${selectedTarget.hbf || selectedTarget.hb}`
+                          : "None"}
+                      </SelectItem>
+                      {locationOptions.map(o => (
+                        <SelectItem key={o.value} value={o.value}>
+                          {o.label} ({o.sourceLabel})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </>
             )}
           </div>
 
@@ -603,18 +693,22 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
         <div className="flex items-start gap-3">
           <Send className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
           <div>
-            <h3 className="text-sm font-bold">Post &amp; notify all users</h3>
+            <h3 className="text-sm font-bold">
+              {isPosted
+                ? "Save changes, or re-notify everyone"
+                : "Post & notify all users"}
+            </h3>
             <p className="text-xs text-muted-foreground max-w-md">
-              Every signed-in user receives an immediate alert and can
-              acknowledge it from their notifications. This can't be undone once
-              posted.
+              {isPosted
+                ? "Save changes quietly, or re-post to send everyone a fresh alert with the updated content."
+                : "Every signed-in user receives an immediate alert and can acknowledge it from their notifications. This can't be undone once posted."}
             </p>
           </div>
         </div>
         <div className="flex gap-2 shrink-0">
           <Button variant="outline" onClick={saveDraft} disabled={saving}>
             <Save className="h-3.5 w-3.5 mr-1.5" />
-            Save as draft
+            {isPosted ? "Save changes" : "Save as draft"}
           </Button>
           <Button
             onClick={postBriefing}
@@ -626,7 +720,7 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
             ) : (
               <Send className="h-3.5 w-3.5 mr-1.5" />
             )}
-            Post STOSEC
+            {isPosted ? "Update & Re-notify" : "Post STOSEC"}
           </Button>
         </div>
       </div>

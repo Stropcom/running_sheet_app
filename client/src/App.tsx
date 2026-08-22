@@ -57,6 +57,7 @@ import CtoRosterAuditLogPage from "@/pages/CtoRoster/AuditLogPage";
 import StosecBriefingListPage from "@/pages/StosecBriefingListPage";
 import StosecBriefingNewPage from "@/pages/StosecBriefingNewPage";
 import StosecBriefingDetailPage from "@/pages/StosecBriefingDetailPage";
+import StosecBriefingEditPage from "@/pages/StosecBriefingEditPage";
 import { DraftModeBanner } from "@/components/DraftModeBanner";
 import { SectionColorProvider } from "@/contexts/SectionColorContext";
 import { useEffect } from "react";
@@ -261,6 +262,10 @@ function Router() {
       <Route
         path="/administration/stosec/new"
         component={StosecBriefingNewPage}
+      />
+      <Route
+        path="/administration/stosec/:id/edit"
+        component={StosecBriefingEditPage}
       />
       <Route
         path="/administration/stosec/:id"

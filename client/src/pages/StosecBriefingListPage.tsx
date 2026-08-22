@@ -1,21 +1,45 @@
+import { useState } from "react";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
+import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, ShieldAlert, Check } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Plus, ShieldAlert, Check, Trash2 } from "lucide-react";
 
 export default function StosecBriefingListPage() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
+  const utils = trpc.useUtils();
   const { data: briefings, isLoading } = trpc.stosecBriefing.list.useQuery();
   const { data: operations } = trpc.operation.list.useQuery();
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+
+  const deleteMutation = trpc.stosecBriefing.delete.useMutation({
+    onSuccess: () => {
+      toast.success("Briefing deleted");
+      utils.stosecBriefing.list.invalidate();
+    },
+    onError: e => toast.error(e.message ?? "Failed to delete"),
+  });
 
   const operationName = (operationId: number) =>
     (operations as any[] | undefined)?.find(o => o.id === operationId)?.name ??
     `Operation #${operationId}`;
+
+  const confirmDeleteBriefing = briefings?.find(b => b.id === confirmDeleteId);
 
   return (
     <DashboardLayout>
@@ -60,32 +84,76 @@ export default function StosecBriefingListPage() {
         ) : (
           <div className="space-y-2">
             {briefings.map(b => (
-              <button
+              <div
                 key={b.id}
-                onClick={() => setLocation(`/administration/stosec/${b.id}`)}
-                className="w-full text-left flex items-center gap-3 p-3.5 rounded-xl bg-card border border-border hover:bg-accent/50 transition-colors"
+                className="flex items-center gap-2 rounded-xl bg-card border border-border hover:bg-accent/50 transition-colors"
               >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <p className="text-sm font-semibold truncate">
-                      {operationName(b.operationId)}
+                <button
+                  onClick={() => setLocation(`/administration/stosec/${b.id}`)}
+                  className="flex-1 min-w-0 text-left flex items-center gap-3 p-3.5"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <p className="text-sm font-semibold truncate">
+                        {operationName(b.operationId)}
+                      </p>
+                      <StatusBadge status={b.status} />
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {b.situation || "No situation summary"}
                     </p>
-                    <StatusBadge status={b.status} />
                   </div>
-                  <p className="text-xs text-muted-foreground truncate">
-                    {b.situation || "No situation summary"}
-                  </p>
-                </div>
-                <span className="text-[11px] text-muted-foreground shrink-0">
-                  {b.postedAt
-                    ? format(new Date(b.postedAt), "d MMM, h:mm a")
-                    : format(new Date(b.createdAt), "d MMM, h:mm a")}
-                </span>
-              </button>
+                  <span className="text-[11px] text-muted-foreground shrink-0">
+                    {b.postedAt
+                      ? format(new Date(b.postedAt), "d MMM, h:mm a")
+                      : format(new Date(b.createdAt), "d MMM, h:mm a")}
+                  </span>
+                </button>
+                {user?.role === "admin" && (
+                  <button
+                    onClick={() => setConfirmDeleteId(b.id)}
+                    className="shrink-0 h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors mr-2"
+                    aria-label="Delete briefing"
+                    title="Delete briefing"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
             ))}
           </div>
         )}
       </div>
+
+      <AlertDialog
+        open={confirmDeleteId !== null}
+        onOpenChange={open => !open && setConfirmDeleteId(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this briefing?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmDeleteBriefing?.status === "posted"
+                ? "This briefing was posted and notified every user — deleting it only removes it from this list, it does not un-notify anyone. This cannot be undone."
+                : "This draft will be permanently removed. This cannot be undone."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (confirmDeleteId !== null) {
+                  deleteMutation.mutate({ id: confirmDeleteId });
+                }
+                setConfirmDeleteId(null);
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DashboardLayout>
   );
 }

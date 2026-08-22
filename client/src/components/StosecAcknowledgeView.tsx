@@ -5,10 +5,11 @@
  * is clicking the notification again, since both land on the same URL. See
  * StosecBriefingDetailPage for the routing that gets here.
  */
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { MapView } from "@/components/Map";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -17,6 +18,7 @@ import {
   MapPin,
   Check,
   ShieldAlert,
+  Pencil,
   Car,
   Home,
   Users,
@@ -26,6 +28,7 @@ import { format } from "date-fns";
 interface Props {
   briefing: {
     id: number;
+    operationId: number;
     operationName: string;
     situation: string | null;
     mission: string | null;
@@ -35,6 +38,8 @@ interface Props {
     warrant: string | null;
     commsPrimary: string | null;
     commsSecondary: string | null;
+    voiOverride: string | null;
+    hbOverride: string | null;
     teamSlots: {
       name: string;
       vehicle: string;
@@ -58,10 +63,39 @@ interface Props {
   };
 }
 
+function teamColor(team: string | null): string {
+  if (team === "TEAM1") return "#6366f1"; // indigo
+  if (team === "TEAM2") return "#0ea5e9"; // sky
+  if (team === "PTT") return "#f59e0b"; // amber
+  return "#64748b"; // slate — no team set
+}
+
+function buildLiveUserPin(name: string, team: string | null, moving: boolean) {
+  const el = document.createElement("div");
+  el.style.cssText = `
+    display:flex;align-items:center;gap:4px;
+    background:#fff;border-radius:999px;padding:3px 8px 3px 3px;
+    box-shadow:0 2px 6px rgba(0,0,0,0.35);
+    border:2px solid ${teamColor(team)};
+    font-family:system-ui,sans-serif;font-size:10px;font-weight:700;
+    white-space:nowrap;cursor:default;
+  `;
+  const dot = document.createElement("span");
+  dot.style.cssText = `width:7px;height:7px;border-radius:50%;flex-shrink:0;background:${moving ? "#16a34a" : "#94a3b8"};`;
+  el.appendChild(dot);
+  const label = document.createElement("span");
+  label.textContent = name.toUpperCase();
+  label.style.color = "#111";
+  el.appendChild(label);
+  return el;
+}
+
 export function StosecAcknowledgeView({ briefing }: Props) {
+  const { user } = useAuth();
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
   const mapRef = useRef<google.maps.Map | null>(null);
+  const [mapReady, setMapReady] = useState(false);
   const [acknowledgedAt, setAcknowledgedAt] = useState(
     briefing.myAcknowledgedAt
   );
@@ -74,27 +108,114 @@ export function StosecAcknowledgeView({ briefing }: Props) {
     onError: e => toast.error(e.message ?? "Failed to acknowledge"),
   });
 
-  const homeAddress = briefing.target?.hbf || briefing.target?.hb || null;
+  const homeAddress =
+    briefing.hbOverride || briefing.target?.hbf || briefing.target?.hb || null;
 
   // MapView only calls onMapReady once the Google Maps script has already
   // loaded (see components/Map.tsx), so google.maps is safe to use directly.
+  const homeMarkerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(
+    null
+  );
   const handleMapReady = (map: google.maps.Map) => {
     mapRef.current = map;
+    setMapReady(true);
     if (!homeAddress) return;
     const geocoder = new google.maps.Geocoder();
     geocoder.geocode({ address: homeAddress }, (results, status) => {
       if (status === "OK" && results?.[0] && mapRef.current) {
         const pos = results[0].geometry.location;
         mapRef.current.setCenter(pos);
-        mapRef.current.setZoom(15);
-        new google.maps.marker.AdvancedMarkerElement({
+        mapRef.current.setZoom(14);
+        const pin = document.createElement("div");
+        pin.style.cssText = `
+          width:26px;height:26px;border-radius:50% 50% 50% 0;
+          transform:rotate(45deg);background:#dc2626;
+          border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.35);
+        `;
+        homeMarkerRef.current = new google.maps.marker.AdvancedMarkerElement({
           map: mapRef.current,
           position: pos,
-          title: homeAddress,
+          content: pin,
+          title: `${homeAddress} (target location)`,
         });
       }
     });
   };
+
+  // Live team positions — reuses the same location feed the main Mapping
+  // page uses. The server currently doesn't filter by operationIds (it
+  // returns every sharing-enabled user app-wide), so this is filtered
+  // client-side to just the officers on this briefing's operation.
+  const { data: liveUsersRaw } = trpc.intelligence.userLocations.useQuery(
+    { operationIds: [briefing.operationId] },
+    { refetchInterval: 3000 }
+  );
+  const liveUsers = (
+    (liveUsersRaw as
+      | {
+          userId: number;
+          deviceId: string;
+          name: string;
+          team: string | null;
+          lat: number;
+          lng: number;
+          speed: number | null;
+          operationIds: number[];
+        }[]
+      | undefined) ?? []
+  ).filter(u => u.operationIds.includes(briefing.operationId));
+
+  const liveMarkersRef = useRef<
+    Map<string, google.maps.marker.AdvancedMarkerElement>
+  >(new Map());
+  const didInitialFitRef = useRef(false);
+
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    const map = mapRef.current;
+    const seen = new Set<string>();
+
+    liveUsers.forEach(u => {
+      const key = `${u.userId}_${u.deviceId}`;
+      seen.add(key);
+      const pos = { lat: u.lat, lng: u.lng };
+      const existing = liveMarkersRef.current.get(key);
+      if (existing) {
+        existing.position = pos;
+      } else {
+        const marker = new google.maps.marker.AdvancedMarkerElement({
+          map,
+          position: pos,
+          content: buildLiveUserPin(u.name, u.team, (u.speed ?? 0) > 0.5),
+          title: u.name,
+        });
+        liveMarkersRef.current.set(key, marker);
+      }
+    });
+
+    // Drop markers for users no longer in the feed (out of range / stopped sharing)
+    liveMarkersRef.current.forEach((marker, key) => {
+      if (!seen.has(key)) {
+        marker.map = null;
+        liveMarkersRef.current.delete(key);
+      }
+    });
+
+    // Fit the view once, the first time there's something to show — after
+    // that, let the officer pan/zoom freely while pins keep moving.
+    if (!didInitialFitRef.current && (liveUsers.length > 0 || homeAddress)) {
+      didInitialFitRef.current = true;
+      if (liveUsers.length > 0) {
+        const bounds = new google.maps.LatLngBounds();
+        liveUsers.forEach(u => bounds.extend({ lat: u.lat, lng: u.lng }));
+        if (homeMarkerRef.current?.position) {
+          bounds.extend(homeMarkerRef.current.position as google.maps.LatLng);
+        }
+        map.fitBounds(bounds, 80);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapReady, JSON.stringify(liveUsers)]);
 
   return (
     <div className="flex flex-col h-full">
@@ -113,6 +234,17 @@ export function StosecAcknowledgeView({ briefing }: Props) {
         <span className="text-[10px] text-muted-foreground">
           {briefing.acknowledgedCount} acknowledged
         </span>
+        {user?.role === "admin" && (
+          <button
+            onClick={() =>
+              setLocation(`/administration/stosec/${briefing.id}/edit`)
+            }
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium text-muted-foreground hover:bg-accent transition-colors"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Edit
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 flex-1 min-h-0">
@@ -122,14 +254,18 @@ export function StosecAcknowledgeView({ briefing }: Props) {
             initialZoom={11}
             onMapReady={handleMapReady}
           />
-          {!homeAddress && (
+          {!homeAddress && liveUsers.length === 0 && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/60 backdrop-blur-sm pointer-events-none">
               <MapPin className="h-8 w-8 text-muted-foreground/40 mb-2" />
               <p className="text-xs text-muted-foreground">
-                No linked target address to plot
+                No location or live team positions to plot
               </p>
             </div>
           )}
+          <div className="absolute bottom-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-card/90 backdrop-blur-sm border border-border shadow-sm text-[11px] font-medium">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            {liveUsers.length} live
+          </div>
         </div>
 
         <div className="overflow-y-auto p-5 space-y-5 border-t sm:border-t-0 sm:border-l border-border">
@@ -159,10 +295,14 @@ export function StosecAcknowledgeView({ briefing }: Props) {
             <Section label="Target reference">
               <div className="space-y-1 text-sm">
                 <p className="font-medium">{briefing.target.name}</p>
-                {(briefing.target.v1f || briefing.target.v1) && (
+                {(briefing.voiOverride ||
+                  briefing.target.v1f ||
+                  briefing.target.v1) && (
                   <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
                     <Car className="h-3 w-3" />
-                    {briefing.target.v1f || briefing.target.v1}
+                    {briefing.voiOverride ||
+                      briefing.target.v1f ||
+                      briefing.target.v1}
                   </p>
                 )}
                 {homeAddress && (

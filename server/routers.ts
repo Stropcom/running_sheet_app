@@ -279,7 +279,7 @@ import {
   deleteReadNotificationsForUser,
   purgeExpiredNotifications,
   createStosecBriefingDraft,
-  updateStosecBriefingDraft,
+  updateStosecBriefing,
   getStosecBriefingById,
   listStosecBriefings,
   postStosecBriefing,
@@ -403,6 +403,8 @@ const stosecBriefingFieldsSchema = {
   operationId: z.number(),
   sheetId: z.number().optional().nullable(),
   targetId: z.number().optional().nullable(),
+  voiOverride: z.string().optional().nullable(),
+  hbOverride: z.string().optional().nullable(),
   situation: z.string().optional().nullable(),
   mission: z.string().optional().nullable(),
   objectives: z.array(z.string()).optional(),
@@ -2197,7 +2199,7 @@ export const appRouter = router({
       .input(z.object({ id: z.number(), ...stosecBriefingFieldsSchema }))
       .mutation(async ({ input }) => {
         const { id, ...data } = input;
-        await updateStosecBriefingDraft(id, data);
+        await updateStosecBriefing(id, data);
         return { ok: true };
       }),
 
@@ -2266,8 +2268,8 @@ export const appRouter = router({
         );
         if (!notified)
           throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "This briefing has already been posted.",
+            code: "NOT_FOUND",
+            message: "Briefing not found.",
           });
         await createAuditLog({
           sheetId: 0,
@@ -2275,7 +2277,7 @@ export const appRouter = router({
           userName: ctx.user.cin ?? "Unknown",
           userCIN: ctx.user.cin ?? undefined,
           action: "stosec_briefing_posted",
-          details: `STOSEC briefing posted for operation "${opName}" — notified ${notified.length} users`,
+          details: `STOSEC briefing ${briefing.status === "posted" ? "re-posted" : "posted"} for operation "${opName}" — notified ${notified.length} users`,
           createdAt: Date.now(),
         });
         return { ok: true, notified: notified.length };

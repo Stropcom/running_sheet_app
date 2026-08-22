@@ -11676,6 +11676,8 @@ export interface UpsertStosecBriefingInput {
   operationId: number;
   sheetId?: number | null;
   targetId?: number | null;
+  voiOverride?: string | null;
+  hbOverride?: string | null;
   situation?: string | null;
   mission?: string | null;
   objectives?: string[];
@@ -11697,6 +11699,8 @@ export async function createStosecBriefingDraft(
     operationId: data.operationId,
     sheetId: data.sheetId ?? null,
     targetId: data.targetId ?? null,
+    voiOverride: data.voiOverride ?? null,
+    hbOverride: data.hbOverride ?? null,
     situation: data.situation ?? null,
     mission: data.mission ?? null,
     objectives: JSON.stringify(data.objectives ?? []),
@@ -11712,8 +11716,12 @@ export async function createStosecBriefingDraft(
   return result.insertId as number;
 }
 
-/** Only valid while the briefing is still a draft — a posted briefing is a fixed record. */
-export async function updateStosecBriefingDraft(
+/**
+ * Updates a briefing's content regardless of status — a posted briefing can
+ * be corrected without that alone re-notifying anyone; re-notifying is only
+ * ever a deliberate, separate call to postStosecBriefing.
+ */
+export async function updateStosecBriefing(
   id: number,
   data: UpsertStosecBriefingInput
 ) {
@@ -11725,6 +11733,8 @@ export async function updateStosecBriefingDraft(
       operationId: data.operationId,
       sheetId: data.sheetId ?? null,
       targetId: data.targetId ?? null,
+      voiOverride: data.voiOverride ?? null,
+      hbOverride: data.hbOverride ?? null,
       situation: data.situation ?? null,
       mission: data.mission ?? null,
       objectives: JSON.stringify(data.objectives ?? []),
@@ -11735,9 +11745,7 @@ export async function updateStosecBriefingDraft(
       commsSecondary: data.commsSecondary ?? null,
       teamSlots: JSON.stringify(data.teamSlots ?? []),
     })
-    .where(
-      and(eq(stosecBriefings.id, id), eq(stosecBriefings.status, "draft"))
-    );
+    .where(eq(stosecBriefings.id, id));
 }
 
 export async function getStosecBriefingById(
@@ -11765,9 +11773,10 @@ export async function listStosecBriefings(): Promise<StosecBriefingView[]> {
 }
 
 /**
- * Posts a draft — the one-way action that makes it visible to everyone and
- * notifies every user. Returns the id list notified, or undefined if the
- * briefing wasn't a postable draft (already posted / doesn't exist).
+ * Posts (or re-posts) a briefing — always notifies every user, whether this
+ * is the first post of a draft or a re-post after editing a already-posted
+ * one. Returns the id list notified, or undefined if the briefing doesn't
+ * exist (or was deleted).
  */
 export async function postStosecBriefing(
   id: number,
@@ -11779,7 +11788,7 @@ export async function postStosecBriefing(
   const [existing] = await db
     .select()
     .from(stosecBriefings)
-    .where(and(eq(stosecBriefings.id, id), eq(stosecBriefings.status, "draft")))
+    .where(and(eq(stosecBriefings.id, id), isNull(stosecBriefings.deletedAt)))
     .limit(1);
   if (!existing) return undefined;
 

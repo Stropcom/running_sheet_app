@@ -101,6 +101,15 @@ export default function RSMapping() {
   const geocodeIndexRef = useRef(0);
   const geocodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
+  // Bumped every time a geocode run starts (clearMap). The Google Geocoder
+  // has no cancellation API, so a call issued by an old run (e.g. one still
+  // in flight when the tab was backgrounded) can resolve after a newer run
+  // has already reset geocodeQueueRef/geocodeIndexRef. Every scheduled
+  // continuation captures the generation active when it was queued and
+  // checks it's still current before touching shared state — otherwise two
+  // runs end up racing on the same index/timer refs and the loop can end
+  // early, leaving the map only partially populated.
+  const geocodeGenRef = useRef(0);
 
   // Move-marker state
   const [movingRowId, setMovingRowId] = useState<number | null>(null);
@@ -151,6 +160,7 @@ export default function RSMapping() {
   // ── Clear map ────────────────────────────────────────────────────────────────
 
   const clearMap = useCallback(() => {
+    geocodeGenRef.current += 1; // invalidate any in-flight/stale geocode continuations
     if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current);
     markersRef.current.forEach((m) => { m.map = null; });
     markersRef.current = [];
@@ -383,6 +393,16 @@ export default function RSMapping() {
   }
 
   const geocodeNextImpl = () => {
+    // The generation active when THIS step began. Captured once, checked
+    // before every scheduled continuation below — see geocodeGenRef.
+    const myGen = geocodeGenRef.current;
+    const scheduleNext = (delayMs: number) => {
+      geocodeTimerRef.current = setTimeout(() => {
+        if (geocodeGenRef.current !== myGen) return; // a newer run has since started
+        geocodeNextRef.current();
+      }, delayMs);
+    };
+
     const queue = geocodeQueueRef.current;
     const idx = geocodeIndexRef.current;
 
@@ -407,22 +427,25 @@ export default function RSMapping() {
     // If row has a persisted lat/lng, use it directly
     if (row.lat != null && row.lng != null) {
       placeWaypointMarker(row, row.lat, row.lng);
-      geocodeTimerRef.current = setTimeout(() => geocodeNextRef.current(), 0);
+      scheduleNext(0);
       return;
     }
 
     const addressQuery = row.addressFull || row.address || "";
     if (!addressQuery || !geocoderRef.current) {
-      geocodeTimerRef.current = setTimeout(() => geocodeNextRef.current(), GEOCODE_DELAY_MS);
+      scheduleNext(GEOCODE_DELAY_MS);
       return;
     }
 
     geocoderRef.current.geocode({ address: addressQuery }, (results, status) => {
+      // The Geocoder API has no cancellation — this callback can resolve
+      // after a newer run has already reset the queue/index refs. Bail if so.
+      if (geocodeGenRef.current !== myGen) return;
       if (status === "OK" && results && results[0]) {
         const pos = results[0].geometry.location;
         placeWaypointMarker(row, pos.lat(), pos.lng());
       }
-      geocodeTimerRef.current = setTimeout(() => geocodeNextRef.current(), GEOCODE_DELAY_MS);
+      scheduleNext(GEOCODE_DELAY_MS);
     });
   };
 

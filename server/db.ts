@@ -11657,7 +11657,14 @@ function parseStosecTeamSlots(raw: string | null): StosecTeamSlot[] {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    // sheetCins (the source for a slot's cin) is stored in whatever case it
+    // was entered, but users.cin and acknowledgement cins are always
+    // upper-cased — normalize here so the acknowledgedCins match works.
+    return parsed.map((slot: StosecTeamSlot) => ({
+      ...slot,
+      cin: slot.cin ? slot.cin.toUpperCase() : slot.cin,
+    }));
   } catch {
     return [];
   }
@@ -11851,14 +11858,15 @@ export async function acknowledgeStosecBriefing(
   if (existing) return existing;
 
   const acknowledgedAt = Date.now();
+  const cinUpper = cin.toUpperCase();
   await db.insert(stosecAcknowledgements).values({
     briefingId,
     userId,
-    cin,
+    cin: cinUpper,
     revision,
     acknowledgedAt,
   });
-  return { id: 0, briefingId, userId, cin, revision, acknowledgedAt };
+  return { id: 0, briefingId, userId, cin: cinUpper, revision, acknowledgedAt };
 }
 
 export async function getStosecAcknowledgementForUser(
@@ -11916,15 +11924,18 @@ export async function getStosecRosterPrefill(
   }
   const allUsers = await getAllUsers();
   const byCin = new Map(allUsers.map(u => [u.cin, u.name]));
-  return cins.map(({ cin }) => ({
-    name: byCin.get(cin) ?? cin,
-    cin,
-    vehicle: "",
-    foot: "",
-    skill: "",
-    kit: "",
-    isTeamLeader: false,
-  }));
+  return cins.map(({ cin }) => {
+    const cinUpper = cin.toUpperCase();
+    return {
+      name: byCin.get(cinUpper) ?? cin,
+      cin: cinUpper,
+      vehicle: "",
+      foot: "",
+      skill: "",
+      kit: "",
+      isTeamLeader: false,
+    };
+  });
 }
 
 // ─── Witness List ───────────────────────────────────────────────────────────

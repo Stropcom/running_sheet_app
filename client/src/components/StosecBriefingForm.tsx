@@ -23,6 +23,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { INTEL_CHIP_CLASSES } from "@/components/IntelEntityChip";
+import { SmeacLabel } from "@/components/SmeacLabel";
+import { formatIntelVehicle, formatIntelAddress } from "@/lib/addressFormat";
 import {
   ShieldAlert,
   Plus,
@@ -394,10 +396,14 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
                 }}
               >
                 <SelectTrigger
-                  className={`h-8 text-xs font-medium rounded-full border ${INTEL_CHIP_CLASSES.person}`}
+                  className={`h-8 text-xs font-medium rounded-full border w-full ${INTEL_CHIP_CLASSES.person}`}
                 >
                   <User className="h-3 w-3 mr-1 shrink-0" />
-                  <SelectValue placeholder="None linked" />
+                  <SelectValue placeholder="None linked" className="truncate">
+                    {selectedTarget
+                      ? selectedTarget.tgt || selectedTarget.name
+                      : undefined}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">None linked</SelectItem>
@@ -429,20 +435,28 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
                 disabled={vehicleOptions.length === 0}
               >
                 <SelectTrigger
-                  className={`h-8 text-xs font-medium rounded-full border ${INTEL_CHIP_CLASSES.vehicle}`}
+                  className={`h-8 text-xs font-medium rounded-full border w-full ${INTEL_CHIP_CLASSES.vehicle}`}
                 >
                   <Car className="h-3 w-3 mr-1 shrink-0" />
-                  <SelectValue placeholder="None" />
+                  <SelectValue placeholder="None" className="truncate">
+                    {(() => {
+                      const raw =
+                        voiOverride ||
+                        selectedTarget?.v1f ||
+                        selectedTarget?.v1;
+                      return raw ? formatIntelVehicle(raw) : undefined;
+                    })()}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__default__">
                     {selectedTarget && (selectedTarget.v1f || selectedTarget.v1)
-                      ? `Target's own — ${selectedTarget.v1f || selectedTarget.v1}`
+                      ? `Target's own — ${formatIntelVehicle(selectedTarget.v1f || selectedTarget.v1)}`
                       : "None"}
                   </SelectItem>
                   {vehicleOptions.map(o => (
                     <SelectItem key={o.value} value={o.value}>
-                      {o.label} ({o.sourceLabel})
+                      {formatIntelVehicle(o.label)} ({o.sourceLabel})
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -468,20 +482,26 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
                 disabled={locationOptions.length === 0}
               >
                 <SelectTrigger
-                  className={`h-8 text-xs font-medium rounded-full border ${INTEL_CHIP_CLASSES.address}`}
+                  className={`h-8 text-xs font-medium rounded-full border w-full ${INTEL_CHIP_CLASSES.address}`}
                 >
                   <MapPin className="h-3 w-3 mr-1 shrink-0" />
-                  <SelectValue placeholder="None" />
+                  <SelectValue placeholder="None" className="truncate">
+                    {(() => {
+                      const raw =
+                        hbOverride || selectedTarget?.hbf || selectedTarget?.hb;
+                      return raw ? formatIntelAddress(raw) : undefined;
+                    })()}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__default__">
                     {selectedTarget && (selectedTarget.hbf || selectedTarget.hb)
-                      ? `Target's own — ${selectedTarget.hbf || selectedTarget.hb}`
+                      ? `Target's own — ${formatIntelAddress(selectedTarget.hbf || selectedTarget.hb)}`
                       : "None"}
                   </SelectItem>
                   {locationOptions.map(o => (
                     <SelectItem key={o.value} value={o.value}>
-                      {o.label} ({o.sourceLabel})
+                      {formatIntelAddress(o.label)} ({o.sourceLabel})
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -738,31 +758,6 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
           </Button>
         </div>
       </div>
-    </div>
-  );
-}
-
-// SMEAC — the standard briefing structure: Situation, Mission, Execution,
-// Administration & Logistics, Command & Signal. The letter is a fixed
-// reference point regardless of what this particular section is titled.
-function SmeacLabel({
-  letter,
-  label,
-  icon: Icon,
-}: {
-  letter: string;
-  label: string;
-  icon?: React.ElementType;
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className="h-5 w-5 rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[11px] font-bold flex items-center justify-center shrink-0">
-        {letter}
-      </span>
-      <h3 className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
-        {Icon && <Icon className="h-3.5 w-3.5" />}
-        {label}
-      </h3>
     </div>
   );
 }

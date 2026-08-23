@@ -9381,6 +9381,69 @@ export function getEntitySightingCrossLinks(
   return links;
 }
 
+/** Finds targets from a DIFFERENT operation whose own entity co-occurs
+ * (same observation row) with one of THIS target/associate's own
+ * registered vehicle(s)/address(es) — e.g. a different target was
+ * observed near/in this record's car. Catches the case
+ * getEntitySightingCrossLinks can't: the vehicle/address itself was only
+ * ever sighted on this record's own operation, but that same sighting
+ * also names a target who belongs to a different operation. */
+export async function getCoOccurringTargetCrossLinks(
+  allEntities: IntelligenceEntity[],
+  ownVehicleRegos: Set<string>,
+  ownAddressCores: Set<string>,
+  excludeOperationIds: Set<number>
+): Promise<SharedEntityCrossLink[]> {
+  if (ownVehicleRegos.size === 0 && ownAddressCores.size === 0) return [];
+
+  // Every row where one of my own vehicles/addresses actually appears,
+  // tagged with which one so the link can say what was shared.
+  const ownRowVia = new Map<number, { via: "vehicle" | "address"; sharedValue: string }>();
+  for (const e of allEntities) {
+    let via: "vehicle" | "address" | null = null;
+    if (e.type === "vehicle") {
+      const rego = extractRegoUpper(e.shortForm);
+      if (rego && ownVehicleRegos.has(rego)) via = "vehicle";
+    } else if (e.type === "address" || e.type === "business") {
+      if (ownAddressCores.has(addressCoreLower(e.shortForm))) via = "address";
+    }
+    if (!via) continue;
+    for (const occ of e.occurrences) {
+      if (occ.rowId <= 0) continue;
+      if (!ownRowVia.has(occ.rowId))
+        ownRowVia.set(occ.rowId, { via, sharedValue: e.shortForm });
+    }
+  }
+  if (ownRowVia.size === 0) return [];
+
+  const opLinksMap = await getTargetOperationLinksMap();
+  const links: SharedEntityCrossLink[] = [];
+  const seen = new Set<string>();
+  for (const e of allEntities) {
+    if (!e.isTarget || !e.targetId) continue;
+    const overlap = e.occurrences.find(
+      o => o.rowId > 0 && ownRowVia.has(o.rowId)
+    );
+    if (!overlap) continue;
+    const info = ownRowVia.get(overlap.rowId)!;
+    for (const op of opLinksMap.get(e.targetId) ?? []) {
+      if (excludeOperationIds.has(op.id)) continue;
+      const key = `${e.targetId}::${op.id}::${info.via}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      links.push({
+        targetId: e.targetId,
+        targetName: e.shortForm,
+        operationId: op.id,
+        operationName: op.name,
+        via: info.via,
+        sharedValue: info.sharedValue,
+      });
+    }
+  }
+  return links;
+}
+
 async function buildTargetOperationalAssociations(
   targetId: number,
   targetLabel: string,
@@ -9656,6 +9719,12 @@ export async function getIntelTargetProfile(
       ownAddressCores,
       ownOperationIds
     ),
+    ...(await getCoOccurringTargetCrossLinks(
+      allEntities,
+      ownVehicleRegos,
+      ownAddressCores,
+      ownOperationIds
+    )),
   ];
 
   return {
@@ -9778,6 +9847,12 @@ export async function getIntelOperationProfile(
           ownAddressCores,
           new Set([operationId])
         ),
+        ...(await getCoOccurringTargetCrossLinks(
+          allEntities,
+          ownVehicleRegos,
+          ownAddressCores,
+          new Set([operationId])
+        )),
       ];
       const crossLinks = crossLinksRaw.filter(
         l => l.operationId !== operationId
@@ -10080,6 +10155,12 @@ export async function getIntelAssociateProfile(
           targetAddressCores(registryAssociate),
           associateOwnOperationIds
         ),
+        ...(await getCoOccurringTargetCrossLinks(
+          allEntities,
+          targetVehicleRegos(registryAssociate),
+          targetAddressCores(registryAssociate),
+          associateOwnOperationIds
+        )),
       ]
     : [];
 
@@ -10175,12 +10256,10 @@ export async function getIntelVehicleProfile(
   // their own right, even when this vehicle has never actually been
   // observed (via a running-sheet row) in that operation — e.g. it's
   // registered to a target tasked there, but hasn't been sighted yet.
-  if (linkedTargets.length > 0) {
-    const opLinksMap = await getTargetOperationLinksMap();
-    for (const lt of linkedTargets) {
-      for (const op of opLinksMap.get(lt.targetId) ?? []) {
-        if (!opMap.has(op.id)) opMap.set(op.id, op);
-      }
+  const opLinksMap = await getTargetOperationLinksMap();
+  for (const lt of linkedTargets) {
+    for (const op of opLinksMap.get(lt.targetId) ?? []) {
+      if (!opMap.has(op.id)) opMap.set(op.id, op);
     }
   }
 
@@ -10193,6 +10272,16 @@ export async function getIntelVehicleProfile(
       o => o.rowId > 0 && assocRowIds.has(o.rowId)
     );
     if (!overlappingOccs.length) continue;
+    // A target who merely co-occurs with this vehicle in an observation
+    // (e.g. named alongside it in the same row) still makes their own
+    // operation(s) relevant here — someone from another operation showing
+    // up around this vehicle is exactly the kind of thing worth flagging,
+    // even though it doesn't make them a "registered" owner (see above).
+    if (other.isTarget && other.targetId) {
+      for (const op of opLinksMap.get(other.targetId) ?? []) {
+        if (!opMap.has(op.id)) opMap.set(op.id, op);
+      }
+    }
     const key = `${other.type}::${other.shortForm.toLowerCase()}`;
     const profileEntity: IntelProfileEntity = {
       id: key,
@@ -10314,12 +10403,10 @@ export async function getIntelLocationProfile(
   // A registered owner's own operation(s) are a cross-operation signal in
   // their own right, even when this address has never actually been
   // observed (via a running-sheet row) in that operation.
-  if (linkedTargets.length > 0) {
-    const opLinksMap = await getTargetOperationLinksMap();
-    for (const lt of linkedTargets) {
-      for (const op of opLinksMap.get(lt.targetId) ?? []) {
-        if (!opMap.has(op.id)) opMap.set(op.id, op);
-      }
+  const opLinksMap = await getTargetOperationLinksMap();
+  for (const lt of linkedTargets) {
+    for (const op of opLinksMap.get(lt.targetId) ?? []) {
+      if (!opMap.has(op.id)) opMap.set(op.id, op);
     }
   }
 
@@ -10332,6 +10419,14 @@ export async function getIntelLocationProfile(
       o => o.rowId > 0 && assocRowIds.has(o.rowId)
     );
     if (!overlappingOccs.length) continue;
+    // A target who merely co-occurs with this address in an observation
+    // still makes their own operation(s) relevant here — see the matching
+    // comment in getIntelVehicleProfile.
+    if (other.isTarget && other.targetId) {
+      for (const op of opLinksMap.get(other.targetId) ?? []) {
+        if (!opMap.has(op.id)) opMap.set(op.id, op);
+      }
+    }
     const key = `${other.type}::${other.shortForm.toLowerCase()}`;
     const profileEntity: IntelProfileEntity = {
       id: key,

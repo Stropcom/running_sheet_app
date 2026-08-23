@@ -4103,6 +4103,7 @@ export default function SheetDetail() {
                               "V1F",
                               "V2F",
                               "DEP",
+                              "ARR",
                             ]);
                             return (
                               <DndContext

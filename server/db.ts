@@ -3973,6 +3973,100 @@ export async function getSheetEntityChips(
     .slice(0, 24);
 }
 
+// ─── Vehicle Depart → Arrive Continuity ────────────────────────────────────
+// Officers write vehicle departures in a fixed narrative pattern —
+// "Vehicle 1FAD531 HOGAN driver, Denise HOLLY (HOLLY) front passenger,
+// departed 34 Duke Street and continued via:" or "Vehicle 1FAD531 HOGAN
+// driver and sole occupant, departed 34 Duke Street and continued via:" —
+// then, sometime later (possibly on a different sheet/day), the same
+// vehicle arrives somewhere and the officer re-types the same occupant
+// description by hand. This mines the operation's own rows for the most
+// recent departure per rego that hasn't since been matched by an arrival
+// for that rego, so the RS Quick Entry popup can offer it back as a chip.
+
+const VEHICLE_DEPART_PATTERN =
+  /Vehicle\s+([A-Za-z0-9]{5,8})\s+(.+?),\s*departed\b/i;
+const VEHICLE_ARRIVE_PATTERN = /Vehicle\s+([A-Za-z0-9]{5,8})\b.*?\barrived\b/i;
+
+export interface PendingVehicleDeparture {
+  rego: string;
+  /** Occupant description as originally written, e.g. "HOGAN driver and sole occupant". */
+  occupantDesc: string;
+  sheetId: number;
+  rowId: number;
+}
+
+// Returns the most recent still-pending (not yet arrived) departure per
+// vehicle rego, across every sheet in the operation, ordered most-recent
+// first. "Pending" means no later row (by insertion order) anywhere in the
+// operation mentions that same rego arriving. Insertion order (row id) is
+// used rather than the sheet's displayed time ordering — officers log
+// observations close to when they happen, and this is only ever offered
+// back as a suggestion the officer confirms before it's inserted, not
+// written directly into the record.
+export async function getPendingVehicleDepartures(
+  operationId: number
+): Promise<PendingVehicleDeparture[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const sheets = await db
+    .select({ id: runningSheets.id })
+    .from(runningSheets)
+    .where(
+      and(
+        eq(runningSheets.operationId, operationId),
+        isNull(runningSheets.deletedAt)
+      )
+    );
+  if (sheets.length === 0) return [];
+  const sheetIds = sheets.map(s => s.id);
+
+  const rows = await db
+    .select({
+      id: sheetRows.id,
+      sheetId: sheetRows.sheetId,
+      observation: sheetRows.observation,
+    })
+    .from(sheetRows)
+    .where(inArray(sheetRows.sheetId, sheetIds))
+    .orderBy(asc(sheetRows.id));
+
+  const lastDepartByRego = new Map<
+    string,
+    { occupantDesc: string; sheetId: number; rowId: number }
+  >();
+  const arrivedRegos = new Set<string>();
+
+  for (const row of rows) {
+    if (!row.observation) continue;
+    const departMatch = row.observation.match(VEHICLE_DEPART_PATTERN);
+    if (departMatch) {
+      const rego = departMatch[1].toUpperCase();
+      lastDepartByRego.set(rego, {
+        occupantDesc: departMatch[2].trim(),
+        sheetId: row.sheetId,
+        rowId: row.id,
+      });
+      arrivedRegos.delete(rego);
+      continue;
+    }
+    const arriveMatch = row.observation.match(VEHICLE_ARRIVE_PATTERN);
+    if (arriveMatch) {
+      arrivedRegos.add(arriveMatch[1].toUpperCase());
+    }
+  }
+
+  const pending: PendingVehicleDeparture[] = [];
+  for (const rego of Array.from(lastDepartByRego.keys())) {
+    if (arrivedRegos.has(rego)) continue;
+    const d = lastDepartByRego.get(rego)!;
+    pending.push({ rego, ...d });
+  }
+  // Most recently departed first.
+  return pending.sort((a, b) => b.rowId - a.rowId);
+}
+
 // ─── Intelligence Heat Map ──────────────────────────────────────────────────
 // Aggregates address/business entities extracted from a scoped set of running
 // sheet rows (one Operation, optionally one Target, and a time window) into

@@ -115,6 +115,7 @@ import {
   getRowById,
   getRowsBySheetId,
   getSheetEntityChips,
+  getPendingVehicleDepartures,
   getRunningSheetById,
   computeWitnessListData,
   getRunningSheets,
@@ -1157,6 +1158,16 @@ export const appRouter = router({
       .input(z.object({ sheetId: z.number() }))
       .query(async ({ input }) => {
         return getSheetEntityChips(input.sheetId);
+      }),
+
+    // Vehicles that departed somewhere in this operation (any sheet) and
+    // haven't since arrived anywhere — surfaced in RS Quick Entry as an
+    // "arrived at" chip so the officer doesn't have to retype the occupant
+    // description. See getPendingVehicleDepartures.
+    pendingVehicleDepartures: protectedProcedure
+      .input(z.object({ operationId: z.number() }))
+      .query(async ({ input }) => {
+        return getPendingVehicleDepartures(input.operationId);
       }),
 
     create: protectedProcedure

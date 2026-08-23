@@ -1524,6 +1524,22 @@ export default function IntelligenceMapping() {
     { operationIds: rsOpIdsForSheets },
     { enabled: rsOpIdsForSheets.length > 0 }
   );
+  // Operation that the selected sheet belongs to — used to scope the
+  // pending-vehicle-departure lookup below to the whole operation, not just
+  // this one sheet, since a vehicle can depart on one shift and arrive on a
+  // later one.
+  const rsSelectedSheetOpId: number | null =
+    (rsSheetsData as any[] | undefined)?.find(
+      (s: any) => s.id === rsSelectedSheetId
+    )?.operationId ?? null;
+  // Vehicles that departed somewhere in this operation and haven't since
+  // arrived anywhere — surfaced as a "Vehicle arriving" chip in RS Quick
+  // Entry so the officer doesn't have to retype the occupant description.
+  const { data: rsPendingDepartures } =
+    trpc.row.pendingVehicleDepartures.useQuery(
+      { operationId: rsSelectedSheetOpId ?? 0 },
+      { enabled: mapQeOpen && rsSelectedSheetOpId !== null }
+    );
   // RS Actions pane — target for selected sheet
   const { data: rsTargetData } = trpc.intelligence.getSheetTarget.useQuery(
     { sheetId: rsSelectedSheetId! },
@@ -5992,6 +6008,64 @@ export default function IntelligenceMapping() {
                                     </span>
                                   </button>
                                 ))}
+                              </div>
+                            );
+                          })()}
+                        {/* Vehicle arriving chips — reuses the occupant
+                          description from the vehicle's last logged
+                          departure anywhere in this operation, so the
+                          officer doesn't have to retype it when the same
+                          vehicle arrives at this quick-entry location. One
+                          chip per still-pending (un-arrived) vehicle —
+                          always requires an explicit tap, never inserted
+                          automatically, since this writes into the record. */}
+                        {mapQeAddress &&
+                          rsPendingDepartures &&
+                          rsPendingDepartures.length > 0 &&
+                          (() => {
+                            const appendText = (text: string) => {
+                              pushInlineUndo(rsInlineText);
+                              setRsInlineText(prev =>
+                                prev ? `${prev} ${text}` : text
+                              );
+                              resetInlineTimer();
+                              rsInlineInputRef.current?.focus();
+                            };
+                            const bracketMatch = mapQeAddress.match(
+                              /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
+                            );
+                            const toTitleCase = (s: string) =>
+                              s
+                                .toLowerCase()
+                                .replace(/\b\w/g, c => c.toUpperCase());
+                            const shortAddr = bracketMatch
+                              ? toTitleCase(bracketMatch[2])
+                              : (mapQeAddress.split(",")[0]?.trim() ??
+                                mapQeAddress);
+                            return (
+                              <div className="flex flex-col gap-1 md:gap-1.5">
+                                <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-amber-500/70">
+                                  Vehicle arriving
+                                </span>
+                                <div className="flex flex-wrap gap-1 md:gap-1.5">
+                                  {rsPendingDepartures.map(d => (
+                                    <button
+                                      key={d.rego}
+                                      onClick={() =>
+                                        appendText(
+                                          `Vehicle ${d.rego} ${d.occupantDesc}, arrived at ${shortAddr}`
+                                        )
+                                      }
+                                      title={`Vehicle ${d.rego} ${d.occupantDesc}, arrived at ${shortAddr}`}
+                                      className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                                    >
+                                      <span className="font-mono normal-case">
+                                        {d.rego}
+                                      </span>{" "}
+                                      arriving
+                                    </button>
+                                  ))}
+                                </div>
                               </div>
                             );
                           })()}

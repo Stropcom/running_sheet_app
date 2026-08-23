@@ -5230,6 +5230,7 @@ export async function getAllIntelligenceEntities(): Promise<
       v1f: targets.v1f,
       v2f: targets.v2f,
       extraVehicles: targets.extraVehicles,
+      extraAddresses: targets.extraAddresses,
       operationId: targets.operationId,
       operationName: operations.name,
     })
@@ -5250,6 +5251,7 @@ export async function getAllIntelligenceEntities(): Promise<
       v1f: targets.v1f,
       v2f: targets.v2f,
       extraVehicles: targets.extraVehicles,
+      extraAddresses: targets.extraAddresses,
       operationId: operationTargetLinks.operationId,
       operationName: operations.name,
     })
@@ -5274,6 +5276,7 @@ export async function getAllIntelligenceEntities(): Promise<
     v1f: string | null;
     v2f: string | null;
     extraVehicles: string | null;
+    extraAddresses: string | null;
     operationId: number | null;
     operationName: string | null;
   }> = [];
@@ -5402,6 +5405,28 @@ export async function getAllIntelligenceEntities(): Promise<
               label: vehicleLabel,
               value: vehicleValue,
               type: "vehicle",
+            });
+          }
+        });
+      } catch {
+        /* malformed JSON — skip */
+      }
+    }
+    // Also include extra addresses beyond HBF, stored as JSON array
+    // {full, short, label?, businessName?, ...structured parts} — same
+    // treatment as the associate block below (assocLocationFields).
+    if (t.extraAddresses) {
+      try {
+        const extras: Array<{ full?: string; short?: string }> = JSON.parse(
+          t.extraAddresses
+        );
+        extras.forEach((ea, idx) => {
+          const addrValue = ea.full?.trim() || ea.short?.trim() || null;
+          if (addrValue) {
+            locationFields.push({
+              label: `Address ${idx + 2}`,
+              value: addrValue,
+              type: "address",
             });
           }
         });
@@ -8646,6 +8671,8 @@ export interface IntelTargetProfile {
   v2: string | null;
   /** Extra vehicles beyond V1: JSON array of {full: string, short: string} */
   extraVehicles: string | null;
+  /** Extra addresses beyond HBF: JSON array of {full: string, short: string, ...} */
+  extraAddresses: string | null;
   dep: string | null;
   arr: string | null;
   operations: Array<{ id: number; name: string }>;
@@ -9147,6 +9174,7 @@ export async function getIntelTargetProfile(
     v2f: target.v2f,
     v2: target.v2,
     extraVehicles: target.extraVehicles ?? null,
+    extraAddresses: target.extraAddresses ?? null,
     dep: target.dep,
     arr: target.arr,
     operations: opLinks,

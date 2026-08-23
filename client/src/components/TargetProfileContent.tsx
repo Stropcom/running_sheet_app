@@ -163,13 +163,37 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
   </div>
 
   ${
-    profile.hbf || profile.v1f || profile.v2f || profile.extraVehicles
+    profile.hbf ||
+    profile.v1f ||
+    profile.v2f ||
+    profile.extraVehicles ||
+    profile.extraAddresses
       ? `
   <div class="section">
     <div class="section-title">Registered Details</div>
     <div class="detail-grid">
       ${profile.hbf ? `<span class="detail-label">Home Address</span><span class="detail-value">${esc(formatIntelAddress(profile.hbf))}</span>` : ""}
       ${prevHtml("hbf") ? `<span style="grid-column:1/-1">${prevHtml("hbf")}</span>` : ""}
+      ${
+        profile.extraAddresses
+          ? (() => {
+              try {
+                const eas: Array<{ full?: string; short?: string }> =
+                  JSON.parse(profile.extraAddresses!);
+                return eas
+                  .map((ea, i) => {
+                    const val = ea.full?.trim() || ea.short?.trim() || "";
+                    return val
+                      ? `<span class="detail-label">Address ${i + 2}</span><span class="detail-value">${esc(formatIntelAddress(val))}</span>`
+                      : "";
+                  })
+                  .join("");
+              } catch {
+                return "";
+              }
+            })()
+          : ""
+      }
       ${profile.v1f ? `<span class="detail-label">Vehicle 1</span><span class="detail-value">${esc(formatIntelVehicle(profile.v1f))}</span>` : ""}
       ${prevHtml("v1f") ? `<span style="grid-column:1/-1">${prevHtml("v1f")}</span>` : ""}
       ${profile.v2f ? `<span class="detail-label">Vehicle 2</span><span class="detail-value">${esc(formatIntelVehicle(profile.v2f))}</span>` : ""}
@@ -485,7 +509,8 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
           {(profile.hbf ||
             profile.v1f ||
             profile.v2f ||
-            profile.extraVehicles) &&
+            profile.extraVehicles ||
+            profile.extraAddresses) &&
             (() => {
               const extraVehicleList: Array<{ full?: string; short?: string }> =
                 (() => {
@@ -497,10 +522,23 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
                     return [];
                   }
                 })();
+              const extraAddressList: Array<{ full?: string; short?: string }> =
+                (() => {
+                  try {
+                    return profile.extraAddresses
+                      ? JSON.parse(profile.extraAddresses)
+                      : [];
+                  } catch {
+                    return [];
+                  }
+                })();
               const totalCount =
                 [profile.hbf, profile.v1f, profile.v2f].filter(Boolean).length +
                 extraVehicleList.filter(
                   ev => ev.full?.trim() || ev.short?.trim()
+                ).length +
+                extraAddressList.filter(
+                  ea => ea.full?.trim() || ea.short?.trim()
                 ).length;
               return (
                 <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
@@ -522,6 +560,20 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
                         </div>
                       </div>
                     )}
+                    {extraAddressList.map((ea, idx) => {
+                      const val = ea.full?.trim() || ea.short?.trim() || "";
+                      if (!val) return null;
+                      return (
+                        <div key={idx} className="flex gap-3 items-start">
+                          <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">
+                            Address {idx + 2}
+                          </span>
+                          <span className="font-mono text-xs text-foreground">
+                            {formatIntelAddress(val)}
+                          </span>
+                        </div>
+                      );
+                    })}
                     {profile.v1f && (
                       <div className="flex gap-3 items-start">
                         <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">

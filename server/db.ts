@@ -4070,6 +4070,27 @@ export async function getPendingVehicleDepartures(
   return pending.sort((a, b) => b.rowId - a.rowId);
 }
 
+// App-wide convention: the first time an address is mentioned in a running
+// sheet it's written in full with its bracketed short-form ("5 Davidson
+// Road, ATTADALE WA (5 Davidson Road)") — that bracket is what
+// extractEntitiesFromText relies on to register the location as an
+// Intelligence entity and place it on the map. Every subsequent mention in
+// the same sheet just uses the short form on its own ("5 Davidson Road").
+// This lets the vehicle-arriving chip decide which form to insert, without
+// touching how any other chip/field on the sheet composes an address.
+export async function isAddressAlreadyMentioned(
+  sheetId: number,
+  shortAddress: string
+): Promise<boolean> {
+  const trimmed = shortAddress.trim();
+  if (!trimmed) return false;
+  const rows = await getRowsBySheetId(sheetId);
+  const needle = `(${trimmed})`.toLowerCase();
+  return rows.some(
+    r => r.observation && r.observation.toLowerCase().includes(needle)
+  );
+}
+
 // ─── Intelligence Heat Map ──────────────────────────────────────────────────
 // Aggregates address/business entities extracted from a scoped set of running
 // sheet rows (one Operation, optionally one Target, and a time window) into

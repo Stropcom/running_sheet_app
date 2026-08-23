@@ -116,6 +116,7 @@ import {
   getRowsBySheetId,
   getSheetEntityChips,
   getPendingVehicleDepartures,
+  isAddressAlreadyMentioned,
   getRunningSheetById,
   computeWitnessListData,
   getRunningSheets,
@@ -1168,6 +1169,21 @@ export const appRouter = router({
       .input(z.object({ operationId: z.number() }))
       .query(async ({ input }) => {
         return getPendingVehicleDepartures(input.operationId);
+      }),
+
+    // Whether an address has already been mentioned (in its full bracketed
+    // form) somewhere in this sheet — see isAddressAlreadyMentioned. Used by
+    // the vehicle-arriving chip to decide full vs short form, following the
+    // same first-mention rule as the rest of the app.
+    addressMentioned: protectedProcedure
+      .input(z.object({ sheetId: z.number(), shortAddress: z.string() }))
+      .query(async ({ input }) => {
+        return {
+          mentioned: await isAddressAlreadyMentioned(
+            input.sheetId,
+            input.shortAddress
+          ),
+        };
       }),
 
     create: protectedProcedure

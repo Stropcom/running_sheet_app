@@ -1540,6 +1540,29 @@ export default function IntelligenceMapping() {
       { operationId: rsSelectedSheetOpId ?? 0 },
       { enabled: mapQeOpen && rsSelectedSheetOpId !== null }
     );
+  // Short-form of the quick-entry address (mirrors the extraction the
+  // "Address chips" section below already does) — used only to check
+  // whether this address has already been mentioned in the sheet, for the
+  // vehicle-arriving chip's full-vs-short decision.
+  const rsQeShortAddr = useMemo(() => {
+    if (!mapQeAddress) return "";
+    const bracketMatch = mapQeAddress.match(
+      /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
+    );
+    const toTitleCase = (s: string) =>
+      s.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+    return bracketMatch
+      ? toTitleCase(bracketMatch[2])
+      : (mapQeAddress.split(",")[0]?.trim() ?? mapQeAddress);
+  }, [mapQeAddress]);
+  // Has this address already been mentioned (full bracketed form) anywhere
+  // in this sheet? If so the vehicle-arriving chip uses the short form,
+  // matching the app-wide first-mention-full/subsequent-mention-short rule
+  // that Intelligence's entity extraction relies on.
+  const { data: rsAddressMentionedData } = trpc.row.addressMentioned.useQuery(
+    { sheetId: rsSelectedSheetId ?? 0, shortAddress: rsQeShortAddr },
+    { enabled: mapQeOpen && !!rsSelectedSheetId && !!rsQeShortAddr }
+  );
   // RS Actions pane — target for selected sheet
   const { data: rsTargetData } = trpc.intelligence.getSheetTarget.useQuery(
     { sheetId: rsSelectedSheetId! },
@@ -6042,6 +6065,14 @@ export default function IntelligenceMapping() {
                               ? toTitleCase(bracketMatch[2])
                               : (mapQeAddress.split(",")[0]?.trim() ??
                                 mapQeAddress);
+                            // App-wide rule: first mention of an address in
+                            // this sheet is written in full (with its
+                            // bracket short-form, which is what Intelligence
+                            // relies on to register the location) — every
+                            // later mention just uses the short form.
+                            const arriveAddr = rsAddressMentionedData?.mentioned
+                              ? shortAddr
+                              : mapQeAddress;
                             return (
                               <div className="flex flex-col gap-1 md:gap-1.5">
                                 <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-amber-500/70">
@@ -6053,10 +6084,10 @@ export default function IntelligenceMapping() {
                                       key={d.rego}
                                       onClick={() =>
                                         appendText(
-                                          `Vehicle ${d.rego} ${d.occupantDesc}, arrived at ${shortAddr}`
+                                          `Vehicle ${d.rego} ${d.occupantDesc}, arrived at ${arriveAddr}`
                                         )
                                       }
-                                      title={`Vehicle ${d.rego} ${d.occupantDesc}, arrived at ${shortAddr}`}
+                                      title={`Vehicle ${d.rego} ${d.occupantDesc}, arrived at ${arriveAddr}`}
                                       className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
                                     >
                                       <span className="font-mono normal-case">

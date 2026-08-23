@@ -16,7 +16,7 @@ type IntelProfileEntity = IntelAssocEntity;
 interface IntelAssociateProfile {
   label: string; type: "person" | "business";
   linkedTargets: Array<{ targetId: number; name: string; operationId: number; operationName: string }>;
-  sharedEntityLinks: Array<{ targetId: number; targetName: string; operationId: number; operationName: string; via: "vehicle" | "address"; sharedValue: string }>;
+  sharedEntityLinks: Array<{ targetId?: number; targetName?: string; operationId: number; operationName: string; via: "vehicle" | "address"; sharedValue: string }>;
   linkedSheets: Array<{ id: number; title: string; operationId: number; operationName: string }>;
   assocLocations: IntelProfileEntity[]; assocVehicles: IntelProfileEntity[];
   isIndicesOnly: boolean;
@@ -83,7 +83,7 @@ function buildAssociateProfileHtml(profile: IntelAssociateProfile, photos: Profi
   </div>` : ""}
   ${totalOpsCount > 1 ? `<p style="font-size:10px;font-weight:600;color:#92400e;background:#fef3c7;border:1px solid #fde68a;border-radius:4px;padding:6px 8px;margin-bottom:16px">Linked across ${totalOpsCount} separate operations — worth checking for a cross-operation connection.</p>` : ""}
   ${profile.linkedTargets.length ? `<div style="margin-bottom:16px"><div class="section-title">Linked Targets</div>${profile.linkedTargets.map(t => `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}"><strong>${esc(t.name)}</strong> <span style="color:#64748b">— ${esc(t.operationName)}</span></p>`).join("")}</div>` : ""}
-  ${profile.sharedEntityLinks.length ? `<div style="margin-bottom:16px"><div class="section-title">Shared Vehicle/Address</div>${profile.sharedEntityLinks.map(l => `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}"><strong>${esc(l.targetName)}</strong> shares this ${esc(l.via)} (${esc(l.sharedValue)}) <span style="color:#64748b">— ${esc(l.operationName)}</span></p>`).join("")}</div>` : ""}
+  ${profile.sharedEntityLinks.length ? `<div style="margin-bottom:16px"><div class="section-title">Shared Vehicle/Address</div>${profile.sharedEntityLinks.map(l => `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}">${l.targetName ? `<strong>${esc(l.targetName)}</strong> shares this ${esc(l.via)} (${esc(l.sharedValue)})` : `This ${esc(l.via)} (${esc(l.sharedValue)}) was also sighted`} <span style="color:#64748b">— ${esc(l.operationName)}</span></p>`).join("")}</div>` : ""}
   ${profile.linkedSheets.length ? `<div style="margin-bottom:16px"><div class="section-title">Running Sheets</div>${profile.linkedSheets.map(s => `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}">${esc(s.title)} <span style="color:#64748b">— ${esc(s.operationName)}</span></p>`).join("")}</div>` : ""}
   ${profile.assocVehicles.length || profile.assocLocations.length ? `<div style="margin-bottom:16px"><div class="section-title">Associations</div>
     ${profile.assocVehicles.length ? `<div class="sub-title">Vehicles</div>${buildEntityListWithPhotosHtml(profile.assocVehicles)}` : ""}
@@ -220,9 +220,13 @@ export default function IntelligenceAssociateProfile() {
                     <div className="flex flex-wrap gap-2">
                       {profile.sharedEntityLinks.map(l => (
                         <button
-                          key={`${l.targetId}-${l.operationId}-${l.via}`}
+                          key={`${l.targetId ?? "sighted"}-${l.operationId}-${l.via}`}
                           onClick={() => navigate(`/intelligence/operation/${l.operationId}`)}
-                          title={`Shares a registered ${l.via} (${l.sharedValue}) with ${l.targetName}`}
+                          title={
+                            l.targetName
+                              ? `Shares a registered ${l.via} (${l.sharedValue}) with ${l.targetName}`
+                              : `This ${l.via} (${l.sharedValue}) was also sighted on this operation`
+                          }
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 hover:bg-amber-100 transition-colors"
                         >
                           <Folder className="w-3 h-3" />

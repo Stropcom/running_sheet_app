@@ -8874,12 +8874,15 @@ export interface IntelProfileEntity {
  * fires purely from registry field overlap, so it catches cases where
  * there's no shared observation text linking the two records at all. */
 export interface SharedEntityCrossLink {
-  targetId: number;
-  targetName: string;
+  /** Absent when this link came from the vehicle/address itself being
+   * independently sighted on another operation, rather than from another
+   * specific target/associate registering the same vehicle/address. */
+  targetId?: number;
+  targetName?: string;
   operationId: number;
   operationName: string;
   via: "vehicle" | "address";
-  /** The rego or address-core that matched, for the tooltip/explanation. */
+  /** The rego or address (display form) that matched, for the tooltip/explanation. */
   sharedValue: string;
 }
 
@@ -9334,6 +9337,50 @@ export async function getSharedEntityCrossLinks(
   return links;
 }
 
+/** Finds operations reached by a target/associate's own registered
+ * vehicle(s)/address(es) via a real observation SIGHTING of that exact
+ * vehicle/address — independent of whose name the sighting was logged
+ * against. This is what catches "my car was seen on someone else's
+ * operation" (e.g. a different target was observed near it) even when
+ * that other target doesn't register the vehicle themselves and neither
+ * record's name ever appears in the other's text — getSharedEntityCrossLinks
+ * above only catches two records that both register the SAME field value;
+ * this catches the vehicle/address itself turning up elsewhere. */
+export function getEntitySightingCrossLinks(
+  allEntities: IntelligenceEntity[],
+  ownVehicleRegos: Set<string>,
+  ownAddressCores: Set<string>,
+  excludeOperationIds: Set<number>
+): SharedEntityCrossLink[] {
+  if (ownVehicleRegos.size === 0 && ownAddressCores.size === 0) return [];
+  const links: SharedEntityCrossLink[] = [];
+  const seen = new Set<string>();
+  for (const e of allEntities) {
+    let via: "vehicle" | "address" | null = null;
+    if (e.type === "vehicle") {
+      const rego = extractRegoUpper(e.shortForm);
+      if (rego && ownVehicleRegos.has(rego)) via = "vehicle";
+    } else if (e.type === "address" || e.type === "business") {
+      if (ownAddressCores.has(addressCoreLower(e.shortForm))) via = "address";
+    }
+    if (!via) continue;
+    for (const occ of e.occurrences) {
+      if (occ.rowId <= 0) continue; // real sightings only, not registry-only occurrences
+      if (excludeOperationIds.has(occ.operationId)) continue;
+      const key = `${occ.operationId}::${via}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      links.push({
+        operationId: occ.operationId,
+        operationName: occ.operationName,
+        via,
+        sharedValue: e.shortForm,
+      });
+    }
+  }
+  return links;
+}
+
 async function buildTargetOperationalAssociations(
   targetId: number,
   targetLabel: string,
@@ -9594,11 +9641,22 @@ export async function getIntelTargetProfile(
       .map(e => [e.associateId as number, e])
   );
 
-  const sharedEntityLinks = await getSharedEntityCrossLinks(
-    targetVehicleRegos(target),
-    targetAddressCores(target),
-    targetId
-  );
+  const ownVehicleRegos = targetVehicleRegos(target);
+  const ownAddressCores = targetAddressCores(target);
+  const ownOperationIds = new Set(opLinks.map(o => o.id));
+  const sharedEntityLinks = [
+    ...(await getSharedEntityCrossLinks(
+      ownVehicleRegos,
+      ownAddressCores,
+      targetId
+    )),
+    ...getEntitySightingCrossLinks(
+      allEntities,
+      ownVehicleRegos,
+      ownAddressCores,
+      ownOperationIds
+    ),
+  ];
 
   return {
     targetId,
@@ -9702,13 +9760,25 @@ export async function getIntelOperationProfile(
           operationSheetIds
         );
       // Does this target share a registered vehicle/address with a target
-      // on a DIFFERENT operation? (Same-operation matches aren't a
-      // cross-operation signal, so those are filtered out below.)
-      const crossLinksRaw = await getSharedEntityCrossLinks(
-        targetVehicleRegos(target),
-        targetAddressCores(target),
-        targetId
-      );
+      // on a DIFFERENT operation, or has its own vehicle/address been
+      // independently sighted on a different operation? (Same-operation
+      // matches aren't a cross-operation signal, so those are filtered out
+      // below.)
+      const ownVehicleRegos = targetVehicleRegos(target);
+      const ownAddressCores = targetAddressCores(target);
+      const crossLinksRaw = [
+        ...(await getSharedEntityCrossLinks(
+          ownVehicleRegos,
+          ownAddressCores,
+          targetId
+        )),
+        ...getEntitySightingCrossLinks(
+          allEntities,
+          ownVehicleRegos,
+          ownAddressCores,
+          new Set([operationId])
+        ),
+      ];
       const crossLinks = crossLinksRaw.filter(
         l => l.operationId !== operationId
       );
@@ -9994,12 +10064,23 @@ export async function getIntelAssociateProfile(
 
   // Associates aren't rows in the `targets` table, so there's no self id to
   // exclude — compare against every target unconditionally.
+  const associateOwnOperationIds = new Set(
+    linkedTargets.map(t => t.operationId)
+  );
   const sharedEntityLinks = registryAssociate
-    ? await getSharedEntityCrossLinks(
-        targetVehicleRegos(registryAssociate),
-        targetAddressCores(registryAssociate),
-        -1
-      )
+    ? [
+        ...(await getSharedEntityCrossLinks(
+          targetVehicleRegos(registryAssociate),
+          targetAddressCores(registryAssociate),
+          -1
+        )),
+        ...getEntitySightingCrossLinks(
+          allEntities,
+          targetVehicleRegos(registryAssociate),
+          targetAddressCores(registryAssociate),
+          associateOwnOperationIds
+        ),
+      ]
     : [];
 
   return {
@@ -10052,12 +10133,13 @@ export async function getIntelVehicleProfile(
     .from(targets)
     .where(isNull(targets.deletedAt));
 
-  // Find EVERY registered target from TWO sources — a rego can legitimately
-  // be registered by more than one target (e.g. two independent targets on
-  // two different operations both have the same car), so this must collect
-  // all matches, not stop at the first:
-  // 1. Target card v1/v1f/v2/v2f/extraVehicles fields that name this vehicle
-  // 2. Row-level co-occurrence: isTarget entities that share observation rows with this vehicle
+  // Registered target(s) — a rego can legitimately be registered by more
+  // than one target (e.g. two independent targets on two different
+  // operations both have the same car), so this collects every match, not
+  // just the first. Deliberately registry-field-only: a target/associate
+  // that merely co-occurs with this vehicle in an observation row belongs
+  // in assocPersons below, not here — "registered target" should mean
+  // exactly what the Target Registry says, not an inferred association.
   const selfRegoForMatch = extractRegoUpper(label);
   const linkedTargetsMap = new Map<number, { targetId: number; name: string }>();
   if (selfRegoForMatch) {
@@ -10065,20 +10147,6 @@ export async function getIntelVehicleProfile(
       if (targetVehicleRegos(t).has(selfRegoForMatch)) {
         linkedTargetsMap.set(t.id, { targetId: t.id, name: t.name });
       }
-    }
-  }
-  // Also check row-level co-occurrence with target entities
-  for (const other of allEntities) {
-    if (!other.isTarget || !other.targetId) continue;
-    if (linkedTargetsMap.has(other.targetId)) continue;
-    const overlappingOccs = other.occurrences.filter(
-      o => o.rowId > 0 && assocRowIds.has(o.rowId)
-    );
-    if (overlappingOccs.length > 0) {
-      linkedTargetsMap.set(other.targetId, {
-        targetId: other.targetId,
-        name: other.shortForm,
-      });
     }
   }
   const linkedTargets = Array.from(linkedTargetsMap.values());
@@ -10204,9 +10272,11 @@ export async function getIntelLocationProfile(
     .from(targets)
     .where(isNull(targets.deletedAt));
 
-  // Build linkedTargets from TWO sources:
-  // 1. Target card fields (hbf/hb/dep/arr/extraAddresses) that mention this location
-  // 2. Row-level co-occurrence: isTarget entities that share observation rows with this location
+  // Registered target(s) — registry-field-only (hbf/hb/dep/arr/
+  // extraAddresses). Deliberately excludes row co-occurrence: a target
+  // that merely appears in an observation alongside this address belongs
+  // in assocPersons below, not here — "registered target" should mean
+  // exactly what the Target Registry says.
   const selfCoreForMatch = addressCoreLower(label);
   const linkedTargetsMap = new Map<
     number,
@@ -10215,19 +10285,6 @@ export async function getIntelLocationProfile(
   for (const t of allTargets) {
     if (targetAddressCores(t).has(selfCoreForMatch)) {
       linkedTargetsMap.set(t.id, { targetId: t.id, name: t.name });
-    }
-  }
-  // Also check row-level co-occurrence with target entities
-  for (const other of allEntities) {
-    if (!other.isTarget || !other.targetId) continue;
-    const overlappingOccs = other.occurrences.filter(
-      o => o.rowId > 0 && assocRowIds.has(o.rowId)
-    );
-    if (overlappingOccs.length > 0 && !linkedTargetsMap.has(other.targetId)) {
-      linkedTargetsMap.set(other.targetId, {
-        targetId: other.targetId,
-        name: other.shortForm,
-      });
     }
   }
   const linkedTargets: IntelLocationProfile["linkedTargets"] = Array.from(

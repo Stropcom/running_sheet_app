@@ -3984,8 +3984,11 @@ export async function getSheetEntityChips(
 // recent departure per rego that hasn't since been matched by an arrival
 // for that rego, so the RS Quick Entry popup can offer it back as a chip.
 
+// Officers sometimes put a comma directly after the rego ("Vehicle 1FAD531,
+// HOGAN driver...") and sometimes don't ("Vehicle 1FAD531 HOGAN driver...") —
+// the ",?\s*" after the rego capture tolerates either.
 const VEHICLE_DEPART_PATTERN =
-  /Vehicle\s+([A-Za-z0-9]{5,8})\s+(.+?),\s*departed\b/i;
+  /Vehicle\s+([A-Za-z0-9]{5,8}),?\s*(.+?),\s*departed\b/i;
 const VEHICLE_ARRIVE_PATTERN = /Vehicle\s+([A-Za-z0-9]{5,8})\b.*?\barrived\b/i;
 
 export interface PendingVehicleDeparture {

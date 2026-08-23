@@ -9895,7 +9895,18 @@ export async function getIntelOperationProfile(
       };
     })
   );
-  const crossOperationLinks: IntelOperationProfile["crossOperationLinks"] =
+  // crossLinks entries can come from more than one detection mechanism
+  // (e.g. a registry-field match against one other target, and a separate
+  // row co-occurrence against a different other target) that both resolve
+  // to the same fact once displayed here — this flatMap deliberately
+  // overwrites each entry's own internal targetId/targetName with THIS
+  // (outer-loop) target's, so those two mechanisms produce rows that are
+  // indistinguishable to the reader even though dedupeCrossLinks() above
+  // correctly kept them apart (it saw two different internal targetIds).
+  // Collapse again here, on the identity actually shown on screen: this
+  // target, that other operation, that kind of link — regardless of which
+  // mechanism found it or what exact value it matched on.
+  const crossOperationLinksRaw: IntelOperationProfile["crossOperationLinks"] =
     targetProfilesRaw
       .filter((t): t is NonNullable<typeof t> => t !== null)
       .flatMap(t =>
@@ -9908,6 +9919,13 @@ export async function getIntelOperationProfile(
           sharedValue: l.sharedValue,
         }))
       );
+  const seenOpLinks = new Set<string>();
+  const crossOperationLinks = crossOperationLinksRaw.filter(l => {
+    const key = `${l.targetId}::${l.otherOperationId}::${l.via}`;
+    if (seenOpLinks.has(key)) return false;
+    seenOpLinks.add(key);
+    return true;
+  });
   const targetProfiles = targetProfilesRaw
     .filter((t): t is NonNullable<typeof t> => t !== null)
     .map(({ crossLinks, ...rest }) => rest) as IntelOperationProfile["targets"];

@@ -4070,6 +4070,91 @@ export async function getPendingVehicleDepartures(
   return pending.sort((a, b) => b.rowId - a.rowId);
 }
 
+// Mirror of VEHICLE_DEPART_PATTERN, for "arrived" rows — kept as its own
+// constant (rather than reusing/extending VEHICLE_ARRIVE_PATTERN above,
+// which only needs to detect that a rego arrived, not who was in it) so
+// getPendingVehicleDepartures' matching is untouched by this.
+const VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN =
+  /Vehicle\s+([A-Za-z0-9]{5,8}),?\s*(.+?),\s*arrived\b/i;
+
+export interface PendingVehicleArrival {
+  rego: string;
+  /** Occupant description as originally written, e.g. "HOGAN driver and sole occupant". */
+  occupantDesc: string;
+  sheetId: number;
+  rowId: number;
+}
+
+// Returns the most recent still-"here" (not yet re-departed) arrival per
+// vehicle rego, across every sheet in the operation, ordered most-recent
+// first — the mirror of getPendingVehicleDepartures, used by the "Vehicle
+// departing" chip to reuse the occupant description from a vehicle's last
+// logged arrival rather than making the officer retype it.
+export async function getPendingVehicleArrivals(
+  operationId: number
+): Promise<PendingVehicleArrival[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const sheets = await db
+    .select({ id: runningSheets.id })
+    .from(runningSheets)
+    .where(
+      and(
+        eq(runningSheets.operationId, operationId),
+        isNull(runningSheets.deletedAt)
+      )
+    );
+  if (sheets.length === 0) return [];
+  const sheetIds = sheets.map(s => s.id);
+
+  const rows = await db
+    .select({
+      id: sheetRows.id,
+      sheetId: sheetRows.sheetId,
+      observation: sheetRows.observation,
+    })
+    .from(sheetRows)
+    .where(inArray(sheetRows.sheetId, sheetIds))
+    .orderBy(asc(sheetRows.id));
+
+  const lastArrivalByRego = new Map<
+    string,
+    { occupantDesc: string; sheetId: number; rowId: number }
+  >();
+  const departedRegos = new Set<string>();
+
+  for (const row of rows) {
+    if (!row.observation) continue;
+    const arriveMatch = row.observation.match(
+      VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN
+    );
+    if (arriveMatch) {
+      const rego = arriveMatch[1].toUpperCase();
+      lastArrivalByRego.set(rego, {
+        occupantDesc: arriveMatch[2].trim(),
+        sheetId: row.sheetId,
+        rowId: row.id,
+      });
+      departedRegos.delete(rego);
+      continue;
+    }
+    const departMatch = row.observation.match(VEHICLE_DEPART_PATTERN);
+    if (departMatch) {
+      departedRegos.add(departMatch[1].toUpperCase());
+    }
+  }
+
+  const pending: PendingVehicleArrival[] = [];
+  for (const rego of Array.from(lastArrivalByRego.keys())) {
+    if (departedRegos.has(rego)) continue;
+    const a = lastArrivalByRego.get(rego)!;
+    pending.push({ rego, ...a });
+  }
+  // Most recently arrived first.
+  return pending.sort((a, b) => b.rowId - a.rowId);
+}
+
 // App-wide convention: the first time an address is mentioned in a running
 // sheet it's written in full with its bracketed short-form ("5 Davidson
 // Road, ATTADALE WA (5 Davidson Road)") — that bracket is what

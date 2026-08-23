@@ -116,6 +116,7 @@ import {
   getRowsBySheetId,
   getSheetEntityChips,
   getPendingVehicleDepartures,
+  getPendingVehicleArrivals,
   isAddressAlreadyMentioned,
   getRunningSheetById,
   computeWitnessListData,
@@ -1169,6 +1170,15 @@ export const appRouter = router({
       .input(z.object({ operationId: z.number() }))
       .query(async ({ input }) => {
         return getPendingVehicleDepartures(input.operationId);
+      }),
+
+    // Vehicles that arrived somewhere in this operation and haven't since
+    // departed again — the mirror of pendingVehicleDepartures, for the
+    // "Vehicle departing" chip. See getPendingVehicleArrivals.
+    pendingVehicleArrivals: protectedProcedure
+      .input(z.object({ operationId: z.number() }))
+      .query(async ({ input }) => {
+        return getPendingVehicleArrivals(input.operationId);
       }),
 
     // Whether an address has already been mentioned (in its full bracketed

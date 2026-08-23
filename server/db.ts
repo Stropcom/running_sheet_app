@@ -9444,6 +9444,26 @@ export async function getCoOccurringTargetCrossLinks(
   return links;
 }
 
+/** getSharedEntityCrossLinks, getEntitySightingCrossLinks, and
+ * getCoOccurringTargetCrossLinks each dedupe within themselves, but the
+ * same underlying fact (e.g. "this vehicle was sighted on operation X")
+ * can legitimately be found by more than one of them at once — collapse
+ * those into a single entry before returning to the client, preferring a
+ * named entry (from the registry-sharing or co-occurring-target checks)
+ * over an anonymous one (from the plain entity-sighting check) when both
+ * exist for the same target/operation/via/value. */
+function dedupeCrossLinks(links: SharedEntityCrossLink[]): SharedEntityCrossLink[] {
+  const map = new Map<string, SharedEntityCrossLink>();
+  for (const l of links) {
+    const key = `${l.targetId ?? "-"}::${l.operationId}::${l.via}::${l.sharedValue.toLowerCase()}`;
+    const existing = map.get(key);
+    if (!existing || (!existing.targetName && l.targetName)) {
+      map.set(key, l);
+    }
+  }
+  return Array.from(map.values());
+}
+
 async function buildTargetOperationalAssociations(
   targetId: number,
   targetLabel: string,
@@ -9707,7 +9727,7 @@ export async function getIntelTargetProfile(
   const ownVehicleRegos = targetVehicleRegos(target);
   const ownAddressCores = targetAddressCores(target);
   const ownOperationIds = new Set(opLinks.map(o => o.id));
-  const sharedEntityLinks = [
+  const sharedEntityLinks = dedupeCrossLinks([
     ...(await getSharedEntityCrossLinks(
       ownVehicleRegos,
       ownAddressCores,
@@ -9725,7 +9745,7 @@ export async function getIntelTargetProfile(
       ownAddressCores,
       ownOperationIds
     )),
-  ];
+  ]);
 
   return {
     targetId,
@@ -9835,7 +9855,7 @@ export async function getIntelOperationProfile(
       // below.)
       const ownVehicleRegos = targetVehicleRegos(target);
       const ownAddressCores = targetAddressCores(target);
-      const crossLinksRaw = [
+      const crossLinksRaw = dedupeCrossLinks([
         ...(await getSharedEntityCrossLinks(
           ownVehicleRegos,
           ownAddressCores,
@@ -9853,7 +9873,7 @@ export async function getIntelOperationProfile(
           ownAddressCores,
           new Set([operationId])
         )),
-      ];
+      ]);
       const crossLinks = crossLinksRaw.filter(
         l => l.operationId !== operationId
       );
@@ -10143,7 +10163,7 @@ export async function getIntelAssociateProfile(
     linkedTargets.map(t => t.operationId)
   );
   const sharedEntityLinks = registryAssociate
-    ? [
+    ? dedupeCrossLinks([
         ...(await getSharedEntityCrossLinks(
           targetVehicleRegos(registryAssociate),
           targetAddressCores(registryAssociate),
@@ -10161,7 +10181,7 @@ export async function getIntelAssociateProfile(
           targetAddressCores(registryAssociate),
           associateOwnOperationIds
         )),
-      ]
+      ])
     : [];
 
   return {

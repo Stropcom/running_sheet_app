@@ -456,10 +456,15 @@ export async function deleteOperation(id: number) {
       )
       .limit(1);
     if (otherLinks.length === 0) {
-      // Exclusively linked — delete target shortcuts then the target
+      // Exclusively linked — delete target shortcuts, associates, then the
+      // target itself. Associates always belong to exactly one target and
+      // have no life of their own once it's gone — leaving them behind
+      // orphaned real rows that getAllIntelligenceEntities() would
+      // otherwise keep surfacing as permanent "INDICES" entities.
       await db
         .delete(targetShortcuts)
         .where(eq(targetShortcuts.targetId, t.id));
+      await db.delete(associates).where(eq(associates.targetId, t.id));
       await db.delete(targets).where(eq(targets.id, t.id));
     } else {
       // Linked to other ops too — just clear the legacy FK
@@ -487,10 +492,12 @@ export async function deleteOperation(id: number) {
       )
       .limit(1);
     if (otherLinks.length === 0) {
-      // Only linked to this operation — delete the target too
+      // Only linked to this operation — delete the target, its shortcuts,
+      // and its associates too (see matching comment above).
       await db
         .delete(targetShortcuts)
         .where(eq(targetShortcuts.targetId, link.targetId));
+      await db.delete(associates).where(eq(associates.targetId, link.targetId));
       await db.delete(targets).where(eq(targets.id, link.targetId));
     }
   }
@@ -2508,6 +2515,11 @@ export async function deleteTarget(id: number) {
   await db
     .delete(operationTargetLinks)
     .where(eq(operationTargetLinks.targetId, id));
+  // Associates always belong to exactly one target and have no life of
+  // their own once it's gone — leaving them behind orphaned real rows
+  // that getAllIntelligenceEntities() would otherwise keep surfacing as
+  // permanent "INDICES" vehicle/address entities with no way to remove them.
+  await db.delete(associates).where(eq(associates.targetId, id));
   // Drop the "tagged to this target" links — the underlying photos stay
   // (they still belong to their own operation), just untagged from a
   // target that no longer exists.
@@ -5552,6 +5564,13 @@ export async function getAllIntelligenceEntities(): Promise<
 
   for (const a of associateRows) {
     const parentRows = targetRowsByTargetId.get(a.targetId) ?? [];
+    // An associate whose parent target no longer exists (e.g. the target
+    // was purged but this associate row wasn't cascade-deleted with it —
+    // see deleteTarget()) is orphaned data, not a live intelligence entity.
+    // Skip it entirely rather than synthesizing a phantom "(Registry)"
+    // occurrence for its address/vehicle fields below, which used to leave
+    // permanent zombie INDICES-badged entities behind after a full delete.
+    if (parentRows.length === 0) continue;
     const parentName = parentRows[0]?.targetName ?? null;
     const assocKey = `associate::${a.id}`;
 
@@ -5682,8 +5701,8 @@ export async function getAllIntelligenceEntities(): Promise<
             : shortForm.length > existing.shortForm.length;
         if (shouldUpgrade) existing.shortForm = shortForm;
       }
-      for (const t of parentRows.length > 0 ? parentRows : [null]) {
-        const linkedSheets = t ? (targetSheetMap.get(t.targetId) ?? []) : [];
+      for (const t of parentRows) {
+        const linkedSheets = targetSheetMap.get(t.targetId) ?? [];
         const sheetEntries =
           linkedSheets.length > 0
             ? linkedSheets
@@ -5702,8 +5721,8 @@ export async function getAllIntelligenceEntities(): Promise<
             entityMap.get(key)!.occurrences.push({
               sheetId: sheet.sheetId,
               sheetTitle: sheet.sheetTitle,
-              operationId: t?.operationId ?? 0,
-              operationName: t?.operationName ?? "(Registry)",
+              operationId: t.operationId ?? 0,
+              operationName: t.operationName ?? "(Registry)",
               rowId: 0,
               observationSnippet: `Associate card — ${a.name} [${field.label}]`,
               timeMinutes: null,

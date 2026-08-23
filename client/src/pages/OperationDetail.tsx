@@ -1,6 +1,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc, trpcClient } from "@/lib/trpc";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
+import { setLastActiveContext } from "@/lib/lastActiveContext";
 import {
   buildRollupSheetBlocksHtml,
   parseRollupJsonArray,
@@ -1895,6 +1896,14 @@ export default function OperationDetail() {
   const operationId = parseInt(params.id ?? "0", 10);
   const [, navigate] = useLocation();
   const search = useSearch();
+
+  // Remembers this as the officer's most recent operation context (no
+  // specific sheet) — used only to pre-fill the New STOSEC Briefing form.
+  useEffect(() => {
+    if (operationId) {
+      setLastActiveContext({ operationId, sheetId: null });
+    }
+  }, [operationId]);
 
   // Derive active tab and target to auto-expand from URL search params
   const searchParams = new URLSearchParams(search);

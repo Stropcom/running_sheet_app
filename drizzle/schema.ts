@@ -681,6 +681,8 @@ export const auditLogs = mysqlTable("audit_logs", {
     "attachment_deleted",
     "summary_completed",
     "summary_reopened",
+    "stosec_briefing_posted",
+    "stosec_briefing_deleted",
   ]).notNull(),
   details: text("details"),
   createdAt: bigint("createdAt", { mode: "number" }).notNull(),
@@ -1548,3 +1550,115 @@ export const ctoRosterEbaRules = mysqlTable("cto_roster_eba_rules", {
 });
 export type CtoRosterEbaRule = typeof ctoRosterEbaRules.$inferSelect;
 export type InsertCtoRosterEbaRule = typeof ctoRosterEbaRules.$inferInsert;
+
+// ─── STOSEC Briefings ───────────────────────────────────────────────────────
+// An exceptional-use urgent briefing document, posted rarely — not a daily
+// or per-shift form (that's Op Manager's tasking board). Posting notifies
+// every user; each notifies-user acknowledges from their own notification,
+// which is logged per-user rather than treated as "opened = read".
+
+export const stosecBriefings = mysqlTable("stosec_briefings", {
+  id: int("id").autoincrement().primaryKey(),
+  operationId: int("operationId").notNull(),
+  // The running sheet this was raised from, if any — informational only.
+  sheetId: int("sheetId"),
+  // Linked Target Registry record: POI is rendered live from its tgt/name
+  // field. VOI/HB default to this same target's v1(f)/hb(f) too, but can be
+  // overridden below to a different vehicle/address under the same
+  // operation (e.g. an associate's car, a different target's address) —
+  // the operation can have several targets, each with several vehicles and
+  // addresses, and the urgent detail isn't always the primary target's own.
+  targetId: int("targetId"),
+  // Free-text snapshot (not a FK — vehicle/address entries are embedded
+  // JSON on a target, not their own rows) of the chosen vehicle/address
+  // when it differs from the linked target's primary v1(f)/hb(f). Null
+  // means "use the linked target's own vehicle/address".
+  voiOverride: varchar("voiOverride", { length: 500 }),
+  hbOverride: varchar("hbOverride", { length: 500 }),
+  // JSON array of strings — additional addresses added via the map search
+  // box, beyond the linked target's own location/hbOverride above.
+  extraLocations: text("extraLocations"),
+
+  // situation is the general free-text field; backgroundIntel/knownRisks
+  // are the more specific SMEAC sub-fields split out from it.
+  situation: text("situation"),
+  backgroundIntel: text("backgroundIntel"),
+  knownRisks: text("knownRisks"),
+  // JSON array of strings.
+  otherAgencies: text("otherAgencies"),
+
+  mission: text("mission"),
+
+  overallPlan: text("overallPlan"),
+  actionsOn: text("actionsOn"),
+  situationChange: text("situationChange"),
+  // JSON array of strings — dynamic length, not a fixed 1-4.
+  objectives: text("objectives"),
+
+  legalAuthArrest: varchar("legalAuthArrest", { length: 255 }),
+  afpOrders: varchar("afpOrders", { length: 255 }),
+  warrant: varchar("warrant", { length: 255 }),
+  // JSON array of strings, e.g. ["Firearm", "Taser", "Baton"].
+  accoutrements: text("accoutrements"),
+  // JSON array of strings, e.g. ["Hat", "Jacket"].
+  covertIdentifiers: text("covertIdentifiers"),
+  // First aid location: either every vehicle carries one, or it's held by
+  // one nominated team member — picked from teamSlots below, snapshotted as
+  // a display name (not a FK; a manually-typed team member has no CIN).
+  firstAidAllVehicles: boolean("firstAidAllVehicles").default(true).notNull(),
+  firstAidMemberName: varchar("firstAidMemberName", { length: 255 }),
+
+  commsPrimary: varchar("commsPrimary", { length: 255 }),
+  commsSecondary: varchar("commsSecondary", { length: 255 }),
+  locationOfTeamLeader: varchar("locationOfTeamLeader", { length: 500 }),
+  reportingProcedures: text("reportingProcedures"),
+
+  // JSON array of { name, vehicle, foot, skill, kit, isTeamLeader }
+  teamSlots: text("teamSlots"),
+
+  status: mysqlEnum("status", ["draft", "posted"]).default("draft").notNull(),
+  // Bumped on every content save, so "which version am I looking at" has a
+  // concrete answer once a briefing has been edited and re-posted.
+  revision: int("revision").default(1).notNull(),
+  postedAt: bigint("postedAt", { mode: "number" }),
+  postedByCIN: varchar("postedByCIN", { length: 64 }),
+
+  createdBy: int("createdBy").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+
+  // Soft-delete
+  deletedAt: bigint("deletedAt", { mode: "number" }),
+  deletedByCIN: varchar("deletedByCIN", { length: 64 }),
+});
+
+export type StosecBriefing = typeof stosecBriefings.$inferSelect;
+export type InsertStosecBriefing = typeof stosecBriefings.$inferInsert;
+
+export const stosecAcknowledgements = mysqlTable(
+  "stosec_acknowledgements",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    briefingId: int("briefingId").notNull(),
+    userId: int("userId").notNull(),
+    cin: varchar("cin", { length: 64 }).notNull(),
+    // Which revision of the briefing this acknowledged — an edit + re-post
+    // bumps stosecBriefings.revision, and a prior revision's acknowledgement
+    // does not carry forward, so each new revision needs its own. Default 1
+    // only matters for backfilling existing rows from before this column
+    // existed; the app always sets it explicitly on insert.
+    revision: int("revision").default(1).notNull(),
+    acknowledgedAt: bigint("acknowledgedAt", { mode: "number" }).notNull(),
+  },
+  t => [
+    uniqueIndex("stosec_ack_briefing_user_rev_idx").on(
+      t.briefingId,
+      t.userId,
+      t.revision
+    ),
+  ]
+);
+
+export type StosecAcknowledgement = typeof stosecAcknowledgements.$inferSelect;
+export type InsertStosecAcknowledgement =
+  typeof stosecAcknowledgements.$inferInsert;

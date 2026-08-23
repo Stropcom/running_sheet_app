@@ -1,0 +1,1 @@
+ALTER TABLE `stosec_briefings` ADD `extraLocations` text;

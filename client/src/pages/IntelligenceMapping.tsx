@@ -26,11 +26,12 @@ import {
   computeUsedVehicleRegos,
   type PersonMentionSuggestion,
 } from "@/lib/mentionAutocomplete";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { MapView } from "@/components/Map";
+import { StosecMapOverlay } from "@/components/StosecMapOverlay";
 import { TargetProfileContent } from "@/components/TargetProfileContent";
 import { OperationProfileContent } from "@/components/OperationProfileContent";
 // The Images page's own folder/gallery levels, reused verbatim so the pane and
@@ -511,8 +512,7 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
         `<div style="font-size:12px;font-weight:700;color:#111;margin-bottom:2px;">${t.name}</div>`
       );
       const tVehicles = [t.v1f, t.v2f].filter((v): v is string => !!v);
-      if (tVehicles.length)
-        lines.push(popupVehicleLines(tVehicles, "11px"));
+      if (tVehicles.length) lines.push(popupVehicleLines(tVehicles, "11px"));
       if (t.operationName)
         lines.push(
           `<div style="font-size:10px;color:#888;margin-top:2px;">Op: ${t.operationName}</div>`
@@ -793,6 +793,16 @@ function haversineMetres(
 export default function IntelligenceMapping() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
+
+  // STOSEC briefing overlay — opened via ?stosec=<id>, e.g. from the Post
+  // notification. Purely additive: doesn't touch any map/marker state below.
+  const search = useSearch();
+  const stosecId = (() => {
+    const raw = new URLSearchParams(search).get("stosec");
+    const parsed = raw ? parseInt(raw, 10) : NaN;
+    return Number.isFinite(parsed) ? parsed : null;
+  })();
+  const closeStosecOverlay = () => setLocation("/intelligence/mapping");
 
   // Filter state — persisted in localStorage
   const [selectedOpIds, setSelectedOpIds] = useState<number[]>(() => {
@@ -1962,7 +1972,9 @@ export default function IntelligenceMapping() {
     let colour: MarkerColour = isTarget ? "red" : "purple";
     let rotation = 0;
     try {
-      const stored = localStorage.getItem(`runlog_intel_appearance_${loc.label}`);
+      const stored = localStorage.getItem(
+        `runlog_intel_appearance_${loc.label}`
+      );
       if (stored) {
         const parsed = JSON.parse(stored);
         if (parsed.icon) icon = parsed.icon;
@@ -2410,17 +2422,21 @@ export default function IntelligenceMapping() {
 
     if (!traceHistories) return;
     for (const userId of Array.from(tracedUserIds)) {
-      const all = (traceHistories as Record<
-        number,
-        { lat: number; lng: number; recordedAt: number }[]
-      >)[userId];
+      const all = (
+        traceHistories as Record<
+          number,
+          { lat: number; lng: number; recordedAt: number }[]
+        >
+      )[userId];
       // The query fetches from the earliest start across all tracked
       // officers, so clip each one to their own Track-on moment.
       const startedAt = trackStartsRef.current.get(userId) ?? 0;
       const points = (all ?? []).filter(p => p.recordedAt >= startedAt);
       if (points.length < 2) continue;
       const path = points.map(p => ({ lat: p.lat, lng: p.lng }));
-      const colour = getTeamColour(traceUserTeamRef.current.get(userId) ?? null);
+      const colour = getTeamColour(
+        traceUserTeamRef.current.get(userId) ?? null
+      );
       const existing = traceLinesRef.current.get(userId);
       if (existing) {
         existing.setPath(path);
@@ -3404,572 +3420,588 @@ export default function IntelligenceMapping() {
         onToggle: () => setRsActionsPaneOpen(o => !o),
       }}
     >
-    <div className="relative flex w-full h-full overflow-hidden">
-      {/* ── Map Area ── */}
-      <div className="flex-1 relative" onClick={handleMapAreaClick}>
-        {/* Loading overlay */}
-        {locsLoading && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/60 backdrop-blur-sm pointer-events-none">
-            <div className="flex flex-col items-center gap-3">
-              <Spinner className="h-8 w-8" />
-              <p className="text-sm text-muted-foreground">
-                Loading intelligence locations…
-              </p>
-            </div>
-          </div>
-        )}
+      <div className="relative flex w-full h-full overflow-hidden">
+        {/* ── Map Area ── */}
+        <div className="flex-1 relative" onClick={handleMapAreaClick}>
+          {/* STOSEC briefing overlay — docked over the map, not a separate
+            page, so the live map stays visible/usable underneath. Inserted
+            first (position:absolute ignores DOM order) with a z-index above
+            the map's own floating controls so it always paints on top. */}
+          {stosecId && (
+            <StosecMapOverlay
+              briefingId={stosecId}
+              onClose={closeStosecOverlay}
+            />
+          )}
 
-        {/* Empty state — only show when there are also no custom markers, and user hasn't dismissed it */}
-        {!locsLoading &&
-          !dismissedNoLocs &&
-          locations &&
-          locations.length === 0 &&
-          !(customMarkers && customMarkers.length > 0) && (
-            <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 pointer-events-auto">
-              <div className="relative bg-card/90 backdrop-blur-sm border border-border rounded-lg px-4 py-2.5 shadow-md text-center max-w-[260px] flex items-center gap-2.5">
-                <MapPin className="h-4 w-4 text-muted-foreground/50 flex-shrink-0" />
-                <p className="text-[11px] text-muted-foreground leading-tight">
-                  {selectedOpIds.length > 0 || selectedTargetIds.length > 0
-                    ? "No locations found for selected filters."
-                    : "Select operations or targets in Map Settings to show locations."}
+          {/* Loading overlay */}
+          {locsLoading && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/60 backdrop-blur-sm pointer-events-none">
+              <div className="flex flex-col items-center gap-3">
+                <Spinner className="h-8 w-8" />
+                <p className="text-sm text-muted-foreground">
+                  Loading intelligence locations…
                 </p>
-                <button
-                  onClick={() => setDismissedNoLocs(true)}
-                  className="flex-shrink-0 ml-1 text-muted-foreground/60 hover:text-foreground transition-colors"
-                  aria-label="Dismiss"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
               </div>
             </div>
           )}
 
-        {/* Placement mode indicator */}
-        {placingMarker && (
-          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 bg-primary text-primary-foreground text-xs font-semibold px-4 py-2 rounded-full shadow-lg pointer-events-none">
-            Tap &amp; hold to place marker
-          </div>
-        )}
+          {/* Empty state — only show when there are also no custom markers, and user hasn't dismissed it */}
+          {!locsLoading &&
+            !dismissedNoLocs &&
+            locations &&
+            locations.length === 0 &&
+            !(customMarkers && customMarkers.length > 0) && (
+              <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 pointer-events-auto">
+                <div className="relative bg-card/90 backdrop-blur-sm border border-border rounded-lg px-4 py-2.5 shadow-md text-center max-w-[260px] flex items-center gap-2.5">
+                  <MapPin className="h-4 w-4 text-muted-foreground/50 flex-shrink-0" />
+                  <p className="text-[11px] text-muted-foreground leading-tight">
+                    {selectedOpIds.length > 0 || selectedTargetIds.length > 0
+                      ? "No locations found for selected filters."
+                      : "Select operations or targets in Map Settings to show locations."}
+                  </p>
+                  <button
+                    onClick={() => setDismissedNoLocs(true)}
+                    className="flex-shrink-0 ml-1 text-muted-foreground/60 hover:text-foreground transition-colors"
+                    aria-label="Dismiss"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
 
-        <div
-          className="w-full h-full"
-          style={
-            mapDarkMode
-              ? { filter: "brightness(0.6) invert(1) hue-rotate(180deg)" }
-              : undefined
-          }
-          onTouchStart={e => {
-            if (e.touches.length !== 1) return;
-            const touch = e.touches[0];
-            longPressTimerRef.current = setTimeout(() => {
-              // Get map coordinates from touch position
-              if (!mapRef.current) return;
-              const mapDiv = mapRef.current.getDiv();
-              const rect = mapDiv.getBoundingClientRect();
-              const x = touch.clientX - rect.left;
-              const y = touch.clientY - rect.top;
-              const proj = mapRef.current.getProjection();
-              if (!proj) return;
-              const bounds = mapRef.current.getBounds();
-              if (!bounds) return;
-              const ne = bounds.getNorthEast();
-              const sw = bounds.getSouthWest();
-              const mapWidth = rect.width;
-              const mapHeight = rect.height;
-              const lng = sw.lng() + (x / mapWidth) * (ne.lng() - sw.lng());
-              const lat = ne.lat() - (y / mapHeight) * (ne.lat() - sw.lat());
-              // Reverse geocode, then show action chooser
-              const geocoder = new google.maps.Geocoder();
-              geocoder.geocode(
-                { location: { lat, lng } },
-                (results, status) => {
-                  const addr =
-                    status === "OK" && results && results[0]
-                      ? results[0].formatted_address
-                      : `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-                  setActionChooser({
-                    lat,
-                    lng,
-                    address: convertGoogleAddresses(addr),
-                  });
-                }
-              );
-            }, 600);
-          }}
-          onTouchEnd={() => {
-            if (longPressTimerRef.current)
-              clearTimeout(longPressTimerRef.current);
-          }}
-          onTouchMove={() => {
-            if (longPressTimerRef.current)
-              clearTimeout(longPressTimerRef.current);
-          }}
-        >
-          <MapView
-            onMapReady={handleMapReady}
+          {/* Placement mode indicator */}
+          {placingMarker && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 bg-primary text-primary-foreground text-xs font-semibold px-4 py-2 rounded-full shadow-lg pointer-events-none">
+              Tap &amp; hold to place marker
+            </div>
+          )}
+
+          <div
             className="w-full h-full"
-            initialCenter={mapInitialCenter}
-            initialZoom={mapInitialZoom}
-            initialMapTypeId={mapInitialTypeId}
-            hideMapTypeControl
-          />
+            style={
+              mapDarkMode
+                ? { filter: "brightness(0.6) invert(1) hue-rotate(180deg)" }
+                : undefined
+            }
+            onTouchStart={e => {
+              if (e.touches.length !== 1) return;
+              const touch = e.touches[0];
+              longPressTimerRef.current = setTimeout(() => {
+                // Get map coordinates from touch position
+                if (!mapRef.current) return;
+                const mapDiv = mapRef.current.getDiv();
+                const rect = mapDiv.getBoundingClientRect();
+                const x = touch.clientX - rect.left;
+                const y = touch.clientY - rect.top;
+                const proj = mapRef.current.getProjection();
+                if (!proj) return;
+                const bounds = mapRef.current.getBounds();
+                if (!bounds) return;
+                const ne = bounds.getNorthEast();
+                const sw = bounds.getSouthWest();
+                const mapWidth = rect.width;
+                const mapHeight = rect.height;
+                const lng = sw.lng() + (x / mapWidth) * (ne.lng() - sw.lng());
+                const lat = ne.lat() - (y / mapHeight) * (ne.lat() - sw.lat());
+                // Reverse geocode, then show action chooser
+                const geocoder = new google.maps.Geocoder();
+                geocoder.geocode(
+                  { location: { lat, lng } },
+                  (results, status) => {
+                    const addr =
+                      status === "OK" && results && results[0]
+                        ? results[0].formatted_address
+                        : `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+                    setActionChooser({
+                      lat,
+                      lng,
+                      address: convertGoogleAddresses(addr),
+                    });
+                  }
+                );
+              }, 600);
+            }}
+            onTouchEnd={() => {
+              if (longPressTimerRef.current)
+                clearTimeout(longPressTimerRef.current);
+            }}
+            onTouchMove={() => {
+              if (longPressTimerRef.current)
+                clearTimeout(longPressTimerRef.current);
+            }}
+          >
+            <MapView
+              onMapReady={handleMapReady}
+              className="w-full h-full"
+              initialCenter={mapInitialCenter}
+              initialZoom={mapInitialZoom}
+              initialMapTypeId={mapInitialTypeId}
+              hideMapTypeControl
+            />
 
-          {/* Map / Sat toggle — top-right, replaces Google's native
+            {/* Map / Sat toggle — top-right, replaces Google's native
               mapTypeControl (see Map.tsx) so it can sit at a predictable,
               compact size next to the search bar instead of the SDK's own
               wider "Map"/"Satellite" control, which doesn't shrink or
               relabel and collided with the search bar on narrow screens. */}
-          <div
-            className="absolute z-20 pointer-events-auto flex items-center bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden"
-            style={{ top: "10px", right: "10px", height: "36px" }}
-            onClick={e => e.stopPropagation()}
-          >
-            {(
-              [
-                { id: "roadmap", label: "Map" },
-                { id: "hybrid", label: "Sat" },
-              ] as const
-            ).map((opt, i) => {
-              const active = mapInitialTypeId === opt.id;
-              return (
-                <button
-                  key={opt.id}
-                  onClick={() => mapRef.current?.setMapTypeId(opt.id)}
-                  className={`h-full px-3 text-xs font-semibold transition-colors ${
-                    active
-                      ? "bg-sky-600 text-white"
-                      : "text-gray-600 hover:bg-gray-50"
-                  } ${i === 0 ? "border-r border-gray-200" : ""}`}
-                >
-                  {opt.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Centre on me / Follow me floating buttons — top-left below search bar */}
-          <div
-            className="absolute z-20 pointer-events-auto flex gap-1"
-            style={{ top: "60px", left: "10px" }}
-          >
-            {/* Centre on me */}
-            <button
-              title="Centre on my location"
-              onClick={e => {
-                e.stopPropagation();
-                if (!ownPositionRef.current) {
-                  toast.error(
-                    "Location not available — enable location sharing first"
-                  );
-                  return;
-                }
-                mapRef.current?.panTo(ownPositionRef.current);
-              }}
-              className="flex items-center justify-center bg-white rounded-lg shadow-md border border-gray-200 hover:bg-gray-50 transition-colors"
-              style={{ width: "40px", height: "40px" }}
+            <div
+              className="absolute z-20 pointer-events-auto flex items-center bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden"
+              style={{ top: "10px", right: "10px", height: "36px" }}
+              onClick={e => e.stopPropagation()}
             >
-              <LocateFixed className="w-5 h-5 text-sky-600" />
-            </button>
-            {/* Follow me toggle */}
-            <button
-              title={
-                followMode ? "Stop following my location" : "Follow my location"
-              }
-              onClick={e => {
-                e.stopPropagation();
-                if (!followMode && !ownPositionRef.current) {
-                  toast.error(
-                    "Location not available — enable location sharing first"
-                  );
-                  return;
-                }
-                const next = !followMode;
-                setFollowMode(next);
-                followModeRef.current = next;
-                if (next && ownPositionRef.current) {
+              {(
+                [
+                  { id: "roadmap", label: "Map" },
+                  { id: "hybrid", label: "Sat" },
+                ] as const
+              ).map((opt, i) => {
+                const active = mapInitialTypeId === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    onClick={() => mapRef.current?.setMapTypeId(opt.id)}
+                    className={`h-full px-3 text-xs font-semibold transition-colors ${
+                      active
+                        ? "bg-sky-600 text-white"
+                        : "text-gray-600 hover:bg-gray-50"
+                    } ${i === 0 ? "border-r border-gray-200" : ""}`}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Centre on me / Follow me floating buttons — top-left below search bar */}
+            <div
+              className="absolute z-20 pointer-events-auto flex gap-1"
+              style={{ top: "60px", left: "10px" }}
+            >
+              {/* Centre on me */}
+              <button
+                title="Centre on my location"
+                onClick={e => {
+                  e.stopPropagation();
+                  if (!ownPositionRef.current) {
+                    toast.error(
+                      "Location not available — enable location sharing first"
+                    );
+                    return;
+                  }
                   mapRef.current?.panTo(ownPositionRef.current);
+                }}
+                className="flex items-center justify-center bg-white rounded-lg shadow-md border border-gray-200 hover:bg-gray-50 transition-colors"
+                style={{ width: "40px", height: "40px" }}
+              >
+                <LocateFixed className="w-5 h-5 text-sky-600" />
+              </button>
+              {/* Follow me toggle */}
+              <button
+                title={
+                  followMode
+                    ? "Stop following my location"
+                    : "Follow my location"
                 }
-              }}
-              className={`flex items-center justify-center rounded-lg shadow-md border transition-colors ${
-                followMode
-                  ? "bg-sky-600 border-sky-700 hover:bg-sky-700"
-                  : "bg-white border-gray-200 hover:bg-gray-50"
-              }`}
-              style={{ width: "40px", height: "40px" }}
-            >
-              <Navigation2
-                className={`w-5 h-5 ${followMode ? "text-white" : "text-sky-600"}`}
-              />
-            </button>
-          </div>
+                onClick={e => {
+                  e.stopPropagation();
+                  if (!followMode && !ownPositionRef.current) {
+                    toast.error(
+                      "Location not available — enable location sharing first"
+                    );
+                    return;
+                  }
+                  const next = !followMode;
+                  setFollowMode(next);
+                  followModeRef.current = next;
+                  if (next && ownPositionRef.current) {
+                    mapRef.current?.panTo(ownPositionRef.current);
+                  }
+                }}
+                className={`flex items-center justify-center rounded-lg shadow-md border transition-colors ${
+                  followMode
+                    ? "bg-sky-600 border-sky-700 hover:bg-sky-700"
+                    : "bg-white border-gray-200 hover:bg-gray-50"
+                }`}
+                style={{ width: "40px", height: "40px" }}
+              >
+                <Navigation2
+                  className={`w-5 h-5 ${followMode ? "text-white" : "text-sky-600"}`}
+                />
+              </button>
+            </div>
 
-          {/* Floating address search bar — top-left, next to our own Map/Sat
+            {/* Floating address search bar — top-left, next to our own Map/Sat
               toggle above (a fixed ~76px, unlike Google's native control it
               replaces). Capping maxWidth to leave that clearance keeps them
               apart at any viewport width without a resize listener. */}
-          <div
-            className="absolute z-20 pointer-events-auto"
-            style={{ top: "10px", left: "10px" }}
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="relative">
-              <div
-                className="flex items-center bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden"
-                style={{
-                  height: "40px",
-                  minWidth: "160px",
-                  maxWidth: "min(260px, calc(100vw - 120px))",
-                }}
-              >
-                <Search className="w-4 h-4 text-gray-400 ml-3 shrink-0" />
-                <input
-                  type="text"
-                  value={addrSearch}
-                  placeholder="Search address or business…"
-                  className="flex-1 px-2 text-sm outline-none bg-transparent text-gray-800 placeholder-gray-400"
-                  style={{ height: "40px" }}
-                  onChange={e => {
-                    const val = e.target.value;
-                    setAddrSearch(val);
-                    if (addrSearchDebounceRef.current)
-                      clearTimeout(addrSearchDebounceRef.current);
-                    if (!val.trim()) {
-                      setAddrSuggestions([]);
-                      setAddrSearchOpen(false);
-                      return;
-                    }
-                    addrSearchDebounceRef.current = setTimeout(() => {
-                      if (!autocompleteServiceRef.current) return;
-                      const mapCentre = mapRef.current?.getCenter();
-                      // No `types` restriction — Google Places only allows one
-                      // type-category filter at a time (or none), and omitting
-                      // it is the only way to get both street addresses and
-                      // business/establishment results in the same search.
-                      const addrRequest: google.maps.places.AutocompletionRequest =
-                        {
-                          input: val,
-                          componentRestrictions: { country: "au" },
-                        };
-                      if (mapCentre) {
-                        addrRequest.locationBias = new google.maps.Circle({
-                          center: {
-                            lat: mapCentre.lat(),
-                            lng: mapCentre.lng(),
-                          },
-                          radius: 50000, // 50 km bias around current map centre
-                        });
-                      }
-                      autocompleteServiceRef.current.getPlacePredictions(
-                        addrRequest,
-                        (predictions, status) => {
-                          if (
-                            status ===
-                              google.maps.places.PlacesServiceStatus.OK &&
-                            predictions
-                          ) {
-                            setAddrSuggestions(predictions);
-                            setAddrSearchOpen(true);
-                          } else {
-                            setAddrSuggestions([]);
-                            setAddrSearchOpen(false);
-                          }
-                        }
-                      );
-                    }, 300);
-                  }}
-                  onFocus={() => {
-                    if (addrSuggestions.length > 0) setAddrSearchOpen(true);
-                  }}
-                  onKeyDown={e => {
-                    if (e.key === "Escape") {
-                      setAddrSearch("");
-                      setAddrSuggestions([]);
-                      setAddrSearchOpen(false);
-                    }
-                  }}
-                />
-                {addrSearch && (
-                  <button
-                    className="mr-2 text-gray-400 hover:text-gray-600"
-                    onClick={() => {
-                      setAddrSearch("");
-                      setAddrSuggestions([]);
-                      setAddrSearchOpen(false);
-                      if (addrSearchPinRef.current) {
-                        addrSearchPinRef.current.map = null;
-                        addrSearchPinRef.current = null;
-                      }
-                    }}
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-              {addrSearchOpen && addrSuggestions.length > 0 && (
+            <div
+              className="absolute z-20 pointer-events-auto"
+              style={{ top: "10px", left: "10px" }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="relative">
                 <div
-                  className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden"
-                  style={{ minWidth: "260px", maxWidth: "320px", zIndex: 30 }}
+                  className="flex items-center bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden"
+                  style={{
+                    height: "40px",
+                    minWidth: "160px",
+                    maxWidth: "min(260px, calc(100vw - 120px))",
+                  }}
                 >
-                  {addrSuggestions.map(s => (
-                    <button
-                      key={s.place_id}
-                      className="w-full text-left px-3 py-2.5 text-sm text-gray-800 hover:bg-gray-50 border-b border-gray-100 last:border-0 flex items-start gap-2"
-                      onClick={() => {
-                        setAddrSearch(s.description);
+                  <Search className="w-4 h-4 text-gray-400 ml-3 shrink-0" />
+                  <input
+                    type="text"
+                    value={addrSearch}
+                    placeholder="Search address or business…"
+                    className="flex-1 px-2 text-sm outline-none bg-transparent text-gray-800 placeholder-gray-400"
+                    style={{ height: "40px" }}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setAddrSearch(val);
+                      if (addrSearchDebounceRef.current)
+                        clearTimeout(addrSearchDebounceRef.current);
+                      if (!val.trim()) {
                         setAddrSuggestions([]);
                         setAddrSearchOpen(false);
-                        // Geocode the selected place and pan map
-                        if (!geocoderRef.current || !mapRef.current) return;
-                        geocoderRef.current.geocode(
-                          { placeId: s.place_id },
-                          (results, status) => {
-                            if (status === "OK" && results && results[0]) {
-                              const loc = results[0].geometry.location;
-                              mapRef.current!.panTo(loc);
-                              mapRef.current!.setZoom(17);
-                              // Drop a temporary search pin
-                              if (addrSearchPinRef.current) {
-                                addrSearchPinRef.current.map = null;
-                              }
-                              const pinEl = document.createElement("div");
-                              pinEl.innerHTML = `<div style="width:36px;height:36px;background:#4285f4;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.35)"></div>`;
-                              const pin =
-                                new google.maps.marker.AdvancedMarkerElement({
-                                  map: mapRef.current!,
-                                  position: loc,
-                                  content: pinEl,
-                                  title: s.description,
-                                });
-                              addrSearchPinRef.current = pin;
-                              // Clicking the blue pin shows the action chooser
-                              pin.addListener("gmp-click", () => {
-                                setActionChooser({
-                                  lat: loc.lat(),
-                                  lng: loc.lng(),
-                                  address: convertGoogleAddresses(
-                                    s.description
-                                  ),
-                                });
-                              });
+                        return;
+                      }
+                      addrSearchDebounceRef.current = setTimeout(() => {
+                        if (!autocompleteServiceRef.current) return;
+                        const mapCentre = mapRef.current?.getCenter();
+                        // No `types` restriction — Google Places only allows one
+                        // type-category filter at a time (or none), and omitting
+                        // it is the only way to get both street addresses and
+                        // business/establishment results in the same search.
+                        const addrRequest: google.maps.places.AutocompletionRequest =
+                          {
+                            input: val,
+                            componentRestrictions: { country: "au" },
+                          };
+                        if (mapCentre) {
+                          addrRequest.locationBias = new google.maps.Circle({
+                            center: {
+                              lat: mapCentre.lat(),
+                              lng: mapCentre.lng(),
+                            },
+                            radius: 50000, // 50 km bias around current map centre
+                          });
+                        }
+                        autocompleteServiceRef.current.getPlacePredictions(
+                          addrRequest,
+                          (predictions, status) => {
+                            if (
+                              status ===
+                                google.maps.places.PlacesServiceStatus.OK &&
+                              predictions
+                            ) {
+                              setAddrSuggestions(predictions);
+                              setAddrSearchOpen(true);
+                            } else {
+                              setAddrSuggestions([]);
+                              setAddrSearchOpen(false);
                             }
                           }
                         );
+                      }, 300);
+                    }}
+                    onFocus={() => {
+                      if (addrSuggestions.length > 0) setAddrSearchOpen(true);
+                    }}
+                    onKeyDown={e => {
+                      if (e.key === "Escape") {
+                        setAddrSearch("");
+                        setAddrSuggestions([]);
+                        setAddrSearchOpen(false);
+                      }
+                    }}
+                  />
+                  {addrSearch && (
+                    <button
+                      className="mr-2 text-gray-400 hover:text-gray-600"
+                      onClick={() => {
+                        setAddrSearch("");
+                        setAddrSuggestions([]);
+                        setAddrSearchOpen(false);
+                        if (addrSearchPinRef.current) {
+                          addrSearchPinRef.current.map = null;
+                          addrSearchPinRef.current = null;
+                        }
                       }}
                     >
-                      <MapPin className="w-3.5 h-3.5 text-gray-400 mt-0.5 shrink-0" />
-                      <span className="leading-snug">{s.description}</span>
+                      <X className="w-3.5 h-3.5" />
                     </button>
-                  ))}
+                  )}
                 </div>
-              )}
+                {addrSearchOpen && addrSuggestions.length > 0 && (
+                  <div
+                    className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden"
+                    style={{ minWidth: "260px", maxWidth: "320px", zIndex: 30 }}
+                  >
+                    {addrSuggestions.map(s => (
+                      <button
+                        key={s.place_id}
+                        className="w-full text-left px-3 py-2.5 text-sm text-gray-800 hover:bg-gray-50 border-b border-gray-100 last:border-0 flex items-start gap-2"
+                        onClick={() => {
+                          setAddrSearch(s.description);
+                          setAddrSuggestions([]);
+                          setAddrSearchOpen(false);
+                          // Geocode the selected place and pan map
+                          if (!geocoderRef.current || !mapRef.current) return;
+                          geocoderRef.current.geocode(
+                            { placeId: s.place_id },
+                            (results, status) => {
+                              if (status === "OK" && results && results[0]) {
+                                const loc = results[0].geometry.location;
+                                mapRef.current!.panTo(loc);
+                                mapRef.current!.setZoom(17);
+                                // Drop a temporary search pin
+                                if (addrSearchPinRef.current) {
+                                  addrSearchPinRef.current.map = null;
+                                }
+                                const pinEl = document.createElement("div");
+                                pinEl.innerHTML = `<div style="width:36px;height:36px;background:#4285f4;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.35)"></div>`;
+                                const pin =
+                                  new google.maps.marker.AdvancedMarkerElement({
+                                    map: mapRef.current!,
+                                    position: loc,
+                                    content: pinEl,
+                                    title: s.description,
+                                  });
+                                addrSearchPinRef.current = pin;
+                                // Clicking the blue pin shows the action chooser
+                                pin.addListener("gmp-click", () => {
+                                  setActionChooser({
+                                    lat: loc.lat(),
+                                    lng: loc.lng(),
+                                    address: convertGoogleAddresses(
+                                      s.description
+                                    ),
+                                  });
+                                });
+                              }
+                            }
+                          );
+                        }}
+                      >
+                        <MapPin className="w-3.5 h-3.5 text-gray-400 mt-0.5 shrink-0" />
+                        <span className="leading-snug">{s.description}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* RS Actions pane is now opened via the header folder-expander icon
+          {/* RS Actions pane is now opened via the header folder-expander icon
             (DashboardLayout's rightPaneToggle prop) instead of a draggable
             side tab — see the DashboardLayout invocation below. */}
 
-        {/* ── Draggable Floating Pill Bar (all devices) ──
+          {/* ── Draggable Floating Pill Bar (all devices) ──
              Tap-hold the drag handle to reposition vertically. Position persisted to localStorage. */}
-        <div
-          className="absolute left-0 right-0 z-20 flex items-center justify-center pointer-events-none"
-          style={{ top: `${pillBarTop}%`, transform: "translateY(-50%)" }}
-        >
-          {/* Drag handle — long-press activates drag */}
           <div
-            className={`pointer-events-auto flex items-center gap-2 lg:gap-3 px-2 py-1.5 rounded-3xl ${
-              pillBarDraggingRef.current ? "cursor-grabbing" : "cursor-grab"
-            } select-none touch-none`}
-            onMouseDown={e => {
-              // Long-press to drag on desktop
-              const startY = e.clientY;
-              const startTop = pillBarTop;
-              const parentH =
-                e.currentTarget.parentElement?.parentElement?.clientHeight ??
-                window.innerHeight;
-              pillBarIsDraggingRef.current = false;
-              pillBarLongPressRef.current = setTimeout(() => {
-                pillBarDraggingRef.current = true;
-                const onMove = (me: MouseEvent) => {
-                  const delta = me.clientY - startY;
-                  if (Math.abs(delta) > 3) {
-                    pillBarIsDraggingRef.current = true;
-                  }
-                  setPillBarTop(
-                    Math.max(
-                      5,
-                      Math.min(95, startTop + (delta / parentH) * 100)
-                    )
-                  );
-                };
+            className="absolute left-0 right-0 z-20 flex items-center justify-center pointer-events-none"
+            style={{ top: `${pillBarTop}%`, transform: "translateY(-50%)" }}
+          >
+            {/* Drag handle — long-press activates drag */}
+            <div
+              className={`pointer-events-auto flex items-center gap-2 lg:gap-3 px-2 py-1.5 rounded-3xl ${
+                pillBarDraggingRef.current ? "cursor-grabbing" : "cursor-grab"
+              } select-none touch-none`}
+              onMouseDown={e => {
+                // Long-press to drag on desktop
+                const startY = e.clientY;
+                const startTop = pillBarTop;
+                const parentH =
+                  e.currentTarget.parentElement?.parentElement?.clientHeight ??
+                  window.innerHeight;
+                pillBarIsDraggingRef.current = false;
+                pillBarLongPressRef.current = setTimeout(() => {
+                  pillBarDraggingRef.current = true;
+                  const onMove = (me: MouseEvent) => {
+                    const delta = me.clientY - startY;
+                    if (Math.abs(delta) > 3) {
+                      pillBarIsDraggingRef.current = true;
+                    }
+                    setPillBarTop(
+                      Math.max(
+                        5,
+                        Math.min(95, startTop + (delta / parentH) * 100)
+                      )
+                    );
+                  };
+                  const onUp = () => {
+                    pillBarDraggingRef.current = false;
+                    document.removeEventListener("mousemove", onMove);
+                    document.removeEventListener("mouseup", onUp);
+                  };
+                  document.addEventListener("mousemove", onMove);
+                  document.addEventListener("mouseup", onUp);
+                }, 300);
                 const onUp = () => {
-                  pillBarDraggingRef.current = false;
-                  document.removeEventListener("mousemove", onMove);
+                  if (pillBarLongPressRef.current)
+                    clearTimeout(pillBarLongPressRef.current);
                   document.removeEventListener("mouseup", onUp);
                 };
-                document.addEventListener("mousemove", onMove);
                 document.addEventListener("mouseup", onUp);
-              }, 300);
-              const onUp = () => {
-                if (pillBarLongPressRef.current)
-                  clearTimeout(pillBarLongPressRef.current);
-                document.removeEventListener("mouseup", onUp);
-              };
-              document.addEventListener("mouseup", onUp);
-            }}
-            onTouchStart={e => {
-              const touch = e.touches[0];
-              const startY = touch.clientY;
-              const startTop = pillBarTop;
-              const parentH =
-                e.currentTarget.parentElement?.parentElement?.clientHeight ??
-                window.innerHeight;
-              pillBarIsDraggingRef.current = false;
-              pillBarLongPressRef.current = setTimeout(() => {
-                pillBarDraggingRef.current = true;
-                const onMove = (te: TouchEvent) => {
-                  const delta = te.touches[0].clientY - startY;
-                  if (Math.abs(delta) > 3) {
-                    pillBarIsDraggingRef.current = true;
-                  }
-                  setPillBarTop(
-                    Math.max(
-                      5,
-                      Math.min(95, startTop + (delta / parentH) * 100)
-                    )
-                  );
-                };
+              }}
+              onTouchStart={e => {
+                const touch = e.touches[0];
+                const startY = touch.clientY;
+                const startTop = pillBarTop;
+                const parentH =
+                  e.currentTarget.parentElement?.parentElement?.clientHeight ??
+                  window.innerHeight;
+                pillBarIsDraggingRef.current = false;
+                pillBarLongPressRef.current = setTimeout(() => {
+                  pillBarDraggingRef.current = true;
+                  const onMove = (te: TouchEvent) => {
+                    const delta = te.touches[0].clientY - startY;
+                    if (Math.abs(delta) > 3) {
+                      pillBarIsDraggingRef.current = true;
+                    }
+                    setPillBarTop(
+                      Math.max(
+                        5,
+                        Math.min(95, startTop + (delta / parentH) * 100)
+                      )
+                    );
+                  };
+                  const onEnd = () => {
+                    pillBarDraggingRef.current = false;
+                    document.removeEventListener("touchmove", onMove);
+                    document.removeEventListener("touchend", onEnd);
+                  };
+                  document.addEventListener("touchmove", onMove, {
+                    passive: true,
+                  });
+                  document.addEventListener("touchend", onEnd);
+                }, 300);
                 const onEnd = () => {
-                  pillBarDraggingRef.current = false;
-                  document.removeEventListener("touchmove", onMove);
+                  if (pillBarLongPressRef.current)
+                    clearTimeout(pillBarLongPressRef.current);
                   document.removeEventListener("touchend", onEnd);
                 };
-                document.addEventListener("touchmove", onMove, {
-                  passive: true,
-                });
                 document.addEventListener("touchend", onEnd);
-              }, 300);
-              const onEnd = () => {
-                if (pillBarLongPressRef.current)
-                  clearTimeout(pillBarLongPressRef.current);
-                document.removeEventListener("touchend", onEnd);
-              };
-              document.addEventListener("touchend", onEnd);
-            }}
-          >
-            {/* Home pill (all devices) — solid filled chip (not translucent) so
+              }}
+            >
+              {/* Home pill (all devices) — solid filled chip (not translucent) so
                 it stays legible over busy satellite imagery, matching the
                 other opaque on-map markers (e.g. the pink custom marker pin).
                 -400 fill / -600 border (one step softer than the previous
                 -500/-700) keeps it defined against terrain without reading
                 as heavy; all four pills share this same fixed w-20 size. */}
-            <button
-              onClick={e => {
-                if (pillBarIsDraggingRef.current) {
-                  e.preventDefault();
-                  return;
-                }
-                setLocation("/");
-              }}
-              className="flex flex-col items-center justify-center gap-1 px-5 py-2.5 rounded-2xl shadow-lg border transition-all w-20 text-white border-slate-600 bg-slate-400 hover:bg-slate-300 active:scale-95"
-              title="Home"
-            >
-              <Home className="h-5 w-5 flex-shrink-0" />
-              <span className="text-[11px] font-semibold leading-none">
-                Home
-              </span>
-            </button>
-
-            {/* Active RS pill */}
-            {(() => {
-              const activeSheet =
-                rsSelectedSheetId && rsSheetsData
-                  ? (rsSheetsData as any[]).find(
-                      (s: any) => s.id === rsSelectedSheetId
-                    )
-                  : null;
-              return (
-                <button
-                  disabled={!activeSheet}
-                  onClick={e => {
-                    if (pillBarIsDraggingRef.current) {
-                      e.preventDefault();
-                      return;
-                    }
-                    if (activeSheet) setLocation(`/sheet/${rsSelectedSheetId}`);
-                  }}
-                  className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all w-20 px-5 py-2.5 ${
-                    activeSheet
-                      ? "text-white border-blue-600 bg-blue-400 hover:bg-blue-300 active:scale-95 cursor-pointer"
-                      : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"
-                  }`}
-                  title={
-                    activeSheet
-                      ? "Open active running sheet"
-                      : "No running sheet selected"
+              <button
+                onClick={e => {
+                  if (pillBarIsDraggingRef.current) {
+                    e.preventDefault();
+                    return;
                   }
-                >
-                  <ClipboardList className="h-5 w-5 flex-shrink-0" />
-                  <span className="text-[11px] font-semibold leading-none">
-                    Active RS
-                  </span>
-                </button>
-              );
-            })()}
+                  setLocation("/");
+                }}
+                className="flex flex-col items-center justify-center gap-1 px-5 py-2.5 rounded-2xl shadow-lg border transition-all w-20 text-white border-slate-600 bg-slate-400 hover:bg-slate-300 active:scale-95"
+                title="Home"
+              >
+                <Home className="h-5 w-5 flex-shrink-0" />
+                <span className="text-[11px] font-semibold leading-none">
+                  Home
+                </span>
+              </button>
 
-            {/* RS Entry pill */}
-            {(() => {
-              const hasSheet = !!rsSelectedSheetId;
-              return (
-                <button
-                  disabled={!hasSheet}
-                  onClick={e => {
-                    if (pillBarIsDraggingRef.current) {
-                      e.preventDefault();
-                      return;
+              {/* Active RS pill */}
+              {(() => {
+                const activeSheet =
+                  rsSelectedSheetId && rsSheetsData
+                    ? (rsSheetsData as any[]).find(
+                        (s: any) => s.id === rsSelectedSheetId
+                      )
+                    : null;
+                return (
+                  <button
+                    disabled={!activeSheet}
+                    onClick={e => {
+                      if (pillBarIsDraggingRef.current) {
+                        e.preventDefault();
+                        return;
+                      }
+                      if (activeSheet)
+                        setLocation(`/sheet/${rsSelectedSheetId}`);
+                    }}
+                    className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all w-20 px-5 py-2.5 ${
+                      activeSheet
+                        ? "text-white border-blue-600 bg-blue-400 hover:bg-blue-300 active:scale-95 cursor-pointer"
+                        : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"
+                    }`}
+                    title={
+                      activeSheet
+                        ? "Open active running sheet"
+                        : "No running sheet selected"
                     }
-                    if (hasSheet) setMapQeOpen(true);
-                  }}
-                  className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all w-20 px-5 py-2.5 ${
-                    hasSheet
-                      ? "text-white border-emerald-600 bg-emerald-400 hover:bg-emerald-300 active:scale-95 cursor-pointer"
-                      : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"
-                  }`}
-                  title={
-                    hasSheet ? "RS Quick Entry" : "Select a running sheet first"
-                  }
-                >
-                  <FileText className="h-5 w-5 flex-shrink-0" />
-                  <span className="text-[11px] font-semibold leading-none">
-                    RS Entry
-                  </span>
-                </button>
-              );
-            })()}
+                  >
+                    <ClipboardList className="h-5 w-5 flex-shrink-0" />
+                    <span className="text-[11px] font-semibold leading-none">
+                      Active RS
+                    </span>
+                  </button>
+                );
+              })()}
 
-            {/* Intel pill */}
-            <button
-              onClick={e => {
-                if (pillBarIsDraggingRef.current) {
-                  e.preventDefault();
-                  return;
-                }
-                setLocation("/intelligence");
-              }}
-              className="flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all w-20 px-5 py-2.5 text-white border-violet-600 bg-violet-400 hover:bg-violet-300 active:scale-95"
-              title="Intel Profiles"
-            >
-              <FolderSearch className="h-5 w-5 flex-shrink-0" />
-              <span className="text-[11px] font-semibold leading-none">
-                Intel
-              </span>
-            </button>
+              {/* RS Entry pill */}
+              {(() => {
+                const hasSheet = !!rsSelectedSheetId;
+                return (
+                  <button
+                    disabled={!hasSheet}
+                    onClick={e => {
+                      if (pillBarIsDraggingRef.current) {
+                        e.preventDefault();
+                        return;
+                      }
+                      if (hasSheet) setMapQeOpen(true);
+                    }}
+                    className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all w-20 px-5 py-2.5 ${
+                      hasSheet
+                        ? "text-white border-emerald-600 bg-emerald-400 hover:bg-emerald-300 active:scale-95 cursor-pointer"
+                        : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"
+                    }`}
+                    title={
+                      hasSheet
+                        ? "RS Quick Entry"
+                        : "Select a running sheet first"
+                    }
+                  >
+                    <FileText className="h-5 w-5 flex-shrink-0" />
+                    <span className="text-[11px] font-semibold leading-none">
+                      RS Entry
+                    </span>
+                  </button>
+                );
+              })()}
+
+              {/* Intel pill */}
+              <button
+                onClick={e => {
+                  if (pillBarIsDraggingRef.current) {
+                    e.preventDefault();
+                    return;
+                  }
+                  setLocation("/intelligence");
+                }}
+                className="flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all w-20 px-5 py-2.5 text-white border-violet-600 bg-violet-400 hover:bg-violet-300 active:scale-95"
+                title="Intel Profiles"
+              >
+                <FolderSearch className="h-5 w-5 flex-shrink-0" />
+                <span className="text-[11px] font-semibold leading-none">
+                  Intel
+                </span>
+              </button>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* ── RS Actions Right Pane ──
+        {/* ── RS Actions Right Pane ──
            z-30 + full viewport width on mobile: the map's floating overlays
            (search bar, locate buttons, bottom pill bar) are absolutely
            positioned within Map Area and don't shrink/clip with it, so on a
@@ -3981,706 +4013,623 @@ export default function IntelligenceMapping() {
            explicit here — full width (nothing beside it to spill into) and a
            z-index above the overlays' z-20 (nothing paints over it either),
            giving it the same "full vision" the left pane already has. */}
-      <div
-        className={`relative flex h-full flex-col border-l-[3px] border-primary/40 bg-card shadow-2xl flex-shrink-0 ${
-          rsActionsPaneOpen ? "z-30" : ""
-        } ${
-          paneResizeDraggingRef.current ? "" : "transition-all duration-200"
-        } ${rsActionsPaneOpen ? "rounded-l-2xl" : "overflow-hidden"}`}
-        style={{
-          width: rsActionsPaneOpen
-            ? isMobile
-              ? "100vw"
-              : `${activePaneWidth}px`
-            : 0,
-          minWidth: rsActionsPaneOpen
-            ? isMobile
-              ? "100vw"
-              : `${PANE_MIN_WIDTH}px`
-            : 0,
-        }}
-      >
-        {/* Resize handle — drag left edge to widen/narrow the pane (mouse or touch). Not on mobile: the pane is full-width there, nothing to resize against. */}
-        {rsActionsPaneOpen && !isMobile && (
-          <div
-            className="absolute -left-1.5 top-0 bottom-0 w-3 z-10 flex items-center justify-center cursor-col-resize touch-none select-none group"
-            title="Drag to resize"
-            onMouseDown={e => {
-              e.stopPropagation();
-              paneResizeDraggingRef.current = true;
-              const startX = e.clientX;
-              const startWidth = activePaneWidth;
-              const onMove = (me: MouseEvent) => {
-                const delta = startX - me.clientX;
-                const maxW = Math.max(
-                  PANE_MIN_WIDTH,
-                  Math.min(720, window.innerWidth - 320)
-                );
-                const next = Math.min(
-                  maxW,
-                  Math.max(PANE_MIN_WIDTH, startWidth + delta)
-                );
-                if (paneSubViewOpen) setPanelWidthProfile(next);
-                else setPanelWidthNormal(next);
-              };
-              const onUp = () => {
-                paneResizeDraggingRef.current = false;
-                document.removeEventListener("mousemove", onMove);
-                document.removeEventListener("mouseup", onUp);
-              };
-              document.addEventListener("mousemove", onMove);
-              document.addEventListener("mouseup", onUp);
-            }}
-            onTouchStart={e => {
-              e.stopPropagation();
-              paneResizeDraggingRef.current = true;
-              const startX = e.touches[0].clientX;
-              const startWidth = activePaneWidth;
-              const onMove = (te: TouchEvent) => {
-                const delta = startX - te.touches[0].clientX;
-                const maxW = Math.max(
-                  PANE_MIN_WIDTH,
-                  Math.min(720, window.innerWidth - 320)
-                );
-                const next = Math.min(
-                  maxW,
-                  Math.max(PANE_MIN_WIDTH, startWidth + delta)
-                );
-                if (paneSubViewOpen) setPanelWidthProfile(next);
-                else setPanelWidthNormal(next);
-              };
-              const onEnd = () => {
-                paneResizeDraggingRef.current = false;
-                document.removeEventListener("touchmove", onMove);
-                document.removeEventListener("touchend", onEnd);
-              };
-              document.addEventListener("touchmove", onMove, { passive: true });
-              document.addEventListener("touchend", onEnd);
-            }}
-          >
-            <div className="w-1 h-12 rounded-full bg-border group-hover:bg-primary/60 transition-colors" />
-          </div>
-        )}
-
-        {/* Pane Header */}
-        <div className="flex items-center justify-between px-4 py-3.5 border-b-2 border-primary/20 flex-shrink-0 bg-primary/[0.06]">
-          {paneTargetProfileId !== null ? (
-            <button
-              onClick={() => setPaneTargetProfileId(null)}
-              className="flex items-center gap-2 min-w-0 flex-1 text-left hover:opacity-75 transition-opacity"
-            >
-              <ChevronLeft className="h-4 w-4 text-violet-500 flex-shrink-0" />
-              <User className="h-4 w-4 text-violet-500 flex-shrink-0" />
-              <span className="font-bold text-sm tracking-tight truncate">
-                Target Profile
-              </span>
-            </button>
-          ) : paneOperationProfileId !== null ? (
-            <button
-              onClick={() => setPaneOperationProfileId(null)}
-              className="flex items-center gap-2 min-w-0 flex-1 text-left hover:opacity-75 transition-opacity"
-            >
-              <ChevronLeft className="h-4 w-4 text-blue-500 flex-shrink-0" />
-              <FolderOpen className="h-4 w-4 text-blue-500 flex-shrink-0" />
-              <span className="font-bold text-sm tracking-tight truncate">
-                Operation Profile
-              </span>
-            </button>
-          ) : paneImagesOpId !== null ? (
-            <button
-              onClick={() => {
-                // Back steps one level at a time: a sheet's photos -> that
-                // operation's sheet folders -> out to the settings list.
-                if (paneImagesSheetId !== null) setPaneImagesSheetId(null);
-                else setPaneImagesOpId(null);
+        <div
+          className={`relative flex h-full flex-col border-l-[3px] border-primary/40 bg-card shadow-2xl flex-shrink-0 ${
+            rsActionsPaneOpen ? "z-30" : ""
+          } ${
+            paneResizeDraggingRef.current ? "" : "transition-all duration-200"
+          } ${rsActionsPaneOpen ? "rounded-l-2xl" : "overflow-hidden"}`}
+          style={{
+            width: rsActionsPaneOpen
+              ? isMobile
+                ? "100vw"
+                : `${activePaneWidth}px`
+              : 0,
+            minWidth: rsActionsPaneOpen
+              ? isMobile
+                ? "100vw"
+                : `${PANE_MIN_WIDTH}px`
+              : 0,
+          }}
+        >
+          {/* Resize handle — drag left edge to widen/narrow the pane (mouse or touch). Not on mobile: the pane is full-width there, nothing to resize against. */}
+          {rsActionsPaneOpen && !isMobile && (
+            <div
+              className="absolute -left-1.5 top-0 bottom-0 w-3 z-10 flex items-center justify-center cursor-col-resize touch-none select-none group"
+              title="Drag to resize"
+              onMouseDown={e => {
+                e.stopPropagation();
+                paneResizeDraggingRef.current = true;
+                const startX = e.clientX;
+                const startWidth = activePaneWidth;
+                const onMove = (me: MouseEvent) => {
+                  const delta = startX - me.clientX;
+                  const maxW = Math.max(
+                    PANE_MIN_WIDTH,
+                    Math.min(720, window.innerWidth - 320)
+                  );
+                  const next = Math.min(
+                    maxW,
+                    Math.max(PANE_MIN_WIDTH, startWidth + delta)
+                  );
+                  if (paneSubViewOpen) setPanelWidthProfile(next);
+                  else setPanelWidthNormal(next);
+                };
+                const onUp = () => {
+                  paneResizeDraggingRef.current = false;
+                  document.removeEventListener("mousemove", onMove);
+                  document.removeEventListener("mouseup", onUp);
+                };
+                document.addEventListener("mousemove", onMove);
+                document.addEventListener("mouseup", onUp);
               }}
-              className="flex items-center gap-2 min-w-0 flex-1 text-left hover:opacity-75 transition-opacity"
+              onTouchStart={e => {
+                e.stopPropagation();
+                paneResizeDraggingRef.current = true;
+                const startX = e.touches[0].clientX;
+                const startWidth = activePaneWidth;
+                const onMove = (te: TouchEvent) => {
+                  const delta = startX - te.touches[0].clientX;
+                  const maxW = Math.max(
+                    PANE_MIN_WIDTH,
+                    Math.min(720, window.innerWidth - 320)
+                  );
+                  const next = Math.min(
+                    maxW,
+                    Math.max(PANE_MIN_WIDTH, startWidth + delta)
+                  );
+                  if (paneSubViewOpen) setPanelWidthProfile(next);
+                  else setPanelWidthNormal(next);
+                };
+                const onEnd = () => {
+                  paneResizeDraggingRef.current = false;
+                  document.removeEventListener("touchmove", onMove);
+                  document.removeEventListener("touchend", onEnd);
+                };
+                document.addEventListener("touchmove", onMove, {
+                  passive: true,
+                });
+                document.addEventListener("touchend", onEnd);
+              }}
             >
-              <ChevronLeft className="h-4 w-4 text-pink-500 flex-shrink-0" />
-              <ImageIcon className="h-4 w-4 text-pink-500 flex-shrink-0" />
-              <span className="font-bold text-sm tracking-tight truncate">
-                Operation Images
-              </span>
-            </button>
-          ) : (
-            <div className="flex items-center gap-2">
-              <Settings2 className="h-4 w-4 text-primary" />
-              <span className="font-bold text-sm tracking-tight">
-                Map Settings
-              </span>
+              <div className="w-1 h-12 rounded-full bg-border group-hover:bg-primary/60 transition-colors" />
             </div>
           )}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 rounded-xl flex-shrink-0"
-            onClick={() => {
-              setRsActionsPaneOpen(false);
-              setPaneTargetProfileId(null);
-              setPaneOperationProfileId(null);
-              setPaneImagesOpId(null);
-              setPaneImagesSheetId(null);
-            }}
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
 
-        {/* Pane Body */}
-        {paneTargetProfileId !== null ? (
-          <div className="flex-1 overflow-hidden">
-            <DocumentZoomViewer contentWidth={768} className="w-full h-full">
-              <TargetProfileContent targetId={paneTargetProfileId} />
-            </DocumentZoomViewer>
-          </div>
-        ) : paneOperationProfileId !== null ? (
-          <div className="flex-1 overflow-hidden">
-            <DocumentZoomViewer contentWidth={768} className="w-full h-full">
-              <OperationProfileContent operationId={paneOperationProfileId} />
-            </DocumentZoomViewer>
-          </div>
-        ) : paneImagesOpId !== null ? (
-          // The Images page's own two levels, rendered inline. Plain scroll
-          // rather than DocumentZoomViewer: this is an interactive gallery
-          // (upload, link, delete, lightbox), not a document to zoom.
-          <div className="flex-1 overflow-y-auto">
-            {paneImagesSheetId !== null ? (
-              <SheetGallery
-                operationId={paneImagesOpId}
-                sheetId={paneImagesSheetId}
-                onBack={() => setPaneImagesSheetId(null)}
-                hideBackButton
-              />
+          {/* Pane Header */}
+          <div className="flex items-center justify-between px-4 py-3.5 border-b-2 border-primary/20 flex-shrink-0 bg-primary/[0.06]">
+            {paneTargetProfileId !== null ? (
+              <button
+                onClick={() => setPaneTargetProfileId(null)}
+                className="flex items-center gap-2 min-w-0 flex-1 text-left hover:opacity-75 transition-opacity"
+              >
+                <ChevronLeft className="h-4 w-4 text-violet-500 flex-shrink-0" />
+                <User className="h-4 w-4 text-violet-500 flex-shrink-0" />
+                <span className="font-bold text-sm tracking-tight truncate">
+                  Target Profile
+                </span>
+              </button>
+            ) : paneOperationProfileId !== null ? (
+              <button
+                onClick={() => setPaneOperationProfileId(null)}
+                className="flex items-center gap-2 min-w-0 flex-1 text-left hover:opacity-75 transition-opacity"
+              >
+                <ChevronLeft className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                <FolderOpen className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                <span className="font-bold text-sm tracking-tight truncate">
+                  Operation Profile
+                </span>
+              </button>
+            ) : paneImagesOpId !== null ? (
+              <button
+                onClick={() => {
+                  // Back steps one level at a time: a sheet's photos -> that
+                  // operation's sheet folders -> out to the settings list.
+                  if (paneImagesSheetId !== null) setPaneImagesSheetId(null);
+                  else setPaneImagesOpId(null);
+                }}
+                className="flex items-center gap-2 min-w-0 flex-1 text-left hover:opacity-75 transition-opacity"
+              >
+                <ChevronLeft className="h-4 w-4 text-pink-500 flex-shrink-0" />
+                <ImageIcon className="h-4 w-4 text-pink-500 flex-shrink-0" />
+                <span className="font-bold text-sm tracking-tight truncate">
+                  Operation Images
+                </span>
+              </button>
             ) : (
-              <SheetFolderList
-                operationId={paneImagesOpId}
-                onBack={() => setPaneImagesOpId(null)}
-                onSelect={id => setPaneImagesSheetId(id)}
-                hideBackButton
-              />
+              <div className="flex items-center gap-2">
+                <Settings2 className="h-4 w-4 text-primary" />
+                <span className="font-bold text-sm tracking-tight">
+                  Map Settings
+                </span>
+              </div>
             )}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 rounded-xl flex-shrink-0"
+              onClick={() => {
+                setRsActionsPaneOpen(false);
+                setPaneTargetProfileId(null);
+                setPaneOperationProfileId(null);
+                setPaneImagesOpId(null);
+                setPaneImagesSheetId(null);
+              }}
+            >
+              <X className="h-4 w-4" />
+            </Button>
           </div>
-        ) : (
-          <div
-            className="flex-1 overflow-y-auto"
-            onClick={() => {
-              if (rsInlineLabel) closeInlineField();
-            }}
-          >
-            {/* ── MAP THEME toggle ── */}
-            <div className="px-3 py-3 border-b border-border">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                    Map Theme
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`text-[11px] font-medium transition-colors ${!mapDarkMode ? "text-foreground" : "text-muted-foreground"}`}
-                  >
-                    Light
-                  </span>
-                  <Switch
-                    checked={mapDarkMode}
-                    onCheckedChange={setMapDarkMode}
-                    className="scale-90"
-                  />
-                  <span
-                    className={`text-[11px] font-medium transition-colors ${mapDarkMode ? "text-foreground" : "text-muted-foreground"}`}
-                  >
-                    Dark
-                  </span>
+
+          {/* Pane Body */}
+          {paneTargetProfileId !== null ? (
+            <div className="flex-1 overflow-hidden">
+              <DocumentZoomViewer contentWidth={768} className="w-full h-full">
+                <TargetProfileContent targetId={paneTargetProfileId} />
+              </DocumentZoomViewer>
+            </div>
+          ) : paneOperationProfileId !== null ? (
+            <div className="flex-1 overflow-hidden">
+              <DocumentZoomViewer contentWidth={768} className="w-full h-full">
+                <OperationProfileContent operationId={paneOperationProfileId} />
+              </DocumentZoomViewer>
+            </div>
+          ) : paneImagesOpId !== null ? (
+            // The Images page's own two levels, rendered inline. Plain scroll
+            // rather than DocumentZoomViewer: this is an interactive gallery
+            // (upload, link, delete, lightbox), not a document to zoom.
+            <div className="flex-1 overflow-y-auto">
+              {paneImagesSheetId !== null ? (
+                <SheetGallery
+                  operationId={paneImagesOpId}
+                  sheetId={paneImagesSheetId}
+                  onBack={() => setPaneImagesSheetId(null)}
+                  hideBackButton
+                />
+              ) : (
+                <SheetFolderList
+                  operationId={paneImagesOpId}
+                  onBack={() => setPaneImagesOpId(null)}
+                  onSelect={id => setPaneImagesSheetId(id)}
+                  hideBackButton
+                />
+              )}
+            </div>
+          ) : (
+            <div
+              className="flex-1 overflow-y-auto"
+              onClick={() => {
+                if (rsInlineLabel) closeInlineField();
+              }}
+            >
+              {/* ── MAP THEME toggle ── */}
+              <div className="px-3 py-3 border-b border-border">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                      Map Theme
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`text-[11px] font-medium transition-colors ${!mapDarkMode ? "text-foreground" : "text-muted-foreground"}`}
+                    >
+                      Light
+                    </span>
+                    <Switch
+                      checked={mapDarkMode}
+                      onCheckedChange={setMapDarkMode}
+                      className="scale-90"
+                    />
+                    <span
+                      className={`text-[11px] font-medium transition-colors ${mapDarkMode ? "text-foreground" : "text-muted-foreground"}`}
+                    >
+                      Dark
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* ── OPERATIONS section ── */}
-            <div className="px-3 py-3 border-b border-border">
-              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-2">
-                Operations
-              </span>
-              {opsLoading ? (
-                <div className="flex items-center justify-center py-3">
-                  <Spinner className="h-4 w-4" />
-                </div>
-              ) : !operations || operations.length === 0 ? (
-                <p className="text-xs text-muted-foreground text-center py-3">
-                  No operations found.
-                </p>
-              ) : (
-                <Popover
-                  open={opsDropdownOpen}
-                  onOpenChange={setOpsDropdownOpen}
-                >
-                  <PopoverTrigger asChild>
-                    <button className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border-2 border-border bg-background hover:bg-accent/50 active:scale-[0.98] transition-all text-left">
-                      <span className="text-xs text-foreground truncate flex-1">
-                        {selectedOpIds.length === 0
-                          ? "Select operations…"
-                          : selectedOpIds.length ===
-                              (operations as any[]).length
-                            ? "All operations"
-                            : (operations as any[])
-                                .filter((op: any) =>
-                                  selectedOpIds.includes(op.id)
-                                )
-                                .map((op: any) => op.name)
-                                .join(", ")}
-                      </span>
-                      <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent
-                    className="w-72 p-2 rounded-xl border-2 border-border shadow-xl"
-                    align="end"
+              {/* ── OPERATIONS section ── */}
+              <div className="px-3 py-3 border-b border-border">
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-2">
+                  Operations
+                </span>
+                {opsLoading ? (
+                  <div className="flex items-center justify-center py-3">
+                    <Spinner className="h-4 w-4" />
+                  </div>
+                ) : !operations || operations.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-3">
+                    No operations found.
+                  </p>
+                ) : (
+                  <Popover
+                    open={opsDropdownOpen}
+                    onOpenChange={setOpsDropdownOpen}
                   >
-                    <div className="flex items-center justify-between px-1 pb-2 border-b border-border mb-1">
-                      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                        Select Operations
-                      </span>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={selectAllOps}
-                          className="text-[10px] text-blue-400 hover:text-blue-300 font-semibold"
-                        >
-                          All
-                        </button>
-                        <button
-                          onClick={clearAll}
-                          className="text-[10px] text-muted-foreground hover:text-foreground font-semibold"
-                        >
-                          Clear
-                        </button>
+                    <PopoverTrigger asChild>
+                      <button className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border-2 border-border bg-background hover:bg-accent/50 active:scale-[0.98] transition-all text-left">
+                        <span className="text-xs text-foreground truncate flex-1">
+                          {selectedOpIds.length === 0
+                            ? "Select operations…"
+                            : selectedOpIds.length ===
+                                (operations as any[]).length
+                              ? "All operations"
+                              : (operations as any[])
+                                  .filter((op: any) =>
+                                    selectedOpIds.includes(op.id)
+                                  )
+                                  .map((op: any) => op.name)
+                                  .join(", ")}
+                        </span>
+                        <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      className="w-72 p-2 rounded-xl border-2 border-border shadow-xl"
+                      align="end"
+                    >
+                      <div className="flex items-center justify-between px-1 pb-2 border-b border-border mb-1">
+                        <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                          Select Operations
+                        </span>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={selectAllOps}
+                            className="text-[10px] text-blue-400 hover:text-blue-300 font-semibold"
+                          >
+                            All
+                          </button>
+                          <button
+                            onClick={clearAll}
+                            className="text-[10px] text-muted-foreground hover:text-foreground font-semibold"
+                          >
+                            Clear
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex flex-col gap-0.5 max-h-64 overflow-y-auto">
-                      {(operations as any[]).map(op => {
-                        const opTargets = opTargetMap.get(op.id) ?? [];
-                        const isOpSelected = selectedOpIds.includes(op.id);
-                        const isExpanded = opExpanded.has(op.id);
-                        return (
-                          <div key={op.id}>
-                            <div className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-accent/50 transition-colors">
-                              <Checkbox
-                                id={`rp-op-${op.id}`}
-                                checked={isOpSelected}
-                                onCheckedChange={() => toggleOp(op.id)}
-                                className="h-4 w-4"
-                              />
-                              <label
-                                htmlFor={`rp-op-${op.id}`}
-                                className="flex-1 text-sm cursor-pointer truncate font-medium"
-                              >
-                                {op.name}
-                              </label>
-                              {opTargets.length > 0 && (
-                                <button
-                                  onClick={() =>
-                                    setOpExpanded(prev => {
-                                      const next = new Set(prev);
-                                      next.has(op.id)
-                                        ? next.delete(op.id)
-                                        : next.add(op.id);
-                                      return next;
-                                    })
-                                  }
-                                  className="text-muted-foreground hover:text-foreground p-0.5"
+                      <div className="flex flex-col gap-0.5 max-h-64 overflow-y-auto">
+                        {(operations as any[]).map(op => {
+                          const opTargets = opTargetMap.get(op.id) ?? [];
+                          const isOpSelected = selectedOpIds.includes(op.id);
+                          const isExpanded = opExpanded.has(op.id);
+                          return (
+                            <div key={op.id}>
+                              <div className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-accent/50 transition-colors">
+                                <Checkbox
+                                  id={`rp-op-${op.id}`}
+                                  checked={isOpSelected}
+                                  onCheckedChange={() => toggleOp(op.id)}
+                                  className="h-4 w-4"
+                                />
+                                <label
+                                  htmlFor={`rp-op-${op.id}`}
+                                  className="flex-1 text-sm cursor-pointer truncate font-medium"
                                 >
-                                  {isExpanded ? (
-                                    <ChevronDown className="h-3.5 w-3.5" />
-                                  ) : (
-                                    <ChevronRight className="h-3.5 w-3.5" />
-                                  )}
-                                </button>
+                                  {op.name}
+                                </label>
+                                {opTargets.length > 0 && (
+                                  <button
+                                    onClick={() =>
+                                      setOpExpanded(prev => {
+                                        const next = new Set(prev);
+                                        next.has(op.id)
+                                          ? next.delete(op.id)
+                                          : next.add(op.id);
+                                        return next;
+                                      })
+                                    }
+                                    className="text-muted-foreground hover:text-foreground p-0.5"
+                                  >
+                                    {isExpanded ? (
+                                      <ChevronDown className="h-3.5 w-3.5" />
+                                    ) : (
+                                      <ChevronRight className="h-3.5 w-3.5" />
+                                    )}
+                                  </button>
+                                )}
+                              </div>
+                              {isExpanded && opTargets.length > 0 && (
+                                <div className="ml-6 pl-2 border-l border-border/50 flex flex-col gap-0.5 mb-1">
+                                  {opTargets.map(t => (
+                                    <div
+                                      key={t.id}
+                                      className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-accent/40 transition-colors"
+                                    >
+                                      <Checkbox
+                                        id={`rp-tgt-${t.id}`}
+                                        checked={selectedTargetIds.includes(
+                                          t.id
+                                        )}
+                                        onCheckedChange={() =>
+                                          toggleTarget(t.id)
+                                        }
+                                        className="h-3.5 w-3.5"
+                                      />
+                                      <label
+                                        htmlFor={`rp-tgt-${t.id}`}
+                                        className="text-xs cursor-pointer truncate text-muted-foreground"
+                                      >
+                                        {t.name}
+                                      </label>
+                                    </div>
+                                  ))}
+                                </div>
                               )}
                             </div>
-                            {isExpanded && opTargets.length > 0 && (
-                              <div className="ml-6 pl-2 border-l border-border/50 flex flex-col gap-0.5 mb-1">
-                                {opTargets.map(t => (
-                                  <div
-                                    key={t.id}
-                                    className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-accent/40 transition-colors"
-                                  >
-                                    <Checkbox
-                                      id={`rp-tgt-${t.id}`}
-                                      checked={selectedTargetIds.includes(t.id)}
-                                      onCheckedChange={() => toggleTarget(t.id)}
-                                      className="h-3.5 w-3.5"
-                                    />
-                                    <label
-                                      htmlFor={`rp-tgt-${t.id}`}
-                                      className="text-xs cursor-pointer truncate text-muted-foreground"
-                                    >
-                                      {t.name}
-                                    </label>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </PopoverContent>
-                </Popover>
-              )}
-            </div>
+                          );
+                        })}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                )}
+              </div>
 
-            {/* ── RS SELECTION section ── */}
-            <div className="px-3 py-3 border-b border-border space-y-3">
-              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
-                RS Selection
-              </span>
+              {/* ── RS SELECTION section ── */}
+              <div className="px-3 py-3 border-b border-border space-y-3">
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
+                  RS Selection
+                </span>
 
-              {/* No ops selected — prompt user */}
-              {selectedOpIds.length === 0 && (
-                <p className="text-[11px] text-muted-foreground leading-snug">
-                  Select an operation above to see available running sheets.
-                </p>
-              )}
+                {/* No ops selected — prompt user */}
+                {selectedOpIds.length === 0 && (
+                  <p className="text-[11px] text-muted-foreground leading-snug">
+                    Select an operation above to see available running sheets.
+                  </p>
+                )}
 
-              {/* Running sheet selector — driven by top Operations filter */}
-              {selectedOpIds.length > 0 && (
-                <div className="flex items-center gap-2">
-                  <Select
-                    value={
-                      rsSelectedSheetId !== null
-                        ? String(rsSelectedSheetId)
-                        : ""
-                    }
-                    onValueChange={val => {
-                      setRsSelectedSheetId(Number(val));
-                      setRsLastEntry(null);
-                    }}
-                  >
-                    <SelectTrigger className="flex-1 h-9 text-xs rounded-xl border-2">
-                      <SelectValue placeholder="Choose running sheet…" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(rsSheetsData ?? [])
-                        .filter((s: any) => !s.closedAt && !s.deletedAt)
-                        .map((s: any) => (
-                          <SelectItem
-                            key={s.id}
-                            value={String(s.id)}
-                            className="text-xs"
-                          >
-                            {s.title || `Sheet #${s.id}`}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                  {rsSelectedSheetId !== null && (
-                    <button
-                      onClick={() => {
-                        setRsSelectedSheetId(null);
+                {/* Running sheet selector — driven by top Operations filter */}
+                {selectedOpIds.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <Select
+                      value={
+                        rsSelectedSheetId !== null
+                          ? String(rsSelectedSheetId)
+                          : ""
+                      }
+                      onValueChange={val => {
+                        setRsSelectedSheetId(Number(val));
                         setRsLastEntry(null);
                       }}
-                      className="flex-shrink-0 h-9 w-9 flex items-center justify-center rounded-xl border-2 border-border bg-muted/40 hover:bg-destructive/20 hover:border-destructive/40 active:scale-95 transition-all"
-                      title="Clear running sheet selection"
                     >
-                      <X className="h-3.5 w-3.5 text-muted-foreground" />
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {/* RS Quick Entry moved to bottom tab bar — use the indigo RS Entry pill instead */}
-            </div>
-            {/* end RS Selection */}
-
-            {/* ── PROFILES (Operation behind the selected RS, then its Target) ── */}
-            {rsSelectedSheetId !== null &&
-              (() => {
-                const sheet = rsSheetsData
-                  ? (rsSheetsData as any[]).find(
-                      (s: any) => s.id === rsSelectedSheetId
-                    )
-                  : null;
-                const opId = sheet?.operationId ?? null;
-                if (!opId && !rsTargetData) return null;
-                return (
-                  <div className="px-3 py-3 border-b border-border space-y-2">
-                    <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
-                      Profiles
-                    </span>
-                    {opId && (
+                      <SelectTrigger className="flex-1 h-9 text-xs rounded-xl border-2">
+                        <SelectValue placeholder="Choose running sheet…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(rsSheetsData ?? [])
+                          .filter((s: any) => !s.closedAt && !s.deletedAt)
+                          .map((s: any) => (
+                            <SelectItem
+                              key={s.id}
+                              value={String(s.id)}
+                              className="text-xs"
+                            >
+                              {s.title || `Sheet #${s.id}`}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                    {rsSelectedSheetId !== null && (
                       <button
                         onClick={() => {
-                          setPaneOperationProfileId(opId);
-                          setPaneTargetProfileId(null);
-                          setPaneImagesOpId(null);
-                          setPaneImagesSheetId(null);
+                          setRsSelectedSheetId(null);
+                          setRsLastEntry(null);
                         }}
-                        className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-blue-500/40 bg-blue-500/10 hover:bg-blue-500/20 active:scale-[0.98] transition-all min-w-0"
+                        className="flex-shrink-0 h-9 w-9 flex items-center justify-center rounded-xl border-2 border-border bg-muted/40 hover:bg-destructive/20 hover:border-destructive/40 active:scale-95 transition-all"
+                        title="Clear running sheet selection"
                       >
-                        <FolderOpen className="h-3.5 w-3.5 text-blue-500 flex-shrink-0" />
-                        <span className="text-xs font-semibold text-blue-500 truncate flex-1 text-left">
-                          {(operations as any[] | undefined)?.find(
-                            (o: any) => o.id === opId
-                          )?.name ?? "Operation profile"}
-                        </span>
-                        <ExternalLink className="h-3 w-3 text-blue-500/60 flex-shrink-0" />
+                        <X className="h-3.5 w-3.5 text-muted-foreground" />
                       </button>
                     )}
                   </div>
-                );
-              })()}
-            {/* end Profiles */}
+                )}
 
-            {/* ── IMAGES (linked to the selected RS's operation) ── */}
-            <div className="px-3 py-3 border-b border-border space-y-2">
-              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
-                Images
-              </span>
-              {(() => {
-                const sheet =
-                  rsSelectedSheetId !== null && rsSheetsData
+                {/* RS Quick Entry moved to bottom tab bar — use the indigo RS Entry pill instead */}
+              </div>
+              {/* end RS Selection */}
+
+              {/* ── PROFILES (Operation behind the selected RS, then its Target) ── */}
+              {rsSelectedSheetId !== null &&
+                (() => {
+                  const sheet = rsSheetsData
                     ? (rsSheetsData as any[]).find(
                         (s: any) => s.id === rsSelectedSheetId
                       )
                     : null;
-                const opId = sheet?.operationId ?? null;
-                if (!opId) {
+                  const opId = sheet?.operationId ?? null;
+                  if (!opId && !rsTargetData) return null;
                   return (
-                    <p className="text-[11px] text-muted-foreground leading-snug">
-                      Select a running sheet above to open its operation's
-                      images.
-                    </p>
-                  );
-                }
-                return (
-                  <button
-                    onClick={() => {
-                      setPaneImagesOpId(opId);
-                      setPaneImagesSheetId(null);
-                      setPaneTargetProfileId(null);
-                      setPaneOperationProfileId(null);
-                    }}
-                    className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-pink-500/40 bg-pink-500/10 hover:bg-pink-500/20 active:scale-[0.98] transition-all min-w-0"
-                  >
-                    <ImageIcon className="h-3.5 w-3.5 text-pink-500 flex-shrink-0" />
-                    <span className="text-xs font-semibold text-pink-500 truncate flex-1 text-left">
-                      Operation Images
-                    </span>
-                    <ExternalLink className="h-3 w-3 text-pink-500/60 flex-shrink-0" />
-                  </button>
-                );
-              })()}
-            </div>
-            {/* end Images */}
-
-            {/* ── LOCATION (own section, so sharing your position is a
-                deliberate act with its own heading rather than a small switch
-                tucked into the Teams header) ── */}
-            <div className="px-3 py-3 border-b border-border space-y-2">
-              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
-                Location
-              </span>
-              <button
-                onClick={() => handleSharingToggle(!sharingEnabled)}
-                className={`flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 active:scale-[0.98] transition-all min-w-0 ${
-                  sharingEnabled
-                    ? "border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20"
-                    : "border-border bg-card hover:bg-accent/40"
-                }`}
-                aria-pressed={sharingEnabled}
-              >
-                <Radio
-                  className={`h-3.5 w-3.5 flex-shrink-0 ${
-                    sharingEnabled ? "text-emerald-500" : "text-muted-foreground"
-                  }`}
-                />
-                <span
-                  className={`text-xs font-semibold truncate flex-1 text-left ${
-                    sharingEnabled ? "text-emerald-500" : "text-foreground"
-                  }`}
-                >
-                  Show &amp; Share
-                </span>
-                <span
-                  className={`text-[11px] font-bold uppercase tracking-wide flex-shrink-0 ${
-                    sharingEnabled ? "text-emerald-500" : "text-muted-foreground"
-                  }`}
-                >
-                  {sharingEnabled ? "On" : "Off"}
-                </span>
-              </button>
-            </div>
-            {/* end Location */}
-
-            {/* ── TEAMS (Live Location) ── */}
-            <div className="px-3 py-3">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <Radio className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                    TEAMS
-                  </span>
-                </div>
-              </div>
-
-              {/* GPS error */}
-              {gpsError && (
-                <div className="flex items-start gap-1.5 mb-3 p-2.5 rounded-xl border-2 border-amber-500/30 bg-amber-500/10">
-                  <AlertTriangle className="h-3 w-3 text-amber-500 mt-0.5 flex-shrink-0" />
-                  <span className="text-[10px] text-amber-400 leading-tight">
-                    {gpsError}
-                  </span>
-                </div>
-              )}
-
-              {/* Team rows — collapsible with memory */}
-              <div className="flex flex-col gap-2">
-                {[
-                  {
-                    key: "TEAM1",
-                    label: "Team 1",
-                    colour: TEAM_COLOURS.TEAM1,
-                    users: liveUsersByTeam.TEAM1,
-                  },
-                  {
-                    key: "TEAM2",
-                    label: "Team 2",
-                    colour: TEAM_COLOURS.TEAM2,
-                    users: liveUsersByTeam.TEAM2,
-                  },
-                  {
-                    key: "PTT",
-                    label: "PTT",
-                    colour: TEAM_COLOURS.PTT,
-                    users: liveUsersByTeam.PTT,
-                  },
-                ].map(({ key, label, colour, users: teamUsers }) => {
-                  const isCollapsed = collapsedTeams.has(key);
-                  return (
-                    <div
-                      key={key}
-                      className="rounded-xl border-2 border-border overflow-hidden"
-                    >
-                      {/* Team header — tap to collapse/expand */}
-                      <div className="flex items-center justify-between px-3 py-2.5 bg-muted/20 hover:bg-muted/40 transition-colors">
+                    <div className="px-3 py-3 border-b border-border space-y-2">
+                      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
+                        Profiles
+                      </span>
+                      {opId && (
                         <button
-                          onClick={() =>
-                            setCollapsedTeams(prev => {
-                              const next = new Set(prev);
-                              next.has(key) ? next.delete(key) : next.add(key);
-                              return next;
-                            })
-                          }
-                          className="flex items-center gap-2 flex-1 min-w-0"
+                          onClick={() => {
+                            setPaneOperationProfileId(opId);
+                            setPaneTargetProfileId(null);
+                            setPaneImagesOpId(null);
+                            setPaneImagesSheetId(null);
+                          }}
+                          className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-blue-500/40 bg-blue-500/10 hover:bg-blue-500/20 active:scale-[0.98] transition-all min-w-0"
                         >
-                          <div
-                            className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                            style={{ background: colour }}
-                          />
-                          <span
-                            className="text-[11px] font-semibold"
-                            style={{ color: colour }}
-                          >
-                            {label}
+                          <FolderOpen className="h-3.5 w-3.5 text-blue-500 flex-shrink-0" />
+                          <span className="text-xs font-semibold text-blue-500 truncate flex-1 text-left">
+                            {(operations as any[] | undefined)?.find(
+                              (o: any) => o.id === opId
+                            )?.name ?? "Operation profile"}
                           </span>
-                          {teamUsers.length > 0 && (
-                            <span className="text-[10px] text-muted-foreground">
-                              ({teamUsers.length})
-                            </span>
-                          )}
-                          {isCollapsed ? (
-                            <ChevronRight className="h-3 w-3 text-muted-foreground ml-auto" />
-                          ) : (
-                            <ChevronDown className="h-3 w-3 text-muted-foreground ml-auto" />
-                          )}
+                          <ExternalLink className="h-3 w-3 text-blue-500/60 flex-shrink-0" />
                         </button>
-                        <button
-                          onClick={() => toggleTeamVisibility(key)}
-                          className="ml-2 text-[10px] text-muted-foreground hover:text-foreground flex-shrink-0 px-1.5 py-0.5 rounded-md border border-border/50 bg-background/50"
-                        >
-                          {hiddenTeams.has(key) ? "Show" : "Hide"}
-                        </button>
-                      </div>
-                      {/* Team members — shown when not collapsed */}
-                      {!isCollapsed && (
-                        <div className="px-3 py-2 border-t border-border bg-card">
-                          {teamUsers.length === 0 ? (
-                            <p className="text-[10px] text-muted-foreground/50 italic">
-                              No units online
-                            </p>
-                          ) : (
-                            <div className="flex flex-col gap-0.5">
-                              {teamUsers.map(u => (
-                                <div
-                                  key={u.userId}
-                                  className="flex items-center justify-between px-1 py-1 rounded-lg hover:bg-accent/30"
-                                >
-                                  <span className="text-[11px] text-foreground font-medium truncate">
-                                    {u.name.toUpperCase()}
-                                    {u.userId === user?.id && (
-                                      <span className="ml-1 text-[9px] text-muted-foreground">
-                                        (you)
-                                      </span>
-                                    )}
-                                  </span>
-                                  <div className="flex items-center gap-1 flex-shrink-0">
-                                    <button
-                                      onClick={() => toggleUserTrace(u.userId)}
-                                      className={`text-[10px] px-1.5 py-0.5 rounded-md border ${
-                                        tracedUserIds.has(u.userId)
-                                          ? "border-indigo-500 text-indigo-400 bg-indigo-500/10"
-                                          : "border-border/50 text-muted-foreground hover:text-foreground bg-background/50"
-                                      }`}
-                                    >
-                                      {tracedUserIds.has(u.userId)
-                                        ? "Tracking"
-                                        : "Track"}
-                                    </button>
-                                    <button
-                                      onClick={() =>
-                                        toggleUserVisibility(u.userId)
-                                      }
-                                      className="text-[10px] text-muted-foreground hover:text-foreground"
-                                    >
-                                      {hiddenUsers.has(u.userId)
-                                        ? "Show"
-                                        : "Hide"}
-                                    </button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
                       )}
                     </div>
                   );
-                })}
+                })()}
+              {/* end Profiles */}
 
-                {/* Unassigned users */}
-                {liveUsersByTeam.unassigned.length > 0 &&
-                  (() => {
-                    const isCollapsed = collapsedTeams.has("null");
+              {/* ── IMAGES (linked to the selected RS's operation) ── */}
+              <div className="px-3 py-3 border-b border-border space-y-2">
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
+                  Images
+                </span>
+                {(() => {
+                  const sheet =
+                    rsSelectedSheetId !== null && rsSheetsData
+                      ? (rsSheetsData as any[]).find(
+                          (s: any) => s.id === rsSelectedSheetId
+                        )
+                      : null;
+                  const opId = sheet?.operationId ?? null;
+                  if (!opId) {
                     return (
-                      <div className="rounded-xl border-2 border-border overflow-hidden">
+                      <p className="text-[11px] text-muted-foreground leading-snug">
+                        Select a running sheet above to open its operation's
+                        images.
+                      </p>
+                    );
+                  }
+                  return (
+                    <button
+                      onClick={() => {
+                        setPaneImagesOpId(opId);
+                        setPaneImagesSheetId(null);
+                        setPaneTargetProfileId(null);
+                        setPaneOperationProfileId(null);
+                      }}
+                      className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-pink-500/40 bg-pink-500/10 hover:bg-pink-500/20 active:scale-[0.98] transition-all min-w-0"
+                    >
+                      <ImageIcon className="h-3.5 w-3.5 text-pink-500 flex-shrink-0" />
+                      <span className="text-xs font-semibold text-pink-500 truncate flex-1 text-left">
+                        Operation Images
+                      </span>
+                      <ExternalLink className="h-3 w-3 text-pink-500/60 flex-shrink-0" />
+                    </button>
+                  );
+                })()}
+              </div>
+              {/* end Images */}
+
+              {/* ── LOCATION (own section, so sharing your position is a
+                deliberate act with its own heading rather than a small switch
+                tucked into the Teams header) ── */}
+              <div className="px-3 py-3 border-b border-border space-y-2">
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
+                  Location
+                </span>
+                <button
+                  onClick={() => handleSharingToggle(!sharingEnabled)}
+                  className={`flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 active:scale-[0.98] transition-all min-w-0 ${
+                    sharingEnabled
+                      ? "border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20"
+                      : "border-border bg-card hover:bg-accent/40"
+                  }`}
+                  aria-pressed={sharingEnabled}
+                >
+                  <Radio
+                    className={`h-3.5 w-3.5 flex-shrink-0 ${
+                      sharingEnabled
+                        ? "text-emerald-500"
+                        : "text-muted-foreground"
+                    }`}
+                  />
+                  <span
+                    className={`text-xs font-semibold truncate flex-1 text-left ${
+                      sharingEnabled ? "text-emerald-500" : "text-foreground"
+                    }`}
+                  >
+                    Show &amp; Share
+                  </span>
+                  <span
+                    className={`text-[11px] font-bold uppercase tracking-wide flex-shrink-0 ${
+                      sharingEnabled
+                        ? "text-emerald-500"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    {sharingEnabled ? "On" : "Off"}
+                  </span>
+                </button>
+              </div>
+              {/* end Location */}
+
+              {/* ── TEAMS (Live Location) ── */}
+              <div className="px-3 py-3">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Radio className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                      TEAMS
+                    </span>
+                  </div>
+                </div>
+
+                {/* GPS error */}
+                {gpsError && (
+                  <div className="flex items-start gap-1.5 mb-3 p-2.5 rounded-xl border-2 border-amber-500/30 bg-amber-500/10">
+                    <AlertTriangle className="h-3 w-3 text-amber-500 mt-0.5 flex-shrink-0" />
+                    <span className="text-[10px] text-amber-400 leading-tight">
+                      {gpsError}
+                    </span>
+                  </div>
+                )}
+
+                {/* Team rows — collapsible with memory */}
+                <div className="flex flex-col gap-2">
+                  {[
+                    {
+                      key: "TEAM1",
+                      label: "Team 1",
+                      colour: TEAM_COLOURS.TEAM1,
+                      users: liveUsersByTeam.TEAM1,
+                    },
+                    {
+                      key: "TEAM2",
+                      label: "Team 2",
+                      colour: TEAM_COLOURS.TEAM2,
+                      users: liveUsersByTeam.TEAM2,
+                    },
+                    {
+                      key: "PTT",
+                      label: "PTT",
+                      colour: TEAM_COLOURS.PTT,
+                      users: liveUsersByTeam.PTT,
+                    },
+                  ].map(({ key, label, colour, users: teamUsers }) => {
+                    const isCollapsed = collapsedTeams.has(key);
+                    return (
+                      <div
+                        key={key}
+                        className="rounded-xl border-2 border-border overflow-hidden"
+                      >
+                        {/* Team header — tap to collapse/expand */}
                         <div className="flex items-center justify-between px-3 py-2.5 bg-muted/20 hover:bg-muted/40 transition-colors">
                           <button
                             onClick={() =>
                               setCollapsedTeams(prev => {
                                 const next = new Set(prev);
-                                next.has("null")
-                                  ? next.delete("null")
-                                  : next.add("null");
+                                next.has(key)
+                                  ? next.delete(key)
+                                  : next.add(key);
                                 return next;
                               })
                             }
                             className="flex items-center gap-2 flex-1 min-w-0"
                           >
-                            <div className="w-2.5 h-2.5 rounded-full bg-gray-500 flex-shrink-0" />
-                            <span className="text-[11px] font-semibold text-muted-foreground">
-                              Unassigned
+                            <div
+                              className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                              style={{ background: colour }}
+                            />
+                            <span
+                              className="text-[11px] font-semibold"
+                              style={{ color: colour }}
+                            >
+                              {label}
                             </span>
-                            <span className="text-[10px] text-muted-foreground">
-                              ({liveUsersByTeam.unassigned.length})
-                            </span>
+                            {teamUsers.length > 0 && (
+                              <span className="text-[10px] text-muted-foreground">
+                                ({teamUsers.length})
+                              </span>
+                            )}
                             {isCollapsed ? (
                               <ChevronRight className="h-3 w-3 text-muted-foreground ml-auto" />
                             ) : (
@@ -4688,556 +4637,605 @@ export default function IntelligenceMapping() {
                             )}
                           </button>
                           <button
-                            onClick={() => toggleTeamVisibility("null")}
+                            onClick={() => toggleTeamVisibility(key)}
                             className="ml-2 text-[10px] text-muted-foreground hover:text-foreground flex-shrink-0 px-1.5 py-0.5 rounded-md border border-border/50 bg-background/50"
                           >
-                            {hiddenTeams.has("null") ? "Show" : "Hide"}
+                            {hiddenTeams.has(key) ? "Show" : "Hide"}
                           </button>
                         </div>
+                        {/* Team members — shown when not collapsed */}
                         {!isCollapsed && (
                           <div className="px-3 py-2 border-t border-border bg-card">
-                            <div className="flex flex-col gap-0.5">
-                              {liveUsersByTeam.unassigned.map(u => (
-                                <div
-                                  key={u.userId}
-                                  className="flex items-center justify-between px-1 py-1 rounded-lg hover:bg-accent/30"
-                                >
-                                  <span className="text-[11px] text-foreground font-medium truncate">
-                                    {u.name.toUpperCase()}
-                                    {u.userId === user?.id && (
-                                      <span className="ml-1 text-[9px] text-muted-foreground">
-                                        (you)
-                                      </span>
-                                    )}
-                                  </span>
-                                  <div className="flex items-center gap-1 flex-shrink-0">
-                                    <button
-                                      onClick={() => toggleUserTrace(u.userId)}
-                                      className={`text-[10px] px-1.5 py-0.5 rounded-md border ${
-                                        tracedUserIds.has(u.userId)
-                                          ? "border-indigo-500 text-indigo-400 bg-indigo-500/10"
-                                          : "border-border/50 text-muted-foreground hover:text-foreground bg-background/50"
-                                      }`}
-                                    >
-                                      {tracedUserIds.has(u.userId)
-                                        ? "Tracking"
-                                        : "Track"}
-                                    </button>
-                                    <button
-                                      onClick={() =>
-                                        toggleUserVisibility(u.userId)
-                                      }
-                                      className="text-[10px] text-muted-foreground hover:text-foreground"
-                                    >
-                                      {hiddenUsers.has(u.userId)
-                                        ? "Show"
-                                        : "Hide"}
-                                    </button>
+                            {teamUsers.length === 0 ? (
+                              <p className="text-[10px] text-muted-foreground/50 italic">
+                                No units online
+                              </p>
+                            ) : (
+                              <div className="flex flex-col gap-0.5">
+                                {teamUsers.map(u => (
+                                  <div
+                                    key={u.userId}
+                                    className="flex items-center justify-between px-1 py-1 rounded-lg hover:bg-accent/30"
+                                  >
+                                    <span className="text-[11px] text-foreground font-medium truncate">
+                                      {u.name.toUpperCase()}
+                                      {u.userId === user?.id && (
+                                        <span className="ml-1 text-[9px] text-muted-foreground">
+                                          (you)
+                                        </span>
+                                      )}
+                                    </span>
+                                    <div className="flex items-center gap-1 flex-shrink-0">
+                                      <button
+                                        onClick={() =>
+                                          toggleUserTrace(u.userId)
+                                        }
+                                        className={`text-[10px] px-1.5 py-0.5 rounded-md border ${
+                                          tracedUserIds.has(u.userId)
+                                            ? "border-indigo-500 text-indigo-400 bg-indigo-500/10"
+                                            : "border-border/50 text-muted-foreground hover:text-foreground bg-background/50"
+                                        }`}
+                                      >
+                                        {tracedUserIds.has(u.userId)
+                                          ? "Tracking"
+                                          : "Track"}
+                                      </button>
+                                      <button
+                                        onClick={() =>
+                                          toggleUserVisibility(u.userId)
+                                        }
+                                        className="text-[10px] text-muted-foreground hover:text-foreground"
+                                      >
+                                        {hiddenUsers.has(u.userId)
+                                          ? "Show"
+                                          : "Hide"}
+                                      </button>
+                                    </div>
                                   </div>
-                                </div>
-                              ))}
-                            </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
                     );
-                  })()}
+                  })}
+
+                  {/* Unassigned users */}
+                  {liveUsersByTeam.unassigned.length > 0 &&
+                    (() => {
+                      const isCollapsed = collapsedTeams.has("null");
+                      return (
+                        <div className="rounded-xl border-2 border-border overflow-hidden">
+                          <div className="flex items-center justify-between px-3 py-2.5 bg-muted/20 hover:bg-muted/40 transition-colors">
+                            <button
+                              onClick={() =>
+                                setCollapsedTeams(prev => {
+                                  const next = new Set(prev);
+                                  next.has("null")
+                                    ? next.delete("null")
+                                    : next.add("null");
+                                  return next;
+                                })
+                              }
+                              className="flex items-center gap-2 flex-1 min-w-0"
+                            >
+                              <div className="w-2.5 h-2.5 rounded-full bg-gray-500 flex-shrink-0" />
+                              <span className="text-[11px] font-semibold text-muted-foreground">
+                                Unassigned
+                              </span>
+                              <span className="text-[10px] text-muted-foreground">
+                                ({liveUsersByTeam.unassigned.length})
+                              </span>
+                              {isCollapsed ? (
+                                <ChevronRight className="h-3 w-3 text-muted-foreground ml-auto" />
+                              ) : (
+                                <ChevronDown className="h-3 w-3 text-muted-foreground ml-auto" />
+                              )}
+                            </button>
+                            <button
+                              onClick={() => toggleTeamVisibility("null")}
+                              className="ml-2 text-[10px] text-muted-foreground hover:text-foreground flex-shrink-0 px-1.5 py-0.5 rounded-md border border-border/50 bg-background/50"
+                            >
+                              {hiddenTeams.has("null") ? "Show" : "Hide"}
+                            </button>
+                          </div>
+                          {!isCollapsed && (
+                            <div className="px-3 py-2 border-t border-border bg-card">
+                              <div className="flex flex-col gap-0.5">
+                                {liveUsersByTeam.unassigned.map(u => (
+                                  <div
+                                    key={u.userId}
+                                    className="flex items-center justify-between px-1 py-1 rounded-lg hover:bg-accent/30"
+                                  >
+                                    <span className="text-[11px] text-foreground font-medium truncate">
+                                      {u.name.toUpperCase()}
+                                      {u.userId === user?.id && (
+                                        <span className="ml-1 text-[9px] text-muted-foreground">
+                                          (you)
+                                        </span>
+                                      )}
+                                    </span>
+                                    <div className="flex items-center gap-1 flex-shrink-0">
+                                      <button
+                                        onClick={() =>
+                                          toggleUserTrace(u.userId)
+                                        }
+                                        className={`text-[10px] px-1.5 py-0.5 rounded-md border ${
+                                          tracedUserIds.has(u.userId)
+                                            ? "border-indigo-500 text-indigo-400 bg-indigo-500/10"
+                                            : "border-border/50 text-muted-foreground hover:text-foreground bg-background/50"
+                                        }`}
+                                      >
+                                        {tracedUserIds.has(u.userId)
+                                          ? "Tracking"
+                                          : "Track"}
+                                      </button>
+                                      <button
+                                        onClick={() =>
+                                          toggleUserVisibility(u.userId)
+                                        }
+                                        className="text-[10px] text-muted-foreground hover:text-foreground"
+                                      >
+                                        {hiddenUsers.has(u.userId)
+                                          ? "Show"
+                                          : "Hide"}
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                </div>
               </div>
+              {/* end TEAMS */}
             </div>
-            {/* end TEAMS */}
-          </div>
-        )}
-        {/* end Pane Body */}
-      </div>
-      {/* end RS Actions Right Pane */}
-
-      {/* ── Quick-Link Editor Modal ── */}
-      {editingQuickLinks && (
-        <div
-          className="absolute inset-0 z-30 flex items-end justify-center"
-          style={{
-            background: "rgba(0,0,0,0.55)",
-            backdropFilter: "blur(4px)",
-          }}
-          onClick={() => setEditingQuickLinks(false)}
-        >
-          <div
-            className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <p className="text-sm font-bold text-foreground">
-                  Customise Quick Links
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Choose up to 3 custom shortcut folders (laptop: 3, tablet: 2,
-                  mobile: 1)
-                </p>
-              </div>
-              <button
-                onClick={() => setEditingQuickLinks(false)}
-                className="text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 max-h-72 overflow-y-auto">
-              {ALL_QUICK_LINK_OPTIONS.map(opt => {
-                const isSelected = quickLinks.some(q => q.path === opt.path);
-                const iconEntry = ICON_MAP[opt.icon];
-                const IconComp = iconEntry?.Icon ?? FolderSearch;
-                const iconColour = iconEntry?.colour ?? "text-muted-foreground";
-                return (
-                  <button
-                    key={opt.path}
-                    onClick={() => {
-                      setQuickLinks(prev => {
-                        let next: QuickLink[];
-                        if (isSelected) {
-                          next = prev.filter(q => q.path !== opt.path);
-                        } else if (prev.length < 3) {
-                          next = [...prev, opt];
-                        } else {
-                          // Replace last slot
-                          next = [...prev.slice(0, 2), opt];
-                        }
-                        localStorage.setItem(
-                          LS_QUICK_LINKS_KEY,
-                          JSON.stringify(next)
-                        );
-                        return next;
-                      });
-                    }}
-                    className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-medium transition-all ${
-                      isSelected
-                        ? "bg-primary/15 border-primary/40 text-primary"
-                        : "bg-accent/30 border-border text-muted-foreground hover:bg-accent/60 hover:text-foreground"
-                    }`}
-                  >
-                    <IconComp
-                      className={`h-3.5 w-3.5 flex-shrink-0 ${iconColour}`}
-                    />
-                    <span className="truncate">{opt.label}</span>
-                    {isSelected && (
-                      <Check className="h-3.5 w-3.5 ml-auto flex-shrink-0" />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-
-            <p className="text-[11px] text-muted-foreground/60 mt-3 text-center">
-              {quickLinks.length}/2 slots used — Operations and active sheet are
-              always shown
-            </p>
-          </div>
+          )}
+          {/* end Pane Body */}
         </div>
-      )}
+        {/* end RS Actions Right Pane */}
 
-      {/* ── POI Tap Bottom Sheet ── */}
-      {poiTap && !pendingLatLng && !mapQeOpen && !actionChooser && (
-        <div
-          className="absolute inset-0 z-40 flex items-end justify-center"
-          style={{
-            background: "rgba(0,0,0,0.55)",
-            backdropFilter: "blur(3px)",
-          }}
-          onClick={() => setPoiTap(null)}
-        >
+        {/* ── Quick-Link Editor Modal ── */}
+        {editingQuickLinks && (
           <div
-            className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8"
-            onClick={e => e.stopPropagation()}
+            className="absolute inset-0 z-30 flex items-end justify-center"
+            style={{
+              background: "rgba(0,0,0,0.55)",
+              backdropFilter: "blur(4px)",
+            }}
+            onClick={() => setEditingQuickLinks(false)}
           >
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex-1 min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-0.5">
-                  Business / Place
-                </p>
-                <p className="text-sm font-bold text-foreground leading-snug">
-                  {poiTap.name}
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5 leading-snug">
-                  {poiTap.address}
-                </p>
-              </div>
-              <button
-                onClick={() => setPoiTap(null)}
-                className="ml-3 text-muted-foreground hover:text-foreground flex-shrink-0"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              {/* RS Quick Entry */}
-              <button
-                onClick={() => {
-                  setMapQeAddress(buildPoiAddress(poiTap.name, poiTap.address));
-                  setMapQeOpen(true);
-                  setPoiTap(null);
-                }}
-                className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-primary/40 bg-primary/5 hover:bg-primary/10 active:scale-95 transition-all px-4 py-5"
-              >
-                <ClipboardList className="h-7 w-7 text-primary" />
-                <span className="text-sm font-bold text-foreground">
-                  RS Quick Entry
-                </span>
-                <span className="text-[10px] text-muted-foreground text-center leading-tight">
-                  Add a running sheet entry for this location
-                </span>
-              </button>
-              {/* Add Marker Here */}
-              <button
-                onClick={() => {
-                  const rsAddress = buildPoiAddress(
-                    poiTap.name,
-                    poiTap.address
-                  );
-                  setCmLabel(poiTap.name);
-                  setCmAddress(rsAddress);
-                  setCmNote("");
-                  setCmPersons([]);
-                  setCmVehicles([]);
-                  setCmRotation(0);
-                  setCmPersonInput("");
-                  setCmVehicleInput("");
-                  setCmOpId(
-                    selectedOpIds.length === 1 ? selectedOpIds[0] : null
-                  );
-                  setPendingLatLng({ lat: poiTap.lat, lng: poiTap.lng });
-                  setPoiTap(null);
-                }}
-                className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-border bg-muted/30 hover:bg-muted/60 active:scale-95 transition-all px-4 py-5"
-              >
-                <MapPin className="h-7 w-7 text-muted-foreground" />
-                <span className="text-sm font-bold text-foreground">
-                  Add Marker Here
-                </span>
-                <span className="text-[10px] text-muted-foreground text-center leading-tight">
-                  Place a custom marker at this business
-                </span>
-              </button>
-            </div>
-            {/* Navigate with Waze — full-width below the grid */}
-            <a
-              href={`https://waze.com/ul?ll=${poiTap?.lat},${poiTap?.lng}&navigate=yes`}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => setPoiTap(null)}
-              className="mt-3 flex items-center justify-center gap-2 w-full rounded-xl border-2 border-cyan-500/40 bg-cyan-500/5 hover:bg-cyan-500/10 active:scale-95 transition-all px-4 py-3"
+            <div
+              className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8"
+              onClick={e => e.stopPropagation()}
             >
-              <Navigation2 className="h-5 w-5 text-cyan-400" />
-              <span className="text-sm font-bold text-foreground">
-                Navigate with Waze
-              </span>
-            </a>
-          </div>
-        </div>
-      )}
-
-      {/* ── Action Chooser Bottom Sheet ── */}
-      {actionChooser && (
-        <div
-          className="absolute inset-0 z-40 flex items-end justify-center"
-          style={{
-            background: "rgba(0,0,0,0.55)",
-            backdropFilter: "blur(3px)",
-          }}
-          onClick={() => setActionChooser(null)}
-        >
-          <div
-            className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex-1 min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-0.5">
-                  Map Location
-                </p>
-                <p className="text-xs text-muted-foreground leading-snug">
-                  {actionChooser.address}
-                </p>
-              </div>
-              <button
-                onClick={() => setActionChooser(null)}
-                className="ml-3 text-muted-foreground hover:text-foreground flex-shrink-0"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              {/* RS Quick Entry */}
-              <button
-                onClick={() => {
-                  setMapQeAddress(actionChooser.address);
-                  setMapQeOpen(true);
-                  setActionChooser(null);
-                }}
-                className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-primary/40 bg-primary/5 hover:bg-primary/10 active:scale-95 transition-all px-4 py-5"
-              >
-                <ClipboardList className="h-7 w-7 text-primary" />
-                <span className="text-sm font-bold text-foreground">
-                  RS Quick Entry
-                </span>
-                <span className="text-[10px] text-muted-foreground text-center leading-tight">
-                  Add a running sheet entry for this location
-                </span>
-              </button>
-              {/* Add Marker Here */}
-              <button
-                onClick={() => {
-                  setCmLabel("");
-                  setCmAddress(actionChooser.address);
-                  setCmNote("");
-                  setCmPersons([]);
-                  setCmVehicles([]);
-                  setCmRotation(0);
-                  setCmPersonInput("");
-                  setCmVehicleInput("");
-                  setCmOpId(
-                    selectedOpIds.length === 1 ? selectedOpIds[0] : null
-                  );
-                  setPendingLatLng({
-                    lat: actionChooser.lat,
-                    lng: actionChooser.lng,
-                  });
-                  setActionChooser(null);
-                }}
-                className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-border bg-muted/30 hover:bg-muted/60 active:scale-95 transition-all px-4 py-5"
-              >
-                <MapPin className="h-7 w-7 text-muted-foreground" />
-                <span className="text-sm font-bold text-foreground">
-                  Add Marker Here
-                </span>
-                <span className="text-[10px] text-muted-foreground text-center leading-tight">
-                  Place a custom marker at this location
-                </span>
-              </button>
-            </div>
-            {/* Navigate with Waze — full-width below the grid */}
-            <a
-              href={`https://waze.com/ul?ll=${actionChooser.lat},${actionChooser.lng}&navigate=yes`}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => setActionChooser(null)}
-              className="mt-3 flex items-center justify-center gap-2 w-full rounded-xl border-2 border-cyan-500/40 bg-cyan-500/5 hover:bg-cyan-500/10 active:scale-95 transition-all px-4 py-3"
-            >
-              <Navigation2 className="h-5 w-5 text-cyan-400" />
-              <span className="text-sm font-bold text-foreground">
-                Navigate with Waze
-              </span>
-            </a>
-          </div>
-        </div>
-      )}
-
-      {/* ── Manual Merge Picker ── */}
-      {manualMergePicker && (
-        <div
-          className="absolute inset-0 z-40 flex items-end justify-center"
-          style={{
-            background: "rgba(0,0,0,0.55)",
-            backdropFilter: "blur(3px)",
-          }}
-          onClick={() => setManualMergePicker(null)}
-        >
-          <div
-            className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8 max-h-[80vh] overflow-y-auto"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-0.5">
-                  Manual Merge
-                </p>
-                <p className="text-sm font-semibold text-foreground">
-                  Select an Intel Pin to merge with
-                </p>
-              </div>
-              <button
-                onClick={() => setManualMergePicker(null)}
-                className="ml-3 text-muted-foreground hover:text-foreground flex-shrink-0"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            {manualMergePicker.candidates.length === 0 ? (
-              <div className="text-center py-6">
-                <p className="text-sm text-muted-foreground">
-                  No intel pins found within 150m of this marker.
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Intel pins must be visible on the map (not already merged) to
-                  appear here.
-                </p>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-2">
-                {manualMergePicker.candidates.map(c => (
-                  <button
-                    key={c.loc.label}
-                    onClick={() => {
-                      // Perform the merge: append intel data to the custom marker's merged list
-                      const enriched = {
-                        ...c.loc,
-                        lat: c.position.lat,
-                        lng: c.position.lng,
-                      };
-                      const existingList =
-                        mergedIntelRef.current.get(manualMergePicker.cmId) ??
-                        [];
-                      if (!existingList.find(e => e.label === enriched.label)) {
-                        existingList.push(enriched);
-                        existingList.sort((a, b) => {
-                          if (
-                            a.type === "target_address" &&
-                            b.type !== "target_address"
-                          )
-                            return -1;
-                          if (
-                            a.type !== "target_address" &&
-                            b.type === "target_address"
-                          )
-                            return 1;
-                          return 0;
-                        });
-                        mergedIntelRef.current.set(
-                          manualMergePicker.cmId,
-                          existingList
-                        );
-                      }
-                      // Remove the intel pin from the map
-                      const pinIdx = markersRef.current.findIndex(m => {
-                        const pos = m.position as
-                          | google.maps.LatLng
-                          | google.maps.LatLngLiteral
-                          | null;
-                        if (!pos) return false;
-                        const lat =
-                          typeof (pos as any).lat === "function"
-                            ? (pos as any).lat()
-                            : (pos as any).lat;
-                        const lng =
-                          typeof (pos as any).lng === "function"
-                            ? (pos as any).lng()
-                            : (pos as any).lng;
-                        return (
-                          Math.abs(lat - c.position.lat) < 0.00001 &&
-                          Math.abs(lng - c.position.lng) < 0.00001
-                        );
-                      });
-                      if (pinIdx !== -1) {
-                        markersRef.current[pinIdx].map = null;
-                        markersRef.current.splice(pinIdx, 1);
-                      }
-                      // Also remove from geocodedIntelRef so it doesn't show in future merge pickers
-                      geocodedIntelRef.current.delete(c.loc.label);
-                      // Persist the merge to the database so it survives page reloads
-                      updateCustomMarkerMut.mutate({
-                        id: manualMergePicker.cmId,
-                        linkedIntelLabel: c.loc.label,
-                      });
-                      setManualMergePicker(null);
-                    }}
-                    className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/30 hover:bg-muted/60 active:scale-[0.98] transition-all px-4 py-3 text-left"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-0.5">
-                        {c.loc.type === "target_address"
-                          ? "Target Address"
-                          : "Observed Location"}
-                      </p>
-                      <p className="text-sm font-semibold text-foreground truncate">
-                        {formatIntelAddress(c.loc.label)}
-                      </p>
-                      {c.loc.linkedTargets?.length > 0 && (
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {c.loc.linkedTargets
-                            .map((t: any) => t.name)
-                            .join(", ")}
-                        </p>
-                      )}
-                    </div>
-                    <span className="text-xs text-muted-foreground flex-shrink-0">
-                      {c.distanceM}m away
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ── Move Marker Banner ── */}
-      {movingMarkerId !== null && (
-        <div className="absolute top-0 left-0 right-0 z-50 flex justify-center px-3 pt-3 pointer-events-none">
-          <div
-            className="pointer-events-auto w-full max-w-md rounded-2xl shadow-2xl border border-border overflow-hidden"
-            style={{ background: "rgba(3,105,161,0.97)" }}
-          >
-            {pendingMoveAddress === null ? (
-              /* Phase 1: dragging */
-              <div className="flex items-center justify-between gap-3 px-4 py-3">
-                <p className="text-sm font-semibold text-white">
-                  Drag marker to new position
-                </p>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="text-sm font-bold text-foreground">
+                    Customise Quick Links
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Choose up to 3 custom shortcut folders (laptop: 3, tablet:
+                    2, mobile: 1)
+                  </p>
+                </div>
                 <button
-                  onClick={() => {
-                    // Cancel: snap marker back to original position
-                    const orig = (window as any).__cmMoveOrigPos;
-                    if (orig && orig.id === movingMarkerId) {
-                      const marker = customMarkerMapRefs.current.get(orig.id);
-                      if (marker) {
-                        marker.position = { lat: orig.lat, lng: orig.lng };
-                        (marker as any).gmpDraggable = false;
-                      }
-                    }
-                    setMovingMarkerId(null);
-                    setPendingMoveAddress(null);
-                    delete (window as any).__cmMoveOrigPos;
-                  }}
-                  className="flex-shrink-0 text-white/80 hover:text-white text-xs font-medium bg-white/20 hover:bg-white/30 rounded-lg px-3 py-1.5 transition-colors"
+                  onClick={() => setEditingQuickLinks(false)}
+                  className="text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  Cancel
+                  <X className="h-4 w-4" />
                 </button>
               </div>
-            ) : (
-              /* Phase 2: confirm new address */
-              <div className="px-4 py-3">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-white/70 mb-0.5">
-                  Move to
-                </p>
-                <p className="text-sm font-semibold text-white mb-3 leading-snug">
-                  {pendingMoveAddress.address}
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => {
-                      if (
-                        movingMarkerId === null ||
-                        pendingMoveAddress === null
-                      )
-                        return;
-                      updateCustomMarkerMut.mutate({
-                        id: movingMarkerId,
-                        lat: pendingMoveAddress.lat,
-                        lng: pendingMoveAddress.lng,
-                        address: pendingMoveAddress.address,
-                      });
-                      const marker =
-                        customMarkerMapRefs.current.get(movingMarkerId);
-                      if (marker) (marker as any).gmpDraggable = false;
-                      setMovingMarkerId(null);
-                      setPendingMoveAddress(null);
-                      delete (window as any).__cmMoveOrigPos;
-                      toast.success("Marker moved");
-                    }}
-                    className="flex-1 text-sm font-semibold text-white bg-white/25 hover:bg-white/35 rounded-xl py-2 transition-colors"
-                  >
-                    Accept
-                  </button>
+
+              <div className="grid grid-cols-2 gap-2 max-h-72 overflow-y-auto">
+                {ALL_QUICK_LINK_OPTIONS.map(opt => {
+                  const isSelected = quickLinks.some(q => q.path === opt.path);
+                  const iconEntry = ICON_MAP[opt.icon];
+                  const IconComp = iconEntry?.Icon ?? FolderSearch;
+                  const iconColour =
+                    iconEntry?.colour ?? "text-muted-foreground";
+                  return (
+                    <button
+                      key={opt.path}
+                      onClick={() => {
+                        setQuickLinks(prev => {
+                          let next: QuickLink[];
+                          if (isSelected) {
+                            next = prev.filter(q => q.path !== opt.path);
+                          } else if (prev.length < 3) {
+                            next = [...prev, opt];
+                          } else {
+                            // Replace last slot
+                            next = [...prev.slice(0, 2), opt];
+                          }
+                          localStorage.setItem(
+                            LS_QUICK_LINKS_KEY,
+                            JSON.stringify(next)
+                          );
+                          return next;
+                        });
+                      }}
+                      className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-medium transition-all ${
+                        isSelected
+                          ? "bg-primary/15 border-primary/40 text-primary"
+                          : "bg-accent/30 border-border text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                      }`}
+                    >
+                      <IconComp
+                        className={`h-3.5 w-3.5 flex-shrink-0 ${iconColour}`}
+                      />
+                      <span className="truncate">{opt.label}</span>
+                      {isSelected && (
+                        <Check className="h-3.5 w-3.5 ml-auto flex-shrink-0" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <p className="text-[11px] text-muted-foreground/60 mt-3 text-center">
+                {quickLinks.length}/2 slots used — Operations and active sheet
+                are always shown
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* ── POI Tap Bottom Sheet ── */}
+        {poiTap && !pendingLatLng && !mapQeOpen && !actionChooser && (
+          <div
+            className="absolute inset-0 z-40 flex items-end justify-center"
+            style={{
+              background: "rgba(0,0,0,0.55)",
+              backdropFilter: "blur(3px)",
+            }}
+            onClick={() => setPoiTap(null)}
+          >
+            <div
+              className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-0.5">
+                    Business / Place
+                  </p>
+                  <p className="text-sm font-bold text-foreground leading-snug">
+                    {poiTap.name}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5 leading-snug">
+                    {poiTap.address}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setPoiTap(null)}
+                  className="ml-3 text-muted-foreground hover:text-foreground flex-shrink-0"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {/* RS Quick Entry */}
+                <button
+                  onClick={() => {
+                    setMapQeAddress(
+                      buildPoiAddress(poiTap.name, poiTap.address)
+                    );
+                    setMapQeOpen(true);
+                    setPoiTap(null);
+                  }}
+                  className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-primary/40 bg-primary/5 hover:bg-primary/10 active:scale-95 transition-all px-4 py-5"
+                >
+                  <ClipboardList className="h-7 w-7 text-primary" />
+                  <span className="text-sm font-bold text-foreground">
+                    RS Quick Entry
+                  </span>
+                  <span className="text-[10px] text-muted-foreground text-center leading-tight">
+                    Add a running sheet entry for this location
+                  </span>
+                </button>
+                {/* Add Marker Here */}
+                <button
+                  onClick={() => {
+                    const rsAddress = buildPoiAddress(
+                      poiTap.name,
+                      poiTap.address
+                    );
+                    setCmLabel(poiTap.name);
+                    setCmAddress(rsAddress);
+                    setCmNote("");
+                    setCmPersons([]);
+                    setCmVehicles([]);
+                    setCmRotation(0);
+                    setCmPersonInput("");
+                    setCmVehicleInput("");
+                    setCmOpId(
+                      selectedOpIds.length === 1 ? selectedOpIds[0] : null
+                    );
+                    setPendingLatLng({ lat: poiTap.lat, lng: poiTap.lng });
+                    setPoiTap(null);
+                  }}
+                  className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-border bg-muted/30 hover:bg-muted/60 active:scale-95 transition-all px-4 py-5"
+                >
+                  <MapPin className="h-7 w-7 text-muted-foreground" />
+                  <span className="text-sm font-bold text-foreground">
+                    Add Marker Here
+                  </span>
+                  <span className="text-[10px] text-muted-foreground text-center leading-tight">
+                    Place a custom marker at this business
+                  </span>
+                </button>
+              </div>
+              {/* Navigate with Waze — full-width below the grid */}
+              <a
+                href={`https://waze.com/ul?ll=${poiTap?.lat},${poiTap?.lng}&navigate=yes`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setPoiTap(null)}
+                className="mt-3 flex items-center justify-center gap-2 w-full rounded-xl border-2 border-cyan-500/40 bg-cyan-500/5 hover:bg-cyan-500/10 active:scale-95 transition-all px-4 py-3"
+              >
+                <Navigation2 className="h-5 w-5 text-cyan-400" />
+                <span className="text-sm font-bold text-foreground">
+                  Navigate with Waze
+                </span>
+              </a>
+            </div>
+          </div>
+        )}
+
+        {/* ── Action Chooser Bottom Sheet ── */}
+        {actionChooser && (
+          <div
+            className="absolute inset-0 z-40 flex items-end justify-center"
+            style={{
+              background: "rgba(0,0,0,0.55)",
+              backdropFilter: "blur(3px)",
+            }}
+            onClick={() => setActionChooser(null)}
+          >
+            <div
+              className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-0.5">
+                    Map Location
+                  </p>
+                  <p className="text-xs text-muted-foreground leading-snug">
+                    {actionChooser.address}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setActionChooser(null)}
+                  className="ml-3 text-muted-foreground hover:text-foreground flex-shrink-0"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {/* RS Quick Entry */}
+                <button
+                  onClick={() => {
+                    setMapQeAddress(actionChooser.address);
+                    setMapQeOpen(true);
+                    setActionChooser(null);
+                  }}
+                  className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-primary/40 bg-primary/5 hover:bg-primary/10 active:scale-95 transition-all px-4 py-5"
+                >
+                  <ClipboardList className="h-7 w-7 text-primary" />
+                  <span className="text-sm font-bold text-foreground">
+                    RS Quick Entry
+                  </span>
+                  <span className="text-[10px] text-muted-foreground text-center leading-tight">
+                    Add a running sheet entry for this location
+                  </span>
+                </button>
+                {/* Add Marker Here */}
+                <button
+                  onClick={() => {
+                    setCmLabel("");
+                    setCmAddress(actionChooser.address);
+                    setCmNote("");
+                    setCmPersons([]);
+                    setCmVehicles([]);
+                    setCmRotation(0);
+                    setCmPersonInput("");
+                    setCmVehicleInput("");
+                    setCmOpId(
+                      selectedOpIds.length === 1 ? selectedOpIds[0] : null
+                    );
+                    setPendingLatLng({
+                      lat: actionChooser.lat,
+                      lng: actionChooser.lng,
+                    });
+                    setActionChooser(null);
+                  }}
+                  className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-border bg-muted/30 hover:bg-muted/60 active:scale-95 transition-all px-4 py-5"
+                >
+                  <MapPin className="h-7 w-7 text-muted-foreground" />
+                  <span className="text-sm font-bold text-foreground">
+                    Add Marker Here
+                  </span>
+                  <span className="text-[10px] text-muted-foreground text-center leading-tight">
+                    Place a custom marker at this location
+                  </span>
+                </button>
+              </div>
+              {/* Navigate with Waze — full-width below the grid */}
+              <a
+                href={`https://waze.com/ul?ll=${actionChooser.lat},${actionChooser.lng}&navigate=yes`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setActionChooser(null)}
+                className="mt-3 flex items-center justify-center gap-2 w-full rounded-xl border-2 border-cyan-500/40 bg-cyan-500/5 hover:bg-cyan-500/10 active:scale-95 transition-all px-4 py-3"
+              >
+                <Navigation2 className="h-5 w-5 text-cyan-400" />
+                <span className="text-sm font-bold text-foreground">
+                  Navigate with Waze
+                </span>
+              </a>
+            </div>
+          </div>
+        )}
+
+        {/* ── Manual Merge Picker ── */}
+        {manualMergePicker && (
+          <div
+            className="absolute inset-0 z-40 flex items-end justify-center"
+            style={{
+              background: "rgba(0,0,0,0.55)",
+              backdropFilter: "blur(3px)",
+            }}
+            onClick={() => setManualMergePicker(null)}
+          >
+            <div
+              className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8 max-h-[80vh] overflow-y-auto"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-0.5">
+                    Manual Merge
+                  </p>
+                  <p className="text-sm font-semibold text-foreground">
+                    Select an Intel Pin to merge with
+                  </p>
+                </div>
+                <button
+                  onClick={() => setManualMergePicker(null)}
+                  className="ml-3 text-muted-foreground hover:text-foreground flex-shrink-0"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              {manualMergePicker.candidates.length === 0 ? (
+                <div className="text-center py-6">
+                  <p className="text-sm text-muted-foreground">
+                    No intel pins found within 150m of this marker.
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Intel pins must be visible on the map (not already merged)
+                    to appear here.
+                  </p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {manualMergePicker.candidates.map(c => (
+                    <button
+                      key={c.loc.label}
+                      onClick={() => {
+                        // Perform the merge: append intel data to the custom marker's merged list
+                        const enriched = {
+                          ...c.loc,
+                          lat: c.position.lat,
+                          lng: c.position.lng,
+                        };
+                        const existingList =
+                          mergedIntelRef.current.get(manualMergePicker.cmId) ??
+                          [];
+                        if (
+                          !existingList.find(e => e.label === enriched.label)
+                        ) {
+                          existingList.push(enriched);
+                          existingList.sort((a, b) => {
+                            if (
+                              a.type === "target_address" &&
+                              b.type !== "target_address"
+                            )
+                              return -1;
+                            if (
+                              a.type !== "target_address" &&
+                              b.type === "target_address"
+                            )
+                              return 1;
+                            return 0;
+                          });
+                          mergedIntelRef.current.set(
+                            manualMergePicker.cmId,
+                            existingList
+                          );
+                        }
+                        // Remove the intel pin from the map
+                        const pinIdx = markersRef.current.findIndex(m => {
+                          const pos = m.position as
+                            | google.maps.LatLng
+                            | google.maps.LatLngLiteral
+                            | null;
+                          if (!pos) return false;
+                          const lat =
+                            typeof (pos as any).lat === "function"
+                              ? (pos as any).lat()
+                              : (pos as any).lat;
+                          const lng =
+                            typeof (pos as any).lng === "function"
+                              ? (pos as any).lng()
+                              : (pos as any).lng;
+                          return (
+                            Math.abs(lat - c.position.lat) < 0.00001 &&
+                            Math.abs(lng - c.position.lng) < 0.00001
+                          );
+                        });
+                        if (pinIdx !== -1) {
+                          markersRef.current[pinIdx].map = null;
+                          markersRef.current.splice(pinIdx, 1);
+                        }
+                        // Also remove from geocodedIntelRef so it doesn't show in future merge pickers
+                        geocodedIntelRef.current.delete(c.loc.label);
+                        // Persist the merge to the database so it survives page reloads
+                        updateCustomMarkerMut.mutate({
+                          id: manualMergePicker.cmId,
+                          linkedIntelLabel: c.loc.label,
+                        });
+                        setManualMergePicker(null);
+                      }}
+                      className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/30 hover:bg-muted/60 active:scale-[0.98] transition-all px-4 py-3 text-left"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-0.5">
+                          {c.loc.type === "target_address"
+                            ? "Target Address"
+                            : "Observed Location"}
+                        </p>
+                        <p className="text-sm font-semibold text-foreground truncate">
+                          {formatIntelAddress(c.loc.label)}
+                        </p>
+                        {c.loc.linkedTargets?.length > 0 && (
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {c.loc.linkedTargets
+                              .map((t: any) => t.name)
+                              .join(", ")}
+                          </p>
+                        )}
+                      </div>
+                      <span className="text-xs text-muted-foreground flex-shrink-0">
+                        {c.distanceM}m away
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Move Marker Banner ── */}
+        {movingMarkerId !== null && (
+          <div className="absolute top-0 left-0 right-0 z-50 flex justify-center px-3 pt-3 pointer-events-none">
+            <div
+              className="pointer-events-auto w-full max-w-md rounded-2xl shadow-2xl border border-border overflow-hidden"
+              style={{ background: "rgba(3,105,161,0.97)" }}
+            >
+              {pendingMoveAddress === null ? (
+                /* Phase 1: dragging */
+                <div className="flex items-center justify-between gap-3 px-4 py-3">
+                  <p className="text-sm font-semibold text-white">
+                    Drag marker to new position
+                  </p>
                   <button
                     onClick={() => {
                       // Cancel: snap marker back to original position
@@ -5253,96 +5251,90 @@ export default function IntelligenceMapping() {
                       setPendingMoveAddress(null);
                       delete (window as any).__cmMoveOrigPos;
                     }}
-                    className="flex-1 text-sm font-semibold text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-xl py-2 transition-colors"
+                    className="flex-shrink-0 text-white/80 hover:text-white text-xs font-medium bg-white/20 hover:bg-white/30 rounded-lg px-3 py-1.5 transition-colors"
                   >
                     Cancel
                   </button>
                 </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ── Intel Pin Move Banner ── */}
-      {movingIntelLabel !== null && (
-        <div className="absolute top-0 left-0 right-0 z-50 flex justify-center px-3 pt-3 pointer-events-none">
-          <div
-            className="pointer-events-auto w-full max-w-md rounded-2xl shadow-2xl border border-border overflow-hidden"
-            style={{ background: "rgba(3,105,161,0.97)" }}
-          >
-            {pendingIntelMoveAddress === null ? (
-              /* Phase 1: dragging */
-              <div className="flex items-center justify-between gap-3 px-4 py-3">
-                <p className="text-sm font-semibold text-white">
-                  Drag marker to new position
-                </p>
-                <button
-                  onClick={() => {
-                    // Cancel: snap marker back to original position
-                    const orig = (window as any).__intelMoveOrigPos;
-                    if (orig && orig.label === movingIntelLabel) {
-                      const marker = markersRef.current.find(
-                        (m: any) => m.title === orig.label
-                      );
-                      if (marker) {
-                        marker.position = { lat: orig.lat, lng: orig.lng };
-                        (marker as any).gmpDraggable = false;
-                      }
-                    }
-                    setMovingIntelLabel(null);
-                    setPendingIntelMoveAddress(null);
-                    delete (window as any).__intelMoveOrigPos;
-                  }}
-                  className="flex-shrink-0 text-white/80 hover:text-white text-xs font-medium bg-white/20 hover:bg-white/30 rounded-lg px-3 py-1.5 transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            ) : (
-              /* Phase 2: confirm new address */
-              <div className="px-4 py-3">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-white/70 mb-0.5">
-                  Move to
-                </p>
-                <p className="text-sm font-semibold text-white mb-3 leading-snug">
-                  {pendingIntelMoveAddress.address}
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => {
-                      if (
-                        movingIntelLabel === null ||
-                        pendingIntelMoveAddress === null
-                      )
-                        return;
-                      // Accept: update geocodedIntelRef so the new position is used next time
-                      const entry =
-                        geocodedIntelRef.current.get(movingIntelLabel);
-                      if (entry) {
-                        geocodedIntelRef.current.set(movingIntelLabel, {
-                          ...entry,
-                          position: {
-                            lat: pendingIntelMoveAddress.lat,
-                            lng: pendingIntelMoveAddress.lng,
-                          },
+              ) : (
+                /* Phase 2: confirm new address */
+                <div className="px-4 py-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-white/70 mb-0.5">
+                    Move to
+                  </p>
+                  <p className="text-sm font-semibold text-white mb-3 leading-snug">
+                    {pendingMoveAddress.address}
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        if (
+                          movingMarkerId === null ||
+                          pendingMoveAddress === null
+                        )
+                          return;
+                        updateCustomMarkerMut.mutate({
+                          id: movingMarkerId,
+                          lat: pendingMoveAddress.lat,
+                          lng: pendingMoveAddress.lng,
+                          address: pendingMoveAddress.address,
                         });
-                      }
-                      const marker = markersRef.current.find(
-                        (m: any) => m.title === movingIntelLabel
-                      );
-                      if (marker) (marker as any).gmpDraggable = false;
-                      setMovingIntelLabel(null);
-                      setPendingIntelMoveAddress(null);
-                      delete (window as any).__intelMoveOrigPos;
-                      toast.success("Marker moved");
-                    }}
-                    className="flex-1 text-sm font-semibold text-white bg-white/25 hover:bg-white/35 rounded-xl py-2 transition-colors"
-                  >
-                    Accept
-                  </button>
+                        const marker =
+                          customMarkerMapRefs.current.get(movingMarkerId);
+                        if (marker) (marker as any).gmpDraggable = false;
+                        setMovingMarkerId(null);
+                        setPendingMoveAddress(null);
+                        delete (window as any).__cmMoveOrigPos;
+                        toast.success("Marker moved");
+                      }}
+                      className="flex-1 text-sm font-semibold text-white bg-white/25 hover:bg-white/35 rounded-xl py-2 transition-colors"
+                    >
+                      Accept
+                    </button>
+                    <button
+                      onClick={() => {
+                        // Cancel: snap marker back to original position
+                        const orig = (window as any).__cmMoveOrigPos;
+                        if (orig && orig.id === movingMarkerId) {
+                          const marker = customMarkerMapRefs.current.get(
+                            orig.id
+                          );
+                          if (marker) {
+                            marker.position = { lat: orig.lat, lng: orig.lng };
+                            (marker as any).gmpDraggable = false;
+                          }
+                        }
+                        setMovingMarkerId(null);
+                        setPendingMoveAddress(null);
+                        delete (window as any).__cmMoveOrigPos;
+                      }}
+                      className="flex-1 text-sm font-semibold text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-xl py-2 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Intel Pin Move Banner ── */}
+        {movingIntelLabel !== null && (
+          <div className="absolute top-0 left-0 right-0 z-50 flex justify-center px-3 pt-3 pointer-events-none">
+            <div
+              className="pointer-events-auto w-full max-w-md rounded-2xl shadow-2xl border border-border overflow-hidden"
+              style={{ background: "rgba(3,105,161,0.97)" }}
+            >
+              {pendingIntelMoveAddress === null ? (
+                /* Phase 1: dragging */
+                <div className="flex items-center justify-between gap-3 px-4 py-3">
+                  <p className="text-sm font-semibold text-white">
+                    Drag marker to new position
+                  </p>
                   <button
                     onClick={() => {
+                      // Cancel: snap marker back to original position
                       const orig = (window as any).__intelMoveOrigPos;
                       if (orig && orig.label === movingIntelLabel) {
                         const marker = markersRef.current.find(
@@ -5357,1026 +5349,828 @@ export default function IntelligenceMapping() {
                       setPendingIntelMoveAddress(null);
                       delete (window as any).__intelMoveOrigPos;
                     }}
-                    className="flex-1 text-sm font-semibold text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-xl py-2 transition-colors"
+                    className="flex-shrink-0 text-white/80 hover:text-white text-xs font-medium bg-white/20 hover:bg-white/30 rounded-lg px-3 py-1.5 transition-colors"
                   >
                     Cancel
                   </button>
                 </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ── Intel Pin Edit Dialog ── */}
-      {editingIntelLabel !== null && (
-        <div
-          className="absolute inset-0 z-40 flex items-end justify-center"
-          style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}
-          onClick={() => setEditingIntelLabel(null)}
-        >
-          <div
-            className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8 max-h-[90vh] overflow-y-auto"
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <p className="text-sm font-bold text-foreground">
-                  Edit Marker Appearance
-                </p>
-                <p className="text-[11px] text-muted-foreground mt-0.5 truncate max-w-[260px]">
-                  {editingIntelLabel}
-                </p>
-              </div>
-              <button
-                onClick={() => setEditingIntelLabel(null)}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            {/* Icon picker */}
-            <div className="mb-4">
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                Marker Icon
-              </p>
-              <div className="space-y-3">
-                {MARKER_ICON_GROUPS.map(group => (
-                  <div key={group.label}>
-                    <p className="text-[10px] text-muted-foreground/70 mb-1.5">
-                      {group.label}
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {group.icons.map(iconKey => (
-                        <button
-                          key={iconKey}
-                          onClick={() =>
-                            setIntelEditIcon(iconKey as MarkerIcon)
-                          }
-                          title={MARKER_ICON_LABELS[iconKey as MarkerIcon]}
-                          className={`w-10 h-10 rounded-lg border-2 flex items-center justify-center transition-all ${
-                            intelEditIcon === iconKey
-                              ? "border-primary bg-primary/10 scale-110"
-                              : "border-border bg-accent/30 hover:border-primary/50"
-                          }`}
-                        >
-                          <img
-                            src={getMarkerDataUrl(
-                              iconKey as MarkerIcon,
-                              intelEditColour
-                            )}
-                            alt={MARKER_ICON_LABELS[iconKey as MarkerIcon]}
-                            className="w-7 h-7 object-contain"
-                          />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Colour picker */}
-            <div className="mb-4">
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                Colour
-              </p>
-              <div className="flex gap-2">
-                {(Object.keys(MARKER_COLOURS) as MarkerColour[]).map(col => (
-                  <button
-                    key={col}
-                    onClick={() => setIntelEditColour(col)}
-                    title={MARKER_COLOUR_LABELS[col]}
-                    className={`w-8 h-8 rounded-full border-2 transition-all ${
-                      intelEditColour === col
-                        ? "border-foreground scale-110"
-                        : "border-transparent hover:border-foreground/40"
-                    }`}
-                    style={{ background: MARKER_COLOURS[col] }}
-                  />
-                ))}
-              </div>
-            </div>
-
-            {/* Rotation */}
-            <div className="mb-4">
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                Rotation — {intelEditRotation}°
-              </p>
-              <div className="flex items-center gap-3">
-                <div className="shrink-0 w-10 h-10 flex items-center justify-center">
-                  <img
-                    src={getMarkerDataUrl(intelEditIcon, intelEditColour)}
-                    alt="preview"
-                    className="w-8 h-8 object-contain transition-transform"
-                    style={{ transform: `rotate(${intelEditRotation}deg)` }}
-                  />
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={359}
-                  step={1}
-                  value={intelEditRotation}
-                  onChange={e => setIntelEditRotation(Number(e.target.value))}
-                  className="flex-1 accent-primary"
-                />
-                <div className="flex gap-1">
-                  {[0, 45, 90, 135, 180, 225, 270, 315].map(deg => (
+              ) : (
+                /* Phase 2: confirm new address */
+                <div className="px-4 py-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-white/70 mb-0.5">
+                    Move to
+                  </p>
+                  <p className="text-sm font-semibold text-white mb-3 leading-snug">
+                    {pendingIntelMoveAddress.address}
+                  </p>
+                  <div className="flex gap-2">
                     <button
-                      key={deg}
-                      onClick={() => setIntelEditRotation(deg)}
-                      title={`${deg}°`}
-                      className={`w-6 h-6 text-[9px] rounded border transition-all ${
-                        intelEditRotation === deg
-                          ? "bg-primary text-primary-foreground border-primary"
-                          : "border-border hover:border-primary/50 text-muted-foreground"
-                      }`}
+                      onClick={() => {
+                        if (
+                          movingIntelLabel === null ||
+                          pendingIntelMoveAddress === null
+                        )
+                          return;
+                        // Accept: update geocodedIntelRef so the new position is used next time
+                        const entry =
+                          geocodedIntelRef.current.get(movingIntelLabel);
+                        if (entry) {
+                          geocodedIntelRef.current.set(movingIntelLabel, {
+                            ...entry,
+                            position: {
+                              lat: pendingIntelMoveAddress.lat,
+                              lng: pendingIntelMoveAddress.lng,
+                            },
+                          });
+                        }
+                        const marker = markersRef.current.find(
+                          (m: any) => m.title === movingIntelLabel
+                        );
+                        if (marker) (marker as any).gmpDraggable = false;
+                        setMovingIntelLabel(null);
+                        setPendingIntelMoveAddress(null);
+                        delete (window as any).__intelMoveOrigPos;
+                        toast.success("Marker moved");
+                      }}
+                      className="flex-1 text-sm font-semibold text-white bg-white/25 hover:bg-white/35 rounded-xl py-2 transition-colors"
                     >
-                      {deg === 0
-                        ? "N"
-                        : deg === 45
-                          ? "NE"
-                          : deg === 90
-                            ? "E"
-                            : deg === 135
-                              ? "SE"
-                              : deg === 180
-                                ? "S"
-                                : deg === 225
-                                  ? "SW"
-                                  : deg === 270
-                                    ? "W"
-                                    : "NW"}
+                      Accept
                     </button>
+                    <button
+                      onClick={() => {
+                        const orig = (window as any).__intelMoveOrigPos;
+                        if (orig && orig.label === movingIntelLabel) {
+                          const marker = markersRef.current.find(
+                            (m: any) => m.title === orig.label
+                          );
+                          if (marker) {
+                            marker.position = { lat: orig.lat, lng: orig.lng };
+                            (marker as any).gmpDraggable = false;
+                          }
+                        }
+                        setMovingIntelLabel(null);
+                        setPendingIntelMoveAddress(null);
+                        delete (window as any).__intelMoveOrigPos;
+                      }}
+                      className="flex-1 text-sm font-semibold text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-xl py-2 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Intel Pin Edit Dialog ── */}
+        {editingIntelLabel !== null && (
+          <div
+            className="absolute inset-0 z-40 flex items-end justify-center"
+            style={{
+              background: "rgba(0,0,0,0.6)",
+              backdropFilter: "blur(4px)",
+            }}
+            onClick={() => setEditingIntelLabel(null)}
+          >
+            <div
+              className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8 max-h-[90vh] overflow-y-auto"
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="text-sm font-bold text-foreground">
+                    Edit Marker Appearance
+                  </p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5 truncate max-w-[260px]">
+                    {editingIntelLabel}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setEditingIntelLabel(null)}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Icon picker */}
+              <div className="mb-4">
+                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                  Marker Icon
+                </p>
+                <div className="space-y-3">
+                  {MARKER_ICON_GROUPS.map(group => (
+                    <div key={group.label}>
+                      <p className="text-[10px] text-muted-foreground/70 mb-1.5">
+                        {group.label}
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {group.icons.map(iconKey => (
+                          <button
+                            key={iconKey}
+                            onClick={() =>
+                              setIntelEditIcon(iconKey as MarkerIcon)
+                            }
+                            title={MARKER_ICON_LABELS[iconKey as MarkerIcon]}
+                            className={`w-10 h-10 rounded-lg border-2 flex items-center justify-center transition-all ${
+                              intelEditIcon === iconKey
+                                ? "border-primary bg-primary/10 scale-110"
+                                : "border-border bg-accent/30 hover:border-primary/50"
+                            }`}
+                          >
+                            <img
+                              src={getMarkerDataUrl(
+                                iconKey as MarkerIcon,
+                                intelEditColour
+                              )}
+                              alt={MARKER_ICON_LABELS[iconKey as MarkerIcon]}
+                              className="w-7 h-7 object-contain"
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>
-            </div>
 
-            {/* Save / Cancel */}
-            <div className="flex gap-3">
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={() => setEditingIntelLabel(null)}
-              >
-                Cancel
-              </Button>
-              <Button
-                className="flex-1"
-                onClick={() => {
-                  if (!editingIntelLabel) return;
-                  // Persist to localStorage
-                  try {
-                    localStorage.setItem(
-                      `runlog_intel_appearance_${editingIntelLabel}`,
-                      JSON.stringify({
-                        icon: intelEditIcon,
-                        colour: intelEditColour,
-                        rotation: intelEditRotation,
-                      })
-                    );
-                  } catch {
-                    /* ignore */
-                  }
-                  // Update the actual map marker element immediately —
-                  // direct img ref first, querySelector fallback (see
-                  // intelPinImgRefs declaration).
-                  const directImg = intelPinImgRefs.current.get(editingIntelLabel);
-                  const img =
-                    directImg ??
-                    (() => {
-                      const markerEntry = markersRef.current.find(
-                        (m: any) => m.title === editingIntelLabel
+              {/* Colour picker */}
+              <div className="mb-4">
+                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                  Colour
+                </p>
+                <div className="flex gap-2">
+                  {(Object.keys(MARKER_COLOURS) as MarkerColour[]).map(col => (
+                    <button
+                      key={col}
+                      onClick={() => setIntelEditColour(col)}
+                      title={MARKER_COLOUR_LABELS[col]}
+                      className={`w-8 h-8 rounded-full border-2 transition-all ${
+                        intelEditColour === col
+                          ? "border-foreground scale-110"
+                          : "border-transparent hover:border-foreground/40"
+                      }`}
+                      style={{ background: MARKER_COLOURS[col] }}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* Rotation */}
+              <div className="mb-4">
+                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                  Rotation — {intelEditRotation}°
+                </p>
+                <div className="flex items-center gap-3">
+                  <div className="shrink-0 w-10 h-10 flex items-center justify-center">
+                    <img
+                      src={getMarkerDataUrl(intelEditIcon, intelEditColour)}
+                      alt="preview"
+                      className="w-8 h-8 object-contain transition-transform"
+                      style={{ transform: `rotate(${intelEditRotation}deg)` }}
+                    />
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={359}
+                    step={1}
+                    value={intelEditRotation}
+                    onChange={e => setIntelEditRotation(Number(e.target.value))}
+                    className="flex-1 accent-primary"
+                  />
+                  <div className="flex gap-1">
+                    {[0, 45, 90, 135, 180, 225, 270, 315].map(deg => (
+                      <button
+                        key={deg}
+                        onClick={() => setIntelEditRotation(deg)}
+                        title={`${deg}°`}
+                        className={`w-6 h-6 text-[9px] rounded border transition-all ${
+                          intelEditRotation === deg
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "border-border hover:border-primary/50 text-muted-foreground"
+                        }`}
+                      >
+                        {deg === 0
+                          ? "N"
+                          : deg === 45
+                            ? "NE"
+                            : deg === 90
+                              ? "E"
+                              : deg === 135
+                                ? "SE"
+                                : deg === 180
+                                  ? "S"
+                                  : deg === 225
+                                    ? "SW"
+                                    : deg === 270
+                                      ? "W"
+                                      : "NW"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Save / Cancel */}
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => setEditingIntelLabel(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className="flex-1"
+                  onClick={() => {
+                    if (!editingIntelLabel) return;
+                    // Persist to localStorage
+                    try {
+                      localStorage.setItem(
+                        `runlog_intel_appearance_${editingIntelLabel}`,
+                        JSON.stringify({
+                          icon: intelEditIcon,
+                          colour: intelEditColour,
+                          rotation: intelEditRotation,
+                        })
                       );
-                      return markerEntry?.content instanceof HTMLElement
-                        ? (markerEntry.content.querySelector("img") as HTMLImageElement | null)
-                        : null;
-                    })();
-                  if (img) {
-                    img.src = getMarkerDataUrl(intelEditIcon, intelEditColour);
-                    img.style.transform = `rotate(${intelEditRotation}deg)`;
-                  }
-                  setEditingIntelLabel(null);
-                  toast.success("Marker appearance saved");
-                }}
-              >
-                Save Changes
-              </Button>
+                    } catch {
+                      /* ignore */
+                    }
+                    // Update the actual map marker element immediately —
+                    // direct img ref first, querySelector fallback (see
+                    // intelPinImgRefs declaration).
+                    const directImg =
+                      intelPinImgRefs.current.get(editingIntelLabel);
+                    const img =
+                      directImg ??
+                      (() => {
+                        const markerEntry = markersRef.current.find(
+                          (m: any) => m.title === editingIntelLabel
+                        );
+                        return markerEntry?.content instanceof HTMLElement
+                          ? (markerEntry.content.querySelector(
+                              "img"
+                            ) as HTMLImageElement | null)
+                          : null;
+                      })();
+                    if (img) {
+                      img.src = getMarkerDataUrl(
+                        intelEditIcon,
+                        intelEditColour
+                      );
+                      img.style.transform = `rotate(${intelEditRotation}deg)`;
+                    }
+                    setEditingIntelLabel(null);
+                    toast.success("Marker appearance saved");
+                  }}
+                >
+                  Save Changes
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* ── Map RS Quick Entry Modal ── */}
-      {mapQeOpen && (
-        <div
-          className="absolute inset-0 z-40 flex items-start justify-center overflow-y-auto p-3 pt-6 md:p-4 md:pt-10"
-          style={{
-            background: "rgba(0,0,0,0.55)",
-            backdropFilter: "blur(3px)",
-          }}
-          onClick={() => {
-            setMapQeOpen(false);
-            setMapQeAddress("");
-            closeInlineField();
-          }}
-        >
+        {/* ── Map RS Quick Entry Modal ── */}
+        {mapQeOpen && (
           <div
-            className="no-scrollbar w-full max-w-lg md:max-w-3xl lg:max-w-5xl bg-card border border-border rounded-2xl shadow-2xl p-5 pb-6 md:p-6 lg:p-8 max-h-[90vh] md:max-h-[92vh] overflow-y-auto"
-            onClick={e => e.stopPropagation()}
+            className="absolute inset-0 z-40 flex items-start justify-center overflow-y-auto p-3 pt-6 md:p-4 md:pt-10"
+            style={{
+              background: "rgba(0,0,0,0.55)",
+              backdropFilter: "blur(3px)",
+            }}
+            onClick={() => {
+              setMapQeOpen(false);
+              setMapQeAddress("");
+              closeInlineField();
+            }}
           >
-            {/* Header */}
-            <div className="flex items-start justify-between mb-4 lg:mb-6">
-              <div className="flex-1 min-w-0">
-                <p className="text-sm md:text-base lg:text-lg font-bold text-foreground">
-                  RS Quick Entry
-                </p>
-                <p className="text-[11px] md:text-xs lg:text-sm text-muted-foreground mt-0.5 truncate">
-                  {mapQeAddress}
-                </p>
+            <div
+              className="no-scrollbar w-full max-w-lg md:max-w-3xl lg:max-w-5xl bg-card border border-border rounded-2xl shadow-2xl p-5 pb-6 md:p-6 lg:p-8 max-h-[90vh] md:max-h-[92vh] overflow-y-auto"
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-start justify-between mb-4 lg:mb-6">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm md:text-base lg:text-lg font-bold text-foreground">
+                    RS Quick Entry
+                  </p>
+                  <p className="text-[11px] md:text-xs lg:text-sm text-muted-foreground mt-0.5 truncate">
+                    {mapQeAddress}
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setMapQeOpen(false);
+                    setMapQeAddress("");
+                    closeInlineField();
+                  }}
+                  className="ml-3 text-muted-foreground hover:text-foreground flex-shrink-0"
+                >
+                  <X className="h-4 w-4 md:h-5 md:w-5" />
+                </button>
               </div>
-              <button
-                onClick={() => {
-                  setMapQeOpen(false);
-                  setMapQeAddress("");
-                  closeInlineField();
-                }}
-                className="ml-3 text-muted-foreground hover:text-foreground flex-shrink-0"
-              >
-                <X className="h-4 w-4 md:h-5 md:w-5" />
-              </button>
-            </div>
 
-            {/* Time picker — slim inline row with Now + Date buttons */}
-            <div className="flex items-center gap-1 md:gap-1.5 mb-2 lg:mb-3 flex-wrap">
-              <Clock className="h-3 w-3 md:h-3.5 md:w-3.5 text-muted-foreground flex-shrink-0" />
-              <span className="text-[10px] md:text-xs text-muted-foreground font-medium mr-0.5">
-                Time:
-              </span>
-              {/* Hour */}
-              <Select
-                value={mapQeHour}
-                onOpenChange={o => setMapQeSelectOpen(o)}
-                onValueChange={v => {
-                  setMapQeHour(v);
-                  setMapQeTimeOverride(
-                    `${String(parseInt(v)).padStart(2, "0")}:${mapQeMinute} ${mapQePeriod}`
-                  );
-                }}
-              >
-                <SelectTrigger className="w-16 h-6 text-[11px] font-mono px-1.5 py-0 md:w-20 md:h-8 md:text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Array.from({ length: 12 }, (_, i) => String(i + 1)).map(
-                    h => (
+              {/* Time picker — slim inline row with Now + Date buttons */}
+              <div className="flex items-center gap-1 md:gap-1.5 mb-2 lg:mb-3 flex-wrap">
+                <Clock className="h-3 w-3 md:h-3.5 md:w-3.5 text-muted-foreground flex-shrink-0" />
+                <span className="text-[10px] md:text-xs text-muted-foreground font-medium mr-0.5">
+                  Time:
+                </span>
+                {/* Hour */}
+                <Select
+                  value={mapQeHour}
+                  onOpenChange={o => setMapQeSelectOpen(o)}
+                  onValueChange={v => {
+                    setMapQeHour(v);
+                    setMapQeTimeOverride(
+                      `${String(parseInt(v)).padStart(2, "0")}:${mapQeMinute} ${mapQePeriod}`
+                    );
+                  }}
+                >
+                  <SelectTrigger className="w-16 h-6 text-[11px] font-mono px-1.5 py-0 md:w-20 md:h-8 md:text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 12 }, (_, i) => String(i + 1)).map(
+                      h => (
+                        <SelectItem
+                          key={h}
+                          value={h}
+                          className="font-mono text-xs"
+                        >
+                          {String(parseInt(h)).padStart(2, "0")}
+                        </SelectItem>
+                      )
+                    )}
+                  </SelectContent>
+                </Select>
+                <span className="text-muted-foreground font-mono text-[11px] md:text-sm">
+                  :
+                </span>
+                {/* Minute */}
+                <Select
+                  value={mapQeMinute}
+                  onOpenChange={o => setMapQeSelectOpen(o)}
+                  onValueChange={v => {
+                    setMapQeMinute(v);
+                    setMapQeTimeOverride(
+                      `${String(parseInt(mapQeHour)).padStart(2, "0")}:${v} ${mapQePeriod}`
+                    );
+                  }}
+                >
+                  <SelectTrigger className="w-16 h-6 text-[11px] font-mono px-1.5 py-0 md:w-20 md:h-8 md:text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 60 }, (_, i) =>
+                      String(i).padStart(2, "0")
+                    ).map(m => (
                       <SelectItem
-                        key={h}
-                        value={h}
+                        key={m}
+                        value={m}
                         className="font-mono text-xs"
                       >
-                        {String(parseInt(h)).padStart(2, "0")}
+                        {m}
                       </SelectItem>
-                    )
-                  )}
-                </SelectContent>
-              </Select>
-              <span className="text-muted-foreground font-mono text-[11px] md:text-sm">
-                :
-              </span>
-              {/* Minute */}
-              <Select
-                value={mapQeMinute}
-                onOpenChange={o => setMapQeSelectOpen(o)}
-                onValueChange={v => {
-                  setMapQeMinute(v);
-                  setMapQeTimeOverride(
-                    `${String(parseInt(mapQeHour)).padStart(2, "0")}:${v} ${mapQePeriod}`
-                  );
-                }}
-              >
-                <SelectTrigger className="w-16 h-6 text-[11px] font-mono px-1.5 py-0 md:w-20 md:h-8 md:text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Array.from({ length: 60 }, (_, i) =>
-                    String(i).padStart(2, "0")
-                  ).map(m => (
-                    <SelectItem key={m} value={m} className="font-mono text-xs">
-                      {m}
+                    ))}
+                  </SelectContent>
+                </Select>
+                {/* AM/PM */}
+                <Select
+                  value={mapQePeriod}
+                  onOpenChange={o => setMapQeSelectOpen(o)}
+                  onValueChange={v => {
+                    setMapQePeriod(v);
+                    setMapQeTimeOverride(
+                      `${String(parseInt(mapQeHour)).padStart(2, "0")}:${mapQeMinute} ${v}`
+                    );
+                  }}
+                >
+                  <SelectTrigger className="w-14 h-6 text-[11px] px-1.5 py-0 md:w-16 md:h-8 md:text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="AM" className="text-xs">
+                      AM
                     </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {/* AM/PM */}
-              <Select
-                value={mapQePeriod}
-                onOpenChange={o => setMapQeSelectOpen(o)}
-                onValueChange={v => {
-                  setMapQePeriod(v);
-                  setMapQeTimeOverride(
-                    `${String(parseInt(mapQeHour)).padStart(2, "0")}:${mapQeMinute} ${v}`
-                  );
-                }}
-              >
-                <SelectTrigger className="w-14 h-6 text-[11px] px-1.5 py-0 md:w-16 md:h-8 md:text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="AM" className="text-xs">
-                    AM
-                  </SelectItem>
-                  <SelectItem value="PM" className="text-xs">
-                    PM
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-              {/* Now button — inline */}
-              <button
-                type="button"
-                onClick={() => {
-                  const n = new Date();
-                  const h24 = n.getHours();
-                  const min = n.getMinutes();
-                  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
-                  const ampm = h24 < 12 ? "AM" : "PM";
-                  setMapQeHour(String(h12));
-                  setMapQeMinute(String(min).padStart(2, "0"));
-                  setMapQePeriod(ampm);
-                  setMapQeTimeOverride(
-                    `${String(h12).padStart(2, "0")}:${String(min).padStart(2, "0")} ${ampm}`
-                  );
-                }}
-                className="h-6 px-2 text-[10px] font-medium rounded border border-border bg-muted/30 hover:bg-accent/50 active:scale-95 transition-all whitespace-nowrap md:h-8 md:px-3 md:text-xs"
-              >
-                Now
-              </button>
-              {/* Date button — toggles stepper */}
-              <button
-                type="button"
-                onClick={() => setShowMapQeDateStepper(v => !v)}
-                className={`h-6 px-2 text-[10px] font-medium rounded border transition-all whitespace-nowrap active:scale-95 md:h-8 md:px-3 md:text-xs ${
-                  showMapQeDateStepper
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border bg-muted/30 hover:bg-accent/50"
-                }`}
-              >
-                Date
-              </button>
-            </div>
-
-            {/* Date stepper — only visible when Date button is toggled on */}
-            {showMapQeDateStepper && (
-              <div className="flex items-center justify-between mb-2 px-1 py-1 rounded-md border border-border/70 bg-muted/30">
+                    <SelectItem value="PM" className="text-xs">
+                      PM
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                {/* Now button — inline */}
                 <button
                   type="button"
-                  className="px-2 py-0.5 text-base font-bold text-muted-foreground hover:text-foreground transition-colors"
-                  onClick={() =>
-                    setMapQeRowDate(_addDaysToYmd(mapQeRowDate, -1))
-                  }
+                  onClick={() => {
+                    const n = new Date();
+                    const h24 = n.getHours();
+                    const min = n.getMinutes();
+                    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+                    const ampm = h24 < 12 ? "AM" : "PM";
+                    setMapQeHour(String(h12));
+                    setMapQeMinute(String(min).padStart(2, "0"));
+                    setMapQePeriod(ampm);
+                    setMapQeTimeOverride(
+                      `${String(h12).padStart(2, "0")}:${String(min).padStart(2, "0")} ${ampm}`
+                    );
+                  }}
+                  className="h-6 px-2 text-[10px] font-medium rounded border border-border bg-muted/30 hover:bg-accent/50 active:scale-95 transition-all whitespace-nowrap md:h-8 md:px-3 md:text-xs"
                 >
-                  ◀
+                  Now
                 </button>
-                <span className="text-[11px] font-semibold tracking-widest text-foreground font-mono">
-                  {_formatPerthDateLabel(mapQeRowDate)}
-                </span>
+                {/* Date button — toggles stepper */}
                 <button
                   type="button"
-                  className="px-2 py-0.5 text-base font-bold text-muted-foreground hover:text-foreground transition-colors"
-                  onClick={() =>
-                    setMapQeRowDate(_addDaysToYmd(mapQeRowDate, 1))
-                  }
+                  onClick={() => setShowMapQeDateStepper(v => !v)}
+                  className={`h-6 px-2 text-[10px] font-medium rounded border transition-all whitespace-nowrap active:scale-95 md:h-8 md:px-3 md:text-xs ${
+                    showMapQeDateStepper
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-muted/30 hover:bg-accent/50"
+                  }`}
                 >
-                  ▶
+                  Date
                 </button>
               </div>
-            )}
 
-            {/* No sheet selected warning */}
-            {rsSelectedSheetId === null ? (
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-3 md:px-4 md:py-4 text-center">
-                <p className="text-xs md:text-sm font-semibold text-amber-400 mb-1">
-                  No running sheet selected
-                </p>
-                <p className="text-[11px] md:text-xs text-muted-foreground">
-                  Select an operation and running sheet in the right panel
-                  first, then tap &amp; hold the map again.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2 md:space-y-3">
-                {/* ARR panel removed per user request */}
-
-                {/* Inline observation field */}
-                {rsInlineLabel &&
-                  (() => {
-                    const selectedSheet = (
-                      rsSheetsData as any[] | undefined
-                    )?.find((s: any) => s.id === rsSelectedSheetId);
-                    const rosterCins: string[] = [];
-                    if (selectedSheet?.sheetCins) {
-                      try {
-                        const parsed: Array<{
-                          cin: string;
-                          isTeamLeader?: boolean;
-                        }> =
-                          typeof selectedSheet.sheetCins === "string"
-                            ? JSON.parse(selectedSheet.sheetCins)
-                            : selectedSheet.sheetCins;
-                        parsed
-                          .sort((a, b) => {
-                            if (a.isTeamLeader && !b.isTeamLeader) return -1;
-                            if (!a.isTeamLeader && b.isTeamLeader) return 1;
-                            const numA = parseInt(a.cin ?? "", 10);
-                            const numB = parseInt(b.cin ?? "", 10);
-                            if (!isNaN(numA) && !isNaN(numB))
-                              return numA - numB;
-                            return (a.cin ?? "").localeCompare(b.cin ?? "");
-                          })
-                          .forEach(c => {
-                            if (c.cin) rosterCins.push(c.cin);
-                          });
-                      } catch {
-                        /* ignore */
-                      }
+              {/* Date stepper — only visible when Date button is toggled on */}
+              {showMapQeDateStepper && (
+                <div className="flex items-center justify-between mb-2 px-1 py-1 rounded-md border border-border/70 bg-muted/30">
+                  <button
+                    type="button"
+                    className="px-2 py-0.5 text-base font-bold text-muted-foreground hover:text-foreground transition-colors"
+                    onClick={() =>
+                      setMapQeRowDate(_addDaysToYmd(mapQeRowDate, -1))
                     }
-                    const inlineReadOnly = isTouchDevice && !rsInlineTypingMode;
-                    return (
-                      <div
-                        className="rounded-lg border border-border bg-muted/40 p-2.5 md:p-3.5 flex flex-col gap-2 md:gap-2.5"
-                        onClick={e => e.stopPropagation()}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] md:text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                            Observation
-                          </span>
-                          <button
-                            type="button"
-                            onClick={undoInlineText}
-                            disabled={rsInlineUndoStack.length === 0}
-                            title="Undo"
-                            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold border border-border text-muted-foreground transition-all active:scale-95 hover:bg-accent/50 disabled:opacity-40 disabled:pointer-events-none"
-                          >
-                            <Undo2 className="h-3 w-3" />
-                            Undo
-                          </button>
-                        </div>
-                        <textarea
-                          ref={rsInlineInputRef}
-                          value={rsInlineText}
-                          readOnly={inlineReadOnly}
-                          onClick={() => {
-                            if (inlineReadOnly) enableInlineTyping();
-                          }}
-                          onChange={e => {
-                            const next = e.target.value;
-                            const now = Date.now();
-                            // Group rapid keystrokes into a single undo step; only
-                            // snapshot when there's been a pause since the last one.
-                            if (now - rsInlineTypingPushRef.current > 600) {
-                              pushInlineUndo(rsInlineText);
-                            }
-                            rsInlineTypingPushRef.current = now;
-                            setRsInlineText(next);
-                            resetInlineTimer();
+                  >
+                    ◀
+                  </button>
+                  <span className="text-[11px] font-semibold tracking-widest text-foreground font-mono">
+                    {_formatPerthDateLabel(mapQeRowDate)}
+                  </span>
+                  <button
+                    type="button"
+                    className="px-2 py-0.5 text-base font-bold text-muted-foreground hover:text-foreground transition-colors"
+                    onClick={() =>
+                      setMapQeRowDate(_addDaysToYmd(mapQeRowDate, 1))
+                    }
+                  >
+                    ▶
+                  </button>
+                </div>
+              )}
 
-                            const cursorPos = e.target.selectionStart ?? next.length;
-                            const vehicleTrigger = detectVehicleMentionTrigger(
-                              next,
-                              cursorPos,
-                              rsUsedVehicleRegos
-                            );
-                            if (vehicleTrigger) {
-                              closeRsMentionDropdown();
-                              setRsVehicleMentionWord({
-                                word: vehicleTrigger.word,
-                                wordStart: vehicleTrigger.wordStart,
-                                wordEnd: cursorPos,
-                              });
-                              setRsVehicleMentionActiveIndex(0);
-                              setRsVehicleMentionAnchor(
-                                getCaretPixelPosition(e.target, cursorPos)
-                              );
-                              if (rsVehicleMentionDebounceRef.current)
-                                clearTimeout(rsVehicleMentionDebounceRef.current);
-                              rsVehicleMentionDebounceRef.current = setTimeout(() => {
-                                setRsVehicleMentionQuery(vehicleTrigger.word);
-                              }, 250);
-                            } else {
-                              closeRsVehicleMentionDropdown();
-                              const trigger = detectMentionTrigger(
+              {/* No sheet selected warning */}
+              {rsSelectedSheetId === null ? (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-3 md:px-4 md:py-4 text-center">
+                  <p className="text-xs md:text-sm font-semibold text-amber-400 mb-1">
+                    No running sheet selected
+                  </p>
+                  <p className="text-[11px] md:text-xs text-muted-foreground">
+                    Select an operation and running sheet in the right panel
+                    first, then tap &amp; hold the map again.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2 md:space-y-3">
+                  {/* ARR panel removed per user request */}
+
+                  {/* Inline observation field */}
+                  {rsInlineLabel &&
+                    (() => {
+                      const selectedSheet = (
+                        rsSheetsData as any[] | undefined
+                      )?.find((s: any) => s.id === rsSelectedSheetId);
+                      const rosterCins: string[] = [];
+                      if (selectedSheet?.sheetCins) {
+                        try {
+                          const parsed: Array<{
+                            cin: string;
+                            isTeamLeader?: boolean;
+                          }> =
+                            typeof selectedSheet.sheetCins === "string"
+                              ? JSON.parse(selectedSheet.sheetCins)
+                              : selectedSheet.sheetCins;
+                          parsed
+                            .sort((a, b) => {
+                              if (a.isTeamLeader && !b.isTeamLeader) return -1;
+                              if (!a.isTeamLeader && b.isTeamLeader) return 1;
+                              const numA = parseInt(a.cin ?? "", 10);
+                              const numB = parseInt(b.cin ?? "", 10);
+                              if (!isNaN(numA) && !isNaN(numB))
+                                return numA - numB;
+                              return (a.cin ?? "").localeCompare(b.cin ?? "");
+                            })
+                            .forEach(c => {
+                              if (c.cin) rosterCins.push(c.cin);
+                            });
+                        } catch {
+                          /* ignore */
+                        }
+                      }
+                      const inlineReadOnly =
+                        isTouchDevice && !rsInlineTypingMode;
+                      return (
+                        <div
+                          className="rounded-lg border border-border bg-muted/40 p-2.5 md:p-3.5 flex flex-col gap-2 md:gap-2.5"
+                          onClick={e => e.stopPropagation()}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] md:text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                              Observation
+                            </span>
+                            <button
+                              type="button"
+                              onClick={undoInlineText}
+                              disabled={rsInlineUndoStack.length === 0}
+                              title="Undo"
+                              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold border border-border text-muted-foreground transition-all active:scale-95 hover:bg-accent/50 disabled:opacity-40 disabled:pointer-events-none"
+                            >
+                              <Undo2 className="h-3 w-3" />
+                              Undo
+                            </button>
+                          </div>
+                          <textarea
+                            ref={rsInlineInputRef}
+                            value={rsInlineText}
+                            readOnly={inlineReadOnly}
+                            onClick={() => {
+                              if (inlineReadOnly) enableInlineTyping();
+                            }}
+                            onChange={e => {
+                              const next = e.target.value;
+                              const now = Date.now();
+                              // Group rapid keystrokes into a single undo step; only
+                              // snapshot when there's been a pause since the last one.
+                              if (now - rsInlineTypingPushRef.current > 600) {
+                                pushInlineUndo(rsInlineText);
+                              }
+                              rsInlineTypingPushRef.current = now;
+                              setRsInlineText(next);
+                              resetInlineTimer();
+
+                              const cursorPos = e.target.selectionStart ?? next.length;
+                              const vehicleTrigger = detectVehicleMentionTrigger(
                                 next,
                                 cursorPos,
-                                rsUsedBracketCodes
+                                rsUsedVehicleRegos
                               );
-                              if (!trigger) {
+                              if (vehicleTrigger) {
                                 closeRsMentionDropdown();
-                              } else {
-                                setRsMentionWord({
-                                  word: trigger.word,
-                                  wordStart: trigger.wordStart,
+                                setRsVehicleMentionWord({
+                                  word: vehicleTrigger.word,
+                                  wordStart: vehicleTrigger.wordStart,
                                   wordEnd: cursorPos,
                                 });
-                                setRsMentionActiveIndex(0);
-                                setRsMentionAnchor(
+                                setRsVehicleMentionActiveIndex(0);
+                                setRsVehicleMentionAnchor(
                                   getCaretPixelPosition(e.target, cursorPos)
                                 );
-                                if (rsMentionDebounceRef.current)
-                                  clearTimeout(rsMentionDebounceRef.current);
-                                rsMentionDebounceRef.current = setTimeout(() => {
-                                  setRsMentionQuery(trigger.word);
+                                if (rsVehicleMentionDebounceRef.current)
+                                  clearTimeout(rsVehicleMentionDebounceRef.current);
+                                rsVehicleMentionDebounceRef.current = setTimeout(() => {
+                                  setRsVehicleMentionQuery(vehicleTrigger.word);
                                 }, 250);
-                              }
-                            }
-                          }}
-                          onFocus={resetInlineTimer}
-                          onBlur={() => {
-                            closeRsMentionDropdown();
-                            closeRsVehicleMentionDropdown();
-                          }}
-                          onKeyDown={e => {
-                            if (
-                              rsVehicleMentionWord &&
-                              rsVehicleMentionSuggestions.length > 0
-                            ) {
-                              if (e.key === "ArrowDown") {
-                                e.preventDefault();
-                                setRsVehicleMentionActiveIndex(
-                                  i => (i + 1) % rsVehicleMentionSuggestions.length
-                                );
-                                return;
-                              }
-                              if (e.key === "ArrowUp") {
-                                e.preventDefault();
-                                setRsVehicleMentionActiveIndex(
-                                  i =>
-                                    (i - 1 + rsVehicleMentionSuggestions.length) %
-                                    rsVehicleMentionSuggestions.length
-                                );
-                                return;
-                              }
-                              if (e.key === "Enter" || e.key === "Tab") {
-                                e.preventDefault();
-                                selectRsVehicleMentionSuggestion(
-                                  rsVehicleMentionSuggestions[
-                                    rsVehicleMentionActiveIndex
-                                  ],
-                                  e.currentTarget
-                                );
-                                return;
-                              }
-                              if (e.key === "Escape") {
-                                e.preventDefault();
+                              } else {
                                 closeRsVehicleMentionDropdown();
-                                return;
-                              }
-                            }
-                            if (rsMentionWord && rsMentionSuggestions.length > 0) {
-                              if (e.key === "ArrowDown") {
-                                e.preventDefault();
-                                setRsMentionActiveIndex(
-                                  i => (i + 1) % rsMentionSuggestions.length
+                                const trigger = detectMentionTrigger(
+                                  next,
+                                  cursorPos,
+                                  rsUsedBracketCodes
                                 );
-                                return;
-                              }
-                              if (e.key === "ArrowUp") {
-                                e.preventDefault();
-                                setRsMentionActiveIndex(
-                                  i =>
-                                    (i - 1 + rsMentionSuggestions.length) %
-                                    rsMentionSuggestions.length
-                                );
-                                return;
-                              }
-                              if (e.key === "Enter" || e.key === "Tab") {
-                                e.preventDefault();
-                                selectRsMentionSuggestion(
-                                  rsMentionSuggestions[rsMentionActiveIndex],
-                                  e.currentTarget
-                                );
-                                return;
-                              }
-                              if (e.key === "Escape") {
-                                e.preventDefault();
-                                closeRsMentionDropdown();
-                                return;
-                              }
-                            }
-                            if (e.key === " " || e.key === "Tab") {
-                              const textarea = e.currentTarget;
-                              const pos = textarea.selectionStart ?? 0;
-                              const textBefore = rsInlineText.slice(0, pos);
-                              const match = textBefore.match(/(\S+)$/);
-                              if (match) {
-                                const word = match[1].toLowerCase();
-                                const expansion = mapQeShortcutMap[word];
-                                if (expansion) {
-                                  e.preventDefault();
-                                  const before = textBefore.slice(
-                                    0,
-                                    textBefore.length - match[1].length
+                                if (!trigger) {
+                                  closeRsMentionDropdown();
+                                } else {
+                                  setRsMentionWord({
+                                    word: trigger.word,
+                                    wordStart: trigger.wordStart,
+                                    wordEnd: cursorPos,
+                                  });
+                                  setRsMentionActiveIndex(0);
+                                  setRsMentionAnchor(
+                                    getCaretPixelPosition(e.target, cursorPos)
                                   );
-                                  const after = rsInlineText.slice(pos);
-                                  const newText =
-                                    before + expansion + " " + after;
-                                  pushInlineUndo(rsInlineText);
-                                  setRsInlineText(newText);
-                                  resetInlineTimer();
-                                  requestAnimationFrame(() => {
-                                    const newPos =
-                                      before.length + expansion.length + 1;
-                                    textarea.setSelectionRange(newPos, newPos);
-                                  });
+                                  if (rsMentionDebounceRef.current)
+                                    clearTimeout(rsMentionDebounceRef.current);
+                                  rsMentionDebounceRef.current = setTimeout(() => {
+                                    setRsMentionQuery(trigger.word);
+                                  }, 250);
                                 }
                               }
-                            }
-                          }}
-                          placeholder={
-                            inlineReadOnly
-                              ? "Tap shortcuts below, or tap here to type…"
-                              : "Add details (optional)…"
-                          }
-                          rows={4}
-                          className={`w-full resize-none rounded-md border border-border bg-background px-2.5 py-1.5 text-[11px] placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring md:px-3 md:py-2 md:text-sm lg:min-h-[140px] ${inlineReadOnly ? "cursor-pointer" : ""}`}
-                        />
-                        {rsMentionWord &&
-                          rsMentionAnchor &&
-                          rsMentionSuggestions.length > 0 && (
-                            <div
-                              className="fixed z-50 w-64 rounded-lg border border-border bg-popover shadow-lg overflow-hidden"
-                              style={{
-                                top: rsMentionAnchor.top,
-                                left: rsMentionAnchor.left,
-                                maxHeight: "220px",
-                                overflowY: "auto",
-                              }}
-                            >
-                              {rsMentionSuggestions.map((s, i) => (
-                                <button
-                                  key={s.key}
-                                  type="button"
-                                  className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-2 border-b border-border/50 last:border-0 transition-colors ${
-                                    i === rsMentionActiveIndex
-                                      ? "bg-accent text-accent-foreground"
-                                      : "text-popover-foreground hover:bg-accent hover:text-accent-foreground"
-                                  }`}
-                                  onMouseEnter={() => setRsMentionActiveIndex(i)}
-                                  onMouseDown={e => {
+                            }}
+                            onFocus={resetInlineTimer}
+                            onBlur={() => {
+                              closeRsMentionDropdown();
+                              closeRsVehicleMentionDropdown();
+                            }}
+                            onKeyDown={e => {
+                              if (
+                                rsVehicleMentionWord &&
+                                rsVehicleMentionSuggestions.length > 0
+                              ) {
+                                if (e.key === "ArrowDown") {
+                                  e.preventDefault();
+                                  setRsVehicleMentionActiveIndex(
+                                    i => (i + 1) % rsVehicleMentionSuggestions.length
+                                  );
+                                  return;
+                                }
+                                if (e.key === "ArrowUp") {
+                                  e.preventDefault();
+                                  setRsVehicleMentionActiveIndex(
+                                    i =>
+                                      (i - 1 + rsVehicleMentionSuggestions.length) %
+                                      rsVehicleMentionSuggestions.length
+                                  );
+                                  return;
+                                }
+                                if (e.key === "Enter" || e.key === "Tab") {
+                                  e.preventDefault();
+                                  selectRsVehicleMentionSuggestion(
+                                    rsVehicleMentionSuggestions[
+                                      rsVehicleMentionActiveIndex
+                                    ],
+                                    e.currentTarget
+                                  );
+                                  return;
+                                }
+                                if (e.key === "Escape") {
+                                  e.preventDefault();
+                                  closeRsVehicleMentionDropdown();
+                                  return;
+                                }
+                              }
+                              if (rsMentionWord && rsMentionSuggestions.length > 0) {
+                                if (e.key === "ArrowDown") {
+                                  e.preventDefault();
+                                  setRsMentionActiveIndex(
+                                    i => (i + 1) % rsMentionSuggestions.length
+                                  );
+                                  return;
+                                }
+                                if (e.key === "ArrowUp") {
+                                  e.preventDefault();
+                                  setRsMentionActiveIndex(
+                                    i =>
+                                      (i - 1 + rsMentionSuggestions.length) %
+                                      rsMentionSuggestions.length
+                                  );
+                                  return;
+                                }
+                                if (e.key === "Enter" || e.key === "Tab") {
+                                  e.preventDefault();
+                                  selectRsMentionSuggestion(
+                                    rsMentionSuggestions[rsMentionActiveIndex],
+                                    e.currentTarget
+                                  );
+                                  return;
+                                }
+                                if (e.key === "Escape") {
+                                  e.preventDefault();
+                                  closeRsMentionDropdown();
+                                  return;
+                                }
+                              }
+                              if (e.key === " " || e.key === "Tab") {
+                                const textarea = e.currentTarget;
+                                const pos = textarea.selectionStart ?? 0;
+                                const textBefore = rsInlineText.slice(0, pos);
+                                const match = textBefore.match(/(\S+)$/);
+                                if (match) {
+                                  const word = match[1].toLowerCase();
+                                  const expansion = mapQeShortcutMap[word];
+                                  if (expansion) {
                                     e.preventDefault();
-                                    if (rsInlineInputRef.current)
-                                      selectRsMentionSuggestion(
-                                        s,
-                                        rsInlineInputRef.current
+                                    const before = textBefore.slice(
+                                      0,
+                                      textBefore.length - match[1].length
+                                    );
+                                    const after = rsInlineText.slice(pos);
+                                    const newText =
+                                      before + expansion + " " + after;
+                                    pushInlineUndo(rsInlineText);
+                                    setRsInlineText(newText);
+                                    resetInlineTimer();
+                                    requestAnimationFrame(() => {
+                                      const newPos =
+                                        before.length + expansion.length + 1;
+                                      textarea.setSelectionRange(
+                                        newPos,
+                                        newPos
                                       );
-                                  }}
-                                >
-                                  <span className="flex items-center gap-1.5 min-w-0">
-                                    <User className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                                    <span className="truncate">
-                                      {s.displayName}
-                                    </span>
-                                  </span>
-                                  <span className="text-xs text-muted-foreground shrink-0">
-                                    {s.rowCount} obs.
-                                  </span>
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        {rsVehicleMentionWord &&
-                          rsVehicleMentionAnchor &&
-                          rsVehicleMentionSuggestions.length > 0 && (
-                            <div
-                              className="fixed z-50 w-72 rounded-lg border border-border bg-popover shadow-lg overflow-hidden"
-                              style={{
-                                top: rsVehicleMentionAnchor.top,
-                                left: rsVehicleMentionAnchor.left,
-                                maxHeight: "220px",
-                                overflowY: "auto",
-                              }}
-                            >
-                              {rsVehicleMentionSuggestions.map((s, i) => (
-                                <button
-                                  key={s.key}
-                                  type="button"
-                                  className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-2 border-b border-border/50 last:border-0 transition-colors ${
-                                    i === rsVehicleMentionActiveIndex
-                                      ? "bg-accent text-accent-foreground"
-                                      : "text-popover-foreground hover:bg-accent hover:text-accent-foreground"
-                                  }`}
-                                  onMouseEnter={() =>
-                                    setRsVehicleMentionActiveIndex(i)
+                                    });
                                   }
-                                  onMouseDown={e => {
-                                    e.preventDefault();
-                                    if (rsInlineInputRef.current)
-                                      selectRsVehicleMentionSuggestion(
-                                        s,
-                                        rsInlineInputRef.current
-                                      );
-                                  }}
-                                >
-                                  <span className="flex items-center gap-1.5 min-w-0">
-                                    <Car className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                                    <span className="truncate">
-                                      {formatIntelVehicle(s.label)}
-                                    </span>
-                                  </span>
-                                  <span className="text-xs text-muted-foreground shrink-0">
-                                    {s.rowCount} obs.
-                                  </span>
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        {/* Shortcut buttons */}
-                        {(() => {
-                          // ── QE chips: exact mirror of main RS chip set, values, and order ──────────
-                          // Single source of truth: assignedTarget (target.getById) for all target fields.
-                          // Chip set matches SheetDetail exactly: TGT, HBF, HB, V1F, V1, extra vehicles, wildcards, DEP, ARR, folder shortcuts.
-                          // Order: qeChipOrder (read from RS localStorage key) with wildcards always last.
-                          const appendText = (text: string) => {
-                            pushInlineUndo(rsInlineText);
-                            setRsInlineText(prev =>
-                              prev ? `${prev} ${text}` : text
-                            );
-                            resetInlineTimer();
-                            rsInlineInputRef.current?.focus();
-                          };
-                          const t = assignedTarget as any;
-                          if (!t) return null;
-
-                          // Extra vehicle chips from JSON (V2F/V2, V3F/V3, …)
-                          const extraVehicleChips: Array<{
-                            label: string;
-                            display: string;
-                            getValue: () => string | null;
-                          }> = [];
-                          try {
-                            const evs: Array<{ full: string; short: string }> =
-                              JSON.parse(t.extraVehicles ?? "[]");
-                            evs.forEach(
-                              (
-                                ev: { full: string; short: string },
-                                i: number
-                              ) => {
-                                const num = i + 2;
-                                if (ev.full)
-                                  extraVehicleChips.push({
-                                    label: `V${num}F`,
-                                    display: `V${num}F`,
-                                    getValue: () => ev.full,
-                                  });
-                                if (ev.short) {
-                                  extraVehicleChips.push({
-                                    label: `V${num}`,
-                                    display: ev.short
-                                      ? `V${num} ${ev.short}`
-                                      : `V${num}`,
-                                    getValue: () => ev.short,
-                                  });
                                 }
                               }
-                            );
-                          } catch {}
-
-                          // Wild field chips (#1, #2, …)
-                          const wildChips: Array<{
-                            label: string;
-                            display: string;
-                            getValue: () => string | null;
-                          }> = [];
-                          try {
-                            const wfs: Array<{ label: string; value: string }> =
-                              JSON.parse(t.wildFields ?? "[]");
-                            wfs.forEach(
-                              (wf: { label: string; value: string }) => {
-                                if (wf.value)
-                                  wildChips.push({
-                                    label: wf.label,
-                                    display: wf.label,
-                                    getValue: () => wf.value,
-                                  });
-                              }
-                            );
-                          } catch {}
-
-                          // Folder shortcut chips (showInRs=true, exclude legacy 'D')
-                          const folderShortcutChips: Array<{
-                            label: string;
-                            display: string;
-                            getValue: () => string | null;
-                          }> = ((generalShortcuts as any[]) ?? [])
-                            .filter(
-                              (s: any) =>
-                                (s.trigger as string).toUpperCase() !== "D" &&
-                                !!s.showInRs
-                            )
-                            .map((s: any) => ({
-                              label: (s.trigger as string).toUpperCase(),
-                              display: (s.trigger as string).toUpperCase(),
-                              getValue: () => s.expansion as string,
-                            }));
-
-                          // Full chip list — identical order to SheetDetail fields array
-                          const allChips: Array<{
-                            label: string;
-                            display: string;
-                            getValue: () => string | null;
-                          }> = [
-                            {
-                              label: "TGT",
-                              display: "TGT",
-                              getValue: () => t.tgt ?? null,
-                            },
-                            {
-                              label: "HBF",
-                              display: "HBF",
-                              getValue: () => t.hbf ?? null,
-                            },
-                            {
-                              label: "HB",
-                              display: "HB",
-                              getValue: () => t.hb ?? null,
-                            },
-                            {
-                              label: "V1F",
-                              display: "V1F",
-                              getValue: () => t.v1f ?? null,
-                            },
-                            {
-                              label: "V1",
-                              display: t.v1 ? `V1 ${t.v1}` : "V1",
-                              getValue: () => t.v1 ?? null,
-                            },
-                            ...extraVehicleChips,
-                            ...wildChips,
-                            {
-                              label: "DEP",
-                              display: "DEP",
-                              getValue: () => t.dep ?? null,
-                            },
-                            {
-                              label: "ARR",
-                              display: "ARR",
-                              getValue: () => t.arr ?? null,
-                            },
-                            ...folderShortcutChips,
-                          ];
-
-                          const available = allChips.filter(
-                            s => s.getValue() !== null
-                          );
-                          if (available.length === 0) return null;
-
-                          // Apply saved RS order — wildcards always last (mirrors SheetDetail)
-                          const isWildcard = (lbl: string) =>
-                            /^#\d+$/.test(lbl);
-                          const nonWildAvail = available.filter(
-                            s => !isWildcard(s.label)
-                          );
-                          const wildAvail = available.filter(s =>
-                            isWildcard(s.label)
-                          );
-                          const orderedNonWild =
-                            qeChipOrder.length > 0
-                              ? [
-                                  ...(qeChipOrder
-                                    .filter(lbl => !isWildcard(lbl))
-                                    .map(lbl =>
-                                      nonWildAvail.find(s => s.label === lbl)
-                                    )
-                                    .filter(Boolean) as typeof available),
-                                  ...nonWildAvail.filter(
-                                    s => !qeChipOrder.includes(s.label)
-                                  ),
-                                ]
-                              : nonWildAvail;
-                          const orderedWild =
-                            qeChipOrder.length > 0
-                              ? [
-                                  ...(qeChipOrder
-                                    .filter(isWildcard)
-                                    .map(lbl =>
-                                      wildAvail.find(s => s.label === lbl)
-                                    )
-                                    .filter(Boolean) as typeof available),
-                                  ...wildAvail.filter(
-                                    s => !qeChipOrder.includes(s.label)
-                                  ),
-                                ]
-                              : wildAvail;
-                          const orderedChips = [
-                            ...orderedNonWild,
-                            ...orderedWild,
-                          ];
-
-                          // Display rules — same as SheetDetail:
-                          // Vn short (V1/V2/…): show label + rego; everything else: trigger label only
-                          const shortcutFolderLabels = new Set(
-                            ((generalShortcuts as any[]) ?? []).map((s: any) =>
-                              (s.trigger as string).toUpperCase()
-                            )
-                          );
-                          const TRIGGER_ONLY = new Set([
-                            "TGT",
-                            "HBF",
-                            "HB",
-                            "V1F",
-                            "DEP",
-                            "ARR",
-                          ]);
-                          const isVnShort = (lbl: string) => /^V\d+$/.test(lbl);
-                          const isVnFull = (lbl: string) => /^V\d+F$/.test(lbl);
-                          const isStandard = (lbl: string) =>
-                            !isVnShort(lbl) &&
-                            (shortcutFolderLabels.has(lbl) ||
-                              TRIGGER_ONLY.has(lbl) ||
-                              isVnFull(lbl));
-
-                          return (
-                            <div className="flex flex-wrap gap-1 md:gap-1.5">
-                              {orderedChips.map(s => (
-                                <button
-                                  key={s.label}
-                                  onClick={() => {
-                                    const v = s.getValue();
-                                    if (v) appendText(v);
-                                  }}
-                                  data-qe-chip={s.label}
-                                  className="cursor-pointer px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
-                                >
-                                  {isVnShort(s.label)
-                                    ? s.display
-                                    : isStandard(s.label)
-                                      ? s.label
-                                      : s.display}
-                                </button>
-                              ))}
-                            </div>
-                          );
-                        })()}
-                        {/* Address chips — full RS address and short street address */}
-                        {mapQeAddress &&
-                          (() => {
-                            const appendText = (text: string) => {
-                              pushInlineUndo(rsInlineText);
-                              setRsInlineText(prev =>
-                                prev ? `${prev} ${text}` : text
-                              );
-                              resetInlineTimer();
-                              rsInlineInputRef.current?.focus();
-                            };
-                            // Extract short address from bracket code: e.g. "21 Olding Way, MELVILLE WA (21 OLDING WAY)" → "21 Olding Way"
-                            const bracketMatch = mapQeAddress.match(
-                              /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
-                            );
-                            // Short address: title-case the bracket code content (e.g. "21 OLDING WAY" → "21 Olding Way")
-                            const toTitleCase = (s: string) =>
-                              s
-                                .toLowerCase()
-                                .replace(/\b\w/g, c => c.toUpperCase());
-                            const shortAddr = bracketMatch
-                              ? toTitleCase(bracketMatch[2])
-                              : (mapQeAddress.split(",")[0]?.trim() ??
-                                mapQeAddress);
-                            return (
-                              <div className="flex flex-col gap-1 md:gap-1.5">
-                                <button
-                                  onClick={() => appendText(mapQeAddress)}
-                                  className="w-full text-left px-2.5 py-1.5 rounded-md border border-teal-500/30 bg-teal-500/5 text-teal-400 hover:bg-teal-500/15 active:scale-[0.98] transition-all md:px-3.5 md:py-2.5"
-                                >
-                                  <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-teal-500/70 block mb-0.5">
-                                    Full Address
-                                  </span>
-                                  <span className="text-[10px] md:text-sm font-mono leading-tight break-all">
-                                    {mapQeAddress}
-                                  </span>
-                                </button>
-                                <button
-                                  onClick={() => appendText(shortAddr)}
-                                  className="w-full text-left px-2.5 py-1.5 rounded-md border border-teal-500/20 bg-teal-500/5 text-teal-300 hover:bg-teal-500/10 active:scale-[0.98] transition-all md:px-3.5 md:py-2.5"
-                                >
-                                  <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-teal-500/70 block mb-0.5">
-                                    Short Address
-                                  </span>
-                                  <span className="text-[10px] md:text-sm font-mono leading-tight">
-                                    {shortAddr}
-                                  </span>
-                                </button>
+                            }}
+                            placeholder={
+                              inlineReadOnly
+                                ? "Tap shortcuts below, or tap here to type…"
+                                : "Add details (optional)…"
+                            }
+                            rows={4}
+                            className={`w-full resize-none rounded-md border border-border bg-background px-2.5 py-1.5 text-[11px] placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring md:px-3 md:py-2 md:text-sm lg:min-h-[140px] ${inlineReadOnly ? "cursor-pointer" : ""}`}
+                          />
+                          {rsMentionWord &&
+                            rsMentionAnchor &&
+                            rsMentionSuggestions.length > 0 && (
+                              <div
+                                className="fixed z-50 w-64 rounded-lg border border-border bg-popover shadow-lg overflow-hidden"
+                                style={{
+                                  top: rsMentionAnchor.top,
+                                  left: rsMentionAnchor.left,
+                                  maxHeight: "220px",
+                                  overflowY: "auto",
+                                }}
+                              >
+                                {rsMentionSuggestions.map((s, i) => (
+                                  <button
+                                    key={s.key}
+                                    type="button"
+                                    className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-2 border-b border-border/50 last:border-0 transition-colors ${
+                                      i === rsMentionActiveIndex
+                                        ? "bg-accent text-accent-foreground"
+                                        : "text-popover-foreground hover:bg-accent hover:text-accent-foreground"
+                                    }`}
+                                    onMouseEnter={() => setRsMentionActiveIndex(i)}
+                                    onMouseDown={e => {
+                                      e.preventDefault();
+                                      if (rsInlineInputRef.current)
+                                        selectRsMentionSuggestion(
+                                          s,
+                                          rsInlineInputRef.current
+                                        );
+                                    }}
+                                  >
+                                    <span className="flex items-center gap-1.5 min-w-0">
+                                      <User className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                                      <span className="truncate">
+                                        {s.displayName}
+                                      </span>
+                                    </span>
+                                    <span className="text-xs text-muted-foreground shrink-0">
+                                      {s.rowCount} obs.
+                                    </span>
+                                  </button>
+                                ))}
                               </div>
-                            );
-                          })()}
-                        {/* Entity chips — quick-insert shortcuts mined from this sheet's own
-                          observations (surname / short address / vehicle rego), shared
-                          across every officer on the sheet via the server. */}
-                        {rsEntityChips &&
-                          rsEntityChips.length > 0 &&
-                          (() => {
+                            )}
+                          {rsVehicleMentionWord &&
+                            rsVehicleMentionAnchor &&
+                            rsVehicleMentionSuggestions.length > 0 && (
+                              <div
+                                className="fixed z-50 w-72 rounded-lg border border-border bg-popover shadow-lg overflow-hidden"
+                                style={{
+                                  top: rsVehicleMentionAnchor.top,
+                                  left: rsVehicleMentionAnchor.left,
+                                  maxHeight: "220px",
+                                  overflowY: "auto",
+                                }}
+                              >
+                                {rsVehicleMentionSuggestions.map((s, i) => (
+                                  <button
+                                    key={s.key}
+                                    type="button"
+                                    className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-2 border-b border-border/50 last:border-0 transition-colors ${
+                                      i === rsVehicleMentionActiveIndex
+                                        ? "bg-accent text-accent-foreground"
+                                        : "text-popover-foreground hover:bg-accent hover:text-accent-foreground"
+                                    }`}
+                                    onMouseEnter={() =>
+                                      setRsVehicleMentionActiveIndex(i)
+                                    }
+                                    onMouseDown={e => {
+                                      e.preventDefault();
+                                      if (rsInlineInputRef.current)
+                                        selectRsVehicleMentionSuggestion(
+                                          s,
+                                          rsInlineInputRef.current
+                                        );
+                                    }}
+                                  >
+                                    <span className="flex items-center gap-1.5 min-w-0">
+                                      <Car className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                                      <span className="truncate">
+                                        {formatIntelVehicle(s.label)}
+                                      </span>
+                                    </span>
+                                    <span className="text-xs text-muted-foreground shrink-0">
+                                      {s.rowCount} obs.
+                                    </span>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          {/* Shortcut buttons */}
+                          {(() => {
+                            // ── QE chips: exact mirror of main RS chip set, values, and order ──────────
+                            // Single source of truth: assignedTarget (target.getById) for all target fields.
+                            // Chip set matches SheetDetail exactly: TGT, HBF, HB, V1F, V1, extra vehicles, wildcards, DEP, ARR, folder shortcuts.
+                            // Order: qeChipOrder (read from RS localStorage key) with wildcards always last.
                             const appendText = (text: string) => {
                               pushInlineUndo(rsInlineText);
                               setRsInlineText(prev =>
@@ -6385,511 +6179,666 @@ export default function IntelligenceMapping() {
                               resetInlineTimer();
                               rsInlineInputRef.current?.focus();
                             };
+                            const t = assignedTarget as any;
+                            if (!t) return null;
+
+                            // Extra vehicle chips from JSON (V2F/V2, V3F/V3, …)
+                            const extraVehicleChips: Array<{
+                              label: string;
+                              display: string;
+                              getValue: () => string | null;
+                            }> = [];
+                            try {
+                              const evs: Array<{
+                                full: string;
+                                short: string;
+                              }> = JSON.parse(t.extraVehicles ?? "[]");
+                              evs.forEach(
+                                (
+                                  ev: { full: string; short: string },
+                                  i: number
+                                ) => {
+                                  const num = i + 2;
+                                  if (ev.full)
+                                    extraVehicleChips.push({
+                                      label: `V${num}F`,
+                                      display: `V${num}F`,
+                                      getValue: () => ev.full,
+                                    });
+                                  if (ev.short) {
+                                    extraVehicleChips.push({
+                                      label: `V${num}`,
+                                      display: ev.short
+                                        ? `V${num} ${ev.short}`
+                                        : `V${num}`,
+                                      getValue: () => ev.short,
+                                    });
+                                  }
+                                }
+                              );
+                            } catch {}
+
+                            // Wild field chips (#1, #2, …)
+                            const wildChips: Array<{
+                              label: string;
+                              display: string;
+                              getValue: () => string | null;
+                            }> = [];
+                            try {
+                              const wfs: Array<{
+                                label: string;
+                                value: string;
+                              }> = JSON.parse(t.wildFields ?? "[]");
+                              wfs.forEach(
+                                (wf: { label: string; value: string }) => {
+                                  if (wf.value)
+                                    wildChips.push({
+                                      label: wf.label,
+                                      display: wf.label,
+                                      getValue: () => wf.value,
+                                    });
+                                }
+                              );
+                            } catch {}
+
+                            // Folder shortcut chips (showInRs=true, exclude legacy 'D')
+                            const folderShortcutChips: Array<{
+                              label: string;
+                              display: string;
+                              getValue: () => string | null;
+                            }> = ((generalShortcuts as any[]) ?? [])
+                              .filter(
+                                (s: any) =>
+                                  (s.trigger as string).toUpperCase() !== "D" &&
+                                  !!s.showInRs
+                              )
+                              .map((s: any) => ({
+                                label: (s.trigger as string).toUpperCase(),
+                                display: (s.trigger as string).toUpperCase(),
+                                getValue: () => s.expansion as string,
+                              }));
+
+                            // Full chip list — identical order to SheetDetail fields array
+                            const allChips: Array<{
+                              label: string;
+                              display: string;
+                              getValue: () => string | null;
+                            }> = [
+                              {
+                                label: "TGT",
+                                display: "TGT",
+                                getValue: () => t.tgt ?? null,
+                              },
+                              {
+                                label: "HBF",
+                                display: "HBF",
+                                getValue: () => t.hbf ?? null,
+                              },
+                              {
+                                label: "HB",
+                                display: "HB",
+                                getValue: () => t.hb ?? null,
+                              },
+                              {
+                                label: "V1F",
+                                display: "V1F",
+                                getValue: () => t.v1f ?? null,
+                              },
+                              {
+                                label: "V1",
+                                display: t.v1 ? `V1 ${t.v1}` : "V1",
+                                getValue: () => t.v1 ?? null,
+                              },
+                              ...extraVehicleChips,
+                              ...wildChips,
+                              {
+                                label: "DEP",
+                                display: "DEP",
+                                getValue: () => t.dep ?? null,
+                              },
+                              {
+                                label: "ARR",
+                                display: "ARR",
+                                getValue: () => t.arr ?? null,
+                              },
+                              ...folderShortcutChips,
+                            ];
+
+                            const available = allChips.filter(
+                              s => s.getValue() !== null
+                            );
+                            if (available.length === 0) return null;
+
+                            // Apply saved RS order — wildcards always last (mirrors SheetDetail)
+                            const isWildcard = (lbl: string) =>
+                              /^#\d+$/.test(lbl);
+                            const nonWildAvail = available.filter(
+                              s => !isWildcard(s.label)
+                            );
+                            const wildAvail = available.filter(s =>
+                              isWildcard(s.label)
+                            );
+                            const orderedNonWild =
+                              qeChipOrder.length > 0
+                                ? [
+                                    ...(qeChipOrder
+                                      .filter(lbl => !isWildcard(lbl))
+                                      .map(lbl =>
+                                        nonWildAvail.find(s => s.label === lbl)
+                                      )
+                                      .filter(Boolean) as typeof available),
+                                    ...nonWildAvail.filter(
+                                      s => !qeChipOrder.includes(s.label)
+                                    ),
+                                  ]
+                                : nonWildAvail;
+                            const orderedWild =
+                              qeChipOrder.length > 0
+                                ? [
+                                    ...(qeChipOrder
+                                      .filter(isWildcard)
+                                      .map(lbl =>
+                                        wildAvail.find(s => s.label === lbl)
+                                      )
+                                      .filter(Boolean) as typeof available),
+                                    ...wildAvail.filter(
+                                      s => !qeChipOrder.includes(s.label)
+                                    ),
+                                  ]
+                                : wildAvail;
+                            const orderedChips = [
+                              ...orderedNonWild,
+                              ...orderedWild,
+                            ];
+
+                            // Display rules — same as SheetDetail:
+                            // Vn short (V1/V2/…): show label + rego; everything else: trigger label only
+                            const shortcutFolderLabels = new Set(
+                              ((generalShortcuts as any[]) ?? []).map(
+                                (s: any) => (s.trigger as string).toUpperCase()
+                              )
+                            );
+                            const TRIGGER_ONLY = new Set([
+                              "TGT",
+                              "HBF",
+                              "HB",
+                              "V1F",
+                              "DEP",
+                              "ARR",
+                            ]);
+                            const isVnShort = (lbl: string) =>
+                              /^V\d+$/.test(lbl);
+                            const isVnFull = (lbl: string) =>
+                              /^V\d+F$/.test(lbl);
+                            const isStandard = (lbl: string) =>
+                              !isVnShort(lbl) &&
+                              (shortcutFolderLabels.has(lbl) ||
+                                TRIGGER_ONLY.has(lbl) ||
+                                isVnFull(lbl));
+
                             return (
                               <div className="flex flex-wrap gap-1 md:gap-1.5">
-                                {rsEntityChips.map(chip => (
+                                {orderedChips.map(s => (
                                   <button
-                                    key={chip.key}
-                                    onClick={() => appendText(chip.insertValue)}
-                                    className="px-2 py-0.5 rounded text-[10px] font-bold border border-violet-500/30 bg-violet-500/5 text-violet-400 hover:bg-violet-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                                    key={s.label}
+                                    onClick={() => {
+                                      const v = s.getValue();
+                                      if (v) appendText(v);
+                                    }}
+                                    data-qe-chip={s.label}
+                                    className="cursor-pointer px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
                                   >
-                                    <span className="font-mono normal-case">
-                                      {chip.insertValue}
-                                    </span>
+                                    {isVnShort(s.label)
+                                      ? s.display
+                                      : isStandard(s.label)
+                                        ? s.label
+                                        : s.display}
                                   </button>
                                 ))}
                               </div>
                             );
                           })()}
-                        {/* Vehicle arriving chips — reuses the occupant
-                          description from the vehicle's last logged
-                          departure anywhere in this operation, so the
-                          officer doesn't have to retype it when the same
-                          vehicle arrives at this quick-entry location. One
-                          chip per still-pending (un-arrived) vehicle —
-                          always requires an explicit tap, never inserted
-                          automatically, since this writes into the record. */}
-                        {mapQeAddress &&
-                          rsPendingDepartures &&
-                          rsPendingDepartures.length > 0 &&
-                          (() => {
-                            const appendText = (text: string) => {
-                              pushInlineUndo(rsInlineText);
-                              setRsInlineText(prev =>
-                                prev ? `${prev} ${text}` : text
-                              );
-                              resetInlineTimer();
-                              rsInlineInputRef.current?.focus();
-                            };
-                            const bracketMatch = mapQeAddress.match(
-                              /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
-                            );
-                            const toTitleCase = (s: string) =>
-                              s
-                                .toLowerCase()
-                                .replace(/\b\w/g, c => c.toUpperCase());
-                            const shortAddr = bracketMatch
-                              ? toTitleCase(bracketMatch[2])
-                              : (mapQeAddress.split(",")[0]?.trim() ??
-                                mapQeAddress);
-                            // App-wide rule: first mention of an address in
-                            // this sheet is written in full (with its
-                            // bracket short-form, which is what Intelligence
-                            // relies on to register the location) — every
-                            // later mention just uses the short form.
-                            const arriveAddr = rsAddressMentionedData?.mentioned
-                              ? shortAddr
-                              : mapQeAddress;
-                            return (
-                              <div className="flex flex-col gap-1 md:gap-1.5">
-                                <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-amber-500/70">
-                                  Vehicle arriving
-                                </span>
-                                <div className="flex flex-wrap gap-1 md:gap-1.5">
-                                  {rsPendingDepartures.map(d => (
-                                    <button
-                                      key={d.rego}
-                                      onClick={() =>
-                                        appendText(
-                                          `Vehicle ${d.rego} ${d.occupantDesc}, arrived at ${arriveAddr}`
-                                        )
-                                      }
-                                      title={`Vehicle ${d.rego} ${d.occupantDesc}, arrived at ${arriveAddr}`}
-                                      className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
-                                    >
-                                      <span className="font-mono normal-case">
-                                        {d.rego}
-                                      </span>{" "}
-                                      arriving
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                            );
-                          })()}
-                        {/* Vehicle departing chips — mirror of the arriving
-                          chips above: reuses the occupant description from
-                          the vehicle's most recent logged arrival, for when
-                          that vehicle is now departing THAT SAME location.
-                          Only shows for a vehicle whose last-known arrival
-                          address matches where this quick-entry popup is
-                          — a vehicle can't be logged departing from
-                          somewhere it isn't. Always uses the short address
-                          form (not the first-mention full form the arriving
-                          chip sometimes needs), since a departure isn't
-                          establishing a new address mention the way an
-                          arrival can be. Requires an explicit tap, same as
-                          the arriving chips. */}
-                        {mapQeAddress &&
-                          rsPendingArrivals &&
-                          rsPendingArrivals.length > 0 &&
-                          (() => {
-                            const appendText = (text: string) => {
-                              pushInlineUndo(rsInlineText);
-                              setRsInlineText(prev =>
-                                prev ? `${prev} ${text}` : text
-                              );
-                              resetInlineTimer();
-                              rsInlineInputRef.current?.focus();
-                            };
-                            const bracketMatch = mapQeAddress.match(
-                              /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
-                            );
-                            const toTitleCase = (s: string) =>
-                              s
-                                .toLowerCase()
-                                .replace(/\b\w/g, c => c.toUpperCase());
-                            const shortAddr = bracketMatch
-                              ? toTitleCase(bracketMatch[2])
-                              : (mapQeAddress.split(",")[0]?.trim() ??
-                                mapQeAddress);
-                            const arrivalsHere = rsPendingArrivals.filter(
-                              a =>
-                                a.address.trim().toLowerCase() ===
-                                shortAddr.trim().toLowerCase()
-                            );
-                            if (arrivalsHere.length === 0) return null;
-                            return (
-                              <div className="flex flex-col gap-1 md:gap-1.5">
-                                <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-amber-500/70">
-                                  Vehicle departing
-                                </span>
-                                <div className="flex flex-wrap gap-1 md:gap-1.5">
-                                  {arrivalsHere.map(a => (
-                                    <button
-                                      key={a.rego}
-                                      onClick={() =>
-                                        appendText(
-                                          `Vehicle ${a.rego} ${a.occupantDesc}, departed ${shortAddr} and continued via:`
-                                        )
-                                      }
-                                      title={`Vehicle ${a.rego} ${a.occupantDesc}, departed ${shortAddr} and continued via:`}
-                                      className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
-                                    >
-                                      <span className="font-mono normal-case">
-                                        {a.rego}
-                                      </span>{" "}
-                                      departing
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                            );
-                          })()}
-                        {/* CIN picker — multi-select with TEAM */}
-                        {rosterCins.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 md:gap-2">
-                            <button
-                              onClick={() => {
-                                const allSel = rosterCins.every(c =>
-                                  rsInlineCins.has(c)
+                          {/* Address chips — full RS address and short street address */}
+                          {mapQeAddress &&
+                            (() => {
+                              const appendText = (text: string) => {
+                                pushInlineUndo(rsInlineText);
+                                setRsInlineText(prev =>
+                                  prev ? `${prev} ${text}` : text
                                 );
-                                const next = allSel
-                                  ? new Set<string>()
-                                  : new Set(rosterCins);
-                                setRsInlineCins(next);
-                                rsInlineCinsRef.current = next;
                                 resetInlineTimer();
-                              }}
-                              className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all active:scale-95 md:px-3.5 md:py-1.5 md:text-sm ${rosterCins.every(c => rsInlineCins.has(c)) ? "bg-amber-500/20 border-amber-500/60 text-amber-400" : "bg-muted/40 border-amber-500/30 text-amber-500/80 hover:bg-amber-500/10"}`}
-                            >
-                              TEAM
-                            </button>
-                            {rosterCins.map(cin => (
+                                rsInlineInputRef.current?.focus();
+                              };
+                              // Extract short address from bracket code: e.g. "21 Olding Way, MELVILLE WA (21 OLDING WAY)" → "21 Olding Way"
+                              const bracketMatch = mapQeAddress.match(
+                                /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
+                              );
+                              // Short address: title-case the bracket code content (e.g. "21 OLDING WAY" → "21 Olding Way")
+                              const toTitleCase = (s: string) =>
+                                s
+                                  .toLowerCase()
+                                  .replace(/\b\w/g, c => c.toUpperCase());
+                              const shortAddr = bracketMatch
+                                ? toTitleCase(bracketMatch[2])
+                                : (mapQeAddress.split(",")[0]?.trim() ??
+                                  mapQeAddress);
+                              return (
+                                <div className="flex flex-col gap-1 md:gap-1.5">
+                                  <button
+                                    onClick={() => appendText(mapQeAddress)}
+                                    className="w-full text-left px-2.5 py-1.5 rounded-md border border-teal-500/30 bg-teal-500/5 text-teal-400 hover:bg-teal-500/15 active:scale-[0.98] transition-all md:px-3.5 md:py-2.5"
+                                  >
+                                    <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-teal-500/70 block mb-0.5">
+                                      Full Address
+                                    </span>
+                                    <span className="text-[10px] md:text-sm font-mono leading-tight break-all">
+                                      {mapQeAddress}
+                                    </span>
+                                  </button>
+                                  <button
+                                    onClick={() => appendText(shortAddr)}
+                                    className="w-full text-left px-2.5 py-1.5 rounded-md border border-teal-500/20 bg-teal-500/5 text-teal-300 hover:bg-teal-500/10 active:scale-[0.98] transition-all md:px-3.5 md:py-2.5"
+                                  >
+                                    <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-teal-500/70 block mb-0.5">
+                                      Short Address
+                                    </span>
+                                    <span className="text-[10px] md:text-sm font-mono leading-tight">
+                                      {shortAddr}
+                                    </span>
+                                  </button>
+                                </div>
+                              );
+                            })()}
+                          {/* Entity chips — quick-insert shortcuts mined from this sheet's own
+                          observations (surname / short address / vehicle rego), shared
+                          across every officer on the sheet via the server. */}
+                          {rsEntityChips &&
+                            rsEntityChips.length > 0 &&
+                            (() => {
+                              const appendText = (text: string) => {
+                                pushInlineUndo(rsInlineText);
+                                setRsInlineText(prev =>
+                                  prev ? `${prev} ${text}` : text
+                                );
+                                resetInlineTimer();
+                                rsInlineInputRef.current?.focus();
+                              };
+                              return (
+                                <div className="flex flex-wrap gap-1 md:gap-1.5">
+                                  {rsEntityChips.map(chip => (
+                                    <button
+                                      key={chip.key}
+                                      onClick={() =>
+                                        appendText(chip.insertValue)
+                                      }
+                                      className="px-2 py-0.5 rounded text-[10px] font-bold border border-violet-500/30 bg-violet-500/5 text-violet-400 hover:bg-violet-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                                    >
+                                      <span className="font-mono normal-case">
+                                        {chip.insertValue}
+                                      </span>
+                                    </button>
+                                  ))}
+                                </div>
+                              );
+                            })()}
+                          {/* CIN picker — multi-select with TEAM */}
+                          {rosterCins.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 md:gap-2">
                               <button
-                                key={cin}
                                 onClick={() => {
-                                  const next = new Set(rsInlineCins);
-                                  if (next.has(cin)) {
-                                    next.delete(cin);
-                                  } else {
-                                    next.add(cin);
-                                  }
+                                  const allSel = rosterCins.every(c =>
+                                    rsInlineCins.has(c)
+                                  );
+                                  const next = allSel
+                                    ? new Set<string>()
+                                    : new Set(rosterCins);
                                   setRsInlineCins(next);
                                   rsInlineCinsRef.current = next;
                                   resetInlineTimer();
                                 }}
-                                className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all active:scale-95 md:px-3.5 md:py-1.5 md:text-sm ${rsInlineCins.has(cin) ? "bg-primary/20 border-primary/60 text-primary" : "bg-muted/40 border-border text-foreground/80 hover:bg-muted/70 hover:text-foreground"}`}
+                                className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all active:scale-95 md:px-3.5 md:py-1.5 md:text-sm ${rosterCins.every(c => rsInlineCins.has(c)) ? "bg-amber-500/20 border-amber-500/60 text-amber-400" : "bg-muted/40 border-amber-500/30 text-amber-500/80 hover:bg-amber-500/10"}`}
                               >
-                                {cin}
+                                TEAM
                               </button>
-                            ))}
+                              {rosterCins.map(cin => (
+                                <button
+                                  key={cin}
+                                  onClick={() => {
+                                    const next = new Set(rsInlineCins);
+                                    if (next.has(cin)) {
+                                      next.delete(cin);
+                                    } else {
+                                      next.add(cin);
+                                    }
+                                    setRsInlineCins(next);
+                                    rsInlineCinsRef.current = next;
+                                    resetInlineTimer();
+                                  }}
+                                  className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all active:scale-95 md:px-3.5 md:py-1.5 md:text-sm ${rsInlineCins.has(cin) ? "bg-primary/20 border-primary/60 text-primary" : "bg-muted/40 border-border text-foreground/80 hover:bg-muted/70 hover:text-foreground"}`}
+                                >
+                                  {cin}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={submitInlineField}
+                              disabled={rsAddingRow}
+                              className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-[10px] font-semibold text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-50 md:px-4 md:py-2 md:text-sm md:gap-1.5"
+                            >
+                              {rsAddingRow ? (
+                                <Spinner className="h-3 w-3 md:h-4 md:w-4" />
+                              ) : (
+                                <Send className="h-3 w-3 md:h-4 md:w-4" />
+                              )}
+                              Submit
+                            </button>
                           </div>
-                        )}
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={submitInlineField}
-                            disabled={rsAddingRow}
-                            className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-[10px] font-semibold text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-50 md:px-4 md:py-2 md:text-sm md:gap-1.5"
-                          >
-                            {rsAddingRow ? (
-                              <Spinner className="h-3 w-3 md:h-4 md:w-4" />
-                            ) : (
-                              <Send className="h-3 w-3 md:h-4 md:w-4" />
-                            )}
-                            Submit
-                          </button>
                         </div>
-                      </div>
-                    );
-                  })()}
+                      );
+                    })()}
 
-                {/* Quick action buttons removed per user request */}
+                  {/* Quick action buttons removed per user request */}
 
-                {/* Last entry confirmation */}
-                {rsLastEntry && (
-                  <div className="rounded-md border border-green-500/30 bg-green-500/10 px-2.5 py-2 md:px-3.5 md:py-3">
-                    <p className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-green-400 mb-0.5">
-                      Last Entry
-                    </p>
-                    <p className="text-[11px] md:text-sm font-mono text-foreground">
-                      {rsLastEntry.time} — {rsLastEntry.label}
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ── Custom Marker Placement Modal ── */}
-      {pendingLatLng && (
-        <div
-          className="absolute inset-0 z-40 flex items-end justify-center"
-          style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}
-          onClick={() => {
-            setPendingLatLng(null);
-            setEditingMarkerId(null);
-          }}
-        >
-          <div
-            className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8 max-h-[90vh] overflow-y-auto"
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <p className="text-sm font-bold text-foreground">
-                  {editingMarkerId ? "Edit Map Marker" : "Place Map Marker"}
-                </p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">
-                  {pendingLatLng.lat.toFixed(5)}, {pendingLatLng.lng.toFixed(5)}
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  setPendingLatLng(null);
-                  setEditingMarkerId(null);
-                }}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            {/* 0. Location / Business Name — shown at top for quick identification */}
-            <div className="mb-3">
-              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
-                Location / Business Name
-              </label>
-              <input
-                type="text"
-                value={cmLabel}
-                onChange={e => setCmLabel(e.target.value)}
-                placeholder="e.g. Target address, coffee shop..."
-                className="w-full text-sm bg-background border border-border rounded-md px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-              />
-            </div>
-
-            {/* 0b. Address */}
-            <div className="mb-3 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1">
-                Address
-              </p>
-              <input
-                type="text"
-                value={cmAddress}
-                onChange={e => setCmAddress(e.target.value)}
-                placeholder="Auto-filled from coordinates…"
-                className="w-full text-sm bg-transparent border-none outline-none text-foreground placeholder:text-muted-foreground"
-              />
-            </div>
-
-            {/* 0c. Notes — directly below address */}
-            <div className="mb-4">
-              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
-                Notes
-              </label>
-              <Textarea
-                value={cmNote}
-                onChange={e => setCmNote(e.target.value)}
-                placeholder="Optional notes..."
-                rows={2}
-                className="text-sm resize-none"
-              />
-            </div>
-
-            {/* 1. Icon picker */}
-            <div className="mb-4">
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                Marker Icon
-              </p>
-              <div className="space-y-3">
-                {MARKER_ICON_GROUPS.map(group => (
-                  <div key={group.label}>
-                    <p className="text-[10px] text-muted-foreground/70 mb-1.5">
-                      {group.label}
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {group.icons.map(iconKey => (
-                        <button
-                          key={iconKey}
-                          onClick={() => setCmIcon(iconKey as MarkerIcon)}
-                          title={MARKER_ICON_LABELS[iconKey as MarkerIcon]}
-                          className={`w-10 h-10 rounded-lg border-2 flex items-center justify-center transition-all ${
-                            cmIcon === iconKey
-                              ? "border-primary bg-primary/10 scale-110"
-                              : "border-border bg-accent/30 hover:border-primary/50"
-                          }`}
-                        >
-                          <img
-                            src={getMarkerDataUrl(
-                              iconKey as MarkerIcon,
-                              cmColour
-                            )}
-                            alt={MARKER_ICON_LABELS[iconKey as MarkerIcon]}
-                            className="w-7 h-7 object-contain"
-                          />
-                        </button>
-                      ))}
+                  {/* Last entry confirmation */}
+                  {rsLastEntry && (
+                    <div className="rounded-md border border-green-500/30 bg-green-500/10 px-2.5 py-2 md:px-3.5 md:py-3">
+                      <p className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-green-400 mb-0.5">
+                        Last Entry
+                      </p>
+                      <p className="text-[11px] md:text-sm font-mono text-foreground">
+                        {rsLastEntry.time} — {rsLastEntry.label}
+                      </p>
                     </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* 2. Colour picker */}
-            <div className="mb-4">
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                Colour
-              </p>
-              <div className="flex gap-2">
-                {(Object.keys(MARKER_COLOURS) as MarkerColour[]).map(col => (
-                  <button
-                    key={col}
-                    onClick={() => setCmColour(col)}
-                    title={MARKER_COLOUR_LABELS[col]}
-                    className={`w-8 h-8 rounded-full border-2 transition-all ${
-                      cmColour === col
-                        ? "border-foreground scale-110"
-                        : "border-transparent hover:border-foreground/40"
-                    }`}
-                    style={{ background: MARKER_COLOURS[col] }}
-                  />
-                ))}
-              </div>
-            </div>
-
-            {/* 3. Rotation */}
-            <div className="mb-4">
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                Rotation — {cmRotation}°
-              </p>
-              <div className="flex items-center gap-3">
-                {/* Rotated preview */}
-                <div className="shrink-0 w-10 h-10 flex items-center justify-center">
-                  <img
-                    src={getMarkerDataUrl(cmIcon, cmColour)}
-                    alt="preview"
-                    className="w-8 h-8 object-contain transition-transform"
-                    style={{ transform: `rotate(${cmRotation}deg)` }}
-                  />
+                  )}
                 </div>
-                {/* Slider */}
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Custom Marker Placement Modal ── */}
+        {pendingLatLng && (
+          <div
+            className="absolute inset-0 z-40 flex items-end justify-center"
+            style={{
+              background: "rgba(0,0,0,0.6)",
+              backdropFilter: "blur(4px)",
+            }}
+            onClick={() => {
+              setPendingLatLng(null);
+              setEditingMarkerId(null);
+            }}
+          >
+            <div
+              className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8 max-h-[90vh] overflow-y-auto"
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="text-sm font-bold text-foreground">
+                    {editingMarkerId ? "Edit Map Marker" : "Place Map Marker"}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    {pendingLatLng.lat.toFixed(5)},{" "}
+                    {pendingLatLng.lng.toFixed(5)}
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setPendingLatLng(null);
+                    setEditingMarkerId(null);
+                  }}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* 0. Location / Business Name — shown at top for quick identification */}
+              <div className="mb-3">
+                <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
+                  Location / Business Name
+                </label>
                 <input
-                  type="range"
-                  min={0}
-                  max={359}
-                  step={1}
-                  value={cmRotation}
-                  onChange={e => setCmRotation(Number(e.target.value))}
-                  className="flex-1 accent-primary"
+                  type="text"
+                  value={cmLabel}
+                  onChange={e => setCmLabel(e.target.value)}
+                  placeholder="e.g. Target address, coffee shop..."
+                  className="w-full text-sm bg-background border border-border rounded-md px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                 />
-                {/* Quick preset buttons */}
-                <div className="flex gap-1">
-                  {[0, 45, 90, 135, 180, 225, 270, 315].map(deg => (
-                    <button
-                      key={deg}
-                      onClick={() => setCmRotation(deg)}
-                      title={`${deg}°`}
-                      className={`w-6 h-6 text-[9px] rounded border transition-all ${
-                        cmRotation === deg
-                          ? "bg-primary text-primary-foreground border-primary"
-                          : "border-border hover:border-primary/50 text-muted-foreground"
-                      }`}
-                    >
-                      {deg === 0
-                        ? "N"
-                        : deg === 45
-                          ? "NE"
-                          : deg === 90
-                            ? "E"
-                            : deg === 135
-                              ? "SE"
-                              : deg === 180
-                                ? "S"
-                                : deg === 225
-                                  ? "SW"
-                                  : deg === 270
-                                    ? "W"
-                                    : "NW"}
-                    </button>
+              </div>
+
+              {/* 0b. Address */}
+              <div className="mb-3 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1">
+                  Address
+                </p>
+                <input
+                  type="text"
+                  value={cmAddress}
+                  onChange={e => setCmAddress(e.target.value)}
+                  placeholder="Auto-filled from coordinates…"
+                  className="w-full text-sm bg-transparent border-none outline-none text-foreground placeholder:text-muted-foreground"
+                />
+              </div>
+
+              {/* 0c. Notes — directly below address */}
+              <div className="mb-4">
+                <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
+                  Notes
+                </label>
+                <Textarea
+                  value={cmNote}
+                  onChange={e => setCmNote(e.target.value)}
+                  placeholder="Optional notes..."
+                  rows={2}
+                  className="text-sm resize-none"
+                />
+              </div>
+
+              {/* 1. Icon picker */}
+              <div className="mb-4">
+                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                  Marker Icon
+                </p>
+                <div className="space-y-3">
+                  {MARKER_ICON_GROUPS.map(group => (
+                    <div key={group.label}>
+                      <p className="text-[10px] text-muted-foreground/70 mb-1.5">
+                        {group.label}
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {group.icons.map(iconKey => (
+                          <button
+                            key={iconKey}
+                            onClick={() => setCmIcon(iconKey as MarkerIcon)}
+                            title={MARKER_ICON_LABELS[iconKey as MarkerIcon]}
+                            className={`w-10 h-10 rounded-lg border-2 flex items-center justify-center transition-all ${
+                              cmIcon === iconKey
+                                ? "border-primary bg-primary/10 scale-110"
+                                : "border-border bg-accent/30 hover:border-primary/50"
+                            }`}
+                          >
+                            <img
+                              src={getMarkerDataUrl(
+                                iconKey as MarkerIcon,
+                                cmColour
+                              )}
+                              alt={MARKER_ICON_LABELS[iconKey as MarkerIcon]}
+                              className="w-7 h-7 object-contain"
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>
-            </div>
 
-            {/* 4. (Label moved to top, Operation/Person/Vehicle removed) */}
+              {/* 2. Colour picker */}
+              <div className="mb-4">
+                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                  Colour
+                </p>
+                <div className="flex gap-2">
+                  {(Object.keys(MARKER_COLOURS) as MarkerColour[]).map(col => (
+                    <button
+                      key={col}
+                      onClick={() => setCmColour(col)}
+                      title={MARKER_COLOUR_LABELS[col]}
+                      className={`w-8 h-8 rounded-full border-2 transition-all ${
+                        cmColour === col
+                          ? "border-foreground scale-110"
+                          : "border-transparent hover:border-foreground/40"
+                      }`}
+                      style={{ background: MARKER_COLOURS[col] }}
+                    />
+                  ))}
+                </div>
+              </div>
 
-            {/* Save / Cancel */}
-            <div className="flex gap-3">
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={() => {
-                  setPendingLatLng(null);
-                  setEditingMarkerId(null);
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                className="flex-1"
-                disabled={cmSaving}
-                onClick={async () => {
-                  if (!pendingLatLng) return;
-                  setCmSaving(true);
-                  try {
-                    if (editingMarkerId !== null) {
-                      // Update existing marker
-                      await updateCustomMarkerMut.mutateAsync({
-                        id: editingMarkerId,
-                        markerIcon: cmIcon,
-                        markerColour: cmColour,
-                        rotation: cmRotation,
-                        label: cmLabel.trim() || null,
-                        address: cmAddress.trim() || null,
-                        note: cmNote.trim() || null,
-                        operationId: cmOpId,
-                        assocPersons: cmPersons,
-                        assocVehicles: cmVehicles,
-                      });
-                      toast.success("Marker updated");
-                    } else {
-                      // Create new marker
-                      await createCustomMarkerMut.mutateAsync({
-                        lat: pendingLatLng.lat,
-                        lng: pendingLatLng.lng,
-                        markerIcon: cmIcon,
-                        markerColour: cmColour,
-                        rotation: cmRotation,
-                        label: cmLabel.trim() || null,
-                        address: cmAddress.trim() || null,
-                        note: cmNote.trim() || null,
-                        operationId: cmOpId,
-                        assocPersons: cmPersons,
-                        assocVehicles: cmVehicles,
-                      });
-                      toast.success("Marker placed");
-                    }
+              {/* 3. Rotation */}
+              <div className="mb-4">
+                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                  Rotation — {cmRotation}°
+                </p>
+                <div className="flex items-center gap-3">
+                  {/* Rotated preview */}
+                  <div className="shrink-0 w-10 h-10 flex items-center justify-center">
+                    <img
+                      src={getMarkerDataUrl(cmIcon, cmColour)}
+                      alt="preview"
+                      className="w-8 h-8 object-contain transition-transform"
+                      style={{ transform: `rotate(${cmRotation}deg)` }}
+                    />
+                  </div>
+                  {/* Slider */}
+                  <input
+                    type="range"
+                    min={0}
+                    max={359}
+                    step={1}
+                    value={cmRotation}
+                    onChange={e => setCmRotation(Number(e.target.value))}
+                    className="flex-1 accent-primary"
+                  />
+                  {/* Quick preset buttons */}
+                  <div className="flex gap-1">
+                    {[0, 45, 90, 135, 180, 225, 270, 315].map(deg => (
+                      <button
+                        key={deg}
+                        onClick={() => setCmRotation(deg)}
+                        title={`${deg}°`}
+                        className={`w-6 h-6 text-[9px] rounded border transition-all ${
+                          cmRotation === deg
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "border-border hover:border-primary/50 text-muted-foreground"
+                        }`}
+                      >
+                        {deg === 0
+                          ? "N"
+                          : deg === 45
+                            ? "NE"
+                            : deg === 90
+                              ? "E"
+                              : deg === 135
+                                ? "SE"
+                                : deg === 180
+                                  ? "S"
+                                  : deg === 225
+                                    ? "SW"
+                                    : deg === 270
+                                      ? "W"
+                                      : "NW"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. (Label moved to top, Operation/Person/Vehicle removed) */}
+
+              {/* Save / Cancel */}
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => {
                     setPendingLatLng(null);
                     setEditingMarkerId(null);
-                    setCmRotation(0);
-                  } catch {
-                    toast.error(
-                      editingMarkerId !== null
-                        ? "Failed to update marker"
-                        : "Failed to save marker"
-                    );
-                  } finally {
-                    setCmSaving(false);
-                  }
-                }}
-              >
-                {cmSaving ? (
-                  <Spinner className="h-4 w-4" />
-                ) : editingMarkerId !== null ? (
-                  "Save Changes"
-                ) : (
-                  "Place Marker"
-                )}
-              </Button>
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className="flex-1"
+                  disabled={cmSaving}
+                  onClick={async () => {
+                    if (!pendingLatLng) return;
+                    setCmSaving(true);
+                    try {
+                      if (editingMarkerId !== null) {
+                        // Update existing marker
+                        await updateCustomMarkerMut.mutateAsync({
+                          id: editingMarkerId,
+                          markerIcon: cmIcon,
+                          markerColour: cmColour,
+                          rotation: cmRotation,
+                          label: cmLabel.trim() || null,
+                          address: cmAddress.trim() || null,
+                          note: cmNote.trim() || null,
+                          operationId: cmOpId,
+                          assocPersons: cmPersons,
+                          assocVehicles: cmVehicles,
+                        });
+                        toast.success("Marker updated");
+                      } else {
+                        // Create new marker
+                        await createCustomMarkerMut.mutateAsync({
+                          lat: pendingLatLng.lat,
+                          lng: pendingLatLng.lng,
+                          markerIcon: cmIcon,
+                          markerColour: cmColour,
+                          rotation: cmRotation,
+                          label: cmLabel.trim() || null,
+                          address: cmAddress.trim() || null,
+                          note: cmNote.trim() || null,
+                          operationId: cmOpId,
+                          assocPersons: cmPersons,
+                          assocVehicles: cmVehicles,
+                        });
+                        toast.success("Marker placed");
+                      }
+                      setPendingLatLng(null);
+                      setEditingMarkerId(null);
+                      setCmRotation(0);
+                    } catch {
+                      toast.error(
+                        editingMarkerId !== null
+                          ? "Failed to update marker"
+                          : "Failed to save marker"
+                      );
+                    } finally {
+                      setCmSaving(false);
+                    }
+                  }}
+                >
+                  {cmSaving ? (
+                    <Spinner className="h-4 w-4" />
+                  ) : editingMarkerId !== null ? (
+                    "Save Changes"
+                  ) : (
+                    "Place Marker"
+                  )}
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
     </DashboardLayout>
   );
 }

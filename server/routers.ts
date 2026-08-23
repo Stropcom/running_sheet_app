@@ -281,6 +281,17 @@ import {
   deleteNotification,
   deleteReadNotificationsForUser,
   purgeExpiredNotifications,
+  createStosecBriefingDraft,
+  updateStosecBriefing,
+  getStosecBriefingById,
+  listStosecBriefings,
+  postStosecBriefing,
+  softDeleteStosecBriefing,
+  acknowledgeStosecBriefing,
+  getStosecAcknowledgementForUser,
+  getStosecAcknowledgements,
+  getStosecRosterPrefill,
+  type StosecTeamSlot,
 } from "./db";
 
 import {
@@ -381,6 +392,46 @@ const structuredTargetFieldsSchema = {
   vehModel: z.string().optional().nullable(),
   vehType: z.string().optional().nullable(),
   extraAddresses: z.string().optional().nullable(), // JSON array of {label?,unitNo,houseNo,streetName,streetType,suburb,state,full,short}
+};
+
+const stosecTeamSlotSchema = z.object({
+  name: z.string(),
+  cin: z.string().optional().nullable(),
+  vehicle: z.string(),
+  foot: z.string(),
+  skill: z.string(),
+  kit: z.string(),
+  isTeamLeader: z.boolean(),
+});
+
+const stosecBriefingFieldsSchema = {
+  operationId: z.number(),
+  sheetId: z.number().optional().nullable(),
+  targetId: z.number().optional().nullable(),
+  voiOverride: z.string().optional().nullable(),
+  hbOverride: z.string().optional().nullable(),
+  extraLocations: z.array(z.string()).optional(),
+  situation: z.string().optional().nullable(),
+  backgroundIntel: z.string().optional().nullable(),
+  knownRisks: z.string().optional().nullable(),
+  otherAgencies: z.array(z.string()).optional(),
+  mission: z.string().optional().nullable(),
+  overallPlan: z.string().optional().nullable(),
+  actionsOn: z.string().optional().nullable(),
+  situationChange: z.string().optional().nullable(),
+  objectives: z.array(z.string()).optional(),
+  legalAuthArrest: z.string().optional().nullable(),
+  afpOrders: z.string().optional().nullable(),
+  warrant: z.string().optional().nullable(),
+  accoutrements: z.array(z.string()).optional(),
+  covertIdentifiers: z.array(z.string()).optional(),
+  firstAidAllVehicles: z.boolean().optional(),
+  firstAidMemberName: z.string().optional().nullable(),
+  commsPrimary: z.string().optional().nullable(),
+  commsSecondary: z.string().optional().nullable(),
+  locationOfTeamLeader: z.string().optional().nullable(),
+  reportingProcedures: z.string().optional().nullable(),
+  teamSlots: z.array(stosecTeamSlotSchema).optional(),
 };
 
 // ─── App Router ───────────────────────────────────────────────────────────────
@@ -2182,6 +2233,152 @@ export const appRouter = router({
       await deleteReadNotificationsForUser(ctx.user.id);
       return { ok: true };
     }),
+  }),
+
+  // ─── STOSEC Briefings ───────────────────────────────────────────────────────
+  // Exceptional-use urgent briefing — see drizzle/schema.ts. Creating/posting
+  // is admin-gated (it lives under Administration and notifies every user);
+  // viewing and acknowledging is open to any logged-in user once posted.
+
+  stosecBriefing: router({
+    create: adminProcedure
+      .input(z.object(stosecBriefingFieldsSchema))
+      .mutation(async ({ ctx, input }) => {
+        const id = await createStosecBriefingDraft(input, ctx.user.id);
+        return { id };
+      }),
+
+    update: adminProcedure
+      .input(z.object({ id: z.number(), ...stosecBriefingFieldsSchema }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        await updateStosecBriefing(id, data);
+        return { ok: true };
+      }),
+
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const briefing = await getStosecBriefingById(input.id);
+        if (!briefing)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Briefing not found.",
+          });
+        const [operation, target, myAck, acks] = await Promise.all([
+          getOperationById(briefing.operationId),
+          briefing.targetId ? getTargetById(briefing.targetId) : null,
+          getStosecAcknowledgementForUser(
+            briefing.id,
+            ctx.user.id,
+            briefing.revision
+          ),
+          getStosecAcknowledgements(briefing.id, briefing.revision),
+        ]);
+        return {
+          ...briefing,
+          operationName: operation?.name ?? "Unknown operation",
+          target: target ?? null,
+          myAcknowledgedAt: myAck?.acknowledgedAt ?? null,
+          acknowledgedCount: acks.length,
+          // CINs are unique per user, so this doubles as a per-slot lookup
+          // for the "which team member pills have acknowledged" display.
+          acknowledgedCins: acks.map(a => a.cin),
+        };
+      }),
+
+    list: protectedProcedure.query(async ({ ctx }) => {
+      const rows = await listStosecBriefings();
+      // Drafts are only visible to their own creator; posted is visible to all.
+      return rows.filter(
+        r => r.status === "posted" || r.createdBy === ctx.user.id
+      );
+    }),
+
+    getRosterPrefill: protectedProcedure
+      .input(z.object({ sheetId: z.number() }))
+      .query(async ({ input }) => {
+        const slots: StosecTeamSlot[] = await getStosecRosterPrefill(
+          input.sheetId
+        );
+        return slots;
+      }),
+
+    post: adminProcedure
+      .input(
+        z.object({ id: z.number(), userIds: z.array(z.number()).optional() })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const briefing = await getStosecBriefingById(input.id);
+        if (!briefing)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Briefing not found.",
+          });
+        const operation = await getOperationById(briefing.operationId);
+        const opName = operation?.name ?? "operation";
+        const notified = await postStosecBriefing(
+          input.id,
+          ctx.user.cin ?? "Unknown",
+          {
+            title: `STOSEC — ${opName}`,
+            body:
+              briefing.situation?.slice(0, 160) ||
+              "An urgent briefing has been posted.",
+            url: `/intelligence/mapping?stosec=${input.id}`,
+          },
+          input.userIds
+        );
+        if (!notified)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Briefing not found.",
+          });
+        await createAuditLog({
+          sheetId: 0,
+          userId: ctx.user.id,
+          userName: ctx.user.cin ?? "Unknown",
+          userCIN: ctx.user.cin ?? undefined,
+          action: "stosec_briefing_posted",
+          details: `STOSEC briefing ${briefing.status === "posted" ? "re-posted" : "posted"} for operation "${opName}" — notified ${notified.length} users`,
+          createdAt: Date.now(),
+        });
+        return { ok: true, notified: notified.length };
+      }),
+
+    delete: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await softDeleteStosecBriefing(input.id, ctx.user.cin ?? "Unknown");
+        await createAuditLog({
+          sheetId: 0,
+          userId: ctx.user.id,
+          userName: ctx.user.cin ?? "Unknown",
+          userCIN: ctx.user.cin ?? undefined,
+          action: "stosec_briefing_deleted",
+          details: `STOSEC briefing #${input.id} deleted`,
+          createdAt: Date.now(),
+        });
+        return { ok: true };
+      }),
+
+    acknowledge: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const briefing = await getStosecBriefingById(input.id);
+        if (!briefing)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Briefing not found.",
+          });
+        const ack = await acknowledgeStosecBriefing(
+          input.id,
+          ctx.user.id,
+          ctx.user.cin ?? "Unknown",
+          briefing.revision
+        );
+        return ack;
+      }),
   }),
 
   // ─── Audit Logs ─────────────────────────────────────────────────────────────

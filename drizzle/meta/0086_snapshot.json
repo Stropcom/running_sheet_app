@@ -1,8 +1,8 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "f139943e-4977-434c-bb59-ec1b87bb34d6",
-  "prevId": "341dc177-8c34-4093-bf19-91655892bd5d",
+  "id": "9fba04bc-1569-4072-9541-bf6439dd97a5",
+  "prevId": "cad36a1c-bd81-4078-9d89-39f39d0c0997",
   "tables": {
     "associates": {
       "name": "associates",
@@ -365,7 +365,7 @@
         },
         "action": {
           "name": "action",
-          "type": "enum('row_created','row_updated','row_deleted','member_added','member_removed','certified','uncertified','sheet_created','sheet_updated','sheet_deleted','sheet_closed','sheet_reopened','sheet_moved','sheet_copied','user_login','user_logout','user_created','user_updated','user_deleted','operation_status_changed','password_changed','attachment_added','attachment_deleted','summary_completed','summary_reopened')",
+          "type": "enum('row_created','row_updated','row_deleted','member_added','member_removed','certified','uncertified','sheet_created','sheet_updated','sheet_deleted','sheet_closed','sheet_reopened','sheet_moved','sheet_copied','user_login','user_logout','user_created','user_updated','user_deleted','operation_status_changed','password_changed','attachment_added','attachment_deleted','summary_completed','summary_reopened','stosec_briefing_posted','stosec_briefing_deleted')",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
@@ -4067,6 +4067,14 @@
           "notNull": true,
           "autoincrement": false
         },
+        "revision": {
+          "name": "revision",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        },
         "acknowledgedAt": {
           "name": "acknowledgedAt",
           "type": "bigint",
@@ -4076,11 +4084,12 @@
         }
       },
       "indexes": {
-        "stosec_ack_briefing_user_idx": {
-          "name": "stosec_ack_briefing_user_idx",
+        "stosec_ack_briefing_user_rev_idx": {
+          "name": "stosec_ack_briefing_user_rev_idx",
           "columns": [
             "briefingId",
-            "userId"
+            "userId",
+            "revision"
           ],
           "isUnique": true
         }
@@ -4128,6 +4137,27 @@
           "notNull": false,
           "autoincrement": false
         },
+        "voiOverride": {
+          "name": "voiOverride",
+          "type": "varchar(500)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "hbOverride": {
+          "name": "hbOverride",
+          "type": "varchar(500)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "extraLocations": {
+          "name": "extraLocations",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "situation": {
           "name": "situation",
           "type": "text",
@@ -4135,8 +4165,50 @@
           "notNull": false,
           "autoincrement": false
         },
+        "backgroundIntel": {
+          "name": "backgroundIntel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "knownRisks": {
+          "name": "knownRisks",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "otherAgencies": {
+          "name": "otherAgencies",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "mission": {
           "name": "mission",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "overallPlan": {
+          "name": "overallPlan",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "actionsOn": {
+          "name": "actionsOn",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "situationChange": {
+          "name": "situationChange",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -4170,6 +4242,35 @@
           "notNull": false,
           "autoincrement": false
         },
+        "accoutrements": {
+          "name": "accoutrements",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "covertIdentifiers": {
+          "name": "covertIdentifiers",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "firstAidAllVehicles": {
+          "name": "firstAidAllVehicles",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": true
+        },
+        "firstAidMemberName": {
+          "name": "firstAidMemberName",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "commsPrimary": {
           "name": "commsPrimary",
           "type": "varchar(255)",
@@ -4180,6 +4281,20 @@
         "commsSecondary": {
           "name": "commsSecondary",
           "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "locationOfTeamLeader": {
+          "name": "locationOfTeamLeader",
+          "type": "varchar(500)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "reportingProcedures": {
+          "name": "reportingProcedures",
+          "type": "text",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
@@ -4198,6 +4313,14 @@
           "notNull": true,
           "autoincrement": false,
           "default": "'draft'"
+        },
+        "revision": {
+          "name": "revision",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
         },
         "postedAt": {
           "name": "postedAt",

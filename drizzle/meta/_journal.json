@@ -565,8 +565,57 @@
     {
       "idx": 80,
       "version": "5",
+      "when": 1787380449075,
+      "tag": "0080_blue_war_machine",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "5",
+      "when": 1787381076877,
+      "tag": "0081_cuddly_night_thrasher",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "5",
+      "when": 1787382610204,
+      "tag": "0082_curved_warbird",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "5",
+      "when": 1787384190391,
+      "tag": "0083_bumpy_patriot",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "5",
+      "when": 1787387002884,
+      "tag": "0084_simple_tenebrous",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "5",
+      "when": 1787394229062,
+      "tag": "0085_left_photon",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "5",
+      "when": 1787397482883,
+      "tag": "0086_mushy_the_captain",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "5",
       "when": 1787457608717,
-      "tag": "0080_elite_jack_murdock",
+      "tag": "0087_elite_jack_murdock",
       "breakpoints": true
     }
   ]

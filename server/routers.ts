@@ -1162,23 +1162,24 @@ export const appRouter = router({
         return getSheetEntityChips(input.sheetId);
       }),
 
-    // Vehicles that departed somewhere in this operation (any sheet) and
-    // haven't since arrived anywhere — surfaced in RS Quick Entry as an
-    // "arrived at" chip so the officer doesn't have to retype the occupant
-    // description. See getPendingVehicleDepartures.
+    // Vehicles that departed somewhere on this sheet and haven't since
+    // arrived anywhere — surfaced in RS Quick Entry as an "arrived at" chip
+    // so the officer doesn't have to retype the occupant description.
+    // Scoped to this sheet only, not the whole operation — see
+    // getPendingVehicleDepartures.
     pendingVehicleDepartures: protectedProcedure
-      .input(z.object({ operationId: z.number() }))
+      .input(z.object({ sheetId: z.number() }))
       .query(async ({ input }) => {
-        return getPendingVehicleDepartures(input.operationId);
+        return getPendingVehicleDepartures(input.sheetId);
       }),
 
-    // Vehicles that arrived somewhere in this operation and haven't since
+    // Vehicles that arrived somewhere on this sheet and haven't since
     // departed again — the mirror of pendingVehicleDepartures, for the
     // "Vehicle departing" chip. See getPendingVehicleArrivals.
     pendingVehicleArrivals: protectedProcedure
-      .input(z.object({ operationId: z.number() }))
+      .input(z.object({ sheetId: z.number() }))
       .query(async ({ input }) => {
-        return getPendingVehicleArrivals(input.operationId);
+        return getPendingVehicleArrivals(input.sheetId);
       }),
 
     // Whether an address has already been mentioned (in its full bracketed

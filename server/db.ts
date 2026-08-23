@@ -4000,49 +4000,26 @@ export interface PendingVehicleDeparture {
 }
 
 // Returns the most recent still-pending (not yet arrived) departure per
-// vehicle rego, across every sheet in the operation, ordered most-recent
-// first. "Pending" means no later row (by insertion order) anywhere in the
-// operation mentions that same rego arriving. Insertion order (row id) is
-// used rather than the sheet's displayed time ordering — officers log
-// observations close to when they happen, and this is only ever offered
-// back as a suggestion the officer confirms before it's inserted, not
-// written directly into the record.
+// vehicle rego on THIS sheet, ordered most-recent first. Deliberately
+// scoped to a single sheet, not the whole operation — a running sheet is a
+// per-day/per-shift log, and a vehicle depart/arrive pair is a one-shift
+// convenience, not something that should carry over into the next sheet.
+// "Pending" means no later row on this sheet mentions that same rego
+// arriving. This is only ever offered back as a suggestion the officer
+// confirms before it's inserted, not written directly into the record.
 export async function getPendingVehicleDepartures(
-  operationId: number
+  sheetId: number
 ): Promise<PendingVehicleDeparture[]> {
-  const db = await getDb();
-  if (!db) return [];
-
-  const sheets = await db
-    .select({ id: runningSheets.id })
-    .from(runningSheets)
-    .where(
-      and(
-        eq(runningSheets.operationId, operationId),
-        isNull(runningSheets.deletedAt)
-      )
-    );
-  if (sheets.length === 0) return [];
-  const sheetIds = sheets.map(s => s.id);
-
-  const rows = await db
-    .select({
-      id: sheetRows.id,
-      sheetId: sheetRows.sheetId,
-      observation: sheetRows.observation,
-    })
-    .from(sheetRows)
-    .where(inArray(sheetRows.sheetId, sheetIds))
-    .orderBy(asc(sheetRows.id));
+  const rows = await getRowsBySheetId(sheetId);
 
   const lastDepartByRego = new Map<
     string,
-    { occupantDesc: string; sheetId: number; rowId: number }
+    { occupantDesc: string; sheetId: number; rowId: number; orderIdx: number }
   >();
   const arrivedRegos = new Set<string>();
 
-  for (const row of rows) {
-    if (!row.observation) continue;
+  rows.forEach((row, idx) => {
+    if (!row.observation) return;
     const departMatch = row.observation.match(VEHICLE_DEPART_PATTERN);
     if (departMatch) {
       const rego = departMatch[1].toUpperCase();
@@ -4050,24 +4027,27 @@ export async function getPendingVehicleDepartures(
         occupantDesc: departMatch[2].trim(),
         sheetId: row.sheetId,
         rowId: row.id,
+        orderIdx: idx,
       });
       arrivedRegos.delete(rego);
-      continue;
+      return;
     }
     const arriveMatch = row.observation.match(VEHICLE_ARRIVE_PATTERN);
     if (arriveMatch) {
       arrivedRegos.add(arriveMatch[1].toUpperCase());
     }
-  }
+  });
 
-  const pending: PendingVehicleDeparture[] = [];
+  const pending: (PendingVehicleDeparture & { orderIdx: number })[] = [];
   for (const rego of Array.from(lastDepartByRego.keys())) {
     if (arrivedRegos.has(rego)) continue;
     const d = lastDepartByRego.get(rego)!;
     pending.push({ rego, ...d });
   }
   // Most recently departed first.
-  return pending.sort((a, b) => b.rowId - a.rowId);
+  return pending
+    .sort((a, b) => b.orderIdx - a.orderIdx)
+    .map(({ orderIdx, ...rest }) => rest);
 }
 
 // Mirror of VEHICLE_DEPART_PATTERN, for "arrived" rows — kept as its own
@@ -4077,55 +4057,56 @@ export async function getPendingVehicleDepartures(
 const VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN =
   /Vehicle\s+([A-Za-z0-9]{5,8}),?\s*(.+?),\s*arrived\b/i;
 
+// Captures the address an "arrived" row names — prefers the canonical
+// bracketed short-form if the row includes one (a first mention of that
+// address), otherwise falls back to the plain text straight after "arrived
+// at" (a later, short-form-only mention). Used so the "Vehicle departing"
+// chip only offers itself back at the exact location a vehicle is known to
+// have arrived at, not at every location on the map.
+function extractArrivalAddress(text: string): string | null {
+  const bracket = text.match(/\(([^)]{1,80})\)/);
+  if (bracket) return bracket[1].trim();
+  const afterArrived = text.match(
+    /arrived at\s+(.+?)(?:\s+and\s+\w+|[.\n]|$)/i
+  );
+  return afterArrived ? afterArrived[1].trim() : null;
+}
+
 export interface PendingVehicleArrival {
   rego: string;
   /** Occupant description as originally written, e.g. "HOGAN driver and sole occupant". */
   occupantDesc: string;
+  /** The address this vehicle is known to have arrived at (short form). */
+  address: string;
   sheetId: number;
   rowId: number;
 }
 
 // Returns the most recent still-"here" (not yet re-departed) arrival per
-// vehicle rego, across every sheet in the operation, ordered most-recent
-// first — the mirror of getPendingVehicleDepartures, used by the "Vehicle
-// departing" chip to reuse the occupant description from a vehicle's last
-// logged arrival rather than making the officer retype it.
+// vehicle rego on THIS sheet, ordered most-recent first — the mirror of
+// getPendingVehicleDepartures, used by the "Vehicle departing" chip to
+// reuse the occupant description (and address) from a vehicle's last
+// logged arrival rather than making the officer retype it. Scoped to a
+// single sheet for the same reason as getPendingVehicleDepartures.
 export async function getPendingVehicleArrivals(
-  operationId: number
+  sheetId: number
 ): Promise<PendingVehicleArrival[]> {
-  const db = await getDb();
-  if (!db) return [];
-
-  const sheets = await db
-    .select({ id: runningSheets.id })
-    .from(runningSheets)
-    .where(
-      and(
-        eq(runningSheets.operationId, operationId),
-        isNull(runningSheets.deletedAt)
-      )
-    );
-  if (sheets.length === 0) return [];
-  const sheetIds = sheets.map(s => s.id);
-
-  const rows = await db
-    .select({
-      id: sheetRows.id,
-      sheetId: sheetRows.sheetId,
-      observation: sheetRows.observation,
-    })
-    .from(sheetRows)
-    .where(inArray(sheetRows.sheetId, sheetIds))
-    .orderBy(asc(sheetRows.id));
+  const rows = await getRowsBySheetId(sheetId);
 
   const lastArrivalByRego = new Map<
     string,
-    { occupantDesc: string; sheetId: number; rowId: number }
+    {
+      occupantDesc: string;
+      address: string;
+      sheetId: number;
+      rowId: number;
+      orderIdx: number;
+    }
   >();
   const departedRegos = new Set<string>();
 
-  for (const row of rows) {
-    if (!row.observation) continue;
+  rows.forEach((row, idx) => {
+    if (!row.observation) return;
     const arriveMatch = row.observation.match(
       VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN
     );
@@ -4133,26 +4114,30 @@ export async function getPendingVehicleArrivals(
       const rego = arriveMatch[1].toUpperCase();
       lastArrivalByRego.set(rego, {
         occupantDesc: arriveMatch[2].trim(),
+        address: extractArrivalAddress(row.observation) ?? "",
         sheetId: row.sheetId,
         rowId: row.id,
+        orderIdx: idx,
       });
       departedRegos.delete(rego);
-      continue;
+      return;
     }
     const departMatch = row.observation.match(VEHICLE_DEPART_PATTERN);
     if (departMatch) {
       departedRegos.add(departMatch[1].toUpperCase());
     }
-  }
+  });
 
-  const pending: PendingVehicleArrival[] = [];
+  const pending: (PendingVehicleArrival & { orderIdx: number })[] = [];
   for (const rego of Array.from(lastArrivalByRego.keys())) {
     if (departedRegos.has(rego)) continue;
     const a = lastArrivalByRego.get(rego)!;
     pending.push({ rego, ...a });
   }
   // Most recently arrived first.
-  return pending.sort((a, b) => b.rowId - a.rowId);
+  return pending
+    .sort((a, b) => b.orderIdx - a.orderIdx)
+    .map(({ orderIdx, ...rest }) => rest);
 }
 
 // App-wide convention: the first time an address is mentioned in a running

@@ -1524,28 +1524,22 @@ export default function IntelligenceMapping() {
     { operationIds: rsOpIdsForSheets },
     { enabled: rsOpIdsForSheets.length > 0 }
   );
-  // Operation that the selected sheet belongs to — used to scope the
-  // pending-vehicle-departure lookup below to the whole operation, not just
-  // this one sheet, since a vehicle can depart on one shift and arrive on a
-  // later one.
-  const rsSelectedSheetOpId: number | null =
-    (rsSheetsData as any[] | undefined)?.find(
-      (s: any) => s.id === rsSelectedSheetId
-    )?.operationId ?? null;
-  // Vehicles that departed somewhere in this operation and haven't since
+  // Vehicles that departed somewhere on THIS sheet and haven't since
   // arrived anywhere — surfaced as a "Vehicle arriving" chip in RS Quick
   // Entry so the officer doesn't have to retype the occupant description.
+  // Deliberately scoped to just this sheet, not the whole operation — these
+  // are one-shift, one-use chips that don't carry over to the next sheet.
   const { data: rsPendingDepartures } =
     trpc.row.pendingVehicleDepartures.useQuery(
-      { operationId: rsSelectedSheetOpId ?? 0 },
-      { enabled: mapQeOpen && rsSelectedSheetOpId !== null }
+      { sheetId: rsSelectedSheetId ?? 0 },
+      { enabled: mapQeOpen && !!rsSelectedSheetId }
     );
-  // Vehicles that arrived somewhere in this operation and haven't since
+  // Vehicles that arrived somewhere on this sheet and haven't since
   // departed again — surfaced as a "Vehicle departing" chip so the officer
   // doesn't have to retype the occupant description from the last arrival.
   const { data: rsPendingArrivals } = trpc.row.pendingVehicleArrivals.useQuery(
-    { operationId: rsSelectedSheetOpId ?? 0 },
-    { enabled: mapQeOpen && rsSelectedSheetOpId !== null }
+    { sheetId: rsSelectedSheetId ?? 0 },
+    { enabled: mapQeOpen && !!rsSelectedSheetId }
   );
   // Short-form of the quick-entry address (mirrors the extraction the
   // "Address chips" section below already does) — used only to check
@@ -3233,10 +3227,20 @@ export default function IntelligenceMapping() {
           // Refetch intel pins so any new address in this observation appears on the map
           void refetchLocations();
           // Refetch entity chips so a newly-mentioned entity shows up as a chip immediately
-          if (rsSelectedSheetId)
+          if (rsSelectedSheetId) {
             void utils.row.entityChips.invalidate({
               sheetId: rsSelectedSheetId,
             });
+            // Refetch pending vehicle depart/arrive chips so a chip that
+            // was just used (e.g. this row logged the vehicle arriving)
+            // disappears immediately rather than staying offered again.
+            void utils.row.pendingVehicleDepartures.invalidate({
+              sheetId: rsSelectedSheetId,
+            });
+            void utils.row.pendingVehicleArrivals.invalidate({
+              sheetId: rsSelectedSheetId,
+            });
+          }
         },
         onError: e => {
           setRsAddingRow(false);
@@ -6109,14 +6113,17 @@ export default function IntelligenceMapping() {
                           })()}
                         {/* Vehicle departing chips — mirror of the arriving
                           chips above: reuses the occupant description from
-                          the vehicle's most recent logged arrival anywhere
-                          in this operation, for when that vehicle is now
-                          departing this quick-entry location. Always uses
-                          the short address form (not the first-mention full
-                          form the arriving chip sometimes needs), since a
-                          departure isn't establishing a new address mention
-                          the way an arrival can be. Requires an explicit
-                          tap, same as the arriving chips. */}
+                          the vehicle's most recent logged arrival, for when
+                          that vehicle is now departing THAT SAME location.
+                          Only shows for a vehicle whose last-known arrival
+                          address matches where this quick-entry popup is
+                          — a vehicle can't be logged departing from
+                          somewhere it isn't. Always uses the short address
+                          form (not the first-mention full form the arriving
+                          chip sometimes needs), since a departure isn't
+                          establishing a new address mention the way an
+                          arrival can be. Requires an explicit tap, same as
+                          the arriving chips. */}
                         {mapQeAddress &&
                           rsPendingArrivals &&
                           rsPendingArrivals.length > 0 &&
@@ -6140,13 +6147,19 @@ export default function IntelligenceMapping() {
                               ? toTitleCase(bracketMatch[2])
                               : (mapQeAddress.split(",")[0]?.trim() ??
                                 mapQeAddress);
+                            const arrivalsHere = rsPendingArrivals.filter(
+                              a =>
+                                a.address.trim().toLowerCase() ===
+                                shortAddr.trim().toLowerCase()
+                            );
+                            if (arrivalsHere.length === 0) return null;
                             return (
                               <div className="flex flex-col gap-1 md:gap-1.5">
                                 <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-amber-500/70">
                                   Vehicle departing
                                 </span>
                                 <div className="flex flex-wrap gap-1 md:gap-1.5">
-                                  {rsPendingArrivals.map(a => (
+                                  {arrivalsHere.map(a => (
                                     <button
                                       key={a.rego}
                                       onClick={() =>

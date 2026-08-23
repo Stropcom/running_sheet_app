@@ -43,7 +43,15 @@ Package manager is **pnpm** (see `packageManager` field in `package.json`); don'
 - `package.json`'s `"version"` field
 - `shared/const.ts`'s `export const APP_VERSION`
 
-This applies to all merges to `main` — features, fixes, docs, refactors — not just user-facing changes. There is no size/significance exception: even a small change gets at least a patch bump. Do the bump as part of the same PR being merged (or as a final standalone "Bump version to X.Y.Z" commit immediately before merging), not as a follow-up. Before merging any branch into `main`, check whether the version has already been bumped on that branch; if not, bump it before merging.
+This applies to all merges to `main` — features, fixes, docs, refactors — not just user-facing changes. There is no size/significance exception: every merge gets at least a patch bump. Do the bump as part of the same PR being merged (or as a final standalone "Bump version to X.Y.Z" commit immediately before merging), not as a follow-up. Before merging any branch into `main`, check whether the version has already been bumped on that branch; if not, bump it before merging.
+
+**Which digit to bump — categorize it, don't default to patch every time:**
+
+- **PATCH** (`1.0.X`) — the default. Bug fixes, corrections to existing behavior, copy/UI tweaks, refactors, dependency bumps, doc/CLAUDE.md changes — anything that doesn't add a capability an officer didn't already have.
+- **MINOR** (`1.X.0`, resets patch to 0) — a new, backward-compatible feature or capability: a new chip/shortcut type on the running sheet, a new autocomplete, a new report/export, a new module or section, a new field on an existing form. If the change description would honestly use "add" for something genuinely new an officer can now do, it's minor, not patch.
+- **MAJOR** (`X.0.0`, resets minor and patch to 0) — a breaking or structural change: a non-backward-compatible schema change, an auth/session model change, replacing how a whole module works, or anything that would require officers to be retrained or old running sheets reinterpreted differently. Expect this to almost never fire in normal feature work.
+
+When a single PR bundles multiple changes (e.g. a new feature plus incidental fixes along the way), bump for the **highest** category present — one new feature alongside three bug fixes is a minor bump, not three separate patches.
 
 ## Architecture
 

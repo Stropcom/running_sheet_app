@@ -575,6 +575,10 @@ export interface StructuredAddressParts {
   streetType: string;
   suburb: string;
   state: string;
+  /** Business/place name, e.g. "Woolworths Fremantle" — most relevant for a
+   * work address. Optional so existing callers building a plain residential
+   * address don't need to know about it. */
+  businessName?: string;
 }
 
 /**
@@ -583,11 +587,18 @@ export interface StructuredAddressParts {
  * from a Google Places pick. Returns empty strings until house number,
  * street name + type, and suburb are all present — unit number and state
  * (defaults to WA) are the only optional parts.
+ *
+ * When a business name is set, it becomes the bracket/short code instead of
+ * the street — matching the convention convertGoogleAddresses()/
+ * buildPoiAddress() use for a business picked via free-text Google Places
+ * search, since extractShortAddress() reads the bracket code as the
+ * canonical short form everywhere else in the app.
  */
 export function composeAddress(parts: StructuredAddressParts): {
   full: string;
   short: string;
 } {
+  const businessName = (parts.businessName ?? "").trim();
   const unitNo = parts.unitNo.trim();
   const houseNo = parts.houseNo.trim();
   const streetName = parts.streetName.trim();
@@ -598,9 +609,67 @@ export function composeAddress(parts: StructuredAddressParts): {
     return { full: "", short: "" };
   const streetFull = toTitleCase(`${streetName} ${streetType}`);
   const numberPart = unitNo ? `${unitNo}/${houseNo}` : houseNo;
-  const short = `${numberPart} ${streetFull}`;
-  const full = `${short}, ${suburb.toUpperCase()} ${state} (${short})`;
-  return { full, short };
+  const streetShort = `${numberPart} ${streetFull}`;
+  const bracketCode = businessName || streetShort;
+  const addressLine = businessName
+    ? `${businessName}, ${streetShort}`
+    : streetShort;
+  const full = `${addressLine}, ${suburb.toUpperCase()} ${state} (${bracketCode})`;
+  return { full, short: bracketCode };
+}
+
+/**
+ * Map a Google Geocoder result's address_components to the subset of
+ * StructuredAddressParts they cover — house number, unit/subpremise, street
+ * (split into name + type against the same abbreviation map used elsewhere
+ * in this file), suburb, and state. Only returns keys Google actually
+ * supplied, so a caller can shallow-merge this over existing field values
+ * without blanking anything Google didn't cover for this result.
+ */
+export function structuredAddressFromGoogleComponents(
+  components: { long_name: string; short_name: string; types: string[] }[]
+): Partial<StructuredAddressParts> {
+  const find = (type: string) => components.find(c => c.types.includes(type));
+
+  const streetNumber = find("street_number")?.long_name ?? "";
+  const routeRaw = find("route")?.long_name ?? "";
+  const subpremise = find("subpremise")?.long_name ?? "";
+  const suburb =
+    find("locality")?.long_name ??
+    find("sublocality")?.long_name ??
+    find("postal_town")?.long_name ??
+    "";
+  const stateShort = find("administrative_area_level_1")?.short_name ?? "";
+
+  const result: Partial<StructuredAddressParts> = {};
+  if (subpremise) result.unitNo = subpremise;
+  if (streetNumber) result.houseNo = streetNumber;
+
+  if (routeRaw.trim()) {
+    const words = routeRaw.trim().split(/\s+/);
+    const lastWord = words[words.length - 1];
+    const expandedFromAbbrev = STREET_TYPE_MAP[lastWord.toLowerCase()];
+    const isAlreadyFullType = STREET_TYPE_OPTIONS.some(
+      t => t.toLowerCase() === lastWord.toLowerCase()
+    );
+    if (words.length > 1 && (expandedFromAbbrev || isAlreadyFullType)) {
+      result.streetName = words.slice(0, -1).join(" ");
+      result.streetType = expandedFromAbbrev ?? lastWord;
+    } else {
+      // Can't confidently split off a type — leave streetType for the
+      // officer to pick from the dropdown rather than guessing wrong.
+      result.streetName = routeRaw.trim();
+    }
+  }
+
+  if (suburb) result.suburb = suburb.toUpperCase();
+  if (
+    stateShort &&
+    (AU_STATE_OPTIONS as readonly string[]).includes(stateShort)
+  ) {
+    result.state = stateShort;
+  }
+  return result;
 }
 
 export interface StructuredVehicleParts {

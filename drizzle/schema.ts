@@ -445,6 +445,9 @@ export const targets = mysqlTable("targets", {
   addrStreetType: varchar("addrStreetType", { length: 32 }),
   addrSuburb: varchar("addrSuburb", { length: 255 }), // stored uppercase
   addrState: varchar("addrState", { length: 3 }),
+  // Business/place name at the primary address, e.g. "Woolworths Fremantle"
+  // for a work address — becomes the hbf/hb bracket short code when set.
+  addrBusinessName: varchar("addrBusinessName", { length: 255 }),
 
   // Primary/V1 vehicle structured parts — compose into v1f/v1
   vehRegistration: varchar("vehRegistration", { length: 32 }),
@@ -493,6 +496,7 @@ export const associates = mysqlTable("associates", {
   addrStreetType: varchar("addrStreetType", { length: 32 }),
   addrSuburb: varchar("addrSuburb", { length: 255 }),
   addrState: varchar("addrState", { length: 3 }),
+  addrBusinessName: varchar("addrBusinessName", { length: 255 }),
   hbf: text("hbf"), // composed Home Address Full
   hb: text("hb"), // composed Home (short)
 

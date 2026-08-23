@@ -370,6 +370,7 @@ const structuredTargetFieldsSchema = {
   addrStreetType: z.string().optional().nullable(),
   addrSuburb: z.string().optional().nullable(),
   addrState: z.string().optional().nullable(),
+  addrBusinessName: z.string().optional().nullable(),
   vehRegistration: z.string().optional().nullable(),
   vehState: z.string().optional().nullable(),
   vehColour: z.string().optional().nullable(),

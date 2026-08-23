@@ -19,9 +19,18 @@
  *   inputClassName – extra classes forwarded to the <input> element
  */
 
-import { useRef, useState, useCallback, useEffect, type FocusEvent } from "react";
+import {
+  useRef,
+  useState,
+  useCallback,
+  useEffect,
+  type FocusEvent,
+} from "react";
 import { MapPin } from "lucide-react";
-import { convertGoogleAddresses, extractShortAddress } from "@/lib/addressFormat";
+import {
+  convertGoogleAddresses,
+  extractShortAddress,
+} from "@/lib/addressFormat";
 import { loadGoogleMaps } from "@/lib/googleMaps";
 
 // Perth CBD — used as fallback when no GPS or explicit bias is available
@@ -38,23 +47,50 @@ interface Props {
   className?: string;
   inputClassName?: string;
   disabled?: boolean;
+  /**
+   * Google Places type filter for suggestions. Defaults to street addresses
+   * only ("address"), matching every existing caller. Pass "any" to search
+   * places/businesses too (no type restriction) — e.g. STOSEC's "Add
+   * location" box, or the Target Registry's address search, where an
+   * officer may want to reference a business or landmark, not just a
+   * street address.
+   */
+  searchScope?: "address" | "any";
+  /**
+   * Called with the selected place's raw Google address components (for
+   * callers that need structured fields — house number, street, suburb,
+   * state — rather than a single formatted string) plus its business/place
+   * name when the picked suggestion was an establishment (e.g. "Woolworths
+   * Fremantle"), not a plain street address. Only fires once the place has
+   * been successfully geocoded.
+   */
+  onPlaceSelected?: (result: {
+    addressComponents: google.maps.GeocoderAddressComponent[];
+    businessName: string | null;
+  }) => void;
 }
 
 export function AddressAutocompleteInput({
   value,
   onChange,
   onShortAddress,
+  onPlaceSelected,
   onBlur,
   locationBias,
   placeholder = "Search address…",
   className = "",
   inputClassName = "",
   disabled,
+  searchScope = "address",
 }: Props) {
-  const [suggestions, setSuggestions] = useState<google.maps.places.AutocompletePrediction[]>([]);
+  const [suggestions, setSuggestions] = useState<
+    google.maps.places.AutocompletePrediction[]
+  >([]);
   const [open, setOpen] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const serviceRef = useRef<google.maps.places.AutocompleteService | null>(null);
+  const serviceRef = useRef<google.maps.places.AutocompleteService | null>(
+    null
+  );
   const wrapperRef = useRef<HTMLDivElement>(null);
   // Cached GPS position from browser Geolocation (refreshed once per mount)
   const gpsRef = useRef<{ lat: number; lng: number } | null>(null);
@@ -72,17 +108,24 @@ export function AddressAutocompleteInput({
   // failed/slow load here doesn't permanently break the field (the shared
   // loader resets its cache on failure, so the next keystroke retries).
   useEffect(() => {
-    loadGoogleMaps().catch(() => { /* ignore load errors silently */ });
+    loadGoogleMaps().catch(() => {
+      /* ignore load errors silently */
+    });
   }, []);
 
   // Request GPS position once on mount for use as bias centre
   useEffect(() => {
     if (!navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        gpsRef.current = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      pos => {
+        gpsRef.current = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+        };
       },
-      () => { /* silently ignore — will fall back to Perth */ },
+      () => {
+        /* silently ignore — will fall back to Perth */
+      },
       { timeout: 5000, maximumAge: 60000 }
     );
   }, []);
@@ -90,7 +133,10 @@ export function AddressAutocompleteInput({
   // Close dropdown when clicking outside
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+      if (
+        wrapperRef.current &&
+        !wrapperRef.current.contains(e.target as Node)
+      ) {
         setOpen(false);
       }
     };
@@ -130,7 +176,10 @@ export function AddressAutocompleteInput({
       const request: google.maps.places.AutocompletionRequest = {
         input: val,
         componentRestrictions: { country: "au" },
-        types: ["address"],
+        // Omitting `types` entirely (searchScope "any") returns Google's
+        // unrestricted mix of addresses, businesses, and points of interest
+        // — the "address" types value on its own excludes establishments.
+        ...(searchScope === "address" ? { types: ["address"] } : {}),
         locationBias: new google.maps.Circle({
           center: centre,
           radius: 50000, // 50 km bias
@@ -138,7 +187,10 @@ export function AddressAutocompleteInput({
       };
 
       svc.getPlacePredictions(request, (predictions, status) => {
-        if (status === google.maps.places.PlacesServiceStatus.OK && predictions) {
+        if (
+          status === google.maps.places.PlacesServiceStatus.OK &&
+          predictions
+        ) {
           setSuggestions(predictions);
           setOpen(true);
         } else {
@@ -149,7 +201,9 @@ export function AddressAutocompleteInput({
     }, 300);
   };
 
-  const handleSelect = (prediction: google.maps.places.AutocompletePrediction) => {
+  const handleSelect = (
+    prediction: google.maps.places.AutocompletePrediction
+  ) => {
     setSuggestions([]);
     setOpen(false);
 
@@ -161,6 +215,11 @@ export function AddressAutocompleteInput({
       return;
     }
 
+    const isBusiness = prediction.types?.includes("establishment") ?? false;
+    const businessName = isBusiness
+      ? (prediction.structured_formatting?.main_text ?? null)
+      : null;
+
     const geocoder = new google.maps.Geocoder();
     geocoder.geocode({ placeId: prediction.place_id }, (results, status) => {
       if (status === "OK" && results && results[0]) {
@@ -168,6 +227,12 @@ export function AddressAutocompleteInput({
         const rsFormatted = convertGoogleAddresses(formatted);
         onChange(rsFormatted);
         if (onShortAddress) onShortAddress(extractShortAddress(rsFormatted));
+        if (onPlaceSelected) {
+          onPlaceSelected({
+            addressComponents: results[0].address_components ?? [],
+            businessName,
+          });
+        }
       } else {
         // Fallback to description if geocode fails
         const rsFormatted = convertGoogleAddresses(prediction.description);
@@ -184,9 +249,14 @@ export function AddressAutocompleteInput({
         value={value}
         onChange={handleChange}
         onBlur={onBlur}
-        onFocus={() => { if (suggestions.length > 0) setOpen(true); }}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") { setSuggestions([]); setOpen(false); }
+        onFocus={() => {
+          if (suggestions.length > 0) setOpen(true);
+        }}
+        onKeyDown={e => {
+          if (e.key === "Escape") {
+            setSuggestions([]);
+            setOpen(false);
+          }
         }}
         placeholder={placeholder}
         disabled={disabled}
@@ -202,12 +272,12 @@ export function AddressAutocompleteInput({
           className="absolute left-0 right-0 top-full mt-1 z-50 rounded-lg border border-border bg-popover shadow-lg overflow-hidden"
           style={{ maxHeight: "240px", overflowY: "auto" }}
         >
-          {suggestions.map((s) => (
+          {suggestions.map(s => (
             <button
               key={s.place_id}
               type="button"
               className="w-full text-left px-3 py-2.5 text-sm text-popover-foreground hover:bg-accent hover:text-accent-foreground border-b border-border/50 last:border-0 flex items-start gap-2 transition-colors"
-              onMouseDown={(e) => {
+              onMouseDown={e => {
                 // Use mousedown so it fires before the input's blur
                 e.preventDefault();
                 handleSelect(s);

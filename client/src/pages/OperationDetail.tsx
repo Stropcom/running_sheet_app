@@ -138,6 +138,7 @@ function TargetCard({
     addrStreetType?: string | null;
     addrSuburb?: string | null;
     addrState?: string | null;
+    addrBusinessName?: string | null;
     vehRegistration?: string | null;
     vehState?: string | null;
     vehColour?: string | null;
@@ -165,6 +166,7 @@ function TargetCard({
     streetType: target.addrStreetType ?? "",
     suburb: target.addrSuburb ?? "",
     state: target.addrState ?? "WA",
+    businessName: target.addrBusinessName ?? "",
   });
   const [vehicle, setVehicle] = useState<
     StructuredVehicleParts & { vehicleType: string }
@@ -260,6 +262,7 @@ function TargetCard({
       addrStreetType: address.streetType || null,
       addrSuburb: address.suburb || null,
       addrState: address.state || null,
+      addrBusinessName: address.businessName || null,
       vehRegistration: vehicle.registration || null,
       vehState: vehicle.state || null,
       vehColour: vehicle.colour || null,

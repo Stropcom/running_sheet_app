@@ -15,6 +15,7 @@
  * bypassed by editing a target from a different page.
  */
 
+import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -23,12 +24,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
 import {
   composeAddress,
   composeTargetName,
   composeVehicle,
   parseDdMmYyyyDate,
   formatDdMmYyyyInput,
+  structuredAddressFromGoogleComponents,
   STREET_TYPE_OPTIONS,
   AU_STATE_OPTIONS,
   VEHICLE_TYPE_OPTIONS,
@@ -94,6 +97,7 @@ export function parseExtraAddresses(
     return arr.map(a => ({
       id: a.id || makeExtraId(),
       label: a.label ?? "",
+      businessName: a.businessName ?? "",
       unitNo: a.unitNo ?? "",
       houseNo: a.houseNo ?? "",
       streetName: a.streetName ?? "",
@@ -207,19 +211,51 @@ export function TargetAddressFields({
   onLabelChange?: (v: string) => void;
 }) {
   const { full } = composeAddress(value);
+  const [placeSearch, setPlaceSearch] = useState("");
   return (
     <div className="flex flex-col gap-3">
-      {onLabelChange && (
+      <div className="flex flex-col gap-1.5">
+        <FieldLabel>Search to autofill (optional)</FieldLabel>
+        <AddressAutocompleteInput
+          value={placeSearch}
+          onChange={setPlaceSearch}
+          onPlaceSelected={({ addressComponents, businessName }) => {
+            const parsed =
+              structuredAddressFromGoogleComponents(addressComponents);
+            onChange({
+              ...value,
+              ...parsed,
+              ...(businessName ? { businessName } : {}),
+            });
+            setPlaceSearch("");
+          }}
+          searchScope="any"
+          placeholder="Search an address, place, or business…"
+          disabled={disabled}
+        />
+      </div>
+      <div className={onLabelChange ? "grid grid-cols-2 gap-3" : ""}>
+        {onLabelChange && (
+          <div className="flex flex-col gap-1.5">
+            <FieldLabel>Label (optional)</FieldLabel>
+            <Input
+              value={label ?? ""}
+              disabled={disabled}
+              onChange={e => onLabelChange(e.target.value)}
+              placeholder="e.g. Workplace, Second home…"
+            />
+          </div>
+        )}
         <div className="flex flex-col gap-1.5">
-          <FieldLabel>Label (optional)</FieldLabel>
+          <FieldLabel>Business / place name (optional)</FieldLabel>
           <Input
-            value={label ?? ""}
+            value={value.businessName ?? ""}
             disabled={disabled}
-            onChange={e => onLabelChange(e.target.value)}
-            placeholder="e.g. Workplace, Second home, Known address…"
+            onChange={e => onChange({ ...value, businessName: e.target.value })}
+            placeholder="e.g. Woolworths Fremantle — particularly for a work address"
           />
         </div>
-      )}
+      </div>
       <div className="grid grid-cols-2 gap-3">
         <div className="flex flex-col gap-1.5">
           <FieldLabel>Unit No.</FieldLabel>
@@ -426,6 +462,7 @@ export const EMPTY_ADDRESS_PARTS: StructuredAddressParts = {
   streetType: "",
   suburb: "",
   state: "WA",
+  businessName: "",
 };
 
 export const EMPTY_VEHICLE_PARTS: StructuredVehicleParts & {

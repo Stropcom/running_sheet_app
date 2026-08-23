@@ -2084,6 +2084,7 @@ export async function getTargetsByOperation(operationId: number) {
       addrStreetType: targets.addrStreetType,
       addrSuburb: targets.addrSuburb,
       addrState: targets.addrState,
+      addrBusinessName: targets.addrBusinessName,
       vehRegistration: targets.vehRegistration,
       vehState: targets.vehState,
       vehColour: targets.vehColour,
@@ -2196,6 +2197,7 @@ export async function updateTarget(
       | "addrStreetType"
       | "addrSuburb"
       | "addrState"
+      | "addrBusinessName"
       | "vehRegistration"
       | "vehState"
       | "vehColour"
@@ -2588,6 +2590,7 @@ export async function updateAssociate(
       | "addrStreetType"
       | "addrSuburb"
       | "addrState"
+      | "addrBusinessName"
       | "v1f"
       | "v1"
       | "vehRegistration"

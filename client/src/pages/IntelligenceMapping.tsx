@@ -6481,6 +6481,141 @@ export default function IntelligenceMapping() {
                                 </div>
                               );
                             })()}
+                          {/* Vehicle arriving chips — reuses the occupant
+                            description from the vehicle's last logged
+                            departure anywhere in this operation, so the
+                            officer doesn't have to retype it when the same
+                            vehicle arrives at this quick-entry location. One
+                            chip per still-pending (un-arrived) vehicle —
+                            always requires an explicit tap, never inserted
+                            automatically, since this writes into the record. */}
+                          {mapQeAddress &&
+                            rsPendingDepartures &&
+                            rsPendingDepartures.length > 0 &&
+                            (() => {
+                              const appendText = (text: string) => {
+                                pushInlineUndo(rsInlineText);
+                                setRsInlineText(prev =>
+                                  prev ? `${prev} ${text}` : text
+                                );
+                                resetInlineTimer();
+                                rsInlineInputRef.current?.focus();
+                              };
+                              const bracketMatch = mapQeAddress.match(
+                                /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
+                              );
+                              const toTitleCase = (s: string) =>
+                                s
+                                  .toLowerCase()
+                                  .replace(/\b\w/g, c => c.toUpperCase());
+                              const shortAddr = bracketMatch
+                                ? toTitleCase(bracketMatch[2])
+                                : (mapQeAddress.split(",")[0]?.trim() ??
+                                  mapQeAddress);
+                              // App-wide rule: first mention of an address in
+                              // this sheet is written in full (with its
+                              // bracket short-form, which is what Intelligence
+                              // relies on to register the location) — every
+                              // later mention just uses the short form.
+                              const arriveAddr = rsAddressMentionedData?.mentioned
+                                ? shortAddr
+                                : mapQeAddress;
+                              return (
+                                <div className="flex flex-col gap-1 md:gap-1.5">
+                                  <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-amber-500/70">
+                                    Vehicle arriving
+                                  </span>
+                                  <div className="flex flex-wrap gap-1 md:gap-1.5">
+                                    {rsPendingDepartures.map(d => (
+                                      <button
+                                        key={d.rego}
+                                        onClick={() =>
+                                          appendText(
+                                            `Vehicle ${d.rego} ${d.occupantDesc}, arrived at ${arriveAddr}`
+                                          )
+                                        }
+                                        title={`Vehicle ${d.rego} ${d.occupantDesc}, arrived at ${arriveAddr}`}
+                                        className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                                      >
+                                        <span className="font-mono normal-case">
+                                          {d.rego}
+                                        </span>{" "}
+                                        arriving
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                          {/* Vehicle departing chips — mirror of the arriving
+                            chips above: reuses the occupant description from
+                            the vehicle's most recent logged arrival, for when
+                            that vehicle is now departing THAT SAME location.
+                            Only shows for a vehicle whose last-known arrival
+                            address matches where this quick-entry popup is
+                            — a vehicle can't be logged departing from
+                            somewhere it isn't. Always uses the short address
+                            form (not the first-mention full form the arriving
+                            chip sometimes needs), since a departure isn't
+                            establishing a new address mention the way an
+                            arrival can be. Requires an explicit tap, same as
+                            the arriving chips. */}
+                          {mapQeAddress &&
+                            rsPendingArrivals &&
+                            rsPendingArrivals.length > 0 &&
+                            (() => {
+                              const appendText = (text: string) => {
+                                pushInlineUndo(rsInlineText);
+                                setRsInlineText(prev =>
+                                  prev ? `${prev} ${text}` : text
+                                );
+                                resetInlineTimer();
+                                rsInlineInputRef.current?.focus();
+                              };
+                              const bracketMatch = mapQeAddress.match(
+                                /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
+                              );
+                              const toTitleCase = (s: string) =>
+                                s
+                                  .toLowerCase()
+                                  .replace(/\b\w/g, c => c.toUpperCase());
+                              const shortAddr = bracketMatch
+                                ? toTitleCase(bracketMatch[2])
+                                : (mapQeAddress.split(",")[0]?.trim() ??
+                                  mapQeAddress);
+                              const arrivalsHere = rsPendingArrivals.filter(
+                                a =>
+                                  a.address.trim().toLowerCase() ===
+                                  shortAddr.trim().toLowerCase()
+                              );
+                              if (arrivalsHere.length === 0) return null;
+                              return (
+                                <div className="flex flex-col gap-1 md:gap-1.5">
+                                  <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-amber-500/70">
+                                    Vehicle departing
+                                  </span>
+                                  <div className="flex flex-wrap gap-1 md:gap-1.5">
+                                    {arrivalsHere.map(a => (
+                                      <button
+                                        key={a.rego}
+                                        onClick={() =>
+                                          appendText(
+                                            `Vehicle ${a.rego} ${a.occupantDesc}, departed ${shortAddr} and continued via:`
+                                          )
+                                        }
+                                        title={`Vehicle ${a.rego} ${a.occupantDesc}, departed ${shortAddr} and continued via:`}
+                                        className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                                      >
+                                        <span className="font-mono normal-case">
+                                          {a.rego}
+                                        </span>{" "}
+                                        departing
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })()}
                           {/* CIN picker — multi-select with TEAM */}
                           {rosterCins.length > 0 && (
                             <div className="flex flex-wrap gap-1.5 md:gap-2">

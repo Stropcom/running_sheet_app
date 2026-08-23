@@ -15,8 +15,17 @@ import {
   buildPoiAddress,
   formatIntelAddress,
   formatIntelVehicle,
+  expandIntelVehicleToFullForm,
   ensureBracketCode,
 } from "@/lib/addressFormat";
+import {
+  getCaretPixelPosition,
+  detectMentionTrigger,
+  detectVehicleMentionTrigger,
+  computeUsedBracketCodes,
+  computeUsedVehicleRegos,
+  type PersonMentionSuggestion,
+} from "@/lib/mentionAutocomplete";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -96,6 +105,7 @@ import {
   Clock,
   Image as ImageIcon,
   Undo2,
+  Car,
 } from "lucide-react";
 
 // Phone/tablet (touch, no physical keyboard) vs laptop/desktop (mouse +
@@ -1098,6 +1108,142 @@ export default function IntelligenceMapping() {
   // undo button can step backwards repeatedly (continuous undo).
   const [rsInlineUndoStack, setRsInlineUndoStack] = useState<string[]>([]);
   const rsInlineTypingPushRef = useRef<number>(0);
+
+  // ── Inline mention autocomplete (person + vehicle) ──────────────────────
+  // Same behaviour as SheetDetail's observation field — see
+  // client/src/lib/mentionAutocomplete.ts, shared by both surfaces.
+  const { data: rsInlineRows } = trpc.row.list.useQuery(
+    { sheetId: rsSelectedSheetId ?? 0 },
+    { enabled: !!rsSelectedSheetId }
+  );
+  const rsUsedBracketCodes = useMemo(
+    () => computeUsedBracketCodes(rsInlineRows ?? []),
+    [rsInlineRows]
+  );
+  const rsUsedVehicleRegos = useMemo(
+    () => computeUsedVehicleRegos(rsInlineRows ?? []),
+    [rsInlineRows]
+  );
+  const [rsMentionWord, setRsMentionWord] = useState<{
+    word: string;
+    wordStart: number;
+    wordEnd: number;
+  } | null>(null);
+  const [rsMentionAnchor, setRsMentionAnchor] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
+  const [rsMentionActiveIndex, setRsMentionActiveIndex] = useState(0);
+  const rsMentionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  const [rsMentionQuery, setRsMentionQuery] = useState("");
+  const { data: rsMentionResults } =
+    trpc.intelligence.searchPersonMentions.useQuery(
+      { query: rsMentionQuery },
+      { enabled: rsMentionQuery.trim().length >= 2 }
+    );
+  const rsMentionSuggestions =
+    rsMentionQuery.trim().length >= 2 ? (rsMentionResults ?? []) : [];
+  const rsConfirmPersonMatch =
+    trpc.intelligence.confirmPersonNameMatch.useMutation();
+
+  const [rsVehicleMentionWord, setRsVehicleMentionWord] = useState<{
+    word: string;
+    wordStart: number;
+    wordEnd: number;
+  } | null>(null);
+  const [rsVehicleMentionAnchor, setRsVehicleMentionAnchor] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
+  const [rsVehicleMentionActiveIndex, setRsVehicleMentionActiveIndex] =
+    useState(0);
+  const rsVehicleMentionDebounceRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const [rsVehicleMentionQuery, setRsVehicleMentionQuery] = useState("");
+  const { data: rsVehicleMentionResults } =
+    trpc.intelligence.searchEntities.useQuery(
+      {
+        type: "vehicle",
+        query: rsVehicleMentionQuery,
+        excludeTargets: false,
+      },
+      { enabled: rsVehicleMentionQuery.trim().length >= 2 }
+    );
+  const rsVehicleMentionSuggestions = (
+    rsVehicleMentionQuery.trim().length >= 2
+      ? (rsVehicleMentionResults ?? [])
+      : []
+  ) as { key: string; label: string; rowCount: number }[];
+
+  function closeRsMentionDropdown() {
+    setRsMentionWord(null);
+    setRsMentionAnchor(null);
+    setRsMentionQuery("");
+    setRsMentionActiveIndex(0);
+    if (rsMentionDebounceRef.current)
+      clearTimeout(rsMentionDebounceRef.current);
+  }
+  function closeRsVehicleMentionDropdown() {
+    setRsVehicleMentionWord(null);
+    setRsVehicleMentionAnchor(null);
+    setRsVehicleMentionQuery("");
+    setRsVehicleMentionActiveIndex(0);
+    if (rsVehicleMentionDebounceRef.current)
+      clearTimeout(rsVehicleMentionDebounceRef.current);
+  }
+
+  function selectRsMentionSuggestion(
+    s: PersonMentionSuggestion,
+    textarea: HTMLTextAreaElement
+  ) {
+    if (!rsMentionWord) return;
+    const insertText = `${s.displayName} (${s.bracketCode})`;
+    pushInlineUndo(rsInlineText);
+    const newText =
+      rsInlineText.slice(0, rsMentionWord.wordStart) +
+      insertText +
+      rsInlineText.slice(rsMentionWord.wordEnd);
+    setRsInlineText(newText);
+    if (s.targetId != null || s.associateId != null) {
+      rsConfirmPersonMatch.mutate({
+        spelling: s.bracketCode,
+        targetId: s.targetId ?? undefined,
+        associateId: s.associateId ?? undefined,
+        correctSpelling: s.bracketCode,
+      });
+    }
+    closeRsMentionDropdown();
+    const newPos = rsMentionWord.wordStart + insertText.length;
+    resetInlineTimer();
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(newPos, newPos);
+    });
+  }
+
+  function selectRsVehicleMentionSuggestion(
+    s: { key: string; label: string; rowCount: number },
+    textarea: HTMLTextAreaElement
+  ) {
+    if (!rsVehicleMentionWord) return;
+    const insertText = expandIntelVehicleToFullForm(s.label);
+    pushInlineUndo(rsInlineText);
+    const newText =
+      rsInlineText.slice(0, rsVehicleMentionWord.wordStart) +
+      insertText +
+      rsInlineText.slice(rsVehicleMentionWord.wordEnd);
+    setRsInlineText(newText);
+    closeRsVehicleMentionDropdown();
+    const newPos = rsVehicleMentionWord.wordStart + insertText.length;
+    resetInlineTimer();
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(newPos, newPos);
+    });
+  }
 
   // Right-pane collapsible RS Quick Entry panel state (separate from modal inline field)
   const [rsQeText, setRsQeText] = useState("");
@@ -5697,9 +5843,129 @@ export default function IntelligenceMapping() {
                             rsInlineTypingPushRef.current = now;
                             setRsInlineText(next);
                             resetInlineTimer();
+
+                            const cursorPos = e.target.selectionStart ?? next.length;
+                            const vehicleTrigger = detectVehicleMentionTrigger(
+                              next,
+                              cursorPos,
+                              rsUsedVehicleRegos
+                            );
+                            if (vehicleTrigger) {
+                              closeRsMentionDropdown();
+                              setRsVehicleMentionWord({
+                                word: vehicleTrigger.word,
+                                wordStart: vehicleTrigger.wordStart,
+                                wordEnd: cursorPos,
+                              });
+                              setRsVehicleMentionActiveIndex(0);
+                              setRsVehicleMentionAnchor(
+                                getCaretPixelPosition(e.target, cursorPos)
+                              );
+                              if (rsVehicleMentionDebounceRef.current)
+                                clearTimeout(rsVehicleMentionDebounceRef.current);
+                              rsVehicleMentionDebounceRef.current = setTimeout(() => {
+                                setRsVehicleMentionQuery(vehicleTrigger.word);
+                              }, 250);
+                            } else {
+                              closeRsVehicleMentionDropdown();
+                              const trigger = detectMentionTrigger(
+                                next,
+                                cursorPos,
+                                rsUsedBracketCodes
+                              );
+                              if (!trigger) {
+                                closeRsMentionDropdown();
+                              } else {
+                                setRsMentionWord({
+                                  word: trigger.word,
+                                  wordStart: trigger.wordStart,
+                                  wordEnd: cursorPos,
+                                });
+                                setRsMentionActiveIndex(0);
+                                setRsMentionAnchor(
+                                  getCaretPixelPosition(e.target, cursorPos)
+                                );
+                                if (rsMentionDebounceRef.current)
+                                  clearTimeout(rsMentionDebounceRef.current);
+                                rsMentionDebounceRef.current = setTimeout(() => {
+                                  setRsMentionQuery(trigger.word);
+                                }, 250);
+                              }
+                            }
                           }}
                           onFocus={resetInlineTimer}
+                          onBlur={() => {
+                            closeRsMentionDropdown();
+                            closeRsVehicleMentionDropdown();
+                          }}
                           onKeyDown={e => {
+                            if (
+                              rsVehicleMentionWord &&
+                              rsVehicleMentionSuggestions.length > 0
+                            ) {
+                              if (e.key === "ArrowDown") {
+                                e.preventDefault();
+                                setRsVehicleMentionActiveIndex(
+                                  i => (i + 1) % rsVehicleMentionSuggestions.length
+                                );
+                                return;
+                              }
+                              if (e.key === "ArrowUp") {
+                                e.preventDefault();
+                                setRsVehicleMentionActiveIndex(
+                                  i =>
+                                    (i - 1 + rsVehicleMentionSuggestions.length) %
+                                    rsVehicleMentionSuggestions.length
+                                );
+                                return;
+                              }
+                              if (e.key === "Enter" || e.key === "Tab") {
+                                e.preventDefault();
+                                selectRsVehicleMentionSuggestion(
+                                  rsVehicleMentionSuggestions[
+                                    rsVehicleMentionActiveIndex
+                                  ],
+                                  e.currentTarget
+                                );
+                                return;
+                              }
+                              if (e.key === "Escape") {
+                                e.preventDefault();
+                                closeRsVehicleMentionDropdown();
+                                return;
+                              }
+                            }
+                            if (rsMentionWord && rsMentionSuggestions.length > 0) {
+                              if (e.key === "ArrowDown") {
+                                e.preventDefault();
+                                setRsMentionActiveIndex(
+                                  i => (i + 1) % rsMentionSuggestions.length
+                                );
+                                return;
+                              }
+                              if (e.key === "ArrowUp") {
+                                e.preventDefault();
+                                setRsMentionActiveIndex(
+                                  i =>
+                                    (i - 1 + rsMentionSuggestions.length) %
+                                    rsMentionSuggestions.length
+                                );
+                                return;
+                              }
+                              if (e.key === "Enter" || e.key === "Tab") {
+                                e.preventDefault();
+                                selectRsMentionSuggestion(
+                                  rsMentionSuggestions[rsMentionActiveIndex],
+                                  e.currentTarget
+                                );
+                                return;
+                              }
+                              if (e.key === "Escape") {
+                                e.preventDefault();
+                                closeRsMentionDropdown();
+                                return;
+                              }
+                            }
                             if (e.key === " " || e.key === "Tab") {
                               const textarea = e.currentTarget;
                               const pos = textarea.selectionStart ?? 0;
@@ -5737,6 +6003,96 @@ export default function IntelligenceMapping() {
                           rows={4}
                           className={`w-full resize-none rounded-md border border-border bg-background px-2.5 py-1.5 text-[11px] placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring md:px-3 md:py-2 md:text-sm lg:min-h-[140px] ${inlineReadOnly ? "cursor-pointer" : ""}`}
                         />
+                        {rsMentionWord &&
+                          rsMentionAnchor &&
+                          rsMentionSuggestions.length > 0 && (
+                            <div
+                              className="fixed z-50 w-64 rounded-lg border border-border bg-popover shadow-lg overflow-hidden"
+                              style={{
+                                top: rsMentionAnchor.top,
+                                left: rsMentionAnchor.left,
+                                maxHeight: "220px",
+                                overflowY: "auto",
+                              }}
+                            >
+                              {rsMentionSuggestions.map((s, i) => (
+                                <button
+                                  key={s.key}
+                                  type="button"
+                                  className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-2 border-b border-border/50 last:border-0 transition-colors ${
+                                    i === rsMentionActiveIndex
+                                      ? "bg-accent text-accent-foreground"
+                                      : "text-popover-foreground hover:bg-accent hover:text-accent-foreground"
+                                  }`}
+                                  onMouseEnter={() => setRsMentionActiveIndex(i)}
+                                  onMouseDown={e => {
+                                    e.preventDefault();
+                                    if (rsInlineInputRef.current)
+                                      selectRsMentionSuggestion(
+                                        s,
+                                        rsInlineInputRef.current
+                                      );
+                                  }}
+                                >
+                                  <span className="flex items-center gap-1.5 min-w-0">
+                                    <User className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                                    <span className="truncate">
+                                      {s.displayName}
+                                    </span>
+                                  </span>
+                                  <span className="text-xs text-muted-foreground shrink-0">
+                                    {s.rowCount} obs.
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        {rsVehicleMentionWord &&
+                          rsVehicleMentionAnchor &&
+                          rsVehicleMentionSuggestions.length > 0 && (
+                            <div
+                              className="fixed z-50 w-72 rounded-lg border border-border bg-popover shadow-lg overflow-hidden"
+                              style={{
+                                top: rsVehicleMentionAnchor.top,
+                                left: rsVehicleMentionAnchor.left,
+                                maxHeight: "220px",
+                                overflowY: "auto",
+                              }}
+                            >
+                              {rsVehicleMentionSuggestions.map((s, i) => (
+                                <button
+                                  key={s.key}
+                                  type="button"
+                                  className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-2 border-b border-border/50 last:border-0 transition-colors ${
+                                    i === rsVehicleMentionActiveIndex
+                                      ? "bg-accent text-accent-foreground"
+                                      : "text-popover-foreground hover:bg-accent hover:text-accent-foreground"
+                                  }`}
+                                  onMouseEnter={() =>
+                                    setRsVehicleMentionActiveIndex(i)
+                                  }
+                                  onMouseDown={e => {
+                                    e.preventDefault();
+                                    if (rsInlineInputRef.current)
+                                      selectRsVehicleMentionSuggestion(
+                                        s,
+                                        rsInlineInputRef.current
+                                      );
+                                  }}
+                                >
+                                  <span className="flex items-center gap-1.5 min-w-0">
+                                    <Car className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                                    <span className="truncate">
+                                      {formatIntelVehicle(s.label)}
+                                    </span>
+                                  </span>
+                                  <span className="text-xs text-muted-foreground shrink-0">
+                                    {s.rowCount} obs.
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
                         {/* Shortcut buttons */}
                         {(() => {
                           // ── QE chips: exact mirror of main RS chip set, values, and order ──────────

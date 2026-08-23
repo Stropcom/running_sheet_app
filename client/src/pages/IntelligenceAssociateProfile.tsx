@@ -3,7 +3,7 @@ import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, FileDown, User, FileText } from "lucide-react";
+import { ArrowLeft, FileDown, User, FileText, AlertTriangle, Folder } from "lucide-react";
 import { EntityPhotosSection } from "@/components/EntityPhotosSection";
 import { buildPhotoGridHtml, buildEntityListWithPhotosHtml, type RowAttachmentLike } from "@/lib/attachmentBanner";
 import { IntelEntityWithPhotos, type IntelAssocEntity } from "@/components/IntelEntityChip";
@@ -16,6 +16,7 @@ type IntelProfileEntity = IntelAssocEntity;
 interface IntelAssociateProfile {
   label: string; type: "person" | "business";
   linkedTargets: Array<{ targetId: number; name: string; operationId: number; operationName: string }>;
+  sharedEntityLinks: Array<{ targetId?: number; targetName?: string; operationId: number; operationName: string; via: "vehicle" | "address"; sharedValue: string }>;
   linkedSheets: Array<{ id: number; title: string; operationId: number; operationName: string }>;
   assocLocations: IntelProfileEntity[]; assocVehicles: IntelProfileEntity[];
   isIndicesOnly: boolean;
@@ -43,6 +44,15 @@ function buildAssociateProfileHtml(profile: IntelAssociateProfile, photos: Profi
   const BLUE_DARK = "#1e3a8a"; const BLUE_MID = "#93c5fd"; const BLUE_LIGHT = "#dbeafe";
   const GREY_TEXT = "#1e293b"; const GREY_BORDER = "#e2e8f0";
   const generatedAt = new Date().toLocaleString("en-AU", { dateStyle: "long", timeStyle: "short" });
+  const linkedOpIds = new Set(profile.linkedTargets.map(t => t.operationId));
+  const sharedOnlyOps = Array.from(
+    new Map(
+      profile.sharedEntityLinks
+        .filter(l => !linkedOpIds.has(l.operationId))
+        .map(l => [l.operationId, l.operationName])
+    ).entries()
+  );
+  const totalOpsCount = linkedOpIds.size + sharedOnlyOps.length;
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>RunLog — Associate Profile: ${esc(profile.label)}</title>
 <style>* { box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; } body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.6; color:${GREY_TEXT}; background:#fff; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 .cover-header { background:${BLUE_DARK} !important; color:#fff !important; padding:28px 32px 22px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
@@ -71,7 +81,9 @@ function buildAssociateProfileHtml(profile: IntelAssociateProfile, photos: Profi
     ${profile.hbf ? `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}"><strong>Home Address</strong> — ${esc(profile.hbf)}</p>` : ""}
     ${profile.v1f ? `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}"><strong>Vehicle</strong> — ${esc(profile.v1f)}</p>` : ""}
   </div>` : ""}
+  ${totalOpsCount > 1 ? `<p style="font-size:10px;font-weight:600;color:#92400e;background:#fef3c7;border:1px solid #fde68a;border-radius:4px;padding:6px 8px;margin-bottom:16px">Linked across ${totalOpsCount} separate operations — worth checking for a cross-operation connection.</p>` : ""}
   ${profile.linkedTargets.length ? `<div style="margin-bottom:16px"><div class="section-title">Linked Targets</div>${profile.linkedTargets.map(t => `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}"><strong>${esc(t.name)}</strong> <span style="color:#64748b">— ${esc(t.operationName)}</span></p>`).join("")}</div>` : ""}
+  ${profile.sharedEntityLinks.length ? `<div style="margin-bottom:16px"><div class="section-title">Shared Vehicle/Address</div>${profile.sharedEntityLinks.map(l => `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}">${l.targetName ? `<strong>${esc(l.targetName)}</strong> shares this ${esc(l.via)} (${esc(l.sharedValue)})` : `This ${esc(l.via)} (${esc(l.sharedValue)}) was also sighted`} <span style="color:#64748b">— ${esc(l.operationName)}</span></p>`).join("")}</div>` : ""}
   ${profile.linkedSheets.length ? `<div style="margin-bottom:16px"><div class="section-title">Running Sheets</div>${profile.linkedSheets.map(s => `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}">${esc(s.title)} <span style="color:#64748b">— ${esc(s.operationName)}</span></p>`).join("")}</div>` : ""}
   ${profile.assocVehicles.length || profile.assocLocations.length ? `<div style="margin-bottom:16px"><div class="section-title">Associations</div>
     ${profile.assocVehicles.length ? `<div class="sub-title">Vehicles</div>${buildEntityListWithPhotosHtml(profile.assocVehicles)}` : ""}
@@ -94,6 +106,18 @@ export default function IntelligenceAssociateProfile() {
     { enabled: !!label }
   );
   const photos = (photosData ?? []) as ProfilePhoto[];
+
+  const linkedOpIds = new Set(
+    (profile?.linkedTargets ?? []).map(t => t.operationId)
+  );
+  const sharedOnlyOps = Array.from(
+    new Map(
+      (profile?.sharedEntityLinks ?? [])
+        .filter(l => !linkedOpIds.has(l.operationId))
+        .map(l => [l.operationId, l.operationName])
+    ).entries()
+  );
+  const totalOpsCount = linkedOpIds.size + sharedOnlyOps.length;
 
   function exportPdf() {
     if (!profile) return;
@@ -170,9 +194,17 @@ export default function IntelligenceAssociateProfile() {
               </div>
             )}
 
-            {profile.linkedTargets.length > 0 && (
+            {(profile.linkedTargets.length > 0 || sharedOnlyOps.length > 0) && (
               <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
                 <SectionHeading label="Linked Targets" count={profile.linkedTargets.length} />
+                {totalOpsCount > 1 && (
+                  <div className="flex items-start gap-2 mb-3 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                    <p className="text-xs text-amber-800 dark:text-amber-300">
+                      Linked across {totalOpsCount} separate operations — worth checking for a cross-operation connection.
+                    </p>
+                  </div>
+                )}
                 <div className="space-y-1">
                   {profile.linkedTargets.map(t => (
                     <button key={`${t.targetId}-${t.operationId}`} onClick={() => navigate(`/intelligence/target/${t.targetId}`)} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border/60 bg-muted/20 hover:bg-accent/10 transition-colors text-left">
@@ -182,6 +214,31 @@ export default function IntelligenceAssociateProfile() {
                     </button>
                   ))}
                 </div>
+                {profile.sharedEntityLinks.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-xs text-muted-foreground mb-1">Shared vehicle / address</p>
+                    <div className="flex flex-wrap gap-2">
+                      {profile.sharedEntityLinks.map(l => (
+                        <button
+                          key={`${l.targetId ?? "sighted"}-${l.operationId}-${l.via}`}
+                          onClick={() => navigate(`/intelligence/operation/${l.operationId}`)}
+                          title={
+                            l.targetName
+                              ? `Shares a registered ${l.via} (${l.sharedValue}) with ${l.targetName}`
+                              : `This ${l.via} (${l.sharedValue}) was also sighted on this operation`
+                          }
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 hover:bg-amber-100 transition-colors"
+                        >
+                          <Folder className="w-3 h-3" />
+                          {l.operationName}
+                          <span className="text-[9px] uppercase tracking-wide opacity-70">
+                            shared {l.via}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

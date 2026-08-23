@@ -3,7 +3,14 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
-import { FileDown, User, Folder, FileText, Users } from "lucide-react";
+import {
+  FileDown,
+  User,
+  Folder,
+  FileText,
+  Users,
+  AlertTriangle,
+} from "lucide-react";
 import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 import { EntityPhotosSection } from "@/components/EntityPhotosSection";
@@ -33,6 +40,54 @@ function SectionHeading({ label, count }: { label: string; count: number }) {
       </span>
     </div>
   );
+}
+
+/** An operation this target/associate reaches into WITHOUT a formal
+ * operationTargetLinks row — either because their name is mentioned in that
+ * operation's observation text (kind "mentioned"), or because a different
+ * target/associate on that operation registers the same vehicle/address
+ * (kind "shared"). Both are real cross-operation signals; kept out of
+ * profile.operations because "formally tasked here" is a different claim
+ * from "reaches into here" and the two shouldn't be conflated. */
+interface CrossOpExtra {
+  id: number;
+  name: string;
+  kind: "mentioned" | "shared";
+  via?: "vehicle" | "address";
+  sharedValue?: string;
+}
+
+function getCrossOperationExtras(profile: {
+  operations: Array<{ id: number; name: string }>;
+  mentionedSheets: Array<{ operationId: number; operationName: string }>;
+  sharedEntityLinks: Array<{
+    operationId: number;
+    operationName: string;
+    via: "vehicle" | "address";
+    sharedValue: string;
+  }>;
+}): CrossOpExtra[] {
+  const linkedOpIds = new Set(profile.operations.map(o => o.id));
+  const map = new Map<number, CrossOpExtra>();
+  for (const s of profile.mentionedSheets) {
+    if (linkedOpIds.has(s.operationId) || map.has(s.operationId)) continue;
+    map.set(s.operationId, {
+      id: s.operationId,
+      name: s.operationName,
+      kind: "mentioned",
+    });
+  }
+  for (const l of profile.sharedEntityLinks) {
+    if (linkedOpIds.has(l.operationId) || map.has(l.operationId)) continue;
+    map.set(l.operationId, {
+      id: l.operationId,
+      name: l.operationName,
+      kind: "shared",
+      via: l.via,
+      sharedValue: l.sharedValue,
+    });
+  }
+  return Array.from(map.values());
 }
 
 // ─── PDF export ────────────────────────────────────────────────────────────
@@ -85,14 +140,8 @@ function buildTargetProfileHtml(
     timeStyle: "short",
   });
 
-  const linkedOpIds = new Set(profile.operations.map(o => o.id));
-  const mentionedOnlyOps = Array.from(
-    new Map(
-      profile.mentionedSheets
-        .filter(s => !linkedOpIds.has(s.operationId))
-        .map(s => [s.operationId, s.operationName])
-    ).entries()
-  );
+  const crossOpExtras = getCrossOperationExtras(profile);
+  const totalOperationsCount = profile.operations.length + crossOpExtras.length;
 
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>RunLog Intelligence Profile — ${esc(profile.name)}</title>
@@ -137,7 +186,7 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
   <div class="gen-time">Generated: ${generatedAt}</div>
 </div>
 <div class="stats-row">
-  <div class="stat-box"><div class="stat-num">${profile.operations.length + mentionedOnlyOps.length}</div><div class="stat-label">Operations</div></div>
+  <div class="stat-box"><div class="stat-num">${totalOperationsCount}</div><div class="stat-label">Operations</div></div>
   <div class="stat-box"><div class="stat-num">${profile.linkedSheets.length + profile.mentionedSheets.length}</div><div class="stat-label">Running Sheets</div></div>
   <div class="stat-box"><div class="stat-num">${profile.assocPersons.length + profile.assocVehicles.length + profile.assocLocations.length}</div><div class="stat-label">Associations</div></div>
   <div class="stat-box"><div class="stat-num">${profile.observationCount}</div><div class="stat-label">Observations</div></div>
@@ -154,10 +203,11 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 
   <div class="section">
     <div class="section-title">Operations</div>
-    <div class="ops-list">${profile.operations.map(o => `<span class="op-badge">${esc(o.name)}</span>`).join("")}${mentionedOnlyOps
+    ${totalOperationsCount > 1 ? `<p style="font-size:10px;font-weight:600;color:#92400e;background:#fef3c7;border:1px solid #fde68a;border-radius:4px;padding:6px 8px;margin-bottom:8px">Linked across ${totalOperationsCount} separate operations — worth checking for a cross-operation connection.</p>` : ""}
+    <div class="ops-list">${profile.operations.map(o => `<span class="op-badge">${esc(o.name)}</span>`).join("")}${crossOpExtras
       .map(
-        ([id, name]) =>
-          `<span class="op-badge" style="opacity:0.65;border-style:dashed;">${esc(name)} <span style="font-size:8px;text-transform:uppercase;">(mentioned)</span></span>`
+        op =>
+          `<span class="op-badge" style="background:#fef3c7 !important;color:#92400e !important;border-color:#fde68a">${esc(op.name)} <span style="font-size:8px;text-transform:uppercase">(${op.kind === "shared" ? `shared ${op.via}` : "mentioned"})</span></span>`
       )
       .join("")}</div>
   </div>
@@ -352,26 +402,14 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
   const historyFor = (field: string) =>
     fieldHistory.filter(h => h.fieldName === field);
 
-  // Operations this target has actually been mentioned in (via
-  // mentionedSheets — the same name-matched data backing "Also Mentioned
-  // In") but isn't formally linked to via the Registry's own operation
-  // links. Kept separate from profile.operations for the same reason
-  // mentionedSheets is kept separate from linkedSheets: "formally on this
-  // operation" and "seen active during this operation" are different claims.
-  const mentionedOnlyOps = profile
-    ? Array.from(
-        new Map(
-          profile.mentionedSheets
-            .filter(
-              s => !profile.operations.some(op => op.id === s.operationId)
-            )
-            .map(s => [
-              s.operationId,
-              { id: s.operationId, name: s.operationName },
-            ])
-        ).values()
-      )
-    : [];
+  // Operations this target reaches into without a formal Registry link —
+  // either named in that operation's observation text, or sharing a
+  // registered vehicle/address with a different target there. See
+  // getCrossOperationExtras.
+  const crossOpExtras = profile ? getCrossOperationExtras(profile) : [];
+  const totalOperationsCount = profile
+    ? profile.operations.length + crossOpExtras.length
+    : 0;
 
   function exportPdf() {
     if (!profile) return;
@@ -440,7 +478,7 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
               {[
                 {
                   label: "Operations",
-                  value: profile.operations.length + mentionedOnlyOps.length,
+                  value: totalOperationsCount,
                 },
                 {
                   label: "Running Sheets",
@@ -473,10 +511,16 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
 
           {/* Operations */}
           <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
-            <SectionHeading
-              label="Operations"
-              count={profile.operations.length}
-            />
+            <SectionHeading label="Operations" count={totalOperationsCount} />
+            {totalOperationsCount > 1 && (
+              <div className="flex items-start gap-2 mb-3 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800">
+                <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <p className="text-xs text-amber-800 dark:text-amber-300">
+                  Linked across {totalOperationsCount} separate operations —
+                  worth checking for a cross-operation connection.
+                </p>
+              </div>
+            )}
             <div className="flex flex-wrap gap-2">
               {profile.operations.map(op => (
                 <button
@@ -488,17 +532,21 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
                   {op.name}
                 </button>
               ))}
-              {mentionedOnlyOps.map(op => (
+              {crossOpExtras.map(op => (
                 <button
-                  key={`mentioned-${op.id}`}
+                  key={`cross-${op.id}`}
                   onClick={() => navigate(`/intelligence/operation/${op.id}`)}
-                  title="Not formally linked — this target was named in an observation on this operation"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-muted/20 text-muted-foreground border border-dashed border-border hover:bg-accent/10 transition-colors"
+                  title={
+                    op.kind === "shared"
+                      ? `Not formally linked — shares a registered ${op.via} (${op.sharedValue}) with a target on this operation`
+                      : "Not formally linked — this target was named in an observation on this operation"
+                  }
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 hover:bg-amber-100 transition-colors"
                 >
                   <Folder className="w-3 h-3" />
                   {op.name}
                   <span className="text-[9px] uppercase tracking-wide opacity-70">
-                    mentioned
+                    {op.kind === "shared" ? `shared ${op.via}` : "mentioned"}
                   </span>
                 </button>
               ))}

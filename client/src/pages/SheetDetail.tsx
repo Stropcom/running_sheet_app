@@ -3985,6 +3985,7 @@ export default function SheetDetail() {
                   ...extraVehicleFields,
                   ...wildFieldItems,
                   { label: "DEP", value: t.dep },
+                  { label: "ARR", value: t.arr },
                   // All shortcut-folder triggers as chips — only those with showInRs=true, exclude legacy 'D' chip
                   ...(shortcutsData ?? [])
                     .filter(

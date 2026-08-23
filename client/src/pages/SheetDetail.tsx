@@ -64,6 +64,7 @@ import {
   ChevronRight,
   Tag,
   User,
+  Car,
 } from "lucide-react";
 import {
   Select,
@@ -83,6 +84,8 @@ import { useObservationFocus } from "@/contexts/ObservationFocusContext";
 import {
   convertGoogleAddresses,
   extractShortAddress,
+  formatIntelVehicle,
+  expandIntelVehicleToFullForm,
 } from "@/lib/addressFormat";
 import {
   bracketCodeFromRegisteredName,
@@ -1788,6 +1791,32 @@ function detectMentionTrigger(
   return { word, wordStart };
 }
 
+// A WA vehicle registration is the one reliable, unambiguous identifier for
+// a vehicle — the description around it (colour, make, model) varies
+// between officers ("grey" vs "silver", model guessed vs unknown), but the
+// rego doesn't. So unlike the name trigger above, this fires on the rego
+// itself rather than trying to recognise the start of a description: a
+// token mixing letters and digits (a rego typed in full or mid-way through,
+// e.g. "1FCC987" or "1FCC98") wherever it appears in the sentence — which
+// naturally covers both "Vehicle 1FCC987 ..." and "...bearing WA
+// registration 1FCC987 ..." phrasing, since the trigger doesn't care what
+// precedes it.
+function detectVehicleMentionTrigger(
+  text: string,
+  cursorPos: number,
+  usedVehicleRegos: Set<string>
+): { word: string; wordStart: number } | null {
+  const textBefore = text.slice(0, cursorPos);
+  const wordMatch = textBefore.match(/([A-Za-z0-9][A-Za-z0-9-]*)$/);
+  if (!wordMatch) return null;
+  const word = wordMatch[1];
+  if (word.length < 3 || word.length > 8) return null;
+  if (!/[A-Za-z]/.test(word) || !/\d/.test(word)) return null;
+  const wordStart = cursorPos - word.length;
+  if (usedVehicleRegos.has(word.toUpperCase())) return null;
+  return { word, wordStart };
+}
+
 interface PersonMentionSuggestion {
   key: string;
   displayName: string;
@@ -1805,6 +1834,7 @@ function EditableCell({
   onSave,
   shortcuts,
   usedBracketCodes,
+  usedVehicleRegos,
 }: {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   value: string | null;
@@ -1816,6 +1846,9 @@ function EditableCell({
   /** Bracket codes already used elsewhere in this sheet — enables the
    * inline name-mention autocomplete when provided (multiline only). */
   usedBracketCodes?: Set<string>;
+  /** Vehicle regos already used elsewhere in this sheet — enables the
+   * inline vehicle-mention autocomplete when provided (multiline only). */
+  usedVehicleRegos?: Set<string>;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value ?? "");
@@ -1858,11 +1891,75 @@ function EditableCell({
     if (mentionDebounceRef.current) clearTimeout(mentionDebounceRef.current);
   }
 
+  // ── Inline vehicle-mention autocomplete ─────────────────────────────────
+  // Mirrors the person-mention block above, but triggers on a rego-shaped
+  // token instead of a capitalised name (see detectVehicleMentionTrigger),
+  // and searches the same Intelligence entity index the Target Registry's
+  // vehicle autocomplete already uses (trpc.intelligence.searchEntities).
+  const [vehicleMentionWord, setVehicleMentionWord] = useState<{
+    word: string;
+    wordStart: number;
+    wordEnd: number;
+  } | null>(null);
+  const [vehicleMentionAnchor, setVehicleMentionAnchor] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
+  const [vehicleMentionActiveIndex, setVehicleMentionActiveIndex] =
+    useState(0);
+  const vehicleMentionDebounceRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const [vehicleMentionQuery, setVehicleMentionQuery] = useState("");
+  const { data: vehicleMentionResults } =
+    trpc.intelligence.searchEntities.useQuery(
+      { type: "vehicle", query: vehicleMentionQuery, excludeTargets: false },
+      { enabled: vehicleMentionQuery.trim().length >= 2 }
+    );
+  const vehicleMentionSuggestions = (
+    vehicleMentionQuery.trim().length >= 2 ? (vehicleMentionResults ?? []) : []
+  ) as { key: string; label: string; rowCount: number }[];
+
+  function closeVehicleMentionDropdown() {
+    setVehicleMentionWord(null);
+    setVehicleMentionAnchor(null);
+    setVehicleMentionQuery("");
+    setVehicleMentionActiveIndex(0);
+    if (vehicleMentionDebounceRef.current)
+      clearTimeout(vehicleMentionDebounceRef.current);
+  }
+
   function handleObservationInput(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const val = e.target.value;
     setDraft(val);
-    if (!usedBracketCodes) return;
     const cursorPos = e.target.selectionStart ?? val.length;
+
+    if (usedVehicleRegos) {
+      const vehicleTrigger = detectVehicleMentionTrigger(
+        val,
+        cursorPos,
+        usedVehicleRegos
+      );
+      if (vehicleTrigger) {
+        closeMentionDropdown();
+        setVehicleMentionWord({
+          word: vehicleTrigger.word,
+          wordStart: vehicleTrigger.wordStart,
+          wordEnd: cursorPos,
+        });
+        setVehicleMentionActiveIndex(0);
+        setVehicleMentionAnchor(getCaretPixelPosition(e.target, cursorPos));
+        if (vehicleMentionDebounceRef.current)
+          clearTimeout(vehicleMentionDebounceRef.current);
+        vehicleMentionDebounceRef.current = setTimeout(() => {
+          setVehicleMentionQuery(vehicleTrigger.word);
+        }, 250);
+        return;
+      }
+      closeVehicleMentionDropdown();
+    }
+
+    if (!usedBracketCodes) return;
     const trigger = detectMentionTrigger(val, cursorPos, usedBracketCodes);
     if (!trigger) {
       closeMentionDropdown();
@@ -1902,6 +1999,28 @@ function EditableCell({
     }
     closeMentionDropdown();
     const newPos = mentionWord.wordStart + insertText.length;
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(newPos, newPos);
+    });
+  }
+
+  function selectVehicleMentionSuggestion(
+    s: { key: string; label: string; rowCount: number },
+    textarea: HTMLTextAreaElement
+  ) {
+    if (!vehicleMentionWord) return;
+    // s.label is the rego (Intelligence's stored short-form for a vehicle);
+    // expand it back to the full RS narrative convention, same as picking a
+    // vehicle in the Target Registry's autocomplete does.
+    const insertText = expandIntelVehicleToFullForm(s.label);
+    const newDraft =
+      draft.slice(0, vehicleMentionWord.wordStart) +
+      insertText +
+      draft.slice(vehicleMentionWord.wordEnd);
+    setDraft(newDraft);
+    closeVehicleMentionDropdown();
+    const newPos = vehicleMentionWord.wordStart + insertText.length;
     requestAnimationFrame(() => {
       textarea.focus();
       textarea.setSelectionRange(newPos, newPos);
@@ -1989,6 +2108,7 @@ function EditableCell({
               // left for some other reason, in which case the dropdown
               // should just close rather than block the save.
               closeMentionDropdown();
+              closeVehicleMentionDropdown();
               notifyObservationBlur();
               const conv = convertGoogleAddresses(draft);
               if (conv !== draft) {
@@ -1999,6 +2119,37 @@ function EditableCell({
               }
             }}
             onKeyDown={e => {
+              if (vehicleMentionWord && vehicleMentionSuggestions.length > 0) {
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setVehicleMentionActiveIndex(
+                    i => (i + 1) % vehicleMentionSuggestions.length
+                  );
+                  return;
+                }
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setVehicleMentionActiveIndex(
+                    i =>
+                      (i - 1 + vehicleMentionSuggestions.length) %
+                      vehicleMentionSuggestions.length
+                  );
+                  return;
+                }
+                if (e.key === "Enter" || e.key === "Tab") {
+                  e.preventDefault();
+                  selectVehicleMentionSuggestion(
+                    vehicleMentionSuggestions[vehicleMentionActiveIndex],
+                    e.currentTarget
+                  );
+                  return;
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  closeVehicleMentionDropdown();
+                  return;
+                }
+              }
               if (mentionWord && mentionSuggestions.length > 0) {
                 if (e.key === "ArrowDown") {
                   e.preventDefault();
@@ -2080,6 +2231,49 @@ function EditableCell({
               ))}
             </div>
           )}
+          {vehicleMentionWord &&
+            vehicleMentionAnchor &&
+            vehicleMentionSuggestions.length > 0 && (
+              <div
+                className="fixed z-50 w-72 rounded-lg border border-border bg-popover shadow-lg overflow-hidden"
+                style={{
+                  top: vehicleMentionAnchor.top,
+                  left: vehicleMentionAnchor.left,
+                  maxHeight: "220px",
+                  overflowY: "auto",
+                }}
+              >
+                {vehicleMentionSuggestions.map((s, i) => (
+                  <button
+                    key={s.key}
+                    type="button"
+                    className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-2 border-b border-border/50 last:border-0 transition-colors ${
+                      i === vehicleMentionActiveIndex
+                        ? "bg-accent text-accent-foreground"
+                        : "text-popover-foreground hover:bg-accent hover:text-accent-foreground"
+                    }`}
+                    onMouseEnter={() => setVehicleMentionActiveIndex(i)}
+                    onMouseDown={e => {
+                      // mousedown fires before the textarea's blur, so this
+                      // beats the onBlur close/save above.
+                      e.preventDefault();
+                      if (textareaRef.current)
+                        selectVehicleMentionSuggestion(s, textareaRef.current);
+                    }}
+                  >
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <Car className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      <span className="truncate">
+                        {formatIntelVehicle(s.label)}
+                      </span>
+                    </span>
+                    <span className="text-xs text-muted-foreground shrink-0">
+                      {s.rowCount} obs.
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
         </>
       );
     }
@@ -3347,6 +3541,24 @@ export default function SheetDetail() {
       }
     }
     return codes;
+  }, [rows]);
+
+  // Vehicle regos already introduced somewhere in this sheet — same idea as
+  // usedBracketCodes above, but for the vehicle-mention autocomplete (see
+  // detectVehicleMentionTrigger): a rego already established here shouldn't
+  // keep re-triggering the suggestion dropdown on every later mention.
+  const usedVehicleRegos = useMemo(() => {
+    const regos = new Set<string>();
+    const regoRe = /\(([0-9][A-Za-z0-9]{2,7})\)/g;
+    for (const r of rows ?? []) {
+      if (!r.observation) continue;
+      let m: RegExpExecArray | null;
+      regoRe.lastIndex = 0;
+      while ((m = regoRe.exec(r.observation)) !== null) {
+        regos.add(m[1].trim().toUpperCase());
+      }
+    }
+    return regos;
   }, [rows]);
 
   // Edit roster state
@@ -4721,6 +4933,7 @@ export default function SheetDetail() {
                                   }}
                                   shortcuts={shortcutMap}
                                   usedBracketCodes={usedBracketCodes}
+                                  usedVehicleRegos={usedVehicleRegos}
                                 />
                               )}
                               <ObservationAttachments

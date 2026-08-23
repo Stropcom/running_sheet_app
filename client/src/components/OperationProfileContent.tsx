@@ -4,7 +4,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
-import { FileDown, User, FileText, ChevronRight } from "lucide-react";
+import { FileDown, User, FileText, ChevronRight, AlertTriangle, Folder } from "lucide-react";
 import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 import { buildPhotoGridHtml, buildEntityListWithPhotosHtml, type RowAttachmentLike } from "@/lib/attachmentBanner";
@@ -28,6 +28,11 @@ interface IntelOperationProfile {
   promisNumber: string | null; imsNumber: string | null; investigationUnit: string | null;
   linkedSheets: Array<{ id: number; title: string; targetId: number | null; targetName: string | null }>;
   targets: OperationTarget[];
+  crossOperationLinks: Array<{
+    targetId: number; targetName: string;
+    otherOperationId: number; otherOperationName: string;
+    via: "vehicle" | "address"; sharedValue: string;
+  }>;
 }
 
 // ─── PDF export ────────────────────────────────────────────────────────────
@@ -67,6 +72,10 @@ function buildOperationProfileHtml(profile: IntelOperationProfile) {
   <div class="stat-box"><div class="stat-num">${totalAssoc}</div><div class="stat-label">Total Associations</div></div>
 </div>
 <div class="content">
+  ${profile.crossOperationLinks.length ? `<div style="margin-bottom:16px"><div class="section-title">Cross-Operation Links</div>
+    <p style="font-size:10px;font-weight:600;color:#92400e;background:#fef3c7;border:1px solid #fde68a;border-radius:4px;padding:6px 8px;margin-bottom:8px">${profile.crossOperationLinks.length} target${profile.crossOperationLinks.length !== 1 ? "s" : ""} in this operation also reach into another operation — worth checking for a connection.</p>
+    ${profile.crossOperationLinks.map(l => `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}"><strong>${esc(l.targetName)}</strong> shares a registered ${esc(l.via)} (${esc(l.sharedValue)}) with a target on <strong>${esc(l.otherOperationName)}</strong></p>`).join("")}
+  </div>` : ""}
   <div class="section-title">Target Intelligence Profiles</div>
   ${targetsHtml}
   <div class="footer"><span>RunLog — Operation Intelligence Profile</span><span>SENSITIVE — FOR OFFICIAL USE ONLY — ${generatedAt}</span></div>
@@ -153,6 +162,41 @@ export function OperationProfileContent({ operationId }: { operationId: number }
               ))}
             </div>
           </div>
+
+          {typedProfile.crossOperationLinks.length > 0 && (
+            <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
+              <div className="flex items-start gap-2 mb-3 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800">
+                <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <p className="text-xs text-amber-800 dark:text-amber-300">
+                  {typedProfile.crossOperationLinks.length} target
+                  {typedProfile.crossOperationLinks.length !== 1 ? "s" : ""} in
+                  this operation also reach into another operation — worth
+                  checking for a cross-operation connection.
+                </p>
+              </div>
+              <div className="space-y-1">
+                {typedProfile.crossOperationLinks.map(l => (
+                  <button
+                    key={`${l.targetId}-${l.otherOperationId}-${l.via}`}
+                    onClick={() => navigate(`/intelligence/target/${l.targetId}`)}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border/60 bg-muted/20 hover:bg-accent/10 transition-colors text-left"
+                  >
+                    <User className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                    <span className="text-xs font-medium text-foreground flex-1 truncate">
+                      {l.targetName}
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-xs text-amber-700 dark:text-amber-400 shrink-0">
+                      <Folder className="w-3 h-3" />
+                      {l.otherOperationName}
+                      <span className="text-[9px] uppercase tracking-wide opacity-70">
+                        shared {l.via}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Target profiles */}
           <div className="space-y-3">

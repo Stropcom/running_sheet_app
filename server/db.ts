@@ -10726,6 +10726,54 @@ export async function getIntelMappingLocations(
     }
   }
 
+  // Step 1b: Register each relevant target's associates' own registered
+  // addresses too — same idea as Step 1, but an associate isn't a target
+  // (no operationTargetLinks row of its own), so it can never appear via
+  // Step 1's target loop. Without this, an associate's HBF/HB only ever
+  // shows up on the map if that address text also happens to get mined
+  // from an observation row — adding an associate to the Target Registry
+  // alone produced no pin at all. Always purple/"observation" (never
+  // upgraded to target_address — that colour is reserved for the target's
+  // own home address), listed by name in assocPersons like any other
+  // co-occurring person rather than linkedTargets, since an associate has
+  // no targetId of its own to key that array on.
+  if (relevantTargets.length > 0) {
+    const relevantTargetIds = relevantTargets.map(t => t.id);
+    const relevantAssociates = await db
+      .select({
+        name: associates.name,
+        hbf: associates.hbf,
+        hb: associates.hb,
+        extraAddresses: associates.extraAddresses,
+      })
+      .from(associates)
+      .where(
+        and(
+          inArray(associates.targetId, relevantTargetIds),
+          isNull(associates.deletedAt)
+        )
+      );
+    for (const a of relevantAssociates) {
+      const addrFields = [a.hbf?.trim() || a.hb?.trim() || null].filter(
+        Boolean
+      ) as string[];
+      let extraAddrs: { full?: string }[] = [];
+      try {
+        extraAddrs = a.extraAddresses ? JSON.parse(a.extraAddresses) : [];
+      } catch {
+        extraAddrs = [];
+      }
+      for (const ea of extraAddrs) {
+        const addr = ea.full?.trim();
+        if (addr) addrFields.push(addr);
+      }
+      for (const addr of addrFields) {
+        const loc = ensureLocation(addr);
+        if (!loc.assocPersons.includes(a.name)) loc.assocPersons.push(a.name);
+      }
+    }
+  }
+
   // Step 2: Use entity co-occurrence to populate observation locations with persons/vehicles
   // Get all location entities (address + business) from filtered set
   const locationEntities = filteredEntities.filter(

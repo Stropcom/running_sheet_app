@@ -418,9 +418,9 @@ function TargetCard({
     setVehicleMode("edit");
     setDirty(true);
   };
-  const startNewVehicle = () => {
-    setVehicleMode("new");
+  const removePrimaryVehicle = () => {
     setVehicle(EMPTY_VEHICLE_PARTS);
+    setVehicleMode("edit");
     setDirty(true);
   };
   const cancelVehicleEdit = () => {
@@ -439,17 +439,6 @@ function TargetCard({
     setExtraAddressModes(m => ({ ...m, [id]: "edit" }));
     setDirty(true);
   };
-  const startNewExtraAddress = (id: string) => {
-    setExtraAddressModes(m => ({ ...m, [id]: "new" }));
-    setExtraAddresses(v =>
-      v.map(ea =>
-        ea.id === id
-          ? { ...EMPTY_ADDRESS_PARTS, id, label: ea.label, full: "", short: "" }
-          : ea
-      )
-    );
-    setDirty(true);
-  };
   const cancelExtraAddressEdit = (id: string) => {
     const original = parseExtraAddresses(target.extraAddresses).find(
       ea => ea.id === id
@@ -465,15 +454,6 @@ function TargetCard({
 
   const startEditExtraVehicle = (id: string) => {
     setExtraVehicleModes(m => ({ ...m, [id]: "edit" }));
-    setDirty(true);
-  };
-  const startNewExtraVehicle = (id: string) => {
-    setExtraVehicleModes(m => ({ ...m, [id]: "new" }));
-    setExtraVehicles(v =>
-      v.map(ev =>
-        ev.id === id ? { ...EMPTY_VEHICLE_PARTS, id, full: "", short: "" } : ev
-      )
-    );
     setDirty(true);
   };
   const cancelExtraVehicleEdit = (id: string) => {
@@ -852,45 +832,26 @@ function TargetCard({
                     </Button>
                   </div>
                   {mode === "locked" ? (
-                    <div className="flex flex-col">
-                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
-                        <div className="flex-1">
-                          {ea.label && (
-                            <p className="text-xs text-muted-foreground">
-                              {ea.label}
-                            </p>
-                          )}
-                          <p className="text-sm text-foreground">{ea.full}</p>
-                        </div>
-                        <div className="flex gap-1.5 flex-wrap sm:shrink-0">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="gap-1.5 text-xs h-7"
-                            onClick={() => startEditExtraAddress(ea.id)}
-                          >
-                            <Pencil className="w-3 h-3" /> Edit current
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="gap-1.5 text-xs h-7"
-                            onClick={() => startNewExtraAddress(ea.id)}
-                          >
-                            <Plus className="w-3 h-3" /> Add new
-                          </Button>
-                        </div>
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
+                      <div className="flex-1">
+                        {ea.label && (
+                          <p className="text-xs text-muted-foreground">
+                            {ea.label}
+                          </p>
+                        )}
+                        <p className="text-sm text-foreground">{ea.full}</p>
                       </div>
-                      <EditVsNewNote kind="address" />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 text-xs h-7 sm:shrink-0"
+                        onClick={() => startEditExtraAddress(ea.id)}
+                      >
+                        <Pencil className="w-3 h-3" /> Edit
+                      </Button>
                     </div>
                   ) : (
                     <div className="flex flex-col gap-2">
-                      {mode === "new" && (
-                        <p className="text-xs text-amber-600 dark:text-amber-400 italic">
-                          Recording a new address for this entry — the current
-                          one is kept as "Previous" once you save.
-                        </p>
-                      )}
                       <TargetAddressFields
                         value={ea}
                         onChange={v => updateAddress(i, v)}
@@ -926,40 +887,31 @@ function TargetCard({
                 <Car className="w-3 h-3" /> Vehicle 1
               </p>
               {vehicleMode === "locked" ? (
-                <div className="flex flex-col">
-                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
-                    <p className="text-sm text-foreground flex-1">
-                      {target.v1f ?? target.v1}
-                    </p>
-                    <div className="flex gap-1.5 flex-wrap sm:shrink-0">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1.5 text-xs h-7"
-                        onClick={startEditVehicle}
-                      >
-                        <Pencil className="w-3 h-3" /> Edit current V1
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1.5 text-xs h-7"
-                        onClick={startNewVehicle}
-                      >
-                        <Plus className="w-3 h-3" /> Add new V1
-                      </Button>
-                    </div>
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
+                  <p className="text-sm text-foreground flex-1">
+                    {target.v1f ?? target.v1}
+                  </p>
+                  <div className="flex gap-1.5 flex-wrap sm:shrink-0">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5 text-xs h-7"
+                      onClick={startEditVehicle}
+                    >
+                      <Pencil className="w-3 h-3" /> Edit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5 text-xs h-7 text-destructive hover:text-destructive"
+                      onClick={removePrimaryVehicle}
+                    >
+                      <Trash2 className="w-3 h-3" /> Remove
+                    </Button>
                   </div>
-                  <EditVsNewNote kind="vehicle" />
                 </div>
               ) : (
                 <div className="flex flex-col gap-2">
-                  {vehicleMode === "new" && (
-                    <p className="text-xs text-amber-600 dark:text-amber-400 italic">
-                      Recording a new Vehicle 1 — the current one is kept as
-                      "Previous" once you save.
-                    </p>
-                  )}
                   <TargetVehicleFields
                     value={vehicle}
                     onChange={v => mark(() => setVehicle(v))}
@@ -1000,40 +952,21 @@ function TargetCard({
                     </Button>
                   </div>
                   {mode === "locked" ? (
-                    <div className="flex flex-col">
-                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
-                        <p className="text-sm text-foreground flex-1">
-                          {ev.full}
-                        </p>
-                        <div className="flex gap-1.5 flex-wrap sm:shrink-0">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="gap-1.5 text-xs h-7"
-                            onClick={() => startEditExtraVehicle(ev.id)}
-                          >
-                            <Pencil className="w-3 h-3" /> Edit current
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="gap-1.5 text-xs h-7"
-                            onClick={() => startNewExtraVehicle(ev.id)}
-                          >
-                            <Plus className="w-3 h-3" /> Add new
-                          </Button>
-                        </div>
-                      </div>
-                      <EditVsNewNote kind="vehicle" />
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
+                      <p className="text-sm text-foreground flex-1">
+                        {ev.full}
+                      </p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 text-xs h-7 sm:shrink-0"
+                        onClick={() => startEditExtraVehicle(ev.id)}
+                      >
+                        <Pencil className="w-3 h-3" /> Edit
+                      </Button>
                     </div>
                   ) : (
                     <div className="flex flex-col gap-2">
-                      {mode === "new" && (
-                        <p className="text-xs text-amber-600 dark:text-amber-400 italic">
-                          Recording a new vehicle for this entry — the current
-                          one is kept as "Previous" once you save.
-                        </p>
-                      )}
                       <TargetVehicleFields
                         value={ev}
                         onChange={v => updateVehicle(i, v)}
@@ -1235,11 +1168,22 @@ function AssociateCard({
   // just Edit + Remove, no "Add new" — associates have no
   // target_field_history equivalent to archive a "Previous" value into, so
   // there's nothing for a second button to do.
+  //
+  // Checked against the composed hbf/hb and v1f/v1 fields first, but falls
+  // back to composing from the structured columns (address/vehicle state,
+  // already initialized from those columns above) for records where the
+  // structured fields were saved but the composed text wasn't — otherwise
+  // those records show as unlocked with no lock button to correct, despite
+  // clearly having a value.
   const [addressMode, setAddressMode] = useState<"locked" | "edit">(
-    associate?.hbf || associate?.hb ? "locked" : "edit"
+    associate?.hbf || associate?.hb || composeAddress(address).full
+      ? "locked"
+      : "edit"
   );
   const [vehicleMode, setVehicleMode] = useState<"locked" | "edit">(
-    associate?.v1f || associate?.v1 ? "locked" : "edit"
+    associate?.v1f || associate?.v1 || composeVehicle(vehicle).full
+      ? "locked"
+      : "edit"
   );
   const [extraAddressModes, setExtraAddressModes] = useState<
     Record<string, "locked" | "edit" | "new">
@@ -1484,7 +1428,9 @@ function AssociateCard({
             {addressMode === "locked" ? (
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
                 <p className="text-sm text-foreground flex-1">
-                  {associate?.hbf ?? associate?.hb}
+                  {associate?.hbf ??
+                    associate?.hb ??
+                    composeAddress(address).full}
                 </p>
                 <div className="flex gap-1.5 flex-wrap sm:shrink-0">
                   <Button
@@ -1511,7 +1457,9 @@ function AssociateCard({
                   value={address}
                   onChange={v => mark(() => setAddress(v))}
                 />
-                {(associate?.hbf || associate?.hb) && (
+                {(associate?.hbf ||
+                  associate?.hb ||
+                  composeAddress(address).full) && (
                   <Button
                     size="sm"
                     variant="ghost"
@@ -1591,7 +1539,9 @@ function AssociateCard({
             {vehicleMode === "locked" ? (
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
                 <p className="text-sm text-foreground flex-1">
-                  {associate?.v1f ?? associate?.v1}
+                  {associate?.v1f ??
+                    associate?.v1 ??
+                    composeVehicle(vehicle).full}
                 </p>
                 <div className="flex gap-1.5 flex-wrap sm:shrink-0">
                   <Button
@@ -1618,7 +1568,9 @@ function AssociateCard({
                   value={vehicle}
                   onChange={v => mark(() => setVehicle(v))}
                 />
-                {(associate?.v1f || associate?.v1) && (
+                {(associate?.v1f ||
+                  associate?.v1 ||
+                  composeVehicle(vehicle).full) && (
                   <Button
                     size="sm"
                     variant="ghost"

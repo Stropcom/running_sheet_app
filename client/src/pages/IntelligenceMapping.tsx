@@ -1589,13 +1589,21 @@ export default function IntelligenceMapping() {
   // Filter by selected operations so markers are scoped to the active operation.
   // When no operation is selected in Map Settings but an RS pane operation is active,
   // include rsSelectedOpId so custom markers for that operation are visible.
-  // Pass empty array only when truly no operation context exists.
-  const effectiveOpIdsForMarkers = useMemo(() => {
+  // Pass empty array only when the user explicitly cleared the ops selector
+  // (that's a deliberate "show nothing" per getCustomMarkers). When there's
+  // truly no operation context at all, pass undefined — not [] — so the
+  // server takes its "all ops" branch, which is the only one that includes
+  // markers with no operation attached. [] and undefined are NOT
+  // interchangeable here: getCustomMarkers treats [] as "nothing selected,
+  // show nothing" and only shows unscoped markers when operationIds is
+  // omitted entirely.
+  const effectiveOpIdsForMarkers = useMemo((): number[] | undefined => {
     if (selectedOpIds.length > 0) return selectedOpIds;
     // If user explicitly cleared the selection, show nothing (don't fall back)
     if (opsExplicitlySet) return [];
-    return [];
-  }, [selectedOpIds, opsExplicitlySet]);
+    if (rsSelectedOpId !== null) return [rsSelectedOpId];
+    return undefined;
+  }, [selectedOpIds, opsExplicitlySet, rsSelectedOpId]);
   const { data: customMarkers, refetch: refetchCustomMarkers } =
     trpc.customMarker.list.useQuery(
       { operationIds: effectiveOpIdsForMarkers },
@@ -4954,7 +4962,10 @@ export default function IntelligenceMapping() {
                     setCmPersonInput("");
                     setCmVehicleInput("");
                     setCmOpId(
-                      selectedOpIds.length === 1 ? selectedOpIds[0] : null
+                      effectiveOpIdsForMarkers &&
+                        effectiveOpIdsForMarkers.length === 1
+                        ? effectiveOpIdsForMarkers[0]
+                        : null
                     );
                     setPendingLatLng({ lat: poiTap.lat, lng: poiTap.lng });
                     setPoiTap(null);
@@ -5047,7 +5058,10 @@ export default function IntelligenceMapping() {
                     setCmPersonInput("");
                     setCmVehicleInput("");
                     setCmOpId(
-                      selectedOpIds.length === 1 ? selectedOpIds[0] : null
+                      effectiveOpIdsForMarkers &&
+                        effectiveOpIdsForMarkers.length === 1
+                        ? effectiveOpIdsForMarkers[0]
+                        : null
                     );
                     setPendingLatLng({
                       lat: actionChooser.lat,
@@ -5913,12 +5927,14 @@ export default function IntelligenceMapping() {
                               setRsInlineText(next);
                               resetInlineTimer();
 
-                              const cursorPos = e.target.selectionStart ?? next.length;
-                              const vehicleTrigger = detectVehicleMentionTrigger(
-                                next,
-                                cursorPos,
-                                rsUsedVehicleRegos
-                              );
+                              const cursorPos =
+                                e.target.selectionStart ?? next.length;
+                              const vehicleTrigger =
+                                detectVehicleMentionTrigger(
+                                  next,
+                                  cursorPos,
+                                  rsUsedVehicleRegos
+                                );
                               if (vehicleTrigger) {
                                 closeRsMentionDropdown();
                                 setRsVehicleMentionWord({
@@ -5931,10 +5947,15 @@ export default function IntelligenceMapping() {
                                   getCaretPixelPosition(e.target, cursorPos)
                                 );
                                 if (rsVehicleMentionDebounceRef.current)
-                                  clearTimeout(rsVehicleMentionDebounceRef.current);
-                                rsVehicleMentionDebounceRef.current = setTimeout(() => {
-                                  setRsVehicleMentionQuery(vehicleTrigger.word);
-                                }, 250);
+                                  clearTimeout(
+                                    rsVehicleMentionDebounceRef.current
+                                  );
+                                rsVehicleMentionDebounceRef.current =
+                                  setTimeout(() => {
+                                    setRsVehicleMentionQuery(
+                                      vehicleTrigger.word
+                                    );
+                                  }, 250);
                               } else {
                                 closeRsVehicleMentionDropdown();
                                 const trigger = detectMentionTrigger(
@@ -5956,9 +5977,12 @@ export default function IntelligenceMapping() {
                                   );
                                   if (rsMentionDebounceRef.current)
                                     clearTimeout(rsMentionDebounceRef.current);
-                                  rsMentionDebounceRef.current = setTimeout(() => {
-                                    setRsMentionQuery(trigger.word);
-                                  }, 250);
+                                  rsMentionDebounceRef.current = setTimeout(
+                                    () => {
+                                      setRsMentionQuery(trigger.word);
+                                    },
+                                    250
+                                  );
                                 }
                               }
                             }}
@@ -5975,7 +5999,9 @@ export default function IntelligenceMapping() {
                                 if (e.key === "ArrowDown") {
                                   e.preventDefault();
                                   setRsVehicleMentionActiveIndex(
-                                    i => (i + 1) % rsVehicleMentionSuggestions.length
+                                    i =>
+                                      (i + 1) %
+                                      rsVehicleMentionSuggestions.length
                                   );
                                   return;
                                 }
@@ -5983,7 +6009,9 @@ export default function IntelligenceMapping() {
                                   e.preventDefault();
                                   setRsVehicleMentionActiveIndex(
                                     i =>
-                                      (i - 1 + rsVehicleMentionSuggestions.length) %
+                                      (i -
+                                        1 +
+                                        rsVehicleMentionSuggestions.length) %
                                       rsVehicleMentionSuggestions.length
                                   );
                                   return;
@@ -6004,7 +6032,10 @@ export default function IntelligenceMapping() {
                                   return;
                                 }
                               }
-                              if (rsMentionWord && rsMentionSuggestions.length > 0) {
+                              if (
+                                rsMentionWord &&
+                                rsMentionSuggestions.length > 0
+                              ) {
                                 if (e.key === "ArrowDown") {
                                   e.preventDefault();
                                   setRsMentionActiveIndex(
@@ -6096,7 +6127,9 @@ export default function IntelligenceMapping() {
                                         ? "bg-accent text-accent-foreground"
                                         : "text-popover-foreground hover:bg-accent hover:text-accent-foreground"
                                     }`}
-                                    onMouseEnter={() => setRsMentionActiveIndex(i)}
+                                    onMouseEnter={() =>
+                                      setRsMentionActiveIndex(i)
+                                    }
                                     onMouseDown={e => {
                                       e.preventDefault();
                                       if (rsInlineInputRef.current)
@@ -6517,9 +6550,10 @@ export default function IntelligenceMapping() {
                               // bracket short-form, which is what Intelligence
                               // relies on to register the location) — every
                               // later mention just uses the short form.
-                              const arriveAddr = rsAddressMentionedData?.mentioned
-                                ? shortAddr
-                                : mapQeAddress;
+                              const arriveAddr =
+                                rsAddressMentionedData?.mentioned
+                                  ? shortAddr
+                                  : mapQeAddress;
                               return (
                                 <div className="flex flex-col gap-1 md:gap-1.5">
                                   <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-amber-500/70">

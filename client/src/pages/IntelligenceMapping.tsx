@@ -31,7 +31,7 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { MapView } from "@/components/Map";
-import { StosecMapOverlay } from "@/components/StosecMapOverlay";
+import { SmeacMapOverlay } from "@/components/SmeacMapOverlay";
 import { TargetProfileContent } from "@/components/TargetProfileContent";
 import { OperationProfileContent } from "@/components/OperationProfileContent";
 // The Images page's own folder/gallery levels, reused verbatim so the pane and
@@ -794,15 +794,15 @@ export default function IntelligenceMapping() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
 
-  // STOSEC briefing overlay — opened via ?stosec=<id>, e.g. from the Post
+  // SMEAC briefing overlay — opened via ?smeac=<id>, e.g. from the Post
   // notification. Purely additive: doesn't touch any map/marker state below.
   const search = useSearch();
-  const stosecId = (() => {
-    const raw = new URLSearchParams(search).get("stosec");
+  const smeacId = (() => {
+    const raw = new URLSearchParams(search).get("smeac");
     const parsed = raw ? parseInt(raw, 10) : NaN;
     return Number.isFinite(parsed) ? parsed : null;
   })();
-  const closeStosecOverlay = () => setLocation("/intelligence/mapping");
+  const closeSmeacOverlay = () => setLocation("/intelligence/mapping");
 
   // Filter state — persisted in localStorage
   const [selectedOpIds, setSelectedOpIds] = useState<number[]>(() => {
@@ -3423,14 +3423,14 @@ export default function IntelligenceMapping() {
       <div className="relative flex w-full h-full overflow-hidden">
         {/* ── Map Area ── */}
         <div className="flex-1 relative" onClick={handleMapAreaClick}>
-          {/* STOSEC briefing overlay — docked over the map, not a separate
+          {/* SMEAC briefing overlay — docked over the map, not a separate
             page, so the live map stays visible/usable underneath. Inserted
             first (position:absolute ignores DOM order) with a z-index above
             the map's own floating controls so it always paints on top. */}
-          {stosecId && (
-            <StosecMapOverlay
-              briefingId={stosecId}
-              onClose={closeStosecOverlay}
+          {smeacId && (
+            <SmeacMapOverlay
+              briefingId={smeacId}
+              onClose={closeSmeacOverlay}
             />
           )}
 

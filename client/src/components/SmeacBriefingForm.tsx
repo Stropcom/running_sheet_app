@@ -1,5 +1,5 @@
 /**
- * The STOSEC Briefing create/edit form — used for a brand-new draft (no
+ * The SMEAC Briefing create/edit form — used for a brand-new draft (no
  * briefingId), a not-yet-posted draft (briefingId set, status "draft"), and
  * re-editing an already-posted briefing (briefingId set, status "posted",
  * reached via the /edit route). Editing a posted briefing never re-notifies
@@ -82,12 +82,12 @@ const ACCOUTREMENT_OPTIONS = [
 ];
 const COVERT_ID_OPTIONS = ["Hat", "Beanie", "Gaiter/snood", "Jacket"];
 
-export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
+export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
 
   const isEdit = briefingId != null;
-  const existing = trpc.stosecBriefing.getById.useQuery(
+  const existing = trpc.smeacBriefing.getById.useQuery(
     { id: briefingId! },
     { enabled: isEdit }
   );
@@ -206,7 +206,7 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
     if (isEdit || autoRosterAppliedRef.current) return;
     if (!sheetId || teamSlots.length > 0) return;
     autoRosterAppliedRef.current = true;
-    utils.stosecBriefing.getRosterPrefill
+    utils.smeacBriefing.getRosterPrefill
       .fetch({ sheetId })
       .then(slots => {
         if (slots.length > 0) setTeamSlots(slots);
@@ -264,9 +264,9 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
     });
   });
 
-  const createMutation = trpc.stosecBriefing.create.useMutation();
-  const updateMutation = trpc.stosecBriefing.update.useMutation();
-  const postMutation = trpc.stosecBriefing.post.useMutation();
+  const createMutation = trpc.smeacBriefing.create.useMutation();
+  const updateMutation = trpc.smeacBriefing.update.useMutation();
+  const postMutation = trpc.smeacBriefing.post.useMutation();
 
   const buildPayload = () => ({
     operationId: operationId!,
@@ -315,15 +315,15 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
         });
         if (isPosted) {
           toast.success("Changes saved");
-          setLocation(`/administration/stosec/${briefingId}`);
+          setLocation(`/administration/smeac/${briefingId}`);
         } else {
           toast.success("Draft saved");
-          utils.stosecBriefing.getById.invalidate({ id: briefingId! });
+          utils.smeacBriefing.getById.invalidate({ id: briefingId! });
         }
       } else {
         const { id } = await createMutation.mutateAsync(buildPayload());
         toast.success("Draft saved");
-        setLocation(`/administration/stosec/${id}`);
+        setLocation(`/administration/smeac/${id}`);
       }
     } catch (e: any) {
       toast.error(e.message ?? "Failed to save");
@@ -353,7 +353,7 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
       toast.success(
         `${isPosted ? "Re-posted" : "Posted"} — notified ${result.notified} users`
       );
-      setLocation(`/administration/stosec/${id}`);
+      setLocation(`/administration/smeac/${id}`);
     } catch (e: any) {
       toast.error(e.message ?? "Failed to post");
     } finally {
@@ -390,7 +390,7 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
         <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
           <span>Administration</span>
           <span>/</span>
-          <span>STOSEC Briefings</span>
+          <span>SMEAC Briefings</span>
           <span>/</span>
           <span className="text-foreground font-medium">
             {isPosted ? "Edit" : isEdit ? "Edit draft" : "New"}
@@ -399,10 +399,10 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
         <div className="flex items-center gap-3 flex-wrap">
           <h1 className="text-xl font-bold">
             {isPosted
-              ? "Edit STOSEC Briefing"
+              ? "Edit SMEAC Briefing"
               : isEdit
-                ? "STOSEC Briefing (draft)"
-                : "New STOSEC Briefing"}
+                ? "SMEAC Briefing (draft)"
+                : "New SMEAC Briefing"}
           </h1>
           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-amber-500/10 text-amber-600 border border-amber-500/30">
             <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
@@ -799,7 +799,7 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
             <button
               onClick={() => {
                 if (!sheetId) return;
-                utils.stosecBriefing.getRosterPrefill
+                utils.smeacBriefing.getRosterPrefill
                   .fetch({ sheetId })
                   .then(slots => setTeamSlots(slots))
                   .catch(() => toast.error("Couldn't load roster"));
@@ -1128,7 +1128,7 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
             ) : (
               <Send className="h-3.5 w-3.5 mr-1.5" />
             )}
-            {isPosted ? "Update & Re-notify" : "Post STOSEC"}
+            {isPosted ? "Update & Re-notify" : "Post SMEAC"}
           </Button>
         </div>
       </div>
@@ -1141,7 +1141,7 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
           <div className="py-2 space-y-1 max-h-72 overflow-y-auto">
             <div className="flex items-center gap-2 pb-2 border-b border-border/50">
               <Checkbox
-                id="stosec-notify-all"
+                id="smeac-notify-all"
                 checked={
                   (usersQuery.data ?? []).length > 0 &&
                   selectedUserIds.size === (usersQuery.data ?? []).length
@@ -1157,7 +1157,7 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
                 }}
               />
               <Label
-                htmlFor="stosec-notify-all"
+                htmlFor="smeac-notify-all"
                 className="font-semibold cursor-pointer"
               >
                 Select All
@@ -1172,7 +1172,7 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
               .map(u => (
                 <div key={u.id} className="flex items-center gap-2 py-1">
                   <Checkbox
-                    id={`stosec-notify-user-${u.id}`}
+                    id={`smeac-notify-user-${u.id}`}
                     checked={selectedUserIds.has(u.id)}
                     onCheckedChange={checked => {
                       setSelectedUserIds(prev => {
@@ -1184,7 +1184,7 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
                     }}
                   />
                   <Label
-                    htmlFor={`stosec-notify-user-${u.id}`}
+                    htmlFor={`smeac-notify-user-${u.id}`}
                     className="cursor-pointer flex items-center gap-2"
                   >
                     <span className="font-mono text-xs text-muted-foreground w-10">
@@ -1210,7 +1210,7 @@ export function StosecBriefingForm({ briefingId }: { briefingId?: number }) {
               className="gap-1 bg-amber-600 hover:bg-amber-700 text-white"
             >
               <Send className="h-3.5 w-3.5" />
-              {isPosted ? "Update & Re-notify" : "Post STOSEC"} (
+              {isPosted ? "Update & Re-notify" : "Post SMEAC"} (
               {selectedUserIds.size})
             </Button>
           </DialogFooter>

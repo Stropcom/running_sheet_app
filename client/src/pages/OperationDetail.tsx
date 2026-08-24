@@ -1898,7 +1898,7 @@ export default function OperationDetail() {
   const search = useSearch();
 
   // Remembers this as the officer's most recent operation context (no
-  // specific sheet) — used only to pre-fill the New STOSEC Briefing form.
+  // specific sheet) — used only to pre-fill the New SMEAC Briefing form.
   useEffect(() => {
     if (operationId) {
       setLastActiveContext({ operationId, sheetId: null });

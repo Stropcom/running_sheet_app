@@ -281,17 +281,17 @@ import {
   deleteNotification,
   deleteReadNotificationsForUser,
   purgeExpiredNotifications,
-  createStosecBriefingDraft,
-  updateStosecBriefing,
-  getStosecBriefingById,
-  listStosecBriefings,
-  postStosecBriefing,
-  softDeleteStosecBriefing,
-  acknowledgeStosecBriefing,
-  getStosecAcknowledgementForUser,
-  getStosecAcknowledgements,
-  getStosecRosterPrefill,
-  type StosecTeamSlot,
+  createSmeacBriefingDraft,
+  updateSmeacBriefing,
+  getSmeacBriefingById,
+  listSmeacBriefings,
+  postSmeacBriefing,
+  softDeleteSmeacBriefing,
+  acknowledgeSmeacBriefing,
+  getSmeacAcknowledgementForUser,
+  getSmeacAcknowledgements,
+  getSmeacRosterPrefill,
+  type SmeacTeamSlot,
 } from "./db";
 
 import {
@@ -394,7 +394,7 @@ const structuredTargetFieldsSchema = {
   extraAddresses: z.string().optional().nullable(), // JSON array of {label?,unitNo,houseNo,streetName,streetType,suburb,state,full,short}
 };
 
-const stosecTeamSlotSchema = z.object({
+const smeacTeamSlotSchema = z.object({
   name: z.string(),
   cin: z.string().optional().nullable(),
   vehicle: z.string(),
@@ -404,7 +404,7 @@ const stosecTeamSlotSchema = z.object({
   isTeamLeader: z.boolean(),
 });
 
-const stosecBriefingFieldsSchema = {
+const smeacBriefingFieldsSchema = {
   operationId: z.number(),
   sheetId: z.number().optional().nullable(),
   targetId: z.number().optional().nullable(),
@@ -431,7 +431,7 @@ const stosecBriefingFieldsSchema = {
   commsSecondary: z.string().optional().nullable(),
   locationOfTeamLeader: z.string().optional().nullable(),
   reportingProcedures: z.string().optional().nullable(),
-  teamSlots: z.array(stosecTeamSlotSchema).optional(),
+  teamSlots: z.array(smeacTeamSlotSchema).optional(),
 };
 
 // ─── App Router ───────────────────────────────────────────────────────────────
@@ -2235,31 +2235,31 @@ export const appRouter = router({
     }),
   }),
 
-  // ─── STOSEC Briefings ───────────────────────────────────────────────────────
+  // ─── SMEAC Briefings ───────────────────────────────────────────────────────
   // Exceptional-use urgent briefing — see drizzle/schema.ts. Creating/posting
   // is admin-gated (it lives under Administration and notifies every user);
   // viewing and acknowledging is open to any logged-in user once posted.
 
-  stosecBriefing: router({
+  smeacBriefing: router({
     create: adminProcedure
-      .input(z.object(stosecBriefingFieldsSchema))
+      .input(z.object(smeacBriefingFieldsSchema))
       .mutation(async ({ ctx, input }) => {
-        const id = await createStosecBriefingDraft(input, ctx.user.id);
+        const id = await createSmeacBriefingDraft(input, ctx.user.id);
         return { id };
       }),
 
     update: adminProcedure
-      .input(z.object({ id: z.number(), ...stosecBriefingFieldsSchema }))
+      .input(z.object({ id: z.number(), ...smeacBriefingFieldsSchema }))
       .mutation(async ({ input }) => {
         const { id, ...data } = input;
-        await updateStosecBriefing(id, data);
+        await updateSmeacBriefing(id, data);
         return { ok: true };
       }),
 
     getById: protectedProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ ctx, input }) => {
-        const briefing = await getStosecBriefingById(input.id);
+        const briefing = await getSmeacBriefingById(input.id);
         if (!briefing)
           throw new TRPCError({
             code: "NOT_FOUND",
@@ -2268,12 +2268,12 @@ export const appRouter = router({
         const [operation, target, myAck, acks] = await Promise.all([
           getOperationById(briefing.operationId),
           briefing.targetId ? getTargetById(briefing.targetId) : null,
-          getStosecAcknowledgementForUser(
+          getSmeacAcknowledgementForUser(
             briefing.id,
             ctx.user.id,
             briefing.revision
           ),
-          getStosecAcknowledgements(briefing.id, briefing.revision),
+          getSmeacAcknowledgements(briefing.id, briefing.revision),
         ]);
         return {
           ...briefing,
@@ -2288,7 +2288,7 @@ export const appRouter = router({
       }),
 
     list: protectedProcedure.query(async ({ ctx }) => {
-      const rows = await listStosecBriefings();
+      const rows = await listSmeacBriefings();
       // Drafts are only visible to their own creator; posted is visible to all.
       return rows.filter(
         r => r.status === "posted" || r.createdBy === ctx.user.id
@@ -2298,7 +2298,7 @@ export const appRouter = router({
     getRosterPrefill: protectedProcedure
       .input(z.object({ sheetId: z.number() }))
       .query(async ({ input }) => {
-        const slots: StosecTeamSlot[] = await getStosecRosterPrefill(
+        const slots: SmeacTeamSlot[] = await getSmeacRosterPrefill(
           input.sheetId
         );
         return slots;
@@ -2309,7 +2309,7 @@ export const appRouter = router({
         z.object({ id: z.number(), userIds: z.array(z.number()).optional() })
       )
       .mutation(async ({ ctx, input }) => {
-        const briefing = await getStosecBriefingById(input.id);
+        const briefing = await getSmeacBriefingById(input.id);
         if (!briefing)
           throw new TRPCError({
             code: "NOT_FOUND",
@@ -2317,15 +2317,15 @@ export const appRouter = router({
           });
         const operation = await getOperationById(briefing.operationId);
         const opName = operation?.name ?? "operation";
-        const notified = await postStosecBriefing(
+        const notified = await postSmeacBriefing(
           input.id,
           ctx.user.cin ?? "Unknown",
           {
-            title: `STOSEC — ${opName}`,
+            title: `SMEAC — ${opName}`,
             body:
               briefing.situation?.slice(0, 160) ||
               "An urgent briefing has been posted.",
-            url: `/intelligence/mapping?stosec=${input.id}`,
+            url: `/intelligence/mapping?smeac=${input.id}`,
           },
           input.userIds
         );
@@ -2339,8 +2339,8 @@ export const appRouter = router({
           userId: ctx.user.id,
           userName: ctx.user.cin ?? "Unknown",
           userCIN: ctx.user.cin ?? undefined,
-          action: "stosec_briefing_posted",
-          details: `STOSEC briefing ${briefing.status === "posted" ? "re-posted" : "posted"} for operation "${opName}" — notified ${notified.length} users`,
+          action: "smeac_briefing_posted",
+          details: `SMEAC briefing ${briefing.status === "posted" ? "re-posted" : "posted"} for operation "${opName}" — notified ${notified.length} users`,
           createdAt: Date.now(),
         });
         return { ok: true, notified: notified.length };
@@ -2349,14 +2349,14 @@ export const appRouter = router({
     delete: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        await softDeleteStosecBriefing(input.id, ctx.user.cin ?? "Unknown");
+        await softDeleteSmeacBriefing(input.id, ctx.user.cin ?? "Unknown");
         await createAuditLog({
           sheetId: 0,
           userId: ctx.user.id,
           userName: ctx.user.cin ?? "Unknown",
           userCIN: ctx.user.cin ?? undefined,
-          action: "stosec_briefing_deleted",
-          details: `STOSEC briefing #${input.id} deleted`,
+          action: "smeac_briefing_deleted",
+          details: `SMEAC briefing #${input.id} deleted`,
           createdAt: Date.now(),
         });
         return { ok: true };
@@ -2365,13 +2365,13 @@ export const appRouter = router({
     acknowledge: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        const briefing = await getStosecBriefingById(input.id);
+        const briefing = await getSmeacBriefingById(input.id);
         if (!briefing)
           throw new TRPCError({
             code: "NOT_FOUND",
             message: "Briefing not found.",
           });
-        const ack = await acknowledgeStosecBriefing(
+        const ack = await acknowledgeSmeacBriefing(
           input.id,
           ctx.user.id,
           ctx.user.cin ?? "Unknown",

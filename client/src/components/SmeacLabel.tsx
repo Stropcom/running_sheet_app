@@ -1,7 +1,7 @@
 // SMEAC — the standard briefing structure: Situation, Mission, Execution,
 // Administration & Logistics, Command & Signal. The letter is a fixed
 // reference point regardless of what this particular section is titled.
-// Shared between StosecBriefingForm (editing) and StosecMapOverlay (reading)
+// Shared between SmeacBriefingForm (editing) and SmeacMapOverlay (reading)
 // so both present the same section structure.
 export function SmeacLabel({
   letter,

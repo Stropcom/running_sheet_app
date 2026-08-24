@@ -19,18 +19,18 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Plus, ShieldAlert, Check, Trash2, Pencil } from "lucide-react";
 
-export default function StosecBriefingListPage() {
+export default function SmeacBriefingListPage() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
-  const { data: briefings, isLoading } = trpc.stosecBriefing.list.useQuery();
+  const { data: briefings, isLoading } = trpc.smeacBriefing.list.useQuery();
   const { data: operations } = trpc.operation.list.useQuery();
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
-  const deleteMutation = trpc.stosecBriefing.delete.useMutation({
+  const deleteMutation = trpc.smeacBriefing.delete.useMutation({
     onSuccess: () => {
       toast.success("Briefing deleted");
-      utils.stosecBriefing.list.invalidate();
+      utils.smeacBriefing.list.invalidate();
     },
     onError: e => toast.error(e.message ?? "Failed to delete"),
   });
@@ -50,12 +50,12 @@ export default function StosecBriefingListPage() {
               <span>Administration</span>
               <span>/</span>
               <span className="text-foreground font-medium">
-                STOSEC Briefings
+                SMEAC Briefings
               </span>
             </div>
             <h1 className="text-xl font-bold flex items-center gap-2">
               <ShieldAlert className="h-5 w-5 text-amber-500" />
-              STOSEC Briefings
+              SMEAC Briefings
             </h1>
             <p className="text-xs text-muted-foreground mt-0.5">
               Exceptional-use urgent briefings — not a daily tool.
@@ -63,7 +63,7 @@ export default function StosecBriefingListPage() {
           </div>
           {user?.role === "admin" && (
             <Button
-              onClick={() => setLocation("/administration/stosec/new")}
+              onClick={() => setLocation("/administration/smeac/new")}
               className="bg-amber-600 hover:bg-amber-700 text-white"
             >
               <Plus className="h-4 w-4 mr-1.5" />
@@ -79,7 +79,7 @@ export default function StosecBriefingListPage() {
           </div>
         ) : !briefings || briefings.length === 0 ? (
           <div className="text-center py-16 text-sm text-muted-foreground">
-            No STOSEC briefings yet.
+            No SMEAC briefings yet.
           </div>
         ) : (
           <div className="space-y-2">
@@ -89,7 +89,7 @@ export default function StosecBriefingListPage() {
                 className="flex items-center gap-2 rounded-xl bg-card border border-border hover:bg-accent/50 transition-colors"
               >
                 <button
-                  onClick={() => setLocation(`/administration/stosec/${b.id}`)}
+                  onClick={() => setLocation(`/administration/smeac/${b.id}`)}
                   className="flex-1 min-w-0 text-left flex items-center gap-3 p-3.5"
                 >
                   <div className="min-w-0 flex-1">
@@ -116,7 +116,7 @@ export default function StosecBriefingListPage() {
                   <div className="flex items-center gap-0.5 shrink-0 mr-2">
                     <button
                       onClick={() =>
-                        setLocation(`/administration/stosec/${b.id}/edit`)
+                        setLocation(`/administration/smeac/${b.id}/edit`)
                       }
                       className="h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                       aria-label="Edit briefing"

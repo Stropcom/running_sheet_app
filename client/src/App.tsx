@@ -54,10 +54,10 @@ import CtoRosterSavedRosterPage from "@/pages/CtoRoster/SavedRosterPage";
 import CtoRosterEACompliancePage from "@/pages/CtoRoster/EACompliancePage";
 import CtoRosterOutlookPage from "@/pages/CtoRoster/OutlookPage";
 import CtoRosterAuditLogPage from "@/pages/CtoRoster/AuditLogPage";
-import StosecBriefingListPage from "@/pages/StosecBriefingListPage";
-import StosecBriefingNewPage from "@/pages/StosecBriefingNewPage";
-import StosecBriefingDetailPage from "@/pages/StosecBriefingDetailPage";
-import StosecBriefingEditPage from "@/pages/StosecBriefingEditPage";
+import SmeacBriefingListPage from "@/pages/SmeacBriefingListPage";
+import SmeacBriefingNewPage from "@/pages/SmeacBriefingNewPage";
+import SmeacBriefingDetailPage from "@/pages/SmeacBriefingDetailPage";
+import SmeacBriefingEditPage from "@/pages/SmeacBriefingEditPage";
 import { DraftModeBanner } from "@/components/DraftModeBanner";
 import { SectionColorProvider } from "@/contexts/SectionColorContext";
 import { useEffect } from "react";
@@ -258,18 +258,18 @@ function Router() {
       />
       <Route path="/audit" component={AuditLogPage} />
       <Route path="/admin" component={AdminPage} />
-      <Route path="/administration/stosec" component={StosecBriefingListPage} />
+      <Route path="/administration/smeac" component={SmeacBriefingListPage} />
       <Route
-        path="/administration/stosec/new"
-        component={StosecBriefingNewPage}
+        path="/administration/smeac/new"
+        component={SmeacBriefingNewPage}
       />
       <Route
-        path="/administration/stosec/:id/edit"
-        component={StosecBriefingEditPage}
+        path="/administration/smeac/:id/edit"
+        component={SmeacBriefingEditPage}
       />
       <Route
-        path="/administration/stosec/:id"
-        component={StosecBriefingDetailPage}
+        path="/administration/smeac/:id"
+        component={SmeacBriefingDetailPage}
       />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />

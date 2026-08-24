@@ -1,5 +1,5 @@
 // Remembers which Operation/Running Sheet a user last had open, purely as a
-// client-side convenience for pre-filling the "New STOSEC Briefing" form —
+// client-side convenience for pre-filling the "New SMEAC Briefing" form —
 // it is not authoritative operational state, just a starting point the
 // creator can change. Per-device (localStorage), not synced server-side.
 

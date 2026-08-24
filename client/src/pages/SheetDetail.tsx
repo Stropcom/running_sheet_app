@@ -2279,7 +2279,7 @@ export default function SheetDetail() {
   );
 
   // Remembers this as the officer's most recent operation/sheet context —
-  // used only to pre-fill the New STOSEC Briefing form, nothing else reads it.
+  // used only to pre-fill the New SMEAC Briefing form, nothing else reads it.
   useEffect(() => {
     if (sheet?.operationId) {
       setLastActiveContext({ operationId: sheet.operationId, sheetId });

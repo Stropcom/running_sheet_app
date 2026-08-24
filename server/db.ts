@@ -109,11 +109,11 @@ import {
   entityDedupDecisions,
   InsertEntityDedupDecision,
   personNameMatchDecisions,
-  stosecBriefings,
-  StosecBriefing,
-  InsertStosecBriefing,
-  stosecAcknowledgements,
-  StosecAcknowledgement,
+  smeacBriefings,
+  SmeacBriefing,
+  InsertSmeacBriefing,
+  smeacAcknowledgements,
+  SmeacAcknowledgement,
 } from "../drizzle/schema";
 import {
   findPossibleDuplicates,
@@ -12350,15 +12350,15 @@ export async function purgeExpiredNotifications() {
     );
 }
 
-// ─── STOSEC Briefings ───────────────────────────────────────────────────────
+// ─── SMEAC Briefings ───────────────────────────────────────────────────────
 // See drizzle/schema.ts for the "exceptional use only" framing. A draft is
 // only visible to its creator; posting is the one-way action that notifies
 // every user and makes it visible to everyone.
 
-export interface StosecTeamSlot {
+export interface SmeacTeamSlot {
   name: string;
   // Only set when this slot came from a real roster CIN (via
-  // getStosecRosterPrefill) — lets the acknowledgement view match this slot
+  // getSmeacRosterPrefill) — lets the acknowledgement view match this slot
   // to a real acknowledgement. A manually-typed team member has no cin and
   // so can't show an acknowledged/not-acknowledged state, only "unlinked".
   cin?: string | null;
@@ -12369,7 +12369,7 @@ export interface StosecTeamSlot {
   isTeamLeader: boolean;
 }
 
-function parseStosecStringArray(raw: string | null): string[] {
+function parseSmeacStringArray(raw: string | null): string[] {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
@@ -12379,7 +12379,7 @@ function parseStosecStringArray(raw: string | null): string[] {
   }
 }
 
-function parseStosecTeamSlots(raw: string | null): StosecTeamSlot[] {
+function parseSmeacTeamSlots(raw: string | null): SmeacTeamSlot[] {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
@@ -12387,7 +12387,7 @@ function parseStosecTeamSlots(raw: string | null): StosecTeamSlot[] {
     // sheetCins (the source for a slot's cin) is stored in whatever case it
     // was entered, but users.cin and acknowledgement cins are always
     // upper-cased — normalize here so the acknowledgedCins match works.
-    return parsed.map((slot: StosecTeamSlot) => ({
+    return parsed.map((slot: SmeacTeamSlot) => ({
       ...slot,
       cin: slot.cin ? slot.cin.toUpperCase() : slot.cin,
     }));
@@ -12396,9 +12396,9 @@ function parseStosecTeamSlots(raw: string | null): StosecTeamSlot[] {
   }
 }
 
-export interface StosecBriefingView
+export interface SmeacBriefingView
   extends Omit<
-    StosecBriefing,
+    SmeacBriefing,
     | "objectives"
     | "teamSlots"
     | "extraLocations"
@@ -12407,26 +12407,26 @@ export interface StosecBriefingView
     | "covertIdentifiers"
   > {
   objectives: string[];
-  teamSlots: StosecTeamSlot[];
+  teamSlots: SmeacTeamSlot[];
   extraLocations: string[];
   otherAgencies: string[];
   accoutrements: string[];
   covertIdentifiers: string[];
 }
 
-function toStosecBriefingView(row: StosecBriefing): StosecBriefingView {
+function toSmeacBriefingView(row: SmeacBriefing): SmeacBriefingView {
   return {
     ...row,
-    objectives: parseStosecStringArray(row.objectives),
-    teamSlots: parseStosecTeamSlots(row.teamSlots),
-    extraLocations: parseStosecStringArray(row.extraLocations),
-    otherAgencies: parseStosecStringArray(row.otherAgencies),
-    accoutrements: parseStosecStringArray(row.accoutrements),
-    covertIdentifiers: parseStosecStringArray(row.covertIdentifiers),
+    objectives: parseSmeacStringArray(row.objectives),
+    teamSlots: parseSmeacTeamSlots(row.teamSlots),
+    extraLocations: parseSmeacStringArray(row.extraLocations),
+    otherAgencies: parseSmeacStringArray(row.otherAgencies),
+    accoutrements: parseSmeacStringArray(row.accoutrements),
+    covertIdentifiers: parseSmeacStringArray(row.covertIdentifiers),
   };
 }
 
-export interface UpsertStosecBriefingInput {
+export interface UpsertSmeacBriefingInput {
   operationId: number;
   sheetId?: number | null;
   targetId?: number | null;
@@ -12453,16 +12453,16 @@ export interface UpsertStosecBriefingInput {
   commsSecondary?: string | null;
   locationOfTeamLeader?: string | null;
   reportingProcedures?: string | null;
-  teamSlots?: StosecTeamSlot[];
+  teamSlots?: SmeacTeamSlot[];
 }
 
-export async function createStosecBriefingDraft(
-  data: UpsertStosecBriefingInput,
+export async function createSmeacBriefingDraft(
+  data: UpsertSmeacBriefingInput,
   createdBy: number
 ): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const [result] = await db.insert(stosecBriefings).values({
+  const [result] = await db.insert(smeacBriefings).values({
     operationId: data.operationId,
     sheetId: data.sheetId ?? null,
     targetId: data.targetId ?? null,
@@ -12499,16 +12499,16 @@ export async function createStosecBriefingDraft(
 /**
  * Updates a briefing's content regardless of status — a posted briefing can
  * be corrected without that alone re-notifying anyone; re-notifying is only
- * ever a deliberate, separate call to postStosecBriefing.
+ * ever a deliberate, separate call to postSmeacBriefing.
  */
-export async function updateStosecBriefing(
+export async function updateSmeacBriefing(
   id: number,
-  data: UpsertStosecBriefingInput
+  data: UpsertSmeacBriefingInput
 ) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db
-    .update(stosecBriefings)
+    .update(smeacBriefings)
     .set({
       operationId: data.operationId,
       sheetId: data.sheetId ?? null,
@@ -12537,33 +12537,33 @@ export async function updateStosecBriefing(
       locationOfTeamLeader: data.locationOfTeamLeader ?? null,
       reportingProcedures: data.reportingProcedures ?? null,
       teamSlots: JSON.stringify(data.teamSlots ?? []),
-      revision: sql`${stosecBriefings.revision} + 1`,
+      revision: sql`${smeacBriefings.revision} + 1`,
     })
-    .where(eq(stosecBriefings.id, id));
+    .where(eq(smeacBriefings.id, id));
 }
 
-export async function getStosecBriefingById(
+export async function getSmeacBriefingById(
   id: number
-): Promise<StosecBriefingView | undefined> {
+): Promise<SmeacBriefingView | undefined> {
   const db = await getDb();
   if (!db) return undefined;
   const [row] = await db
     .select()
-    .from(stosecBriefings)
-    .where(and(eq(stosecBriefings.id, id), isNull(stosecBriefings.deletedAt)))
+    .from(smeacBriefings)
+    .where(and(eq(smeacBriefings.id, id), isNull(smeacBriefings.deletedAt)))
     .limit(1);
-  return row ? toStosecBriefingView(row) : undefined;
+  return row ? toSmeacBriefingView(row) : undefined;
 }
 
-export async function listStosecBriefings(): Promise<StosecBriefingView[]> {
+export async function listSmeacBriefings(): Promise<SmeacBriefingView[]> {
   const db = await getDb();
   if (!db) return [];
   const rows = await db
     .select()
-    .from(stosecBriefings)
-    .where(isNull(stosecBriefings.deletedAt))
-    .orderBy(desc(stosecBriefings.createdAt));
-  return rows.map(toStosecBriefingView);
+    .from(smeacBriefings)
+    .where(isNull(smeacBriefings.deletedAt))
+    .orderBy(desc(smeacBriefings.createdAt));
+  return rows.map(toSmeacBriefingView);
 }
 
 /**
@@ -12572,7 +12572,7 @@ export async function listStosecBriefings(): Promise<StosecBriefingView[]> {
  * one. Returns the id list notified, or undefined if the briefing doesn't
  * exist (or was deleted).
  */
-export async function postStosecBriefing(
+export async function postSmeacBriefing(
   id: number,
   postedByCIN: string,
   notifyBody: { title: string; body: string; url: string },
@@ -12584,15 +12584,15 @@ export async function postStosecBriefing(
   if (!db) throw new Error("Database not available");
   const [existing] = await db
     .select()
-    .from(stosecBriefings)
-    .where(and(eq(stosecBriefings.id, id), isNull(stosecBriefings.deletedAt)))
+    .from(smeacBriefings)
+    .where(and(eq(smeacBriefings.id, id), isNull(smeacBriefings.deletedAt)))
     .limit(1);
   if (!existing) return undefined;
 
   await db
-    .update(stosecBriefings)
+    .update(smeacBriefings)
     .set({ status: "posted", postedAt: Date.now(), postedByCIN })
-    .where(eq(stosecBriefings.id, id));
+    .where(eq(smeacBriefings.id, id));
 
   // Distinguish "no list passed" (default: everyone, back-compat for any
   // caller that doesn't offer a picker) from "explicitly an empty list"
@@ -12606,18 +12606,18 @@ export async function postStosecBriefing(
     title: notifyBody.title,
     body: notifyBody.body,
     url: notifyBody.url,
-    sourceModule: "stosecBriefing",
+    sourceModule: "smeacBriefing",
   });
   return userIds;
 }
 
-export async function softDeleteStosecBriefing(id: number, cin: string) {
+export async function softDeleteSmeacBriefing(id: number, cin: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db
-    .update(stosecBriefings)
+    .update(smeacBriefings)
     .set({ deletedAt: Date.now(), deletedByCIN: cin })
-    .where(eq(stosecBriefings.id, id));
+    .where(eq(smeacBriefings.id, id));
 }
 
 /**
@@ -12626,22 +12626,22 @@ export async function softDeleteStosecBriefing(id: number, cin: string) {
  * new revision, and a prior revision's acknowledgement doesn't carry
  * forward, so this is "first acknowledgement of THIS revision wins".
  */
-export async function acknowledgeStosecBriefing(
+export async function acknowledgeSmeacBriefing(
   briefingId: number,
   userId: number,
   cin: string,
   revision: number
-): Promise<StosecAcknowledgement> {
+): Promise<SmeacAcknowledgement> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const [existing] = await db
     .select()
-    .from(stosecAcknowledgements)
+    .from(smeacAcknowledgements)
     .where(
       and(
-        eq(stosecAcknowledgements.briefingId, briefingId),
-        eq(stosecAcknowledgements.userId, userId),
-        eq(stosecAcknowledgements.revision, revision)
+        eq(smeacAcknowledgements.briefingId, briefingId),
+        eq(smeacAcknowledgements.userId, userId),
+        eq(smeacAcknowledgements.revision, revision)
       )
     )
     .limit(1);
@@ -12649,7 +12649,7 @@ export async function acknowledgeStosecBriefing(
 
   const acknowledgedAt = Date.now();
   const cinUpper = cin.toUpperCase();
-  await db.insert(stosecAcknowledgements).values({
+  await db.insert(smeacAcknowledgements).values({
     briefingId,
     userId,
     cin: cinUpper,
@@ -12659,21 +12659,21 @@ export async function acknowledgeStosecBriefing(
   return { id: 0, briefingId, userId, cin: cinUpper, revision, acknowledgedAt };
 }
 
-export async function getStosecAcknowledgementForUser(
+export async function getSmeacAcknowledgementForUser(
   briefingId: number,
   userId: number,
   revision: number
-): Promise<StosecAcknowledgement | undefined> {
+): Promise<SmeacAcknowledgement | undefined> {
   const db = await getDb();
   if (!db) return undefined;
   const [row] = await db
     .select()
-    .from(stosecAcknowledgements)
+    .from(smeacAcknowledgements)
     .where(
       and(
-        eq(stosecAcknowledgements.briefingId, briefingId),
-        eq(stosecAcknowledgements.userId, userId),
-        eq(stosecAcknowledgements.revision, revision)
+        eq(smeacAcknowledgements.briefingId, briefingId),
+        eq(smeacAcknowledgements.userId, userId),
+        eq(smeacAcknowledgements.revision, revision)
       )
     )
     .limit(1);
@@ -12681,28 +12681,28 @@ export async function getStosecAcknowledgementForUser(
 }
 
 /** Acknowledgements for the given revision only — a prior revision's don't count. */
-export async function getStosecAcknowledgements(
+export async function getSmeacAcknowledgements(
   briefingId: number,
   revision: number
-): Promise<StosecAcknowledgement[]> {
+): Promise<SmeacAcknowledgement[]> {
   const db = await getDb();
   if (!db) return [];
   return db
     .select()
-    .from(stosecAcknowledgements)
+    .from(smeacAcknowledgements)
     .where(
       and(
-        eq(stosecAcknowledgements.briefingId, briefingId),
-        eq(stosecAcknowledgements.revision, revision)
+        eq(smeacAcknowledgements.briefingId, briefingId),
+        eq(smeacAcknowledgements.revision, revision)
       )
     )
-    .orderBy(asc(stosecAcknowledgements.acknowledgedAt));
+    .orderBy(asc(smeacAcknowledgements.acknowledgedAt));
 }
 
 /** Today's sheet roster (CIN -> display name) to pre-fill the team grid when raising a briefing from a running sheet. */
-export async function getStosecRosterPrefill(
+export async function getSmeacRosterPrefill(
   sheetId: number
-): Promise<StosecTeamSlot[]> {
+): Promise<SmeacTeamSlot[]> {
   const sheet = await getRunningSheetById(sheetId);
   if (!sheet || !sheet.sheetCins) return [];
   let cins: { cin: string }[] = [];

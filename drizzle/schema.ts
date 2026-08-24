@@ -681,8 +681,8 @@ export const auditLogs = mysqlTable("audit_logs", {
     "attachment_deleted",
     "summary_completed",
     "summary_reopened",
-    "stosec_briefing_posted",
-    "stosec_briefing_deleted",
+    "smeac_briefing_posted",
+    "smeac_briefing_deleted",
   ]).notNull(),
   details: text("details"),
   createdAt: bigint("createdAt", { mode: "number" }).notNull(),
@@ -1551,13 +1551,13 @@ export const ctoRosterEbaRules = mysqlTable("cto_roster_eba_rules", {
 export type CtoRosterEbaRule = typeof ctoRosterEbaRules.$inferSelect;
 export type InsertCtoRosterEbaRule = typeof ctoRosterEbaRules.$inferInsert;
 
-// ─── STOSEC Briefings ───────────────────────────────────────────────────────
+// ─── SMEAC Briefings ────────────────────────────────────────────────────────
 // An exceptional-use urgent briefing document, posted rarely — not a daily
 // or per-shift form (that's Op Manager's tasking board). Posting notifies
 // every user; each notifies-user acknowledges from their own notification,
 // which is logged per-user rather than treated as "opened = read".
 
-export const stosecBriefings = mysqlTable("stosec_briefings", {
+export const smeacBriefings = mysqlTable("smeac_briefings", {
   id: int("id").autoincrement().primaryKey(),
   operationId: int("operationId").notNull(),
   // The running sheet this was raised from, if any — informational only.
@@ -1632,18 +1632,18 @@ export const stosecBriefings = mysqlTable("stosec_briefings", {
   deletedByCIN: varchar("deletedByCIN", { length: 64 }),
 });
 
-export type StosecBriefing = typeof stosecBriefings.$inferSelect;
-export type InsertStosecBriefing = typeof stosecBriefings.$inferInsert;
+export type SmeacBriefing = typeof smeacBriefings.$inferSelect;
+export type InsertSmeacBriefing = typeof smeacBriefings.$inferInsert;
 
-export const stosecAcknowledgements = mysqlTable(
-  "stosec_acknowledgements",
+export const smeacAcknowledgements = mysqlTable(
+  "smeac_acknowledgements",
   {
     id: int("id").autoincrement().primaryKey(),
     briefingId: int("briefingId").notNull(),
     userId: int("userId").notNull(),
     cin: varchar("cin", { length: 64 }).notNull(),
     // Which revision of the briefing this acknowledged — an edit + re-post
-    // bumps stosecBriefings.revision, and a prior revision's acknowledgement
+    // bumps smeacBriefings.revision, and a prior revision's acknowledgement
     // does not carry forward, so each new revision needs its own. Default 1
     // only matters for backfilling existing rows from before this column
     // existed; the app always sets it explicitly on insert.
@@ -1651,7 +1651,7 @@ export const stosecAcknowledgements = mysqlTable(
     acknowledgedAt: bigint("acknowledgedAt", { mode: "number" }).notNull(),
   },
   t => [
-    uniqueIndex("stosec_ack_briefing_user_rev_idx").on(
+    uniqueIndex("smeac_ack_briefing_user_rev_idx").on(
       t.briefingId,
       t.userId,
       t.revision
@@ -1659,6 +1659,6 @@ export const stosecAcknowledgements = mysqlTable(
   ]
 );
 
-export type StosecAcknowledgement = typeof stosecAcknowledgements.$inferSelect;
-export type InsertStosecAcknowledgement =
-  typeof stosecAcknowledgements.$inferInsert;
+export type SmeacAcknowledgement = typeof smeacAcknowledgements.$inferSelect;
+export type InsertSmeacAcknowledgement =
+  typeof smeacAcknowledgements.$inferInsert;

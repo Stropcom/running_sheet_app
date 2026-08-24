@@ -1,13 +1,13 @@
 /**
- * The recipient-facing view of a POSTED STOSEC briefing, docked over the
+ * The recipient-facing view of a POSTED SMEAC briefing, docked over the
  * live Mapping page rather than replacing it — so the officer can read the
  * briefing while the real map (with its full markers, team tags, etc.)
- * keeps running underneath/beside it. Opened via `?stosec=<id>` on
+ * keeps running underneath/beside it. Opened via `?smeac=<id>` on
  * /intelligence/mapping (see IntelligenceMapping.tsx), which is also what
- * the STOSEC "Post" notification links to. Closing just clears the query
+ * the SMEAC "Post" notification links to. Closing just clears the query
  * param — reopening is clicking the notification again, or the list page.
  *
- * Mirrors StosecBriefingForm's SMEAC section structure (via the shared
+ * Mirrors SmeacBriefingForm's SMEAC section structure (via the shared
  * SmeacLabel) so the read view and the edit view read as the same
  * document. Editing only happens from the Administration list page, not
  * from here — this panel is read + acknowledge only.
@@ -35,7 +35,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 
-export function StosecMapOverlay({
+export function SmeacMapOverlay({
   briefingId,
   onClose,
 }: {
@@ -47,16 +47,16 @@ export function StosecMapOverlay({
   const utils = trpc.useUtils();
   // Polled while open so a team member's pill turns green for everyone
   // watching as acknowledgements come in, not just on their own action.
-  const { data: briefing, isLoading } = trpc.stosecBriefing.getById.useQuery(
+  const { data: briefing, isLoading } = trpc.smeacBriefing.getById.useQuery(
     { id: briefingId },
     { refetchInterval: 8000 }
   );
   const [acknowledgedAt, setAcknowledgedAt] = useState<number | null>(null);
 
-  const acknowledge = trpc.stosecBriefing.acknowledge.useMutation({
+  const acknowledge = trpc.smeacBriefing.acknowledge.useMutation({
     onSuccess: ack => {
       setAcknowledgedAt(ack.acknowledgedAt);
-      utils.stosecBriefing.getById.invalidate({ id: briefingId });
+      utils.smeacBriefing.getById.invalidate({ id: briefingId });
     },
     onError: e => toast.error(e.message ?? "Failed to acknowledge"),
   });
@@ -74,7 +74,7 @@ export function StosecMapOverlay({
       <div className="flex items-center gap-2 px-4 py-3 border-b border-border shrink-0">
         <ShieldAlert className="h-4 w-4 text-amber-500 shrink-0" />
         <h1 className="text-sm font-semibold flex-1 min-w-0 truncate">
-          {briefing ? `STOSEC — ${briefing.operationName}` : "STOSEC"}
+          {briefing ? `SMEAC — ${briefing.operationName}` : "SMEAC"}
         </h1>
         {briefing && (
           <span className="text-[10px] font-mono font-medium text-muted-foreground border border-border rounded px-1.5 py-0.5 shrink-0">
@@ -84,7 +84,7 @@ export function StosecMapOverlay({
         {user?.role === "admin" && briefing && (
           <button
             onClick={() =>
-              setLocation(`/administration/stosec/${briefing.id}/edit`)
+              setLocation(`/administration/smeac/${briefing.id}/edit`)
             }
             className="p-1.5 rounded-md text-muted-foreground hover:bg-accent transition-colors shrink-0"
             aria-label="Edit briefing"

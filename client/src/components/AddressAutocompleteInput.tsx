@@ -50,7 +50,7 @@ interface Props {
   /**
    * Google Places type filter for suggestions. Defaults to street addresses
    * only ("address"), matching every existing caller. Pass "any" to search
-   * places/businesses too (no type restriction) — e.g. STOSEC's "Add
+   * places/businesses too (no type restriction) — e.g. SMEAC's "Add
    * location" box, or the Target Registry's address search, where an
    * officer may want to reference a business or landmark, not just a
    * street address.

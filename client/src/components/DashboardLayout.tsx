@@ -1256,7 +1256,7 @@ function AdminNavTile({
     location === "/draft" ||
     location === "/operation-management" ||
     location === "/recycle-bin" ||
-    location.startsWith("/administration/stosec") ||
+    location.startsWith("/administration/smeac") ||
     location === "/help";
   return (
     <DropdownMenu>
@@ -1288,9 +1288,9 @@ function AdminNavTile({
           <Trash2 className="h-4 w-4 mr-2" />
           Recycle Bin
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setLocation("/administration/stosec")}>
+        <DropdownMenuItem onClick={() => setLocation("/administration/smeac")}>
           <ShieldAlert className="h-4 w-4 mr-2" />
-          STOSEC Briefings
+          SMEAC Briefings
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => setLocation("/help")}>
           <HelpCircle className="h-4 w-4 mr-2" />
@@ -1787,7 +1787,7 @@ function DashboardLayoutContent({
       "/recycle-bin",
       "/help",
       "/reports",
-      "/administration/stosec",
+      "/administration/smeac",
     ];
     if (adminPaths.some(p => location === p || location.startsWith(p))) {
       setAdminFolderExpanded(true);
@@ -2053,7 +2053,7 @@ function DashboardLayoutContent({
                             location === "/draft" ||
                             location === "/operation-management" ||
                             location === "/recycle-bin" ||
-                            location.startsWith("/administration/stosec") ||
+                            location.startsWith("/administration/smeac") ||
                             location === "/help"
                       }
                       onClick={() => setAdminFolderExpanded(v => !v)}
@@ -2067,7 +2067,7 @@ function DashboardLayoutContent({
                           location === "/draft" ||
                           location === "/operation-management" ||
                           location === "/recycle-bin" ||
-                          location.startsWith("/administration/stosec") ||
+                          location.startsWith("/administration/smeac") ||
                           location === "/help"
                             ? "text-sidebar-foreground font-medium"
                             : "text-sidebar-foreground/80"
@@ -2130,15 +2130,15 @@ function DashboardLayoutContent({
                           Recycle Bin
                         </button>
 
-                        {/* STOSEC Briefings — exceptional use only */}
+                        {/* SMEAC Briefings — exceptional use only */}
                         <button
-                          onClick={() => setLocation("/administration/stosec")}
+                          onClick={() => setLocation("/administration/smeac")}
                           className={subItemClass(
-                            location.startsWith("/administration/stosec")
+                            location.startsWith("/administration/smeac")
                           )}
                         >
                           <ShieldAlert className="h-3.5 w-3.5 shrink-0 text-foreground" />
-                          STOSEC Briefings
+                          SMEAC Briefings
                         </button>
 
                         {/* Help */}

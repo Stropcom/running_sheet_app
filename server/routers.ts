@@ -2379,6 +2379,75 @@ export const appRouter = router({
         );
         return ack;
       }),
+
+    /** Generates a .docx export of the briefing. Returns a base64-encoded file. */
+    export: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const briefing = await getSmeacBriefingById(input.id);
+        if (!briefing)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Briefing not found.",
+          });
+        const [operation, target] = await Promise.all([
+          getOperationById(briefing.operationId),
+          briefing.targetId ? getTargetById(briefing.targetId) : null,
+        ]);
+        // Same override-then-registry-fallback logic as SmeacMapOverlay's
+        // read view, so the export matches what officers see on screen.
+        const rawHome =
+          briefing.hbOverride || target?.hbf || target?.hb || null;
+        const rawVehicle =
+          briefing.voiOverride || target?.v1f || target?.v1 || null;
+
+        const { generateSmeacDocx } = await import("./smeacGenerator");
+        const producedAt = Date.now();
+        const buf = await generateSmeacDocx({
+          operationName: operation?.name ?? "Unknown operation",
+          revision: briefing.revision,
+          status: briefing.status,
+          postedAt: briefing.postedAt,
+          postedByCIN: briefing.postedByCIN,
+          targetName: target?.name ?? null,
+          voi: rawVehicle,
+          hb: rawHome,
+          extraLocations: briefing.extraLocations,
+          backgroundIntel: briefing.backgroundIntel,
+          knownRisks: briefing.knownRisks,
+          otherAgencies: briefing.otherAgencies,
+          mission: briefing.mission,
+          overallPlan: briefing.overallPlan,
+          actionsOn: briefing.actionsOn,
+          situationChange: briefing.situationChange,
+          objectives: briefing.objectives,
+          teamSlots: briefing.teamSlots,
+          legalAuthArrest: briefing.legalAuthArrest,
+          afpOrders: briefing.afpOrders,
+          warrant: briefing.warrant,
+          accoutrements: briefing.accoutrements,
+          covertIdentifiers: briefing.covertIdentifiers,
+          firstAidAllVehicles: briefing.firstAidAllVehicles,
+          firstAidMemberName: briefing.firstAidMemberName,
+          locationOfTeamLeader: briefing.locationOfTeamLeader,
+          reportingProcedures: briefing.reportingProcedures,
+          commsPrimary: briefing.commsPrimary,
+          commsSecondary: briefing.commsSecondary,
+          producedAt,
+          certifierCin: ctx.user.cin ?? "UNKNOWN",
+        });
+
+        const opNameSlug = (operation?.name ?? "Operation").replace(
+          /[^a-zA-Z0-9]/g,
+          "_"
+        );
+        const filename = `SurveillanceSMEAC_${opNameSlug}_${new Date(producedAt).toISOString().slice(0, 10)}.docx`;
+        return {
+          filename,
+          base64: buf.toString("base64"),
+          producedAt,
+        };
+      }),
   }),
 
   // ─── Audit Logs ─────────────────────────────────────────────────────────────

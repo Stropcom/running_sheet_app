@@ -17,7 +17,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, ShieldAlert, Check, Trash2, Pencil } from "lucide-react";
+import {
+  Plus,
+  ShieldAlert,
+  Check,
+  Trash2,
+  Pencil,
+  Download,
+} from "lucide-react";
+import { downloadBase64File } from "@/lib/downloadFile";
 
 export default function SmeacBriefingListPage() {
   const { user } = useAuth();
@@ -26,6 +34,7 @@ export default function SmeacBriefingListPage() {
   const { data: briefings, isLoading } = trpc.smeacBriefing.list.useQuery();
   const { data: operations } = trpc.operation.list.useQuery();
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [exportingId, setExportingId] = useState<number | null>(null);
 
   const deleteMutation = trpc.smeacBriefing.delete.useMutation({
     onSuccess: () => {
@@ -33,6 +42,22 @@ export default function SmeacBriefingListPage() {
       utils.smeacBriefing.list.invalidate();
     },
     onError: e => toast.error(e.message ?? "Failed to delete"),
+  });
+
+  const exportMutation = trpc.smeacBriefing.export.useMutation({
+    onSuccess: data => {
+      setExportingId(null);
+      downloadBase64File(
+        data.base64,
+        data.filename,
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      );
+      toast.success("SMEAC exported");
+    },
+    onError: e => {
+      setExportingId(null);
+      toast.error(e.message ?? "Failed to export");
+    },
   });
 
   const operationName = (operationId: number) =>
@@ -112,28 +137,42 @@ export default function SmeacBriefingListPage() {
                       : format(new Date(b.createdAt), "d MMM, h:mm a")}
                   </span>
                 </button>
-                {user?.role === "admin" && (
-                  <div className="flex items-center gap-0.5 shrink-0 mr-2">
-                    <button
-                      onClick={() =>
-                        setLocation(`/administration/smeac/${b.id}/edit`)
-                      }
-                      className="h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                      aria-label="Edit briefing"
-                      title="Edit briefing"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      onClick={() => setConfirmDeleteId(b.id)}
-                      className="h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                      aria-label="Delete briefing"
-                      title="Delete briefing"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                )}
+                <div className="flex items-center gap-0.5 shrink-0 mr-2">
+                  <button
+                    onClick={() => {
+                      setExportingId(b.id);
+                      exportMutation.mutate({ id: b.id });
+                    }}
+                    disabled={exportingId === b.id}
+                    className="h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+                    aria-label="Export briefing"
+                    title="Export briefing"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                  </button>
+                  {user?.role === "admin" && (
+                    <>
+                      <button
+                        onClick={() =>
+                          setLocation(`/administration/smeac/${b.id}/edit`)
+                        }
+                        className="h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                        aria-label="Edit briefing"
+                        title="Edit briefing"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => setConfirmDeleteId(b.id)}
+                        className="h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                        aria-label="Delete briefing"
+                        title="Delete briefing"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             ))}
           </div>

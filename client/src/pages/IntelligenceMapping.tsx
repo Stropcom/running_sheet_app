@@ -1589,12 +1589,20 @@ export default function IntelligenceMapping() {
   // Filter by selected operations so markers are scoped to the active operation.
   // When no operation is selected in Map Settings but an RS pane operation is active,
   // include rsSelectedOpId so custom markers for that operation are visible.
-  // Pass empty array only when truly no operation context exists.
-  const effectiveOpIdsForMarkers = useMemo(() => {
+  // Pass empty array only when the user explicitly cleared the ops selector
+  // (that's a deliberate "show nothing" per getCustomMarkers). When there's
+  // truly no operation context at all, pass undefined — not [] — so the
+  // server takes its "all ops" branch, which is the only one that includes
+  // markers with no operation attached. [] and undefined are NOT
+  // interchangeable here: getCustomMarkers treats [] as "nothing selected,
+  // show nothing" and only shows unscoped markers when operationIds is
+  // omitted entirely.
+  const effectiveOpIdsForMarkers = useMemo((): number[] | undefined => {
     if (selectedOpIds.length > 0) return selectedOpIds;
     // If user explicitly cleared the selection, show nothing (don't fall back)
     if (opsExplicitlySet) return [];
-    return rsSelectedOpId !== null ? [rsSelectedOpId] : [];
+    if (rsSelectedOpId !== null) return [rsSelectedOpId];
+    return undefined;
   }, [selectedOpIds, opsExplicitlySet, rsSelectedOpId]);
   const { data: customMarkers, refetch: refetchCustomMarkers } =
     trpc.customMarker.list.useQuery(
@@ -4954,7 +4962,8 @@ export default function IntelligenceMapping() {
                     setCmPersonInput("");
                     setCmVehicleInput("");
                     setCmOpId(
-                      effectiveOpIdsForMarkers.length === 1
+                      effectiveOpIdsForMarkers &&
+                        effectiveOpIdsForMarkers.length === 1
                         ? effectiveOpIdsForMarkers[0]
                         : null
                     );
@@ -5049,7 +5058,8 @@ export default function IntelligenceMapping() {
                     setCmPersonInput("");
                     setCmVehicleInput("");
                     setCmOpId(
-                      effectiveOpIdsForMarkers.length === 1
+                      effectiveOpIdsForMarkers &&
+                        effectiveOpIdsForMarkers.length === 1
                         ? effectiveOpIdsForMarkers[0]
                         : null
                     );

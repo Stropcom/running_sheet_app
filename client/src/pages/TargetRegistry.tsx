@@ -818,19 +818,9 @@ function TargetCard({
                   key={ea.id}
                   className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2"
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
-                      <Home className="w-3 h-3" /> Additional Address {i + 2}
-                    </span>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-6 w-6 text-destructive hover:text-destructive"
-                      onClick={() => removeAddress(i)}
-                    >
-                      <X className="w-3 h-3" />
-                    </Button>
-                  </div>
+                  <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
+                    <Home className="w-3 h-3" /> Additional Address {i + 2}
+                  </span>
                   {mode === "locked" ? (
                     <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
                       <div className="flex-1">
@@ -841,14 +831,24 @@ function TargetCard({
                         )}
                         <p className="text-sm text-foreground">{ea.full}</p>
                       </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1.5 text-xs h-7 sm:shrink-0"
-                        onClick={() => startEditExtraAddress(ea.id)}
-                      >
-                        <Pencil className="w-3 h-3" /> Edit
-                      </Button>
+                      <div className="flex gap-1.5 flex-wrap sm:shrink-0">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1.5 text-xs h-7"
+                          onClick={() => startEditExtraAddress(ea.id)}
+                        >
+                          <Pencil className="w-3 h-3" /> Edit
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1.5 text-xs h-7 text-destructive hover:text-destructive"
+                          onClick={() => removeAddress(i)}
+                        >
+                          <Trash2 className="w-3 h-3" /> Remove
+                        </Button>
+                      </div>
                     </div>
                   ) : (
                     <div className="flex flex-col gap-2">
@@ -938,32 +938,32 @@ function TargetCard({
                   key={ev.id}
                   className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2"
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
-                      <Car className="w-3 h-3" /> Vehicle {i + 2}
-                    </span>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-6 w-6 text-destructive hover:text-destructive"
-                      onClick={() => removeVehicle(i)}
-                    >
-                      <X className="w-3 h-3" />
-                    </Button>
-                  </div>
+                  <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
+                    <Car className="w-3 h-3" /> Vehicle {i + 2}
+                  </span>
                   {mode === "locked" ? (
                     <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
                       <p className="text-sm text-foreground flex-1">
                         {ev.full}
                       </p>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1.5 text-xs h-7 sm:shrink-0"
-                        onClick={() => startEditExtraVehicle(ev.id)}
-                      >
-                        <Pencil className="w-3 h-3" /> Edit
-                      </Button>
+                      <div className="flex gap-1.5 flex-wrap sm:shrink-0">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1.5 text-xs h-7"
+                          onClick={() => startEditExtraVehicle(ev.id)}
+                        >
+                          <Pencil className="w-3 h-3" /> Edit
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1.5 text-xs h-7 text-destructive hover:text-destructive"
+                          onClick={() => removeVehicle(i)}
+                        >
+                          <Trash2 className="w-3 h-3" /> Remove
+                        </Button>
+                      </div>
                     </div>
                   ) : (
                     <div className="flex flex-col gap-2">
@@ -1480,19 +1480,9 @@ function AssociateCard({
                 key={ea.id}
                 className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2"
               >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
-                    <Home className="w-3 h-3" /> Additional Address {i + 2}
-                  </span>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-6 w-6 text-destructive hover:text-destructive"
-                    onClick={() => removeAddress(i)}
-                  >
-                    <X className="w-3 h-3" />
-                  </Button>
-                </div>
+                <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
+                  <Home className="w-3 h-3" /> Additional Address {i + 2}
+                </span>
                 {mode === "locked" ? (
                   <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
                     <div className="flex-1">
@@ -1503,14 +1493,24 @@ function AssociateCard({
                       )}
                       <p className="text-sm text-foreground">{ea.full}</p>
                     </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="gap-1.5 text-xs h-7 sm:shrink-0"
-                      onClick={() => startEditExtraAddress(ea.id)}
-                    >
-                      <Pencil className="w-3 h-3" /> Edit
-                    </Button>
+                    <div className="flex gap-1.5 flex-wrap sm:shrink-0">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 text-xs h-7"
+                        onClick={() => startEditExtraAddress(ea.id)}
+                      >
+                        <Pencil className="w-3 h-3" /> Edit
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 text-xs h-7 text-destructive hover:text-destructive"
+                        onClick={() => removeAddress(i)}
+                      >
+                        <Trash2 className="w-3 h-3" /> Remove
+                      </Button>
+                    </div>
                   </div>
                 ) : (
                   <TargetAddressFields
@@ -1591,30 +1591,30 @@ function AssociateCard({
                 key={ev.id}
                 className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2"
               >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
-                    <Car className="w-3 h-3" /> Vehicle {i + 2}
-                  </span>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-6 w-6 text-destructive hover:text-destructive"
-                    onClick={() => removeVehicle(i)}
-                  >
-                    <X className="w-3 h-3" />
-                  </Button>
-                </div>
+                <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
+                  <Car className="w-3 h-3" /> Vehicle {i + 2}
+                </span>
                 {mode === "locked" ? (
                   <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
                     <p className="text-sm text-foreground flex-1">{ev.full}</p>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="gap-1.5 text-xs h-7 sm:shrink-0"
-                      onClick={() => startEditExtraVehicle(ev.id)}
-                    >
-                      <Pencil className="w-3 h-3" /> Edit
-                    </Button>
+                    <div className="flex gap-1.5 flex-wrap sm:shrink-0">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 text-xs h-7"
+                        onClick={() => startEditExtraVehicle(ev.id)}
+                      >
+                        <Pencil className="w-3 h-3" /> Edit
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 text-xs h-7 text-destructive hover:text-destructive"
+                        onClick={() => removeVehicle(i)}
+                      >
+                        <Trash2 className="w-3 h-3" /> Remove
+                      </Button>
+                    </div>
                   </div>
                 ) : (
                   <TargetVehicleFields

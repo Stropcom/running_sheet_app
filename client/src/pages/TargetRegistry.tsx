@@ -774,63 +774,6 @@ function TargetCard({
               )}
             </div>
 
-            <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
-              <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
-                <Car className="w-3 h-3" /> Vehicle 1
-              </p>
-              {vehicleMode === "locked" ? (
-                <div className="flex flex-col">
-                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
-                    <p className="text-sm text-foreground flex-1">
-                      {target.v1f ?? target.v1}
-                    </p>
-                    <div className="flex gap-1.5 flex-wrap sm:shrink-0">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1.5 text-xs h-7"
-                        onClick={startEditVehicle}
-                      >
-                        <Pencil className="w-3 h-3" /> Edit current V1
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1.5 text-xs h-7"
-                        onClick={startNewVehicle}
-                      >
-                        <Plus className="w-3 h-3" /> Add new V1
-                      </Button>
-                    </div>
-                  </div>
-                  <EditVsNewNote kind="vehicle" />
-                </div>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {vehicleMode === "new" && (
-                    <p className="text-xs text-amber-600 dark:text-amber-400 italic">
-                      Recording a new Vehicle 1 — the current one is kept as
-                      "Previous" once you save.
-                    </p>
-                  )}
-                  <TargetVehicleFields
-                    value={vehicle}
-                    onChange={v => mark(() => setVehicle(v))}
-                  />
-                  {(target.v1f || target.v1) && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="gap-1.5 text-xs self-start"
-                      onClick={cancelVehicleEdit}
-                    >
-                      Cancel
-                    </Button>
-                  )}
-                </div>
-              )}
-            </div>
-
             {/* ── Dynamic extra addresses — same lock/Edit/Add-new pattern as
                  Home Address, tracked per entry by its stable id. ── */}
             {extraAddresses.map((ea, i) => {
@@ -922,6 +865,63 @@ function TargetCard({
             >
               <Plus className="w-3.5 h-3.5" /> Add Address
             </Button>
+
+            <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
+              <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
+                <Car className="w-3 h-3" /> Vehicle 1
+              </p>
+              {vehicleMode === "locked" ? (
+                <div className="flex flex-col">
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
+                    <p className="text-sm text-foreground flex-1">
+                      {target.v1f ?? target.v1}
+                    </p>
+                    <div className="flex gap-1.5 flex-wrap sm:shrink-0">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 text-xs h-7"
+                        onClick={startEditVehicle}
+                      >
+                        <Pencil className="w-3 h-3" /> Edit current V1
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 text-xs h-7"
+                        onClick={startNewVehicle}
+                      >
+                        <Plus className="w-3 h-3" /> Add new V1
+                      </Button>
+                    </div>
+                  </div>
+                  <EditVsNewNote kind="vehicle" />
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {vehicleMode === "new" && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 italic">
+                      Recording a new Vehicle 1 — the current one is kept as
+                      "Previous" once you save.
+                    </p>
+                  )}
+                  <TargetVehicleFields
+                    value={vehicle}
+                    onChange={v => mark(() => setVehicle(v))}
+                  />
+                  {(target.v1f || target.v1) && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="gap-1.5 text-xs self-start"
+                      onClick={cancelVehicleEdit}
+                    >
+                      Cancel
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* ── Dynamic extra vehicles (V2, V3, …) — same pattern ── */}
             {extraVehicles.map((ev, i) => {
@@ -1390,16 +1390,6 @@ function AssociateCard({
             />
           </div>
 
-          <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
-            <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
-              <Car className="w-3 h-3" /> Vehicle
-            </p>
-            <TargetVehicleFields
-              value={vehicle}
-              onChange={v => mark(() => setVehicle(v))}
-            />
-          </div>
-
           {extraAddresses.map((ea, i) => (
             <div
               key={i}
@@ -1434,6 +1424,16 @@ function AssociateCard({
           >
             <Plus className="w-3.5 h-3.5" /> Add Address
           </Button>
+
+          <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
+            <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
+              <Car className="w-3 h-3" /> Vehicle
+            </p>
+            <TargetVehicleFields
+              value={vehicle}
+              onChange={v => mark(() => setVehicle(v))}
+            />
+          </div>
 
           {extraVehicles.map((ev, i) => (
             <div

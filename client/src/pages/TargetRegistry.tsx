@@ -1231,6 +1231,50 @@ function AssociateCard({
   const [dirty, setDirty] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  // Same locked/at-a-glance look as the Target's own panels, but simpler:
+  // just Edit + Remove, no "Add new" — associates have no
+  // target_field_history equivalent to archive a "Previous" value into, so
+  // there's nothing for a second button to do.
+  const [addressMode, setAddressMode] = useState<"locked" | "edit">(
+    associate?.hbf || associate?.hb ? "locked" : "edit"
+  );
+  const [vehicleMode, setVehicleMode] = useState<"locked" | "edit">(
+    associate?.v1f || associate?.v1 ? "locked" : "edit"
+  );
+  const [extraAddressModes, setExtraAddressModes] = useState<
+    Record<string, "locked" | "edit" | "new">
+  >(() => computeExtraModes(parseExtraAddresses(associate?.extraAddresses)));
+  const [extraVehicleModes, setExtraVehicleModes] = useState<
+    Record<string, "locked" | "edit" | "new">
+  >(() => computeExtraModes(parseExtraVehicles(associate?.extraVehicles)));
+
+  const startEditAddress = () => {
+    setAddressMode("edit");
+    setDirty(true);
+  };
+  const removePrimaryAddress = () => {
+    setAddress(EMPTY_ADDRESS_PARTS);
+    setAddressMode("edit");
+    setDirty(true);
+  };
+  const startEditVehicle = () => {
+    setVehicleMode("edit");
+    setDirty(true);
+  };
+  const removePrimaryVehicle = () => {
+    setVehicle(EMPTY_VEHICLE_PARTS);
+    setVehicleMode("edit");
+    setDirty(true);
+  };
+  const startEditExtraAddress = (id: string) => {
+    setExtraAddressModes(m => ({ ...m, [id]: "edit" }));
+    setDirty(true);
+  };
+  const startEditExtraVehicle = (id: string) => {
+    setExtraVehicleModes(m => ({ ...m, [id]: "edit" }));
+    setDirty(true);
+  };
+
   // ── Possible-duplicate warning (new associates only) — checks name/address/
   // vehicle against every existing target, associate and text-mined entity.
   // Warn-only: an associate's registry profile isn't merged into anything,
@@ -1245,16 +1289,12 @@ function AssociateCard({
     setDirty(true);
   };
   const addAddress = () => {
+    const id = makeExtraId();
     setExtraAddresses(v => [
       ...v,
-      {
-        ...EMPTY_ADDRESS_PARTS,
-        id: makeExtraId(),
-        label: "",
-        full: "",
-        short: "",
-      },
+      { ...EMPTY_ADDRESS_PARTS, id, label: "", full: "", short: "" },
     ]);
+    setExtraAddressModes(m => ({ ...m, [id]: "edit" }));
     setDirty(true);
   };
   const removeAddress = (i: number) => {
@@ -1268,10 +1308,12 @@ function AssociateCard({
     setDirty(true);
   };
   const addVehicle = () => {
+    const id = makeExtraId();
     setExtraVehicles(v => [
       ...v,
-      { ...EMPTY_VEHICLE_PARTS, id: makeExtraId(), full: "", short: "" },
+      { ...EMPTY_VEHICLE_PARTS, id, full: "", short: "" },
     ]);
+    setExtraVehicleModes(m => ({ ...m, [id]: "edit" }));
     setDirty(true);
   };
   const removeVehicle = (i: number) => {
@@ -1439,38 +1481,100 @@ function AssociateCard({
             <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
               <Home className="w-3 h-3" /> Address
             </p>
-            <TargetAddressFields
-              value={address}
-              onChange={v => mark(() => setAddress(v))}
-            />
+            {addressMode === "locked" ? (
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
+                <p className="text-sm text-foreground flex-1">
+                  {associate?.hbf ?? associate?.hb}
+                </p>
+                <div className="flex gap-1.5 flex-wrap sm:shrink-0">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 text-xs h-7"
+                    onClick={startEditAddress}
+                  >
+                    <Pencil className="w-3 h-3" /> Edit
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 text-xs h-7 text-destructive hover:text-destructive"
+                    onClick={removePrimaryAddress}
+                  >
+                    <Trash2 className="w-3 h-3" /> Remove
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <TargetAddressFields
+                  value={address}
+                  onChange={v => mark(() => setAddress(v))}
+                />
+                {(associate?.hbf || associate?.hb) && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="gap-1.5 text-xs self-start"
+                    onClick={() => setAddressMode("locked")}
+                  >
+                    Cancel
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
 
-          {extraAddresses.map((ea, i) => (
-            <div
-              key={i}
-              className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
-                  <Home className="w-3 h-3" /> Additional Address {i + 2}
-                </span>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-6 w-6 text-destructive hover:text-destructive"
-                  onClick={() => removeAddress(i)}
-                >
-                  <X className="w-3 h-3" />
-                </Button>
+          {extraAddresses.map((ea, i) => {
+            const mode = extraAddressModes[ea.id] ?? "edit";
+            return (
+              <div
+                key={ea.id}
+                className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
+                    <Home className="w-3 h-3" /> Additional Address {i + 2}
+                  </span>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-6 w-6 text-destructive hover:text-destructive"
+                    onClick={() => removeAddress(i)}
+                  >
+                    <X className="w-3 h-3" />
+                  </Button>
+                </div>
+                {mode === "locked" ? (
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
+                    <div className="flex-1">
+                      {ea.label && (
+                        <p className="text-xs text-muted-foreground">
+                          {ea.label}
+                        </p>
+                      )}
+                      <p className="text-sm text-foreground">{ea.full}</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5 text-xs h-7 sm:shrink-0"
+                      onClick={() => startEditExtraAddress(ea.id)}
+                    >
+                      <Pencil className="w-3 h-3" /> Edit
+                    </Button>
+                  </div>
+                ) : (
+                  <TargetAddressFields
+                    value={ea}
+                    onChange={v => updateAddressEntry(i, v)}
+                    label={ea.label}
+                    onLabelChange={v => updateAddressEntry(i, { label: v })}
+                  />
+                )}
               </div>
-              <TargetAddressFields
-                value={ea}
-                onChange={v => updateAddressEntry(i, v)}
-                label={ea.label}
-                onLabelChange={v => updateAddressEntry(i, { label: v })}
-              />
-            </div>
-          ))}
+            );
+          })}
           <Button
             size="sm"
             variant="outline"
@@ -1484,36 +1588,91 @@ function AssociateCard({
             <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
               <Car className="w-3 h-3" /> Vehicle
             </p>
-            <TargetVehicleFields
-              value={vehicle}
-              onChange={v => mark(() => setVehicle(v))}
-            />
+            {vehicleMode === "locked" ? (
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
+                <p className="text-sm text-foreground flex-1">
+                  {associate?.v1f ?? associate?.v1}
+                </p>
+                <div className="flex gap-1.5 flex-wrap sm:shrink-0">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 text-xs h-7"
+                    onClick={startEditVehicle}
+                  >
+                    <Pencil className="w-3 h-3" /> Edit
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 text-xs h-7 text-destructive hover:text-destructive"
+                    onClick={removePrimaryVehicle}
+                  >
+                    <Trash2 className="w-3 h-3" /> Remove
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <TargetVehicleFields
+                  value={vehicle}
+                  onChange={v => mark(() => setVehicle(v))}
+                />
+                {(associate?.v1f || associate?.v1) && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="gap-1.5 text-xs self-start"
+                    onClick={() => setVehicleMode("locked")}
+                  >
+                    Cancel
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
 
-          {extraVehicles.map((ev, i) => (
-            <div
-              key={i}
-              className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
-                  <Car className="w-3 h-3" /> Vehicle {i + 2}
-                </span>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-6 w-6 text-destructive hover:text-destructive"
-                  onClick={() => removeVehicle(i)}
-                >
-                  <X className="w-3 h-3" />
-                </Button>
+          {extraVehicles.map((ev, i) => {
+            const mode = extraVehicleModes[ev.id] ?? "edit";
+            return (
+              <div
+                key={ev.id}
+                className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
+                    <Car className="w-3 h-3" /> Vehicle {i + 2}
+                  </span>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-6 w-6 text-destructive hover:text-destructive"
+                    onClick={() => removeVehicle(i)}
+                  >
+                    <X className="w-3 h-3" />
+                  </Button>
+                </div>
+                {mode === "locked" ? (
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
+                    <p className="text-sm text-foreground flex-1">{ev.full}</p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5 text-xs h-7 sm:shrink-0"
+                      onClick={() => startEditExtraVehicle(ev.id)}
+                    >
+                      <Pencil className="w-3 h-3" /> Edit
+                    </Button>
+                  </div>
+                ) : (
+                  <TargetVehicleFields
+                    value={ev}
+                    onChange={v => updateVehicleEntry(i, v)}
+                  />
+                )}
               </div>
-              <TargetVehicleFields
-                value={ev}
-                onChange={v => updateVehicleEntry(i, v)}
-              />
-            </div>
-          ))}
+            );
+          })}
           <Button
             size="sm"
             variant="outline"

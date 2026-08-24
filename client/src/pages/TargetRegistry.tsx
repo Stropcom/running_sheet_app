@@ -308,6 +308,14 @@ function TargetCard({
   // there's nothing to preserve yet. Extra entries are tracked by their
   // stable `id`, not array position, so the mode map stays correct even as
   // entries are added/removed.
+  // Name has no "Add new" option like Address/Vehicle do — a name change is
+  // always correcting a mistake, not the target becoming a different person,
+  // so there's no "Previous" value worth preserving in target_field_history.
+  // Just a single Edit toggle for the same locked/at-a-glance look as the
+  // other panels.
+  const [nameMode, setNameMode] = useState<"locked" | "edit">(
+    target.name ? "locked" : "edit"
+  );
   const [addressMode, setAddressMode] = useState<"locked" | "edit" | "new">(
     target.hbf || target.hb ? "locked" : "edit"
   );
@@ -358,6 +366,7 @@ function TargetCard({
     const freshExtraVehicles = parseExtraVehicles(target.extraVehicles);
     setExtraAddresses(freshExtraAddresses);
     setExtraVehicles(freshExtraVehicles);
+    setNameMode(target.name ? "locked" : "edit");
     setAddressMode(target.hbf || target.hb ? "locked" : "edit");
     setVehicleMode(target.v1f || target.v1 ? "locked" : "edit");
     setExtraAddressModes(computeExtraModes(freshExtraAddresses));
@@ -368,6 +377,19 @@ function TargetCard({
   const mark = (fn: () => void) => {
     fn();
     setDirty(true);
+  };
+
+  const startEditName = () => {
+    setNameMode("edit");
+    setDirty(true);
+  };
+  const cancelNameEdit = () => {
+    setNameMode("locked");
+    setIdentity({
+      firstNames: target.firstNames ?? "",
+      surname: target.surname ?? "",
+      bornDate: isoToDdMmYyyy(target.bornDate),
+    });
   };
 
   const startEditAddress = () => {
@@ -712,10 +734,43 @@ function TargetCard({
               </div>
             )}
 
-            <TargetIdentityFields
-              value={identity}
-              onChange={v => mark(() => setIdentity(v))}
-            />
+            <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
+              <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
+                <Target className="w-3 h-3" /> Name
+              </p>
+              {nameMode === "locked" ? (
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
+                  <p className="text-sm text-foreground flex-1">
+                    {target.name}
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 text-xs h-7 sm:shrink-0"
+                    onClick={startEditName}
+                  >
+                    <Pencil className="w-3 h-3" /> Edit
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <TargetIdentityFields
+                    value={identity}
+                    onChange={v => mark(() => setIdentity(v))}
+                  />
+                  {target.name && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="gap-1.5 text-xs self-start"
+                      onClick={cancelNameEdit}
+                    >
+                      Cancel
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
 
             <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
               <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
@@ -1007,6 +1062,8 @@ function TargetCard({
               <Plus className="w-3.5 h-3.5" /> Add Vehicle
             </Button>
 
+            <AssociatesSection targetId={target.id} />
+
             {/* ── Depart / Arrive ── */}
             {(
               [
@@ -1050,8 +1107,6 @@ function TargetCard({
                 {update.isPending ? "Saving…" : "Save"}
               </Button>
             </div>
-
-            <AssociatesSection targetId={target.id} />
           </div>
         )}
       </div>

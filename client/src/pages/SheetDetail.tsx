@@ -1105,7 +1105,7 @@ function MemberCell({
                 title={`Add all ${rosterCins.length} rostered CINs`}
               >
                 <Users className="w-3 h-3" />
-                Team ({rosterCins.length})
+                Team
               </button>
             )}
           </div>

@@ -65,7 +65,9 @@ import {
   Tag,
   User,
   Car,
+  TriangleAlert,
 } from "lucide-react";
+import { looksLikeUnparsedVehicleEvent } from "@shared/vehicleEventPatterns";
 import {
   Select,
   SelectContent,
@@ -863,16 +865,27 @@ function MemberCell({
   const handleAdd = () => {
     if (!newName.trim()) return;
     const val = newName.trim();
-    // If user typed 'team' (case-insensitive), expand to all roster CINs
-    if (val.toLowerCase() === "team" && rosterCins && rosterCins.length > 0) {
-      rosterCins.forEach(cin => onAddMember(row.id, cin));
-      setNewName("");
-      setAdding(false);
-      return;
-    }
     onAddMember(row.id, val);
     setNewName("");
     setAdding(false);
+  };
+
+  // Adds every rostered CIN to this row at once, in roster order (leader
+  // first, then ascending CIN), one mutation at a time so order is
+  // preserved rather than racing. Two entry points share this: the "★ Add
+  // all team CINs" dropdown option below, and the "Team" quick-add button
+  // shown next to "+ Add" whenever a roster exists.
+  const addAllTeamCins = () => {
+    if (!rosterCins || rosterCins.length === 0) return;
+    const addSequentially = (cins: string[], idx: number) => {
+      if (idx >= cins.length) {
+        setAdding(false);
+        return;
+      }
+      onAddMember(row.id, cins[idx]);
+      setTimeout(() => addSequentially(cins, idx + 1), 80);
+    };
+    addSequentially(rosterCins, 0);
   };
 
   // dnd-kit sensors — pointer (desktop) + touch with 250ms delay (mobile tap-hold)
@@ -940,16 +953,7 @@ function MemberCell({
                   value={newName}
                   onValueChange={v => {
                     if (v === "__all__") {
-                      // Add sequentially to preserve team order (leader first, then ascending CIN)
-                      const addSequentially = (cins: string[], idx: number) => {
-                        if (idx >= cins.length) {
-                          setAdding(false);
-                          return;
-                        }
-                        onAddMember(row.id, cins[idx]);
-                        setTimeout(() => addSequentially(cins, idx + 1), 80);
-                      };
-                      addSequentially(rosterCins, 0);
+                      addAllTeamCins();
                     } else {
                       onAddMember(row.id, v);
                       setNewName("");
@@ -1027,13 +1031,25 @@ function MemberCell({
             )}
           </div>
         ) : (
-          <button
-            onClick={() => setAdding(true)}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors mt-0.5 w-fit"
-          >
-            <UserPlus className="w-3 h-3" />
-            Add
-          </button>
+          <div className="flex items-center gap-3 mt-0.5">
+            <button
+              onClick={() => setAdding(true)}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors w-fit"
+            >
+              <UserPlus className="w-3 h-3" />
+              Add
+            </button>
+            {rosterCins && rosterCins.length > 1 && (
+              <button
+                onClick={addAllTeamCins}
+                className="flex items-center gap-1 text-xs text-primary/80 hover:text-primary transition-colors w-fit"
+                title={`Add all ${rosterCins.length} rostered CINs`}
+              >
+                <Users className="w-3 h-3" />
+                Team ({rosterCins.length})
+              </button>
+            )}
+          </div>
         ))}
     </div>
   );
@@ -1720,6 +1736,13 @@ function EditableCell({
     useObservationFocus();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // "Couldn't parse this as a vehicle event" hint (multiline/observation
+  // only) — tracks the exact text it was dismissed for, so editing the row
+  // past that text re-shows the hint rather than suppressing it forever.
+  const [vehicleHintDismissedFor, setVehicleHintDismissedFor] = useState<
+    string | null
+  >(null);
+
   // ── Inline mention autocomplete ─────────────────────────────────────────
   const [mentionWord, setMentionWord] = useState<{
     word: string;
@@ -1769,8 +1792,7 @@ function EditableCell({
     top: number;
     left: number;
   } | null>(null);
-  const [vehicleMentionActiveIndex, setVehicleMentionActiveIndex] =
-    useState(0);
+  const [vehicleMentionActiveIndex, setVehicleMentionActiveIndex] = useState(0);
   const vehicleMentionDebounceRef = useRef<ReturnType<
     typeof setTimeout
   > | null>(null);
@@ -1932,6 +1954,30 @@ function EditableCell({
       textarea.setSelectionRange(newPos, newPos);
     });
   };
+
+  const observationForHint = editing ? draft : (value ?? "");
+  const showVehicleHint =
+    !!multiline &&
+    !locked &&
+    observationForHint !== vehicleHintDismissedFor &&
+    looksLikeUnparsedVehicleEvent(observationForHint);
+  const vehicleHint = showVehicleHint ? (
+    <div className="mt-1.5 flex items-start gap-1.5 px-2.5 py-1.5 rounded-md border border-dashed border-amber-400 dark:border-amber-700 bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 text-xs">
+      <TriangleAlert className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+      <span className="flex-1">
+        Looks like a vehicle event — couldn't turn it into a chip. Rephrase, or
+        ignore if this wasn't a departure/arrival.
+      </span>
+      <button
+        type="button"
+        onMouseDown={e => e.preventDefault()}
+        onClick={() => setVehicleHintDismissedFor(observationForHint)}
+        className="font-medium underline underline-offset-2 shrink-0 hover:text-amber-800 dark:hover:text-amber-300"
+      >
+        Dismiss
+      </button>
+    </div>
+  ) : null;
 
   if (locked) {
     return (
@@ -2138,6 +2184,7 @@ function EditableCell({
                 ))}
               </div>
             )}
+          {vehicleHint}
         </>
       );
     }
@@ -2161,16 +2208,19 @@ function EditableCell({
   }
 
   return (
-    <div
-      className="text-sm cursor-text hover:bg-accent/50 rounded px-1 -mx-1 py-0.5 min-h-[1.75rem] transition-colors whitespace-pre-wrap"
-      onClick={() => setEditing(true)}
-    >
-      {value || (
-        <span className="text-muted-foreground/50 italic text-xs">
-          {placeholder}
-        </span>
-      )}
-    </div>
+    <>
+      <div
+        className="text-sm cursor-text hover:bg-accent/50 rounded px-1 -mx-1 py-0.5 min-h-[1.75rem] transition-colors whitespace-pre-wrap"
+        onClick={() => setEditing(true)}
+      >
+        {value || (
+          <span className="text-muted-foreground/50 italic text-xs">
+            {placeholder}
+          </span>
+        )}
+      </div>
+      {vehicleHint}
+    </>
   );
 }
 

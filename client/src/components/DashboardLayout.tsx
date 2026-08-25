@@ -92,6 +92,7 @@ import {
   TrendingUp,
   CalendarClock,
   ShieldAlert,
+  Database,
 } from "lucide-react";
 import React, {
   CSSProperties,
@@ -1257,6 +1258,7 @@ function AdminNavTile({
     location === "/operation-management" ||
     location === "/recycle-bin" ||
     location.startsWith("/administration/smeac") ||
+    location.startsWith("/administration/intel-export") ||
     location === "/help";
   return (
     <DropdownMenu>
@@ -1291,6 +1293,12 @@ function AdminNavTile({
         <DropdownMenuItem onClick={() => setLocation("/administration/smeac")}>
           <ShieldAlert className="h-4 w-4 mr-2" />
           SMEAC Briefings
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => setLocation("/administration/intel-export")}
+        >
+          <Database className="h-4 w-4 mr-2" />
+          Intel Export
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => setLocation("/help")}>
           <HelpCircle className="h-4 w-4 mr-2" />
@@ -1788,6 +1796,7 @@ function DashboardLayoutContent({
       "/help",
       "/reports",
       "/administration/smeac",
+      "/administration/intel-export",
     ];
     if (adminPaths.some(p => location === p || location.startsWith(p))) {
       setAdminFolderExpanded(true);
@@ -2054,6 +2063,9 @@ function DashboardLayoutContent({
                             location === "/operation-management" ||
                             location === "/recycle-bin" ||
                             location.startsWith("/administration/smeac") ||
+                            location.startsWith(
+                              "/administration/intel-export"
+                            ) ||
                             location === "/help"
                       }
                       onClick={() => setAdminFolderExpanded(v => !v)}
@@ -2068,6 +2080,7 @@ function DashboardLayoutContent({
                           location === "/operation-management" ||
                           location === "/recycle-bin" ||
                           location.startsWith("/administration/smeac") ||
+                          location.startsWith("/administration/intel-export") ||
                           location === "/help"
                             ? "text-sidebar-foreground font-medium"
                             : "text-sidebar-foreground/80"
@@ -2139,6 +2152,19 @@ function DashboardLayoutContent({
                         >
                           <ShieldAlert className="h-3.5 w-3.5 shrink-0 text-foreground" />
                           SMEAC Briefings
+                        </button>
+
+                        {/* Intel Export */}
+                        <button
+                          onClick={() =>
+                            setLocation("/administration/intel-export")
+                          }
+                          className={subItemClass(
+                            location.startsWith("/administration/intel-export")
+                          )}
+                        >
+                          <Database className="h-3.5 w-3.5 shrink-0 text-foreground" />
+                          Intel Export
                         </button>
 
                         {/* Help */}

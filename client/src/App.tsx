@@ -55,6 +55,7 @@ import CtoRosterEACompliancePage from "@/pages/CtoRoster/EACompliancePage";
 import CtoRosterOutlookPage from "@/pages/CtoRoster/OutlookPage";
 import CtoRosterAuditLogPage from "@/pages/CtoRoster/AuditLogPage";
 import SmeacBriefingListPage from "@/pages/SmeacBriefingListPage";
+import IntelExportPage from "@/pages/IntelExportPage";
 import SmeacBriefingNewPage from "@/pages/SmeacBriefingNewPage";
 import SmeacBriefingDetailPage from "@/pages/SmeacBriefingDetailPage";
 import SmeacBriefingEditPage from "@/pages/SmeacBriefingEditPage";
@@ -271,6 +272,7 @@ function Router() {
         path="/administration/smeac/:id"
         component={SmeacBriefingDetailPage}
       />
+      <Route path="/administration/intel-export" component={IntelExportPage} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

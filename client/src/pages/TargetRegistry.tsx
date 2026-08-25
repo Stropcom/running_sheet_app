@@ -120,6 +120,11 @@ type RegistryTarget = {
     operationName: string | null;
   }>;
   isIndicesOnly?: boolean;
+  /** Set when this target has been confirmed as the same real person as an
+   * Associate elsewhere in the registry — see "Person Identity Links" in
+   * server/db.ts. Both records survive independently; only shared fields
+   * stay in sync. */
+  linkedAssociateId?: number | null;
 };
 
 // Initial lock state for a set of extra address/vehicle entries — "locked"
@@ -717,6 +722,15 @@ function TargetCard({
             <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
               <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
                 <Target className="w-3 h-3" /> Name
+                {target.linkedAssociateId && (
+                  <Badge
+                    variant="secondary"
+                    className="text-[10px] gap-1 font-medium normal-case tracking-normal ml-1"
+                    title="This target's name/address/vehicle stay in sync with a linked Associate record elsewhere in the registry — the same real person, filed both ways."
+                  >
+                    <Link2 className="h-2.5 w-2.5" /> Linked to an associate
+                  </Badge>
+                )}
               </p>
               {nameMode === "locked" ? (
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
@@ -1104,6 +1118,10 @@ type AssociateRecord = {
   extraAddresses: string | null;
   extraVehicles: string | null;
   isIndicesOnly?: boolean;
+  /** Set when this associate has been confirmed as the same real person as
+   * a Target elsewhere in the registry — mirror of RegistryTarget's
+   * linkedAssociateId above. */
+  linkedTargetId?: number | null;
 };
 
 function AssociateCard({
@@ -1279,6 +1297,14 @@ function AssociateCard({
     },
     onError: (e: { message: string }) => toast.error(e.message),
   });
+  const createLinkedMut = trpc.associate.createLinkedFromTarget.useMutation({
+    onSuccess: () => {
+      utils.associate.listForTarget.invalidate({ targetId });
+      toast.success("Associate added and linked to the existing target");
+      onCreated?.();
+    },
+    onError: (e: { message: string }) => toast.error(e.message),
+  });
   const updateMut = trpc.associate.update.useMutation({
     onSuccess: () => {
       utils.associate.listForTarget.invalidate({ targetId });
@@ -1362,6 +1388,62 @@ function AssociateCard({
     setWarnIndex(0);
   };
 
+  const [linking, setLinking] = useState(false);
+
+  const handleWarnLinkAndCopy = async (linkable: {
+    recordType: "target" | "associate";
+    id: number;
+  }) => {
+    // This card only ever creates an Associate, so the only linkable match
+    // it can offer is an existing Target record — a "person" match against
+    // another Associate has no merge/link concept here.
+    if (linkable.recordType !== "target") return;
+    setLinking(true);
+    try {
+      const target = await utils.target.getById.fetch({
+        id: linkable.id,
+      });
+      if (!target) {
+        toast.error("Couldn't load the matched target.");
+        return;
+      }
+      createLinkedMut.mutate({
+        targetId,
+        name: target.name,
+        tgt: target.tgt,
+        hbf: target.hbf,
+        hb: target.hb,
+        v1f: target.v1f,
+        v1: target.v1,
+        extraAddresses: target.extraAddresses ?? "[]",
+        extraVehicles: target.extraVehicles ?? "[]",
+        firstNames: target.firstNames,
+        surname: target.surname,
+        bornDate: target.bornDate,
+        addrUnitNo: target.addrUnitNo,
+        addrHouseNo: target.addrHouseNo,
+        addrStreetName: target.addrStreetName,
+        addrStreetType: target.addrStreetType,
+        addrSuburb: target.addrSuburb,
+        addrState: target.addrState,
+        addrBusinessName: target.addrBusinessName,
+        vehRegistration: target.vehRegistration,
+        vehState: target.vehState,
+        vehColour: target.vehColour,
+        vehMake: target.vehMake,
+        vehModel: target.vehModel,
+        vehType: target.vehType,
+        existingTargetId: target.id,
+      });
+      setWarnQueue([]);
+      setWarnIndex(0);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to link and copy.");
+    } finally {
+      setLinking(false);
+    }
+  };
+
   const handleSave = async () => {
     const payload = buildPayload();
     if (!payload.name) {
@@ -1409,6 +1491,15 @@ function AssociateCard({
         <span className="flex-1 text-sm font-medium truncate">
           {displayName}
         </span>
+        {associate?.linkedTargetId && (
+          <Badge
+            variant="secondary"
+            className="text-[10px] gap-1 font-medium normal-case tracking-normal"
+            title="This associate's name/address/vehicle stay in sync with a linked Target record elsewhere in the registry — the same real person, filed both ways."
+          >
+            <Link2 className="h-2.5 w-2.5" /> Linked
+          </Badge>
+        )}
         {associate?.isIndicesOnly && <IndicesBadge />}
         <ChevronRight
           className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${expanded ? "rotate-90" : ""}`}
@@ -1689,6 +1780,8 @@ function AssociateCard({
         warning={warnQueue[warnIndex] ?? null}
         onContinue={handleWarnContinue}
         onReview={handleWarnReview}
+        onLinkAndCopy={handleWarnLinkAndCopy}
+        linking={linking}
       />
     </div>
   );
@@ -1761,6 +1854,14 @@ export default function TargetRegistryPage() {
       toast.success("Target added to registry.");
     },
   });
+
+  const createLinkedMutation =
+    trpc.target.registry.createLinkedFromAssociate.useMutation({
+      onSuccess: () => {
+        utils.target.registry.list.invalidate();
+        toast.success("Target created and linked to the existing associate.");
+      },
+    });
 
   const filtered = useMemo(() => {
     if (!targets) return [];
@@ -2043,7 +2144,15 @@ export default function TargetRegistryPage() {
         open={showCreate}
         onClose={() => setShowCreate(false)}
         onSave={async payload => {
-          await createMutation.mutateAsync(payload);
+          const { existingAssociateId, ...rest } = payload;
+          if (existingAssociateId) {
+            await createLinkedMutation.mutateAsync({
+              ...rest,
+              existingAssociateId,
+            });
+          } else {
+            await createMutation.mutateAsync(rest);
+          }
         }}
       />
 

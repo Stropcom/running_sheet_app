@@ -1604,10 +1604,15 @@ export default function IntelligenceMapping() {
     if (rsSelectedOpId !== null) return [rsSelectedOpId];
     return undefined;
   }, [selectedOpIds, opsExplicitlySet, rsSelectedOpId]);
+  const utils = trpc.useUtils();
+  // Paused while a marker is being dragged/confirmed (movingMarkerId !== null)
+  // so the 5s poll can't land mid-move and hand the render effect below a
+  // stale (pre-update) position — which snapped the marker straight back to
+  // where it started, intermittently, right after "Accept".
   const { data: customMarkers, refetch: refetchCustomMarkers } =
     trpc.customMarker.list.useQuery(
       { operationIds: effectiveOpIdsForMarkers },
-      { refetchInterval: 5000, enabled: true }
+      { refetchInterval: movingMarkerId === null ? 5000 : false, enabled: true }
     );
   const createCustomMarkerMut = trpc.customMarker.create.useMutation({
     onSuccess: () => {
@@ -1620,11 +1625,16 @@ export default function IntelligenceMapping() {
     },
   });
   const updateCustomMarkerMut = trpc.customMarker.update.useMutation({
+    onMutate: async () => {
+      // Belt-and-braces: also cancel any poll already in flight when the
+      // move is accepted, so a stale response can't resolve after this
+      // mutation's own refetch and undo it.
+      await utils.customMarker.list.cancel();
+    },
     onSuccess: () => {
       void refetchCustomMarkers();
     },
   });
-  const utils = trpc.useUtils();
 
   // Intelligence entities for associate/vehicle dropdowns
   const { data: intelEntities } = trpc.intelligence.getEntities.useQuery();
@@ -3436,10 +3446,7 @@ export default function IntelligenceMapping() {
             first (position:absolute ignores DOM order) with a z-index above
             the map's own floating controls so it always paints on top. */}
           {smeacId && (
-            <SmeacMapOverlay
-              briefingId={smeacId}
-              onClose={closeSmeacOverlay}
-            />
+            <SmeacMapOverlay briefingId={smeacId} onClose={closeSmeacOverlay} />
           )}
 
           {/* Loading overlay */}

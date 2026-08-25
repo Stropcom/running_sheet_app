@@ -541,6 +541,27 @@ function exportToPDF(
         </tr>${spacerRow}`);
         continue;
       }
+      // Fully-certified row whose members are exactly the full daily roster —
+      // collapse to a single "TEAM" pill instead of one row per CIN. The
+      // individual CINs are still real data on the row underneath (Witness
+      // List generation reads that, not this export), this is display only.
+      if (
+        row.isLocked &&
+        isFullTeamMembers(
+          row.members,
+          cinRoster.map(c => c.cin)
+        )
+      ) {
+        const obsHtml =
+          boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>")) +
+          attachmentImagesHtml(row.attachments);
+        parts.push(`<tr style="background:${rowBg}">
+          <td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap">${row.time ?? ""}</td>
+          <td style="padding:6px 6px 8px;${bb};${cb}">${obsHtml}</td>
+          <td style="padding:6px 6px 8px;${bb};font-size:11px"><span class="pill pill-certified">&#10003; TEAM</span></td>
+        </tr>${spacerRow}`);
+        continue;
+      }
       // Render one <tr> per member so CIN and Certified columns align perfectly
       const memberRows = row.members
         .map((m, idx) => {
@@ -759,6 +780,28 @@ function exportToPDF(
 
 const SPACER = "__SPACE__";
 
+// True when a row's real (non-spacer) members are exactly the full daily
+// roster — same CINs, no more, no fewer, duplicates collapsed by set
+// equality. Used to collapse a fully-certified row's member list down to a
+// single "TEAM" pill (MemberCell) and a single certify/uncertify control
+// (CertifyCell) — never for a row that merely happens to have every member
+// certified, only one that IS the whole team.
+function isFullTeamMembers(
+  members: { memberName: string }[],
+  rosterCins: string[] | undefined
+): boolean {
+  if (!rosterCins || rosterCins.length === 0) return false;
+  const realSet = new Set(
+    members
+      .map(m => m.memberName)
+      .filter(n => n !== SPACER)
+      .map(n => n.toUpperCase())
+  );
+  const rosterSet = new Set(rosterCins.map(c => c.toUpperCase()));
+  if (realSet.size !== rosterSet.size) return false;
+  return Array.from(rosterSet).every(cin => realSet.has(cin));
+}
+
 function SortableCinItem({
   member,
   cert,
@@ -911,35 +954,53 @@ function MemberCell({
     );
   };
 
+  // A fully-certified row (isLocked) whose members are exactly the full
+  // daily roster collapses to a single green "TEAM" pill instead of every
+  // CIN — the individual CINs are still the real data underneath (used by
+  // Witness List generation and everywhere else); this is display only.
+  // Uncertifying (via CertifyCell) drops row.isLocked, which reverts this
+  // automatically since the check below no longer holds.
+  const showTeamCollapse =
+    row.isLocked && isFullTeamMembers(row.members, rosterCins);
+
   return (
     <div className="flex flex-col min-w-[40px]">
-      {/* CIN list — drag handles allow full reordering */}
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
-      >
-        <SortableContext
-          items={row.members.map(m => m.id)}
-          strategy={verticalListSortingStrategy}
+      {showTeamCollapse ? (
+        <div className="flex items-center gap-1.5 h-8">
+          <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-500" />
+          <span className="text-sm font-mono font-semibold text-emerald-500">
+            TEAM
+          </span>
+        </div>
+      ) : (
+        /* CIN list — drag handles allow full reordering */
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
         >
-          {row.members.map(member => {
-            const cert = !!row.certifications.find(
-              c => c.memberId === member.id && c.isActive
-            );
-            return (
-              <SortableCinItem
-                key={member.id}
-                member={member}
-                cert={cert}
-                canEdit={canEdit}
-                isLocked={row.isLocked}
-                onRemove={() => onRemoveMember(member.id, row.id)}
-              />
-            );
-          })}
-        </SortableContext>
-      </DndContext>
+          <SortableContext
+            items={row.members.map(m => m.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            {row.members.map(member => {
+              const cert = !!row.certifications.find(
+                c => c.memberId === member.id && c.isActive
+              );
+              return (
+                <SortableCinItem
+                  key={member.id}
+                  member={member}
+                  cert={cert}
+                  canEdit={canEdit}
+                  isLocked={row.isLocked}
+                  onRemove={() => onRemoveMember(member.id, row.id)}
+                />
+              );
+            })}
+          </SortableContext>
+        </DndContext>
+      )}
 
       {/* Add button — sits below all CINs */}
       {canEdit &&
@@ -1229,6 +1290,7 @@ function CertifyCell({
   onUncertify,
   onUncertifyAll,
   onDeleteRow,
+  rosterCins,
 }: {
   row: SheetRow;
   canCertify: boolean;
@@ -1236,6 +1298,7 @@ function CertifyCell({
   onUncertify: (rowId: number, memberId: number) => void;
   onUncertifyAll: (rowId: number) => void;
   onDeleteRow?: (rowId: number) => void;
+  rosterCins?: string[];
 }) {
   const total = row.members.length;
   const certified = row.certifications.filter(c => c.isActive).length;
@@ -1263,94 +1326,108 @@ function CertifyCell({
   // Height of each member sub-row — must match MemberCell's member row height
   const ROW_H = "h-8";
 
+  // Mirrors MemberCell's "TEAM" pill collapse — same condition, so the two
+  // columns stay row-aligned. Certifications aren't touched by this at
+  // all; "Uncertify All" below still un-collapses it, same as ever.
+  const showTeamCollapse =
+    row.isLocked && isFullTeamMembers(row.members, rosterCins);
+
   return (
     <div className="flex flex-col items-center">
       {/* One row per member — same fixed height as MemberCell member rows */}
-      {row.members.map(m => {
-        const cert = row.certifications.find(
-          c => c.memberId === m.id && c.isActive
-        );
-        return (
-          <div
-            key={m.id}
-            className={`flex flex-col items-center justify-center ${ROW_H} w-full`}
-          >
-            {/* Shield: single certify/uncertify toggle — no cross, just the shield */}
-            {cert ? (
-              /* Certified: green shield + certifier CIN side by side */
-              <div className="flex items-center justify-center gap-1">
-                {canCertify && !row.isLocked ? (
+      {showTeamCollapse ? (
+        <div
+          className={`flex flex-col items-center justify-center ${ROW_H} w-full`}
+        >
+          <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-500" />
+        </div>
+      ) : (
+        row.members.map(m => {
+          const cert = row.certifications.find(
+            c => c.memberId === m.id && c.isActive
+          );
+          return (
+            <div
+              key={m.id}
+              className={`flex flex-col items-center justify-center ${ROW_H} w-full`}
+            >
+              {/* Shield: single certify/uncertify toggle — no cross, just the shield */}
+              {cert ? (
+                /* Certified: green shield + certifier CIN side by side */
+                <div className="flex items-center justify-center gap-1">
+                  {canCertify && !row.isLocked ? (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="w-6 h-6 shrink-0 text-emerald-500 hover:text-red-400 hover:bg-red-400/10"
+                          onClick={() => onUncertify(row.id, m.id)}
+                        >
+                          <ShieldCheck className="w-4 h-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">
+                        Uncertify {m.memberName}
+                      </TooltipContent>
+                    </Tooltip>
+                  ) : (
+                    <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-500" />
+                  )}
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="w-6 h-6 shrink-0 text-emerald-500 hover:text-red-400 hover:bg-red-400/10"
-                        onClick={() => onUncertify(row.id, m.id)}
-                      >
-                        <ShieldCheck className="w-4 h-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="text-xs">
-                      Uncertify {m.memberName}
-                    </TooltipContent>
-                  </Tooltip>
-                ) : (
-                  <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-500" />
-                )}
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="text-xs font-mono font-medium text-emerald-500 cursor-default">
-                      {(cert as any).certifiedByCIN || cert.certifiedByName}
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="font-medium">
-                        Certified by{" "}
+                      <span className="text-xs font-mono font-medium text-emerald-500 cursor-default">
                         {(cert as any).certifiedByCIN || cert.certifiedByName}
                       </span>
-                      <span className="text-muted-foreground flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {format(
-                          new Date(cert.certifiedAt),
-                          "MMM d, yyyy HH:mm:ss"
-                        )}
-                      </span>
-                    </div>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-            ) : (
-              /* Uncertified: red shield centred, "Certify" label below */
-              <div className="flex flex-col items-center justify-center gap-0">
-                {canCertify && !row.isLocked ? (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="w-6 h-6 shrink-0 text-red-500 hover:text-emerald-500 hover:bg-emerald-500/10"
-                        onClick={() => onCertify(row.id, m.id)}
-                      >
-                        <ShieldCheck className="w-4 h-4" />
-                      </Button>
                     </TooltipTrigger>
                     <TooltipContent side="top" className="text-xs">
-                      Certify {m.memberName}
+                      <div className="flex flex-col gap-0.5">
+                        <span className="font-medium">
+                          Certified by{" "}
+                          {(cert as any).certifiedByCIN || cert.certifiedByName}
+                        </span>
+                        <span className="text-muted-foreground flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          {format(
+                            new Date(cert.certifiedAt),
+                            "MMM d, yyyy HH:mm:ss"
+                          )}
+                        </span>
+                      </div>
                     </TooltipContent>
                   </Tooltip>
-                ) : (
-                  <ShieldCheck className="w-4 h-4 shrink-0 text-red-500" />
-                )}
-                <span className="text-[10px] leading-none text-red-500 font-medium">
-                  Certify
-                </span>
-              </div>
-            )}
-          </div>
-        );
-      })}
+                </div>
+              ) : (
+                /* Uncertified: red shield centred, "Certify" label below */
+                <div className="flex flex-col items-center justify-center gap-0">
+                  {canCertify && !row.isLocked ? (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="w-6 h-6 shrink-0 text-red-500 hover:text-emerald-500 hover:bg-emerald-500/10"
+                          onClick={() => onCertify(row.id, m.id)}
+                        >
+                          <ShieldCheck className="w-4 h-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">
+                        Certify {m.memberName}
+                      </TooltipContent>
+                    </Tooltip>
+                  ) : (
+                    <ShieldCheck className="w-4 h-4 shrink-0 text-red-500" />
+                  )}
+                  <span className="text-[10px] leading-none text-red-500 font-medium">
+                    Certify
+                  </span>
+                </div>
+              )}
+            </div>
+          );
+        })
+      )}
 
       {/* Summary — at the bottom */}
       <div className="flex items-center justify-center gap-1.5 mt-1 w-full">
@@ -4909,6 +4986,7 @@ export default function SheetDetail() {
                                       }
                                     : undefined
                                 }
+                                rosterCins={rosterCinList}
                               />
                             </td>
                           </tr>

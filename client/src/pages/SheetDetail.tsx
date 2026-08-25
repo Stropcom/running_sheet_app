@@ -65,9 +65,7 @@ import {
   Tag,
   User,
   Car,
-  TriangleAlert,
 } from "lucide-react";
-import { looksLikeUnparsedVehicleEvent } from "@shared/vehicleEventPatterns";
 import {
   Select,
   SelectContent,
@@ -1813,13 +1811,6 @@ function EditableCell({
     useObservationFocus();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // "Couldn't parse this as a vehicle event" hint (multiline/observation
-  // only) — tracks the exact text it was dismissed for, so editing the row
-  // past that text re-shows the hint rather than suppressing it forever.
-  const [vehicleHintDismissedFor, setVehicleHintDismissedFor] = useState<
-    string | null
-  >(null);
-
   // ── Inline mention autocomplete ─────────────────────────────────────────
   const [mentionWord, setMentionWord] = useState<{
     word: string;
@@ -2032,30 +2023,6 @@ function EditableCell({
     });
   };
 
-  const observationForHint = editing ? draft : (value ?? "");
-  const showVehicleHint =
-    !!multiline &&
-    !locked &&
-    observationForHint !== vehicleHintDismissedFor &&
-    looksLikeUnparsedVehicleEvent(observationForHint);
-  const vehicleHint = showVehicleHint ? (
-    <div className="mt-1.5 flex items-start gap-1.5 px-2.5 py-1.5 rounded-md border border-dashed border-amber-400 dark:border-amber-700 bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 text-xs">
-      <TriangleAlert className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-      <span className="flex-1">
-        Looks like a vehicle event — couldn't turn it into a chip. Rephrase, or
-        ignore if this wasn't a departure/arrival.
-      </span>
-      <button
-        type="button"
-        onMouseDown={e => e.preventDefault()}
-        onClick={() => setVehicleHintDismissedFor(observationForHint)}
-        className="font-medium underline underline-offset-2 shrink-0 hover:text-amber-800 dark:hover:text-amber-300"
-      >
-        Dismiss
-      </button>
-    </div>
-  ) : null;
-
   if (locked) {
     return (
       <span className="text-sm text-muted-foreground whitespace-pre-wrap">
@@ -2261,7 +2228,6 @@ function EditableCell({
                 ))}
               </div>
             )}
-          {vehicleHint}
         </>
       );
     }
@@ -2285,19 +2251,16 @@ function EditableCell({
   }
 
   return (
-    <>
-      <div
-        className="text-sm cursor-text hover:bg-accent/50 rounded px-1 -mx-1 py-0.5 min-h-[1.75rem] transition-colors whitespace-pre-wrap"
-        onClick={() => setEditing(true)}
-      >
-        {value || (
-          <span className="text-muted-foreground/50 italic text-xs">
-            {placeholder}
-          </span>
-        )}
-      </div>
-      {vehicleHint}
-    </>
+    <div
+      className="text-sm cursor-text hover:bg-accent/50 rounded px-1 -mx-1 py-0.5 min-h-[1.75rem] transition-colors whitespace-pre-wrap"
+      onClick={() => setEditing(true)}
+    >
+      {value || (
+        <span className="text-muted-foreground/50 italic text-xs">
+          {placeholder}
+        </span>
+      )}
+    </div>
   );
 }
 

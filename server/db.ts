@@ -24,6 +24,11 @@ import {
   nameWithoutBornClause,
 } from "@shared/addressFormat";
 import {
+  VEHICLE_DEPART_PATTERN,
+  VEHICLE_ARRIVE_PATTERN,
+  VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN,
+} from "@shared/vehicleEventPatterns";
+import {
   classifyVisitDirection,
   timeBucketLabels,
   DAY_LABELS,
@@ -3989,12 +3994,10 @@ export async function getSheetEntityChips(
 // recent departure per rego that hasn't since been matched by an arrival
 // for that rego, so the RS Quick Entry popup can offer it back as a chip.
 
-// Officers sometimes put a comma directly after the rego ("Vehicle 1FAD531,
-// HOGAN driver...") and sometimes don't ("Vehicle 1FAD531 HOGAN driver...") —
-// the ",?\s*" after the rego capture tolerates either.
-const VEHICLE_DEPART_PATTERN =
-  /Vehicle\s+([A-Za-z0-9]{5,8}),?\s*(.+?),\s*departed\b/i;
-const VEHICLE_ARRIVE_PATTERN = /Vehicle\s+([A-Za-z0-9]{5,8})\b.*?\barrived\b/i;
+// VEHICLE_DEPART_PATTERN / VEHICLE_ARRIVE_PATTERN / VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN
+// live in shared/vehicleEventPatterns.ts (imported above) so the client's
+// "couldn't parse this as a vehicle event" hint checks against the exact
+// same patterns this file uses to build chips.
 
 export interface PendingVehicleDeparture {
   rego: string;
@@ -4054,13 +4057,6 @@ export async function getPendingVehicleDepartures(
     .sort((a, b) => b.orderIdx - a.orderIdx)
     .map(({ orderIdx, ...rest }) => rest);
 }
-
-// Mirror of VEHICLE_DEPART_PATTERN, for "arrived" rows — kept as its own
-// constant (rather than reusing/extending VEHICLE_ARRIVE_PATTERN above,
-// which only needs to detect that a rego arrived, not who was in it) so
-// getPendingVehicleDepartures' matching is untouched by this.
-const VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN =
-  /Vehicle\s+([A-Za-z0-9]{5,8}),?\s*(.+?),\s*arrived\b/i;
 
 // Captures the address an "arrived" row names — prefers the canonical
 // bracketed short-form if the row includes one (a first mention of that
@@ -9403,7 +9399,10 @@ export async function getCoOccurringTargetCrossLinks(
 
   // Every row where one of my own vehicles/addresses actually appears,
   // tagged with which one so the link can say what was shared.
-  const ownRowVia = new Map<number, { via: "vehicle" | "address"; sharedValue: string }>();
+  const ownRowVia = new Map<
+    number,
+    { via: "vehicle" | "address"; sharedValue: string }
+  >();
   for (const e of allEntities) {
     let via: "vehicle" | "address" | null = null;
     if (e.type === "vehicle") {
@@ -9457,7 +9456,9 @@ export async function getCoOccurringTargetCrossLinks(
  * named entry (from the registry-sharing or co-occurring-target checks)
  * over an anonymous one (from the plain entity-sighting check) when both
  * exist for the same target/operation/via/value. */
-function dedupeCrossLinks(links: SharedEntityCrossLink[]): SharedEntityCrossLink[] {
+function dedupeCrossLinks(
+  links: SharedEntityCrossLink[]
+): SharedEntityCrossLink[] {
   const map = new Map<string, SharedEntityCrossLink>();
   for (const l of links) {
     const key = `${l.targetId ?? "-"}::${l.operationId}::${l.via}::${l.sharedValue.toLowerCase()}`;
@@ -10265,7 +10266,10 @@ export async function getIntelVehicleProfile(
   // in assocPersons below, not here — "registered target" should mean
   // exactly what the Target Registry says, not an inferred association.
   const selfRegoForMatch = extractRegoUpper(label);
-  const linkedTargetsMap = new Map<number, { targetId: number; name: string }>();
+  const linkedTargetsMap = new Map<
+    number,
+    { targetId: number; name: string }
+  >();
   if (selfRegoForMatch) {
     for (const t of allTargets) {
       if (targetVehicleRegos(t).has(selfRegoForMatch)) {

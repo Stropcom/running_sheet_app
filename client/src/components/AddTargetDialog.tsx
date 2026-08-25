@@ -339,13 +339,6 @@ export function AddTargetDialog({
               <TargetAddressFields value={address} onChange={setAddress} />
             </div>
 
-            <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
-              <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
-                <Car className="w-3 h-3" /> Vehicle 1
-              </p>
-              <TargetVehicleFields value={vehicle} onChange={setVehicle} />
-            </div>
-
             {/* Dynamic extra addresses */}
             {extraAddresses.map((ea, i) => (
               <div
@@ -406,6 +399,13 @@ export function AddTargetDialog({
             >
               <Plus className="w-3.5 h-3.5" /> Add Address
             </Button>
+
+            <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
+              <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
+                <Car className="w-3 h-3" /> Vehicle 1
+              </p>
+              <TargetVehicleFields value={vehicle} onChange={setVehicle} />
+            </div>
 
             {/* Dynamic extra vehicles */}
             {extraVehicles.map((ev, i) => (

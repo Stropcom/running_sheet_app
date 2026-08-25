@@ -76,7 +76,6 @@ import {
   X,
   Radio,
   AlertTriangle,
-  Home,
   FolderOpen,
   Check,
   FileText,
@@ -3822,7 +3821,7 @@ export default function IntelligenceMapping() {
           >
             {/* Drag handle — long-press activates drag */}
             <div
-              className={`pointer-events-auto flex items-center gap-2 lg:gap-3 px-2 py-1.5 rounded-3xl ${
+              className={`pointer-events-auto flex items-center gap-1.5 px-2 py-1.5 rounded-3xl ${
                 pillBarDraggingRef.current ? "cursor-grabbing" : "cursor-grab"
               } select-none touch-none`}
               onMouseDown={e => {
@@ -3902,29 +3901,6 @@ export default function IntelligenceMapping() {
                 document.addEventListener("touchend", onEnd);
               }}
             >
-              {/* Home pill (all devices) — solid filled chip (not translucent) so
-                it stays legible over busy satellite imagery, matching the
-                other opaque on-map markers (e.g. the pink custom marker pin).
-                -400 fill / -600 border (one step softer than the previous
-                -500/-700) keeps it defined against terrain without reading
-                as heavy; all four pills share this same fixed w-20 size. */}
-              <button
-                onClick={e => {
-                  if (pillBarIsDraggingRef.current) {
-                    e.preventDefault();
-                    return;
-                  }
-                  setLocation("/");
-                }}
-                className="flex flex-col items-center justify-center gap-1 px-5 py-2.5 rounded-2xl shadow-lg border transition-all w-20 text-white border-slate-600 bg-slate-400 hover:bg-slate-300 active:scale-95"
-                title="Home"
-              >
-                <Home className="h-5 w-5 flex-shrink-0" />
-                <span className="text-[11px] font-semibold leading-none">
-                  Home
-                </span>
-              </button>
-
               {/* Active RS pill */}
               {(() => {
                 const activeSheet =
@@ -3944,7 +3920,7 @@ export default function IntelligenceMapping() {
                       if (activeSheet)
                         setLocation(`/sheet/${rsSelectedSheetId}`);
                     }}
-                    className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all w-20 px-5 py-2.5 ${
+                    className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all w-[72px] px-3 py-2 ${
                       activeSheet
                         ? "text-white border-blue-600 bg-blue-400 hover:bg-blue-300 active:scale-95 cursor-pointer"
                         : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"
@@ -3976,7 +3952,7 @@ export default function IntelligenceMapping() {
                       }
                       if (hasSheet) setMapQeOpen(true);
                     }}
-                    className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all w-20 px-5 py-2.5 ${
+                    className={`flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all w-[72px] px-3 py-2 ${
                       hasSheet
                         ? "text-white border-emerald-600 bg-emerald-400 hover:bg-emerald-300 active:scale-95 cursor-pointer"
                         : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"
@@ -3994,24 +3970,6 @@ export default function IntelligenceMapping() {
                   </button>
                 );
               })()}
-
-              {/* Intel pill */}
-              <button
-                onClick={e => {
-                  if (pillBarIsDraggingRef.current) {
-                    e.preventDefault();
-                    return;
-                  }
-                  setLocation("/intelligence");
-                }}
-                className="flex flex-col items-center justify-center gap-1 rounded-2xl shadow-lg border transition-all w-20 px-5 py-2.5 text-white border-violet-600 bg-violet-400 hover:bg-violet-300 active:scale-95"
-                title="Intel Profiles"
-              >
-                <FolderSearch className="h-5 w-5 flex-shrink-0" />
-                <span className="text-[11px] font-semibold leading-none">
-                  Intel
-                </span>
-              </button>
             </div>
           </div>
         </div>

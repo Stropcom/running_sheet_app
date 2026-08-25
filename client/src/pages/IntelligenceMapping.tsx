@@ -3920,7 +3920,7 @@ export default function IntelligenceMapping() {
                       if (activeSheet)
                         setLocation(`/sheet/${rsSelectedSheetId}`);
                     }}
-                    className={`flex items-center justify-center gap-2 rounded-xl shadow-lg border transition-all px-5 py-2.5 ${
+                    className={`flex items-center justify-center gap-2 rounded-xl shadow-lg border transition-all w-[136px] px-5 py-2.5 ${
                       activeSheet
                         ? "text-white border-blue-600 bg-blue-400 hover:bg-blue-300 active:scale-95 cursor-pointer"
                         : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"
@@ -3952,7 +3952,7 @@ export default function IntelligenceMapping() {
                       }
                       if (hasSheet) setMapQeOpen(true);
                     }}
-                    className={`flex items-center justify-center gap-2 rounded-xl shadow-lg border transition-all px-5 py-2.5 ${
+                    className={`flex items-center justify-center gap-2 rounded-xl shadow-lg border transition-all w-[136px] px-5 py-2.5 ${
                       hasSheet
                         ? "text-white border-emerald-600 bg-emerald-400 hover:bg-emerald-300 active:scale-95 cursor-pointer"
                         : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"

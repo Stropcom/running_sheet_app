@@ -12,9 +12,10 @@
  *
  * Exception: a "person" match against a real Associate record, or a
  * "target" match against a real Target record (not just a text mention),
- * carries `linkable` — enabling a third option, "Yes, same person — link
- * and copy", that creates the new record pre-filled from the matched one
- * and links the two (see AddTargetDialog.tsx / TargetRegistry.tsx's
+ * carries `linkable` — enabling a third option, "Yes — continue and create
+ * Target/Associate" (label flips based on which side matched), that
+ * creates the new record pre-filled from the matched one and links the
+ * two (see AddTargetDialog.tsx / TargetRegistry.tsx's
  * handleWarnLinkAndCopy). Both records still survive independently; only
  * their shared identity fields stay in sync afterwards.
  */
@@ -68,7 +69,7 @@ export function PossibleDuplicateAlert({
   onContinue: () => void;
   /** "Wait, let me check" — stop here, leave the form as-is so the officer can review. */
   onReview: () => void;
-  /** "Yes, same person — link and copy" — only called when warning.linkable is set. */
+  /** "Yes — continue and create Target/Associate" — only called when warning.linkable is set. */
   onLinkAndCopy?: (linkable: {
     recordType: "target" | "associate";
     id: number;
@@ -108,7 +109,10 @@ export function PossibleDuplicateAlert({
                 className="w-full gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
               >
                 <Link2 className="w-4 h-4" />
-                Yes, same person — link and copy
+                Yes — continue and create{" "}
+                {warning.linkable.recordType === "associate"
+                  ? "Target"
+                  : "Associate"}
               </Button>
             )}
             <Button onClick={onContinue} disabled={linking} className="w-full">

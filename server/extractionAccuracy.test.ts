@@ -8,6 +8,25 @@
  * across the whole batch — a genuine, reproducible accuracy number instead
  * of a guess.
  *
+ * SCOPE — read this before treating a "miss" here as a real Intelligence
+ * module gap: extractEntitiesFromText is the standalone, per-row bracket
+ * parser. It is only ONE of the signals getAllIntelligenceEntities() uses
+ * to build what the Intelligence folder actually displays. For a target or
+ * associate already in the registry, that function ALSO (a) registers a
+ * guaranteed occurrence on every sheet linked via runningSheets.targetId,
+ * with no text-scanning involved (see the "Add formal target cards" block
+ * below the initial data loads), and (b) pre-seeds each sheet's dictionary
+ * with every registered target/associate alias, then re-scans every row for
+ * UNBRACKETED mentions of those known aliases ("Pass B", search this file
+ * for "scan every row for both bracketed AND unbracketed occurrences").
+ * So a registered person can be missing their bracket in the text entirely
+ * and still be tracked correctly — this benchmark will still score that as
+ * a miss, because it calls extractEntitiesFromText directly and never sees
+ * the sheet-level alias dictionary or the registry link. Treat a miss here
+ * as "the bracket parser alone didn't catch it," not "the app got it
+ * wrong" — that distinction only matters for people/vehicles/addresses NOT
+ * already in the registry, which really do depend on the bracket alone.
+ *
  * Two datasets:
  *  - SYNTHETIC_CASES: hand-written sentences covering the running sheet's
  *    bracket-tagging convention across every entity type, including a
@@ -153,6 +172,15 @@ const SYNTHETIC_CASES: Case[] = [
 // supplied by the user via a running-sheet JSON export. Route-list rows
 // (9, 10, 11) carry no brackets at all — they double as a false-positive
 // stress test, since they're full of capitalised street names.
+//
+// HOGAN is this sheet's registered target (sheet.targetId links to him) and
+// is never bracket-tagged anywhere in this sheet's text — every mention
+// below is plain "HOGAN". `expected: []` on those rows is correct for
+// extractEntitiesFromText in isolation, which is all this benchmark
+// measures. It is NOT a gap in the real Intelligence module: HOGAN is
+// still tracked correctly there, via the target-card sheet link and the
+// unbracketed-alias rescan getAllIntelligenceEntities() does on top of
+// this function (see the SCOPE note at the top of this file).
 const REAL_CASES: Case[] = [
   {
     label: "AMAZE row 1 — surveillance commencement address",
@@ -169,7 +197,7 @@ const REAL_CASES: Case[] = [
   },
   {
     label:
-      "AMAZE row 3 — departure narrative with no brackets (target name untagged)",
+      "AMAZE row 3 — departure narrative with no brackets (target mention, tracked via registry alias, not the bracket parser)",
     text: "Vehicle 1FAT007 HOGAN driver and sole occupant, departed 45 Burrendah Boulevard and continued via:",
     expected: [],
   },

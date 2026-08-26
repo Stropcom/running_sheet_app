@@ -1,20 +1,26 @@
 /**
- * Synthetic accuracy benchmark for extractEntitiesFromText.
+ * Accuracy benchmarks for extractEntitiesFromText.
  *
- * This is deliberately NOT a pass/fail regression suite like
+ * These are deliberately NOT pass/fail regression suites like
  * entityClassification.test.ts or addressFormat.test.ts (which each assert
- * one specific known behaviour). Instead it runs a representative batch of
- * synthetic observation sentences — written to mirror the phrasing and
- * bracket-tagging convention officers actually use on the running sheet —
- * against the real extraction function, and reports precision/recall/F1
- * across the whole batch. That gives a genuine, reproducible accuracy
- * number instead of a guess, and a place to compare against once real
- * (de-identified) observation text is available.
+ * one specific known behaviour). Instead they run a batch of observation
+ * text against the real extraction function and report precision/recall/F1
+ * across the whole batch — a genuine, reproducible accuracy number instead
+ * of a guess.
  *
- * The dataset intentionally includes a few "hard" cases the extractor is
- * known/expected to get wrong (a business name that starts with a digit,
- * a parenthetical aside that happens to contain the word "vehicle") — the
- * point of a benchmark is an honest number, not a cherry-picked one.
+ * Two datasets:
+ *  - SYNTHETIC_CASES: hand-written sentences covering the running sheet's
+ *    bracket-tagging convention across every entity type, including a
+ *    couple of deliberate "hard" cases the extractor is known to get
+ *    wrong — included so the score reflects reality, not cherry-picked
+ *    wins.
+ *  - REAL_CASES: every row's observation text from a real running sheet
+ *    export (Operation AMAZE, sheet 28, 2026-08-26 — user-supplied JSON
+ *    export via the Intel Export feature), hand-labelled against the
+ *    actual bracketed entities each row contains. This is a small sample
+ *    (one sheet, 12 rows) — useful as a first real-world data point, not
+ *    yet a statistically robust benchmark on its own. Extend this array
+ *    as more real (de-identified) running sheets are supplied.
  */
 import { describe, it, expect } from "vitest";
 import { extractEntitiesFromText } from "./db";
@@ -33,7 +39,7 @@ interface Case {
   knownLimitation?: boolean;
 }
 
-const CASES: Case[] = [
+const SYNTHETIC_CASES: Case[] = [
   {
     label: "person + address in one sentence",
     text: "IOs observed Jason SMITH (SMITH) exit 12 Preston Point Road, EAST FREMANTLE WA (12 PRESTON POINT RD) and enter a waiting sedan.",
@@ -143,75 +149,160 @@ const CASES: Case[] = [
   },
 ];
 
-describe("extractEntitiesFromText — synthetic accuracy benchmark", () => {
-  it("reports precision/recall/F1 across the synthetic dataset", () => {
-    let truePositives = 0;
-    let falseNegatives = 0; // expected entity missing, or wrong type
-    let falsePositives = 0; // extracted entity not in the expected set
-    const misses: string[] = [];
+// Source: Operation AMAZE, running sheet 28 (2026-08-26), rows 1-12, as
+// supplied by the user via a running-sheet JSON export. Route-list rows
+// (9, 10, 11) carry no brackets at all — they double as a false-positive
+// stress test, since they're full of capitalised street names.
+const REAL_CASES: Case[] = [
+  {
+    label: "AMAZE row 1 — surveillance commencement address",
+    text: "Surveillance commenced in the vicinity of 45 Burrendah Boulevard, WILLETTON WA (45 Burrendah Boulevard).",
+    expected: [{ rawShortForm: "45 Burrendah Boulevard", type: "address" }],
+  },
+  {
+    label: "AMAZE row 2 — two vehicles parked, one on a personalised plate",
+    text: "A grey Ford Ranger Utility, bearing WA registration 1FAT007 (Vehicle 1FAT007)and a red Holden Monaro coupe, bearing WA registration HOGES (Vehicle HOGES) parked and unattended in the driveway.",
+    expected: [
+      { rawShortForm: "Vehicle 1FAT007", type: "vehicle" },
+      { rawShortForm: "Vehicle HOGES", type: "vehicle" },
+    ],
+  },
+  {
+    label:
+      "AMAZE row 3 — departure narrative with no brackets (target name untagged)",
+    text: "Vehicle 1FAT007 HOGAN driver and sole occupant, departed 45 Burrendah Boulevard and continued via:",
+    expected: [],
+  },
+  {
+    label: "AMAZE row 9 — route/street list, no brackets",
+    text: "Pinetree Gully Road, WILLETTON,\nBernera Drive,\nKarel Avenue,\nParry Avenue,\nCamm Avenue,\nBull Creek Drive,\nLeach Highway,\nPerth City,\nKwinana Freeway,\nCharles Street,\nGraham Farmer Freeway,\nEast Parade,\nE Parade,\nGuildford Road,\nWalcott Street,\nRoy Street,\nLois La, MOUNT LAWLEY, whereat;",
+    expected: [],
+  },
+  {
+    label: "AMAZE row 4 — arrival at a business address, meets an associate",
+    text: "Vehicle 1FAT007 HOGAN driver and sole occupant, arrived at Cafe Guilty Pleasure Mount Lawley, 634 Beaufort Street, MOUNT LAWLEY (Cafe Guilty Pleasure Mount Lawley) parked in the car park. HOGAN exited the vehicle and met with Rodney OWEN (OWEN). HOGAN and OWEN walked through the car park, entered Cafe Guilty Pleasure Mount Lawley and continued out of sight.",
+    expected: [
+      { rawShortForm: "Cafe Guilty Pleasure Mount Lawley", type: "address" },
+      { rawShortForm: "OWEN", type: "person" },
+    ],
+  },
+  {
+    label:
+      "AMAZE row 5 — associate's vehicle departs, target's vehicle departs",
+    text: "HOGAN and OWEN exited the cafe, walked through the car park in conversation. OWEN entered a brown BMW X5 SUV, bearing WA registration 1FAB456 (Vehicle 1FAB456). Vehicle 1FAB456, HOGAN driver and sole occupant, departed and continued out of sight. Vehicle 1FAT007 HOGAN driver and sole occupant, departed Cafe Guilty Pleasure Mount Lawley and continued via:",
+    expected: [{ rawShortForm: "Vehicle 1FAB456", type: "vehicle" }],
+  },
+  {
+    label: "AMAZE row 10 — route/street list, no brackets",
+    text: "Lois La, MOUNT LAWLEY,\nKaata La,\nBarlee Street,\nBeaufort Street,\nVincent Street,\nLoftus Street,\nCambridge Street,\nDenton Street,\nOld Jacaranda Way,\nMere View Way,\nTighe Street,\nAllora Avenue,\nSelvatica Lane, SUBIACO, whereat;",
+    expected: [],
+  },
+  {
+    label: "AMAZE row 6 — arrival at a plain street address",
+    text: "Vehicle 1FAT007 HOGAN driver and sole occupant, arrived at 21 Allora Avenue, SUBIACO WA (21 Allora Avenue) and parked in the driveway.",
+    expected: [{ rawShortForm: "21 Allora Avenue", type: "address" }],
+  },
+  {
+    label: "AMAZE row 7 — departure narrative with no brackets",
+    text: "Vehicle 1FAT007, HOGAN driver and sole occupant, departed 21 Allora Avenue and continued via:",
+    expected: [],
+  },
+  {
+    label: "AMAZE row 11 — route/street list, no brackets",
+    text: "Selvatica Lane, SUBIACO,\nLaurino Terrace,\nTighe Street,\nHay Street,\nTroy Terrace,\nLutey Avenue,\nStubbs Terrace,\nNash Street,\nSelby Street,\nStubbs Terrace,\nAlfred Road,\nW Coast Highway,\nGrant Street,\nMarine Parade, COTTESLOE, whereat;",
+    expected: [],
+  },
+  {
+    label: "AMAZE row 8 — arrival at a second business address",
+    text: "Vehicle 1FAT007, HOGAN driver and sole occupant, arrived at Cottesloe Beach View Apartments, 152 Marine Parade, COTTESLOE WA (Cottesloe Beach View Apartments) parked in the car park.",
+    expected: [
+      { rawShortForm: "Cottesloe Beach View Apartments", type: "address" },
+    ],
+  },
+  {
+    label: "AMAZE row 12 — surveillance ceased narrative, no brackets",
+    text: "Surveillance ceased in the vicinity of Cottesloe Beach View Apartments.",
+    expected: [],
+  },
+];
 
-    for (const c of CASES) {
-      const actual = extractEntitiesFromText(c.text);
+function runBenchmark(cases: Case[], title: string, floor: number) {
+  let truePositives = 0;
+  let falseNegatives = 0; // expected entity missing, or wrong type
+  let falsePositives = 0; // extracted entity not in the expected set
+  const misses: string[] = [];
 
-      for (const exp of c.expected) {
-        const found = actual.find(a => a.rawShortForm === exp.rawShortForm);
-        if (found && found.type === exp.type) {
-          truePositives++;
-        } else {
-          falseNegatives++;
-          misses.push(
-            found
-              ? `[${c.label}] "${exp.rawShortForm}": expected type "${exp.type}", got "${found.type}"`
-              : `[${c.label}] "${exp.rawShortForm}": not extracted at all`
-          );
-        }
-      }
+  for (const c of cases) {
+    const actual = extractEntitiesFromText(c.text);
 
-      const expectedRawForms = new Set(c.expected.map(e => e.rawShortForm));
-      for (const a of actual) {
-        if (!expectedRawForms.has(a.rawShortForm)) {
-          falsePositives++;
-          misses.push(
-            `[${c.label}] unexpected extra entity: "${a.rawShortForm}" (${a.type})`
-          );
-        }
+    for (const exp of c.expected) {
+      const found = actual.find(a => a.rawShortForm === exp.rawShortForm);
+      if (found && found.type === exp.type) {
+        truePositives++;
+      } else {
+        falseNegatives++;
+        misses.push(
+          found
+            ? `[${c.label}] "${exp.rawShortForm}": expected type "${exp.type}", got "${found.type}"`
+            : `[${c.label}] "${exp.rawShortForm}": not extracted at all`
+        );
       }
     }
 
-    const precision =
-      truePositives + falsePositives === 0
-        ? 1
-        : truePositives / (truePositives + falsePositives);
-    const recall =
-      truePositives + falseNegatives === 0
-        ? 1
-        : truePositives / (truePositives + falseNegatives);
-    const f1 =
-      precision + recall === 0
-        ? 0
-        : (2 * precision * recall) / (precision + recall);
+    const expectedRawForms = new Set(c.expected.map(e => e.rawShortForm));
+    for (const a of actual) {
+      if (!expectedRawForms.has(a.rawShortForm)) {
+        falsePositives++;
+        misses.push(
+          `[${c.label}] unexpected extra entity: "${a.rawShortForm}" (${a.type})`
+        );
+      }
+    }
+  }
 
-    // eslint-disable-next-line no-console
-    console.log(
-      [
-        "",
-        "── extractEntitiesFromText synthetic accuracy benchmark ──",
-        `Cases: ${CASES.length}  (${CASES.filter(c => c.knownLimitation).length} flagged as known limitations)`,
-        `True positives:  ${truePositives}`,
-        `False negatives: ${falseNegatives}`,
-        `False positives: ${falsePositives}`,
-        `Precision: ${(precision * 100).toFixed(1)}%`,
-        `Recall:    ${(recall * 100).toFixed(1)}%`,
-        `F1:        ${(f1 * 100).toFixed(1)}%`,
-        misses.length ? "\nMisses:" : "",
-        ...misses.map(m => "  - " + m),
-        "────────────────────────────────────────────────────────",
-        "",
-      ].join("\n")
-    );
+  const precision =
+    truePositives + falsePositives === 0
+      ? 1
+      : truePositives / (truePositives + falsePositives);
+  const recall =
+    truePositives + falseNegatives === 0
+      ? 1
+      : truePositives / (truePositives + falseNegatives);
+  const f1 =
+    precision + recall === 0
+      ? 0
+      : (2 * precision * recall) / (precision + recall);
 
-    // Floor, not a target — catches a real regression without needing this
-    // test file updated every time the synthetic dataset is extended.
-    expect(f1).toBeGreaterThanOrEqual(0.75);
+  // eslint-disable-next-line no-console
+  console.log(
+    [
+      "",
+      `── extractEntitiesFromText benchmark: ${title} ──`,
+      `Cases: ${cases.length}  (${cases.filter(c => c.knownLimitation).length} flagged as known limitations)`,
+      `True positives:  ${truePositives}`,
+      `False negatives: ${falseNegatives}`,
+      `False positives: ${falsePositives}`,
+      `Precision: ${(precision * 100).toFixed(1)}%`,
+      `Recall:    ${(recall * 100).toFixed(1)}%`,
+      `F1:        ${(f1 * 100).toFixed(1)}%`,
+      misses.length ? "\nMisses:" : "",
+      ...misses.map(m => "  - " + m),
+      "────────────────────────────────────────────────────────",
+      "",
+    ].join("\n")
+  );
+
+  // Floor, not a target — catches a real regression without needing this
+  // test file updated every time a dataset is extended.
+  expect(f1).toBeGreaterThanOrEqual(floor);
+}
+
+describe("extractEntitiesFromText — accuracy benchmarks", () => {
+  it("reports precision/recall/F1 across the synthetic dataset", () => {
+    runBenchmark(SYNTHETIC_CASES, "synthetic dataset", 0.75);
+  });
+
+  it("reports precision/recall/F1 across a real running sheet (Operation AMAZE)", () => {
+    runBenchmark(REAL_CASES, "real dataset — Operation AMAZE, sheet 28", 0.75);
   });
 });

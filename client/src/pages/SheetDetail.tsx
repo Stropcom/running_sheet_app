@@ -28,6 +28,7 @@ import {
   type TargetMatchCandidate,
 } from "@/components/TargetMatchDialog";
 import { CrossOperationEntityAlert } from "@/components/CrossOperationEntityAlert";
+import { MissingLocationAlert } from "@/components/MissingLocationAlert";
 import {
   Dialog,
   DialogContent,
@@ -2642,6 +2643,15 @@ export default function SheetDetail() {
         type: DedupType;
         label: string;
         operationNames: string[];
+      }
+    | {
+        /** A vehicle-presence row ("parked and unattended...") with no
+         * location entity of its own — see findMissingLocationSuggestion.
+         * An actual decision, not informational: confirm appends the
+         * suggested location to the observation before saving. */
+        kind: "missingLocation";
+        location: string;
+        source: string;
       };
   const [dupeQueue, setDupeQueue] = useState<PendingDupe[]>([]);
   const [dupeIndex, setDupeIndex] = useState(0);
@@ -2669,6 +2679,21 @@ export default function SheetDetail() {
       new RegExp(`\\(${escaped}\\)`, "g"),
       `(${safeSpelling})`
     );
+  }
+
+  // Appends " at <location>" to the end of the observation, ahead of any
+  // trailing sentence punctuation — used when the officer confirms the
+  // MissingLocationAlert prompt. No brackets: the location was already
+  // fully introduced earlier in the sheet, so this is a subsequent
+  // mention, matching the app-wide convention (see
+  // isAddressAlreadyMentioned in server/db.ts).
+  function appendLocationSuggestion(text: string, location: string): string {
+    const trimmed = text.trimEnd();
+    const trailingPunct = trimmed.match(/([.:])\s*$/);
+    if (trailingPunct) {
+      return `${trimmed.slice(0, -1)} at ${location}${trailingPunct[1]}`;
+    }
+    return `${trimmed} at ${location}.`;
   }
 
   const updateRowWithDupeCheck = useCallback(
@@ -2764,6 +2789,29 @@ export default function SheetDetail() {
           }
         }
 
+        // A vehicle-presence row with no location of its own — see
+        // findMissingLocationSuggestion. Checked against the fully
+        // corrected text (after any spelling fixes above), and only once
+        // sheetId is known.
+        if (sheetId) {
+          try {
+            const missingLocation = await utils.row.checkMissingLocation.fetch({
+              sheetId,
+              observation: correctedObservation,
+              excludeRowId: input.id,
+            });
+            if (missingLocation) {
+              queue.push({
+                kind: "missingLocation",
+                location: missingLocation.location,
+                source: missingLocation.source,
+              });
+            }
+          } catch (err) {
+            console.warn("checkMissingLocation failed", err);
+          }
+        }
+
         const correctedInput = { ...input, observation: correctedObservation };
         if (queue.length === 0) {
           updateRow.mutate(correctedInput);
@@ -2778,7 +2826,7 @@ export default function SheetDetail() {
         updateRow.mutate(input);
       }
     },
-    [isOnline, updateRow, utils, sheet?.operationId]
+    [isOnline, updateRow, utils, sheet?.operationId, sheetId]
   );
 
   function handleTargetMatchResolved(
@@ -2792,6 +2840,22 @@ export default function SheetDetail() {
           pendingSaveInputRef.current.observation,
           rawShortForm,
           correctSpelling
+        ),
+      };
+    }
+    handleDupeDialogResolved();
+  }
+
+  function handleMissingLocationResolved(
+    addLocation: boolean,
+    location: string
+  ) {
+    if (addLocation && pendingSaveInputRef.current?.observation) {
+      pendingSaveInputRef.current = {
+        ...pendingSaveInputRef.current,
+        observation: appendLocationSuggestion(
+          pendingSaveInputRef.current.observation,
+          location
         ),
       };
     }
@@ -5474,6 +5538,27 @@ export default function SheetDetail() {
                   : null
               }
               onAcknowledge={handleDupeDialogResolved}
+            />
+          );
+        }
+        if (currentDupe.kind === "missingLocation") {
+          return (
+            <MissingLocationAlert
+              key={dupeIndex}
+              warning={
+                dupeDialogOpen
+                  ? {
+                      location: currentDupe.location,
+                      source: currentDupe.source,
+                    }
+                  : null
+              }
+              onConfirm={() =>
+                handleMissingLocationResolved(true, currentDupe.location)
+              }
+              onDecline={() =>
+                handleMissingLocationResolved(false, currentDupe.location)
+              }
             />
           );
         }

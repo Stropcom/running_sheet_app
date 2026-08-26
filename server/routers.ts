@@ -118,6 +118,7 @@ import {
   getPendingVehicleDepartures,
   getPendingVehicleArrivals,
   isAddressAlreadyMentioned,
+  findMissingLocationSuggestion,
   getRunningSheetById,
   computeWitnessListData,
   getRunningSheets,
@@ -1246,6 +1247,28 @@ export const appRouter = router({
             input.shortAddress
           ),
         };
+      }),
+
+    // Detects a vehicle-presence row ("parked and unattended...") with no
+    // location entity of its own, and — if this sheet has an established
+    // location to offer back (a "Surveillance commenced" row, or an
+    // earlier row's location) — returns the suggestion so the client can
+    // confirm with the officer before saving. See
+    // findMissingLocationSuggestion for why this matters beyond readability.
+    checkMissingLocation: protectedProcedure
+      .input(
+        z.object({
+          sheetId: z.number(),
+          observation: z.string(),
+          excludeRowId: z.number().optional(),
+        })
+      )
+      .query(async ({ input }) => {
+        return findMissingLocationSuggestion(
+          input.sheetId,
+          input.observation,
+          input.excludeRowId
+        );
       }),
 
     create: protectedProcedure

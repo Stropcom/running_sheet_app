@@ -4236,6 +4236,123 @@ export async function getPendingVehicleArrivals(
     .map(({ orderIdx, ...rest }) => rest);
 }
 
+// ─── Missing Location Prompt (Vehicle Presence Rows) ───────────────────────
+// Officers often write a "vehicles present at the address" row at the start
+// of the day (or whenever they re-check an address) without repeating the
+// location — relying on an earlier "Surveillance commenced ... (LOCATION)"
+// row to carry the context for a human reading the sheet top-to-bottom.
+// That's a real gap for getAllIntelligenceEntities() though: it links
+// vehicles to a location per-ROW (see registerOccurrence), so a row with
+// vehicle brackets and no location mention of its own never gets linked on
+// the map/Intelligence folder for THAT row, even though the location is
+// "obviously" the one established earlier. This detects that specific
+// shape — vehicle(s) described as present/parked, no movement verb, no
+// location entity anywhere in the row's own text — and offers back the
+// most recent established location (prioritising a "Surveillance
+// commenced" row) so the officer can add it with one tap. Entirely
+// rule-based: a fixed phrase/keyword check plus a reuse of
+// extractEntitiesFromText, no different in kind from the punctuation
+// normalization above.
+//
+// Deliberately narrow (matches only this specific "static presence, no
+// movement verb" shape) rather than firing on every vehicle-mentioning row
+// with no location — a row already describing an arrival/departure is
+// covered by its own "arrived at X"/"departed X" convention and doesn't
+// need this prompt.
+const STATIC_PRESENCE_PATTERN = /\b(parked|unattended|stationary)\b/i;
+const VEHICLE_MOVEMENT_PATTERN =
+  /\b(arrived|departed|driving|drove|drives|reversed|reversing|reverses|pulled up|pulled away|pulling up|pulling away|left)\b/i;
+const VEHICLE_MENTION_PATTERN = /\bVehicle\s+[A-Za-z0-9]{2,8}\b/i;
+
+export function looksLikeUnlocatedVehiclePresenceRow(
+  observation: string
+): boolean {
+  if (!VEHICLE_MENTION_PATTERN.test(observation)) return false;
+  if (!STATIC_PRESENCE_PATTERN.test(observation)) return false;
+  if (VEHICLE_MOVEMENT_PATTERN.test(observation)) return false;
+  const entities = extractEntitiesFromText(observation);
+  return !entities.some(e => e.type === "address" || e.type === "business");
+}
+
+// The app-wide subsequent-mention convention (see isAddressAlreadyMentioned
+// below) drops the suburb — an already-introduced address is referred back
+// to by its street portion alone ("21 Allora Avenue", not "21 Allora
+// Avenue, SUBIACO"). A plain business-name entity (no address attached)
+// has no suburb to strip in the first place, so this is a no-op for those.
+export function toSubsequentMentionForm(shortForm: string): string {
+  const commaIdx = shortForm.indexOf(",");
+  return commaIdx === -1 ? shortForm : shortForm.slice(0, commaIdx).trim();
+}
+
+export interface MissingLocationSuggestion {
+  location: string;
+  source: string;
+}
+
+// Pure decision logic over an already-fetched row list — kept separate
+// from findMissingLocationSuggestion's DB fetch below so it can be unit
+// tested directly, the same way extractEntitiesFromText and
+// normalizeObservationPunctuation are (no DB dependency, deterministic).
+export function pickMissingLocationSuggestion(
+  observation: string,
+  otherRows: Array<{ observation: string | null }>
+): MissingLocationSuggestion | null {
+  if (!looksLikeUnlocatedVehiclePresenceRow(observation)) return null;
+
+  const rows = otherRows.filter(
+    (r): r is { observation: string } => !!r.observation
+  );
+
+  const commencementRow = rows.find(r =>
+    /surveillance commenced/i.test(r.observation)
+  );
+  if (commencementRow) {
+    const entities = extractEntitiesFromText(commencementRow.observation);
+    const loc = entities.find(
+      e => e.type === "address" || e.type === "business"
+    );
+    if (loc) {
+      return {
+        location: toSubsequentMentionForm(loc.shortForm),
+        source: "the Surveillance commencement row",
+      };
+    }
+  }
+
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const entities = extractEntitiesFromText(rows[i].observation);
+    const loc = entities.find(
+      e => e.type === "address" || e.type === "business"
+    );
+    if (loc) {
+      return {
+        location: toSubsequentMentionForm(loc.shortForm),
+        source: "an earlier row on this sheet",
+      };
+    }
+  }
+
+  return null;
+}
+
+// Scoped to a single sheet for the same reason as the vehicle depart/arrive
+// continuity helpers above — a running sheet is a per-day/per-shift log,
+// and "the location established earlier today" shouldn't reach into a
+// different day's sheet. excludeRowId lets an edit of an existing row skip
+// re-matching itself as its own "earlier row".
+export async function findMissingLocationSuggestion(
+  sheetId: number,
+  observation: string,
+  excludeRowId?: number
+): Promise<MissingLocationSuggestion | null> {
+  if (!looksLikeUnlocatedVehiclePresenceRow(observation)) return null;
+  const rows = await getRowsBySheetId(sheetId);
+  return pickMissingLocationSuggestion(
+    observation,
+    rows.filter(r => r.id !== excludeRowId)
+  );
+}
+
 // App-wide convention: the first time an address is mentioned in a running
 // sheet it's written in full with its bracketed short-form ("5 Davidson
 // Road, ATTADALE WA (5 Davidson Road)") — that bracket is what

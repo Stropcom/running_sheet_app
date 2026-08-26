@@ -313,6 +313,7 @@ import {
   createWipcMember,
   updateWipcMember,
   deleteWipcMember,
+  getIntelExportData,
   getOpManagerPriorityBoard,
   saveOpManagerPriorityBoard,
   getOpManagerTaskingCalendar,
@@ -2454,6 +2455,16 @@ export const appRouter = router({
             attachments: attachments.filter(a => a.rowId === row.id),
           })),
         };
+      }),
+
+    /** Structured JSON-ready data for Administration → Intel Export: the
+     * selected running sheet(s) verbatim, and the intelligence mined from
+     * them — nothing from the Court module, WIPC-protected CINs redacted.
+     * Admin-only: this is data meant to leave the organisation. */
+    intelExportData: adminProcedure
+      .input(z.object({ sheetIds: z.array(z.number()).min(1) }))
+      .query(async ({ input }) => {
+        return getIntelExportData(input.sheetIds);
       }),
   }),
 

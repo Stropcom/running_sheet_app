@@ -8703,6 +8703,207 @@ export async function listWipcMembers() {
   );
 }
 
+/** CINs (uppercased) currently registered for WIPC protection. Used only to
+ * redact protected identities from data meant to leave the app (e.g. Intel
+ * Export) — never to gate normal in-app display, which already shows CINs
+ * freely to authenticated users. */
+export async function getWipcProtectedCins(): Promise<Set<string>> {
+  const members = await listWipcMembers();
+  const cins = new Set<string>();
+  for (const m of members) {
+    const cin = (m as any).cinNumber as string | undefined;
+    if (cin && cin.trim()) cins.add(cin.trim().toUpperCase());
+  }
+  return cins;
+}
+
+// ─── Intel Export ───────────────────────────────────────────────────────────
+// Structured JSON/CSV data for handing running-sheet content and its mined
+// intelligence to another agency's system — Administration → Intel Export.
+// Deliberately independent of the Court module (Statement/Witness List/
+// WIPC generators) — this reads straight from running sheets and the
+// Intelligence entity index, nothing here is ever built from Court output.
+// Any CIN that matches a registered WIPC member is redacted, since WIPC
+// exists specifically to keep that identity from appearing in material that
+// could leave the organisation.
+
+export interface IntelExportRunningSheet {
+  operation: {
+    id: number;
+    name: string;
+    promisNumber: string | null;
+    imsNumber: string | null;
+    investigationUnit: string | null;
+  } | null;
+  sheet: {
+    id: number;
+    title: string;
+    sheetDate: string | null;
+    status: "open" | "closed";
+    closedAt: number | null;
+    closedByCIN: string | null;
+    targetId: number | null;
+    targetName: string | null;
+    roster: { cin: string; isTeamLeader: boolean }[];
+  };
+  rows: {
+    rowNumber: number;
+    date: string | null;
+    time: string | null;
+    observation: string | null;
+    membersPresent: string[];
+    certifications: { cin: string; certifiedAt: string }[];
+    isLocked: boolean;
+  }[];
+}
+
+export interface IntelExportEntity {
+  type: "person" | "vehicle" | "address" | "business" | "unknown";
+  shortForm: string;
+  isRegisteredTarget: boolean;
+  registryId: number | null;
+  occurrences: {
+    sheetId: number;
+    sheetTitle: string;
+    rowNumber: number | null;
+    time: string | null;
+    snippet: string;
+  }[];
+}
+
+/** Builds both Intel Export documents (the running sheet(s) themselves, and
+ * the intelligence mined from them) for a set of running sheets — the
+ * caller decides which of the two, and in which format(s), to actually
+ * download. Redacts any WIPC-protected CIN wherever a CIN appears. */
+export async function getIntelExportData(sheetIds: number[]): Promise<{
+  runningSheets: IntelExportRunningSheet[];
+  intelEntities: IntelExportEntity[];
+}> {
+  const protectedCins = await getWipcProtectedCins();
+  const redactCin = (cin: string | null | undefined): string => {
+    if (!cin) return "";
+    return protectedCins.has(cin.trim().toUpperCase()) ? "WIPC-PROTECTED" : cin;
+  };
+
+  const runningSheets: IntelExportRunningSheet[] = [];
+  const rowMetaById = new Map<
+    number,
+    {
+      sheetId: number;
+      sheetTitle: string;
+      rowNumber: number;
+      time: string | null;
+    }
+  >();
+
+  for (const sheetId of sheetIds) {
+    const sheet = await getRunningSheetById(sheetId);
+    if (!sheet) continue;
+    const operation = sheet.operationId
+      ? await getOperationById(sheet.operationId)
+      : null;
+    const rows = await getRowsBySheetId(sheetId);
+    const rowIds = rows.map(r => r.id);
+    const [members, certs] = await Promise.all([
+      getMembersByRowIds(rowIds),
+      getCertificationsByRowIds(rowIds),
+    ]);
+
+    let roster: { cin: string; isTeamLeader: boolean }[] = [];
+    try {
+      const raw: Array<{ cin: string; isTeamLeader?: boolean }> = JSON.parse(
+        sheet.sheetCins ?? "[]"
+      );
+      roster = raw.map(c => ({
+        cin: redactCin(c.cin),
+        isTeamLeader: !!c.isTeamLeader,
+      }));
+    } catch {
+      roster = [];
+    }
+
+    rows.forEach(row => {
+      rowMetaById.set(row.id, {
+        sheetId,
+        sheetTitle: sheet.title,
+        rowNumber: row.rowNumber,
+        time: row.time,
+      });
+    });
+
+    runningSheets.push({
+      operation: operation
+        ? {
+            id: operation.id,
+            name: operation.name,
+            promisNumber: operation.promisNumber ?? null,
+            imsNumber: operation.imsNumber ?? null,
+            investigationUnit: operation.investigationUnit ?? null,
+          }
+        : null,
+      sheet: {
+        id: sheet.id,
+        title: sheet.title,
+        sheetDate: sheet.sheetDate,
+        status: sheet.closedAt ? "closed" : "open",
+        closedAt: sheet.closedAt ?? null,
+        closedByCIN: sheet.closedByCIN ? redactCin(sheet.closedByCIN) : null,
+        targetId: sheet.targetId ?? null,
+        targetName: sheet.targetName ?? null,
+        roster,
+      },
+      rows: rows.map(row => ({
+        rowNumber: row.rowNumber,
+        date: row.rowDate ?? sheet.sheetDate ?? null,
+        time: row.time,
+        observation: row.observation,
+        membersPresent: members
+          .filter(m => m.rowId === row.id)
+          .map(m => redactCin(m.memberName)),
+        certifications: certs
+          .filter(c => c.rowId === row.id && c.isActive)
+          .map(c => ({
+            cin: redactCin(c.certifiedByCIN),
+            certifiedAt: new Date(c.certifiedAt).toISOString(),
+          })),
+        isLocked: row.isLocked,
+      })),
+    });
+  }
+
+  const sheetIdSet = new Set(sheetIds);
+  const allEntities = await getAllIntelligenceEntities();
+  const intelEntities: IntelExportEntity[] = [];
+  for (const e of allEntities) {
+    const relevantOccurrences = e.occurrences.filter(
+      o => sheetIdSet.has(o.sheetId) && o.rowId > 0
+    );
+    if (relevantOccurrences.length === 0) continue;
+    intelEntities.push({
+      type: e.type,
+      shortForm: e.shortForm,
+      isRegisteredTarget: !!e.isTarget || !!e.isAssociate,
+      registryId: e.isTarget
+        ? (e.targetId ?? null)
+        : e.isAssociate
+          ? (e.associateId ?? null)
+          : null,
+      occurrences: relevantOccurrences.map(o => {
+        const meta = rowMetaById.get(o.rowId);
+        return {
+          sheetId: o.sheetId,
+          sheetTitle: o.sheetTitle,
+          rowNumber: meta?.rowNumber ?? null,
+          time: meta?.time ?? null,
+          snippet: o.observationSnippet,
+        };
+      }),
+    });
+  }
+
+  return { runningSheets, intelEntities };
+}
+
 /** Save a new WIPC member (encrypted) — admin only */
 export async function createWipcMember(
   createdBy: number,

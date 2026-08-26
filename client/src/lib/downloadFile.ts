@@ -10,11 +10,19 @@
 // browsers), route through the native share sheet instead so the user picks
 // where it's saved. Everywhere else (desktop browsers), fall back to the
 // existing blob-download approach, which already works correctly there.
-export async function downloadBase64File(base64: string, filename: string, mime: string): Promise<void> {
-  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+export async function downloadBase64File(
+  base64: string,
+  filename: string,
+  mime: string
+): Promise<void> {
+  const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
   const blob = new Blob([bytes], { type: mime });
 
-  if (typeof navigator !== "undefined" && typeof navigator.share === "function" && typeof navigator.canShare === "function") {
+  if (
+    typeof navigator !== "undefined" &&
+    typeof navigator.share === "function" &&
+    typeof navigator.canShare === "function"
+  ) {
     try {
       const file = new File([blob], filename, { type: mime });
       if (navigator.canShare({ files: [file] })) {
@@ -38,4 +46,16 @@ export async function downloadBase64File(base64: string, filename: string, mime:
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+}
+
+// Plain-text export (JSON/CSV) — same save behaviour as downloadBase64File
+// (native share sheet on mobile, blob-download fallback on desktop), just
+// starting from a text string instead of a base64 payload. UTF-8 safe.
+export async function downloadTextFile(
+  text: string,
+  filename: string,
+  mime: string
+): Promise<void> {
+  const base64 = btoa(unescape(encodeURIComponent(text)));
+  await downloadBase64File(base64, filename, mime);
 }

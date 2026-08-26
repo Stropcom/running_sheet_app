@@ -6530,10 +6530,10 @@ export default function IntelligenceMapping() {
                                         key={d.rego}
                                         onClick={() =>
                                           appendText(
-                                            `Vehicle ${d.rego} ${d.occupantDesc}, arrived at ${arriveAddr}`
+                                            `Vehicle ${d.rego}, ${d.occupantDesc}, arrived at ${arriveAddr}`
                                           )
                                         }
-                                        title={`Vehicle ${d.rego} ${d.occupantDesc}, arrived at ${arriveAddr}`}
+                                        title={`Vehicle ${d.rego}, ${d.occupantDesc}, arrived at ${arriveAddr}`}
                                         className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
                                       >
                                         <span className="font-mono normal-case">
@@ -6599,10 +6599,10 @@ export default function IntelligenceMapping() {
                                         key={a.rego}
                                         onClick={() =>
                                           appendText(
-                                            `Vehicle ${a.rego} ${a.occupantDesc}, departed ${shortAddr} and continued via:`
+                                            `Vehicle ${a.rego}, ${a.occupantDesc}, departed ${shortAddr} and continued via:`
                                           )
                                         }
-                                        title={`Vehicle ${a.rego} ${a.occupantDesc}, departed ${shortAddr} and continued via:`}
+                                        title={`Vehicle ${a.rego}, ${a.occupantDesc}, departed ${shortAddr} and continued via:`}
                                         className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
                                       >
                                         <span className="font-mono normal-case">

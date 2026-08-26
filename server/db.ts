@@ -949,7 +949,14 @@ export async function getRowById(id: number) {
 export async function createSheetRow(data: InsertSheetRow) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const [result] = await db.insert(sheetRows).values(data);
+  const normalized =
+    typeof data.observation === "string"
+      ? {
+          ...data,
+          observation: normalizeObservationPunctuation(data.observation),
+        }
+      : data;
+  const [result] = await db.insert(sheetRows).values(normalized);
   return result.insertId as number;
 }
 
@@ -959,7 +966,14 @@ export async function updateSheetRow(
 ) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.update(sheetRows).set(data).where(eq(sheetRows.id, id));
+  const normalized =
+    typeof data.observation === "string"
+      ? {
+          ...data,
+          observation: normalizeObservationPunctuation(data.observation),
+        }
+      : data;
+  await db.update(sheetRows).set(normalized).where(eq(sheetRows.id, id));
 }
 
 export async function deleteSheetRow(id: number) {
@@ -3983,6 +3997,88 @@ export async function getSheetEntityChips(
     .slice(0, 24);
 }
 
+// ─── Observation Punctuation Normalization ─────────────────────────────────
+// Officers write vehicle mentions and depart/arrive rows via several
+// paths — the QE popup's autocomplete, the "Vehicle arriving"/"Vehicle
+// departing" chips, and free typing — and only the chips are guaranteed to
+// produce consistent punctuation. Two gaps matter enough to auto-correct
+// at save time, applied here rather than per-client-callsite so it's
+// enforced once regardless of how the text reached the server:
+//
+//   1. A comma should always follow a "(Vehicle REGO)" bracket. Cosmetic
+//      on its own, but the NEXT bracketed entity in the same sentence is
+//      found by scanning forward from here (see extractEntitiesFromText's
+//      fullDescription capture), so a missing separator can let an
+//      unrelated earlier clause bleed into that next entity's
+//      classification.
+//   2. A comma must precede "departed"/"arrived" following a "Vehicle
+//      REGO" mention — this one is load-bearing, not cosmetic:
+//      VEHICLE_DEPART_PATTERN / VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN
+//      below require that exact comma to match at all, and
+//      getPendingVehicleDepartures/getPendingVehicleArrivals silently miss
+//      the row without it — the QE "Vehicle arriving"/"Vehicle departing"
+//      chip just never appears.
+//
+// Deliberately structural, not phrase-based: it doesn't try to recognise
+// "driver"/"passenger"/"unseen occupant/s"/etc — it only looks for the
+// fixed "Vehicle REGO ... departed/arrived" shape the parsing patterns
+// below already use, so any occupant phrasing (present or future) is
+// covered without a maintained word list. Only ever applied when a row is
+// created or edited (see createSheetRow/updateSheetRow) — never
+// retroactively rewritten, and the row.update procedure already refuses a
+// locked row before this can run.
+export function normalizeObservationPunctuation(text: string): string {
+  if (!text) return text;
+  let result = text;
+
+  // Rule 1: comma right after a "(Vehicle REGO)" bracket, unless the next
+  // non-space character already closes the clause (,.;:)\n) or the
+  // bracket is the last thing in the text.
+  result = result.replace(
+    /\(Vehicle\s+[A-Za-z0-9]{2,8}\)/gi,
+    (bracket: string, offset: number, str: string) => {
+      const rest = str.slice(offset + bracket.length);
+      const peek = rest.match(/^(\s*)(\S)?/);
+      const ws = peek?.[1] ?? "";
+      const nextChar = peek?.[2];
+      if (nextChar === undefined) return bracket; // end of text — leave alone
+      if (ws.includes("\n")) return bracket; // paragraph break already separates it
+      if (/[,.;:)]/.test(nextChar)) return bracket; // already closed
+      // ws (if any) is NOT part of the regex match, so it's left untouched
+      // in the source string right after whatever we return here — only
+      // add a space ourselves when there's no existing whitespace to rely
+      // on, otherwise we'd double it up.
+      return ws.length > 0 ? `${bracket},` : `${bracket}, `;
+    }
+  );
+
+  // Rule 2: for a "Vehicle REGO ... departed/arrived" narrative, make sure
+  // there's a comma right after the rego and right before the keyword.
+  // Mirrors VEHICLE_DEPART_PATTERN/VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN's
+  // own single-line-only reach (no dotAll flag) so this never "fixes" a
+  // pairing those patterns wouldn't actually recognise as one event. The
+  // "(?<!\()" guard skips a "Vehicle REGO" mention that's actually the
+  // CONTENT of a "(Vehicle REGO)" bracket (Rule 1's job, above) — without
+  // it, "Vehicle 1ABC123 (Vehicle 1ABC123) ... departed" would wrongly
+  // treat the bracket's own closing ")" as part of this narrative.
+  result = result.replace(
+    /(?<!\()\bVehicle\s+([A-Za-z0-9]{5,8})(,?)(\s*)(.+?)(,?)(\s*)(departed|arrived)\b/gi,
+    (
+      _match: string,
+      rego: string,
+      commaAfterRego: string,
+      wsAfterRego: string,
+      middle: string,
+      commaBeforeKeyword: string,
+      wsBeforeKeyword: string,
+      keyword: string
+    ) =>
+      `Vehicle ${rego}${commaAfterRego || ","}${wsAfterRego}${middle}${commaBeforeKeyword || ","}${wsBeforeKeyword}${keyword}`
+  );
+
+  return result;
+}
+
 // ─── Vehicle Depart → Arrive Continuity ────────────────────────────────────
 // Officers write vehicle departures in a fixed narrative pattern —
 // "Vehicle 1FAD531 HOGAN driver, Denise HOLLY (HOLLY) front passenger,
@@ -3995,9 +4091,8 @@ export async function getSheetEntityChips(
 // for that rego, so the RS Quick Entry popup can offer it back as a chip.
 
 // VEHICLE_DEPART_PATTERN / VEHICLE_ARRIVE_PATTERN / VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN
-// live in shared/vehicleEventPatterns.ts (imported above) so the client's
-// "couldn't parse this as a vehicle event" hint checks against the exact
-// same patterns this file uses to build chips.
+// live in shared/vehicleEventPatterns.ts (imported above), reused by
+// normalizeObservationPunctuation above so both stay in lockstep.
 
 export interface PendingVehicleDeparture {
   rego: string;

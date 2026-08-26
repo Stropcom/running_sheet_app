@@ -33,13 +33,13 @@
  *    couple of deliberate "hard" cases the extractor is known to get
  *    wrong — included so the score reflects reality, not cherry-picked
  *    wins.
- *  - REAL_CASES: every row's observation text from a real running sheet
- *    export (Operation AMAZE, sheet 28, 2026-08-26 — user-supplied JSON
- *    export via the Intel Export feature), hand-labelled against the
- *    actual bracketed entities each row contains. This is a small sample
- *    (one sheet, 12 rows) — useful as a first real-world data point, not
- *    yet a statistically robust benchmark on its own. Extend this array
- *    as more real (de-identified) running sheets are supplied.
+ *  - REAL_CASES: every row's observation text from real running sheet
+ *    exports (Operation AMAZE, sheets 28 and 29, 2026-08-26 — user-supplied
+ *    JSON exports via the Intel Export feature), hand-labelled against the
+ *    actual bracketed entities each row contains. Still a small sample
+ *    (two sheets, 25 rows) — a useful real-world data point, not yet a
+ *    statistically robust benchmark on its own. Extend this array as more
+ *    real (de-identified) running sheets are supplied.
  */
 import { describe, it, expect } from "vitest";
 import { extractEntitiesFromText } from "./db";
@@ -252,6 +252,90 @@ const REAL_CASES: Case[] = [
     text: "Surveillance ceased in the vicinity of Cottesloe Beach View Apartments.",
     expected: [],
   },
+
+  // Source: Operation AMAZE, running sheet 29 (sheet 29, target CORNELL,
+  // 2026-08-26), rows 1-13, user-supplied. Note HOGAN appears here as an
+  // ASSOCIATE (front passenger) — a different role than on sheet 28, where
+  // HOGAN is the target — same name, different entity role on a different
+  // sheet. Doesn't affect extraction of the isolated per-row text below,
+  // which only cares about the bracket, not sheet-level role.
+  {
+    label: "AMAZE(CORNELL) row 1 — surveillance commencement address",
+    text: "Surveillance commenced in the vicinity of 35 Stirling Highway, NEDLANDS WA (35 Stirling Highway).",
+    expected: [{ rawShortForm: "35 Stirling Highway", type: "address" }],
+  },
+  {
+    label:
+      "AMAZE(CORNELL) row 2 — two vehicles parked, no location bracket in this row",
+    text: "A green Holden Commodore Sedan, bearing WA registration 1DAF836 (Vehicle 1DAF836), and a silver Ford Everest 4WD, bearing WA registration XCF937 (Vehicle XCF937), parked and unattended in the driveway at 35 Stirling Highway.",
+    expected: [
+      { rawShortForm: "Vehicle 1DAF836", type: "vehicle" },
+      { rawShortForm: "Vehicle XCF937", type: "vehicle" },
+    ],
+  },
+  {
+    label: "AMAZE(CORNELL) row 3 — departure narrative with no brackets at all",
+    text: "CORNELL walked from the vicinity of the residence to Vehicle 1DAF836. Vehicle 1DAF836, CORNELL driver and sole occupant, departed 35 Stirling Highway and continued via: PHOTOGRAPH/S TAKEN",
+    expected: [],
+  },
+  {
+    label: "AMAZE(CORNELL) row 4 — arrival at a plain street address",
+    text: "Vehicle 1DAF836, CORNELL driver and sole occupant, arrived at 90 Brandon Street, KENSINGTON WA (90 Brandon Street) and street parked. CORNELL exited Vehicle 1DAF836 walked towards the residence and continued out of sight. PHOTOGRAPH/S TAKEN",
+    expected: [{ rawShortForm: "90 Brandon Street", type: "address" }],
+  },
+  {
+    label:
+      "AMAZE(CORNELL) row 5 — new associate introduced as a front passenger",
+    text: "Vehicle 1DAF836, CORNELL driver, Paul HOGAN (HOGAN) front passenger, departed 90 Brandon Street and continued via:",
+    expected: [{ rawShortForm: "HOGAN", type: "person" }],
+  },
+  {
+    label:
+      "AMAZE(CORNELL) row 6 — associate re-bracketed plus a business+address arrival",
+    text: "Vehicle 1DAF836, CORNELL driver, Paul HOGAN (HOGAN) front passenger, arrived and street parked in the vicinity of Cheeky Boy Espresso, 31F Ardross Street, APPLECROSS WA (Cheeky Boy Espresso). CORNELL and HOGAN exited the vehicle and walked into Cheeky Boy Cafe and out of sight.",
+    expected: [
+      { rawShortForm: "HOGAN", type: "person" },
+      { rawShortForm: "Cheeky Boy Espresso", type: "address" },
+    ],
+  },
+  {
+    label: "AMAZE(CORNELL) row 7 — plain narrative, no brackets",
+    text: "CORNELL and HOGAN seated inside Cheeky Boy Espresso - HOGAN had a black mobile phone on the table in front of him and CORNELL had two mobile phones on the table.",
+    expected: [],
+  },
+  {
+    label: "AMAZE(CORNELL) row 8 — plain narrative, no brackets",
+    text: "CORNELL and HOGAN paid for their coffee, exited Cheeky Boy Espresso, walked to and entered Vehicle 1DAF836.",
+    expected: [],
+  },
+  {
+    label:
+      "AMAZE(CORNELL) row 9 — departure narrative, no brackets (subsequent mentions drop them)",
+    text: "Vehicle 1DAF836, CORNELL driver, HOGAN front passenger, departed Cheeky Boy Espresso and continued via:",
+    expected: [],
+  },
+  {
+    label:
+      "AMAZE(CORNELL) row 10 — arrival address bracket with a lowercase unit-letter suffix",
+    text: "Vehicle 1DAF836, CORNELL driver, HOGAN front passenger, arrived at 62A Rome Road, MELVILLE WA (62a Rome Road) and parked in the driveway.",
+    expected: [{ rawShortForm: "62a Rome Road", type: "address" }],
+  },
+  {
+    label: "AMAZE(CORNELL) row 11 — departure narrative, no brackets",
+    text: "Vehicle 1DAF836, CORNELL driver, HOGAN front passenger, departed 62A Rome Road and continued via:",
+    expected: [],
+  },
+  {
+    label:
+      "AMAZE(CORNELL) row 12 — arrival at an address shared with a different sheet's commencement",
+    text: "Vehicle 1DAF836, CORNELL driver, HOGAN front passenger, arrived at 45 Burrendah Boulevard, WILLETTON (45 Burrendah Boulevard)",
+    expected: [{ rawShortForm: "45 Burrendah Boulevard", type: "address" }],
+  },
+  {
+    label: "AMAZE(CORNELL) row 13 — surveillance ceased narrative, no brackets",
+    text: "Surveillance ceased in the vicinity of 45 Burrendah Boulevard.",
+    expected: [],
+  },
 ];
 
 function runBenchmark(cases: Case[], title: string, floor: number) {
@@ -330,7 +414,11 @@ describe("extractEntitiesFromText — accuracy benchmarks", () => {
     runBenchmark(SYNTHETIC_CASES, "synthetic dataset", 0.75);
   });
 
-  it("reports precision/recall/F1 across a real running sheet (Operation AMAZE)", () => {
-    runBenchmark(REAL_CASES, "real dataset — Operation AMAZE, sheet 28", 0.75);
+  it("reports precision/recall/F1 across real running sheets (Operation AMAZE)", () => {
+    runBenchmark(
+      REAL_CASES,
+      "real dataset — Operation AMAZE, sheets 28 + 29",
+      0.75
+    );
   });
 });

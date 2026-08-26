@@ -35,6 +35,7 @@ export async function runDuplicateChecks(
           candidateLabel: label,
           existingLabel: match.name,
           reason: match.reason,
+          linkable: { recordType: "target", id: match.id },
         });
       }
       continue;
@@ -44,11 +45,15 @@ export async function runDuplicateChecks(
       label,
     });
     if (matches.length > 0) {
+      const best = matches[0];
       warnings.push({
         kind: item.kind,
         candidateLabel: label,
-        existingLabel: matches[0].label,
-        reason: matches[0].reason,
+        existingLabel: best.label,
+        reason: best.reason,
+        linkable: best.associateId
+          ? { recordType: "associate", id: best.associateId }
+          : null,
       });
     }
   }

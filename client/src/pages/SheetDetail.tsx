@@ -3592,6 +3592,16 @@ export default function SheetDetail() {
     },
     onError: (e: { message: string }) => toast.error(e.message),
   });
+  const createLinkedTargetForEditSheet =
+    trpc.target.registry.createLinkedFromAssociate.useMutation({
+      onSuccess: () => {
+        utils.target.listAll.invalidate();
+        if (sheet?.operationId) {
+          utils.target.list.invalidate({ operationId: sheet.operationId });
+        }
+      },
+      onError: (e: { message: string }) => toast.error(e.message),
+    });
 
   const deleteSheet = trpc.sheet.delete.useMutation({
     onSuccess: () => {
@@ -5306,10 +5316,17 @@ export default function SheetDetail() {
         open={editCreateTargetDialogOpen}
         onClose={() => setEditCreateTargetDialogOpen(false)}
         onSave={async (payload: RegistryCreatePayload) => {
-          const result = await createTargetForEditSheet.mutateAsync({
-            ...payload,
-            linkToOperationId: sheet?.operationId,
-          });
+          const { existingAssociateId, ...rest } = payload;
+          const result = existingAssociateId
+            ? await createLinkedTargetForEditSheet.mutateAsync({
+                ...rest,
+                existingAssociateId,
+                linkToOperationId: sheet?.operationId,
+              })
+            : await createTargetForEditSheet.mutateAsync({
+                ...rest,
+                linkToOperationId: sheet?.operationId,
+              });
           setEditSelectedTargetId(result.id);
           setEditTargetMode("link");
         }}

@@ -198,6 +198,8 @@ import {
   getTargetShortcutsForSheet,
   getAllTargetsForRegistry,
   createRegistryTarget,
+  createTargetLinkedToAssociate,
+  createAssociateLinkedToTarget,
   getAssociatesForTarget,
   getAssociatesForTargetWithIndices,
   getAssociateById,
@@ -2734,6 +2736,42 @@ export const appRouter = router({
           return result;
         }),
 
+      /** Create a new target, linked to an existing Associate confirmed to
+       * be the same real person — the "Yes, same person — link and copy"
+       * resolution on the possible-duplicate prompt. Both records survive;
+       * see server/db.ts's createTargetLinkedToAssociate. */
+      createLinkedFromAssociate: protectedProcedure
+        .input(
+          z.object({
+            name: z.string().min(1).max(255),
+            tgt: z.string().optional().nullable(),
+            hbf: z.string().optional().nullable(),
+            hb: z.string().optional().nullable(),
+            v1f: z.string().optional().nullable(),
+            v1: z.string().optional().nullable(),
+            v2f: z.string().optional().nullable(),
+            v2: z.string().optional().nullable(),
+            dep: z.string().optional().nullable(),
+            arr: z.string().optional().nullable(),
+            extraVehicles: z.string().optional().nullable(),
+            wildFields: z.string().optional().nullable(),
+            linkToOperationId: z.number().optional().nullable(),
+            existingAssociateId: z.number(),
+            ...structuredTargetFieldsSchema,
+          })
+        )
+        .mutation(async ({ input, ctx }) => {
+          const { linkToOperationId, existingAssociateId, ...data } = input;
+          const result = await createTargetLinkedToAssociate(
+            { ...data, createdBy: ctx.user.id },
+            existingAssociateId
+          );
+          if (linkToOperationId) {
+            await linkTargetToOperation(result.id, linkToOperationId);
+          }
+          return result;
+        }),
+
       /** Update a target in the registry */
       update: protectedProcedure
         .input(
@@ -2916,6 +2954,35 @@ export const appRouter = router({
       )
       .mutation(async ({ input, ctx }) => {
         return createAssociate({ ...input, createdBy: ctx.user.id });
+      }),
+
+    /** Create a new associate of `targetId`, linked to a DIFFERENT existing
+     * Target record confirmed to be the same real person — the "Yes, same
+     * person — link and copy" resolution on the possible-duplicate prompt.
+     * `targetId` (who this associate is filed under) and `existingTargetId`
+     * (the other Target record that's the same person) are deliberately
+     * separate — see server/db.ts's createAssociateLinkedToTarget. */
+    createLinkedFromTarget: protectedProcedure
+      .input(
+        z.object({
+          targetId: z.number(),
+          name: z.string().min(1).max(255),
+          tgt: z.string().optional().nullable(),
+          hbf: z.string().optional().nullable(),
+          hb: z.string().optional().nullable(),
+          v1f: z.string().optional().nullable(),
+          v1: z.string().optional().nullable(),
+          extraVehicles: z.string().optional().nullable(),
+          existingTargetId: z.number(),
+          ...structuredTargetFieldsSchema,
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const { existingTargetId, ...data } = input;
+        return createAssociateLinkedToTarget(
+          { ...data, createdBy: ctx.user.id },
+          existingTargetId
+        );
       }),
 
     /** Update an associate */

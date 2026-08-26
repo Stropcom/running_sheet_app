@@ -93,6 +93,11 @@ export interface RegistryCreatePayload {
   vehMake: string | null;
   vehModel: string | null;
   vehType: string | null;
+  /** Set only for the "Yes, same person — link and copy" resolution — the
+   * caller should create this target via
+   * `target.registry.createLinkedFromAssociate` instead of the plain
+   * `create`, passing this through. Absent on a normal save. */
+  existingAssociateId?: number | null;
 }
 
 export function AddTargetDialog({
@@ -116,6 +121,7 @@ export function AddTargetDialog({
   const [extraAddresses, setExtraAddresses] = useState<ExtraAddress[]>([]);
   const [extraVehicles, setExtraVehicles] = useState<ExtraVehicle[]>([]);
   const [saving, setSaving] = useState(false);
+  const [linking, setLinking] = useState(false);
   const utils = trpc.useUtils();
 
   // ── Possible-duplicate detection (fires on Save, not while typing) ──
@@ -156,6 +162,7 @@ export function AddTargetDialog({
     setMergeOpen(false);
     setWarnQueue([]);
     setWarnIndex(0);
+    setLinking(false);
     onClose();
   };
 
@@ -208,6 +215,66 @@ export function AddTargetDialog({
       setSaving(false);
     }
   };
+
+  // Builds the create payload for "Yes, same person — link and copy": every
+  // shared identity field comes from the matched Associate record, not
+  // whatever the officer had typed in this form — DEP/ARR (target-only,
+  // an associate has no equivalent) stay whatever the officer entered here.
+  const buildLinkedPayload = (associate: {
+    id: number;
+    name: string;
+    tgt: string | null;
+    hbf: string | null;
+    hb: string | null;
+    v1f: string | null;
+    v1: string | null;
+    extraAddresses: string | null;
+    extraVehicles: string | null;
+    firstNames: string | null;
+    surname: string | null;
+    bornDate: string | null;
+    addrUnitNo: string | null;
+    addrHouseNo: string | null;
+    addrStreetName: string | null;
+    addrStreetType: string | null;
+    addrSuburb: string | null;
+    addrState: string | null;
+    addrBusinessName: string | null;
+    vehRegistration: string | null;
+    vehState: string | null;
+    vehColour: string | null;
+    vehMake: string | null;
+    vehModel: string | null;
+    vehType: string | null;
+  }): RegistryCreatePayload => ({
+    name: associate.name,
+    tgt: associate.tgt,
+    hbf: associate.hbf,
+    hb: associate.hb,
+    v1f: associate.v1f,
+    v1: associate.v1,
+    dep: dep || null,
+    arr: arr || null,
+    extraAddresses: associate.extraAddresses ?? "[]",
+    extraVehicles: associate.extraVehicles ?? "[]",
+    firstNames: associate.firstNames,
+    surname: associate.surname,
+    bornDate: associate.bornDate,
+    addrUnitNo: associate.addrUnitNo,
+    addrHouseNo: associate.addrHouseNo,
+    addrStreetName: associate.addrStreetName,
+    addrStreetType: associate.addrStreetType,
+    addrSuburb: associate.addrSuburb,
+    addrState: associate.addrState,
+    addrBusinessName: associate.addrBusinessName,
+    vehRegistration: associate.vehRegistration,
+    vehState: associate.vehState,
+    vehColour: associate.vehColour,
+    vehMake: associate.vehMake,
+    vehModel: associate.vehModel,
+    vehType: associate.vehType,
+    existingAssociateId: associate.id,
+  });
 
   const composedName = composeTargetName(identity).name;
 
@@ -280,6 +347,35 @@ export function AddTargetDialog({
   const handleWarnReview = () => {
     setWarnQueue([]);
     setWarnIndex(0);
+  };
+
+  const handleWarnLinkAndCopy = async (linkable: {
+    recordType: "target" | "associate";
+    id: number;
+  }) => {
+    // This dialog only ever creates a Target, so the only linkable match it
+    // can offer is an existing Associate record (a "target" match here
+    // would mean two Targets share a name, which is the separate merge
+    // flow above, not this one).
+    if (linkable.recordType !== "associate") return;
+    setLinking(true);
+    try {
+      const associate = await utils.associate.getById.fetch({
+        id: linkable.id,
+      });
+      if (!associate) {
+        toast.error("Couldn't load the matched associate.");
+        return;
+      }
+      await onSave(buildLinkedPayload(associate));
+      setWarnQueue([]);
+      setWarnIndex(0);
+      resetAndClose();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to link and copy.");
+    } finally {
+      setLinking(false);
+    }
   };
 
   const handleMergeInstead = async () => {
@@ -536,6 +632,8 @@ export function AddTargetDialog({
         warning={warnQueue[warnIndex] ?? null}
         onContinue={handleWarnContinue}
         onReview={handleWarnReview}
+        onLinkAndCopy={handleWarnLinkAndCopy}
+        linking={linking}
       />
 
       {/* Field-level merge into the existing target */}

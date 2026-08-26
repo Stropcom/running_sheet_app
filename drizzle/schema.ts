@@ -417,6 +417,16 @@ export type InsertIntelligenceGeocodeCache =
 export const targets = mysqlTable("targets", {
   id: int("id").autoincrement().primaryKey(),
   operationId: int("operationId"), // nullable — legacy field, use join table instead
+  // Points at an associates.id representing the SAME real person, when an
+  // officer has confirmed a possible-duplicate match is one — see the
+  // "Person Identity Links" section below. Distinct from a normal
+  // target/associate relationship: an associate belongs to exactly one
+  // target via associates.targetId, but this is two independent registry
+  // records (this Target, and someone else's Associate) that happen to be
+  // the same person. Both records keep existing and keep their own role;
+  // only their shared identity fields (name/address/vehicle — see
+  // LINKED_SYNC_FIELDS in server/db.ts) are kept in sync.
+  linkedAssociateId: int("linkedAssociateId"),
   name: varchar("name", { length: 255 }).notNull(), // e.g. "Target 1" or a codename
   tgt: text("tgt"), // Target (person) details
   hbf: text("hbf"), // Home Address Full
@@ -483,6 +493,13 @@ export type InsertTarget = typeof targets.$inferInsert;
 export const associates = mysqlTable("associates", {
   id: int("id").autoincrement().primaryKey(),
   targetId: int("targetId").notNull(),
+  // Points at a targets.id representing the SAME real person — the mirror
+  // of targets.linkedAssociateId above. Not to be confused with targetId:
+  // targetId is "which Target Registry entry this associate is filed
+  // under" (unchanged by linking); linkedTargetId is "which OTHER Target
+  // record is this same person" (only set when confirmed via the
+  // possible-duplicate prompt).
+  linkedTargetId: int("linkedTargetId"),
 
   firstNames: varchar("firstNames", { length: 255 }),
   surname: varchar("surname", { length: 255 }),

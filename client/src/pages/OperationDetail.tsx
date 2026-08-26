@@ -711,6 +711,16 @@ function TargetPanel({
     onError: (e: { message: string }) => toast.error(e.message),
   });
 
+  const createLinked =
+    trpc.target.registry.createLinkedFromAssociate.useMutation({
+      onSuccess: () => {
+        utils.target.list.invalidate({ operationId });
+        utils.target.listAll.invalidate();
+        toast.success("Target added and linked to the existing associate");
+      },
+      onError: (e: { message: string }) => toast.error(e.message),
+    });
+
   // Link = link the existing target record to this operation (no duplication)
   const linkTarget = trpc.target.registry.linkToOperation.useMutation({
     onSuccess: () => {
@@ -773,10 +783,19 @@ function TargetPanel({
         open={addDialogOpen}
         onClose={() => setAddDialogOpen(false)}
         onSave={async (payload: RegistryCreatePayload) => {
-          await create.mutateAsync({
-            ...payload,
-            linkToOperationId: operationId,
-          });
+          const { existingAssociateId, ...rest } = payload;
+          if (existingAssociateId) {
+            await createLinked.mutateAsync({
+              ...rest,
+              existingAssociateId,
+              linkToOperationId: operationId,
+            });
+          } else {
+            await create.mutateAsync({
+              ...rest,
+              linkToOperationId: operationId,
+            });
+          }
         }}
       />
 
@@ -2024,6 +2043,14 @@ export default function OperationDetail() {
     },
     onError: (e: { message: string }) => toast.error(e.message),
   });
+  const createLinkedTargetForSheet =
+    trpc.target.registry.createLinkedFromAssociate.useMutation({
+      onSuccess: () => {
+        utils.target.list.invalidate({ operationId });
+        utils.target.listAll.invalidate();
+      },
+      onError: (e: { message: string }) => toast.error(e.message),
+    });
 
   const updateOperation = trpc.operation.update.useMutation({
     onSuccess: () => {
@@ -2986,10 +3013,17 @@ export default function OperationDetail() {
         open={createTargetDialogOpen}
         onClose={() => setCreateTargetDialogOpen(false)}
         onSave={async (payload: RegistryCreatePayload) => {
-          const result = await createTargetForSheet.mutateAsync({
-            ...payload,
-            linkToOperationId: operationId,
-          });
+          const { existingAssociateId, ...rest } = payload;
+          const result = existingAssociateId
+            ? await createLinkedTargetForSheet.mutateAsync({
+                ...rest,
+                existingAssociateId,
+                linkToOperationId: operationId,
+              })
+            : await createTargetForSheet.mutateAsync({
+                ...rest,
+                linkToOperationId: operationId,
+              });
           setNewTargetId(result.id);
           setTargetMode("link");
         }}

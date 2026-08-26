@@ -14,6 +14,12 @@ export interface DedupCandidateEntity {
   label: string;
   type: DedupType;
   rowCount: number;
+  /** Set only when this candidate is a real Associate registry record (not
+   * a plain-text mention) — carries the associate's id and its owning
+   * target's id, so a "person" match can offer "link and copy" instead of
+   * just "continue"/"review". See server/db.ts's checkPossibleDuplicates. */
+  associateId?: number | null;
+  associateOfTargetId?: number | null;
 }
 
 export interface DuplicateMatch extends DedupCandidateEntity {

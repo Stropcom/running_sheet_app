@@ -2202,6 +2202,56 @@ export async function createTarget(data: InsertTarget) {
   return { id: (result as any).insertId as number };
 }
 
+// ─── Person Identity Links (Target ↔ Associate) ────────────────────────────
+// An officer creating a new Target or Associate can confirm that a
+// possible-duplicate match really is the same real person as an existing
+// Associate/Target elsewhere in the registry. Neither record is converted
+// or deleted — both keep existing under their own role — but their shared
+// identity fields below are copied in at creation, then kept in sync on
+// every later edit to either side (see updateTarget/updateAssociate).
+// Linking and syncing both run inside a single DB transaction: if either
+// side's write fails, the whole operation rolls back rather than leaving
+// the two records out of sync with each other.
+const LINKED_SYNC_FIELDS = [
+  "firstNames",
+  "surname",
+  "bornDate",
+  "name",
+  "tgt",
+  "addrUnitNo",
+  "addrHouseNo",
+  "addrStreetName",
+  "addrStreetType",
+  "addrSuburb",
+  "addrState",
+  "addrBusinessName",
+  "hbf",
+  "hb",
+  "vehRegistration",
+  "vehState",
+  "vehColour",
+  "vehMake",
+  "vehModel",
+  "vehType",
+  "v1f",
+  "v1",
+  "extraAddresses",
+  "extraVehicles",
+] as const;
+type LinkedSyncField = (typeof LINKED_SYNC_FIELDS)[number];
+type LinkedSyncData = Partial<Record<LinkedSyncField, string | null>>;
+
+/** Narrows an update payload down to just the fields two linked records
+ * share, so a target-only field (dep/arr/wildFields) or associate-only
+ * field never gets written to the other side. */
+function pickLinkedSyncFields(data: Record<string, unknown>): LinkedSyncData {
+  const out: LinkedSyncData = {};
+  for (const f of LINKED_SYNC_FIELDS) {
+    if (f in data) out[f] = data[f as keyof typeof data] as string | null;
+  }
+  return out;
+}
+
 export async function updateTarget(
   id: number,
   data: Partial<
@@ -2258,106 +2308,131 @@ export async function updateTarget(
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
 
-  const hasExtraChanges =
-    (options?.newExtraAddressIds?.length ?? 0) > 0 ||
-    (options?.newExtraVehicleIds?.length ?? 0) > 0;
+  return db.transaction(async tx => {
+    const hasExtraChanges =
+      (options?.newExtraAddressIds?.length ?? 0) > 0 ||
+      (options?.newExtraVehicleIds?.length ?? 0) > 0;
 
-  if (options?.isNewAddress || options?.isNewVehicle || hasExtraChanges) {
-    const current = await getTargetById(id);
-    if (current) {
-      const now = Date.now();
-      const historyRows: InsertTargetFieldHistory[] = [];
-      if (
-        options?.isNewAddress &&
-        current.hbf &&
-        current.hbf.trim() &&
-        current.hbf.trim() !== (data.hbf ?? "").trim()
-      ) {
-        historyRows.push({
-          targetId: id,
-          fieldName: "hbf",
-          previousValue: current.hbf,
-          supersededAt: now,
-          supersededByCIN: options.byCIN ?? null,
-        });
-      }
-      if (
-        options?.isNewVehicle &&
-        current.v1f &&
-        current.v1f.trim() &&
-        current.v1f.trim() !== (data.v1f ?? "").trim()
-      ) {
-        historyRows.push({
-          targetId: id,
-          fieldName: "v1f",
-          previousValue: current.v1f,
-          supersededAt: now,
-          supersededByCIN: options.byCIN ?? null,
-        });
-      }
-
-      const parseJsonArray = (
-        json: string | null | undefined
-      ): Array<{ id?: string; full?: string }> => {
-        if (!json) return [];
-        try {
-          return JSON.parse(json);
-        } catch {
-          return [];
+    if (options?.isNewAddress || options?.isNewVehicle || hasExtraChanges) {
+      const [current] = await tx
+        .select()
+        .from(targets)
+        .where(eq(targets.id, id))
+        .limit(1);
+      if (current) {
+        const now = Date.now();
+        const historyRows: InsertTargetFieldHistory[] = [];
+        if (
+          options?.isNewAddress &&
+          current.hbf &&
+          current.hbf.trim() &&
+          current.hbf.trim() !== (data.hbf ?? "").trim()
+        ) {
+          historyRows.push({
+            targetId: id,
+            fieldName: "hbf",
+            previousValue: current.hbf,
+            supersededAt: now,
+            supersededByCIN: options.byCIN ?? null,
+          });
         }
-      };
+        if (
+          options?.isNewVehicle &&
+          current.v1f &&
+          current.v1f.trim() &&
+          current.v1f.trim() !== (data.v1f ?? "").trim()
+        ) {
+          historyRows.push({
+            targetId: id,
+            fieldName: "v1f",
+            previousValue: current.v1f,
+            supersededAt: now,
+            supersededByCIN: options.byCIN ?? null,
+          });
+        }
 
-      if (options?.newExtraAddressIds?.length) {
-        const oldEntries = parseJsonArray(current.extraAddresses);
-        const newEntries = parseJsonArray(data.extraAddresses);
-        for (const entryId of options.newExtraAddressIds) {
-          const oldEntry = oldEntries.find(e => e.id === entryId);
-          const newEntry = newEntries.find(e => e.id === entryId);
-          if (
-            oldEntry?.full &&
-            oldEntry.full.trim() &&
-            oldEntry.full.trim() !== (newEntry?.full ?? "").trim()
-          ) {
-            historyRows.push({
-              targetId: id,
-              fieldName: `extraAddress:${entryId}`,
-              previousValue: oldEntry.full,
-              supersededAt: now,
-              supersededByCIN: options.byCIN ?? null,
-            });
+        const parseJsonArray = (
+          json: string | null | undefined
+        ): Array<{ id?: string; full?: string }> => {
+          if (!json) return [];
+          try {
+            return JSON.parse(json);
+          } catch {
+            return [];
+          }
+        };
+
+        if (options?.newExtraAddressIds?.length) {
+          const oldEntries = parseJsonArray(current.extraAddresses);
+          const newEntries = parseJsonArray(data.extraAddresses);
+          for (const entryId of options.newExtraAddressIds) {
+            const oldEntry = oldEntries.find(e => e.id === entryId);
+            const newEntry = newEntries.find(e => e.id === entryId);
+            if (
+              oldEntry?.full &&
+              oldEntry.full.trim() &&
+              oldEntry.full.trim() !== (newEntry?.full ?? "").trim()
+            ) {
+              historyRows.push({
+                targetId: id,
+                fieldName: `extraAddress:${entryId}`,
+                previousValue: oldEntry.full,
+                supersededAt: now,
+                supersededByCIN: options.byCIN ?? null,
+              });
+            }
           }
         }
-      }
-      if (options?.newExtraVehicleIds?.length) {
-        const oldEntries = parseJsonArray(current.extraVehicles);
-        const newEntries = parseJsonArray(data.extraVehicles);
-        for (const entryId of options.newExtraVehicleIds) {
-          const oldEntry = oldEntries.find(e => e.id === entryId);
-          const newEntry = newEntries.find(e => e.id === entryId);
-          if (
-            oldEntry?.full &&
-            oldEntry.full.trim() &&
-            oldEntry.full.trim() !== (newEntry?.full ?? "").trim()
-          ) {
-            historyRows.push({
-              targetId: id,
-              fieldName: `extraVehicle:${entryId}`,
-              previousValue: oldEntry.full,
-              supersededAt: now,
-              supersededByCIN: options.byCIN ?? null,
-            });
+        if (options?.newExtraVehicleIds?.length) {
+          const oldEntries = parseJsonArray(current.extraVehicles);
+          const newEntries = parseJsonArray(data.extraVehicles);
+          for (const entryId of options.newExtraVehicleIds) {
+            const oldEntry = oldEntries.find(e => e.id === entryId);
+            const newEntry = newEntries.find(e => e.id === entryId);
+            if (
+              oldEntry?.full &&
+              oldEntry.full.trim() &&
+              oldEntry.full.trim() !== (newEntry?.full ?? "").trim()
+            ) {
+              historyRows.push({
+                targetId: id,
+                fieldName: `extraVehicle:${entryId}`,
+                previousValue: oldEntry.full,
+                supersededAt: now,
+                supersededByCIN: options.byCIN ?? null,
+              });
+            }
           }
         }
-      }
 
-      if (historyRows.length > 0) {
-        await db.insert(targetFieldHistory).values(historyRows);
+        if (historyRows.length > 0) {
+          await tx.insert(targetFieldHistory).values(historyRows);
+        }
       }
     }
-  }
 
-  await db.update(targets).set(data).where(eq(targets.id, id));
-  return { id };
+    await tx.update(targets).set(data).where(eq(targets.id, id));
+
+    // Propagate shared identity fields to a linked associate, if this target
+    // is linked to one — blocking (the whole transaction rolls back) rather
+    // than letting the two records drift out of sync.
+    const [linkRow] = await tx
+      .select({ linkedAssociateId: targets.linkedAssociateId })
+      .from(targets)
+      .where(eq(targets.id, id))
+      .limit(1);
+    if (linkRow?.linkedAssociateId) {
+      const synced = pickLinkedSyncFields(data);
+      if (Object.keys(synced).length > 0) {
+        await tx
+          .update(associates)
+          .set(synced as Partial<InsertAssociate>)
+          .where(eq(associates.id, linkRow.linkedAssociateId));
+      }
+    }
+
+    return { id };
+  });
 }
 
 export async function getTargetById(id: number) {
@@ -2642,8 +2717,103 @@ export async function updateAssociate(
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  await db.update(associates).set(data).where(eq(associates.id, id));
-  return { id };
+  return db.transaction(async tx => {
+    await tx.update(associates).set(data).where(eq(associates.id, id));
+
+    // Propagate shared identity fields to a linked target, if this
+    // associate is linked to one — blocking (the whole transaction rolls
+    // back) rather than letting the two records drift out of sync.
+    const [linkRow] = await tx
+      .select({ linkedTargetId: associates.linkedTargetId })
+      .from(associates)
+      .where(eq(associates.id, id))
+      .limit(1);
+    if (linkRow?.linkedTargetId) {
+      const synced = pickLinkedSyncFields(data);
+      if (Object.keys(synced).length > 0) {
+        await tx
+          .update(targets)
+          .set(synced as Partial<InsertTarget>)
+          .where(eq(targets.id, linkRow.linkedTargetId));
+      }
+    }
+
+    return { id };
+  });
+}
+
+/**
+ * Creates a new Target pre-filled from `data`, linked to an existing
+ * Associate record confirmed to be the same real person (see "Person
+ * Identity Links" above createTarget). Both records survive independently;
+ * only their shared fields (LINKED_SYNC_FIELDS) stay in sync from here on.
+ */
+export async function createTargetLinkedToAssociate(
+  data: Omit<InsertTarget, "operationId"> & { operationId?: number | null },
+  existingAssociateId: number
+): Promise<{ id: number }> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  return db.transaction(async tx => {
+    const [existing] = await tx
+      .select({ linkedTargetId: associates.linkedTargetId })
+      .from(associates)
+      .where(eq(associates.id, existingAssociateId))
+      .limit(1);
+    if (!existing) throw new Error("Associate not found");
+    if (existing.linkedTargetId) {
+      throw new Error(
+        "This associate is already linked to another target record."
+      );
+    }
+    const [result] = await tx.insert(targets).values({
+      ...data,
+      operationId: data.operationId ?? null,
+      linkedAssociateId: existingAssociateId,
+    });
+    const newTargetId = (result as any).insertId as number;
+    await tx
+      .update(associates)
+      .set({ linkedTargetId: newTargetId })
+      .where(eq(associates.id, existingAssociateId));
+    return { id: newTargetId };
+  });
+}
+
+/**
+ * Creates a new Associate pre-filled from `data`, linked to an existing
+ * Target record confirmed to be the same real person. Mirror of
+ * createTargetLinkedToAssociate above.
+ */
+export async function createAssociateLinkedToTarget(
+  data: InsertAssociate,
+  existingTargetId: number
+): Promise<{ id: number }> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  return db.transaction(async tx => {
+    const [existing] = await tx
+      .select({ linkedAssociateId: targets.linkedAssociateId })
+      .from(targets)
+      .where(eq(targets.id, existingTargetId))
+      .limit(1);
+    if (!existing) throw new Error("Target not found");
+    if (existing.linkedAssociateId) {
+      throw new Error(
+        "This target is already linked to another associate record."
+      );
+    }
+    const [result] = await tx.insert(associates).values({
+      ...data,
+      linkedTargetId: existingTargetId,
+    });
+    const newAssociateId = (result as any).insertId as number;
+    await tx
+      .update(targets)
+      .set({ linkedAssociateId: newAssociateId })
+      .where(eq(targets.id, existingTargetId));
+    return { id: newAssociateId };
+  });
 }
 
 export async function softDeleteAssociate(id: number, cin: string) {
@@ -6596,6 +6766,8 @@ export interface DuplicateMatchResult {
   rowCount: number;
   score: number;
   reason: string;
+  associateId?: number | null;
+  associateOfTargetId?: number | null;
 }
 
 /**
@@ -6638,6 +6810,8 @@ export async function checkPossibleDuplicates(
       label: e.shortForm,
       type,
       rowCount: e.occurrences.filter(o => o.rowId > 0).length,
+      associateId: e.isAssociate ? e.associateId : null,
+      associateOfTargetId: e.isAssociate ? e.associateOfTargetId : null,
     }));
 
   const decisions = await db

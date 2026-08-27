@@ -195,21 +195,21 @@ export function PossibleMatchDialog({
           </Button>
         </div>
 
-        <div className="flex items-center justify-center gap-4 sm:gap-8">
-          <div className="flex flex-col items-center gap-1.5">
+        <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-8">
+          <div className="flex flex-col items-center gap-1.5 shrink-0">
             <img
               src={current.newPhotoUrl}
               alt="New photo"
-              className={`rounded-lg border border-border transition-all ${zoom.imgClass}`}
+              className={`rounded-lg border border-border transition-all shrink-0 ${zoom.imgClass}`}
             />
             <span className="text-xs text-muted-foreground">New photo</span>
           </div>
-          <div className="text-muted-foreground text-lg">≈</div>
-          <div className="flex flex-col items-center gap-1.5">
+          <div className="text-muted-foreground text-lg shrink-0">≈</div>
+          <div className="flex flex-col items-center gap-1.5 shrink-0">
             <img
               src={current.match.photoUrl}
               alt={current.match.entityLabel}
-              className={`rounded-lg border border-border transition-all ${zoom.imgClass}`}
+              className={`rounded-lg border border-border transition-all shrink-0 ${zoom.imgClass}`}
             />
             <span
               className={`text-xs text-muted-foreground text-center truncate ${zoom.captionClass}`}

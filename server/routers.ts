@@ -119,6 +119,7 @@ import {
   getPendingVehicleArrivals,
   isAddressAlreadyMentioned,
   findMissingLocationSuggestion,
+  findVagueVehicleMatch,
   getRunningSheetById,
   computeWitnessListData,
   getRunningSheets,
@@ -1268,6 +1269,28 @@ export const appRouter = router({
       )
       .query(async ({ input }) => {
         return findMissingLocationSuggestion(
+          input.sheetId,
+          input.observation,
+          input.excludeRowId
+        );
+      }),
+
+    // Detects a vehicle with a real registration that might be the same
+    // vehicle as an earlier vague sighting on this sheet ("Vehicle White
+    // Hyundai" — no rego observed). Confirming merges the two via the same
+    // entityAliases mechanism the Merge Entities tool uses (see
+    // intelligence.mergeEntities) — the running sheet text itself is never
+    // touched, only how the Intelligence folder links the two sightings.
+    checkVagueVehicleMatch: protectedProcedure
+      .input(
+        z.object({
+          sheetId: z.number(),
+          observation: z.string(),
+          excludeRowId: z.number().optional(),
+        })
+      )
+      .query(async ({ input }) => {
+        return findVagueVehicleMatch(
           input.sheetId,
           input.observation,
           input.excludeRowId

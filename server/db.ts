@@ -123,6 +123,7 @@ import {
 import {
   findPossibleDuplicates,
   comparePersonNames,
+  compareVehicleDescriptions,
   type DedupType,
   type DedupCandidateEntity,
 } from "./entityDedup";
@@ -3291,6 +3292,12 @@ export async function deepSearchOperations(
 
 // ─── Intelligence ─────────────────────────────────────────────────────────────
 
+// Hoisted out of extractEntitiesFromText so other detection logic (see the
+// vague-vehicle matching below) can reuse the same make list rather than
+// duplicating it.
+export const VEHICLE_MAKES_PATTERN =
+  /\b(toyota|ford|holden|honda|mazda|nissan|mitsubishi|subaru|hyundai|kia|volkswagen|vw|bmw|mercedes|audi|lexus|volvo|jeep|dodge|chevrolet|chevy|ram|gmc|chrysler|fiat|alfa|peugeot|renault|citroen|skoda|seat|suzuki|isuzu|daihatsu|ssangyong|great wall|gwm|haval|mg|byd|tesla|rivian|land rover|range rover|defender|discovery|jaguar|porsche|ferrari|lamborghini|maserati|bentley|rolls royce|aston martin|mclaren|lotus|mini|smart|dacia|lancia|opel|vauxhall|saab|pontiac|buick|cadillac|lincoln|infiniti|acura|genesis|lucid|polestar|scout|rivian)\b/i;
+
 /**
  * Extract bracketed entities from a single observation string.
  * Pattern: any text followed by (ShortForm) — the short form is the entity identifier.
@@ -3419,8 +3426,7 @@ export function extractEntitiesFromText(text: string): Array<{
         shortForm.replace(/\s/g, "").toUpperCase()
       );
     // Broader vehicle make/model keywords
-    const VEHICLE_MAKES =
-      /\b(toyota|ford|holden|honda|mazda|nissan|mitsubishi|subaru|hyundai|kia|volkswagen|vw|bmw|mercedes|audi|lexus|volvo|jeep|dodge|chevrolet|chevy|ram|gmc|chrysler|fiat|alfa|peugeot|renault|citroen|skoda|seat|suzuki|isuzu|daihatsu|ssangyong|great wall|gwm|haval|mg|byd|tesla|rivian|land rover|range rover|defender|discovery|jaguar|porsche|ferrari|lamborghini|maserati|bentley|rolls royce|aston martin|mclaren|lotus|mini|smart|dacia|lancia|opel|vauxhall|saab|pontiac|buick|cadillac|lincoln|infiniti|acura|genesis|lucid|polestar|scout|rivian)\b/i;
+    const VEHICLE_MAKES = VEHICLE_MAKES_PATTERN;
     const VEHICLE_BODY =
       /\b(vehicle|car|truck|van|ute|sedan|hatchback|suv|wagon|coupe|convertible|roadster|pickup|4wd|4x4|cab|dual cab|single cab|tray|flatbed|panel van|people mover|minivan|bus|minibus|motorcycle|motorbike|bike|scooter|quad|atv|boat|trailer|caravan|motorhome|rv|bearing|registration|rego|reg|plate|plated)\b/i;
     // A shortForm that looks like an all-caps person name (letters/spaces/
@@ -3678,67 +3684,91 @@ export function extractEntitiesFromText(text: string): Array<{
       // Step 1: extract raw rego
       const rawRego = shortForm.replace(/^vehicle\s+/i, "").trim();
 
-      // Step 2: find the description text — everything before the rego
-      // mention. If the rego quoted in the text doesn't match the bracket's
-      // rego (e.g. a typo), regoIdx is -1 and the whole fullDescription is
-      // used instead — the boilerplate-stripping step below also swallows a
-      // trailing rego-shaped token in that case, so the mismatched number
-      // doesn't leak into the description either way.
-      const regoIdx = fullDescription
-        .toUpperCase()
-        .indexOf(rawRego.toUpperCase());
-      let descSource =
-        regoIdx > 0 ? fullDescription.slice(0, regoIdx) : fullDescription;
+      // Everything below assumes rawRego IS a real registration and
+      // searches for that exact text inside fullDescription to find where
+      // the description ends. That assumption breaks for a vague/no-rego
+      // sighting bracketed with a make/model instead of a plate — e.g.
+      // "(Vehicle White Hyundai)" on "a white Hyundai Santa Fe,
+      // registration unable to be observed" — where "White Hyundai" is
+      // also a substring of the description itself, so regoIdx lands
+      // mid-sentence and truncates descSource to a fragment ("a"). A real
+      // WA rego is short and never spells out a recognised make, so guard
+      // the whole reconstruction on that instead of assuming every bracket
+      // is a plate.
+      const rawRegoCompact = rawRego.replace(/\s/g, "").toUpperCase();
+      const rawRegoLooksLikeRealRego =
+        /^\d[A-Z]{2,3}\d{3}$/.test(rawRegoCompact) ||
+        (/^[A-Z0-9]{2,7}$/.test(rawRegoCompact) &&
+          !VEHICLE_MAKES_PATTERN.test(rawRego));
 
-      const STATE_CODES = "WA|NSW|VIC|QLD|SA|TAS|NT|ACT";
-      descSource = descSource
-        .replace(
-          new RegExp(
-            `[,;]?\\s*(?:bearing\\s+)?(?:(?:${STATE_CODES})\\s+)?(?:registration|rego|reg\\.?|plated?)\\s*:?\\s*(?:\\d[A-Za-z0-9]{2,7})?\\s*$`,
-            "i"
-          ),
-          ""
-        )
-        .replace(/[,;]\s*$/, "")
-        .trim();
-
-      // A real vehicle description is a short noun phrase (colour + make +
-      // model + trim + body, typically 2-5 words). When an officer embeds
-      // that same phrase in a longer narrative sentence instead of writing
-      // it tersely — "WINMAR and LOWE walked through the car park to a blue
-      // Mercedes Benz C250 sedan, bearing WA registration 1HFD521" — keeping
-      // the whole clause up to the rego drags the narrative prose in too.
-      // Cut at the LAST standalone article ("a"/"an"/"the") — that's
-      // reliably where the noun phrase describing the vehicle starts, since
-      // narrative lead-ins almost always end "...to a", "...into an",
-      // "...near the", etc. Falls back to a generous word-count cap when no
-      // article is present, as a backstop against unbounded narrative text
-      // with no article at all.
-      const articlePattern = /\b(?:a|an|the)\s+(?=\S)/gi;
-      let lastArticleEnd = -1;
-      let articleMatch: RegExpExecArray | null;
-      while ((articleMatch = articlePattern.exec(descSource)) !== null) {
-        lastArticleEnd = articleMatch.index + articleMatch[0].length;
-      }
-      if (lastArticleEnd >= 0) {
-        descSource = descSource.slice(lastArticleEnd);
+      if (!rawRegoLooksLikeRealRego) {
+        // Descriptive bracket, not a real rego — the bracket text itself
+        // (minus the "Vehicle " prefix) already IS the description; there's
+        // nothing in fullDescription to reconstruct around.
+        displayName = rawRego || shortForm;
       } else {
-        const words = descSource.split(/\s+/).filter(Boolean);
-        if (words.length > 8) descSource = words.slice(-8).join(" ");
-      }
-      descSource = descSource
-        .replace(/^vehicle\s+/i, "")
-        .replace(/\s+/g, " ")
-        .trim();
+        // Step 2: find the description text — everything before the rego
+        // mention. If the rego quoted in the text doesn't match the bracket's
+        // rego (e.g. a typo), regoIdx is -1 and the whole fullDescription is
+        // used instead — the boilerplate-stripping step below also swallows a
+        // trailing rego-shaped token in that case, so the mismatched number
+        // doesn't leak into the description either way.
+        const regoIdx = fullDescription
+          .toUpperCase()
+          .indexOf(rawRego.toUpperCase());
+        let descSource =
+          regoIdx > 0 ? fullDescription.slice(0, regoIdx) : fullDescription;
 
-      if (rawRego && rawRego !== shortForm) {
-        // Had "Vehicle REGO" format — use rego + description as written
-        displayName = descSource ? `${rawRego} ${descSource}` : rawRego;
-      } else if (descSource) {
-        // shortForm is already just the rego
-        displayName = `${rawRego} ${descSource}`;
+        const STATE_CODES = "WA|NSW|VIC|QLD|SA|TAS|NT|ACT";
+        descSource = descSource
+          .replace(
+            new RegExp(
+              `[,;]?\\s*(?:bearing\\s+)?(?:(?:${STATE_CODES})\\s+)?(?:registration|rego|reg\\.?|plated?)\\s*:?\\s*(?:\\d[A-Za-z0-9]{2,7})?\\s*$`,
+              "i"
+            ),
+            ""
+          )
+          .replace(/[,;]\s*$/, "")
+          .trim();
+
+        // A real vehicle description is a short noun phrase (colour + make +
+        // model + trim + body, typically 2-5 words). When an officer embeds
+        // that same phrase in a longer narrative sentence instead of writing
+        // it tersely — "WINMAR and LOWE walked through the car park to a blue
+        // Mercedes Benz C250 sedan, bearing WA registration 1HFD521" — keeping
+        // the whole clause up to the rego drags the narrative prose in too.
+        // Cut at the LAST standalone article ("a"/"an"/"the") — that's
+        // reliably where the noun phrase describing the vehicle starts, since
+        // narrative lead-ins almost always end "...to a", "...into an",
+        // "...near the", etc. Falls back to a generous word-count cap when no
+        // article is present, as a backstop against unbounded narrative text
+        // with no article at all.
+        const articlePattern = /\b(?:a|an|the)\s+(?=\S)/gi;
+        let lastArticleEnd = -1;
+        let articleMatch: RegExpExecArray | null;
+        while ((articleMatch = articlePattern.exec(descSource)) !== null) {
+          lastArticleEnd = articleMatch.index + articleMatch[0].length;
+        }
+        if (lastArticleEnd >= 0) {
+          descSource = descSource.slice(lastArticleEnd);
+        } else {
+          const words = descSource.split(/\s+/).filter(Boolean);
+          if (words.length > 8) descSource = words.slice(-8).join(" ");
+        }
+        descSource = descSource
+          .replace(/^vehicle\s+/i, "")
+          .replace(/\s+/g, " ")
+          .trim();
+
+        if (rawRego && rawRego !== shortForm) {
+          // Had "Vehicle REGO" format — use rego + description as written
+          displayName = descSource ? `${rawRego} ${descSource}` : rawRego;
+        } else if (descSource) {
+          // shortForm is already just the rego
+          displayName = `${rawRego} ${descSource}`;
+        }
+        // else: keep displayName = shortForm (bare rego, no description available)
       }
-      // else: keep displayName = shortForm (bare rego, no description available)
     } else if (type === "person") {
       // Extract the last 2-4 words immediately before the bracket — these are most
       // likely to be the full name. E.g. "Observed Jason JOHNSON (JOHNSON)" →
@@ -4521,6 +4551,184 @@ export async function findMissingLocationSuggestion(
     observation,
     rows.filter(r => r.id !== excludeRowId)
   );
+}
+
+// ─── Vague Vehicle Match (No-Rego Sighting → Later Full Description) ──────
+// A vehicle is often first sighted without its registration visible —
+// "a white Hyundai Santa Fe, registration unable to be observed (Vehicle
+// White Hyundai)" — and only fully identified later in the same sheet once
+// the rego is actually seen. Bracketed like that, the vague sighting is
+// already a real, trackable vehicle entity (extractEntitiesFromText
+// classifies it as type "vehicle" fine, since classification only needs a
+// make/body keyword nearby) — but it keys on whatever descriptive text was
+// typed, so a later full sighting with the real rego becomes a SEPARATE,
+// unlinked entity even though it's the same car. This detects that
+// specific shape and offers the officer a merge, reusing the exact
+// mechanism the "Merge Entities" tool and the general duplicate-prompt
+// already use (entityAliases via mergeEntities) — see the SCOPE note on
+// compareVehicleDescriptions in entityDedup.ts for why this needs a
+// dedicated word-overlap comparison rather than the existing
+// character-similarity vehicle comparator (compareVehicles): a vague
+// bracket and a real rego share almost no characters in common even when
+// they're the same car.
+
+// Two independent signals that a vehicle mention is vague (no real rego
+// known yet), combined with OR rather than AND so either one alone is
+// enough — an officer might bracket the vague sighting with just a
+// make/model ("Vehicle White Hyundai") without writing an explicit "rego
+// not seen" phrase, or vice versa:
+//   1. The bracket itself contains a vehicle make (VEHICLE_MAKES_PATTERN)
+//      — a real rego never does.
+//   2. The surrounding text uses one of the common ways officers phrase
+//      "the registration wasn't visible" — kept fuzzy/pattern-based
+//      (unseen/unobserved/unable to see or observe/not visible) rather
+//      than a fixed phrase list, so wording variants are still caught.
+const NO_REGO_OBSERVED_PATTERN =
+  /\b(registration|rego|reg|plate)\b[^.]{0,40}\b(unseen|unobserved|not\s+(?:seen|observed|obtained|visible)|unable\s+to\s+(?:be\s+)?(?:see|seen|observe|observed|obtain|obtained)|no(?:t)?\s+visible)\b/i;
+
+function isVagueVehicleMention(
+  shortForm: string,
+  fullDescription: string
+): boolean {
+  const hasRealRego = /\b\d[A-Za-z]{2,3}\d{3}\b/.test(shortForm);
+  if (hasRealRego) return false;
+  return (
+    VEHICLE_MAKES_PATTERN.test(shortForm) ||
+    NO_REGO_OBSERVED_PATTERN.test(fullDescription)
+  );
+}
+
+export interface VagueVehicleMatch {
+  /** The vague sighting's bracket text — becomes entityAliases' loserLabel on confirm. */
+  loserLabel: string;
+  /** The new, real-rego vehicle just entered — becomes entityAliases' winnerLabel. */
+  winnerLabel: string;
+  reason: string;
+}
+
+// Pure decision logic over an already-extracted row list — kept separate
+// from findVagueVehicleMatch's DB fetch/alias-dedup checks below so it can
+// be unit tested directly, the same pattern as
+// pickMissingLocationSuggestion. Returns every candidate match (best first
+// by score), not just one — the DB-aware wrapper below filters out any
+// already-decided pair and takes the first survivor.
+export function pickVagueVehicleMatches(
+  observation: string,
+  otherRows: Array<{ observation: string | null }>
+): VagueVehicleMatch[] {
+  const newVehicles = extractEntitiesFromText(observation).filter(
+    e => e.type === "vehicle" && /\b\d[A-Za-z]{2,3}\d{3}\b/.test(e.shortForm)
+  );
+  if (newVehicles.length === 0) return [];
+
+  const rows = otherRows.filter(
+    (r): r is { observation: string } => !!r.observation
+  );
+
+  const candidates: Array<VagueVehicleMatch & { score: number }> = [];
+  for (const newVehicle of newVehicles) {
+    const winnerKey = normOnly("vehicle", newVehicle.shortForm);
+    const newDescText = `${newVehicle.fullDescription} ${newVehicle.shortForm}`;
+
+    for (const row of rows) {
+      const earlierEntities = extractEntitiesFromText(row.observation);
+      for (const earlier of earlierEntities) {
+        if (earlier.type !== "vehicle") continue;
+        if (!isVagueVehicleMention(earlier.shortForm, earlier.fullDescription))
+          continue;
+
+        const loserKey = normOnly("vehicle", earlier.shortForm);
+        if (loserKey === winnerKey) continue;
+
+        const match = compareVehicleDescriptions(
+          newDescText,
+          `${earlier.fullDescription} ${earlier.shortForm}`
+        );
+        if (!match) continue;
+
+        candidates.push({
+          loserLabel: earlier.shortForm,
+          winnerLabel: newVehicle.shortForm,
+          reason: match.reason,
+          score: match.score,
+        });
+      }
+    }
+  }
+  return candidates
+    .sort((a, b) => b.score - a.score)
+    .map(({ score: _score, ...rest }) => rest);
+}
+
+// Scoped to a single sheet, same reasoning as the other same-day continuity
+// helpers above (vehicle depart/arrive, missing location). excludeRowId
+// lets an edit of an existing row skip matching against itself.
+export async function findVagueVehicleMatch(
+  sheetId: number,
+  observation: string,
+  excludeRowId?: number
+): Promise<VagueVehicleMatch | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const rows = await getRowsBySheetId(sheetId);
+  const candidates = pickVagueVehicleMatches(
+    observation,
+    rows.filter(r => r.id !== excludeRowId)
+  );
+
+  for (const candidate of candidates) {
+    const loserKey = normOnly("vehicle", candidate.loserLabel);
+    const winnerKey = normOnly("vehicle", candidate.winnerLabel);
+
+    // Already linked (either direction) or already dismissed as "not the
+    // same vehicle" — don't ask again, same as the generic duplicate-prompt
+    // pipeline.
+    const [existingAlias, existingDecision] = await Promise.all([
+      db
+        .select()
+        .from(entityAliases)
+        .where(
+          and(
+            eq(entityAliases.type, "vehicle"),
+            or(
+              and(
+                eq(entityAliases.loserKey, loserKey),
+                eq(entityAliases.winnerKey, winnerKey)
+              ),
+              and(
+                eq(entityAliases.loserKey, winnerKey),
+                eq(entityAliases.winnerKey, loserKey)
+              )
+            )
+          )
+        )
+        .limit(1),
+      db
+        .select()
+        .from(entityDedupDecisions)
+        .where(
+          and(
+            eq(entityDedupDecisions.type, "vehicle"),
+            or(
+              and(
+                eq(entityDedupDecisions.keyA, loserKey),
+                eq(entityDedupDecisions.keyB, winnerKey)
+              ),
+              and(
+                eq(entityDedupDecisions.keyA, winnerKey),
+                eq(entityDedupDecisions.keyB, loserKey)
+              )
+            )
+          )
+        )
+        .limit(1),
+    ]);
+    if (existingAlias.length > 0 || existingDecision.length > 0) continue;
+
+    return candidate;
+  }
+  return null;
 }
 
 // App-wide convention: the first time an address is mentioned in a running

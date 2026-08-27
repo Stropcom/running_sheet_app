@@ -56,9 +56,19 @@ const CATEGORY_LABEL: Record<string, string> = {
 // side by side within whatever width the dialog actually rendered at — a
 // fixed-px size at high zoom could exceed the dialog on a narrower screen,
 // which used to force the pair to squeeze (pre-shrink-0) or wrap onto two
-// lines (post-shrink-0) instead of staying side by side. Every class below
-// is a literal string (not built from a runtime template) so Tailwind's
-// build-time scanner picks them all up regardless of which step is active.
+// lines (post-shrink-0) instead of staying side by side.
+//
+// The dialog's own max-width is viewport-relative (vw), not a fixed rem
+// breakpoint (max-w-4xl/5xl/etc.) — on a typical laptop-width browser
+// window those fixed breakpoints all land within a few px of DialogContent's
+// own built-in calc(100%-2rem) cap, so Large/X-Large/Maximum ended up
+// rendering at nearly the same actual width and the zoom barely looked like
+// it was doing anything. vw scales with the real window instead of hitting
+// that same ceiling at every step past Medium.
+//
+// Every class below is a literal string (not built from a runtime
+// template) so Tailwind's build-time scanner picks them all up regardless
+// of which step is active at render time.
 const ZOOM_STEPS: {
   label: string;
   colClass: string;
@@ -73,27 +83,27 @@ const ZOOM_STEPS: {
   },
   {
     label: "Medium",
-    colClass: "w-[30%]",
+    colClass: "w-[34%]",
     imgFit: "object-contain bg-muted",
-    dialogClass: "max-w-2xl",
+    dialogClass: "max-w-[75vw]",
   },
   {
     label: "Large",
-    colClass: "w-[36%]",
+    colClass: "w-[40%]",
     imgFit: "object-contain bg-muted",
-    dialogClass: "max-w-4xl",
+    dialogClass: "max-w-[85vw]",
   },
   {
     label: "X-Large",
-    colClass: "w-[40%]",
+    colClass: "w-[44%]",
     imgFit: "object-contain bg-muted",
-    dialogClass: "max-w-5xl",
+    dialogClass: "max-w-[92vw]",
   },
   {
     label: "Maximum",
-    colClass: "w-[42%]",
+    colClass: "w-[47%]",
     imgFit: "object-contain bg-muted",
-    dialogClass: "max-w-7xl",
+    dialogClass: "max-w-[97vw]",
   },
 ];
 const MAX_ZOOM_INDEX = ZOOM_STEPS.length - 1;

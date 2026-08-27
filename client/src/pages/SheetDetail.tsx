@@ -5395,6 +5395,7 @@ export default function SheetDetail() {
               });
           setEditSelectedTargetId(result.id);
           setEditTargetMode("link");
+          return result;
         }}
       />
 

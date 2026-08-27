@@ -785,17 +785,16 @@ function TargetPanel({
         onSave={async (payload: RegistryCreatePayload) => {
           const { existingAssociateId, ...rest } = payload;
           if (existingAssociateId) {
-            await createLinked.mutateAsync({
+            return await createLinked.mutateAsync({
               ...rest,
               existingAssociateId,
               linkToOperationId: operationId,
             });
-          } else {
-            await create.mutateAsync({
-              ...rest,
-              linkToOperationId: operationId,
-            });
           }
+          return await create.mutateAsync({
+            ...rest,
+            linkToOperationId: operationId,
+          });
         }}
       />
 
@@ -3026,6 +3025,7 @@ export default function OperationDetail() {
               });
           setNewTargetId(result.id);
           setTargetMode("link");
+          return result;
         }}
       />
 

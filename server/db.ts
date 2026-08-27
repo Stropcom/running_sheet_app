@@ -10620,6 +10620,19 @@ export async function getIntelTargetProfile(
   const ownVehicleRegos = targetVehicleRegos(target);
   const ownAddressCores = targetAddressCores(target);
   const ownOperationIds = new Set(opLinks.map(o => o.id));
+  // Same reasoning as the mirror-image check in getIntelAssociateProfile: if
+  // this target is Person-Identity-Linked to a registry associate, that
+  // associate's own operation (via its parent target) is this same
+  // person's own turf, not a genuine cross-operation connection to flag.
+  if (target.linkedAssociateId) {
+    const linkedAssociate = await getAssociateById(target.linkedAssociateId);
+    if (linkedAssociate) {
+      const parentOps = await getLinkedOperationsForTarget(
+        linkedAssociate.targetId
+      );
+      for (const op of parentOps) ownOperationIds.add(op.operationId);
+    }
+  }
   const sharedEntityLinks = dedupeCrossLinks([
     ...(await getSharedEntityCrossLinks(
       ownVehicleRegos,
@@ -11069,17 +11082,35 @@ export async function getIntelAssociateProfile(
     ? await getAssociateById(entity.associateId ?? -1)
     : undefined;
 
-  // Associates aren't rows in the `targets` table, so there's no self id to
-  // exclude — compare against every target unconditionally.
+  // Associates aren't rows in the `targets` table, so there's normally no
+  // self id to exclude — EXCEPT when this associate is Person-Identity-
+  // Linked to a target (linkedTargetId), whose shared fields (hbf/v1f/etc.)
+  // are kept in sync with this record — see updateAssociate/updateTarget.
+  // Without excluding it, that linked target's own registered
+  // vehicle/address would falsely show up here as a "shared" cross-op
+  // match, when it's actually just this same person's other profile (now
+  // already surfaced by the "Identical profile" banner/combined intel).
   const associateOwnOperationIds = new Set(
     linkedTargets.map(t => t.operationId)
   );
+  // Same reasoning as the linkedTargetId exclusion above, for the two
+  // occurrence-based cross-link checks below: a real sighting of this
+  // person's own vehicle/address on an operation the LINKED target (not
+  // this associate's associateOfTargetId) is tasked to is this same
+  // person's own turf, not a cross-operation connection to flag.
+  if (registryAssociate?.linkedTargetId) {
+    const linkedTargetOps = await getLinkedOperationsForTarget(
+      registryAssociate.linkedTargetId
+    );
+    for (const op of linkedTargetOps)
+      associateOwnOperationIds.add(op.operationId);
+  }
   const sharedEntityLinks = registryAssociate
     ? dedupeCrossLinks([
         ...(await getSharedEntityCrossLinks(
           targetVehicleRegos(registryAssociate),
           targetAddressCores(registryAssociate),
-          -1
+          registryAssociate.linkedTargetId ?? -1
         )),
         ...getEntitySightingCrossLinks(
           allEntities,

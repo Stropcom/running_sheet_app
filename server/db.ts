@@ -1473,6 +1473,15 @@ export interface FaceMatchCandidate {
   similarity: number;
   attachmentId: number;
   photoUrl: string;
+  /** Where this candidate photo actually came from — a different running
+   * sheet (possibly weeks/months old, on a different operation entirely)
+   * the officer confirming a match may have no idea exists. Null sheetId
+   * means a manually-uploaded photo not attached to any row; operation
+   * info is always present since every attachment has a home Operation. */
+  sourceSheetId: number | null;
+  sourceSheetTitle: string | null;
+  sourceOperationId: number;
+  sourceOperationName: string;
 }
 
 // Threshold picked from empirical testing against one real multi-face photo
@@ -1530,6 +1539,10 @@ export async function findSimilarFaces(
       targetId: attachmentEntityLinks.targetId,
       entityLabel: attachmentEntityLinks.entityLabel,
       photoUrl: rowAttachments.url,
+      sourceSheetId: sheetRows.sheetId,
+      sourceSheetTitle: runningSheets.title,
+      sourceOperationId: rowAttachments.operationId,
+      sourceOperationName: operations.name,
     })
     .from(personDetections)
     .innerJoin(
@@ -1540,6 +1553,12 @@ export async function findSimilarFaces(
       rowAttachments,
       eq(personDetections.attachmentId, rowAttachments.id)
     )
+    // A manually-uploaded photo (see rowAttachments.isManualUpload) has no
+    // rowId, so these two are left joins — the candidate still always has
+    // a home Operation (rowAttachments.operationId is never null).
+    .leftJoin(sheetRows, eq(sheetRows.id, rowAttachments.rowId))
+    .leftJoin(runningSheets, eq(runningSheets.id, sheetRows.sheetId))
+    .innerJoin(operations, eq(operations.id, rowAttachments.operationId))
     .where(isNull(rowAttachments.deletedAt));
 
   const candidates: FaceMatchCandidate[] = [];
@@ -1557,6 +1576,10 @@ export async function findSimilarFaces(
         similarity,
         attachmentId: r.attachmentId,
         photoUrl: r.photoUrl,
+        sourceSheetId: r.sourceSheetId,
+        sourceSheetTitle: r.sourceSheetTitle,
+        sourceOperationId: r.sourceOperationId,
+        sourceOperationName: r.sourceOperationName,
       });
     }
   }

@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { useLocation } from "wouter";
 import {
   Dialog,
   DialogContent,
@@ -8,7 +9,16 @@ import {
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Check, X, Users, User, ZoomIn, ZoomOut } from "lucide-react";
+import {
+  Check,
+  X,
+  Users,
+  User,
+  ZoomIn,
+  ZoomOut,
+  FileText,
+  ImageUp,
+} from "lucide-react";
 
 export interface FaceMatchCandidate {
   entityLinkId: number;
@@ -18,6 +28,13 @@ export interface FaceMatchCandidate {
   similarity: number;
   attachmentId: number;
   photoUrl: string;
+  /** Where this candidate photo actually came from — a different running
+   * sheet the officer confirming a match may have no idea exists. Null
+   * sourceSheetId means a manually-uploaded photo not attached to any row. */
+  sourceSheetId: number | null;
+  sourceSheetTitle: string | null;
+  sourceOperationId: number;
+  sourceOperationName: string;
 }
 
 export interface PendingMatch {
@@ -88,6 +105,7 @@ export function PossibleMatchDialog({
 }) {
   const [index, setIndex] = useState(0);
   const [zoomIndex, setZoomIndex] = useState(0);
+  const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
 
   const invalidate = () => {
@@ -198,6 +216,27 @@ export function PossibleMatchDialog({
             >
               {current.match.entityLabel}
             </span>
+            {current.match.sourceSheetId ? (
+              <button
+                type="button"
+                onClick={() =>
+                  setLocation(`/sheet/${current.match.sourceSheetId}`)
+                }
+                title={`Open ${current.match.sourceSheetTitle} — ${current.match.sourceOperationName}, to see other photos there`}
+                className={`flex items-center gap-1 text-[10px] text-primary underline underline-offset-2 truncate ${zoom.captionClass}`}
+              >
+                <FileText className="h-2.5 w-2.5 shrink-0" />
+                {current.match.sourceSheetTitle}
+              </button>
+            ) : (
+              <span
+                title="Uploaded directly to this operation's Images folder — not attached to a running sheet row"
+                className={`flex items-center gap-1 text-[10px] text-muted-foreground truncate ${zoom.captionClass}`}
+              >
+                <ImageUp className="h-2.5 w-2.5 shrink-0" />
+                Uploaded · {current.match.sourceOperationName}
+              </span>
+            )}
           </div>
         </div>
 

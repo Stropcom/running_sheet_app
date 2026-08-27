@@ -3918,6 +3918,19 @@ export interface IntelligenceEntity {
    * the information is now corroborated by a running sheet.
    */
   isIndicesOnly?: boolean;
+  /**
+   * Set when this entity's Target/Associate card is linked (via
+   * targets.linkedAssociateId / associates.linkedTargetId — see "Person
+   * Identity Links" above updateTarget) to a card of the other kind for
+   * the same real person. Both entities' occurrences are unioned so
+   * either profile shows the complete picture; this points at the other
+   * one so the UI can flag "identical profile" and link across.
+   */
+  identicalProfile?: {
+    type: "target" | "associate";
+    id: number;
+    label: string;
+  } | null;
   occurrences: Array<{
     sheetId: number;
     sheetTitle: string;
@@ -6940,6 +6953,59 @@ export async function getAllIntelligenceEntities(): Promise<
     mergedMap.set(k, entity);
   }
 
+  // ── Person Identity Links: mirror intelligence across a linked pair ────────
+  // A Target card and a Registry Associate card can be confirmed as the same
+  // real person (targets.linkedAssociateId / associates.linkedTargetId — see
+  // "Person Identity Links" above updateTarget). Both records intentionally
+  // stay as separate profiles (a Target and an Associate are different
+  // roles), but neither one should be missing intelligence the other has —
+  // so union their occurrences onto both entities, and mark each with a
+  // pointer to its identical twin so the UI can flag it.
+  const linkedPairRows = await db
+    .select({
+      targetId: targets.id,
+      targetName: targets.name,
+      associateId: targets.linkedAssociateId,
+    })
+    .from(targets)
+    .where(
+      and(isNull(targets.deletedAt), isNotNull(targets.linkedAssociateId))
+    );
+
+  for (const pair of linkedPairRows) {
+    if (!pair.associateId) continue;
+    const targetEntity = mergedMap.get(`target::${pair.targetName}`);
+    const associateEntity = Array.from(mergedMap.values()).find(
+      e => e.isAssociate && e.associateId === pair.associateId
+    );
+    if (!targetEntity || !associateEntity) continue;
+
+    const seen = new Set<string>();
+    const combined: IntelligenceEntity["occurrences"] = [];
+    for (const occ of [
+      ...targetEntity.occurrences,
+      ...associateEntity.occurrences,
+    ]) {
+      const dedupeKey = `${occ.sheetId}::${occ.rowId}::${occ.observationSnippet}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      combined.push(occ);
+    }
+    targetEntity.occurrences = combined;
+    associateEntity.occurrences = combined.slice();
+
+    targetEntity.identicalProfile = {
+      type: "associate",
+      id: associateEntity.associateId!,
+      label: associateEntity.shortForm,
+    };
+    associateEntity.identicalProfile = {
+      type: "target",
+      id: targetEntity.targetId!,
+      label: targetEntity.shortForm,
+    };
+  }
+
   // "Indices" flag — computed last, once every occurrence (registry-injected
   // and text-mined alike) has been assembled and merged above.
   const finalEntities = Array.from(mergedMap.values());
@@ -7542,6 +7608,16 @@ export async function getAssociationGraph(
   const rowMembers = new Map<number, Set<string>>();
 
   for (const entity of entities) {
+    // A Target and Associate card confirmed as the same real person (see
+    // identicalProfile in getAllIntelligenceEntities) already carry the
+    // same unioned occurrences — represent them as ONE combined node
+    // (the Target side) rather than two nodes for one person. Skip the
+    // Associate side here; its occurrences are already fully reflected via
+    // the Target node below.
+    if (entity.isAssociate && entity.identicalProfile?.type === "target") {
+      continue;
+    }
+
     const type: AssocNode["type"] = entity.isTarget
       ? "target"
       : (entity.type as AssocNode["type"]);
@@ -9725,6 +9801,15 @@ export interface IntelTargetProfile {
    * observation — i.e. everything known about them so far came from the
    * Target Registry (or another non-RS source), not from the field. */
   isIndicesOnly: boolean;
+  /** Present when this target is linked (Person Identity Links) to a
+   * Registry Associate record confirmed to be the same real person — both
+   * profiles show identical combined intelligence; the UI uses this to
+   * flag it and link across. */
+  identicalProfile?: {
+    type: "target" | "associate";
+    id: number;
+    label: string;
+  } | null;
   /** Associates recorded directly on this target in the Target Registry — a
    * guaranteed link (not inferred from observation-text co-occurrence). */
   registryAssociates: Array<{
@@ -9805,6 +9890,15 @@ export interface IntelAssociateProfile {
    * observation — i.e. everything known about them so far came from the
    * Target Registry (or another non-RS source), not from the field. */
   isIndicesOnly: boolean;
+  /** Present when this associate is linked (Person Identity Links) to a
+   * Target record confirmed to be the same real person — both profiles
+   * show identical combined intelligence; the UI uses this to flag it and
+   * link across. */
+  identicalProfile?: {
+    type: "target" | "associate";
+    id: number;
+    label: string;
+  } | null;
   /** Present when this associate has a formal Target Registry record — its
    * own structured identity/address/vehicle, not just text-mined mentions. */
   registryAssociateId?: number | null;
@@ -10574,6 +10668,7 @@ export async function getIntelTargetProfile(
     assocVehicles,
     assocLocations,
     isIndicesOnly: targetEntity?.isIndicesOnly ?? false,
+    identicalProfile: targetEntity?.identicalProfile ?? null,
     registryAssociates: registryAssociateRows.map(a => ({
       id: a.id,
       name: a.name,
@@ -11010,6 +11105,7 @@ export async function getIntelAssociateProfile(
     assocLocations,
     assocVehicles,
     isIndicesOnly: entity.isIndicesOnly ?? false,
+    identicalProfile: entity.identicalProfile ?? null,
     registryAssociateId: registryAssociate?.id ?? null,
     firstNames: registryAssociate?.firstNames ?? null,
     surname: registryAssociate?.surname ?? null,

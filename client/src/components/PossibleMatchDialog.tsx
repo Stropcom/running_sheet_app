@@ -51,44 +51,49 @@ const CATEGORY_LABEL: Record<string, string> = {
 
 // Zoom steps for comparing the two faces — deliberately goes well past a
 // simple "expanded" toggle so the officer can get the photos as large as
-// the dialog can usefully show. Every class below is a literal string (not
-// built from a runtime template) so Tailwind's build-time scanner picks
-// them all up regardless of which step is active at render time.
+// the dialog can usefully show. Each photo's column width is a PERCENTAGE
+// of the row (not a fixed px size) so two of them plus the gap always fit
+// side by side within whatever width the dialog actually rendered at — a
+// fixed-px size at high zoom could exceed the dialog on a narrower screen,
+// which used to force the pair to squeeze (pre-shrink-0) or wrap onto two
+// lines (post-shrink-0) instead of staying side by side. Every class below
+// is a literal string (not built from a runtime template) so Tailwind's
+// build-time scanner picks them all up regardless of which step is active.
 const ZOOM_STEPS: {
   label: string;
-  imgClass: string;
-  captionClass: string;
+  colClass: string;
+  imgFit: string;
   dialogClass: string;
 }[] = [
   {
     label: "Small",
-    imgClass: "w-28 h-28 object-cover",
-    captionClass: "max-w-[120px]",
+    colClass: "w-28",
+    imgFit: "object-cover",
     dialogClass: "max-w-md",
   },
   {
     label: "Medium",
-    imgClass: "w-44 h-44 sm:w-52 sm:h-52 object-contain bg-muted",
-    captionClass: "max-w-[180px]",
-    dialogClass: "max-w-xl",
+    colClass: "w-[30%]",
+    imgFit: "object-contain bg-muted",
+    dialogClass: "max-w-2xl",
   },
   {
     label: "Large",
-    imgClass: "w-60 h-60 sm:w-72 sm:h-72 object-contain bg-muted",
-    captionClass: "max-w-[220px]",
-    dialogClass: "max-w-3xl",
-  },
-  {
-    label: "X-Large",
-    imgClass: "w-72 h-72 sm:w-96 sm:h-96 object-contain bg-muted",
-    captionClass: "max-w-[280px]",
+    colClass: "w-[36%]",
+    imgFit: "object-contain bg-muted",
     dialogClass: "max-w-4xl",
   },
   {
+    label: "X-Large",
+    colClass: "w-[40%]",
+    imgFit: "object-contain bg-muted",
+    dialogClass: "max-w-5xl",
+  },
+  {
     label: "Maximum",
-    imgClass: "w-80 h-80 sm:w-[32rem] sm:h-[32rem] object-contain bg-muted",
-    captionClass: "max-w-[340px]",
-    dialogClass: "max-w-6xl",
+    colClass: "w-[42%]",
+    imgFit: "object-contain bg-muted",
+    dialogClass: "max-w-7xl",
   },
 ];
 const MAX_ZOOM_INDEX = ZOOM_STEPS.length - 1;
@@ -195,25 +200,29 @@ export function PossibleMatchDialog({
           </Button>
         </div>
 
-        <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-8">
-          <div className="flex flex-col items-center gap-1.5 shrink-0">
+        <div className="flex items-start justify-center gap-4 sm:gap-8">
+          <div
+            className={`flex flex-col items-center gap-1.5 shrink-0 ${zoom.colClass}`}
+          >
             <img
               src={current.newPhotoUrl}
               alt="New photo"
-              className={`rounded-lg border border-border transition-all shrink-0 ${zoom.imgClass}`}
+              className={`w-full aspect-square rounded-lg border border-border transition-all ${zoom.imgFit}`}
             />
             <span className="text-xs text-muted-foreground">New photo</span>
           </div>
-          <div className="text-muted-foreground text-lg shrink-0">≈</div>
-          <div className="flex flex-col items-center gap-1.5 shrink-0">
+          <div className="text-muted-foreground text-lg shrink-0 self-center">
+            ≈
+          </div>
+          <div
+            className={`flex flex-col items-center gap-1.5 shrink-0 ${zoom.colClass}`}
+          >
             <img
               src={current.match.photoUrl}
               alt={current.match.entityLabel}
-              className={`rounded-lg border border-border transition-all shrink-0 ${zoom.imgClass}`}
+              className={`w-full aspect-square rounded-lg border border-border transition-all ${zoom.imgFit}`}
             />
-            <span
-              className={`text-xs text-muted-foreground text-center truncate ${zoom.captionClass}`}
-            >
+            <span className="text-xs text-muted-foreground text-center break-words w-full">
               {current.match.entityLabel}
             </span>
             {current.match.sourceSheetId ? (
@@ -223,18 +232,22 @@ export function PossibleMatchDialog({
                   setLocation(`/sheet/${current.match.sourceSheetId}`)
                 }
                 title={`Open ${current.match.sourceSheetTitle} — ${current.match.sourceOperationName}, to see other photos there`}
-                className={`flex items-center gap-1 text-[10px] text-primary underline underline-offset-2 truncate ${zoom.captionClass}`}
+                className="flex items-center gap-1 text-[10px] text-primary underline underline-offset-2 break-words w-full justify-center"
               >
                 <FileText className="h-2.5 w-2.5 shrink-0" />
-                {current.match.sourceSheetTitle}
+                <span className="break-words">
+                  {current.match.sourceSheetTitle}
+                </span>
               </button>
             ) : (
               <span
                 title="Uploaded directly to this operation's Images folder — not attached to a running sheet row"
-                className={`flex items-center gap-1 text-[10px] text-muted-foreground truncate ${zoom.captionClass}`}
+                className="flex items-center gap-1 text-[10px] text-muted-foreground break-words w-full justify-center"
               >
                 <ImageUp className="h-2.5 w-2.5 shrink-0" />
-                Uploaded · {current.match.sourceOperationName}
+                <span className="break-words">
+                  Uploaded · {current.match.sourceOperationName}
+                </span>
               </span>
             )}
           </div>

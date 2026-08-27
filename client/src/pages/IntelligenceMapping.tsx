@@ -26,6 +26,8 @@ import {
   computeUsedVehicleRegos,
   type PersonMentionSuggestion,
 } from "@/lib/mentionAutocomplete";
+import { MissingLocationAlert } from "@/components/MissingLocationAlert";
+import { VagueVehicleMatchAlert } from "@/components/VagueVehicleMatchAlert";
 import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -1745,6 +1747,31 @@ export default function IntelligenceMapping() {
   // RS Actions pane — create row mutation
   const rsAddMember = trpc.member.add.useMutation();
   const rsCreateRow = trpc.row.create.useMutation();
+  // Save-time prompts (missing location / vague vehicle match) — same
+  // checks as the full running-sheet table's updateRowWithDupeCheck in
+  // SheetDetail.tsx, ported here since RS Quick Entry from the map is a
+  // second, independent way to add a row and was bypassing them entirely.
+  type QeDupe =
+    | { kind: "missingLocation"; location: string; source: string }
+    | {
+        kind: "vagueVehicle";
+        loserLabel: string;
+        winnerLabel: string;
+        reason: string;
+      };
+  const [qeDupeQueue, setQeDupeQueue] = useState<QeDupe[]>([]);
+  const [qeDupeIndex, setQeDupeIndex] = useState(0);
+  const [qeDupeDialogOpen, setQeDupeDialogOpen] = useState(false);
+  const [qeVagueVehicleBusy, setQeVagueVehicleBusy] = useState(false);
+  const qePendingEntryRef = useRef<{
+    observation: string;
+    cinsToAttach: Set<string> | null;
+    timeOverride: string | null;
+    rowDateOverride: string | null;
+  } | null>(null);
+  const mergeEntitiesMut = trpc.intelligence.mergeEntities.useMutation();
+  const markEntitiesNotDuplicateMut =
+    trpc.intelligence.markEntitiesNotDuplicate.useMutation();
   // General shortcuts for quick entry buttons
   const { data: generalShortcuts } = trpc.shortcuts.list.useQuery(undefined, {
     staleTime: 0,
@@ -3235,7 +3262,12 @@ export default function IntelligenceMapping() {
     const timeOverride = mapQeTimeOverride;
     const rowDateOverride = mapQeRowDate;
     closeInlineField();
-    addQuickRsEntry(finalText, cinsToAttach, timeOverride, rowDateOverride);
+    void addQuickRsEntryWithChecks(
+      finalText,
+      cinsToAttach,
+      timeOverride,
+      rowDateOverride
+    );
   };
 
   const resetInlineTimer = () => {
@@ -3428,6 +3460,153 @@ export default function IntelligenceMapping() {
       }
     );
   };
+
+  // Appends " at <location>" to the end of the observation, ahead of any
+  // trailing sentence punctuation — used when the officer confirms the
+  // MissingLocationAlert prompt. Mirrors appendLocationSuggestion in
+  // SheetDetail.tsx (kept local rather than shared — it's a single small
+  // pure function with no other dependencies).
+  const appendQeLocationSuggestion = (
+    text: string,
+    location: string
+  ): string => {
+    const trimmed = text.trimEnd();
+    const trailingPunct = trimmed.match(/([.:])\s*$/);
+    if (trailingPunct) {
+      return `${trimmed.slice(0, -1)} at ${location}${trailingPunct[1]}`;
+    }
+    return `${trimmed} at ${location}.`;
+  };
+
+  // Same save-time checks as SheetDetail's updateRowWithDupeCheck, run
+  // before the row actually gets created — RS Quick Entry from the map is
+  // a second entry point into row.create and was skipping both prompts
+  // entirely. Only fires with meaningful observation text and a selected
+  // sheet; on any check failure, falls through to a normal save rather
+  // than blocking the officer's entry.
+  const addQuickRsEntryWithChecks = async (
+    observation: string,
+    cinsToAttach?: Set<string> | null,
+    timeOverride?: string | null,
+    rowDateOverride?: string | null
+  ) => {
+    if (!rsSelectedSheetId || !observation.trim()) {
+      addQuickRsEntry(observation, cinsToAttach, timeOverride, rowDateOverride);
+      return;
+    }
+
+    const queue: QeDupe[] = [];
+    try {
+      const missingLocation = await utils.row.checkMissingLocation.fetch({
+        sheetId: rsSelectedSheetId,
+        observation,
+      });
+      if (missingLocation) {
+        queue.push({
+          kind: "missingLocation",
+          location: missingLocation.location,
+          source: missingLocation.source,
+        });
+      }
+    } catch (err) {
+      console.warn("checkMissingLocation failed", err);
+    }
+    try {
+      const vagueVehicle = await utils.row.checkVagueVehicleMatch.fetch({
+        sheetId: rsSelectedSheetId,
+        observation,
+      });
+      if (vagueVehicle) {
+        queue.push({
+          kind: "vagueVehicle",
+          loserLabel: vagueVehicle.loserLabel,
+          winnerLabel: vagueVehicle.winnerLabel,
+          reason: vagueVehicle.reason,
+        });
+      }
+    } catch (err) {
+      console.warn("checkVagueVehicleMatch failed", err);
+    }
+
+    if (queue.length === 0) {
+      addQuickRsEntry(observation, cinsToAttach, timeOverride, rowDateOverride);
+      return;
+    }
+    qePendingEntryRef.current = {
+      observation,
+      cinsToAttach: cinsToAttach ?? null,
+      timeOverride: timeOverride ?? null,
+      rowDateOverride: rowDateOverride ?? null,
+    };
+    setQeDupeQueue(queue);
+    setQeDupeIndex(0);
+    setQeDupeDialogOpen(true);
+  };
+
+  function handleQeDupeResolved() {
+    const nextIndex = qeDupeIndex + 1;
+    if (nextIndex < qeDupeQueue.length) {
+      setQeDupeIndex(nextIndex);
+      setQeDupeDialogOpen(true);
+    } else {
+      setQeDupeDialogOpen(false);
+      setQeDupeQueue([]);
+      setQeDupeIndex(0);
+      const pending = qePendingEntryRef.current;
+      qePendingEntryRef.current = null;
+      if (pending) {
+        addQuickRsEntry(
+          pending.observation,
+          pending.cinsToAttach,
+          pending.timeOverride,
+          pending.rowDateOverride
+        );
+      }
+    }
+  }
+
+  function handleQeMissingLocationResolved(
+    addLocation: boolean,
+    location: string
+  ) {
+    if (addLocation && qePendingEntryRef.current) {
+      qePendingEntryRef.current = {
+        ...qePendingEntryRef.current,
+        observation: appendQeLocationSuggestion(
+          qePendingEntryRef.current.observation,
+          location
+        ),
+      };
+    }
+    handleQeDupeResolved();
+  }
+
+  async function handleQeVagueVehicleResolved(
+    confirmed: boolean,
+    warning: { loserLabel: string; winnerLabel: string }
+  ) {
+    setQeVagueVehicleBusy(true);
+    try {
+      if (confirmed) {
+        await mergeEntitiesMut.mutateAsync({
+          type: "vehicle",
+          winnerLabel: warning.winnerLabel,
+          loserLabel: warning.loserLabel,
+        });
+      } else {
+        await markEntitiesNotDuplicateMut.mutateAsync({
+          type: "vehicle",
+          labelA: warning.winnerLabel,
+          labelB: warning.loserLabel,
+        });
+      }
+    } catch (err) {
+      console.warn("vague vehicle match resolution failed", err);
+    } finally {
+      setQeVagueVehicleBusy(false);
+    }
+    handleQeDupeResolved();
+  }
 
   return (
     <DashboardLayout
@@ -6973,6 +7152,49 @@ export default function IntelligenceMapping() {
           </div>
         )}
       </div>
+
+      {(() => {
+        const currentQeDupe = qeDupeQueue[qeDupeIndex];
+        if (!currentQeDupe) return null;
+        if (currentQeDupe.kind === "missingLocation") {
+          return (
+            <MissingLocationAlert
+              key={qeDupeIndex}
+              warning={
+                qeDupeDialogOpen
+                  ? {
+                      location: currentQeDupe.location,
+                      source: currentQeDupe.source,
+                    }
+                  : null
+              }
+              onConfirm={() =>
+                handleQeMissingLocationResolved(true, currentQeDupe.location)
+              }
+              onDecline={() =>
+                handleQeMissingLocationResolved(false, currentQeDupe.location)
+              }
+            />
+          );
+        }
+        return (
+          <VagueVehicleMatchAlert
+            key={qeDupeIndex}
+            warning={
+              qeDupeDialogOpen
+                ? {
+                    loserLabel: currentQeDupe.loserLabel,
+                    winnerLabel: currentQeDupe.winnerLabel,
+                    reason: currentQeDupe.reason,
+                  }
+                : null
+            }
+            busy={qeVagueVehicleBusy}
+            onConfirm={() => handleQeVagueVehicleResolved(true, currentQeDupe)}
+            onDecline={() => handleQeVagueVehicleResolved(false, currentQeDupe)}
+          />
+        );
+      })()}
     </DashboardLayout>
   );
 }

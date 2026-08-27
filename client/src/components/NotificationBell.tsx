@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { useFaceMatchNotification } from "@/contexts/FaceMatchNotificationContext";
 
 // General-purpose in-app notification inbox (see notifications router /
 // drizzle schema comment) — reliable regardless of browser push
@@ -26,6 +27,7 @@ export function NotificationBell({
   const [open, setOpen] = useState(false);
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
+  const { openNotification } = useFaceMatchNotification();
 
   const { data: unread } = trpc.notifications.unreadCount.useQuery(undefined, {
     refetchInterval: 30_000,
@@ -131,9 +133,16 @@ export function NotificationBell({
                       // (not just marked read) via the full-text pop-up on
                       // the running sheet itself — see FaceMatchAckDialog —
                       // since the body text here is line-clamped to 2 lines
-                      // and was too little room for the full wording.
-                      if (!n.readAt && n.sourceModule !== "faceRecognition")
+                      // and was too little room for the full wording. That
+                      // pop-up only opens from an explicit click here (never
+                      // just from landing on the sheet some other way), and
+                      // re-clicking an already-acknowledged one still
+                      // reopens it — see FaceMatchNotificationContext.
+                      if (n.sourceModule === "faceRecognition") {
+                        openNotification(n.id);
+                      } else if (!n.readAt) {
                         markRead.mutate({ id: n.id });
+                      }
                       setOpen(false);
                       if (n.url) setLocation(n.url);
                     }}

@@ -29,6 +29,8 @@ import {
 } from "@/components/TargetMatchDialog";
 import { CrossOperationEntityAlert } from "@/components/CrossOperationEntityAlert";
 import { MissingLocationAlert } from "@/components/MissingLocationAlert";
+import { VagueVehicleMatchAlert } from "@/components/VagueVehicleMatchAlert";
+import { FaceMatchAckDialog } from "@/components/FaceMatchAckDialog";
 import {
   Dialog,
   DialogContent,
@@ -2652,6 +2654,17 @@ export default function SheetDetail() {
         kind: "missingLocation";
         location: string;
         source: string;
+      }
+    | {
+        /** A vehicle with a real registration that might be the same car
+         * as an earlier no-rego sighting on this sheet — see
+         * findVagueVehicleMatch. Confirm merges the two entities via
+         * intelligence.mergeEntities (same mechanism as the Merge Entities
+         * tool); this row's own text is never touched. */
+        kind: "vagueVehicle";
+        loserLabel: string;
+        winnerLabel: string;
+        reason: string;
       };
   const [dupeQueue, setDupeQueue] = useState<PendingDupe[]>([]);
   const [dupeIndex, setDupeIndex] = useState(0);
@@ -2661,6 +2674,10 @@ export default function SheetDetail() {
   // stale-closure trap of reading state that was just set in the same tick
   // (e.g. applying a spelling correction, then immediately saving).
   const pendingSaveInputRef = useRef<RowSaveInput | null>(null);
+  const [vagueVehicleBusy, setVagueVehicleBusy] = useState(false);
+  const mergeEntitiesMut = trpc.intelligence.mergeEntities.useMutation();
+  const markEntitiesNotDuplicateMut =
+    trpc.intelligence.markEntitiesNotDuplicate.useMutation();
 
   function applyBracketCorrection(
     text: string,
@@ -2810,6 +2827,28 @@ export default function SheetDetail() {
           } catch (err) {
             console.warn("checkMissingLocation failed", err);
           }
+
+          // A vehicle with a real registration that might be the same car
+          // as an earlier no-rego sighting on this sheet — see
+          // findVagueVehicleMatch. Confirming links the two entities via
+          // mergeEntities without touching any row's text.
+          try {
+            const vagueVehicle = await utils.row.checkVagueVehicleMatch.fetch({
+              sheetId,
+              observation: correctedObservation,
+              excludeRowId: input.id,
+            });
+            if (vagueVehicle) {
+              queue.push({
+                kind: "vagueVehicle",
+                loserLabel: vagueVehicle.loserLabel,
+                winnerLabel: vagueVehicle.winnerLabel,
+                reason: vagueVehicle.reason,
+              });
+            }
+          } catch (err) {
+            console.warn("checkVagueVehicleMatch failed", err);
+          }
         }
 
         const correctedInput = { ...input, observation: correctedObservation };
@@ -2858,6 +2897,33 @@ export default function SheetDetail() {
           location
         ),
       };
+    }
+    handleDupeDialogResolved();
+  }
+
+  async function handleVagueVehicleResolved(
+    confirmed: boolean,
+    warning: { loserLabel: string; winnerLabel: string }
+  ) {
+    setVagueVehicleBusy(true);
+    try {
+      if (confirmed) {
+        await mergeEntitiesMut.mutateAsync({
+          type: "vehicle",
+          winnerLabel: warning.winnerLabel,
+          loserLabel: warning.loserLabel,
+        });
+      } else {
+        await markEntitiesNotDuplicateMut.mutateAsync({
+          type: "vehicle",
+          labelA: warning.winnerLabel,
+          labelB: warning.loserLabel,
+        });
+      }
+    } catch (err) {
+      console.warn("vague vehicle match resolution failed", err);
+    } finally {
+      setVagueVehicleBusy(false);
     }
     handleDupeDialogResolved();
   }
@@ -5579,6 +5645,25 @@ export default function SheetDetail() {
             />
           );
         }
+        if (currentDupe.kind === "vagueVehicle") {
+          return (
+            <VagueVehicleMatchAlert
+              key={dupeIndex}
+              warning={
+                dupeDialogOpen
+                  ? {
+                      loserLabel: currentDupe.loserLabel,
+                      winnerLabel: currentDupe.winnerLabel,
+                      reason: currentDupe.reason,
+                    }
+                  : null
+              }
+              busy={vagueVehicleBusy}
+              onConfirm={() => handleVagueVehicleResolved(true, currentDupe)}
+              onDecline={() => handleVagueVehicleResolved(false, currentDupe)}
+            />
+          );
+        }
         return (
           <TargetMatchDialog
             key={dupeIndex}
@@ -5595,6 +5680,7 @@ export default function SheetDetail() {
           />
         );
       })()}
+      {sheetId && <FaceMatchAckDialog sheetId={sheetId} />}
     </DashboardLayout>
   );
 }

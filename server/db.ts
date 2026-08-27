@@ -123,6 +123,7 @@ import {
 import {
   findPossibleDuplicates,
   comparePersonNames,
+  compareVehicleDescriptions,
   type DedupType,
   type DedupCandidateEntity,
 } from "./entityDedup";
@@ -1472,6 +1473,15 @@ export interface FaceMatchCandidate {
   similarity: number;
   attachmentId: number;
   photoUrl: string;
+  /** Where this candidate photo actually came from — a different running
+   * sheet (possibly weeks/months old, on a different operation entirely)
+   * the officer confirming a match may have no idea exists. Null sheetId
+   * means a manually-uploaded photo not attached to any row; operation
+   * info is always present since every attachment has a home Operation. */
+  sourceSheetId: number | null;
+  sourceSheetTitle: string | null;
+  sourceOperationId: number;
+  sourceOperationName: string;
 }
 
 // Threshold picked from empirical testing against one real multi-face photo
@@ -1529,6 +1539,10 @@ export async function findSimilarFaces(
       targetId: attachmentEntityLinks.targetId,
       entityLabel: attachmentEntityLinks.entityLabel,
       photoUrl: rowAttachments.url,
+      sourceSheetId: sheetRows.sheetId,
+      sourceSheetTitle: runningSheets.title,
+      sourceOperationId: rowAttachments.operationId,
+      sourceOperationName: operations.name,
     })
     .from(personDetections)
     .innerJoin(
@@ -1539,6 +1553,12 @@ export async function findSimilarFaces(
       rowAttachments,
       eq(personDetections.attachmentId, rowAttachments.id)
     )
+    // A manually-uploaded photo (see rowAttachments.isManualUpload) has no
+    // rowId, so these two are left joins — the candidate still always has
+    // a home Operation (rowAttachments.operationId is never null).
+    .leftJoin(sheetRows, eq(sheetRows.id, rowAttachments.rowId))
+    .leftJoin(runningSheets, eq(runningSheets.id, sheetRows.sheetId))
+    .innerJoin(operations, eq(operations.id, rowAttachments.operationId))
     .where(isNull(rowAttachments.deletedAt));
 
   const candidates: FaceMatchCandidate[] = [];
@@ -1556,6 +1576,10 @@ export async function findSimilarFaces(
         similarity,
         attachmentId: r.attachmentId,
         photoUrl: r.photoUrl,
+        sourceSheetId: r.sourceSheetId,
+        sourceSheetTitle: r.sourceSheetTitle,
+        sourceOperationId: r.sourceOperationId,
+        sourceOperationName: r.sourceOperationName,
       });
     }
   }
@@ -1581,10 +1605,82 @@ const FACE_IDENTITY_PRIORITY: Record<string, number> = {
   target: 2,
 };
 
+/** Resolves an attachment back to the running-sheet row/sheet it's attached
+ * to (if any) — a manually-uploaded photo (see rowAttachments.isManualUpload)
+ * may not belong to any row, in which case there's no lock/sheet to guard
+ * or notify about. Used by confirmFaceMatch to check whether the row
+ * holding an "Unidentified Person" photo is certified/locked before
+ * auto-renaming it. */
+async function getAttachmentRowSheetInfo(attachmentId: number): Promise<{
+  sheetId: number;
+  sheetTitle: string;
+  sheetCins: string | null;
+  isRowLocked: boolean;
+  isSheetClosed: boolean;
+} | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const [row] = await db
+    .select({
+      isLocked: sheetRows.isLocked,
+      sheetId: runningSheets.id,
+      sheetTitle: runningSheets.title,
+      sheetCins: runningSheets.sheetCins,
+      closedAt: runningSheets.closedAt,
+    })
+    .from(rowAttachments)
+    .innerJoin(sheetRows, eq(sheetRows.id, rowAttachments.rowId))
+    .innerJoin(runningSheets, eq(runningSheets.id, sheetRows.sheetId))
+    .where(eq(rowAttachments.id, attachmentId))
+    .limit(1);
+  if (!row) return null;
+  return {
+    sheetId: row.sheetId,
+    sheetTitle: row.sheetTitle,
+    sheetCins: row.sheetCins,
+    isRowLocked: row.isLocked,
+    isSheetClosed: row.closedAt != null,
+  };
+}
+
+/** Notifies a running sheet's Author and Team Leader (see sheetCins'
+ * isAuthor/isTeamLeader flags) via the app's in-app notification system.
+ * Deduplicates in case the same officer holds both roles. */
+async function notifySheetAuthorAndTeamLeader(
+  sheetCinsJson: string | null,
+  params: { title: string; body: string; url: string }
+) {
+  let roster: { cin: string; isTeamLeader?: boolean; isAuthor?: boolean }[] =
+    [];
+  try {
+    roster = sheetCinsJson ? JSON.parse(sheetCinsJson) : [];
+  } catch {
+    roster = [];
+  }
+  const cins = Array.from(
+    new Set(
+      roster
+        .filter(c => c.isAuthor || c.isTeamLeader)
+        .map(c => c.cin)
+        .filter(Boolean)
+    )
+  );
+  if (cins.length === 0) return;
+  const users = await Promise.all(cins.map(cin => getUserByCin(cin)));
+  const userIds = Array.from(
+    new Set(users.filter((u): u is NonNullable<typeof u> => !!u).map(u => u.id))
+  );
+  if (userIds.length === 0) return;
+  await createNotificationsForUsers(userIds, {
+    ...params,
+    sourceModule: "faceRecognition",
+  });
+}
+
 export async function confirmFaceMatch(
   newLinkId: number,
   matchedLinkId: number
-) {
+): Promise<{ applied: boolean; blockedRowLocked: boolean }> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const [newLink] = await db
@@ -1608,6 +1704,21 @@ export async function confirmFaceMatch(
   const [winner, loser] =
     newPriority > matchedPriority ? [newLink, matched] : [matched, newLink];
 
+  // A genuine identification — an Unidentified Person pool resolving to a
+  // real Target/Associate — is the only case that needs a lock guard and a
+  // notification. entityKey is unique per (attachmentId, faceIndex) for
+  // unidentified_person links (see the dedup index above), so the loser
+  // side here is always exactly the one photo/face being confirmed.
+  const isRealIdentification =
+    loser.category === "unidentified_person" &&
+    winner.category !== "unidentified_person";
+
+  const loserRowInfo = isRealIdentification
+    ? await getAttachmentRowSheetInfo(loser.attachmentId)
+    : null;
+  const loserRowLocked =
+    !!loserRowInfo?.isRowLocked || !!loserRowInfo?.isSheetClosed;
+
   const loserGroupWhere =
     loser.category === "target"
       ? and(
@@ -1619,15 +1730,46 @@ export async function confirmFaceMatch(
           eq(attachmentEntityLinks.entityKey, loser.entityKey ?? "")
         );
 
-  await db
-    .update(attachmentEntityLinks)
-    .set({
-      category: winner.category,
-      targetId: winner.targetId,
-      entityKey: winner.entityKey,
-      entityLabel: winner.entityLabel,
-    })
-    .where(loserGroupWhere);
+  // Certified rows are evidentiary — a Facial Recognition match must never
+  // silently rewrite one. Skip the rename and fall through to the
+  // "needs manual review" notification below instead.
+  if (!(isRealIdentification && loserRowLocked)) {
+    await db
+      .update(attachmentEntityLinks)
+      .set({
+        category: winner.category,
+        targetId: winner.targetId,
+        entityKey: winner.entityKey,
+        entityLabel: winner.entityLabel,
+      })
+      .where(loserGroupWhere);
+  }
+
+  if (isRealIdentification && loserRowInfo) {
+    const winnerRowInfo = await getAttachmentRowSheetInfo(winner.attachmentId);
+    const otherSheetClause = winnerRowInfo
+      ? `an image in '${winnerRowInfo.sheetTitle}'`
+      : "a linked photo";
+    const url = `/sheet/${loserRowInfo.sheetId}`;
+    if (loserRowLocked) {
+      await notifySheetAuthorAndTeamLeader(loserRowInfo.sheetCins, {
+        title: "Facial Recognition match needs review — row is certified",
+        body: `An unidentified Person in Running Sheet '${loserRowInfo.sheetTitle}' has a possible Facial Recognition match (${winner.entityLabel}) from ${otherSheetClause}, but the row is certified/locked so it could not be updated automatically. You need to review '${loserRowInfo.sheetTitle}' and confirm manually.`,
+        url,
+      });
+    } else {
+      await notifySheetAuthorAndTeamLeader(loserRowInfo.sheetCins, {
+        title: "Unidentified person identified via Facial Recognition",
+        body: `An unidentified Person in Running Sheet '${loserRowInfo.sheetTitle}' has been identified through Facial Recognition from ${otherSheetClause}. You need to review '${loserRowInfo.sheetTitle}'.`,
+        url,
+      });
+    }
+  }
+
+  return {
+    applied: !(isRealIdentification && loserRowLocked),
+    blockedRowLocked: isRealIdentification && loserRowLocked,
+  };
 }
 
 // Officer confirmed "no, not the same person" — stored unordered (smaller id
@@ -3291,6 +3433,12 @@ export async function deepSearchOperations(
 
 // ─── Intelligence ─────────────────────────────────────────────────────────────
 
+// Hoisted out of extractEntitiesFromText so other detection logic (see the
+// vague-vehicle matching below) can reuse the same make list rather than
+// duplicating it.
+export const VEHICLE_MAKES_PATTERN =
+  /\b(toyota|ford|holden|honda|mazda|nissan|mitsubishi|subaru|hyundai|kia|volkswagen|vw|bmw|mercedes|audi|lexus|volvo|jeep|dodge|chevrolet|chevy|ram|gmc|chrysler|fiat|alfa|peugeot|renault|citroen|skoda|seat|suzuki|isuzu|daihatsu|ssangyong|great wall|gwm|haval|mg|byd|tesla|rivian|land rover|range rover|defender|discovery|jaguar|porsche|ferrari|lamborghini|maserati|bentley|rolls royce|aston martin|mclaren|lotus|mini|smart|dacia|lancia|opel|vauxhall|saab|pontiac|buick|cadillac|lincoln|infiniti|acura|genesis|lucid|polestar|scout|rivian)\b/i;
+
 /**
  * Extract bracketed entities from a single observation string.
  * Pattern: any text followed by (ShortForm) — the short form is the entity identifier.
@@ -3419,8 +3567,7 @@ export function extractEntitiesFromText(text: string): Array<{
         shortForm.replace(/\s/g, "").toUpperCase()
       );
     // Broader vehicle make/model keywords
-    const VEHICLE_MAKES =
-      /\b(toyota|ford|holden|honda|mazda|nissan|mitsubishi|subaru|hyundai|kia|volkswagen|vw|bmw|mercedes|audi|lexus|volvo|jeep|dodge|chevrolet|chevy|ram|gmc|chrysler|fiat|alfa|peugeot|renault|citroen|skoda|seat|suzuki|isuzu|daihatsu|ssangyong|great wall|gwm|haval|mg|byd|tesla|rivian|land rover|range rover|defender|discovery|jaguar|porsche|ferrari|lamborghini|maserati|bentley|rolls royce|aston martin|mclaren|lotus|mini|smart|dacia|lancia|opel|vauxhall|saab|pontiac|buick|cadillac|lincoln|infiniti|acura|genesis|lucid|polestar|scout|rivian)\b/i;
+    const VEHICLE_MAKES = VEHICLE_MAKES_PATTERN;
     const VEHICLE_BODY =
       /\b(vehicle|car|truck|van|ute|sedan|hatchback|suv|wagon|coupe|convertible|roadster|pickup|4wd|4x4|cab|dual cab|single cab|tray|flatbed|panel van|people mover|minivan|bus|minibus|motorcycle|motorbike|bike|scooter|quad|atv|boat|trailer|caravan|motorhome|rv|bearing|registration|rego|reg|plate|plated)\b/i;
     // A shortForm that looks like an all-caps person name (letters/spaces/
@@ -3678,67 +3825,91 @@ export function extractEntitiesFromText(text: string): Array<{
       // Step 1: extract raw rego
       const rawRego = shortForm.replace(/^vehicle\s+/i, "").trim();
 
-      // Step 2: find the description text — everything before the rego
-      // mention. If the rego quoted in the text doesn't match the bracket's
-      // rego (e.g. a typo), regoIdx is -1 and the whole fullDescription is
-      // used instead — the boilerplate-stripping step below also swallows a
-      // trailing rego-shaped token in that case, so the mismatched number
-      // doesn't leak into the description either way.
-      const regoIdx = fullDescription
-        .toUpperCase()
-        .indexOf(rawRego.toUpperCase());
-      let descSource =
-        regoIdx > 0 ? fullDescription.slice(0, regoIdx) : fullDescription;
+      // Everything below assumes rawRego IS a real registration and
+      // searches for that exact text inside fullDescription to find where
+      // the description ends. That assumption breaks for a vague/no-rego
+      // sighting bracketed with a make/model instead of a plate — e.g.
+      // "(Vehicle White Hyundai)" on "a white Hyundai Santa Fe,
+      // registration unable to be observed" — where "White Hyundai" is
+      // also a substring of the description itself, so regoIdx lands
+      // mid-sentence and truncates descSource to a fragment ("a"). A real
+      // WA rego is short and never spells out a recognised make, so guard
+      // the whole reconstruction on that instead of assuming every bracket
+      // is a plate.
+      const rawRegoCompact = rawRego.replace(/\s/g, "").toUpperCase();
+      const rawRegoLooksLikeRealRego =
+        /^\d[A-Z]{2,3}\d{3}$/.test(rawRegoCompact) ||
+        (/^[A-Z0-9]{2,7}$/.test(rawRegoCompact) &&
+          !VEHICLE_MAKES_PATTERN.test(rawRego));
 
-      const STATE_CODES = "WA|NSW|VIC|QLD|SA|TAS|NT|ACT";
-      descSource = descSource
-        .replace(
-          new RegExp(
-            `[,;]?\\s*(?:bearing\\s+)?(?:(?:${STATE_CODES})\\s+)?(?:registration|rego|reg\\.?|plated?)\\s*:?\\s*(?:\\d[A-Za-z0-9]{2,7})?\\s*$`,
-            "i"
-          ),
-          ""
-        )
-        .replace(/[,;]\s*$/, "")
-        .trim();
-
-      // A real vehicle description is a short noun phrase (colour + make +
-      // model + trim + body, typically 2-5 words). When an officer embeds
-      // that same phrase in a longer narrative sentence instead of writing
-      // it tersely — "WINMAR and LOWE walked through the car park to a blue
-      // Mercedes Benz C250 sedan, bearing WA registration 1HFD521" — keeping
-      // the whole clause up to the rego drags the narrative prose in too.
-      // Cut at the LAST standalone article ("a"/"an"/"the") — that's
-      // reliably where the noun phrase describing the vehicle starts, since
-      // narrative lead-ins almost always end "...to a", "...into an",
-      // "...near the", etc. Falls back to a generous word-count cap when no
-      // article is present, as a backstop against unbounded narrative text
-      // with no article at all.
-      const articlePattern = /\b(?:a|an|the)\s+(?=\S)/gi;
-      let lastArticleEnd = -1;
-      let articleMatch: RegExpExecArray | null;
-      while ((articleMatch = articlePattern.exec(descSource)) !== null) {
-        lastArticleEnd = articleMatch.index + articleMatch[0].length;
-      }
-      if (lastArticleEnd >= 0) {
-        descSource = descSource.slice(lastArticleEnd);
+      if (!rawRegoLooksLikeRealRego) {
+        // Descriptive bracket, not a real rego — the bracket text itself
+        // (minus the "Vehicle " prefix) already IS the description; there's
+        // nothing in fullDescription to reconstruct around.
+        displayName = rawRego || shortForm;
       } else {
-        const words = descSource.split(/\s+/).filter(Boolean);
-        if (words.length > 8) descSource = words.slice(-8).join(" ");
-      }
-      descSource = descSource
-        .replace(/^vehicle\s+/i, "")
-        .replace(/\s+/g, " ")
-        .trim();
+        // Step 2: find the description text — everything before the rego
+        // mention. If the rego quoted in the text doesn't match the bracket's
+        // rego (e.g. a typo), regoIdx is -1 and the whole fullDescription is
+        // used instead — the boilerplate-stripping step below also swallows a
+        // trailing rego-shaped token in that case, so the mismatched number
+        // doesn't leak into the description either way.
+        const regoIdx = fullDescription
+          .toUpperCase()
+          .indexOf(rawRego.toUpperCase());
+        let descSource =
+          regoIdx > 0 ? fullDescription.slice(0, regoIdx) : fullDescription;
 
-      if (rawRego && rawRego !== shortForm) {
-        // Had "Vehicle REGO" format — use rego + description as written
-        displayName = descSource ? `${rawRego} ${descSource}` : rawRego;
-      } else if (descSource) {
-        // shortForm is already just the rego
-        displayName = `${rawRego} ${descSource}`;
+        const STATE_CODES = "WA|NSW|VIC|QLD|SA|TAS|NT|ACT";
+        descSource = descSource
+          .replace(
+            new RegExp(
+              `[,;]?\\s*(?:bearing\\s+)?(?:(?:${STATE_CODES})\\s+)?(?:registration|rego|reg\\.?|plated?)\\s*:?\\s*(?:\\d[A-Za-z0-9]{2,7})?\\s*$`,
+              "i"
+            ),
+            ""
+          )
+          .replace(/[,;]\s*$/, "")
+          .trim();
+
+        // A real vehicle description is a short noun phrase (colour + make +
+        // model + trim + body, typically 2-5 words). When an officer embeds
+        // that same phrase in a longer narrative sentence instead of writing
+        // it tersely — "WINMAR and LOWE walked through the car park to a blue
+        // Mercedes Benz C250 sedan, bearing WA registration 1HFD521" — keeping
+        // the whole clause up to the rego drags the narrative prose in too.
+        // Cut at the LAST standalone article ("a"/"an"/"the") — that's
+        // reliably where the noun phrase describing the vehicle starts, since
+        // narrative lead-ins almost always end "...to a", "...into an",
+        // "...near the", etc. Falls back to a generous word-count cap when no
+        // article is present, as a backstop against unbounded narrative text
+        // with no article at all.
+        const articlePattern = /\b(?:a|an|the)\s+(?=\S)/gi;
+        let lastArticleEnd = -1;
+        let articleMatch: RegExpExecArray | null;
+        while ((articleMatch = articlePattern.exec(descSource)) !== null) {
+          lastArticleEnd = articleMatch.index + articleMatch[0].length;
+        }
+        if (lastArticleEnd >= 0) {
+          descSource = descSource.slice(lastArticleEnd);
+        } else {
+          const words = descSource.split(/\s+/).filter(Boolean);
+          if (words.length > 8) descSource = words.slice(-8).join(" ");
+        }
+        descSource = descSource
+          .replace(/^vehicle\s+/i, "")
+          .replace(/\s+/g, " ")
+          .trim();
+
+        if (rawRego && rawRego !== shortForm) {
+          // Had "Vehicle REGO" format — use rego + description as written
+          displayName = descSource ? `${rawRego} ${descSource}` : rawRego;
+        } else if (descSource) {
+          // shortForm is already just the rego
+          displayName = `${rawRego} ${descSource}`;
+        }
+        // else: keep displayName = shortForm (bare rego, no description available)
       }
-      // else: keep displayName = shortForm (bare rego, no description available)
     } else if (type === "person") {
       // Extract the last 2-4 words immediately before the bracket — these are most
       // likely to be the full name. E.g. "Observed Jason JOHNSON (JOHNSON)" →
@@ -3888,6 +4059,19 @@ export interface IntelligenceEntity {
    * the information is now corroborated by a running sheet.
    */
   isIndicesOnly?: boolean;
+  /**
+   * Set when this entity's Target/Associate card is linked (via
+   * targets.linkedAssociateId / associates.linkedTargetId — see "Person
+   * Identity Links" above updateTarget) to a card of the other kind for
+   * the same real person. Both entities' occurrences are unioned so
+   * either profile shows the complete picture; this points at the other
+   * one so the UI can flag "identical profile" and link across.
+   */
+  identicalProfile?: {
+    type: "target" | "associate";
+    id: number;
+    label: string;
+  } | null;
   occurrences: Array<{
     sheetId: number;
     sheetTitle: string;
@@ -4463,6 +4647,15 @@ export interface MissingLocationSuggestion {
 // from findMissingLocationSuggestion's DB fetch below so it can be unit
 // tested directly, the same way extractEntitiesFromText and
 // normalizeObservationPunctuation are (no DB dependency, deterministic).
+//
+// Rolling location, not "always the commencement address": a team moves
+// over the course of a sheet (depart 67 Cleaver Street → arrive 28
+// Carnarvon Crescent), so "the location this row is obviously at" is
+// whichever address/business was most recently established BEFORE this
+// row — walking backward through the sheet — not necessarily wherever
+// surveillance first commenced. Only falls back to the commencement row
+// when nothing more recent has been mentioned yet (e.g. this is the very
+// first vehicle-presence row of the day, right after commencement).
 export function pickMissingLocationSuggestion(
   observation: string,
   otherRows: Array<{ observation: string | null }>
@@ -4473,31 +4666,20 @@ export function pickMissingLocationSuggestion(
     (r): r is { observation: string } => !!r.observation
   );
 
-  const commencementRow = rows.find(r =>
-    /surveillance commenced/i.test(r.observation)
-  );
-  if (commencementRow) {
-    const entities = extractEntitiesFromText(commencementRow.observation);
-    const loc = entities.find(
-      e => e.type === "address" || e.type === "business"
-    );
-    if (loc) {
-      return {
-        location: toSubsequentMentionForm(loc.shortForm),
-        source: "the Surveillance commencement row",
-      };
-    }
-  }
-
   for (let i = rows.length - 1; i >= 0; i--) {
     const entities = extractEntitiesFromText(rows[i].observation);
     const loc = entities.find(
       e => e.type === "address" || e.type === "business"
     );
     if (loc) {
+      const isCommencementRow = /surveillance commenced/i.test(
+        rows[i].observation
+      );
       return {
         location: toSubsequentMentionForm(loc.shortForm),
-        source: "an earlier row on this sheet",
+        source: isCommencementRow
+          ? "the Surveillance commencement row"
+          : "an earlier row on this sheet",
       };
     }
   }
@@ -4521,6 +4703,184 @@ export async function findMissingLocationSuggestion(
     observation,
     rows.filter(r => r.id !== excludeRowId)
   );
+}
+
+// ─── Vague Vehicle Match (No-Rego Sighting → Later Full Description) ──────
+// A vehicle is often first sighted without its registration visible —
+// "a white Hyundai Santa Fe, registration unable to be observed (Vehicle
+// White Hyundai)" — and only fully identified later in the same sheet once
+// the rego is actually seen. Bracketed like that, the vague sighting is
+// already a real, trackable vehicle entity (extractEntitiesFromText
+// classifies it as type "vehicle" fine, since classification only needs a
+// make/body keyword nearby) — but it keys on whatever descriptive text was
+// typed, so a later full sighting with the real rego becomes a SEPARATE,
+// unlinked entity even though it's the same car. This detects that
+// specific shape and offers the officer a merge, reusing the exact
+// mechanism the "Merge Entities" tool and the general duplicate-prompt
+// already use (entityAliases via mergeEntities) — see the SCOPE note on
+// compareVehicleDescriptions in entityDedup.ts for why this needs a
+// dedicated word-overlap comparison rather than the existing
+// character-similarity vehicle comparator (compareVehicles): a vague
+// bracket and a real rego share almost no characters in common even when
+// they're the same car.
+
+// Two independent signals that a vehicle mention is vague (no real rego
+// known yet), combined with OR rather than AND so either one alone is
+// enough — an officer might bracket the vague sighting with just a
+// make/model ("Vehicle White Hyundai") without writing an explicit "rego
+// not seen" phrase, or vice versa:
+//   1. The bracket itself contains a vehicle make (VEHICLE_MAKES_PATTERN)
+//      — a real rego never does.
+//   2. The surrounding text uses one of the common ways officers phrase
+//      "the registration wasn't visible" — kept fuzzy/pattern-based
+//      (unseen/unobserved/unable to see or observe/not visible) rather
+//      than a fixed phrase list, so wording variants are still caught.
+const NO_REGO_OBSERVED_PATTERN =
+  /\b(registration|rego|reg|plate)\b[^.]{0,40}\b(unseen|unobserved|not\s+(?:seen|observed|obtained|visible)|unable\s+to\s+(?:be\s+)?(?:see|seen|observe|observed|obtain|obtained)|no(?:t)?\s+visible)\b/i;
+
+function isVagueVehicleMention(
+  shortForm: string,
+  fullDescription: string
+): boolean {
+  const hasRealRego = /\b\d[A-Za-z]{2,3}\d{3}\b/.test(shortForm);
+  if (hasRealRego) return false;
+  return (
+    VEHICLE_MAKES_PATTERN.test(shortForm) ||
+    NO_REGO_OBSERVED_PATTERN.test(fullDescription)
+  );
+}
+
+export interface VagueVehicleMatch {
+  /** The vague sighting's bracket text — becomes entityAliases' loserLabel on confirm. */
+  loserLabel: string;
+  /** The new, real-rego vehicle just entered — becomes entityAliases' winnerLabel. */
+  winnerLabel: string;
+  reason: string;
+}
+
+// Pure decision logic over an already-extracted row list — kept separate
+// from findVagueVehicleMatch's DB fetch/alias-dedup checks below so it can
+// be unit tested directly, the same pattern as
+// pickMissingLocationSuggestion. Returns every candidate match (best first
+// by score), not just one — the DB-aware wrapper below filters out any
+// already-decided pair and takes the first survivor.
+export function pickVagueVehicleMatches(
+  observation: string,
+  otherRows: Array<{ observation: string | null }>
+): VagueVehicleMatch[] {
+  const newVehicles = extractEntitiesFromText(observation).filter(
+    e => e.type === "vehicle" && /\b\d[A-Za-z]{2,3}\d{3}\b/.test(e.shortForm)
+  );
+  if (newVehicles.length === 0) return [];
+
+  const rows = otherRows.filter(
+    (r): r is { observation: string } => !!r.observation
+  );
+
+  const candidates: Array<VagueVehicleMatch & { score: number }> = [];
+  for (const newVehicle of newVehicles) {
+    const winnerKey = normOnly("vehicle", newVehicle.shortForm);
+    const newDescText = `${newVehicle.fullDescription} ${newVehicle.shortForm}`;
+
+    for (const row of rows) {
+      const earlierEntities = extractEntitiesFromText(row.observation);
+      for (const earlier of earlierEntities) {
+        if (earlier.type !== "vehicle") continue;
+        if (!isVagueVehicleMention(earlier.shortForm, earlier.fullDescription))
+          continue;
+
+        const loserKey = normOnly("vehicle", earlier.shortForm);
+        if (loserKey === winnerKey) continue;
+
+        const match = compareVehicleDescriptions(
+          newDescText,
+          `${earlier.fullDescription} ${earlier.shortForm}`
+        );
+        if (!match) continue;
+
+        candidates.push({
+          loserLabel: earlier.shortForm,
+          winnerLabel: newVehicle.shortForm,
+          reason: match.reason,
+          score: match.score,
+        });
+      }
+    }
+  }
+  return candidates
+    .sort((a, b) => b.score - a.score)
+    .map(({ score: _score, ...rest }) => rest);
+}
+
+// Scoped to a single sheet, same reasoning as the other same-day continuity
+// helpers above (vehicle depart/arrive, missing location). excludeRowId
+// lets an edit of an existing row skip matching against itself.
+export async function findVagueVehicleMatch(
+  sheetId: number,
+  observation: string,
+  excludeRowId?: number
+): Promise<VagueVehicleMatch | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const rows = await getRowsBySheetId(sheetId);
+  const candidates = pickVagueVehicleMatches(
+    observation,
+    rows.filter(r => r.id !== excludeRowId)
+  );
+
+  for (const candidate of candidates) {
+    const loserKey = normOnly("vehicle", candidate.loserLabel);
+    const winnerKey = normOnly("vehicle", candidate.winnerLabel);
+
+    // Already linked (either direction) or already dismissed as "not the
+    // same vehicle" — don't ask again, same as the generic duplicate-prompt
+    // pipeline.
+    const [existingAlias, existingDecision] = await Promise.all([
+      db
+        .select()
+        .from(entityAliases)
+        .where(
+          and(
+            eq(entityAliases.type, "vehicle"),
+            or(
+              and(
+                eq(entityAliases.loserKey, loserKey),
+                eq(entityAliases.winnerKey, winnerKey)
+              ),
+              and(
+                eq(entityAliases.loserKey, winnerKey),
+                eq(entityAliases.winnerKey, loserKey)
+              )
+            )
+          )
+        )
+        .limit(1),
+      db
+        .select()
+        .from(entityDedupDecisions)
+        .where(
+          and(
+            eq(entityDedupDecisions.type, "vehicle"),
+            or(
+              and(
+                eq(entityDedupDecisions.keyA, loserKey),
+                eq(entityDedupDecisions.keyB, winnerKey)
+              ),
+              and(
+                eq(entityDedupDecisions.keyA, winnerKey),
+                eq(entityDedupDecisions.keyB, loserKey)
+              )
+            )
+          )
+        )
+        .limit(1),
+    ]);
+    if (existingAlias.length > 0 || existingDecision.length > 0) continue;
+
+    return candidate;
+  }
+  return null;
 }
 
 // App-wide convention: the first time an address is mentioned in a running
@@ -6734,6 +7094,59 @@ export async function getAllIntelligenceEntities(): Promise<
     mergedMap.set(k, entity);
   }
 
+  // ── Person Identity Links: mirror intelligence across a linked pair ────────
+  // A Target card and a Registry Associate card can be confirmed as the same
+  // real person (targets.linkedAssociateId / associates.linkedTargetId — see
+  // "Person Identity Links" above updateTarget). Both records intentionally
+  // stay as separate profiles (a Target and an Associate are different
+  // roles), but neither one should be missing intelligence the other has —
+  // so union their occurrences onto both entities, and mark each with a
+  // pointer to its identical twin so the UI can flag it.
+  const linkedPairRows = await db
+    .select({
+      targetId: targets.id,
+      targetName: targets.name,
+      associateId: targets.linkedAssociateId,
+    })
+    .from(targets)
+    .where(
+      and(isNull(targets.deletedAt), isNotNull(targets.linkedAssociateId))
+    );
+
+  for (const pair of linkedPairRows) {
+    if (!pair.associateId) continue;
+    const targetEntity = mergedMap.get(`target::${pair.targetName}`);
+    const associateEntity = Array.from(mergedMap.values()).find(
+      e => e.isAssociate && e.associateId === pair.associateId
+    );
+    if (!targetEntity || !associateEntity) continue;
+
+    const seen = new Set<string>();
+    const combined: IntelligenceEntity["occurrences"] = [];
+    for (const occ of [
+      ...targetEntity.occurrences,
+      ...associateEntity.occurrences,
+    ]) {
+      const dedupeKey = `${occ.sheetId}::${occ.rowId}::${occ.observationSnippet}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      combined.push(occ);
+    }
+    targetEntity.occurrences = combined;
+    associateEntity.occurrences = combined.slice();
+
+    targetEntity.identicalProfile = {
+      type: "associate",
+      id: associateEntity.associateId!,
+      label: associateEntity.shortForm,
+    };
+    associateEntity.identicalProfile = {
+      type: "target",
+      id: targetEntity.targetId!,
+      label: targetEntity.shortForm,
+    };
+  }
+
   // "Indices" flag — computed last, once every occurrence (registry-injected
   // and text-mined alike) has been assembled and merged above.
   const finalEntities = Array.from(mergedMap.values());
@@ -7336,6 +7749,16 @@ export async function getAssociationGraph(
   const rowMembers = new Map<number, Set<string>>();
 
   for (const entity of entities) {
+    // A Target and Associate card confirmed as the same real person (see
+    // identicalProfile in getAllIntelligenceEntities) already carry the
+    // same unioned occurrences — represent them as ONE combined node
+    // (the Target side) rather than two nodes for one person. Skip the
+    // Associate side here; its occurrences are already fully reflected via
+    // the Target node below.
+    if (entity.isAssociate && entity.identicalProfile?.type === "target") {
+      continue;
+    }
+
     const type: AssocNode["type"] = entity.isTarget
       ? "target"
       : (entity.type as AssocNode["type"]);
@@ -9519,6 +9942,15 @@ export interface IntelTargetProfile {
    * observation — i.e. everything known about them so far came from the
    * Target Registry (or another non-RS source), not from the field. */
   isIndicesOnly: boolean;
+  /** Present when this target is linked (Person Identity Links) to a
+   * Registry Associate record confirmed to be the same real person — both
+   * profiles show identical combined intelligence; the UI uses this to
+   * flag it and link across. */
+  identicalProfile?: {
+    type: "target" | "associate";
+    id: number;
+    label: string;
+  } | null;
   /** Associates recorded directly on this target in the Target Registry — a
    * guaranteed link (not inferred from observation-text co-occurrence). */
   registryAssociates: Array<{
@@ -9599,6 +10031,15 @@ export interface IntelAssociateProfile {
    * observation — i.e. everything known about them so far came from the
    * Target Registry (or another non-RS source), not from the field. */
   isIndicesOnly: boolean;
+  /** Present when this associate is linked (Person Identity Links) to a
+   * Target record confirmed to be the same real person — both profiles
+   * show identical combined intelligence; the UI uses this to flag it and
+   * link across. */
+  identicalProfile?: {
+    type: "target" | "associate";
+    id: number;
+    label: string;
+  } | null;
   /** Present when this associate has a formal Target Registry record — its
    * own structured identity/address/vehicle, not just text-mined mentions. */
   registryAssociateId?: number | null;
@@ -10320,6 +10761,19 @@ export async function getIntelTargetProfile(
   const ownVehicleRegos = targetVehicleRegos(target);
   const ownAddressCores = targetAddressCores(target);
   const ownOperationIds = new Set(opLinks.map(o => o.id));
+  // Same reasoning as the mirror-image check in getIntelAssociateProfile: if
+  // this target is Person-Identity-Linked to a registry associate, that
+  // associate's own operation (via its parent target) is this same
+  // person's own turf, not a genuine cross-operation connection to flag.
+  if (target.linkedAssociateId) {
+    const linkedAssociate = await getAssociateById(target.linkedAssociateId);
+    if (linkedAssociate) {
+      const parentOps = await getLinkedOperationsForTarget(
+        linkedAssociate.targetId
+      );
+      for (const op of parentOps) ownOperationIds.add(op.operationId);
+    }
+  }
   const sharedEntityLinks = dedupeCrossLinks([
     ...(await getSharedEntityCrossLinks(
       ownVehicleRegos,
@@ -10368,6 +10822,7 @@ export async function getIntelTargetProfile(
     assocVehicles,
     assocLocations,
     isIndicesOnly: targetEntity?.isIndicesOnly ?? false,
+    identicalProfile: targetEntity?.identicalProfile ?? null,
     registryAssociates: registryAssociateRows.map(a => ({
       id: a.id,
       name: a.name,
@@ -10768,17 +11223,35 @@ export async function getIntelAssociateProfile(
     ? await getAssociateById(entity.associateId ?? -1)
     : undefined;
 
-  // Associates aren't rows in the `targets` table, so there's no self id to
-  // exclude — compare against every target unconditionally.
+  // Associates aren't rows in the `targets` table, so there's normally no
+  // self id to exclude — EXCEPT when this associate is Person-Identity-
+  // Linked to a target (linkedTargetId), whose shared fields (hbf/v1f/etc.)
+  // are kept in sync with this record — see updateAssociate/updateTarget.
+  // Without excluding it, that linked target's own registered
+  // vehicle/address would falsely show up here as a "shared" cross-op
+  // match, when it's actually just this same person's other profile (now
+  // already surfaced by the "Identical profile" banner/combined intel).
   const associateOwnOperationIds = new Set(
     linkedTargets.map(t => t.operationId)
   );
+  // Same reasoning as the linkedTargetId exclusion above, for the two
+  // occurrence-based cross-link checks below: a real sighting of this
+  // person's own vehicle/address on an operation the LINKED target (not
+  // this associate's associateOfTargetId) is tasked to is this same
+  // person's own turf, not a cross-operation connection to flag.
+  if (registryAssociate?.linkedTargetId) {
+    const linkedTargetOps = await getLinkedOperationsForTarget(
+      registryAssociate.linkedTargetId
+    );
+    for (const op of linkedTargetOps)
+      associateOwnOperationIds.add(op.operationId);
+  }
   const sharedEntityLinks = registryAssociate
     ? dedupeCrossLinks([
         ...(await getSharedEntityCrossLinks(
           targetVehicleRegos(registryAssociate),
           targetAddressCores(registryAssociate),
-          -1
+          registryAssociate.linkedTargetId ?? -1
         )),
         ...getEntitySightingCrossLinks(
           allEntities,
@@ -10804,6 +11277,7 @@ export async function getIntelAssociateProfile(
     assocLocations,
     assocVehicles,
     isIndicesOnly: entity.isIndicesOnly ?? false,
+    identicalProfile: entity.identicalProfile ?? null,
     registryAssociateId: registryAssociate?.id ?? null,
     firstNames: registryAssociate?.firstNames ?? null,
     surname: registryAssociate?.surname ?? null,

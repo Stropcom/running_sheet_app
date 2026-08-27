@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { useFaceMatchNotification } from "@/contexts/FaceMatchNotificationContext";
 
 // General-purpose in-app notification inbox (see notifications router /
 // drizzle schema comment) — reliable regardless of browser push
@@ -26,11 +27,11 @@ export function NotificationBell({
   const [open, setOpen] = useState(false);
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
+  const { openNotification } = useFaceMatchNotification();
 
-  const { data: unread } = trpc.notifications.unreadCount.useQuery(
-    undefined,
-    { refetchInterval: 30_000 }
-  );
+  const { data: unread } = trpc.notifications.unreadCount.useQuery(undefined, {
+    refetchInterval: 30_000,
+  });
   const { data: list } = trpc.notifications.list.useQuery(undefined, {
     enabled: open,
   });
@@ -128,7 +129,20 @@ export function NotificationBell({
                   <button
                     className="flex-1 min-w-0 text-left flex items-start gap-2"
                     onClick={() => {
-                      if (!n.readAt) markRead.mutate({ id: n.id });
+                      // Facial Recognition notifications are acknowledged
+                      // (not just marked read) via the full-text pop-up on
+                      // the running sheet itself — see FaceMatchAckDialog —
+                      // since the body text here is line-clamped to 2 lines
+                      // and was too little room for the full wording. That
+                      // pop-up only opens from an explicit click here (never
+                      // just from landing on the sheet some other way), and
+                      // re-clicking an already-acknowledged one still
+                      // reopens it — see FaceMatchNotificationContext.
+                      if (n.sourceModule === "faceRecognition") {
+                        openNotification(n.id);
+                      } else if (!n.readAt) {
+                        markRead.mutate({ id: n.id });
+                      }
                       setOpen(false);
                       if (n.url) setLocation(n.url);
                     }}
@@ -137,9 +151,7 @@ export function NotificationBell({
                       <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
                     )}
                     <div className={`min-w-0 ${n.readAt ? "pl-3.5" : ""}`}>
-                      <p className="text-sm font-medium truncate">
-                        {n.title}
-                      </p>
+                      <p className="text-sm font-medium truncate">{n.title}</p>
                       <p className="text-xs text-muted-foreground line-clamp-2">
                         {n.body}
                       </p>

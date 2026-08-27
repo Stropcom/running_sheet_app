@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { useLocation } from "wouter";
 import {
   Dialog,
   DialogContent,
@@ -8,7 +9,16 @@ import {
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Check, X, Users, User } from "lucide-react";
+import {
+  Check,
+  X,
+  Users,
+  User,
+  ZoomIn,
+  ZoomOut,
+  FileText,
+  ImageUp,
+} from "lucide-react";
 
 export interface FaceMatchCandidate {
   entityLinkId: number;
@@ -18,6 +28,13 @@ export interface FaceMatchCandidate {
   similarity: number;
   attachmentId: number;
   photoUrl: string;
+  /** Where this candidate photo actually came from — a different running
+   * sheet the officer confirming a match may have no idea exists. Null
+   * sourceSheetId means a manually-uploaded photo not attached to any row. */
+  sourceSheetId: number | null;
+  sourceSheetTitle: string | null;
+  sourceOperationId: number;
+  sourceOperationName: string;
 }
 
 export interface PendingMatch {
@@ -32,6 +49,82 @@ const CATEGORY_LABEL: Record<string, string> = {
   unidentified_person: "Unidentified Person",
 };
 
+// Zoom steps for comparing the two faces — deliberately goes well past a
+// simple "expanded" toggle so the officer can get the photos as large as
+// the dialog can usefully show. Each photo's column width is a PERCENTAGE
+// of the row (not a fixed px size) so two of them plus the gap always fit
+// side by side within whatever width the dialog actually rendered at — a
+// fixed-px size at high zoom could exceed the dialog on a narrower screen,
+// which used to force the pair to squeeze (pre-shrink-0) or wrap onto two
+// lines (post-shrink-0) instead of staying side by side.
+//
+// The dialog's own max-width is viewport-relative (vw), not a fixed rem
+// breakpoint (max-w-4xl/5xl/etc.) — on a typical laptop-width browser
+// window those fixed breakpoints all land within a few px of DialogContent's
+// own built-in calc(100%-2rem) cap, so Large/X-Large/Maximum ended up
+// rendering at nearly the same actual width and the zoom barely looked like
+// it was doing anything. vw scales with the real window instead of hitting
+// that same ceiling at every step past Medium.
+//
+// dialogClass sets an explicit w-[Xvw], not just max-w-[Xvw] — the base
+// DialogContent classes include w-full, and a max-width alone only caps
+// however wide that w-full percentage resolves to, which isn't guaranteed
+// to reach the vw figure. An explicit width forces it there directly (vw
+// is always relative to the true viewport, unlike a % width).
+//
+// DialogContent's own base classes (client/src/components/ui/dialog.tsx)
+// include a plain, unprefixed max-w-[calc(100%-2rem)] AND a responsive
+// sm:max-w-lg (512px) that only kicks in at >=640px viewport — i.e. on
+// essentially every desktop/laptop. tailwind-merge only drops a base class
+// when the override shares its exact variant, so an unprefixed
+// max-w-[Xvw] here does NOT remove sm:max-w-lg — that 512px cap kept
+// winning the cascade (its @media rule sits after the base utility) no
+// matter how large Xvw was, which is why bumping the vw values alone
+// didn't visibly change anything. Every step below now also sets a
+// matching sm:max-w-[...] to actually override it.
+//
+// Every class below is a literal string (not built from a runtime
+// template) so Tailwind's build-time scanner picks them all up regardless
+// of which step is active at render time.
+const ZOOM_STEPS: {
+  label: string;
+  colClass: string;
+  imgFit: string;
+  dialogClass: string;
+}[] = [
+  {
+    label: "Small",
+    colClass: "w-28",
+    imgFit: "object-cover",
+    dialogClass: "max-w-md sm:max-w-md",
+  },
+  {
+    label: "Medium",
+    colClass: "w-[34%]",
+    imgFit: "object-contain bg-muted",
+    dialogClass: "w-[80vw] max-w-[80vw] sm:max-w-[80vw]",
+  },
+  {
+    label: "Large",
+    colClass: "w-[40%]",
+    imgFit: "object-contain bg-muted",
+    dialogClass: "w-[90vw] max-w-[90vw] sm:max-w-[90vw]",
+  },
+  {
+    label: "X-Large",
+    colClass: "w-[44%]",
+    imgFit: "object-contain bg-muted",
+    dialogClass: "w-[95vw] max-w-[95vw] sm:max-w-[95vw]",
+  },
+  {
+    label: "Maximum",
+    colClass: "w-[48%]",
+    imgFit: "object-contain bg-muted",
+    dialogClass: "w-[99vw] max-w-[99vw] sm:max-w-[99vw]",
+  },
+];
+const MAX_ZOOM_INDEX = ZOOM_STEPS.length - 1;
+
 // Steps through every possible-match candidate surfaced after confirming
 // face(s) — one candidate at a time, always requiring an explicit human
 // Confirm or Not a match tap. Never applies a match automatically.
@@ -43,6 +136,8 @@ export function PossibleMatchDialog({
   onDone: () => void;
 }) {
   const [index, setIndex] = useState(0);
+  const [zoomIndex, setZoomIndex] = useState(0);
+  const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
 
   const invalidate = () => {
@@ -52,8 +147,14 @@ export function PossibleMatchDialog({
   };
 
   const confirmMatch = trpc.attachment.confirmFaceMatch.useMutation({
-    onSuccess: () => {
-      toast.success("Linked as the same person");
+    onSuccess: result => {
+      if (result.blockedRowLocked) {
+        toast.warning(
+          "Same person confirmed, but that row is certified/locked — the Author and Team Leader have been notified to review it manually."
+        );
+      } else {
+        toast.success("Linked as the same person");
+      }
       invalidate();
       advance();
     },
@@ -66,6 +167,7 @@ export function PossibleMatchDialog({
   });
 
   const advance = () => {
+    setZoomIndex(0);
     if (index + 1 >= matches.length) onDone();
     else setIndex(index + 1);
   };
@@ -73,6 +175,7 @@ export function PossibleMatchDialog({
   if (matches.length === 0) return null;
   const current = matches[index];
   const pending = confirmMatch.isPending || dismissMatch.isPending;
+  const zoom = ZOOM_STEPS[zoomIndex];
 
   return (
     <Dialog
@@ -81,7 +184,9 @@ export function PossibleMatchDialog({
         if (!o) onDone();
       }}
     >
-      <DialogContent className="max-w-md">
+      <DialogContent
+        className={`${zoom.dialogClass} max-h-[96vh] overflow-y-auto`}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Users className="h-4 w-4 text-primary" />
@@ -94,25 +199,84 @@ export function PossibleMatchDialog({
           This face looks similar to an existing entry. Is it the same person?
         </p>
 
-        <div className="flex items-center justify-center gap-4">
-          <div className="flex flex-col items-center gap-1.5">
+        <div className="flex items-center justify-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="h-7 w-7 shrink-0"
+            disabled={zoomIndex === 0}
+            onClick={() => setZoomIndex(z => Math.max(0, z - 1))}
+            title="Zoom out"
+          >
+            <ZoomOut className="h-3.5 w-3.5" />
+          </Button>
+          <span className="text-xs text-muted-foreground w-16 text-center">
+            {zoom.label}
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="h-7 w-7 shrink-0"
+            disabled={zoomIndex === MAX_ZOOM_INDEX}
+            onClick={() => setZoomIndex(z => Math.min(MAX_ZOOM_INDEX, z + 1))}
+            title="Zoom in"
+          >
+            <ZoomIn className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+
+        <div className="flex items-start justify-center gap-4 sm:gap-8">
+          <div
+            className={`flex flex-col items-center gap-1.5 shrink-0 ${zoom.colClass}`}
+          >
             <img
               src={current.newPhotoUrl}
               alt="New photo"
-              className="w-28 h-28 rounded-lg object-cover border border-border"
+              className={`w-full aspect-square rounded-lg border border-border transition-all ${zoom.imgFit}`}
             />
             <span className="text-xs text-muted-foreground">New photo</span>
           </div>
-          <div className="text-muted-foreground text-lg">≈</div>
-          <div className="flex flex-col items-center gap-1.5">
+          <div className="text-muted-foreground text-lg shrink-0 self-center">
+            ≈
+          </div>
+          <div
+            className={`flex flex-col items-center gap-1.5 shrink-0 ${zoom.colClass}`}
+          >
             <img
               src={current.match.photoUrl}
               alt={current.match.entityLabel}
-              className="w-28 h-28 rounded-lg object-cover border border-border"
+              className={`w-full aspect-square rounded-lg border border-border transition-all ${zoom.imgFit}`}
             />
-            <span className="text-xs text-muted-foreground text-center max-w-[120px] truncate">
+            <span className="text-xs text-muted-foreground text-center break-words w-full">
               {current.match.entityLabel}
             </span>
+            {current.match.sourceSheetId ? (
+              <button
+                type="button"
+                onClick={() =>
+                  setLocation(`/sheet/${current.match.sourceSheetId}`)
+                }
+                title={`Open ${current.match.sourceSheetTitle} — ${current.match.sourceOperationName}, to see other photos there`}
+                className="flex items-center gap-1 text-[10px] text-primary underline underline-offset-2 break-words w-full justify-center"
+              >
+                <FileText className="h-2.5 w-2.5 shrink-0" />
+                <span className="break-words">
+                  {current.match.sourceSheetTitle}
+                </span>
+              </button>
+            ) : (
+              <span
+                title="Uploaded directly to this operation's Images folder — not attached to a running sheet row"
+                className="flex items-center gap-1 text-[10px] text-muted-foreground break-words w-full justify-center"
+              >
+                <ImageUp className="h-2.5 w-2.5 shrink-0" />
+                <span className="break-words">
+                  Uploaded · {current.match.sourceOperationName}
+                </span>
+              </span>
+            )}
           </div>
         </div>
 

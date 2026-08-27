@@ -185,6 +185,93 @@ function compareVehicles(
   return null;
 }
 
+// Deliberately open-class (words to strip), not closed-class (words to
+// require) — a colour/make/model word list would need constant maintenance
+// as officers describe vehicles in every way imaginable, while the set of
+// filler/admin words around a vehicle description ("bearing", "WA
+// registration", "unable to be observed"...) is small and stable.
+const VEHICLE_DESCRIPTOR_NOISE_WORDS = new Set([
+  "a",
+  "an",
+  "the",
+  "and",
+  "with",
+  "in",
+  "at",
+  "of",
+  "to",
+  "on",
+  "bearing",
+  "wa",
+  "registration",
+  "rego",
+  "reg",
+  "plate",
+  "plated",
+  "vehicle",
+  "unable",
+  "be",
+  "seen",
+  "unseen",
+  "observed",
+  "unobserved",
+  "not",
+  "no",
+  "visible",
+  "obtain",
+  "obtained",
+]);
+
+function vehicleDescriptorTokens(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, " ")
+    .split(/\s+/)
+    .filter(w => w.length > 1 && !VEHICLE_DESCRIPTOR_NOISE_WORDS.has(w));
+}
+
+/**
+ * Compares two vehicle DESCRIPTIONS (not just bracket labels) for a possible
+ * "same vehicle, one side has no registration yet" match. Distinct from
+ * compareVehicles above, which compares near-identical rego strings —
+ * this one is for the opposite case: a vague sighting with no rego at all
+ * ("white Hyundai Santa Fe, registration unable to be observed") against a
+ * later, fully-identified sighting of what might be the same car. The two
+ * share almost no character-level similarity (compareVehicles' fallback
+ * would miss this entirely — "White Hyundai" vs "1FAD234" score near zero),
+ * so this compares descriptive WORD overlap instead, the same containment
+ * heuristic comparePersonNames uses for "same entity, one side has extra
+ * detail".
+ */
+export function compareVehicleDescriptions(
+  descA: string,
+  descB: string
+): { score: number; reason: string } | null {
+  const tokensA = vehicleDescriptorTokens(descA);
+  const tokensB = vehicleDescriptorTokens(descB);
+  if (tokensA.length === 0 || tokensB.length === 0) return null;
+
+  const setA = new Set(tokensA);
+  const setB = new Set(tokensB);
+  const [smaller, larger] =
+    tokensA.length <= tokensB.length ? [setA, setB] : [setB, setA];
+  const overlap = Array.from(smaller).filter(t => larger.has(t)).length;
+
+  if (smaller.size >= 1 && overlap === smaller.size) {
+    return {
+      score: 0.85,
+      reason: "Matching vehicle description (colour/make/model)",
+    };
+  }
+  if (smaller.size >= 2 && overlap / smaller.size >= 0.66) {
+    return {
+      score: 0.7,
+      reason: "Similar vehicle description (colour/make/model)",
+    };
+  }
+  return null;
+}
+
 // ─── Addresses ───────────────────────────────────────────────────────────────
 
 const UNIT_PREFIX =

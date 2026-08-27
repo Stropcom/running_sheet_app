@@ -5,6 +5,7 @@ import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import { FaceMatchNotificationProvider } from "./contexts/FaceMatchNotificationContext";
 import Home from "./pages/Home";
 import OperationDetail from "./pages/OperationDetail";
 import SheetDetail from "./pages/SheetDetail";
@@ -285,11 +286,13 @@ function App() {
       <ThemeProvider defaultTheme="light" switchable>
         <TooltipProvider>
           <SectionColorProvider>
-            {/* Apply accent palette globally on every page */}
-            <AppearanceApplier />
-            <Toaster />
-            <DraftModeBanner />
-            <Router />
+            <FaceMatchNotificationProvider>
+              {/* Apply accent palette globally on every page */}
+              <AppearanceApplier />
+              <Toaster />
+              <DraftModeBanner />
+              <Router />
+            </FaceMatchNotificationProvider>
           </SectionColorProvider>
         </TooltipProvider>
       </ThemeProvider>

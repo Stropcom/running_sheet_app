@@ -10,6 +10,7 @@ import {
   FileText,
   Users,
   AlertTriangle,
+  Link2,
 } from "lucide-react";
 import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
@@ -508,6 +509,30 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
           </div>
 
           <EntityPhotosSection category="target" targetId={targetId} />
+
+          {profile.identicalProfile && (
+            <div className="flex items-start gap-2 mb-4 px-3 py-2.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-300 dark:border-indigo-800">
+              <Link2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-indigo-800 dark:text-indigo-300">
+                  Identical profile — this is the same person as{" "}
+                  <strong>{profile.identicalProfile.label}</strong>, filed as an
+                  Associate. All intelligence below is combined across both
+                  records, so nothing is missed by looking at just this one.
+                </p>
+                <button
+                  onClick={() =>
+                    navigate(
+                      `/intelligence/associate/${encodeURIComponent(profile.identicalProfile!.label)}`
+                    )
+                  }
+                  className="text-xs font-semibold text-indigo-700 dark:text-indigo-300 underline underline-offset-2 mt-1"
+                >
+                  View Associate profile →
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Operations */}
           <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">

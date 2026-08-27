@@ -119,6 +119,7 @@ import {
   getPendingVehicleArrivals,
   isAddressAlreadyMentioned,
   findMissingLocationSuggestion,
+  findVagueVehicleMatch,
   getRunningSheetById,
   computeWitnessListData,
   getRunningSheets,
@@ -1274,6 +1275,28 @@ export const appRouter = router({
         );
       }),
 
+    // Detects a vehicle with a real registration that might be the same
+    // vehicle as an earlier vague sighting on this sheet ("Vehicle White
+    // Hyundai" — no rego observed). Confirming merges the two via the same
+    // entityAliases mechanism the Merge Entities tool uses (see
+    // intelligence.mergeEntities) — the running sheet text itself is never
+    // touched, only how the Intelligence folder links the two sightings.
+    checkVagueVehicleMatch: protectedProcedure
+      .input(
+        z.object({
+          sheetId: z.number(),
+          observation: z.string(),
+          excludeRowId: z.number().optional(),
+        })
+      )
+      .query(async ({ input }) => {
+        return findVagueVehicleMatch(
+          input.sheetId,
+          input.observation,
+          input.excludeRowId
+        );
+      }),
+
     create: protectedProcedure
       .input(
         z.object({
@@ -1863,8 +1886,11 @@ export const appRouter = router({
     confirmFaceMatch: protectedProcedure
       .input(z.object({ newLinkId: z.number(), matchedLinkId: z.number() }))
       .mutation(async ({ input }) => {
-        await confirmFaceMatchDb(input.newLinkId, input.matchedLinkId);
-        return { success: true };
+        const result = await confirmFaceMatchDb(
+          input.newLinkId,
+          input.matchedLinkId
+        );
+        return { success: true, ...result };
       }),
 
     // Officer rejected a suggested possible-match — remembered so the same

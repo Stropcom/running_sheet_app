@@ -66,6 +66,12 @@ const CATEGORY_LABEL: Record<string, string> = {
 // it was doing anything. vw scales with the real window instead of hitting
 // that same ceiling at every step past Medium.
 //
+// dialogClass sets an explicit w-[Xvw], not just max-w-[Xvw] — the base
+// DialogContent classes include w-full, and a max-width alone only caps
+// however wide that w-full percentage resolves to, which isn't guaranteed
+// to reach the vw figure. An explicit width forces it there directly (vw
+// is always relative to the true viewport, unlike a % width).
+//
 // Every class below is a literal string (not built from a runtime
 // template) so Tailwind's build-time scanner picks them all up regardless
 // of which step is active at render time.
@@ -85,25 +91,25 @@ const ZOOM_STEPS: {
     label: "Medium",
     colClass: "w-[34%]",
     imgFit: "object-contain bg-muted",
-    dialogClass: "max-w-[75vw]",
+    dialogClass: "w-[80vw] max-w-[80vw]",
   },
   {
     label: "Large",
     colClass: "w-[40%]",
     imgFit: "object-contain bg-muted",
-    dialogClass: "max-w-[85vw]",
+    dialogClass: "w-[90vw] max-w-[90vw]",
   },
   {
     label: "X-Large",
     colClass: "w-[44%]",
     imgFit: "object-contain bg-muted",
-    dialogClass: "max-w-[92vw]",
+    dialogClass: "w-[95vw] max-w-[95vw]",
   },
   {
     label: "Maximum",
-    colClass: "w-[47%]",
+    colClass: "w-[48%]",
     imgFit: "object-contain bg-muted",
-    dialogClass: "max-w-[97vw]",
+    dialogClass: "w-[99vw] max-w-[99vw]",
   },
 ];
 const MAX_ZOOM_INDEX = ZOOM_STEPS.length - 1;
@@ -168,7 +174,7 @@ export function PossibleMatchDialog({
       }}
     >
       <DialogContent
-        className={`${zoom.dialogClass} max-h-[90vh] overflow-y-auto`}
+        className={`${zoom.dialogClass} max-h-[96vh] overflow-y-auto`}
       >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">

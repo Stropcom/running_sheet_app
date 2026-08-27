@@ -30,6 +30,7 @@ import {
 import { CrossOperationEntityAlert } from "@/components/CrossOperationEntityAlert";
 import { MissingLocationAlert } from "@/components/MissingLocationAlert";
 import { VagueVehicleMatchAlert } from "@/components/VagueVehicleMatchAlert";
+import { FaceMatchAckDialog } from "@/components/FaceMatchAckDialog";
 import {
   Dialog,
   DialogContent,
@@ -5679,6 +5680,7 @@ export default function SheetDetail() {
           />
         );
       })()}
+      {sheetId && <FaceMatchAckDialog sheetId={sheetId} />}
     </DashboardLayout>
   );
 }

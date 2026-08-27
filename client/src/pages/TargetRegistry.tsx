@@ -2146,13 +2146,12 @@ export default function TargetRegistryPage() {
         onSave={async payload => {
           const { existingAssociateId, ...rest } = payload;
           if (existingAssociateId) {
-            await createLinkedMutation.mutateAsync({
+            return await createLinkedMutation.mutateAsync({
               ...rest,
               existingAssociateId,
             });
-          } else {
-            await createMutation.mutateAsync(rest);
           }
+          return await createMutation.mutateAsync(rest);
         }}
       />
 

@@ -30,7 +30,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, X, Home, Car, AlertTriangle, Merge } from "lucide-react";
+import { Plus, X, Home, Car, Users, AlertTriangle, Merge } from "lucide-react";
 import {
   TargetIdentityFields,
   TargetAddressFields,
@@ -100,6 +100,18 @@ export interface RegistryCreatePayload {
   existingAssociateId?: number | null;
 }
 
+// A person the officer wants to record as an associate of this brand-new
+// target, staged locally (no associate row exists yet — associates always
+// belong to a real targetId) and created right after the target itself
+// saves successfully. Same three-part shape (identity/address/vehicle) as
+// the target's own fields, reusing the identical field components.
+interface StagedAssociate {
+  key: string;
+  identity: StructuredNameParts;
+  address: StructuredAddressParts;
+  vehicle: StructuredVehicleParts & { vehicleType: string };
+}
+
 export function AddTargetDialog({
   open,
   onClose,
@@ -107,7 +119,10 @@ export function AddTargetDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  onSave: (data: RegistryCreatePayload) => Promise<void>;
+  /** Resolves with the newly-created (or linked) target's id, so this
+   * dialog can create any staged associates against it once the target
+   * itself is safely saved. */
+  onSave: (data: RegistryCreatePayload) => Promise<{ id: number }>;
 }) {
   const [identity, setIdentity] =
     useState<StructuredNameParts>(EMPTY_NAME_PARTS);
@@ -120,9 +135,11 @@ export function AddTargetDialog({
   const [arr, setArr] = useState("");
   const [extraAddresses, setExtraAddresses] = useState<ExtraAddress[]>([]);
   const [extraVehicles, setExtraVehicles] = useState<ExtraVehicle[]>([]);
+  const [associates, setAssociates] = useState<StagedAssociate[]>([]);
   const [saving, setSaving] = useState(false);
   const [linking, setLinking] = useState(false);
   const utils = trpc.useUtils();
+  const associateCreateMut = trpc.associate.create.useMutation();
 
   // ── Possible-duplicate detection (fires on Save, not while typing) ──
   // A name that fuzzy-matches an existing target offers a merge instead of
@@ -157,6 +174,7 @@ export function AddTargetDialog({
     setArr("");
     setExtraAddresses([]);
     setExtraVehicles([]);
+    setAssociates([]);
     setDupMatch(null);
     setExistingFull(null);
     setMergeOpen(false);
@@ -204,10 +222,64 @@ export function AddTargetDialog({
     };
   };
 
+  // Creates every staged associate against the just-saved target. Skips any
+  // entry with no name (an officer who tapped "Add Associate" but left it
+  // blank shouldn't get an error). Deliberately doesn't run the
+  // possible-duplicate check AssociateCard's own save does — with several
+  // associates possibly staged at once that flow doesn't fit well inside
+  // this dialog; a genuine duplicate can still be merged afterward from the
+  // Target Registry the same way any other duplicate is.
+  const saveStagedAssociates = async (targetId: number) => {
+    const toCreate = associates
+      .map(a => {
+        const { name, tgt } = composeTargetName(a.identity);
+        if (!name) return null;
+        const { full: hbf, short: hb } = composeAddress(a.address);
+        const { full: v1f, short: v1 } = composeVehicle(a.vehicle);
+        return {
+          targetId,
+          name,
+          tgt: tgt || null,
+          hbf: hbf || null,
+          hb: hb || null,
+          v1f: v1f || null,
+          v1: v1 || null,
+          firstNames: a.identity.firstNames || null,
+          surname: a.identity.surname || null,
+          bornDate: ddMmYyyyToIso(a.identity.bornDate) || null,
+          addrUnitNo: a.address.unitNo || null,
+          addrHouseNo: a.address.houseNo || null,
+          addrStreetName: a.address.streetName || null,
+          addrStreetType: a.address.streetType || null,
+          addrSuburb: a.address.suburb || null,
+          addrState: a.address.state || null,
+          addrBusinessName: a.address.businessName || null,
+          vehRegistration: a.vehicle.registration || null,
+          vehState: a.vehicle.state || null,
+          vehColour: a.vehicle.colour || null,
+          vehMake: a.vehicle.make || null,
+          vehModel: a.vehicle.model || null,
+          vehType: a.vehicle.vehicleType || null,
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
+    if (toCreate.length === 0) return;
+    const results = await Promise.allSettled(
+      toCreate.map(payload => associateCreateMut.mutateAsync(payload))
+    );
+    const failed = results.filter(r => r.status === "rejected").length;
+    if (failed > 0) {
+      toast.error(
+        `Target saved, but ${failed} associate${failed > 1 ? "s" : ""} failed to save — add ${failed > 1 ? "them" : "it"} from the target's card in the registry.`
+      );
+    }
+  };
+
   const saveAsNew = async () => {
     setSaving(true);
     try {
-      await onSave(buildPayload());
+      const result = await onSave(buildPayload());
+      await saveStagedAssociates(result.id);
       resetAndClose();
     } catch (err: any) {
       toast.error(err?.message ?? "Failed to save target.");
@@ -367,7 +439,8 @@ export function AddTargetDialog({
         toast.error("Couldn't load the matched associate.");
         return;
       }
-      await onSave(buildLinkedPayload(associate));
+      const result = await onSave(buildLinkedPayload(associate));
+      await saveStagedAssociates(result.id);
       setWarnQueue([]);
       setWarnIndex(0);
       resetAndClose();
@@ -554,6 +627,96 @@ export function AddTargetDialog({
             >
               <Plus className="w-3.5 h-3.5" /> Add Vehicle
             </Button>
+
+            {/* Associates — same position as AssociatesSection on the
+                saved target's own card (server/db.ts requires a real
+                targetId, so these are staged here and created right after
+                the target itself saves). */}
+            <div className="mt-2 pt-3 border-t border-border/50 flex flex-col gap-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5" /> Associates
+              </p>
+              {associates.map((assoc, i) => (
+                <div
+                  key={assoc.key}
+                  className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-3"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
+                      <Users className="w-3 h-3" /> Associate {i + 1}
+                    </span>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6 text-destructive hover:text-destructive"
+                      onClick={() =>
+                        setAssociates(v => v.filter((_, idx) => idx !== i))
+                      }
+                    >
+                      <X className="w-3 h-3" />
+                    </Button>
+                  </div>
+                  <TargetIdentityFields
+                    value={assoc.identity}
+                    onChange={v =>
+                      setAssociates(list =>
+                        list.map((item, idx) =>
+                          idx === i ? { ...item, identity: v } : item
+                        )
+                      )
+                    }
+                  />
+                  <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
+                    <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
+                      <Home className="w-3 h-3" /> Home Address
+                    </p>
+                    <TargetAddressFields
+                      value={assoc.address}
+                      onChange={v =>
+                        setAssociates(list =>
+                          list.map((item, idx) =>
+                            idx === i ? { ...item, address: v } : item
+                          )
+                        )
+                      }
+                    />
+                  </div>
+                  <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
+                    <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
+                      <Car className="w-3 h-3" /> Vehicle 1
+                    </p>
+                    <TargetVehicleFields
+                      value={assoc.vehicle}
+                      onChange={v =>
+                        setAssociates(list =>
+                          list.map((item, idx) =>
+                            idx === i ? { ...item, vehicle: v } : item
+                          )
+                        )
+                      }
+                    />
+                  </div>
+                </div>
+              ))}
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 self-start"
+                onClick={() =>
+                  setAssociates(v => [
+                    ...v,
+                    {
+                      key: makeExtraId(),
+                      identity: EMPTY_NAME_PARTS,
+                      address: EMPTY_ADDRESS_PARTS,
+                      vehicle: EMPTY_VEHICLE_PARTS,
+                    },
+                  ])
+                }
+              >
+                <Plus className="w-3.5 h-3.5" /> Add Associate
+              </Button>
+            </div>
 
             {/* Depart / Arrive */}
             <div className="flex flex-col gap-1.5">

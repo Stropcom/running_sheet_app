@@ -72,6 +72,17 @@ const CATEGORY_LABEL: Record<string, string> = {
 // to reach the vw figure. An explicit width forces it there directly (vw
 // is always relative to the true viewport, unlike a % width).
 //
+// DialogContent's own base classes (client/src/components/ui/dialog.tsx)
+// include a plain, unprefixed max-w-[calc(100%-2rem)] AND a responsive
+// sm:max-w-lg (512px) that only kicks in at >=640px viewport — i.e. on
+// essentially every desktop/laptop. tailwind-merge only drops a base class
+// when the override shares its exact variant, so an unprefixed
+// max-w-[Xvw] here does NOT remove sm:max-w-lg — that 512px cap kept
+// winning the cascade (its @media rule sits after the base utility) no
+// matter how large Xvw was, which is why bumping the vw values alone
+// didn't visibly change anything. Every step below now also sets a
+// matching sm:max-w-[...] to actually override it.
+//
 // Every class below is a literal string (not built from a runtime
 // template) so Tailwind's build-time scanner picks them all up regardless
 // of which step is active at render time.
@@ -85,31 +96,31 @@ const ZOOM_STEPS: {
     label: "Small",
     colClass: "w-28",
     imgFit: "object-cover",
-    dialogClass: "max-w-md",
+    dialogClass: "max-w-md sm:max-w-md",
   },
   {
     label: "Medium",
     colClass: "w-[34%]",
     imgFit: "object-contain bg-muted",
-    dialogClass: "w-[80vw] max-w-[80vw]",
+    dialogClass: "w-[80vw] max-w-[80vw] sm:max-w-[80vw]",
   },
   {
     label: "Large",
     colClass: "w-[40%]",
     imgFit: "object-contain bg-muted",
-    dialogClass: "w-[90vw] max-w-[90vw]",
+    dialogClass: "w-[90vw] max-w-[90vw] sm:max-w-[90vw]",
   },
   {
     label: "X-Large",
     colClass: "w-[44%]",
     imgFit: "object-contain bg-muted",
-    dialogClass: "w-[95vw] max-w-[95vw]",
+    dialogClass: "w-[95vw] max-w-[95vw] sm:max-w-[95vw]",
   },
   {
     label: "Maximum",
     colClass: "w-[48%]",
     imgFit: "object-contain bg-muted",
-    dialogClass: "w-[99vw] max-w-[99vw]",
+    dialogClass: "w-[99vw] max-w-[99vw] sm:max-w-[99vw]",
   },
 ];
 const MAX_ZOOM_INDEX = ZOOM_STEPS.length - 1;

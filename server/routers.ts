@@ -1886,8 +1886,11 @@ export const appRouter = router({
     confirmFaceMatch: protectedProcedure
       .input(z.object({ newLinkId: z.number(), matchedLinkId: z.number() }))
       .mutation(async ({ input }) => {
-        await confirmFaceMatchDb(input.newLinkId, input.matchedLinkId);
-        return { success: true };
+        const result = await confirmFaceMatchDb(
+          input.newLinkId,
+          input.matchedLinkId
+        );
+        return { success: true, ...result };
       }),
 
     // Officer rejected a suggested possible-match — remembered so the same

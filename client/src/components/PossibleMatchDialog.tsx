@@ -8,7 +8,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Check, X, Users, User } from "lucide-react";
+import { Check, X, Users, User, Maximize2, Minimize2 } from "lucide-react";
 
 export interface FaceMatchCandidate {
   entityLinkId: number;
@@ -43,6 +43,7 @@ export function PossibleMatchDialog({
   onDone: () => void;
 }) {
   const [index, setIndex] = useState(0);
+  const [expanded, setExpanded] = useState(false);
   const utils = trpc.useUtils();
 
   const invalidate = () => {
@@ -52,8 +53,14 @@ export function PossibleMatchDialog({
   };
 
   const confirmMatch = trpc.attachment.confirmFaceMatch.useMutation({
-    onSuccess: () => {
-      toast.success("Linked as the same person");
+    onSuccess: result => {
+      if (result.blockedRowLocked) {
+        toast.warning(
+          "Same person confirmed, but that row is certified/locked — the Author and Team Leader have been notified to review it manually."
+        );
+      } else {
+        toast.success("Linked as the same person");
+      }
       invalidate();
       advance();
     },
@@ -66,6 +73,7 @@ export function PossibleMatchDialog({
   });
 
   const advance = () => {
+    setExpanded(false);
     if (index + 1 >= matches.length) onDone();
     else setIndex(index + 1);
   };
@@ -81,7 +89,13 @@ export function PossibleMatchDialog({
         if (!o) onDone();
       }}
     >
-      <DialogContent className="max-w-md">
+      <DialogContent
+        className={
+          expanded
+            ? "max-w-3xl max-h-[90vh] overflow-y-auto"
+            : "max-w-md max-h-[90vh] overflow-y-auto"
+        }
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Users className="h-4 w-4 text-primary" />
@@ -94,26 +108,64 @@ export function PossibleMatchDialog({
           This face looks similar to an existing entry. Is it the same person?
         </p>
 
-        <div className="flex items-center justify-center gap-4">
-          <div className="flex flex-col items-center gap-1.5">
-            <img
-              src={current.newPhotoUrl}
-              alt="New photo"
-              className="w-28 h-28 rounded-lg object-cover border border-border"
-            />
+        <div className="flex items-center justify-center gap-4 sm:gap-8">
+          <button
+            type="button"
+            onClick={() => setExpanded(e => !e)}
+            title={expanded ? "Shrink photos" : "Expand photos to compare"}
+            className="flex flex-col items-center gap-1.5 group"
+          >
+            <div className="relative">
+              <img
+                src={current.newPhotoUrl}
+                alt="New photo"
+                className={`rounded-lg border border-border transition-all ${
+                  expanded
+                    ? "w-64 h-64 sm:w-72 sm:h-72 object-contain bg-muted"
+                    : "w-28 h-28 object-cover"
+                }`}
+              />
+              <span className="absolute bottom-1.5 right-1.5 h-6 w-6 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                {expanded ? (
+                  <Minimize2 className="h-3 w-3" />
+                ) : (
+                  <Maximize2 className="h-3 w-3" />
+                )}
+              </span>
+            </div>
             <span className="text-xs text-muted-foreground">New photo</span>
-          </div>
+          </button>
           <div className="text-muted-foreground text-lg">≈</div>
-          <div className="flex flex-col items-center gap-1.5">
-            <img
-              src={current.match.photoUrl}
-              alt={current.match.entityLabel}
-              className="w-28 h-28 rounded-lg object-cover border border-border"
-            />
-            <span className="text-xs text-muted-foreground text-center max-w-[120px] truncate">
+          <button
+            type="button"
+            onClick={() => setExpanded(e => !e)}
+            title={expanded ? "Shrink photos" : "Expand photos to compare"}
+            className="flex flex-col items-center gap-1.5 group"
+          >
+            <div className="relative">
+              <img
+                src={current.match.photoUrl}
+                alt={current.match.entityLabel}
+                className={`rounded-lg border border-border transition-all ${
+                  expanded
+                    ? "w-64 h-64 sm:w-72 sm:h-72 object-contain bg-muted"
+                    : "w-28 h-28 object-cover"
+                }`}
+              />
+              <span className="absolute bottom-1.5 right-1.5 h-6 w-6 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                {expanded ? (
+                  <Minimize2 className="h-3 w-3" />
+                ) : (
+                  <Maximize2 className="h-3 w-3" />
+                )}
+              </span>
+            </div>
+            <span
+              className={`text-xs text-muted-foreground text-center truncate ${expanded ? "max-w-[220px]" : "max-w-[120px]"}`}
+            >
               {current.match.entityLabel}
             </span>
-          </div>
+          </button>
         </div>
 
         <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">

@@ -1582,10 +1582,82 @@ const FACE_IDENTITY_PRIORITY: Record<string, number> = {
   target: 2,
 };
 
+/** Resolves an attachment back to the running-sheet row/sheet it's attached
+ * to (if any) — a manually-uploaded photo (see rowAttachments.isManualUpload)
+ * may not belong to any row, in which case there's no lock/sheet to guard
+ * or notify about. Used by confirmFaceMatch to check whether the row
+ * holding an "Unidentified Person" photo is certified/locked before
+ * auto-renaming it. */
+async function getAttachmentRowSheetInfo(attachmentId: number): Promise<{
+  sheetId: number;
+  sheetTitle: string;
+  sheetCins: string | null;
+  isRowLocked: boolean;
+  isSheetClosed: boolean;
+} | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const [row] = await db
+    .select({
+      isLocked: sheetRows.isLocked,
+      sheetId: runningSheets.id,
+      sheetTitle: runningSheets.title,
+      sheetCins: runningSheets.sheetCins,
+      closedAt: runningSheets.closedAt,
+    })
+    .from(rowAttachments)
+    .innerJoin(sheetRows, eq(sheetRows.id, rowAttachments.rowId))
+    .innerJoin(runningSheets, eq(runningSheets.id, sheetRows.sheetId))
+    .where(eq(rowAttachments.id, attachmentId))
+    .limit(1);
+  if (!row) return null;
+  return {
+    sheetId: row.sheetId,
+    sheetTitle: row.sheetTitle,
+    sheetCins: row.sheetCins,
+    isRowLocked: row.isLocked,
+    isSheetClosed: row.closedAt != null,
+  };
+}
+
+/** Notifies a running sheet's Author and Team Leader (see sheetCins'
+ * isAuthor/isTeamLeader flags) via the app's in-app notification system.
+ * Deduplicates in case the same officer holds both roles. */
+async function notifySheetAuthorAndTeamLeader(
+  sheetCinsJson: string | null,
+  params: { title: string; body: string; url: string }
+) {
+  let roster: { cin: string; isTeamLeader?: boolean; isAuthor?: boolean }[] =
+    [];
+  try {
+    roster = sheetCinsJson ? JSON.parse(sheetCinsJson) : [];
+  } catch {
+    roster = [];
+  }
+  const cins = Array.from(
+    new Set(
+      roster
+        .filter(c => c.isAuthor || c.isTeamLeader)
+        .map(c => c.cin)
+        .filter(Boolean)
+    )
+  );
+  if (cins.length === 0) return;
+  const users = await Promise.all(cins.map(cin => getUserByCin(cin)));
+  const userIds = Array.from(
+    new Set(users.filter((u): u is NonNullable<typeof u> => !!u).map(u => u.id))
+  );
+  if (userIds.length === 0) return;
+  await createNotificationsForUsers(userIds, {
+    ...params,
+    sourceModule: "faceRecognition",
+  });
+}
+
 export async function confirmFaceMatch(
   newLinkId: number,
   matchedLinkId: number
-) {
+): Promise<{ applied: boolean; blockedRowLocked: boolean }> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const [newLink] = await db
@@ -1609,6 +1681,21 @@ export async function confirmFaceMatch(
   const [winner, loser] =
     newPriority > matchedPriority ? [newLink, matched] : [matched, newLink];
 
+  // A genuine identification — an Unidentified Person pool resolving to a
+  // real Target/Associate — is the only case that needs a lock guard and a
+  // notification. entityKey is unique per (attachmentId, faceIndex) for
+  // unidentified_person links (see the dedup index above), so the loser
+  // side here is always exactly the one photo/face being confirmed.
+  const isRealIdentification =
+    loser.category === "unidentified_person" &&
+    winner.category !== "unidentified_person";
+
+  const loserRowInfo = isRealIdentification
+    ? await getAttachmentRowSheetInfo(loser.attachmentId)
+    : null;
+  const loserRowLocked =
+    !!loserRowInfo?.isRowLocked || !!loserRowInfo?.isSheetClosed;
+
   const loserGroupWhere =
     loser.category === "target"
       ? and(
@@ -1620,15 +1707,46 @@ export async function confirmFaceMatch(
           eq(attachmentEntityLinks.entityKey, loser.entityKey ?? "")
         );
 
-  await db
-    .update(attachmentEntityLinks)
-    .set({
-      category: winner.category,
-      targetId: winner.targetId,
-      entityKey: winner.entityKey,
-      entityLabel: winner.entityLabel,
-    })
-    .where(loserGroupWhere);
+  // Certified rows are evidentiary — a Facial Recognition match must never
+  // silently rewrite one. Skip the rename and fall through to the
+  // "needs manual review" notification below instead.
+  if (!(isRealIdentification && loserRowLocked)) {
+    await db
+      .update(attachmentEntityLinks)
+      .set({
+        category: winner.category,
+        targetId: winner.targetId,
+        entityKey: winner.entityKey,
+        entityLabel: winner.entityLabel,
+      })
+      .where(loserGroupWhere);
+  }
+
+  if (isRealIdentification && loserRowInfo) {
+    const winnerRowInfo = await getAttachmentRowSheetInfo(winner.attachmentId);
+    const otherSheetClause = winnerRowInfo
+      ? `an image in '${winnerRowInfo.sheetTitle}'`
+      : "a linked photo";
+    const url = `/sheet/${loserRowInfo.sheetId}`;
+    if (loserRowLocked) {
+      await notifySheetAuthorAndTeamLeader(loserRowInfo.sheetCins, {
+        title: "Facial Recognition match needs review — row is certified",
+        body: `An unidentified Person in Running Sheet '${loserRowInfo.sheetTitle}' has a possible Facial Recognition match (${winner.entityLabel}) from ${otherSheetClause}, but the row is certified/locked so it could not be updated automatically. You need to review '${loserRowInfo.sheetTitle}' and confirm manually.`,
+        url,
+      });
+    } else {
+      await notifySheetAuthorAndTeamLeader(loserRowInfo.sheetCins, {
+        title: "Unidentified person identified via Facial Recognition",
+        body: `An unidentified Person in Running Sheet '${loserRowInfo.sheetTitle}' has been identified through Facial Recognition from ${otherSheetClause}. You need to review '${loserRowInfo.sheetTitle}'.`,
+        url,
+      });
+    }
+  }
+
+  return {
+    applied: !(isRealIdentification && loserRowLocked),
+    blockedRowLocked: isRealIdentification && loserRowLocked,
+  };
 }
 
 // Officer confirmed "no, not the same person" — stored unordered (smaller id

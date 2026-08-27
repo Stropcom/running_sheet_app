@@ -85,7 +85,7 @@ describe("pickMissingLocationSuggestion", () => {
     });
   });
 
-  it("prefers the commencement row's location over a later, different row's location", () => {
+  it("prefers a later, different row's location over the commencement row — rolling location, the team may have moved on", () => {
     const result = pickMissingLocationSuggestion(vehiclePresenceText, [
       commencementRow,
       {
@@ -93,8 +93,26 @@ describe("pickMissingLocationSuggestion", () => {
           "Vehicle 1FAT007, HOGAN driver and sole occupant, arrived at 21 Allora Avenue, SUBIACO WA (21 Allora Avenue) and parked in the driveway.",
       },
     ]);
-    expect(result?.location).toBe("45 Burrendah Boulevard");
-    expect(result?.source).toBe("the Surveillance commencement row");
+    expect(result?.location).toBe("21 Allora Avenue");
+    expect(result?.source).toBe("an earlier row on this sheet");
+  });
+
+  it("rolls forward through a depart/arrive sequence to the team's current address, not the original commencement address", () => {
+    const result = pickMissingLocationSuggestion(vehiclePresenceText, [
+      commencementRow,
+      {
+        observation:
+          "Vehicle 1GDD373, WINMAR driver, TOOLMAN front passenger, departed 45 Burrendah Boulevard and continued via:",
+      },
+      {
+        observation:
+          "Vehicle 1GDD373, WINMAR driver, TOOLMAN front passenger, arrived at 21 Allora Avenue, SUBIACO WA (21 Allora Avenue).",
+      },
+    ]);
+    expect(result).toEqual({
+      location: "21 Allora Avenue",
+      source: "an earlier row on this sheet",
+    });
   });
 
   it("suggests a plain business-name location (no address attached) unchanged", () => {

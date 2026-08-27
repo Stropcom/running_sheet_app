@@ -4493,6 +4493,15 @@ export interface MissingLocationSuggestion {
 // from findMissingLocationSuggestion's DB fetch below so it can be unit
 // tested directly, the same way extractEntitiesFromText and
 // normalizeObservationPunctuation are (no DB dependency, deterministic).
+//
+// Rolling location, not "always the commencement address": a team moves
+// over the course of a sheet (depart 67 Cleaver Street → arrive 28
+// Carnarvon Crescent), so "the location this row is obviously at" is
+// whichever address/business was most recently established BEFORE this
+// row — walking backward through the sheet — not necessarily wherever
+// surveillance first commenced. Only falls back to the commencement row
+// when nothing more recent has been mentioned yet (e.g. this is the very
+// first vehicle-presence row of the day, right after commencement).
 export function pickMissingLocationSuggestion(
   observation: string,
   otherRows: Array<{ observation: string | null }>
@@ -4503,31 +4512,20 @@ export function pickMissingLocationSuggestion(
     (r): r is { observation: string } => !!r.observation
   );
 
-  const commencementRow = rows.find(r =>
-    /surveillance commenced/i.test(r.observation)
-  );
-  if (commencementRow) {
-    const entities = extractEntitiesFromText(commencementRow.observation);
-    const loc = entities.find(
-      e => e.type === "address" || e.type === "business"
-    );
-    if (loc) {
-      return {
-        location: toSubsequentMentionForm(loc.shortForm),
-        source: "the Surveillance commencement row",
-      };
-    }
-  }
-
   for (let i = rows.length - 1; i >= 0; i--) {
     const entities = extractEntitiesFromText(rows[i].observation);
     const loc = entities.find(
       e => e.type === "address" || e.type === "business"
     );
     if (loc) {
+      const isCommencementRow = /surveillance commenced/i.test(
+        rows[i].observation
+      );
       return {
         location: toSubsequentMentionForm(loc.shortForm),
-        source: "an earlier row on this sheet",
+        source: isCommencementRow
+          ? "the Surveillance commencement row"
+          : "an earlier row on this sheet",
       };
     }
   }

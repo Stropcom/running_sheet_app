@@ -92,15 +92,26 @@ const ADDRESS_SHAPE = new RegExp(
   "g"
 );
 
+/** Same shape as ADDRESS_SHAPE but without a required trailing state code or
+ * postcode — a real training document had an associate's address written
+ * as "103 Watkins Street, WHITE GUM VALLEY" with neither. Anchored to the
+ * END of the string (not scanned anywhere within it, unlike ADDRESS_SHAPE)
+ * so it's only safe to use against a single already-isolated line — see
+ * parseAddressLineLoose below — rather than risking a false match inside a
+ * longer sentence that happens to contain a comma. */
+const ADDRESS_SHAPE_LOOSE =
+  /\b(\d+[A-Za-z]?(?:\/\d+[A-Za-z]?)?)\s+([A-Za-z][A-Za-z\s]{1,40}?),\s*([A-Za-z][A-Za-z\s]{1,40}?)$/;
+
 function splitUnitHouse(token: string): { unitNo: string; houseNo: string } {
   const m = token.match(/^(\d+[A-Za-z]?)\/(\d+[A-Za-z]?)$/);
   if (m) return { unitNo: m[1], houseNo: m[2] };
   return { unitNo: "", houseNo: token };
 }
 
-function splitStreetNameAndType(
-  streetWords: string
-): { streetName: string; streetType: string } {
+function splitStreetNameAndType(streetWords: string): {
+  streetName: string;
+  streetType: string;
+} {
   const words = streetWords.trim().split(/\s+/);
   const last = words[words.length - 1] ?? "";
   const expanded = STREET_TYPES[last.toLowerCase()];
@@ -131,6 +142,31 @@ export function parseAddressLine(text: string): ParsedAddressLine | null {
     streetType,
     suburb,
     state: AU_STATES.has(state) ? state : "WA",
+    confident,
+    raw: raw.trim(),
+  };
+}
+
+/** Parses a single, already-isolated line (e.g. one line of an
+ * "associate block" — see targetProfileFieldMap.ts's findAssociateBlocks)
+ * as an address with no state code, defaulting to WA. Only ever call this
+ * against one line at a time, never a longer block of prose — see
+ * ADDRESS_SHAPE_LOOSE's own comment for why. */
+export function parseAddressLineLoose(text: string): ParsedAddressLine | null {
+  const m = ADDRESS_SHAPE_LOOSE.exec(text.trim());
+  if (!m) return null;
+  const [raw, numberToken, streetWords, suburbRaw] = m;
+  const { unitNo, houseNo } = splitUnitHouse(numberToken);
+  const { streetName, streetType } = splitStreetNameAndType(streetWords);
+  const suburb = suburbRaw.trim().toUpperCase();
+  const confident = !!(houseNo && streetName && streetType && suburb);
+  return {
+    houseNo,
+    unitNo,
+    streetName,
+    streetType,
+    suburb,
+    state: "WA",
     confident,
     raw: raw.trim(),
   };

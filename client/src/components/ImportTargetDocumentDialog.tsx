@@ -121,7 +121,42 @@ export function ImportTargetDocumentDialog({
 
   const handleContinue = () => {
     if (!result) return;
-    const associates: StagedAssociate[] = result.candidateEntities
+    // Associates found with their own address and/or vehicle attached
+    // (e.g. an "Associates:" block) come first, fully pre-filled; a bare
+    // person mention with nothing to attach still becomes a staged
+    // associate, just with blank address/vehicle fields to fill in.
+    const blockAssociates: StagedAssociate[] = result.associateBlocks.map(
+      a => ({
+        key: makeExtraId(),
+        identity: {
+          firstNames: a.firstNames,
+          surname: a.surname,
+          bornDate: "",
+        },
+        address: a.address
+          ? {
+              unitNo: a.address.unitNo,
+              houseNo: a.address.houseNo,
+              streetName: a.address.streetName,
+              streetType: a.address.streetType,
+              suburb: a.address.suburb,
+              state: a.address.state,
+              businessName: "",
+            }
+          : EMPTY_ADDRESS_PARTS,
+        vehicle: a.vehicle
+          ? {
+              registration: a.vehicle.registration,
+              state: a.vehicle.state,
+              colour: a.vehicle.colour,
+              make: a.vehicle.make,
+              model: a.vehicle.model,
+              vehicleType: a.vehicle.vehicleType,
+            }
+          : EMPTY_VEHICLE_PARTS,
+      })
+    );
+    const bareAssociates: StagedAssociate[] = result.candidateEntities
       .filter(c => c.type === "person")
       .map(c => {
         const words = c.value.trim().split(/\s+/);
@@ -138,6 +173,10 @@ export function ImportTargetDocumentDialog({
           vehicle: EMPTY_VEHICLE_PARTS,
         };
       });
+    const associates: StagedAssociate[] = [
+      ...blockAssociates,
+      ...bareAssociates,
+    ];
 
     const [primaryAddress, ...restAddresses] = result.addresses;
     const [primaryVehicle, ...restVehicles] = result.vehicles;
@@ -342,6 +381,40 @@ export function ImportTargetDocumentDialog({
                       <span className="text-muted-foreground">{f.label}:</span>{" "}
                       {f.value}
                     </p>
+                  ))}
+                </div>
+              )}
+
+              {result.associateBlocks.length > 0 && (
+                <div className="rounded-lg border border-border/60 bg-muted/10 p-3 flex flex-col gap-2">
+                  <p className="text-xs font-bold text-primary uppercase tracking-wide">
+                    Associates found ({result.associateBlocks.length})
+                  </p>
+                  {result.associateBlocks.map((a, i) => (
+                    <div key={i} className="text-sm flex flex-col gap-0.5">
+                      <span className="font-medium">
+                        {a.firstNames} {a.surname}
+                      </span>
+                      {a.address && (
+                        <span className="text-muted-foreground text-xs">
+                          {[
+                            a.address.unitNo && `${a.address.unitNo}/`,
+                            a.address.houseNo,
+                            a.address.streetName,
+                            a.address.streetType,
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
+                          , {a.address.suburb} {a.address.state}
+                        </span>
+                      )}
+                      {a.vehicle && (
+                        <span className="text-muted-foreground text-xs">
+                          {a.vehicle.registration} ({a.vehicle.state}) —{" "}
+                          {a.vehicle.colour} {a.vehicle.make} {a.vehicle.model}
+                        </span>
+                      )}
+                    </div>
                   ))}
                 </div>
               )}

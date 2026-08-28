@@ -58,11 +58,24 @@ const PERSON_SURNAME_STOPLIST = new Set([
   "PROMIS",
 ]);
 
-/** "Firstname [Middlename] SURNAME" — one to three title-case words
- * immediately followed by an all-caps word (optionally hyphenated, e.g.
- * "SMITH-JONES"). */
+/** "Firstname [Middlename] SURNAME" — one to three genuinely title-case
+ * words (capital first letter, lowercase rest — NOT "[A-Z][a-zA-Z]+", which
+ * an all-caps word like "WHITE" also satisfies since it starts with a
+ * capital) immediately followed by an all-caps word (optionally hyphenated,
+ * e.g. "SMITH-JONES"). Without the lowercase requirement on the leading
+ * group, an all-caps suburb with no trailing state code (e.g. "103 Watkins
+ * Street, WHITE GUM VALLEY") reads as "Firstname(s) WHITE GUM SURNAME
+ * VALLEY" — a real false positive found against an actual training
+ * document. */
 const PERSON_RE =
-  /\b([A-Z][a-zA-Z'-]+(?:\s+[A-Z][a-zA-Z'-]+){0,2})\s+([A-Z]{2,}(?:-[A-Z]{2,})?)\b/g;
+  /\b([A-Z][a-z'-]+(?:\s+[A-Z][a-z'-]+){0,2})\s+([A-Z]{2,}(?:-[A-Z]{2,})?)\b/g;
+
+/** Same shape as PERSON_RE but anchored to the WHOLE line — used to detect
+ * a name sitting on its own line as the anchor for an "associate block"
+ * (name, then its address and/or vehicle on the following lines) rather
+ * than scanning it out of running prose. */
+const WHOLE_LINE_PERSON_RE =
+  /^([A-Z][a-z'-]+(?:\s+[A-Z][a-z'-]+){0,2})\s+([A-Z]{2,}(?:-[A-Z]{2,})?)$/;
 
 const BUSINESS_SUFFIX_RE =
   /\b(Pty\.?\s*Ltd\.?|Ltd\.?|Inc\.?|LLC|Corp\.?|Corporation)\b/i;
@@ -80,6 +93,25 @@ const LABELLED_PHONE_RE = /^\s*(?:Mobile|Phone|Tel|Contact)\s*:\s*(.+?)\s*$/gim;
 // a real, distinct fact to surface, not noise to dedupe away.
 const LOOSE_MOBILE_RE = /(?<!\d)0?4\d{8}(?!\d)/g;
 
+function isRejectedSurname(surname: string): boolean {
+  return AU_STATES.has(surname) || PERSON_SURNAME_STOPLIST.has(surname);
+}
+
+/** Matches a single line that is ENTIRELY a "Firstname [Middlename]
+ * SURNAME" name and nothing else — used to anchor an "associate block" (a
+ * name on its own line, followed by that person's address and/or vehicle
+ * on the next line or two — see targetProfileFieldMap.ts's
+ * findAssociateBlocks) rather than picking a name out of running prose. */
+export function matchWholeLinePersonName(
+  line: string
+): { firstNames: string; surname: string } | null {
+  const m = line.trim().match(WHOLE_LINE_PERSON_RE);
+  if (!m) return null;
+  const surname = m[2];
+  if (isRejectedSurname(surname)) return null;
+  return { firstNames: m[1], surname };
+}
+
 /** Bare "Firstname SURNAME" mentions — always low confidence; there is no
  * label to lean on, only shape. */
 export function findCandidatePersons(text: string): CandidateEntity[] {
@@ -88,8 +120,7 @@ export function findCandidatePersons(text: string): CandidateEntity[] {
   let m: RegExpExecArray | null;
   while ((m = PERSON_RE.exec(text)) !== null) {
     const surname = m[2];
-    if (AU_STATES.has(surname) || PERSON_SURNAME_STOPLIST.has(surname))
-      continue;
+    if (isRejectedSurname(surname)) continue;
     out.push({
       type: "person",
       value: `${m[1]} ${surname}`,

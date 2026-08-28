@@ -7,9 +7,21 @@
 // for yet (PROMIS ID, OCG, COB, ...) shown read-only, plus free-text
 // candidate entities for a human to confirm. Nothing here writes to the
 // database — this module only produces a proposed shape for the review UI.
-import { parseAddressLine, type ParsedAddressLine } from "./addressLineParser";
-import { findVehicleLines, type ParsedVehicleLine } from "./vehicleLineParser";
-import { scanFreeText, type CandidateEntity } from "./freeTextEntityScan";
+import {
+  parseAddressLine,
+  parseAddressLineLoose,
+  type ParsedAddressLine,
+} from "./addressLineParser";
+import {
+  findVehicleLines,
+  parseVehicleLine,
+  type ParsedVehicleLine,
+} from "./vehicleLineParser";
+import {
+  scanFreeText,
+  matchWholeLinePersonName,
+  type CandidateEntity,
+} from "./freeTextEntityScan";
 import type { DocxReadResult } from "./docxTableReader";
 
 /** Labels this document format uses for fields the schema has no place for
@@ -55,6 +67,13 @@ export interface UnmappedField {
   value: string;
 }
 
+export interface FreeTextAssociate {
+  firstNames: string;
+  surname: string;
+  address: ParsedAddressLine | null;
+  vehicle: ParsedVehicleLine | null;
+}
+
 export interface TargetProfileImportResult {
   name: ParsedPersonName | null;
   addresses: ParsedAddressEntry[];
@@ -65,6 +84,12 @@ export interface TargetProfileImportResult {
   /** The document's free-text narrative (e.g. a "Summary" cell), concatenated
    * in document order. */
   freeText: string;
+  /** Person mentions in `freeText` found with their own address and/or
+   * vehicle on the following line(s) — e.g. an "Associates:" block. Each
+   * one is a suggestion for the review screen, not a fact to persist
+   * directly. Persons captured here are excluded from `candidateEntities`
+   * below so the same name doesn't surface twice. */
+  associateBlocks: FreeTextAssociate[];
   /** Person/business/email/phone mentions found in `freeText` — each one is
    * a suggestion for the review screen, not a fact to persist directly. */
   candidateEntities: CandidateEntity[];
@@ -106,7 +131,10 @@ function findFreeTextSection(rows: string[][], label: string): string {
   return parts.join("\n\n");
 }
 
-function splitPersonName(full: string): { firstNames: string; surname: string } {
+function splitPersonName(full: string): {
+  firstNames: string;
+  surname: string;
+} {
   const trimmed = full.trim();
   const words = trimmed.split(/\s+/).filter(Boolean);
   if (words.length < 2) return { firstNames: trimmed, surname: "" };
@@ -140,6 +168,64 @@ function parseAddressBlock(text: string): ParsedAddressEntry[] {
     if (parsed) {
       out.push({ ...parsed, label: pendingLabel });
       pendingLabel = "";
+    }
+  }
+  return out;
+}
+
+/** Scans free text for a name sitting on its own line, immediately
+ * followed (within the next couple of lines) by that person's address
+ * and/or vehicle — the shape a target profile document uses for an
+ * "Associates:" block, e.g.:
+ *   David GRAY
+ *   103 Watkins Street, WHITE GUM VALLEY
+ *   1GHF389 (WA) red BYD Sealion 6
+ * Falls back from parseAddressLine (requires a state code) to
+ * parseAddressLineLoose (defaults to WA) since these lines don't always
+ * carry one — see addressLineParser.ts's own comment on that. A name with
+ * neither an address nor a vehicle following it is left for
+ * findCandidatePersons to pick up as a bare mention instead — this
+ * function only claims names it can attach something concrete to. */
+function findAssociateBlocks(text: string): FreeTextAssociate[] {
+  const lines = text
+    .split("\n")
+    .map(l => l.trim())
+    .filter(Boolean);
+  const out: FreeTextAssociate[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const person = matchWholeLinePersonName(lines[i]);
+    if (!person) continue;
+
+    let address: ParsedAddressLine | null = null;
+    let vehicle: ParsedVehicleLine | null = null;
+    let j = i + 1;
+    while (j < lines.length && j < i + 3 && (!address || !vehicle)) {
+      if (!address) {
+        const a = parseAddressLine(lines[j]) ?? parseAddressLineLoose(lines[j]);
+        if (a) {
+          address = a;
+          j++;
+          continue;
+        }
+      }
+      if (!vehicle) {
+        const v = parseVehicleLine(lines[j]);
+        if (v) {
+          vehicle = v;
+          j++;
+          continue;
+        }
+      }
+      break;
+    }
+
+    if (address || vehicle) {
+      out.push({
+        firstNames: person.firstNames,
+        surname: person.surname,
+        address,
+        vehicle,
+      });
     }
   }
   return out;
@@ -186,7 +272,13 @@ export function mapDocxToTargetProfile(
   const freeText = [freeTextFromTable, ...result.paragraphs]
     .filter(Boolean)
     .join("\n\n");
-  const candidateEntities = scanFreeText(freeText);
+  const associateBlocks = findAssociateBlocks(freeText);
+  const blockNames = new Set(
+    associateBlocks.map(a => `${a.firstNames} ${a.surname}`)
+  );
+  const candidateEntities = scanFreeText(freeText).filter(
+    c => !(c.type === "person" && blockNames.has(c.value))
+  );
 
   return {
     name,
@@ -194,6 +286,7 @@ export function mapDocxToTargetProfile(
     vehicles,
     unmappedFields,
     freeText,
+    associateBlocks,
     candidateEntities,
   };
 }

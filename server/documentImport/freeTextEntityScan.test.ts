@@ -4,6 +4,7 @@ import {
   findCandidateBusinesses,
   findCandidateEmails,
   findCandidatePhones,
+  matchWholeLinePersonName,
   scanFreeText,
 } from "./freeTextEntityScan";
 
@@ -34,6 +35,38 @@ describe("findCandidatePersons", () => {
     const result = findCandidatePersons(SUMMARY_TEXT);
     expect(result.some(c => c.value.includes("Bullsbrook WA"))).toBe(false);
     expect(result.some(c => c.value.includes("Central WA"))).toBe(false);
+  });
+
+  // Regression: "WHITE GUM VALLEY" (an all-caps suburb, no state code) was
+  // matching as if it were a person's name — "WHITE" satisfied
+  // "[A-Z][a-zA-Z'-]+" the same as a real title-case word like "Woodvale"
+  // did, since that character class allows uppercase letters throughout,
+  // not just the first one. Found against a real training document.
+  it("does not false-positive on an all-caps suburb with no state code", () => {
+    const text = "David GRAY\n103 Watkins Street, WHITE GUM VALLEY";
+    const result = findCandidatePersons(text);
+    expect(result.map(c => c.value)).toEqual(["David GRAY"]);
+  });
+});
+
+describe("matchWholeLinePersonName", () => {
+  it("matches a bare name line", () => {
+    expect(matchWholeLinePersonName("David GRAY")).toEqual({
+      firstNames: "David",
+      surname: "GRAY",
+    });
+  });
+
+  it("rejects an all-caps line", () => {
+    expect(matchWholeLinePersonName("WHITE GUM VALLEY")).toBeNull();
+  });
+
+  it("rejects a line with trailing content", () => {
+    expect(matchWholeLinePersonName("David GRAY was present")).toBeNull();
+  });
+
+  it("rejects a state code as a surname", () => {
+    expect(matchWholeLinePersonName("Woodvale WA")).toBeNull();
   });
 });
 

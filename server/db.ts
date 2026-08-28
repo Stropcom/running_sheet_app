@@ -4202,21 +4202,22 @@ export function mergeContainedEntities(
   return survivors;
 }
 
-// Matches a WA-plate-shaped registration token embedded in a longer
-// description. Two shapes: the current standard "1ABC234" (digit + 2-3
-// letters + 3 digits, e.g. "1ADF124", "1ICW519") and the older/interstate
-// "ABC123" / "ABC-123" / "ABC 123" shape (1-3 letters + optional dash/space
-// + 3 digits, e.g. "XFD987") — see the WA_REGO classifier further down for
-// the same two shapes used during text-mining. Both extractRegoUpper and
-// vehicleRegoKey below must share this single pattern: they used to diverge
-// (extractRegoUpper was digit-first only), which silently dropped any
-// letter-first rego from the "Registered Target(s)" cross-link lookups
-// while vehicleRegoKey's separate fallback-to-full-text-match still kept
-// entities merged — the split surfaced as a vehicle correctly shown as a
-// single Indices-only entity but with spurious extra "linked operations"
-// pulled in only through the full-text fallback path.
+// Matches a plate-shaped registration token embedded in a longer
+// description: a contiguous 4-10 character alphanumeric block containing
+// at least one digit and at least one letter (e.g. "1ADF124", "1ICW519",
+// "XFD987", "1BIG7238"). Real rego formats vary too much by state/era/
+// personalisation to enumerate as fixed digit/letter-count shapes — an
+// earlier, narrower version of this pattern only recognised the current
+// WA standard ("1ABC234") and one older/interstate shape ("ABC123"), which
+// silently failed to extract anything from a differently-shaped plate
+// (an 8-character rego fell through both alternatives entirely, since a
+// contiguous alnum run only has word boundaries at its outer edges — no
+// shorter substring inside it is independently matchable). Both
+// extractRegoUpper and vehicleRegoKey below must share this single
+// pattern, or they silently diverge — see the comment history on this
+// constant for two separate regressions caused by exactly that split.
 export const VEHICLE_REGO_PATTERN =
-  /\b\d[A-Za-z]{2,3}\d{3}\b|\b[A-Za-z]{1,3}[-\s]?\d{3}\b/;
+  /\b(?=[A-Za-z0-9]{4,10}\b)(?=[A-Za-z0-9]*[0-9])(?=[A-Za-z0-9]*[A-Za-z])[A-Za-z0-9]{4,10}\b/;
 
 // Vehicles are uniquely identified by their registration, not by whatever
 // descriptive text happens to surround it in a given mention. The same car

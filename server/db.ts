@@ -7161,6 +7161,39 @@ export async function getAllIntelligenceEntities(): Promise<
       id: targetEntity.targetId!,
       label: targetEntity.shortForm,
     };
+
+    // A registry field (V1F/HBF/etc.) shared by this linked pair produces
+    // its own "Target card" occurrence from the target's own record AND a
+    // separate "Associate card" occurrence from the associate's own record
+    // on whatever vehicle/address entity that field's value keys into —
+    // even though both describe the exact same real-world fact for the
+    // exact same person (see updateTarget's Person Identity Link sync).
+    // When neither side has any real operation touchpoint of its own, that
+    // duplication is harmless — it's still just one true Indices-only fact.
+    // But once EITHER side carries a real operation (e.g. the associate's
+    // parent target is tasked to an operation while the linked target
+    // itself is a bare registry entry), the other side's "(Registry)"
+    // fallback occurrence for that same synced field is a redundant
+    // restatement, not a second independent cross-operation touchpoint —
+    // left in place it inflated e.g. a vehicle's "linked operations" with a
+    // phantom "(Registry)" badge alongside the real one. combined (just
+    // assigned above) already carries the union of both sides' own PERSON
+    // occurrences, so it's the right place to check for real exposure.
+    const identityHasRealOp = combined.some(o => o.operationId !== 0);
+    if (identityHasRealOp) {
+      const targetCardPrefix = `Target card — ${targetEntity.shortForm} [`;
+      const associateCardPrefix = `Associate card — ${associateEntity.shortForm} [`;
+      for (const entity of Array.from(mergedMap.values())) {
+        if (entity.type !== "vehicle" && entity.type !== "address") continue;
+        entity.occurrences = entity.occurrences.filter(o => {
+          if (o.rowId !== 0 || o.operationId !== 0) return true;
+          return (
+            !o.observationSnippet.startsWith(targetCardPrefix) &&
+            !o.observationSnippet.startsWith(associateCardPrefix)
+          );
+        });
+      }
+    }
   }
 
   // "Indices" flag — computed last, once every occurrence (registry-injected

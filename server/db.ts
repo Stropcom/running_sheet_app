@@ -10109,6 +10109,14 @@ export interface IntelVehicleProfile {
    * independent targets on two different operations both have the same
    * car), so this must never be narrowed to "the first match". */
   linkedTargets: Array<{ targetId: number; name: string }>;
+  /** Every registered associate that lists this vehicle — mirrors
+   * linkedTargets above but for an associate's own vehicle field. */
+  linkedAssociates: Array<{
+    associateId: number;
+    name: string;
+    targetId: number;
+    targetName: string;
+  }>;
   linkedOperations: Array<{ id: number; name: string }>;
   linkedSheets: Array<{
     id: number;
@@ -10128,6 +10136,14 @@ export interface IntelVehicleProfile {
 export interface IntelLocationProfile {
   label: string;
   linkedTargets: Array<{ targetId: number; name: string }>;
+  /** Every registered associate that lists this address — mirrors
+   * linkedTargets above but for an associate's own address field. */
+  linkedAssociates: Array<{
+    associateId: number;
+    name: string;
+    targetId: number;
+    targetName: string;
+  }>;
   linkedOperations: Array<{ id: number; name: string }>;
   linkedSheets: Array<{
     id: number;
@@ -11387,34 +11403,71 @@ export async function getIntelVehicleProfile(
   }
   const linkedTargets = Array.from(linkedTargetsMap.values());
 
+  // Registered associate(s) — same idea as linkedTargets above, but for an
+  // associate's own vehicle field rather than a target's. An associate has
+  // no operation of its own; its only tie to an operation is whichever
+  // one(s) its parent target happens to be tasked to, and that tie is
+  // registry bookkeeping, not evidence this vehicle has anything to do
+  // with that operation — see the isIndicesOnly guard on opMap below.
+  const allAssociatesForVehicle = await db
+    .select({
+      id: associates.id,
+      name: associates.name,
+      targetId: associates.targetId,
+      targetName: targets.name,
+      v1f: associates.v1f,
+      v1: associates.v1,
+      extraVehicles: associates.extraVehicles,
+    })
+    .from(associates)
+    .innerJoin(targets, eq(associates.targetId, targets.id))
+    .where(and(isNull(associates.deletedAt), isNull(targets.deletedAt)));
+  const linkedAssociatesMap = new Map<
+    number,
+    { associateId: number; name: string; targetId: number; targetName: string }
+  >();
+  if (selfRegoForMatch) {
+    for (const a of allAssociatesForVehicle) {
+      if (targetVehicleRegos(a).has(selfRegoForMatch)) {
+        linkedAssociatesMap.set(a.id, {
+          associateId: a.id,
+          name: a.name,
+          targetId: a.targetId,
+          targetName: a.targetName,
+        });
+      }
+    }
+  }
+  const linkedAssociates = Array.from(linkedAssociatesMap.values());
+
   const opMap = new Map<number, { id: number; name: string }>();
   const sheetMap = new Map<
     number,
     { id: number; title: string; operationId: number; operationName: string }
   >();
+  // Only a REAL sighting (a running-sheet row) counts as this vehicle being
+  // linked to an operation. A registry-only entry — this vehicle merely
+  // being listed on a target's or associate's card — is ownership
+  // information, not evidence it has anything to do with wherever that
+  // target/associate happens to be tasked; see linkedTargets/linkedAssociates
+  // above for that ownership fact instead. Previously this also folded in
+  // an "owner's own operations" signal for a never-sighted vehicle, which
+  // read as "this vehicle has been active on operation X" when it hadn't.
+  const opLinksMap = await getTargetOperationLinksMap();
   for (const occ of entity.occurrences) {
+    if (occ.rowId <= 0) continue;
     if (!opMap.has(occ.operationId))
       opMap.set(occ.operationId, {
         id: occ.operationId,
         name: occ.operationName,
       });
-    if (occ.rowId > 0 && !sheetMap.has(occ.sheetId)) {
+    if (!sheetMap.has(occ.sheetId)) {
       sheetMap.set(occ.sheetId, {
         id: occ.sheetId,
         title: occ.sheetTitle,
         operationId: occ.operationId,
         operationName: occ.operationName,
       });
-    }
-  }
-  // A registered owner's own operation(s) are a cross-operation signal in
-  // their own right, even when this vehicle has never actually been
-  // observed (via a running-sheet row) in that operation — e.g. it's
-  // registered to a target tasked there, but hasn't been sighted yet.
-  const opLinksMap = await getTargetOperationLinksMap();
-  for (const lt of linkedTargets) {
-    for (const op of opLinksMap.get(lt.targetId) ?? []) {
-      if (!opMap.has(op.id)) opMap.set(op.id, op);
     }
   }
 
@@ -11476,6 +11529,7 @@ export async function getIntelVehicleProfile(
     label: entity.shortForm,
     firstObservation,
     linkedTargets,
+    linkedAssociates,
     linkedOperations: Array.from(opMap.values()),
     linkedSheets: Array.from(sheetMap.values()),
     assocPersons,
@@ -11535,33 +11589,60 @@ export async function getIntelLocationProfile(
     linkedTargetsMap.values()
   );
 
+  // Registered associate(s) — same idea as linkedTargets above, but for an
+  // associate's own address field. See the matching comment in
+  // getIntelVehicleProfile for why this doesn't fold into linkedOperations.
+  const allAssociatesForLocation = await db
+    .select({
+      id: associates.id,
+      name: associates.name,
+      targetId: associates.targetId,
+      targetName: targets.name,
+      hbf: associates.hbf,
+      hb: associates.hb,
+      extraAddresses: associates.extraAddresses,
+    })
+    .from(associates)
+    .innerJoin(targets, eq(associates.targetId, targets.id))
+    .where(and(isNull(associates.deletedAt), isNull(targets.deletedAt)));
+  const linkedAssociatesMap = new Map<
+    number,
+    { associateId: number; name: string; targetId: number; targetName: string }
+  >();
+  for (const a of allAssociatesForLocation) {
+    if (targetAddressCores(a).has(selfCoreForMatch)) {
+      linkedAssociatesMap.set(a.id, {
+        associateId: a.id,
+        name: a.name,
+        targetId: a.targetId,
+        targetName: a.targetName,
+      });
+    }
+  }
+  const linkedAssociates = Array.from(linkedAssociatesMap.values());
+
   const opMap = new Map<number, { id: number; name: string }>();
   const sheetMap = new Map<
     number,
     { id: number; title: string; operationId: number; operationName: string }
   >();
+  // Only a REAL sighting counts as this address being linked to an
+  // operation — see the matching comment in getIntelVehicleProfile.
+  const opLinksMap = await getTargetOperationLinksMap();
   for (const occ of entity.occurrences) {
+    if (occ.rowId <= 0) continue;
     if (!opMap.has(occ.operationId))
       opMap.set(occ.operationId, {
         id: occ.operationId,
         name: occ.operationName,
       });
-    if (occ.rowId > 0 && !sheetMap.has(occ.sheetId)) {
+    if (!sheetMap.has(occ.sheetId)) {
       sheetMap.set(occ.sheetId, {
         id: occ.sheetId,
         title: occ.sheetTitle,
         operationId: occ.operationId,
         operationName: occ.operationName,
       });
-    }
-  }
-  // A registered owner's own operation(s) are a cross-operation signal in
-  // their own right, even when this address has never actually been
-  // observed (via a running-sheet row) in that operation.
-  const opLinksMap = await getTargetOperationLinksMap();
-  for (const lt of linkedTargets) {
-    for (const op of opLinksMap.get(lt.targetId) ?? []) {
-      if (!opMap.has(op.id)) opMap.set(op.id, op);
     }
   }
 
@@ -11616,6 +11697,7 @@ export async function getIntelLocationProfile(
   return {
     label: entity.shortForm,
     linkedTargets,
+    linkedAssociates,
     linkedOperations: Array.from(opMap.values()),
     linkedSheets: Array.from(sheetMap.values()),
     assocPersons,

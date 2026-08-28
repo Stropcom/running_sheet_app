@@ -213,7 +213,18 @@ function useCompactLayout() {
   return isCompact;
 }
 
-export default function EgoNetworkMap() {
+export default function EgoNetworkMap({
+  initialOperationId = null,
+  initialSheetId = null,
+}: {
+  /** Pre-scopes the view on first render — e.g. a "View on Ego Network"
+   * link from a Running Sheet page. Read once via useState's lazy
+   * initializer, not kept in sync afterwards: the officer's own dropdown
+   * choices should win from that point on, not get silently overwritten
+   * by a stale prop if the parent re-renders. */
+  initialOperationId?: number | null;
+  initialSheetId?: number | null;
+}) {
   const [focusId, setFocusId] = useState<string | null>(null);
   const [hops, setHops] = useState<1 | 2>(1);
   const [expandRing1, setExpandRing1] = useState(false);
@@ -224,7 +235,15 @@ export default function EgoNetworkMap() {
   const [mobilePanel, setMobilePanel] = useState<"info" | "map">("map");
   // null = every operation. Scoping here narrows the whole view at once —
   // the graph, the focus-entity list, and the rings all come off this query.
-  const [operationId, setOperationId] = useState<number | null>(null);
+  const [operationId, setOperationId] = useState<number | null>(
+    initialOperationId
+  );
+  // null = every sheet in the scoped operation(s). A running sheet only
+  // makes sense to pick once its parent operation is picked — the dropdown
+  // that lists them is disabled until then — so this always resets when
+  // operationId changes rather than silently scoping to a sheet from a
+  // now-deselected operation.
+  const [sheetId, setSheetId] = useState<number | null>(initialSheetId);
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
 
@@ -245,13 +264,24 @@ export default function EgoNetworkMap() {
   }, [size.w, size.h]);
 
   const { data: operations } = trpc.operation.list.useQuery();
+  const { data: sheetsInOperation } = trpc.sheet.listByOperation.useQuery(
+    { operationId: operationId ?? -1 },
+    { enabled: operationId != null }
+  );
 
+  // A picked sheet already implies its operation, so the query scopes to
+  // just the sheet rather than both — passing operationIds too would be
+  // redundant, not stricter (a sheet can't span operations).
   const {
     data: graphData,
     isLoading,
     refetch,
   } = trpc.intelligence.getAssociationGraph.useQuery(
-    { operationIds: operationId != null ? [operationId] : undefined },
+    {
+      operationIds:
+        sheetId == null && operationId != null ? [operationId] : undefined,
+      sheetIds: sheetId != null ? [sheetId] : undefined,
+    },
     { staleTime: 30_000 }
   );
 
@@ -289,25 +319,18 @@ export default function EgoNetworkMap() {
     return m;
   }, [graphData]);
 
-  // Default the focus to the best-connected entity so the view isn't empty
-  // on first open — the officer can pick a different one from the list.
-  // This also re-picks when the operation filter changes and the entity
-  // currently in focus isn't part of the newly-scoped graph, rather than
-  // leaving the canvas blank on a focus that no longer exists.
+  // Focus starts blank — every scope dropdown (Operation, Running Sheet,
+  // Focus Entity) defaults to nothing selected, and the officer picks a
+  // focus explicitly rather than the view silently landing on whichever
+  // entity happens to be best-connected. This only ever *clears* the
+  // focus (never auto-picks one) when it falls outside a newly-scoped
+  // graph, so switching Operation/Running Sheet doesn't leave the canvas
+  // pointing at an entity that's no longer in view.
   useEffect(() => {
-    if (!graphData?.nodes?.length) return;
-    if (focusId && nodesById.has(focusId)) return;
-    let best: string | null = null;
-    let bestCount = -1;
-    for (const n of graphData.nodes as EgoNode[]) {
-      const c = adjacency.get(n.id)?.length ?? 0;
-      if (c > bestCount) {
-        bestCount = c;
-        best = n.id;
-      }
+    if (focusId && graphData?.nodes?.length && !nodesById.has(focusId)) {
+      setFocusId(null);
     }
-    setFocusId(best);
-  }, [graphData, adjacency, nodesById, focusId]);
+  }, [graphData, nodesById, focusId]);
 
   useEffect(() => {
     setExpandRing1(false);
@@ -391,15 +414,20 @@ export default function EgoNetworkMap() {
       ring1Radius: radii.ring1,
       ring2Radius: radii.ring2,
     });
+    const scopedOperationName =
+      operationId != null
+        ? ((operations ?? []).find(o => o.id === operationId)?.name ?? null)
+        : null;
+    const scopedSheetTitle =
+      sheetId != null
+        ? ((sheetsInOperation ?? []).find(s => s.id === sheetId)?.title ?? null)
+        : null;
     exportEgoNetworkPdf({
       focusNode,
       layout: exportLayout,
       radii,
       hops,
-      operationName:
-        operationId != null
-          ? ((operations ?? []).find(o => o.id === operationId)?.name ?? null)
-          : null,
+      operationName: scopedSheetTitle ?? scopedOperationName,
     });
   }, [
     focusNode,
@@ -409,6 +437,8 @@ export default function EgoNetworkMap() {
     expandRing1,
     operationId,
     operations,
+    sheetId,
+    sheetsInOperation,
   ]);
 
   return (
@@ -428,7 +458,10 @@ export default function EgoNetworkMap() {
 
         <Select
           value={operationId != null ? String(operationId) : "all"}
-          onValueChange={v => setOperationId(v === "all" ? null : Number(v))}
+          onValueChange={v => {
+            setOperationId(v === "all" ? null : Number(v));
+            setSheetId(null);
+          }}
         >
           <SelectTrigger className="w-44 h-8 text-xs">
             <SelectValue placeholder="All operations" />
@@ -443,14 +476,54 @@ export default function EgoNetworkMap() {
           </SelectContent>
         </Select>
 
-        <div className="h-5 w-px bg-border shrink-0" />
+        {/* Running sheet only makes sense once an operation narrows the
+            list — disabled rather than hidden so the control doesn't jump
+            around as the officer picks an operation. */}
+        <Select
+          value={sheetId != null ? String(sheetId) : "all"}
+          onValueChange={v => setSheetId(v === "all" ? null : Number(v))}
+          disabled={operationId == null}
+        >
+          <SelectTrigger className="w-48 h-8 text-xs">
+            <SelectValue placeholder="All running sheets" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All running sheets</SelectItem>
+            {(sheetsInOperation ?? []).map(s => (
+              <SelectItem key={s.id} value={String(s.id)}>
+                {s.title}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span>Focus:</span>
-          <span className="font-semibold text-foreground">
-            {focusNode ? focusNode.label : "—"}
-          </span>
-        </div>
+        {/* Focus entity — placed right after the Operation/Running Sheet
+            scope so all three read as one "narrow down, then pick" group.
+            Replaces the old plain "Focus: <name>" readout, which is now
+            redundant with this dropdown showing the same thing. */}
+        <Select
+          value={focusId ?? undefined}
+          onValueChange={v => {
+            recenter(v);
+            if (isCompact) setMobilePanel("map");
+          }}
+        >
+          <SelectTrigger className="w-52 h-8 text-xs">
+            <SelectValue placeholder="Select focus entity…" />
+          </SelectTrigger>
+          <SelectContent>
+            {entityGroups.map(g => (
+              <SelectGroup key={g.type}>
+                <SelectLabel>{g.label}</SelectLabel>
+                {g.nodes.map(n => (
+                  <SelectItem key={n.id} value={n.id}>
+                    {n.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            ))}
+          </SelectContent>
+        </Select>
 
         <div className="h-5 w-px bg-border shrink-0" />
 
@@ -522,41 +595,17 @@ export default function EgoNetworkMap() {
             }
           >
             <div className="px-3 py-2.5 border-b border-border">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                Focus entity
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                {focusNode
+                  ? `Direct links (${ring1Ids.length + hiddenRing1Count})`
+                  : "Direct links"}
               </p>
-              <Select
-                value={focusId ?? undefined}
-                onValueChange={v => {
-                  recenter(v);
-                  if (isCompact) setMobilePanel("map");
-                }}
-              >
-                <SelectTrigger className="w-full h-8 text-xs">
-                  <SelectValue placeholder="Select an entity…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {entityGroups.map(g => (
-                    <SelectGroup key={g.type}>
-                      <SelectLabel>{g.label}</SelectLabel>
-                      {g.nodes.map(n => (
-                        <SelectItem key={n.id} value={n.id}>
-                          {n.label}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {focusNode && (
-              <div className="px-3 py-2 border-b border-border">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                  Direct links ({ring1Ids.length + hiddenRing1Count})
+              {!focusNode && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Pick a focus entity above to see its direct links.
                 </p>
-              </div>
-            )}
+              )}
+            </div>
             <ScrollArea className="flex-1">
               <div className="p-2 space-y-0.5">
                 {focusNode && placed.length === 0 && (
@@ -646,10 +695,15 @@ export default function EgoNetworkMap() {
 
               {!isLoading && !focusNode && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground">
-                  <p className="text-sm">No entities available.</p>
+                  <p className="text-sm">
+                    {graphData?.nodes?.length
+                      ? "No entity focused."
+                      : "No entities available."}
+                  </p>
                   <p className="text-xs">
-                    Pick a focus entity from the list once observations have
-                    been logged.
+                    {graphData?.nodes?.length
+                      ? "Pick a focus entity from the dropdown above."
+                      : "Pick a focus entity once observations have been logged."}
                   </p>
                 </div>
               )}

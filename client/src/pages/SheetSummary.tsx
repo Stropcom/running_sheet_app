@@ -30,6 +30,17 @@ import { useParams, useLocation } from "wouter";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
+import {
+  NODE_COLORS,
+  ENTITY_TYPES,
+  ENTITY_LABELS,
+  computeEgoLayout,
+  exportRingRadii,
+  buildEgoNetworkSvg,
+  escXml,
+  type EgoNode,
+  type EgoEdge,
+} from "@/lib/egoNetworkLayout";
 import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
 import { EntityAutocompleteInput } from "@/components/EntityAutocompleteInput";
 import { useOffline } from "@/contexts/OfflineContext";
@@ -450,6 +461,21 @@ function SummaryTimePicker({
 // page marking — see SheetDetail.tsx's exportToPDF and
 // TargetProfileContent.tsx's buildTargetProfileHtml for the shared convention.
 
+/** Pre-computed so exportSummaryToPDF (a plain HTML-string builder) never has
+ * to know about tRPC/the graph shape — see buildEgoNetworkExportData below,
+ * which does the async fetch + layout work at export-click time. */
+interface EgoNetworkExportData {
+  focusLabel: string;
+  focusTypeLabel: string;
+  focusOccurrences: number;
+  focusOperations: string;
+  svg: string;
+  statsLine: string;
+  legend: string;
+  linkRows: string;
+  linkedCount: number;
+}
+
 function exportSummaryToPDF(params: {
   sheetTitle: string;
   form: FormState;
@@ -457,9 +483,17 @@ function exportSummaryToPDF(params: {
   entries: SheetSummaryEntryLike[];
   record: SheetSummaryRecordLike | null | undefined;
   mapImageDataUrl: string | null;
+  egoNetwork: EgoNetworkExportData | null;
 }) {
-  const { sheetTitle, form, vehicles, entries, record, mapImageDataUrl } =
-    params;
+  const {
+    sheetTitle,
+    form,
+    vehicles,
+    entries,
+    record,
+    mapImageDataUrl,
+    egoNetwork,
+  } = params;
   const esc = (s: string | null | undefined) =>
     (s ?? "")
       .replace(/&/g, "&amp;")
@@ -591,6 +625,16 @@ tfoot { display:table-footer-group; }
 .summary-table th:last-child, .summary-table td:last-child { border-right:none; }
 .summary-table td { vertical-align:top; font-size:10.5px; padding:6px 8px; border-bottom:1px solid ${GREY_BORDER}; border-right:1px solid ${GREY_BORDER}; }
 .summary-table tbody tr:last-child td { border-bottom:none; }
+.diagram-wrap { padding:4px 0 10px; }
+.stats-line { text-align:center; font-size:10px; color:#64748b; padding-bottom:8px; }
+.legend { display:flex; flex-wrap:wrap; gap:14px; justify-content:center; padding:10px 0 2px; border-top:1px solid ${GREY_BORDER}; }
+.legend-item { display:inline-flex; align-items:center; gap:6px; font-size:10px; color:#475569; }
+.legend-dot { width:9px; height:9px; border-radius:50%; display:inline-block; }
+.links-table { width:100%; border-collapse:collapse; border:1.5px solid ${BLUE_DARK}; margin-top:10px; }
+.links-table th { background:${BLUE_LIGHT} !important; color:${BLUE_DARK} !important; font-weight:700; font-size:9.5px; text-transform:uppercase; letter-spacing:0.04em; text-align:left; padding:6px 8px; border-bottom:2px solid ${BLUE_DARK}; border-right:1px solid #c7d5ee; }
+.links-table th:last-child, .links-table td:last-child { border-right:none; }
+.links-table td { vertical-align:top; font-size:10.5px; padding:6px 8px; border-bottom:1px solid ${GREY_BORDER}; border-right:1px solid ${GREY_BORDER}; }
+.links-table tbody tr:last-child td { border-bottom:none; }
 .footer-note { margin:14px 32px 0; padding:12px 0; border-top:1px solid ${GREY_BORDER}; font-size:9px; color:#94a3b8; }
 .footer-band { background:${BLUE_DARK} !important; color:#fff !important; padding:8px 32px; display:grid; grid-template-columns:1fr 1fr 1fr; align-items:center; font-size:9px; font-weight:700; letter-spacing:0.04em; }
 .footer-band span:first-child { text-align:left; }
@@ -655,6 +699,32 @@ tfoot { display:table-footer-group; }
         )}</div>`
       : ""
   }
+  ${
+    egoNetwork
+      ? `<div class="page-break">${plainSection(
+          "Ego Network",
+          `<div class="detail-grid">
+            ${detailRow("Focus entity", egoNetwork.focusLabel)}
+            ${detailRow("Type", egoNetwork.focusTypeLabel)}
+            ${detailRow("Occurrences", String(egoNetwork.focusOccurrences))}
+            ${detailRow("Operations", egoNetwork.focusOperations)}
+          </div>
+          <div class="diagram-wrap">
+            ${egoNetwork.svg}
+            <div class="stats-line">${egoNetwork.statsLine}</div>
+            <div class="legend">${egoNetwork.legend}</div>
+          </div>
+          ${
+            egoNetwork.linkedCount
+              ? `<table class="links-table">
+                <thead><tr><th>Entity</th><th style="width:110px">Type</th><th style="width:110px">Co-occurrences</th></tr></thead>
+                <tbody>${egoNetwork.linkRows}</tbody>
+              </table>`
+              : `<p class="muted-note">This entity has no other entities recorded alongside it on this running sheet.</p>`
+          }`
+        )}</div>`
+      : ""
+  }
 </div>
 </td></tr></tbody>
 </table>
@@ -672,6 +742,99 @@ ${buildExportPreviewCloseBar()}
   setTimeout(() => {
     win.print();
   }, 400);
+}
+
+/** Turns a sheet-scoped association graph into the same diagram/table shape
+ * the Ego Network's own PDF export uses (see EgoNetworkMap.tsx's
+ * handleExport) — kept a plain function rather than reusing that one
+ * directly since this runs from a click handler with no interactive
+ * dropdown state, and always at 1 hop (a supervisor summary is meant to be
+ * a quick read, not a deep-dive). Prefers the running sheet's own linked
+ * target as the focus — this report is specifically "this sheet's
+ * network" — and only falls back to the best-connected entity when the
+ * sheet has no target, or that target never actually appears in its own
+ * entities (e.g. registry-only, indices-only for this sheet).
+ */
+function buildEgoNetworkExportData(
+  graphData: { nodes: EgoNode[]; edges: EgoEdge[] } | null | undefined,
+  preferredTargetName: string | null
+): EgoNetworkExportData | null {
+  if (!graphData || graphData.nodes.length === 0) return null;
+
+  const nodesById = new Map<string, EgoNode>();
+  for (const n of graphData.nodes) nodesById.set(n.id, n);
+
+  const adjacency = new Map<string, { id: string; weight: number }[]>();
+  for (const e of graphData.edges) {
+    const s = typeof e.source === "string" ? e.source : e.source.id;
+    const t = typeof e.target === "string" ? e.target : e.target.id;
+    if (!adjacency.has(s)) adjacency.set(s, []);
+    if (!adjacency.has(t)) adjacency.set(t, []);
+    adjacency.get(s)!.push({ id: t, weight: e.weight });
+    adjacency.get(t)!.push({ id: s, weight: e.weight });
+  }
+  for (const list of Array.from(adjacency.values()))
+    list.sort((a, b) => b.weight - a.weight);
+
+  let focus: EgoNode | null = preferredTargetName
+    ? (nodesById.get(`target::${preferredTargetName}`) ?? null)
+    : null;
+  if (!focus) {
+    let bestCount = -1;
+    for (const n of Array.from(nodesById.values())) {
+      const c = adjacency.get(n.id)?.length ?? 0;
+      if (c > bestCount) {
+        bestCount = c;
+        focus = n;
+      }
+    }
+  }
+  if (!focus) return null;
+
+  const ring1Count = adjacency.get(focus.id)?.length ?? 0;
+  const radii = exportRingRadii(ring1Count);
+  const layout = computeEgoLayout({
+    focusNode: focus,
+    adjacency,
+    nodesById,
+    hops: 1,
+    expandRing1: false,
+    ring1Radius: radii.ring1,
+    ring2Radius: radii.ring2,
+  });
+
+  const svg = buildEgoNetworkSvg({ focusNode: focus, layout, radii });
+  const ring1 = layout.placed.filter(p => p.hop === 1);
+
+  const linkRows = layout.placed
+    .map(
+      p =>
+        `<tr><td>${escXml(p.node.label)}</td><td>${escXml(ENTITY_LABELS[p.node.type] ?? p.node.type)}</td><td>${p.weight}&times;</td></tr>`
+    )
+    .join("");
+
+  const legend = ENTITY_TYPES.map(
+    t =>
+      `<span class="legend-item"><span class="legend-dot" style="background:${NODE_COLORS[t]}"></span>${escXml(ENTITY_LABELS[t])}</span>`
+  ).join("");
+
+  const statsLine =
+    `${ring1.length} direct link${ring1.length !== 1 ? "s" : ""}` +
+    (layout.hiddenRing1Count > 0
+      ? ` &middot; ${layout.hiddenRing1Count} not shown`
+      : "");
+
+  return {
+    focusLabel: focus.label,
+    focusTypeLabel: ENTITY_LABELS[focus.type] ?? focus.type,
+    focusOccurrences: focus.occurrences,
+    focusOperations: focus.operationNames.join(", ") || "—",
+    svg,
+    statsLine,
+    legend,
+    linkRows,
+    linkedCount: layout.placed.length,
+  };
 }
 
 // ─── Page ───────────────────────────────────────────────────────────────────
@@ -937,6 +1100,21 @@ export default function SheetSummaryPage() {
           );
         }
       }
+
+      let egoNetwork: EgoNetworkExportData | null = null;
+      try {
+        const graphData =
+          await trpcClient.intelligence.getAssociationGraph.query({
+            sheetIds: [sheetId],
+          });
+        egoNetwork = buildEgoNetworkExportData(
+          graphData,
+          targetRecord?.name ?? null
+        );
+      } catch {
+        toast.error("Couldn't build the ego network — exporting without it.");
+      }
+
       exportSummaryToPDF({
         sheetTitle: sheet?.title ?? "Running Sheet",
         form,
@@ -944,6 +1122,7 @@ export default function SheetSummaryPage() {
         entries: entries ?? [],
         record,
         mapImageDataUrl,
+        egoNetwork,
       });
     } finally {
       setExportingPdf(false);

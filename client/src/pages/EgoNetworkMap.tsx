@@ -319,25 +319,18 @@ export default function EgoNetworkMap({
     return m;
   }, [graphData]);
 
-  // Default the focus to the best-connected entity so the view isn't empty
-  // on first open — the officer can pick a different one from the list.
-  // This also re-picks when the operation filter changes and the entity
-  // currently in focus isn't part of the newly-scoped graph, rather than
-  // leaving the canvas blank on a focus that no longer exists.
+  // Focus starts blank — every scope dropdown (Operation, Running Sheet,
+  // Focus Entity) defaults to nothing selected, and the officer picks a
+  // focus explicitly rather than the view silently landing on whichever
+  // entity happens to be best-connected. This only ever *clears* the
+  // focus (never auto-picks one) when it falls outside a newly-scoped
+  // graph, so switching Operation/Running Sheet doesn't leave the canvas
+  // pointing at an entity that's no longer in view.
   useEffect(() => {
-    if (!graphData?.nodes?.length) return;
-    if (focusId && nodesById.has(focusId)) return;
-    let best: string | null = null;
-    let bestCount = -1;
-    for (const n of graphData.nodes as EgoNode[]) {
-      const c = adjacency.get(n.id)?.length ?? 0;
-      if (c > bestCount) {
-        bestCount = c;
-        best = n.id;
-      }
+    if (focusId && graphData?.nodes?.length && !nodesById.has(focusId)) {
+      setFocusId(null);
     }
-    setFocusId(best);
-  }, [graphData, adjacency, nodesById, focusId]);
+  }, [graphData, nodesById, focusId]);
 
   useEffect(() => {
     setExpandRing1(false);
@@ -427,8 +420,7 @@ export default function EgoNetworkMap({
         : null;
     const scopedSheetTitle =
       sheetId != null
-        ? ((sheetsInOperation ?? []).find(s => s.id === sheetId)?.title ??
-          null)
+        ? ((sheetsInOperation ?? []).find(s => s.id === sheetId)?.title ?? null)
         : null;
     exportEgoNetworkPdf({
       focusNode,
@@ -505,14 +497,33 @@ export default function EgoNetworkMap({
           </SelectContent>
         </Select>
 
-        <div className="h-5 w-px bg-border shrink-0" />
-
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span>Focus:</span>
-          <span className="font-semibold text-foreground">
-            {focusNode ? focusNode.label : "—"}
-          </span>
-        </div>
+        {/* Focus entity — placed right after the Operation/Running Sheet
+            scope so all three read as one "narrow down, then pick" group.
+            Replaces the old plain "Focus: <name>" readout, which is now
+            redundant with this dropdown showing the same thing. */}
+        <Select
+          value={focusId ?? undefined}
+          onValueChange={v => {
+            recenter(v);
+            if (isCompact) setMobilePanel("map");
+          }}
+        >
+          <SelectTrigger className="w-52 h-8 text-xs">
+            <SelectValue placeholder="Select focus entity…" />
+          </SelectTrigger>
+          <SelectContent>
+            {entityGroups.map(g => (
+              <SelectGroup key={g.type}>
+                <SelectLabel>{g.label}</SelectLabel>
+                {g.nodes.map(n => (
+                  <SelectItem key={n.id} value={n.id}>
+                    {n.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            ))}
+          </SelectContent>
+        </Select>
 
         <div className="h-5 w-px bg-border shrink-0" />
 
@@ -584,41 +595,17 @@ export default function EgoNetworkMap({
             }
           >
             <div className="px-3 py-2.5 border-b border-border">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                Focus entity
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                {focusNode
+                  ? `Direct links (${ring1Ids.length + hiddenRing1Count})`
+                  : "Direct links"}
               </p>
-              <Select
-                value={focusId ?? undefined}
-                onValueChange={v => {
-                  recenter(v);
-                  if (isCompact) setMobilePanel("map");
-                }}
-              >
-                <SelectTrigger className="w-full h-8 text-xs">
-                  <SelectValue placeholder="Select an entity…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {entityGroups.map(g => (
-                    <SelectGroup key={g.type}>
-                      <SelectLabel>{g.label}</SelectLabel>
-                      {g.nodes.map(n => (
-                        <SelectItem key={n.id} value={n.id}>
-                          {n.label}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {focusNode && (
-              <div className="px-3 py-2 border-b border-border">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                  Direct links ({ring1Ids.length + hiddenRing1Count})
+              {!focusNode && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Pick a focus entity above to see its direct links.
                 </p>
-              </div>
-            )}
+              )}
+            </div>
             <ScrollArea className="flex-1">
               <div className="p-2 space-y-0.5">
                 {focusNode && placed.length === 0 && (
@@ -708,10 +695,15 @@ export default function EgoNetworkMap({
 
               {!isLoading && !focusNode && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground">
-                  <p className="text-sm">No entities available.</p>
+                  <p className="text-sm">
+                    {graphData?.nodes?.length
+                      ? "No entity focused."
+                      : "No entities available."}
+                  </p>
                   <p className="text-xs">
-                    Pick a focus entity from the list once observations have
-                    been logged.
+                    {graphData?.nodes?.length
+                      ? "Pick a focus entity from the dropdown above."
+                      : "Pick a focus entity once observations have been logged."}
                   </p>
                 </div>
               )}

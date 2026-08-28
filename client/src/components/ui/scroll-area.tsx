@@ -16,7 +16,16 @@ function ScrollArea({
     >
       <ScrollAreaPrimitive.Viewport
         data-slot="scroll-area-viewport"
-        className="focus-visible:ring-ring/50 size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:outline-1"
+        // Radix wraps whatever we render here in its own div styled
+        // `display: table; min-width: 100%` (to measure content for
+        // scrolling) — a table's width is content-driven, so min-width is
+        // only a floor, not a ceiling: unbroken text inside (e.g. a
+        // truncate/flex-1 label) can force that table wider than its
+        // container instead of respecting it, spilling visually past the
+        // scroll area. Forcing that one generated wrapper back to a plain
+        // block box makes width constraints (and therefore truncate) work
+        // the way every consumer of this component already expects.
+        className="focus-visible:ring-ring/50 size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:outline-1 [&>div]:!block"
       >
         {children}
       </ScrollAreaPrimitive.Viewport>

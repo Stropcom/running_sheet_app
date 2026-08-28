@@ -48,6 +48,26 @@ describe("looksLikeUnlocatedVehiclePresenceRow", () => {
       "A grey Ford Ranger Utility, bearing WA registration 1FAT007 (Vehicle 1FAT007), was noted nearby.";
     expect(looksLikeUnlocatedVehiclePresenceRow(text)).toBe(false);
   });
+
+  // Regression test: appendLocationSuggestion (client/src/pages/SheetDetail.tsx)
+  // used to append the officer-confirmed location WITHOUT its bracket
+  // (" at 35 Petra Street." rather than " (35 Petra Street)."), matching the
+  // vehicle-arriving chip's "subsequent mention, no bracket needed"
+  // convention — which doesn't apply here, since this check specifically
+  // requires a bracket in THIS row's own text to register the address. The
+  // bug: confirming the prompt never actually satisfied the check that
+  // triggered it, so it kept firing on every later save of the same row.
+  it("still flags the row if the confirmed location was appended without a bracket (the bug)", () => {
+    const text =
+      "A green Holden Commodore Sedan, bearing WA registration 1DAF836 (Vehicle 1DAF836), parked and unattended in the driveway at 35 Petra Street.";
+    expect(looksLikeUnlocatedVehiclePresenceRow(text)).toBe(true);
+  });
+
+  it("stops flagging the row once the confirmed location is appended WITH its bracket (the fix)", () => {
+    const text =
+      "A green Holden Commodore Sedan, bearing WA registration 1DAF836 (Vehicle 1DAF836), parked and unattended in the driveway (35 Petra Street).";
+    expect(looksLikeUnlocatedVehiclePresenceRow(text)).toBe(false);
+  });
 });
 
 describe("pickMissingLocationSuggestion", () => {

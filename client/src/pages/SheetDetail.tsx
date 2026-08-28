@@ -2698,19 +2698,26 @@ export default function SheetDetail() {
     );
   }
 
-  // Appends " at <location>" to the end of the observation, ahead of any
+  // Appends " (<location>)" to the end of the observation, ahead of any
   // trailing sentence punctuation — used when the officer confirms the
-  // MissingLocationAlert prompt. No brackets: the location was already
-  // fully introduced earlier in the sheet, so this is a subsequent
-  // mention, matching the app-wide convention (see
-  // isAddressAlreadyMentioned in server/db.ts).
+  // MissingLocationAlert prompt. Deliberately WITH brackets, unlike the
+  // vehicle-arriving chip's "subsequent mention" convention
+  // (isAddressAlreadyMentioned in server/db.ts): that convention exists for
+  // sheet-wide readability and doesn't need this row's own text to carry a
+  // recognisable entity. This prompt exists specifically because
+  // extractEntitiesFromText only registers an address for THIS row when it
+  // sees a "(ShortForm)" bracket — bracket-less text here would leave the
+  // row exactly as unlocated as before, and the prompt would keep firing
+  // on every subsequent save (confirmed bug, see missingLocationSuggestion
+  // test coverage for looksLikeUnlocatedVehiclePresenceRow).
   function appendLocationSuggestion(text: string, location: string): string {
     const trimmed = text.trimEnd();
+    const bracket = `(${location})`;
     const trailingPunct = trimmed.match(/([.:])\s*$/);
     if (trailingPunct) {
-      return `${trimmed.slice(0, -1)} at ${location}${trailingPunct[1]}`;
+      return `${trimmed.slice(0, -1)} ${bracket}${trailingPunct[1]}`;
     }
-    return `${trimmed} at ${location}.`;
+    return `${trimmed} ${bracket}.`;
   }
 
   const updateRowWithDupeCheck = useCallback(

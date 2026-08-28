@@ -3178,10 +3178,11 @@ export const appRouter = router({
       .input(
         z.object({
           operationIds: z.array(z.number()).optional(),
+          sheetIds: z.array(z.number()).optional(),
         })
       )
       .query(async ({ input }) => {
-        return getAssociationGraph(input.operationIds);
+        return getAssociationGraph(input.operationIds, input.sheetIds);
       }),
 
     /** Target intelligence profile */

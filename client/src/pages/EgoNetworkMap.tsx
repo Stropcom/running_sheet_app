@@ -213,7 +213,18 @@ function useCompactLayout() {
   return isCompact;
 }
 
-export default function EgoNetworkMap() {
+export default function EgoNetworkMap({
+  initialOperationId = null,
+  initialSheetId = null,
+}: {
+  /** Pre-scopes the view on first render — e.g. a "View on Ego Network"
+   * link from a Running Sheet page. Read once via useState's lazy
+   * initializer, not kept in sync afterwards: the officer's own dropdown
+   * choices should win from that point on, not get silently overwritten
+   * by a stale prop if the parent re-renders. */
+  initialOperationId?: number | null;
+  initialSheetId?: number | null;
+}) {
   const [focusId, setFocusId] = useState<string | null>(null);
   const [hops, setHops] = useState<1 | 2>(1);
   const [expandRing1, setExpandRing1] = useState(false);
@@ -224,7 +235,15 @@ export default function EgoNetworkMap() {
   const [mobilePanel, setMobilePanel] = useState<"info" | "map">("map");
   // null = every operation. Scoping here narrows the whole view at once —
   // the graph, the focus-entity list, and the rings all come off this query.
-  const [operationId, setOperationId] = useState<number | null>(null);
+  const [operationId, setOperationId] = useState<number | null>(
+    initialOperationId
+  );
+  // null = every sheet in the scoped operation(s). A running sheet only
+  // makes sense to pick once its parent operation is picked — the dropdown
+  // that lists them is disabled until then — so this always resets when
+  // operationId changes rather than silently scoping to a sheet from a
+  // now-deselected operation.
+  const [sheetId, setSheetId] = useState<number | null>(initialSheetId);
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
 
@@ -245,13 +264,24 @@ export default function EgoNetworkMap() {
   }, [size.w, size.h]);
 
   const { data: operations } = trpc.operation.list.useQuery();
+  const { data: sheetsInOperation } = trpc.sheet.listByOperation.useQuery(
+    { operationId: operationId ?? -1 },
+    { enabled: operationId != null }
+  );
 
+  // A picked sheet already implies its operation, so the query scopes to
+  // just the sheet rather than both — passing operationIds too would be
+  // redundant, not stricter (a sheet can't span operations).
   const {
     data: graphData,
     isLoading,
     refetch,
   } = trpc.intelligence.getAssociationGraph.useQuery(
-    { operationIds: operationId != null ? [operationId] : undefined },
+    {
+      operationIds:
+        sheetId == null && operationId != null ? [operationId] : undefined,
+      sheetIds: sheetId != null ? [sheetId] : undefined,
+    },
     { staleTime: 30_000 }
   );
 
@@ -391,15 +421,21 @@ export default function EgoNetworkMap() {
       ring1Radius: radii.ring1,
       ring2Radius: radii.ring2,
     });
+    const scopedOperationName =
+      operationId != null
+        ? ((operations ?? []).find(o => o.id === operationId)?.name ?? null)
+        : null;
+    const scopedSheetTitle =
+      sheetId != null
+        ? ((sheetsInOperation ?? []).find(s => s.id === sheetId)?.title ??
+          null)
+        : null;
     exportEgoNetworkPdf({
       focusNode,
       layout: exportLayout,
       radii,
       hops,
-      operationName:
-        operationId != null
-          ? ((operations ?? []).find(o => o.id === operationId)?.name ?? null)
-          : null,
+      operationName: scopedSheetTitle ?? scopedOperationName,
     });
   }, [
     focusNode,
@@ -409,6 +445,8 @@ export default function EgoNetworkMap() {
     expandRing1,
     operationId,
     operations,
+    sheetId,
+    sheetsInOperation,
   ]);
 
   return (
@@ -428,7 +466,10 @@ export default function EgoNetworkMap() {
 
         <Select
           value={operationId != null ? String(operationId) : "all"}
-          onValueChange={v => setOperationId(v === "all" ? null : Number(v))}
+          onValueChange={v => {
+            setOperationId(v === "all" ? null : Number(v));
+            setSheetId(null);
+          }}
         >
           <SelectTrigger className="w-44 h-8 text-xs">
             <SelectValue placeholder="All operations" />
@@ -438,6 +479,27 @@ export default function EgoNetworkMap() {
             {(operations ?? []).map(op => (
               <SelectItem key={op.id} value={String(op.id)}>
                 {op.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Running sheet only makes sense once an operation narrows the
+            list — disabled rather than hidden so the control doesn't jump
+            around as the officer picks an operation. */}
+        <Select
+          value={sheetId != null ? String(sheetId) : "all"}
+          onValueChange={v => setSheetId(v === "all" ? null : Number(v))}
+          disabled={operationId == null}
+        >
+          <SelectTrigger className="w-48 h-8 text-xs">
+            <SelectValue placeholder="All running sheets" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All running sheets</SelectItem>
+            {(sheetsInOperation ?? []).map(s => (
+              <SelectItem key={s.id} value={String(s.id)}>
+                {s.title}
               </SelectItem>
             ))}
           </SelectContent>

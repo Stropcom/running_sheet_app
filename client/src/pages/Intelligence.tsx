@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Input } from "@/components/ui/input";
@@ -1335,7 +1335,28 @@ export default function IntelligencePage() {
   const [, navigate] = useLocation();
   const isMobile = useIsMobile();
   const [search, setSearch] = useState("");
-  const [activeTab, setActiveTab] = useState<TabView>("operations");
+  // Deep link support for "View on Ego Network" (e.g. from a Running Sheet
+  // page): ?tab=egonet&operationId=X&sheetId=Y opens straight into the Ego
+  // Network tab, pre-scoped. Read once on mount via the lazy initializers
+  // below — not tracked afterwards, so navigating away and using the tabs
+  // normally doesn't fight with a stale query string.
+  const routeSearch = useSearch();
+  const [deepLinkTab] = useState(
+    () => new URLSearchParams(routeSearch).get("tab")
+  );
+  const [deepLinkOperationId] = useState<number | null>(() => {
+    const raw = new URLSearchParams(routeSearch).get("operationId");
+    const n = raw ? parseInt(raw, 10) : NaN;
+    return Number.isFinite(n) ? n : null;
+  });
+  const [deepLinkSheetId] = useState<number | null>(() => {
+    const raw = new URLSearchParams(routeSearch).get("sheetId");
+    const n = raw ? parseInt(raw, 10) : NaN;
+    return Number.isFinite(n) ? n : null;
+  });
+  const [activeTab, setActiveTab] = useState<TabView>(
+    deepLinkTab === "egonet" ? "egonet" : "operations"
+  );
   // The map tabs render a full-bleed canvas with their own filter chrome and
   // their own data fetch — none of the entity-list scaffolding (search/sort
   // bar, skeleton loader, entity grid) applies to them. Kept as one derived
@@ -1725,7 +1746,10 @@ export default function IntelligencePage() {
             className="-mx-4 -mb-4 flex-1"
             style={{ height: "calc(100vh - 260px)" }}
           >
-            <EgoNetworkMap />
+            <EgoNetworkMap
+              initialOperationId={deepLinkOperationId}
+              initialSheetId={deepLinkSheetId}
+            />
           </div>
         )}
 

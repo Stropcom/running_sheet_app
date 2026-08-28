@@ -68,6 +68,7 @@ import {
   Tag,
   User,
   Car,
+  Share2,
 } from "lucide-react";
 import {
   Select,
@@ -4084,6 +4085,19 @@ export default function SheetDetail() {
             <ClipboardCheck className="w-4 h-4" />
             Governance
           </button>
+          {sheet && (
+            <button
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+              onClick={() =>
+                navigate(
+                  `/intelligence?tab=egonet&operationId=${sheet.operationId}&sheetId=${sheetId}`
+                )
+              }
+            >
+              <Share2 className="w-4 h-4" />
+              Ego Network
+            </button>
+          )}
         </div>
 
         {/* Closed banner */}

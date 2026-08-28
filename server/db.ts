@@ -7752,12 +7752,14 @@ export interface AssociationGraph {
  * but never manufacture an edge.
  */
 export async function getAssociationGraph(
-  operationIds?: number[]
+  operationIds?: number[],
+  sheetIds?: number[]
 ): Promise<AssociationGraph> {
   const db = await getDb();
   if (!db) return { nodes: [], edges: [] };
 
   const scoped = operationIds && operationIds.length > 0 ? operationIds : null;
+  const sheetScoped = sheetIds && sheetIds.length > 0 ? sheetIds : null;
   const entities = await getAllIntelligenceEntities();
 
   const nodeMap = new Map<string, AssocNode>();
@@ -7782,9 +7784,11 @@ export async function getAssociationGraph(
       ? `target::${entity.shortForm}`
       : `${entity.type}::${entity.shortForm.toLowerCase()}`;
 
-    const relevant = scoped
-      ? entity.occurrences.filter(o => scoped.includes(o.operationId))
-      : entity.occurrences;
+    const relevant = entity.occurrences.filter(
+      o =>
+        (!scoped || scoped.includes(o.operationId)) &&
+        (!sheetScoped || sheetScoped.includes(o.sheetId))
+    );
     if (relevant.length === 0) continue;
 
     let node = nodeMap.get(nodeId);

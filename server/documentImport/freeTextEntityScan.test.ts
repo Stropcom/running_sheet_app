@@ -86,6 +86,34 @@ describe("findCandidateEmails", () => {
     expect(match).toBeDefined();
     expect(match!.confidence).toBe("high");
   });
+
+  // Regression: a multi-part domain (e.g. "riverfreight.com.au") already
+  // caught by the labelled email pattern was ALSO matched by the bare-email
+  // fallback, but truncated to "riverfreight.com" (the old domain pattern
+  // only allowed one label+TLD), so it slipped past the seen-dedup check
+  // and produced a spurious second "low confidence" entry for the exact
+  // same address. Found while building fictional test documents.
+  it("does not duplicate a labelled multi-part-domain email as a truncated bare match", () => {
+    const result = findCandidateEmails(
+      "Email: danny.okafor@riverfreight.com.au"
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      value: "danny.okafor@riverfreight.com.au",
+      confidence: "high",
+    });
+  });
+
+  it("still finds a bare multi-part-domain email with no label at all", () => {
+    const result = findCandidateEmails(
+      "contact danny.okafor@riverfreight.com.au for details"
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      value: "danny.okafor@riverfreight.com.au",
+      confidence: "low",
+    });
+  });
 });
 
 describe("findCandidatePhones", () => {

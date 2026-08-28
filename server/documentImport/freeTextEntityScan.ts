@@ -81,7 +81,14 @@ const BUSINESS_SUFFIX_RE =
   /\b(Pty\.?\s*Ltd\.?|Ltd\.?|Inc\.?|LLC|Corp\.?|Corporation)\b/i;
 
 const LABELLED_EMAIL_RE = /^\s*Email\s*:\s*(.+?)\s*$/gim;
-const BARE_EMAIL_RE = /\b[\w.+-]+@[A-Za-z0-9-]+\.[A-Za-z]{2,}\b/g;
+// Domain requires one-or-more "label." groups before the final TLD segment
+// — a single "[A-Za-z0-9-]+\.[A-Za-z]{2,}" only matches the first
+// label+TLD of a multi-part domain (e.g. stops at "riverfreight.com" inside
+// "riverfreight.com.au"), which for an email already caught by
+// LABELLED_EMAIL_RE produces a spurious second, truncated "low confidence"
+// entry for the exact same address instead of being recognised as a
+// duplicate.
+const BARE_EMAIL_RE = /\b[\w.+-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}\b/g;
 
 const LABELLED_PHONE_RE = /^\s*(?:Mobile|Phone|Tel|Contact)\s*:\s*(.+?)\s*$/gim;
 // Deliberately not anchored to a label: catches the same shape even when a

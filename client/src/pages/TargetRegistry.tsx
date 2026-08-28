@@ -40,6 +40,7 @@ import {
   Home,
   Users,
   Pencil,
+  FileText,
 } from "lucide-react";
 import { useViewMode } from "@/contexts/ViewModeContext";
 import { cn } from "@/lib/utils";
@@ -61,6 +62,10 @@ import {
   AddTargetDialog,
   type RegistryCreatePayload,
 } from "@/components/AddTargetDialog";
+import {
+  ImportTargetDocumentDialog,
+  type DocumentImportPrefill,
+} from "@/components/ImportTargetDocumentDialog";
 import {
   composeTargetName,
   composeAddress,
@@ -1830,6 +1835,10 @@ export default function TargetRegistryPage() {
   const { data: targets, isLoading } = trpc.target.registry.list.useQuery();
 
   const { viewMode } = useViewMode();
+  const [showImportDocument, setShowImportDocument] = useState(false);
+  const [importPrefill, setImportPrefill] =
+    useState<DocumentImportPrefill | null>(null);
+  const [importKey, setImportKey] = useState(0);
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"alpha" | "recent" | "operation">(
     "alpha"
@@ -1931,6 +1940,13 @@ export default function TargetRegistryPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={() => setShowImportDocument(true)}
+            >
+              <FileText className="h-4 w-4" /> Import from Document
+            </Button>
             <Button className="gap-2" onClick={() => setShowCreate(true)}>
               <Plus className="h-4 w-4" /> Add Target
             </Button>
@@ -2139,10 +2155,17 @@ export default function TargetRegistryPage() {
         )}
       </div>
 
-      {/* Add Target dialog */}
+      {/* Add Target dialog — re-mounted with a fresh key whenever a document
+          import hands it a pre-fill, so lazy state init picks up the new
+          values instead of whatever a previous import (or a blank open)
+          already initialised. */}
       <AddTargetDialog
+        key={importPrefill ? `import-${importKey}` : "blank"}
         open={showCreate}
-        onClose={() => setShowCreate(false)}
+        onClose={() => {
+          setShowCreate(false);
+          setImportPrefill(null);
+        }}
         onSave={async payload => {
           const { existingAssociateId, ...rest } = payload;
           if (existingAssociateId) {
@@ -2152,6 +2175,24 @@ export default function TargetRegistryPage() {
             });
           }
           return await createMutation.mutateAsync(rest);
+        }}
+        initialIdentity={importPrefill?.identity}
+        initialAddress={importPrefill?.address}
+        initialVehicle={importPrefill?.vehicle}
+        initialExtraAddresses={importPrefill?.extraAddresses}
+        initialExtraVehicles={importPrefill?.extraVehicles}
+        initialAssociates={importPrefill?.associates}
+      />
+
+      {/* Import from Document dialog */}
+      <ImportTargetDocumentDialog
+        open={showImportDocument}
+        onClose={() => setShowImportDocument(false)}
+        onContinue={prefill => {
+          setImportPrefill(prefill);
+          setImportKey(k => k + 1);
+          setShowImportDocument(false);
+          setShowCreate(true);
         }}
       />
 

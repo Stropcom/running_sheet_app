@@ -105,7 +105,7 @@ export interface RegistryCreatePayload {
 // belong to a real targetId) and created right after the target itself
 // saves successfully. Same three-part shape (identity/address/vehicle) as
 // the target's own fields, reusing the identical field components.
-interface StagedAssociate {
+export interface StagedAssociate {
   key: string;
   identity: StructuredNameParts;
   address: StructuredAddressParts;
@@ -116,6 +116,12 @@ export function AddTargetDialog({
   open,
   onClose,
   onSave,
+  initialIdentity,
+  initialAddress,
+  initialVehicle,
+  initialExtraAddresses,
+  initialExtraVehicles,
+  initialAssociates,
 }: {
   open: boolean;
   onClose: () => void;
@@ -123,19 +129,38 @@ export function AddTargetDialog({
    * dialog can create any staged associates against it once the target
    * itself is safely saved. */
   onSave: (data: RegistryCreatePayload) => Promise<{ id: number }>;
+  /** Pre-fills the form from a parsed document import (see
+   * ImportTargetDocumentDialog.tsx) instead of starting blank. Read once
+   * via lazy state init — the caller re-mounts this dialog with a fresh
+   * `key` for each import so a later plain "Add Target" open isn't stuck
+   * showing a previous import's values. */
+  initialIdentity?: StructuredNameParts;
+  initialAddress?: StructuredAddressParts;
+  initialVehicle?: StructuredVehicleParts & { vehicleType: string };
+  initialExtraAddresses?: ExtraAddress[];
+  initialExtraVehicles?: ExtraVehicle[];
+  initialAssociates?: StagedAssociate[];
 }) {
-  const [identity, setIdentity] =
-    useState<StructuredNameParts>(EMPTY_NAME_PARTS);
-  const [address, setAddress] =
-    useState<StructuredAddressParts>(EMPTY_ADDRESS_PARTS);
+  const [identity, setIdentity] = useState<StructuredNameParts>(
+    () => initialIdentity ?? EMPTY_NAME_PARTS
+  );
+  const [address, setAddress] = useState<StructuredAddressParts>(
+    () => initialAddress ?? EMPTY_ADDRESS_PARTS
+  );
   const [vehicle, setVehicle] = useState<
     StructuredVehicleParts & { vehicleType: string }
-  >(EMPTY_VEHICLE_PARTS);
+  >(() => initialVehicle ?? EMPTY_VEHICLE_PARTS);
   const [dep, setDep] = useState("");
   const [arr, setArr] = useState("");
-  const [extraAddresses, setExtraAddresses] = useState<ExtraAddress[]>([]);
-  const [extraVehicles, setExtraVehicles] = useState<ExtraVehicle[]>([]);
-  const [associates, setAssociates] = useState<StagedAssociate[]>([]);
+  const [extraAddresses, setExtraAddresses] = useState<ExtraAddress[]>(
+    () => initialExtraAddresses ?? []
+  );
+  const [extraVehicles, setExtraVehicles] = useState<ExtraVehicle[]>(
+    () => initialExtraVehicles ?? []
+  );
+  const [associates, setAssociates] = useState<StagedAssociate[]>(
+    () => initialAssociates ?? []
+  );
   const [saving, setSaving] = useState(false);
   const [linking, setLinking] = useState(false);
   const utils = trpc.useUtils();

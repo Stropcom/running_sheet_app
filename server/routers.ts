@@ -307,6 +307,8 @@ import {
 import { generateStatDecDocx } from "./statDecGenerator";
 import { generateWipcRequestDocx } from "./wipcRequestGenerator";
 import { vaultEncrypt, vaultDecrypt } from "./wipcVault";
+import { readDocxTables } from "./documentImport/docxTableReader";
+import { mapDocxToTargetProfile } from "./documentImport/targetProfileFieldMap";
 import {
   createWipcAuditEntry,
   getWipcAuditLog,
@@ -2939,6 +2941,31 @@ export const appRouter = router({
         .input(z.object({ targetId: z.number() }))
         .query(async ({ input }) => {
           return getTargetFieldHistory(input.targetId);
+        }),
+
+      /** Parses an uploaded .docx target-profile document into a proposed
+       * set of structured fields for the review screen (see
+       * server/documentImport/) — deterministic table/text parsing only,
+       * no AI/LLM call, per CLAUDE.md's Golden Rule. Nothing is persisted
+       * here and the document itself isn't stored; the officer reviews and
+       * confirms the parsed fields, then saves through the normal
+       * create/update mutations above. */
+      parseDocx: protectedProcedure
+        .input(
+          z.object({
+            dataBase64: z.string().min(1),
+          })
+        )
+        .mutation(async ({ input }) => {
+          const buffer = Buffer.from(input.dataBase64, "base64");
+          const read = await readDocxTables(buffer);
+          if (read.tables.length === 0 && read.paragraphs.length === 0) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Couldn't read this file as a Word document (.docx).",
+            });
+          }
+          return mapDocxToTargetProfile(read);
         }),
     }),
   }),

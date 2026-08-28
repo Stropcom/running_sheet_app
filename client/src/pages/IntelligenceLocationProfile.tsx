@@ -34,6 +34,12 @@ type IntelProfileEntity = IntelAssocEntity;
 interface IntelLocationProfile {
   label: string;
   linkedTargets: Array<{ targetId: number; name: string }>;
+  linkedAssociates: Array<{
+    associateId: number;
+    name: string;
+    targetId: number;
+    targetName: string;
+  }>;
   linkedOperations: Array<{ id: number; name: string }>;
   linkedSheets: Array<{
     id: number;
@@ -113,6 +119,7 @@ function buildLocationProfileHtml(
       : ""
   }
   ${profile.linkedTargets.length ? `<div style="margin-bottom:16px"><div class="section-title">Linked Targets</div>${profile.linkedTargets.map(t => `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}"><strong>${esc(t.name)}</strong></p>`).join("")}</div>` : ""}
+  ${profile.linkedAssociates.length ? `<div style="margin-bottom:16px"><div class="section-title">Registered Associate${profile.linkedAssociates.length > 1 ? "s" : ""}</div>${profile.linkedAssociates.map(a => `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}"><strong>${esc(a.name)}</strong> <span style="color:#64748b">(associate of ${esc(a.targetName)})</span></p>`).join("")}</div>` : ""}
   ${profile.linkedSheets.length ? `<div style="margin-bottom:16px"><div class="section-title">Running Sheets</div>${profile.linkedSheets.map(s => `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}">${esc(s.title)} <span style="color:#64748b">— ${esc(s.operationName)}</span></p>`).join("")}</div>` : ""}
   ${
     profile.assocPersons.length || profile.assocVehicles.length
@@ -323,6 +330,40 @@ export default function IntelligenceLocationProfile() {
                       <User className="w-3.5 h-3.5 text-blue-500 shrink-0" />
                       <span className="text-xs font-medium text-foreground">
                         {t.name}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {profile.linkedAssociates.length > 0 && (
+              <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
+                <SectionHeading
+                  label={
+                    profile.linkedAssociates.length > 1
+                      ? "Registered Associates"
+                      : "Registered Associate"
+                  }
+                  count={profile.linkedAssociates.length}
+                />
+                <div className="space-y-1">
+                  {profile.linkedAssociates.map(a => (
+                    <button
+                      key={a.associateId}
+                      onClick={() =>
+                        navigate(
+                          `/intelligence/associate/${encodeURIComponent(a.name)}`
+                        )
+                      }
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border/60 bg-muted/20 hover:bg-accent/10 transition-colors text-left"
+                    >
+                      <User className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                      <span className="text-xs font-medium text-foreground">
+                        {a.name}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        associate of {a.targetName}
                       </span>
                     </button>
                   ))}

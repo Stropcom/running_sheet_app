@@ -4202,21 +4202,22 @@ export function mergeContainedEntities(
   return survivors;
 }
 
-// Matches a WA-plate-shaped registration token embedded in a longer
-// description. Two shapes: the current standard "1ABC234" (digit + 2-3
-// letters + 3 digits, e.g. "1ADF124", "1ICW519") and the older/interstate
-// "ABC123" / "ABC-123" / "ABC 123" shape (1-3 letters + optional dash/space
-// + 3 digits, e.g. "XFD987") — see the WA_REGO classifier further down for
-// the same two shapes used during text-mining. Both extractRegoUpper and
-// vehicleRegoKey below must share this single pattern: they used to diverge
-// (extractRegoUpper was digit-first only), which silently dropped any
-// letter-first rego from the "Registered Target(s)" cross-link lookups
-// while vehicleRegoKey's separate fallback-to-full-text-match still kept
-// entities merged — the split surfaced as a vehicle correctly shown as a
-// single Indices-only entity but with spurious extra "linked operations"
-// pulled in only through the full-text fallback path.
+// Matches a plate-shaped registration token embedded in a longer
+// description: a contiguous 4-10 character alphanumeric block containing
+// at least one digit and at least one letter (e.g. "1ADF124", "1ICW519",
+// "XFD987", "1BIG7238"). Real rego formats vary too much by state/era/
+// personalisation to enumerate as fixed digit/letter-count shapes — an
+// earlier, narrower version of this pattern only recognised the current
+// WA standard ("1ABC234") and one older/interstate shape ("ABC123"), which
+// silently failed to extract anything from a differently-shaped plate
+// (an 8-character rego fell through both alternatives entirely, since a
+// contiguous alnum run only has word boundaries at its outer edges — no
+// shorter substring inside it is independently matchable). Both
+// extractRegoUpper and vehicleRegoKey below must share this single
+// pattern, or they silently diverge — see the comment history on this
+// constant for two separate regressions caused by exactly that split.
 export const VEHICLE_REGO_PATTERN =
-  /\b\d[A-Za-z]{2,3}\d{3}\b|\b[A-Za-z]{1,3}[-\s]?\d{3}\b/;
+  /\b(?=[A-Za-z0-9]{4,10}\b)(?=[A-Za-z0-9]*[0-9])(?=[A-Za-z0-9]*[A-Za-z])[A-Za-z0-9]{4,10}\b/;
 
 // Vehicles are uniquely identified by their registration, not by whatever
 // descriptive text happens to surround it in a given mention. The same car
@@ -7161,6 +7162,39 @@ export async function getAllIntelligenceEntities(): Promise<
       id: targetEntity.targetId!,
       label: targetEntity.shortForm,
     };
+
+    // A registry field (V1F/HBF/etc.) shared by this linked pair produces
+    // its own "Target card" occurrence from the target's own record AND a
+    // separate "Associate card" occurrence from the associate's own record
+    // on whatever vehicle/address entity that field's value keys into —
+    // even though both describe the exact same real-world fact for the
+    // exact same person (see updateTarget's Person Identity Link sync).
+    // When neither side has any real operation touchpoint of its own, that
+    // duplication is harmless — it's still just one true Indices-only fact.
+    // But once EITHER side carries a real operation (e.g. the associate's
+    // parent target is tasked to an operation while the linked target
+    // itself is a bare registry entry), the other side's "(Registry)"
+    // fallback occurrence for that same synced field is a redundant
+    // restatement, not a second independent cross-operation touchpoint —
+    // left in place it inflated e.g. a vehicle's "linked operations" with a
+    // phantom "(Registry)" badge alongside the real one. combined (just
+    // assigned above) already carries the union of both sides' own PERSON
+    // occurrences, so it's the right place to check for real exposure.
+    const identityHasRealOp = combined.some(o => o.operationId !== 0);
+    if (identityHasRealOp) {
+      const targetCardPrefix = `Target card — ${targetEntity.shortForm} [`;
+      const associateCardPrefix = `Associate card — ${associateEntity.shortForm} [`;
+      for (const entity of Array.from(mergedMap.values())) {
+        if (entity.type !== "vehicle" && entity.type !== "address") continue;
+        entity.occurrences = entity.occurrences.filter(o => {
+          if (o.rowId !== 0 || o.operationId !== 0) return true;
+          return (
+            !o.observationSnippet.startsWith(targetCardPrefix) &&
+            !o.observationSnippet.startsWith(associateCardPrefix)
+          );
+        });
+      }
+    }
   }
 
   // "Indices" flag — computed last, once every occurrence (registry-injected
@@ -10076,6 +10110,14 @@ export interface IntelVehicleProfile {
    * independent targets on two different operations both have the same
    * car), so this must never be narrowed to "the first match". */
   linkedTargets: Array<{ targetId: number; name: string }>;
+  /** Every registered associate that lists this vehicle — mirrors
+   * linkedTargets above but for an associate's own vehicle field. */
+  linkedAssociates: Array<{
+    associateId: number;
+    name: string;
+    targetId: number;
+    targetName: string;
+  }>;
   linkedOperations: Array<{ id: number; name: string }>;
   linkedSheets: Array<{
     id: number;
@@ -10095,6 +10137,14 @@ export interface IntelVehicleProfile {
 export interface IntelLocationProfile {
   label: string;
   linkedTargets: Array<{ targetId: number; name: string }>;
+  /** Every registered associate that lists this address — mirrors
+   * linkedTargets above but for an associate's own address field. */
+  linkedAssociates: Array<{
+    associateId: number;
+    name: string;
+    targetId: number;
+    targetName: string;
+  }>;
   linkedOperations: Array<{ id: number; name: string }>;
   linkedSheets: Array<{
     id: number;
@@ -11354,34 +11404,71 @@ export async function getIntelVehicleProfile(
   }
   const linkedTargets = Array.from(linkedTargetsMap.values());
 
+  // Registered associate(s) — same idea as linkedTargets above, but for an
+  // associate's own vehicle field rather than a target's. An associate has
+  // no operation of its own; its only tie to an operation is whichever
+  // one(s) its parent target happens to be tasked to, and that tie is
+  // registry bookkeeping, not evidence this vehicle has anything to do
+  // with that operation — see the isIndicesOnly guard on opMap below.
+  const allAssociatesForVehicle = await db
+    .select({
+      id: associates.id,
+      name: associates.name,
+      targetId: associates.targetId,
+      targetName: targets.name,
+      v1f: associates.v1f,
+      v1: associates.v1,
+      extraVehicles: associates.extraVehicles,
+    })
+    .from(associates)
+    .innerJoin(targets, eq(associates.targetId, targets.id))
+    .where(and(isNull(associates.deletedAt), isNull(targets.deletedAt)));
+  const linkedAssociatesMap = new Map<
+    number,
+    { associateId: number; name: string; targetId: number; targetName: string }
+  >();
+  if (selfRegoForMatch) {
+    for (const a of allAssociatesForVehicle) {
+      if (targetVehicleRegos(a).has(selfRegoForMatch)) {
+        linkedAssociatesMap.set(a.id, {
+          associateId: a.id,
+          name: a.name,
+          targetId: a.targetId,
+          targetName: a.targetName,
+        });
+      }
+    }
+  }
+  const linkedAssociates = Array.from(linkedAssociatesMap.values());
+
   const opMap = new Map<number, { id: number; name: string }>();
   const sheetMap = new Map<
     number,
     { id: number; title: string; operationId: number; operationName: string }
   >();
+  // Only a REAL sighting (a running-sheet row) counts as this vehicle being
+  // linked to an operation. A registry-only entry — this vehicle merely
+  // being listed on a target's or associate's card — is ownership
+  // information, not evidence it has anything to do with wherever that
+  // target/associate happens to be tasked; see linkedTargets/linkedAssociates
+  // above for that ownership fact instead. Previously this also folded in
+  // an "owner's own operations" signal for a never-sighted vehicle, which
+  // read as "this vehicle has been active on operation X" when it hadn't.
+  const opLinksMap = await getTargetOperationLinksMap();
   for (const occ of entity.occurrences) {
+    if (occ.rowId <= 0) continue;
     if (!opMap.has(occ.operationId))
       opMap.set(occ.operationId, {
         id: occ.operationId,
         name: occ.operationName,
       });
-    if (occ.rowId > 0 && !sheetMap.has(occ.sheetId)) {
+    if (!sheetMap.has(occ.sheetId)) {
       sheetMap.set(occ.sheetId, {
         id: occ.sheetId,
         title: occ.sheetTitle,
         operationId: occ.operationId,
         operationName: occ.operationName,
       });
-    }
-  }
-  // A registered owner's own operation(s) are a cross-operation signal in
-  // their own right, even when this vehicle has never actually been
-  // observed (via a running-sheet row) in that operation — e.g. it's
-  // registered to a target tasked there, but hasn't been sighted yet.
-  const opLinksMap = await getTargetOperationLinksMap();
-  for (const lt of linkedTargets) {
-    for (const op of opLinksMap.get(lt.targetId) ?? []) {
-      if (!opMap.has(op.id)) opMap.set(op.id, op);
     }
   }
 
@@ -11443,6 +11530,7 @@ export async function getIntelVehicleProfile(
     label: entity.shortForm,
     firstObservation,
     linkedTargets,
+    linkedAssociates,
     linkedOperations: Array.from(opMap.values()),
     linkedSheets: Array.from(sheetMap.values()),
     assocPersons,
@@ -11502,33 +11590,60 @@ export async function getIntelLocationProfile(
     linkedTargetsMap.values()
   );
 
+  // Registered associate(s) — same idea as linkedTargets above, but for an
+  // associate's own address field. See the matching comment in
+  // getIntelVehicleProfile for why this doesn't fold into linkedOperations.
+  const allAssociatesForLocation = await db
+    .select({
+      id: associates.id,
+      name: associates.name,
+      targetId: associates.targetId,
+      targetName: targets.name,
+      hbf: associates.hbf,
+      hb: associates.hb,
+      extraAddresses: associates.extraAddresses,
+    })
+    .from(associates)
+    .innerJoin(targets, eq(associates.targetId, targets.id))
+    .where(and(isNull(associates.deletedAt), isNull(targets.deletedAt)));
+  const linkedAssociatesMap = new Map<
+    number,
+    { associateId: number; name: string; targetId: number; targetName: string }
+  >();
+  for (const a of allAssociatesForLocation) {
+    if (targetAddressCores(a).has(selfCoreForMatch)) {
+      linkedAssociatesMap.set(a.id, {
+        associateId: a.id,
+        name: a.name,
+        targetId: a.targetId,
+        targetName: a.targetName,
+      });
+    }
+  }
+  const linkedAssociates = Array.from(linkedAssociatesMap.values());
+
   const opMap = new Map<number, { id: number; name: string }>();
   const sheetMap = new Map<
     number,
     { id: number; title: string; operationId: number; operationName: string }
   >();
+  // Only a REAL sighting counts as this address being linked to an
+  // operation — see the matching comment in getIntelVehicleProfile.
+  const opLinksMap = await getTargetOperationLinksMap();
   for (const occ of entity.occurrences) {
+    if (occ.rowId <= 0) continue;
     if (!opMap.has(occ.operationId))
       opMap.set(occ.operationId, {
         id: occ.operationId,
         name: occ.operationName,
       });
-    if (occ.rowId > 0 && !sheetMap.has(occ.sheetId)) {
+    if (!sheetMap.has(occ.sheetId)) {
       sheetMap.set(occ.sheetId, {
         id: occ.sheetId,
         title: occ.sheetTitle,
         operationId: occ.operationId,
         operationName: occ.operationName,
       });
-    }
-  }
-  // A registered owner's own operation(s) are a cross-operation signal in
-  // their own right, even when this address has never actually been
-  // observed (via a running-sheet row) in that operation.
-  const opLinksMap = await getTargetOperationLinksMap();
-  for (const lt of linkedTargets) {
-    for (const op of opLinksMap.get(lt.targetId) ?? []) {
-      if (!opMap.has(op.id)) opMap.set(op.id, op);
     }
   }
 
@@ -11583,6 +11698,7 @@ export async function getIntelLocationProfile(
   return {
     label: entity.shortForm,
     linkedTargets,
+    linkedAssociates,
     linkedOperations: Array.from(opMap.values()),
     linkedSheets: Array.from(sheetMap.values()),
     assocPersons,

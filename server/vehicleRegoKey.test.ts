@@ -39,6 +39,23 @@ describe("vehicleRegoKey", () => {
     expect(a).toBe(b);
   });
 
+  it("keys on a longer 8-character rego that doesn't fit the standard 6-7 character shapes", () => {
+    expect(vehicleRegoKey("1BIG7238 blue Toyota Landcruiser 4WD")).toBe(
+      "1big7238"
+    );
+    expect(
+      vehicleRegoKey(
+        "blue Toyota Landcruiser 4WD, bearing WA registration 1BIG7238"
+      )
+    ).toBe("1big7238");
+  });
+
+  it("does not pick up short alnum tokens like a body-style year or engine size", () => {
+    expect(vehicleRegoKey("silver Hyundai Santa Fe, no plate visible")).toBe(
+      "silver hyundai santa fe, no plate visible"
+    );
+  });
+
   it("falls back to the normalized full text when no rego shape is found", () => {
     expect(vehicleRegoKey("white Audi A4 Sedan, no plate visible")).toBe(
       "white audi a4 sedan, no plate visible"

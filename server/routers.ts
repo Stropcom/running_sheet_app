@@ -2962,8 +2962,7 @@ export const appRouter = router({
           if (read.tables.length === 0 && read.paragraphs.length === 0) {
             throw new TRPCError({
               code: "BAD_REQUEST",
-              message:
-                "Couldn't read this file as a Word document (.docx).",
+              message: "Couldn't read this file as a Word document (.docx).",
             });
           }
           return mapDocxToTargetProfile(read);

@@ -4202,6 +4202,22 @@ export function mergeContainedEntities(
   return survivors;
 }
 
+// Matches a WA-plate-shaped registration token embedded in a longer
+// description. Two shapes: the current standard "1ABC234" (digit + 2-3
+// letters + 3 digits, e.g. "1ADF124", "1ICW519") and the older/interstate
+// "ABC123" / "ABC-123" / "ABC 123" shape (1-3 letters + optional dash/space
+// + 3 digits, e.g. "XFD987") — see the WA_REGO classifier further down for
+// the same two shapes used during text-mining. Both extractRegoUpper and
+// vehicleRegoKey below must share this single pattern: they used to diverge
+// (extractRegoUpper was digit-first only), which silently dropped any
+// letter-first rego from the "Registered Target(s)" cross-link lookups
+// while vehicleRegoKey's separate fallback-to-full-text-match still kept
+// entities merged — the split surfaced as a vehicle correctly shown as a
+// single Indices-only entity but with spurious extra "linked operations"
+// pulled in only through the full-text fallback path.
+export const VEHICLE_REGO_PATTERN =
+  /\b\d[A-Za-z]{2,3}\d{3}\b|\b[A-Za-z]{1,3}[-\s]?\d{3}\b/;
+
 // Vehicles are uniquely identified by their registration, not by whatever
 // descriptive text happens to surround it in a given mention. The same car
 // can show up as "1ADF124" (bare), "Vehicle 1ADF124" (chip insert),
@@ -4214,7 +4230,7 @@ export function mergeContainedEntities(
 // available description is still kept for display (see "prefer longer
 // shortForm" below).
 export function vehicleRegoKey(text: string): string {
-  const m = text.match(/\b\d[A-Za-z]{2,3}\d{3}\b/);
+  const m = text.match(VEHICLE_REGO_PATTERN);
   return (m ? m[0] : text).toLowerCase().replace(/\s+/g, " ").trim();
 }
 
@@ -10113,8 +10129,6 @@ function targetCoreName(name: string): string {
 // registration (vehicles) / normalized address core (locations) rather
 // than exact string equality, since the free-text entity mined from an
 // observation rarely matches the manually-typed V1F/HBF field byte-for-byte.
-
-const VEHICLE_REGO_PATTERN = /\b\d[A-Za-z]{2,3}\d{3}\b/;
 
 function extractRegoUpper(text: string): string | null {
   const m = text.match(VEHICLE_REGO_PATTERN);

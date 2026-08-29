@@ -274,14 +274,13 @@ const STATE_BRACKET_RE = /\(\s*(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\s*\)/g;
  *      with the state spelled out instead of bracketed. Nothing gets
  *      produced for this case today, so the whole cell is reported as one
  *      unparsed item.
- *   2. A vehicle DID anchor, but its raw text contains a SECOND
+ *   2. A vehicle DID anchor, but its raw text still contains a SECOND
  *      "(<STATE>)"-shaped bracket beyond its own anchor — the signature of
- *      a second vehicle whose own anchor was broken by stray punctuation
- *      (e.g. "SLICK1, (WA) ..." — the comma breaks the anchor, so its
- *      text gets silently swallowed into the first vehicle's description
- *      instead of producing a second entry, see vehicleLineParser.ts).
- *      That vehicle's whole raw text is reported so the officer can see
- *      the buried second mention. */
+ *      a second vehicle whose own anchor was broken by punctuation
+ *      vehicleLineParser.ts doesn't already tolerate (it handles a comma —
+ *      "SLICK1, (WA) ..." — directly now, so this is the fallback for
+ *      anything stranger still slipping through). That vehicle's whole raw
+ *      text is reported so the officer can see the buried second mention. */
 function findUnparsedVehicleItems(
   vehiclesValue: string,
   vehicles: ParsedVehicleLine[]

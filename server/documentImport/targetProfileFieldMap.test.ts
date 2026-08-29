@@ -207,12 +207,12 @@ describe("mapDocxToTargetProfile — needsReview", () => {
     ]);
   });
 
-  // A second vehicle whose own "<token> (<STATE>)" anchor is broken by a
-  // stray comma gets silently swallowed into the first vehicle's
-  // description (garbled model field) rather than producing its own entry
-  // — the swallowed vehicle's bracket is still detectable as a second
-  // "(<STATE>)" inside that garbled description.
-  it("reports a vehicle whose raw text contains a second, unanchored state bracket", () => {
+  // A second vehicle whose own "<token> (<STATE>)" anchor has a stray
+  // comma before the bracket ("SLICK1, (WA) ...") used to get silently
+  // swallowed into the first vehicle's description — vehicleLineParser.ts
+  // now tolerates that comma directly, so both anchor independently and
+  // neither needs the needsReview safety net below.
+  it("splits a comma-before-bracket vehicle into its own entry, not a needsReview fallback", () => {
     const result = mapDocxToTargetProfile({
       tables: [
         {
@@ -227,14 +227,18 @@ describe("mapDocxToTargetProfile — needsReview", () => {
       ],
       paragraphs: [],
     });
-    expect(result.vehicles).toHaveLength(1);
-    expect(result.needsReview).toEqual([
-      {
-        kind: "vehicle",
-        label: "",
-        raw: "1KINGZ (WA) 2021 white BMW X5 4WD\n\nSLICK1, (WA) 2019 black Audi RS3 hatch",
-      },
-    ]);
+    expect(result.vehicles).toHaveLength(2);
+    expect(result.vehicles[0]).toMatchObject({
+      registration: "1KINGZ",
+      make: "BMW",
+      model: "X5",
+    });
+    expect(result.vehicles[1]).toMatchObject({
+      registration: "SLICK1",
+      make: "Audi",
+      model: "RS3",
+    });
+    expect(result.needsReview).toEqual([]);
   });
 
   // A VEHICLES cell with real content but no "(<STATE>)" anchor at all

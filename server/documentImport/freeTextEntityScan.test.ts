@@ -68,6 +68,56 @@ describe("matchWholeLinePersonName", () => {
   it("rejects a state code as a surname", () => {
     expect(matchWholeLinePersonName("Woodvale WA")).toBeNull();
   });
+
+  // A document doesn't always label an associate with "Associates:" — it
+  // might give no title at all (just the bare name, already covered by
+  // "matches a bare name line" above), or use a relationship word instead
+  // ("Mum", "Dad", "Sister", ...). A relationship word on its OWN line
+  // needs no special handling (it's a single word, never matches the
+  // name shape, so findAssociateBlocks just skips past it to the name on
+  // the next line) — these cover the word sharing a line WITH the name.
+  describe("relationship-word labels", () => {
+    it("strips a leading relationship word with a dash", () => {
+      expect(matchWholeLinePersonName("Mum - Jane SMITH")).toEqual({
+        firstNames: "Jane",
+        surname: "SMITH",
+      });
+    });
+
+    it("strips a leading relationship word with a colon", () => {
+      expect(matchWholeLinePersonName("Dad: John SMITH")).toEqual({
+        firstNames: "John",
+        surname: "SMITH",
+      });
+    });
+
+    it("strips a trailing relationship word in parentheses", () => {
+      expect(matchWholeLinePersonName("Jane SMITH (Sister)")).toEqual({
+        firstNames: "Jane",
+        surname: "SMITH",
+      });
+    });
+
+    it("strips a trailing relationship word after a dash", () => {
+      expect(matchWholeLinePersonName("John SMITH - Brother")).toEqual({
+        firstNames: "John",
+        surname: "SMITH",
+      });
+    });
+
+    it("is case-insensitive on the relationship word", () => {
+      expect(matchWholeLinePersonName("MUM - Jane SMITH")).toEqual({
+        firstNames: "Jane",
+        surname: "SMITH",
+      });
+    });
+
+    it("does not strip a word that isn't a known relationship", () => {
+      // "Consignee" isn't in the relationship word list, so this should
+      // fail the whole-line shape check same as any other prefixed line.
+      expect(matchWholeLinePersonName("Consignee - Jane SMITH")).toBeNull();
+    });
+  });
 });
 
 describe("findCandidateBusinesses", () => {

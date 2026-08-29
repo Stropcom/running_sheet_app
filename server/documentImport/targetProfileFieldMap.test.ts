@@ -133,6 +133,48 @@ describe("mapDocxToTargetProfile", () => {
     );
     expect(payneResult.needsReview).toEqual([]);
   });
+
+  // A document doesn't always introduce an associate with "Associates:" —
+  // sometimes there's no title at all, sometimes it's a relationship word
+  // ("Mum", "Dad", ...) instead. Both still need to anchor a full
+  // name+address+vehicle block end-to-end through the orchestrator, not
+  // just at the matchWholeLinePersonName unit level.
+  it("finds an associate block with no title and one introduced by a relationship word", () => {
+    const result = mapDocxToTargetProfile({
+      tables: [
+        {
+          rows: [["", "SUMMARY"]],
+        },
+        {
+          rows: [
+            [
+              "",
+              "Jane SMITH\n123 Example Street, PERTH WA 6000\n1ABC123 (WA) blue Toyota Camry sedan\n\nDad - John SMITH\n45 Other Road, FREMANTLE WA 6160",
+            ],
+          ],
+        },
+      ],
+      paragraphs: [],
+    });
+
+    expect(result.associateBlocks).toHaveLength(2);
+    expect(result.associateBlocks[0]).toMatchObject({
+      firstNames: "Jane",
+      surname: "SMITH",
+    });
+    expect(result.associateBlocks[0].vehicle).toMatchObject({
+      registration: "1ABC123",
+    });
+    expect(result.associateBlocks[1]).toMatchObject({
+      firstNames: "John",
+      surname: "SMITH",
+    });
+    expect(result.associateBlocks[1].address).toMatchObject({
+      houseNo: "45",
+      streetName: "Other",
+      suburb: "FREMANTLE",
+    });
+  });
 });
 
 describe("mapDocxToTargetProfile — needsReview", () => {

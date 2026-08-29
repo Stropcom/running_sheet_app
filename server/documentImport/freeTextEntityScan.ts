@@ -104,15 +104,88 @@ function isRejectedSurname(surname: string): boolean {
   return AU_STATES.has(surname) || PERSON_SURNAME_STOPLIST.has(surname);
 }
 
+// A relationship word instead of (or alongside) "Associates:" — a document
+// doesn't always label who someone is with a role like "Associate", it just
+// says how they're related to the target: "Mum", "Dad", "Sister", etc.
+// There's no schema field for the relationship itself (per the "treat them
+// as associates for now" decision), so this list exists purely to
+// RECOGNISE the name next to one of these words, not to record the
+// relationship anywhere.
+const RELATIONSHIP_WORDS = new Set([
+  "mum",
+  "mother",
+  "dad",
+  "father",
+  "sister",
+  "brother",
+  "wife",
+  "husband",
+  "partner",
+  "son",
+  "daughter",
+  "cousin",
+  "uncle",
+  "aunt",
+  "auntie",
+  "nephew",
+  "niece",
+  "grandmother",
+  "grandfather",
+  "nan",
+  "nanna",
+  "pop",
+  "stepmother",
+  "stepfather",
+  "stepson",
+  "stepdaughter",
+  "stepsister",
+  "stepbrother",
+  "girlfriend",
+  "boyfriend",
+  "fiancee",
+  "fiance",
+  "friend",
+  "associate",
+  "colleague",
+]);
+
+/** Strips a leading or trailing relationship-word label from a line before
+ * name-matching, e.g. "Mum - Jane SMITH", "Dad: John SMITH",
+ * "Jane SMITH (Mum)", "Jane SMITH - Sister" all reduce to "Jane SMITH". A
+ * relationship word sitting on its OWN line (no name on the same line)
+ * doesn't need this — matchWholeLinePersonName already returns null for it
+ * (a single word never satisfies the firstname+surname shape), so
+ * findAssociateBlocks just skips it and picks up the name on the next
+ * line as usual. */
+function stripRelationshipLabel(line: string): string {
+  let s = line.trim();
+  const leading = s.match(/^([A-Za-z]+)\s*[-–:,]\s*(.+)$/);
+  if (leading && RELATIONSHIP_WORDS.has(leading[1].toLowerCase())) {
+    s = leading[2].trim();
+  }
+  const trailingParen = s.match(/^(.+?)\s*\(([A-Za-z]+)\)$/);
+  if (trailingParen && RELATIONSHIP_WORDS.has(trailingParen[2].toLowerCase())) {
+    s = trailingParen[1].trim();
+  }
+  const trailingDash = s.match(/^(.+?)\s*[-–:,]\s*([A-Za-z]+)$/);
+  if (trailingDash && RELATIONSHIP_WORDS.has(trailingDash[2].toLowerCase())) {
+    s = trailingDash[1].trim();
+  }
+  return s;
+}
+
 /** Matches a single line that is ENTIRELY a "Firstname [Middlename]
  * SURNAME" name and nothing else — used to anchor an "associate block" (a
  * name on its own line, followed by that person's address and/or vehicle
  * on the next line or two — see targetProfileFieldMap.ts's
- * findAssociateBlocks) rather than picking a name out of running prose. */
+ * findAssociateBlocks) rather than picking a name out of running prose. A
+ * relationship word attached to the same line (see RELATIONSHIP_WORDS) is
+ * stripped first so "Mum - Jane SMITH" still anchors a block the same way
+ * a bare "Jane SMITH" or an "Associates:"-labelled one does. */
 export function matchWholeLinePersonName(
   line: string
 ): { firstNames: string; surname: string } | null {
-  const m = line.trim().match(WHOLE_LINE_PERSON_RE);
+  const m = stripRelationshipLabel(line).match(WHOLE_LINE_PERSON_RE);
   if (!m) return null;
   const surname = m[2];
   if (isRejectedSurname(surname)) return null;

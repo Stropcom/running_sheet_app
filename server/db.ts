@@ -4739,14 +4739,42 @@ const VEHICLE_MOVEMENT_PATTERN =
   /\b(arrived|departed|driving|drove|drives|reversed|reversing|reverses|pulled up|pulled away|pulling up|pulling away|left)\b/i;
 const VEHICLE_MENTION_PATTERN = /\bVehicle\s+[A-Za-z0-9]{2,8}\b/i;
 
+// Word-boundary substring test for a bare (bracket-free) mention of a
+// known short form — the same matching approach getAllIntelligenceEntities'
+// "Pass B" uses to pick up a re-mention like "returned to 54 Terrace Road"
+// with no bracket of its own. Factored out here so
+// looksLikeUnlocatedVehiclePresenceRow can apply the identical rule rather
+// than a stricter one-off check.
+function hasBareMention(observation: string, term: string): boolean {
+  const trimmed = term.trim();
+  if (!trimmed) return false;
+  const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const wordBoundary = /^[A-Za-z]/.test(trimmed)
+    ? `\\b${escaped}\\b`
+    : `(?<![A-Za-z0-9])${escaped}(?![A-Za-z0-9])`;
+  return new RegExp(wordBoundary, "i").test(observation);
+}
+
+// `knownLocationShortForms` lets a caller (see pickMissingLocationSuggestion)
+// pass in every address/business short form already bracket-introduced
+// elsewhere in this sheet — a bare mention of any of those on THIS row
+// counts as already located too, mirroring getAllIntelligenceEntities'
+// "Pass B" bare-re-mention handling (the same convention the
+// vehicle-arriving chip's subsequent-mention, no-bracket insertion relies
+// on). Without this, a row using that exact same bracket-free convention
+// would look permanently "unlocated" to this check alone, even though the
+// rest of the app already recognises it as located.
 export function looksLikeUnlocatedVehiclePresenceRow(
-  observation: string
+  observation: string,
+  knownLocationShortForms: string[] = []
 ): boolean {
   if (!VEHICLE_MENTION_PATTERN.test(observation)) return false;
   if (!STATIC_PRESENCE_PATTERN.test(observation)) return false;
   if (VEHICLE_MOVEMENT_PATTERN.test(observation)) return false;
   const entities = extractEntitiesFromText(observation);
-  return !entities.some(e => e.type === "address" || e.type === "business");
+  if (entities.some(e => e.type === "address" || e.type === "business"))
+    return false;
+  return !knownLocationShortForms.some(sf => hasBareMention(observation, sf));
 }
 
 // The app-wide subsequent-mention convention (see isAddressAlreadyMentioned
@@ -4781,11 +4809,27 @@ export function pickMissingLocationSuggestion(
   observation: string,
   otherRows: Array<{ observation: string | null }>
 ): MissingLocationSuggestion | null {
-  if (!looksLikeUnlocatedVehiclePresenceRow(observation)) return null;
-
   const rows = otherRows.filter(
     (r): r is { observation: string } => !!r.observation
   );
+
+  // Every address/business short form already bracket-introduced anywhere
+  // else in this sheet — see looksLikeUnlocatedVehiclePresenceRow's
+  // knownLocationShortForms param for why this row's own bare mention of
+  // any of these should count as already located.
+  const knownShortForms: string[] = [];
+  for (const r of rows) {
+    for (const e of extractEntitiesFromText(r.observation)) {
+      if (e.type === "address" || e.type === "business") {
+        knownShortForms.push(e.shortForm);
+        if (e.rawShortForm !== e.shortForm)
+          knownShortForms.push(e.rawShortForm);
+      }
+    }
+  }
+
+  if (!looksLikeUnlocatedVehiclePresenceRow(observation, knownShortForms))
+    return null;
 
   for (let i = rows.length - 1; i >= 0; i--) {
     const entities = extractEntitiesFromText(rows[i].observation);

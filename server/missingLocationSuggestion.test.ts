@@ -49,24 +49,36 @@ describe("looksLikeUnlocatedVehiclePresenceRow", () => {
     expect(looksLikeUnlocatedVehiclePresenceRow(text)).toBe(false);
   });
 
-  // Regression test: appendLocationSuggestion (client/src/pages/SheetDetail.tsx)
-  // used to append the officer-confirmed location WITHOUT its bracket
-  // (" at 35 Petra Street." rather than " (35 Petra Street)."), matching the
-  // vehicle-arriving chip's "subsequent mention, no bracket needed"
-  // convention — which doesn't apply here, since this check specifically
-  // requires a bracket in THIS row's own text to register the address. The
-  // bug: confirming the prompt never actually satisfied the check that
-  // triggered it, so it kept firing on every later save of the same row.
-  it("still flags the row if the confirmed location was appended without a bracket (the bug)", () => {
+  // Called with no knownLocationShortForms (the default), this check only
+  // has the row's own text to go on — a bare, bracket-free mention looks
+  // identical to no location at all in isolation. That's expected and
+  // correct: pickMissingLocationSuggestion below is what actually supplies
+  // the sheet's known short forms, mirroring how getAllIntelligenceEntities'
+  // "Pass B" needs the rest of the sheet to recognise a bare re-mention too.
+  it("flags a bare, bracket-free location mention when no known short forms are supplied", () => {
     const text =
       "A green Holden Commodore Sedan, bearing WA registration 1DAF836 (Vehicle 1DAF836), parked and unattended in the driveway at 35 Petra Street.";
     expect(looksLikeUnlocatedVehiclePresenceRow(text)).toBe(true);
   });
 
-  it("stops flagging the row once the confirmed location is appended WITH its bracket (the fix)", () => {
+  it("stops flagging the row once the confirmed location is appended WITH its own bracket", () => {
     const text =
       "A green Holden Commodore Sedan, bearing WA registration 1DAF836 (Vehicle 1DAF836), parked and unattended in the driveway (35 Petra Street).";
     expect(looksLikeUnlocatedVehiclePresenceRow(text)).toBe(false);
+  });
+
+  // The actual mechanism appendLocationSuggestion (SheetDetail.tsx) and
+  // appendQeLocationSuggestion (IntelligenceMapping.tsx) rely on: a bare
+  // mention is enough, exactly like the vehicle-arriving chip's
+  // "subsequent mention, no bracket needed" convention — as long as the
+  // location was bracket-introduced SOMEWHERE else in the sheet, which the
+  // caller passes in via knownLocationShortForms.
+  it("stops flagging the row once its bare mention matches a known short form", () => {
+    const text =
+      "A green Holden Commodore Sedan, bearing WA registration 1DAF836 (Vehicle 1DAF836), parked and unattended in the driveway at 35 Petra Street.";
+    expect(
+      looksLikeUnlocatedVehiclePresenceRow(text, ["35 Petra Street"])
+    ).toBe(false);
   });
 });
 
@@ -169,5 +181,20 @@ describe("pickMissingLocationSuggestion", () => {
       commencementRow,
     ]);
     expect(result?.location).toBe("45 Burrendah Boulevard");
+  });
+
+  // End-to-end regression for the actual reported bug: confirming the
+  // prompt appends the suggested location as a bare, bracket-free mention
+  // (appendLocationSuggestion/appendQeLocationSuggestion) — this proves
+  // that once saved, the SAME row no longer re-triggers the prompt on a
+  // later save, because its bare mention of "45 Burrendah Boulevard"
+  // matches the short form the commencement row already bracket-introduced.
+  it("stops suggesting a location for a row that already has a bare (bracket-free) mention of one", () => {
+    const rowAfterConfirming =
+      "A green Holden Commodore Sedan, bearing WA registration 1DAF836 (Vehicle 1DAF836), and a silver Ford Everest 4WD, bearing WA registration XCF937 (Vehicle XCF937), parked and unattended in the driveway at 45 Burrendah Boulevard.";
+    const result = pickMissingLocationSuggestion(rowAfterConfirming, [
+      commencementRow,
+    ]);
+    expect(result).toBeNull();
   });
 });

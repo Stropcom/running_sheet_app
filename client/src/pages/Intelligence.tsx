@@ -82,6 +82,9 @@ interface Entity {
   targetId?: number | null;
   lowConfidence?: boolean;
   isIndicesOnly?: boolean;
+  /** Registry surname (targets.surname / associates.surname) — powers
+   * "Sort by Surname" on the Targets/Associates tabs. */
+  surname?: string | null;
   occurrences: Occurrence[];
 }
 
@@ -138,6 +141,86 @@ function uniqueSheets(occurrences: Occurrence[]) {
     seen.add(o.sheetId);
     return true;
   });
+}
+
+// ─── Derived sort keys (Vehicle "Make" / Location "Suburb") ───────────────────
+// Vehicles and locations aren't registry tables of their own — there's no
+// structured "make" or "suburb" field to sort by — so these are parsed
+// deterministically off the entity's already-normalised display text
+// instead, matching composeVehicle/composeAddress's own field order
+// (shared/lib/addressFormat.ts) rather than guessing at free-form text.
+
+const VEHICLE_MAKE_SKIP_COLOURS = new Set([
+  "white",
+  "black",
+  "silver",
+  "grey",
+  "gray",
+  "blue",
+  "red",
+  "green",
+  "yellow",
+  "gold",
+  "brown",
+  "maroon",
+  "orange",
+  "purple",
+  "tan",
+  "beige",
+  "cream",
+  "navy",
+  "khaki",
+  "pink",
+  "bronze",
+  "charcoal",
+]);
+
+// entity.shortForm for a vehicle is already normalised into "REGO colour
+// make model type" order by formatIntelVehicle (shared/addressFormat.ts) —
+// regardless of whether the vehicle came from a registered V1/extra-vehicle
+// field or a free-text observation mention. Strip the leading rego token,
+// then an optional colour word, and whatever's left is the make.
+function deriveVehicleMake(entity: Entity): string {
+  const words = entity.shortForm.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "";
+  let idx = 0;
+  if (/[A-Za-z]/.test(words[0]) && /\d/.test(words[0])) idx = 1;
+  if (words[idx] && VEHICLE_MAKE_SKIP_COLOURS.has(words[idx].toLowerCase()))
+    idx++;
+  return words[idx] ?? "";
+}
+
+const SUBURB_STATE_RE =
+  /,\s*([A-Za-z][\w\s]*?)\s+(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\b/;
+
+// An address entity's shortForm deliberately drops the suburb (the
+// "subsequent mention" convention — see isAddressAlreadyMentioned in
+// server/db.ts), so the suburb has to come from an occurrence's
+// fullDescription instead, which composeAddress always writes as
+// "<street>, <SUBURB> <STATE> (<short>)". Different occurrences of the same
+// address can carry different free-text wording, so this checks each one
+// until it finds a match rather than assuming the first occurrence has it.
+function deriveSuburb(entity: Entity): string {
+  for (const occ of entity.occurrences) {
+    const match = occ.fullDescription.match(SUBURB_STATE_RE);
+    if (match) return match[1].trim();
+  }
+  return "";
+}
+
+// The alphabetically-earliest real operation name (excluding the
+// operationId=0 "(Registry)" pseudo-operation) among this entity's
+// occurrences — used for "Sort by Operation". A target/associate linked to
+// several operations sorts by whichever of those names comes first, same
+// tie-break a human alphabetising a list by hand would use.
+function getPrimaryOperationName(entity: Entity): string {
+  let best: string | null = null;
+  for (const occ of entity.occurrences) {
+    if (occ.operationId === 0 || occ.operationName === "(Registry)") continue;
+    if (best === null || occ.operationName.localeCompare(best) < 0)
+      best = occ.operationName;
+  }
+  return best ?? "";
 }
 
 // ─── PDF Export ───────────────────────────────────────────────────────────────
@@ -1341,8 +1424,8 @@ export default function IntelligencePage() {
   // below — not tracked afterwards, so navigating away and using the tabs
   // normally doesn't fight with a stale query string.
   const routeSearch = useSearch();
-  const [deepLinkTab] = useState(
-    () => new URLSearchParams(routeSearch).get("tab")
+  const [deepLinkTab] = useState(() =>
+    new URLSearchParams(routeSearch).get("tab")
   );
   const [deepLinkOperationId] = useState<number | null>(() => {
     const raw = new URLSearchParams(routeSearch).get("operationId");
@@ -1376,13 +1459,29 @@ export default function IntelligencePage() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
 
-  // Sort order (entity tabs)
-  type SortOrder = "frequency" | "az" | "za" | "recent" | "oldest";
+  // Sort order (entity tabs) — "operation"/"surname" apply to Targets and
+  // Associates, "make" to Vehicles, "suburb" to Locations (see the sort pill
+  // row below, which only shows the options relevant to the active tab).
+  type SortOrder =
+    | "frequency"
+    | "az"
+    | "za"
+    | "recent"
+    | "oldest"
+    | "operation"
+    | "surname"
+    | "make"
+    | "suburb";
   const [sortOrder, setSortOrder] = useState<SortOrder>("frequency");
 
   // Sort order (operations tab)
   type OpSortOrder = "az" | "recent";
   const [opSortOrder, setOpSortOrder] = useState<OpSortOrder>("az");
+
+  // Operation filter (Targets/Associates tabs only) — null = all operations.
+  const [filterOperationId, setFilterOperationId] = useState<number | null>(
+    null
+  );
 
   const dateRange = useMemo(
     () => presetToRange(datePreset, customFrom, customTo),
@@ -1441,6 +1540,34 @@ export default function IntelligencePage() {
             getLatestSheet(a).localeCompare(getLatestSheet(b)) ||
             getLatestTime(a) - getLatestTime(b)
           );
+        if (sortOrder === "operation")
+          return getPrimaryOperationName(a).localeCompare(
+            getPrimaryOperationName(b)
+          );
+        if (sortOrder === "surname") {
+          const as = (a.surname ?? "").trim();
+          const bs = (b.surname ?? "").trim();
+          if (!as && !bs) return a.shortForm.localeCompare(b.shortForm);
+          if (!as) return 1;
+          if (!bs) return -1;
+          return as.localeCompare(bs);
+        }
+        if (sortOrder === "make") {
+          const am = deriveVehicleMake(a);
+          const bm = deriveVehicleMake(b);
+          if (!am && !bm) return a.shortForm.localeCompare(b.shortForm);
+          if (!am) return 1;
+          if (!bm) return -1;
+          return am.localeCompare(bm);
+        }
+        if (sortOrder === "suburb") {
+          const asub = deriveSuburb(a);
+          const bsub = deriveSuburb(b);
+          if (!asub && !bsub) return a.shortForm.localeCompare(b.shortForm);
+          if (!asub) return 1;
+          if (!bsub) return -1;
+          return asub.localeCompare(bsub);
+        }
         // default: frequency
         return b.occurrences.length - a.occurrences.length;
       });
@@ -1465,13 +1592,25 @@ export default function IntelligencePage() {
           o.observationSnippet.toLowerCase().includes(q) ||
           o.fullDescription.toLowerCase().includes(q)
       );
+    // Targets/Associates only — "only displays targets linked to that
+    // operation" (a formal operation_target_links relationship, which every
+    // target/associate occurrence already carries an operationId for, not
+    // just a text mention — see getPrimaryOperationName's comment).
+    const matchesOperationFilter = (e: Entity) =>
+      filterOperationId === null ||
+      e.occurrences.some(o => o.operationId === filterOperationId);
     if (activeTab === "targets")
       return filteredEntities.filter(
-        e => e.isTarget === true && matchesSearch(e)
+        e =>
+          e.isTarget === true && matchesSearch(e) && matchesOperationFilter(e)
       );
     if (activeTab === "associates")
       return filteredEntities.filter(
-        e => e.type === "person" && !e.isTarget && matchesSearch(e)
+        e =>
+          e.type === "person" &&
+          !e.isTarget &&
+          matchesSearch(e) &&
+          matchesOperationFilter(e)
       );
     if (activeTab === "vehicle")
       return filteredEntities.filter(
@@ -1482,7 +1621,7 @@ export default function IntelligencePage() {
         e => (e.type === "address" || e.type === "business") && matchesSearch(e)
       );
     return filteredEntities.filter(matchesSearch);
-  }, [filteredEntities, activeTab, search]);
+  }, [filteredEntities, activeTab, search, filterOperationId]);
 
   // Counts per tab for badges
   const tabCounts = useMemo(() => {
@@ -1674,7 +1813,7 @@ export default function IntelligencePage() {
           </div>
         )}
 
-        {/* Search bar + sort control — entity tabs only */}
+        {/* Search bar + filter + sort control — entity tabs only */}
         {activeTab !== "operations" && !isMapTab && (
           <div className="space-y-2 mb-5">
             <div className="relative">
@@ -1686,16 +1825,58 @@ export default function IntelligencePage() {
                 onChange={e => setSearch(e.target.value)}
               />
             </div>
+
+            {(activeTab === "targets" || activeTab === "associates") && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-muted-foreground mr-1">
+                  Filter:
+                </span>
+                <Select
+                  value={filterOperationId?.toString() ?? "all"}
+                  onValueChange={v =>
+                    setFilterOperationId(v === "all" ? null : Number(v))
+                  }
+                >
+                  <SelectTrigger className="h-8 w-auto min-w-[10rem] text-xs">
+                    <SelectValue placeholder="Operation" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All operations</SelectItem>
+                    {(allOps ?? []).map(op => (
+                      <SelectItem key={op.id} value={op.id.toString()}>
+                        {op.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-xs text-muted-foreground mr-1">Sort:</span>
               {(
                 [
-                  { value: "frequency", label: "Most frequent" },
-                  { value: "az", label: "A → Z" },
-                  { value: "za", label: "Z → A" },
-                  { value: "recent", label: "Most recent" },
-                  { value: "oldest", label: "Oldest first" },
-                ] as const
+                  { value: "frequency" as const, label: "Most frequent" },
+                  { value: "az" as const, label: "A → Z" },
+                  { value: "za" as const, label: "Z → A" },
+                  { value: "recent" as const, label: "Most recent" },
+                  { value: "oldest" as const, label: "Oldest first" },
+                  ...(activeTab === "targets" || activeTab === "associates"
+                    ? [
+                        {
+                          value: "operation" as const,
+                          label: "Operation A → Z",
+                        },
+                        { value: "surname" as const, label: "Surname A → Z" },
+                      ]
+                    : []),
+                  ...(activeTab === "vehicle"
+                    ? [{ value: "make" as const, label: "Make A → Z" }]
+                    : []),
+                  ...(activeTab === "locations"
+                    ? [{ value: "suburb" as const, label: "Suburb A → Z" }]
+                    : []),
+                ] satisfies { value: SortOrder; label: string }[]
               ).map(opt => (
                 <button
                   key={opt.value}

@@ -4143,6 +4143,11 @@ export interface IntelligenceEntity {
   tgtAlias?: string | null;
   /** For target entities: the numeric DB id of the target record */
   targetId?: number | null;
+  /** For target/associate entities: the structured registry surname field
+   * (targets.surname / associates.surname) — used for "Sort by Surname" on
+   * the Intelligence folder's Targets/Associates tabs, rather than guessing
+   * a surname out of the free-text shortForm display name. */
+  surname?: string | null;
   /** True when at least one occurrence was extracted with low confidence (type=unknown or ambiguous pattern) */
   lowConfidence?: boolean;
   /** Labels of entities merged into this one via a confirmed duplicate decision. */
@@ -6330,6 +6335,7 @@ export async function getAllIntelligenceEntities(): Promise<
     .select({
       targetId: targets.id,
       targetName: targets.name,
+      surname: targets.surname,
       tgt: targets.tgt,
       hb: targets.hb,
       v1: targets.v1,
@@ -6351,6 +6357,7 @@ export async function getAllIntelligenceEntities(): Promise<
     .select({
       targetId: targets.id,
       targetName: targets.name,
+      surname: targets.surname,
       tgt: targets.tgt,
       hb: targets.hb,
       v1: targets.v1,
@@ -6376,6 +6383,7 @@ export async function getAllIntelligenceEntities(): Promise<
   const targetRows: Array<{
     targetId: number;
     targetName: string;
+    surname: string | null;
     tgt: string | null;
     hb: string | null;
     v1: string | null;
@@ -6458,6 +6466,7 @@ export async function getAllIntelligenceEntities(): Promise<
         isTarget: true,
         tgtAlias: t.tgt?.trim() || null,
         targetId: t.targetId,
+        surname: t.surname,
         occurrences: [],
       });
     }
@@ -6647,6 +6656,7 @@ export async function getAllIntelligenceEntities(): Promise<
       id: associates.id,
       targetId: associates.targetId,
       name: associates.name,
+      surname: associates.surname,
       tgt: associates.tgt,
       hbf: associates.hbf,
       hb: associates.hb,
@@ -6682,6 +6692,7 @@ export async function getAllIntelligenceEntities(): Promise<
         associateId: a.id,
         associateOfTargetId: a.targetId,
         associateOfTargetName: parentName,
+        surname: a.surname,
         occurrences: [],
       });
     }

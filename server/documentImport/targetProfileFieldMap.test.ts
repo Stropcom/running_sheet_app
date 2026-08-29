@@ -121,4 +121,109 @@ describe("mapDocxToTargetProfile", () => {
     expect(personValues).not.toContain("WHITE GUM VALLEY");
     expect(personValues).not.toContain("David GRAY");
   });
+
+  it("reports an empty needsReview for both real fixtures — no false positives", async () => {
+    const trainingResult = mapDocxToTargetProfile(
+      await readDocxTables(readFileSync(FIXTURE_PATH))
+    );
+    expect(trainingResult.needsReview).toEqual([]);
+
+    const payneResult = mapDocxToTargetProfile(
+      await readDocxTables(readFileSync(PAYNE_FIXTURE_PATH))
+    );
+    expect(payneResult.needsReview).toEqual([]);
+  });
+});
+
+describe("mapDocxToTargetProfile — needsReview", () => {
+  // A "LOCATION OF INTEREST" line under a recognised sub-label that matches
+  // neither parseAddressLine nor its loose fallback (no leading house
+  // number, e.g. a corner address) used to just vanish. It should now be
+  // reported so the officer knows something was there.
+  it("reports an address line under a label that nothing could parse", () => {
+    const result = mapDocxToTargetProfile({
+      tables: [
+        {
+          rows: [
+            [
+              "",
+              "LOCATION OF INTEREST",
+              "Current Address:\nCnr Marmion Street and Preston Point Road, EAST FREMANTLE WA.",
+            ],
+          ],
+        },
+      ],
+      paragraphs: [],
+    });
+    expect(result.addresses).toEqual([]);
+    expect(result.needsReview).toEqual([
+      {
+        kind: "address",
+        label: "Current Address",
+        raw: "Cnr Marmion Street and Preston Point Road, EAST FREMANTLE WA.",
+      },
+    ]);
+  });
+
+  // A second vehicle whose own "<token> (<STATE>)" anchor is broken by a
+  // stray comma gets silently swallowed into the first vehicle's
+  // description (garbled model field) rather than producing its own entry
+  // — the swallowed vehicle's bracket is still detectable as a second
+  // "(<STATE>)" inside that garbled description.
+  it("reports a vehicle whose raw text contains a second, unanchored state bracket", () => {
+    const result = mapDocxToTargetProfile({
+      tables: [
+        {
+          rows: [
+            [
+              "",
+              "VEHICLES",
+              "1KINGZ (WA) 2021 white BMW X5 4WD\n\nSLICK1, (WA) 2019 black Audi RS3 hatch",
+            ],
+          ],
+        },
+      ],
+      paragraphs: [],
+    });
+    expect(result.vehicles).toHaveLength(1);
+    expect(result.needsReview).toEqual([
+      {
+        kind: "vehicle",
+        label: "",
+        raw: "1KINGZ (WA) 2021 white BMW X5 4WD\n\nSLICK1, (WA) 2019 black Audi RS3 hatch",
+      },
+    ]);
+  });
+
+  // A VEHICLES cell with real content but no "(<STATE>)" anchor at all
+  // (e.g. "Rego 1MXP920, ..." with the state never bracketed) currently
+  // produces zero vehicle entries — the whole cell should be reported.
+  it("reports a whole VEHICLES cell with no anchor at all", () => {
+    const result = mapDocxToTargetProfile({
+      tables: [
+        {
+          rows: [
+            ["", "VEHICLES", "Rego 1MXP920, red Mazda 3 hatch, parked at rear"],
+          ],
+        },
+      ],
+      paragraphs: [],
+    });
+    expect(result.vehicles).toEqual([]);
+    expect(result.needsReview).toEqual([
+      {
+        kind: "vehicle",
+        label: "",
+        raw: "Rego 1MXP920, red Mazda 3 hatch, parked at rear",
+      },
+    ]);
+  });
+
+  it("reports nothing for a blank VEHICLES cell", () => {
+    const result = mapDocxToTargetProfile({
+      tables: [{ rows: [["", "VEHICLES", ""]] }],
+      paragraphs: [],
+    });
+    expect(result.needsReview).toEqual([]);
+  });
 });

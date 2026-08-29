@@ -181,6 +181,42 @@ export function ImportTargetDocumentDialog({
     const [primaryAddress, ...restAddresses] = result.addresses;
     const [primaryVehicle, ...restVehicles] = result.vehicles;
 
+    // Content the document clearly intended as an address/vehicle but that
+    // nothing could actually parse (see UnparsedItem) becomes a real Extra
+    // Address/Vehicle card too — with the raw text dropped into the field
+    // an officer would look at first (street name / model) — rather than
+    // just being described on this screen and then vanishing. The officer
+    // edits it into shape instead of retyping it from the original
+    // document.
+    const unparsedExtraAddresses: ExtraAddress[] = result.needsReview
+      .filter(u => u.kind === "address")
+      .map(u => ({
+        id: makeExtraId(),
+        label: u.label,
+        businessName: "",
+        unitNo: "",
+        houseNo: "",
+        streetName: u.raw,
+        streetType: "",
+        suburb: "",
+        state: "WA",
+        full: "",
+        short: "",
+      }));
+    const unparsedExtraVehicles: ExtraVehicle[] = result.needsReview
+      .filter(u => u.kind === "vehicle")
+      .map(u => ({
+        id: makeExtraId(),
+        registration: "",
+        state: "WA",
+        colour: "",
+        make: "",
+        model: u.raw,
+        vehicleType: "",
+        full: "",
+        short: "",
+      }));
+
     onContinue({
       identity: result.name
         ? {
@@ -210,30 +246,36 @@ export function ImportTargetDocumentDialog({
             vehicleType: primaryVehicle.vehicleType,
           }
         : EMPTY_VEHICLE_PARTS,
-      extraAddresses: restAddresses.map(a => ({
-        id: makeExtraId(),
-        label: a.label,
-        businessName: "",
-        unitNo: a.unitNo,
-        houseNo: a.houseNo,
-        streetName: a.streetName,
-        streetType: a.streetType,
-        suburb: a.suburb,
-        state: a.state,
-        full: "",
-        short: "",
-      })),
-      extraVehicles: restVehicles.map(v => ({
-        id: makeExtraId(),
-        registration: v.registration,
-        state: v.state,
-        colour: v.colour,
-        make: v.make,
-        model: v.model,
-        vehicleType: v.vehicleType,
-        full: "",
-        short: "",
-      })),
+      extraAddresses: [
+        ...restAddresses.map(a => ({
+          id: makeExtraId(),
+          label: a.label,
+          businessName: "",
+          unitNo: a.unitNo,
+          houseNo: a.houseNo,
+          streetName: a.streetName,
+          streetType: a.streetType,
+          suburb: a.suburb,
+          state: a.state,
+          full: "",
+          short: "",
+        })),
+        ...unparsedExtraAddresses,
+      ],
+      extraVehicles: [
+        ...restVehicles.map(v => ({
+          id: makeExtraId(),
+          registration: v.registration,
+          state: v.state,
+          colour: v.colour,
+          make: v.make,
+          model: v.model,
+          vehicleType: v.vehicleType,
+          full: "",
+          short: "",
+        })),
+        ...unparsedExtraVehicles,
+      ],
       associates,
     });
     reset();
@@ -362,6 +404,39 @@ export function ImportTargetDocumentDialog({
                       {v.registration} ({v.state}) — {v.colour} {v.make}{" "}
                       {v.model}
                       {v.vehicleType && ` ${v.vehicleType}`}
+                      {!v.confident && (
+                        <Badge variant="outline" className="ml-1.5 text-[10px]">
+                          check details
+                        </Badge>
+                      )}
+                    </p>
+                  ))}
+                </div>
+              )}
+
+              {result.needsReview.length > 0 && (
+                <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 flex flex-col gap-2">
+                  <p className="text-xs font-bold text-amber-600 uppercase tracking-wide flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    Needs your review ({result.needsReview.length})
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    The document clearly had an address or vehicle here, but it
+                    couldn't be read automatically. Each one below will be added
+                    as an extra Address/Vehicle on the next screen with the
+                    original text dropped in — split it into the right fields
+                    there rather than retyping it from the document.
+                  </p>
+                  {result.needsReview.map((u, i) => (
+                    <p key={i} className="text-sm">
+                      <span className="text-muted-foreground">
+                        {u.kind === "address"
+                          ? u.label
+                            ? `${u.label}: `
+                            : "Address: "
+                          : "Vehicle: "}
+                      </span>
+                      <span className="italic">{u.raw}</span>
                     </p>
                   ))}
                 </div>

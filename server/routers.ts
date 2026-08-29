@@ -144,6 +144,7 @@ import {
   deleteTarget,
   getTargetById,
   findPossibleDuplicateTarget,
+  findPossibleDuplicatePerson,
   mergeTargetFieldDetails,
   getTargetFieldHistory,
   setSheetTarget,
@@ -2897,6 +2898,25 @@ export const appRouter = router({
           return findPossibleDuplicateTarget(input.name, input.excludeId);
         }),
 
+      /** Same fuzzy check as findPossibleDuplicate above, but against the
+       * combined Target + Associate registry — used by the document-import
+       * pipeline, where a parsed name (target or associate) could already
+       * be on file as either kind. */
+      findPossibleDuplicatePerson: protectedProcedure
+        .input(
+          z.object({
+            name: z.string().min(1),
+            excludeTargetId: z.number().optional(),
+            excludeAssociateId: z.number().optional(),
+          })
+        )
+        .query(async ({ input }) => {
+          return findPossibleDuplicatePerson(input.name, {
+            targetId: input.excludeTargetId,
+            associateId: input.excludeAssociateId,
+          });
+        }),
+
       /** Applies officer-resolved field choices when a new target entry is merged into an existing one instead of creating a duplicate. */
       mergeFieldDetails: protectedProcedure
         .input(
@@ -2924,6 +2944,23 @@ export const appRouter = router({
             appendWildFields: z
               .array(z.object({ label: z.string(), value: z.string() }))
               .optional(),
+            appendExtraAddresses: z
+              .array(
+                z.object({
+                  id: z.string(),
+                  label: z.string(),
+                  businessName: z.string(),
+                  unitNo: z.string(),
+                  houseNo: z.string(),
+                  streetName: z.string(),
+                  streetType: z.string(),
+                  suburb: z.string(),
+                  state: z.string(),
+                  full: z.string(),
+                  short: z.string(),
+                })
+              )
+              .optional(),
           })
         )
         .mutation(async ({ input, ctx }) => {
@@ -2932,7 +2969,8 @@ export const appRouter = router({
             input.resolutions,
             input.appendExtraVehicles ?? [],
             input.appendWildFields ?? [],
-            ctx.user.cin ?? null
+            ctx.user.cin ?? null,
+            input.appendExtraAddresses ?? []
           );
         }),
 

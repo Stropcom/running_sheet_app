@@ -2636,6 +2636,68 @@ export async function findPossibleDuplicateTarget(
   };
 }
 
+export interface PossibleDuplicatePerson {
+  type: "target" | "associate";
+  id: number;
+  name: string;
+  score: number;
+  reason: string;
+}
+
+/** Same fuzzy-match engine as findPossibleDuplicateTarget, but searches
+ * BOTH the Target Registry and the Associate Registry as one combined
+ * candidate pool — for "does this person already exist anywhere in the
+ * registry", not just among other targets. Used by the document-import
+ * pipeline: a parsed target name (and every parsed associate name) needs
+ * checking against everyone already on file, target or associate, since
+ * either could be who the document is actually describing. */
+export async function findPossibleDuplicatePerson(
+  name: string,
+  exclude?: { targetId?: number; associateId?: number }
+): Promise<PossibleDuplicatePerson | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const [targetRows, associateRows] = await Promise.all([
+    db
+      .select({ id: targets.id, name: targets.name })
+      .from(targets)
+      .where(isNull(targets.deletedAt)),
+    db
+      .select({ id: associates.id, name: associates.name })
+      .from(associates)
+      .where(isNull(associates.deletedAt)),
+  ]);
+  const candidates: DedupCandidateEntity[] = [
+    ...targetRows
+      .filter(r => r.id !== exclude?.targetId)
+      .map(r => ({
+        key: `target:${r.id}`,
+        label: r.name,
+        type: "person" as DedupType,
+        rowCount: 0,
+      })),
+    ...associateRows
+      .filter(r => r.id !== exclude?.associateId)
+      .map(r => ({
+        key: `associate:${r.id}`,
+        label: r.name,
+        type: "person" as DedupType,
+        rowCount: 0,
+      })),
+  ];
+  const matches = findPossibleDuplicates(name, "person", "__new__", candidates);
+  if (matches.length === 0) return null;
+  const best = matches[0];
+  const [type, idStr] = best.key.split(":");
+  return {
+    type: type as "target" | "associate",
+    id: Number(idStr),
+    name: best.label,
+    score: best.score,
+    reason: best.reason,
+  };
+}
+
 /** All recorded "previous" values for a target, most recently superseded first. */
 export async function getTargetFieldHistory(targetId: number) {
   const db = await getDb();
@@ -2655,12 +2717,27 @@ export async function getTargetFieldHistory(targetId: number) {
  * losing value is preserved as history rather than dropped — nothing is
  * ever silently overwritten or lost.
  */
+export interface ExtraAddressAppend {
+  id: string;
+  label: string;
+  businessName: string;
+  unitNo: string;
+  houseNo: string;
+  streetName: string;
+  streetType: string;
+  suburb: string;
+  state: string;
+  full: string;
+  short: string;
+}
+
 export async function mergeTargetFieldDetails(
   targetId: number,
   resolutions: { field: TargetFieldName; value: string; discarded?: string }[],
   appendExtraVehicles: { full: string; short: string }[],
   appendWildFields: { label: string; value: string }[],
-  byCIN: string | null
+  byCIN: string | null,
+  appendExtraAddresses: ExtraAddressAppend[] = []
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -2706,6 +2783,30 @@ export async function mergeTargetFieldDetails(
     );
     if (toAdd.length > 0)
       patch.extraVehicles = JSON.stringify([...existing, ...toAdd]);
+  }
+  // Extra addresses are just as additive as extra vehicles above, but keep
+  // their full structured parts (not just full/short) — TargetAddressFields
+  // needs unitNo/houseNo/streetName/streetType/suburb/state to render an
+  // editable form afterward, not a single opaque string.
+  if (appendExtraAddresses.length > 0) {
+    let existing: ExtraAddressAppend[] = [];
+    try {
+      existing = current.extraAddresses
+        ? JSON.parse(current.extraAddresses)
+        : [];
+    } catch {
+      existing = [];
+    }
+    const existingKeys = new Set(
+      existing.map(a => `${a.full.trim()}|${a.short.trim()}`.toLowerCase())
+    );
+    const toAdd = appendExtraAddresses.filter(
+      a =>
+        (a.full.trim() || a.short.trim()) &&
+        !existingKeys.has(`${a.full.trim()}|${a.short.trim()}`.toLowerCase())
+    );
+    if (toAdd.length > 0)
+      patch.extraAddresses = JSON.stringify([...existing, ...toAdd]);
   }
   if (appendWildFields.length > 0) {
     let existing: { label: string; value: string }[] = [];

@@ -21,6 +21,19 @@ import { Merge } from "lucide-react";
 
 type ExtraVehicle = { full: string; short: string };
 type WildField = { label: string; value: string };
+export type ExtraAddress = {
+  id: string;
+  label: string;
+  businessName: string;
+  unitNo: string;
+  houseNo: string;
+  streetName: string;
+  streetType: string;
+  suburb: string;
+  state: string;
+  full: string;
+  short: string;
+};
 
 const FIELD_LABELS: Record<string, string> = {
   name: "Full Name, Born",
@@ -32,7 +45,16 @@ const FIELD_LABELS: Record<string, string> = {
   dep: "Depart (DEP)",
   arr: "Arrive (ARR)",
 };
-const FIELD_ORDER = ["name", "tgt", "hbf", "hb", "v1f", "v1", "dep", "arr"] as const;
+const FIELD_ORDER = [
+  "name",
+  "tgt",
+  "hbf",
+  "hb",
+  "v1f",
+  "v1",
+  "dep",
+  "arr",
+] as const;
 type FieldName = (typeof FIELD_ORDER)[number];
 
 export interface ExistingTargetLike {
@@ -46,6 +68,7 @@ export interface ExistingTargetLike {
   dep: string | null;
   arr: string | null;
   extraVehicles: string | null; // JSON: ExtraVehicle[]
+  extraAddresses: string | null; // JSON: ExtraAddress[]
   wildFields: string | null; // JSON: WildField[]
 }
 
@@ -59,6 +82,7 @@ export interface IncomingTargetLike {
   dep: string;
   arr: string;
   extraVehicles: ExtraVehicle[];
+  extraAddresses: ExtraAddress[];
   wildFields: WildField[];
 }
 
@@ -87,10 +111,16 @@ export function TargetMergeDialog({
   onMerged,
 }: Props) {
   const mergeMutation = trpc.target.registry.mergeFieldDetails.useMutation();
-  const [selections, setSelections] = useState<Record<string, "new" | "existing">>({});
+  const [selections, setSelections] = useState<
+    Record<string, "new" | "existing">
+  >({});
 
   const conflicts = useMemo(() => {
-    const out: { field: FieldName; existingVal: string; incomingVal: string }[] = [];
+    const out: {
+      field: FieldName;
+      existingVal: string;
+      incomingVal: string;
+    }[] = [];
     for (const field of FIELD_ORDER) {
       const existingVal = (existing[field] ?? "").trim();
       const incomingVal = (incoming[field] ?? "").trim();
@@ -112,10 +142,18 @@ export function TargetMergeDialog({
     return out;
   }, [existing, incoming]);
 
-  const existingExtraVehicles = parseJsonArray<ExtraVehicle>(existing.extraVehicles);
+  const existingExtraVehicles = parseJsonArray<ExtraVehicle>(
+    existing.extraVehicles
+  );
+  const existingExtraAddresses = parseJsonArray<ExtraAddress>(
+    existing.extraAddresses
+  );
   const existingWildFields = parseJsonArray<WildField>(existing.wildFields);
   const newExtraVehicles = incoming.extraVehicles.filter(
     v => v.full.trim() || v.short.trim()
+  );
+  const newExtraAddresses = incoming.extraAddresses.filter(
+    a => a.full.trim() || a.short.trim()
   );
   const newWildFields = incoming.wildFields.filter(w => w.value.trim());
   const addVehicleCount = newExtraVehicles.filter(
@@ -124,6 +162,14 @@ export function TargetMergeDialog({
         e =>
           e.full.trim().toLowerCase() === v.full.trim().toLowerCase() &&
           e.short.trim().toLowerCase() === v.short.trim().toLowerCase()
+      )
+  ).length;
+  const addAddressCount = newExtraAddresses.filter(
+    a =>
+      !existingExtraAddresses.some(
+        e =>
+          e.full.trim().toLowerCase() === a.full.trim().toLowerCase() &&
+          e.short.trim().toLowerCase() === a.short.trim().toLowerCase()
       )
   ).length;
   const addWildCount = newWildFields.filter(
@@ -138,11 +184,16 @@ export function TargetMergeDialog({
   const getSelection = (field: string) => selections[field] ?? "new";
 
   const handleMerge = async () => {
-    const resolutions: { field: FieldName; value: string; discarded?: string }[] = [
+    const resolutions: {
+      field: FieldName;
+      value: string;
+      discarded?: string;
+    }[] = [
       ...conflicts.map(c => ({
         field: c.field,
         value: getSelection(c.field) === "new" ? c.incomingVal : c.existingVal,
-        discarded: getSelection(c.field) === "new" ? c.existingVal : c.incomingVal,
+        discarded:
+          getSelection(c.field) === "new" ? c.existingVal : c.incomingVal,
       })),
       ...autoFills.map(a => ({ field: a.field, value: a.incomingVal })),
     ];
@@ -152,6 +203,7 @@ export function TargetMergeDialog({
         resolutions,
         appendExtraVehicles: newExtraVehicles,
         appendWildFields: newWildFields,
+        appendExtraAddresses: newExtraAddresses,
       });
       toast.success(`Merged into existing target "${existing.name}"`);
       onMerged(existing.id);
@@ -167,22 +219,29 @@ export function TargetMergeDialog({
     addVehicleCount > 0
       ? `${addVehicleCount} vehicle${addVehicleCount !== 1 ? "s" : ""} added`
       : null,
+    addAddressCount > 0
+      ? `${addAddressCount} address${addAddressCount !== 1 ? "es" : ""} added`
+      : null,
     addWildCount > 0
       ? `${addWildCount} extra field${addWildCount !== 1 ? "s" : ""} added`
       : null,
   ].filter(Boolean);
 
   return (
-    <Dialog open={open} onOpenChange={v => !mergeMutation.isPending && onOpenChange(v)}>
+    <Dialog
+      open={open}
+      onOpenChange={v => !mergeMutation.isPending && onOpenChange(v)}
+    >
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Merge className="w-4 h-4 text-primary shrink-0" /> Merge Target Details
+            <Merge className="w-4 h-4 text-primary shrink-0" /> Merge Target
+            Details
           </DialogTitle>
           <DialogDescription>
             {conflicts.length === 0
               ? "No conflicting details — the new information will be added to the existing target."
-              : "Some details differ from the existing target. Pick which value stays current for each — the other is kept as a labeled \"Previous\" record, nothing is lost."}
+              : 'Some details differ from the existing target. Pick which value stays current for each — the other is kept as a labeled "Previous" record, nothing is lost.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -195,8 +254,16 @@ export function TargetMergeDialog({
                 </span>
                 <div className="grid grid-cols-2 gap-2">
                   {[
-                    { side: "new" as const, label: "New", value: c.incomingVal },
-                    { side: "existing" as const, label: "Existing", value: c.existingVal },
+                    {
+                      side: "new" as const,
+                      label: "New",
+                      value: c.incomingVal,
+                    },
+                    {
+                      side: "existing" as const,
+                      label: "Existing",
+                      value: c.existingVal,
+                    },
                   ].map(opt => (
                     <label
                       key={opt.side}

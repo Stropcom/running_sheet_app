@@ -507,6 +507,15 @@ export function AddTargetDialog({
         const c = composeVehicle(ev);
         return { full: c.full, short: c.short };
       }),
+      extraAddresses: extraAddresses.map(ea => {
+        const c = composeAddress(ea);
+        return {
+          ...ea,
+          businessName: ea.businessName ?? "",
+          full: c.full,
+          short: c.short,
+        };
+      }),
       wildFields: [] as WildField[],
     };
   };

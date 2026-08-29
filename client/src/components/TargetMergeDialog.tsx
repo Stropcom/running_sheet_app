@@ -92,6 +92,15 @@ interface Props {
   existing: ExistingTargetLike;
   incoming: IncomingTargetLike;
   onMerged: (targetId: number) => void;
+  /** The operation picked/created on AddTargetDialog's OperationPicker —
+   * every target must be linked to an operation, and merging into an
+   * existing target is still a "this target now belongs to this
+   * operation too" event, not an exemption from that rule. */
+  linkToOperationId: number;
+  /** The document's free-text narrative, if this merge came from a
+   * document import — saved against the (existing target, this operation)
+   * link the same way a plain create would. */
+  background: string | null;
 }
 
 function parseJsonArray<T>(json: string | null | undefined): T[] {
@@ -109,6 +118,8 @@ export function TargetMergeDialog({
   existing,
   incoming,
   onMerged,
+  linkToOperationId,
+  background,
 }: Props) {
   const mergeMutation = trpc.target.registry.mergeFieldDetails.useMutation();
   const [selections, setSelections] = useState<
@@ -204,6 +215,8 @@ export function TargetMergeDialog({
         appendExtraVehicles: newExtraVehicles,
         appendWildFields: newWildFields,
         appendExtraAddresses: newExtraAddresses,
+        linkToOperationId,
+        background,
       });
       toast.success(`Merged into existing target "${existing.name}"`);
       onMerged(existing.id);

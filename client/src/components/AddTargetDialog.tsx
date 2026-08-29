@@ -892,6 +892,8 @@ export function AddTargetDialog({
           }}
           existing={existingFull}
           incoming={mergeIncoming()}
+          linkToOperationId={operation!.id}
+          background={initialBackground?.trim() || null}
           onMerged={() => {
             utils.target.registry.list.invalidate();
             resetAndClose();

@@ -2976,10 +2976,20 @@ export const appRouter = router({
                 })
               )
               .optional(),
+            // Every target must belong to at least one operation — merging
+            // into an existing target doesn't exempt it from that, and if
+            // the existing target isn't already linked to the operation the
+            // officer picked on AddTargetDialog's OperationPicker, this is
+            // what creates that link.
+            linkToOperationId: z.number(),
+            // The document's free-text narrative, when this merge came from
+            // a document import — stored on the (target, operation) link
+            // the same way a plain create would.
+            background: z.string().optional().nullable(),
           })
         )
         .mutation(async ({ input, ctx }) => {
-          return mergeTargetFieldDetails(
+          const result = await mergeTargetFieldDetails(
             input.targetId,
             input.resolutions,
             input.appendExtraVehicles ?? [],
@@ -2987,6 +2997,12 @@ export const appRouter = router({
             ctx.user.cin ?? null,
             input.appendExtraAddresses ?? []
           );
+          await linkTargetToOperation(
+            input.targetId,
+            input.linkToOperationId,
+            input.background
+          );
+          return result;
         }),
 
       /** "Previous" values recorded when a field was resolved in favor of the other side during a merge — never deleted, just superseded. */

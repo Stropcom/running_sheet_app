@@ -3461,21 +3461,27 @@ export default function IntelligenceMapping() {
     );
   };
 
-  // Appends " at <location>" to the end of the observation, ahead of any
+  // Appends " (<location>)" to the end of the observation, ahead of any
   // trailing sentence punctuation — used when the officer confirms the
   // MissingLocationAlert prompt. Mirrors appendLocationSuggestion in
   // SheetDetail.tsx (kept local rather than shared — it's a single small
-  // pure function with no other dependencies).
+  // pure function with no other dependencies). Deliberately WITH brackets:
+  // extractEntitiesFromText only registers an address for this row when it
+  // sees a "(ShortForm)" bracket — a bracket-less "at <location>" (this
+  // function's own bug until now, missed when SheetDetail.tsx's copy was
+  // fixed) leaves the row exactly as unlocated as before, so the prompt
+  // keeps firing on every later save. See missingLocationSuggestion.test.ts.
   const appendQeLocationSuggestion = (
     text: string,
     location: string
   ): string => {
     const trimmed = text.trimEnd();
+    const bracket = `(${location})`;
     const trailingPunct = trimmed.match(/([.:])\s*$/);
     if (trailingPunct) {
-      return `${trimmed.slice(0, -1)} at ${location}${trailingPunct[1]}`;
+      return `${trimmed.slice(0, -1)} ${bracket}${trailingPunct[1]}`;
     }
-    return `${trimmed} at ${location}.`;
+    return `${trimmed} ${bracket}.`;
   };
 
   // Same save-time checks as SheetDetail's updateRowWithDupeCheck, run

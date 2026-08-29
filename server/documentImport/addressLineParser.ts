@@ -80,16 +80,31 @@ const AU_STATES = new Set([
   "ACT",
 ]);
 
+/** An optional unit-number prefix immediately before the house number,
+ * covering every convention these documents use for it:
+ *   "Unit 3, 7 ..."  "3, 7 ..."  "3/7 ..."  "U3, 7 ..."  "U3/7 ..."
+ * The word "Unit"/letter "U" is itself optional (the bare "3, 7" form is
+ * one officers actually use), so what makes this a UNIT prefix rather than
+ * an ordinary house number is the comma-or-slash immediately following the
+ * first digit group — a plain address's house number is always followed
+ * by a space then the street name ("45 Burrendah Boulevard"), never a
+ * comma or slash, so this group only ever engages when a unit really is
+ * present. Two capture groups: the unit number, then the house number.
+ * Case-insensitive match (see the "i" flag on both address regexes below)
+ * so "unit"/"u" match regardless of how the officer capitalised it. */
+const NUMBER_TOKEN = `(?:(?:unit\\s+|u)?(\\d+[A-Za-z]?)\\s*[,/]\\s*)?(\\d+[A-Za-z]?)`;
+
 /** Matches "<houseNo> <street words incl. type>, <suburb> <STATE> [postcode]"
- * anywhere in a string — the shape a WA intelligence document's address
- * lines consistently follow, labeled or not. Captures loosely; the street
- * type and suburb/state split happens afterward against the lists above so
- * a state or type this exact regex didn't anticipate still gets a chance. */
+ * (with an optional unit-number prefix — see NUMBER_TOKEN) anywhere in a
+ * string — the shape a WA intelligence document's address lines
+ * consistently follow, labeled or not. Captures loosely; the street type
+ * and suburb/state split happens afterward against the lists above so a
+ * state or type this exact regex didn't anticipate still gets a chance. */
 const ADDRESS_SHAPE = new RegExp(
-  `\\b(\\d+[A-Za-z]?(?:\\/\\d+[A-Za-z]?)?)\\s+([A-Za-z][A-Za-z\\s]{1,40}?),\\s*([A-Za-z][A-Za-z\\s]{1,40}?)\\s+(${Array.from(
+  `\\b${NUMBER_TOKEN}\\s+([A-Za-z][A-Za-z\\s]{1,40}?),\\s*([A-Za-z][A-Za-z\\s]{1,40}?)\\s+(${Array.from(
     AU_STATES
   ).join("|")})\\b(?:\\s+(\\d{4}))?`,
-  "g"
+  "gi"
 );
 
 /** Same shape as ADDRESS_SHAPE but without a required trailing state code or
@@ -99,13 +114,14 @@ const ADDRESS_SHAPE = new RegExp(
  * so it's only safe to use against a single already-isolated line — see
  * parseAddressLineLoose below — rather than risking a false match inside a
  * longer sentence that happens to contain a comma. */
-const ADDRESS_SHAPE_LOOSE =
-  /\b(\d+[A-Za-z]?(?:\/\d+[A-Za-z]?)?)\s+([A-Za-z][A-Za-z\s]{1,40}?),\s*([A-Za-z][A-Za-z\s]{1,40}?)$/;
+const ADDRESS_SHAPE_LOOSE = new RegExp(
+  `\\b${NUMBER_TOKEN}\\s+([A-Za-z][A-Za-z\\s]{1,40}?),\\s*([A-Za-z][A-Za-z\\s]{1,40}?)$`,
+  "i"
+);
 
-function splitUnitHouse(token: string): { unitNo: string; houseNo: string } {
-  const m = token.match(/^(\d+[A-Za-z]?)\/(\d+[A-Za-z]?)$/);
-  if (m) return { unitNo: m[1], houseNo: m[2] };
-  return { unitNo: "", houseNo: token };
+function normalizeState(state: string): string {
+  const upper = state.toUpperCase();
+  return AU_STATES.has(upper) ? upper : "WA";
 }
 
 function splitStreetNameAndType(streetWords: string): {
@@ -130,18 +146,17 @@ export function parseAddressLine(text: string): ParsedAddressLine | null {
   ADDRESS_SHAPE.lastIndex = 0;
   const m = ADDRESS_SHAPE.exec(text);
   if (!m) return null;
-  const [raw, numberToken, streetWords, suburbRaw, state] = m;
-  const { unitNo, houseNo } = splitUnitHouse(numberToken);
+  const [raw, unitNo, houseNo, streetWords, suburbRaw, state] = m;
   const { streetName, streetType } = splitStreetNameAndType(streetWords);
   const suburb = suburbRaw.trim().toUpperCase();
   const confident = !!(houseNo && streetName && streetType && suburb);
   return {
     houseNo,
-    unitNo,
+    unitNo: unitNo ?? "",
     streetName,
     streetType,
     suburb,
-    state: AU_STATES.has(state) ? state : "WA",
+    state: normalizeState(state),
     confident,
     raw: raw.trim(),
   };
@@ -155,14 +170,13 @@ export function parseAddressLine(text: string): ParsedAddressLine | null {
 export function parseAddressLineLoose(text: string): ParsedAddressLine | null {
   const m = ADDRESS_SHAPE_LOOSE.exec(text.trim());
   if (!m) return null;
-  const [raw, numberToken, streetWords, suburbRaw] = m;
-  const { unitNo, houseNo } = splitUnitHouse(numberToken);
+  const [raw, unitNo, houseNo, streetWords, suburbRaw] = m;
   const { streetName, streetType } = splitStreetNameAndType(streetWords);
   const suburb = suburbRaw.trim().toUpperCase();
   const confident = !!(houseNo && streetName && streetType && suburb);
   return {
     houseNo,
-    unitNo,
+    unitNo: unitNo ?? "",
     streetName,
     streetType,
     suburb,
@@ -182,17 +196,16 @@ export function findAddressLines(text: string): ParsedAddressLine[] {
   ADDRESS_SHAPE.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = ADDRESS_SHAPE.exec(text)) !== null) {
-    const [raw, numberToken, streetWords, suburbRaw, state] = m;
-    const { unitNo, houseNo } = splitUnitHouse(numberToken);
+    const [raw, unitNo, houseNo, streetWords, suburbRaw, state] = m;
     const { streetName, streetType } = splitStreetNameAndType(streetWords);
     const suburb = suburbRaw.trim().toUpperCase();
     out.push({
       houseNo,
-      unitNo,
+      unitNo: unitNo ?? "",
       streetName,
       streetType,
       suburb,
-      state: AU_STATES.has(state) ? state : "WA",
+      state: normalizeState(state),
       confident: !!(houseNo && streetName && streetType && suburb),
       raw: raw.trim(),
     });

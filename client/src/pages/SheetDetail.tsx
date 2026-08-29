@@ -4869,7 +4869,17 @@ export default function SheetDetail() {
                                       // Strategy (in priority order):
                                       //   1. Bracket code at end of text: "(27 Olding Way)" → "27 Olding Way"
                                       //   2. Street number pattern anywhere in text: "27 Olding Way" extracted from sentence
-                                      //   3. Full first line as last resort
+                                      //   3. "departed <Name>"/"arrived at <Name>" clause — a bare business/
+                                      //      location name with no house number (e.g. "departed Attadale
+                                      //      Kitchen and continued via:") — isolates just the name so the
+                                      //      enrichment lookup below can actually find it. Without this the
+                                      //      whole noisy sentence fell through to step 4 and got sent to
+                                      //      Google's geocoder as-is, which only "worked" by luck when the
+                                      //      business happened to be famous enough (a Bunnings, a well-known
+                                      //      cafe) for Google's fuzzy matching to find it buried in the noise
+                                      //      — a real but less-indexed business (e.g. a small local cafe)
+                                      //      geocoded to a wrong, unrelated street instead.
+                                      //   4. Full first line as last resort
                                       const prevObs = prevRow.observation ?? "";
                                       const nextObs = nextRow.observation ?? "";
 
@@ -4892,7 +4902,15 @@ export default function SheetDetail() {
                                         );
                                         if (streetMatch)
                                           return streetMatch[1].trim();
-                                        // 3. Last resort: full text (server will try to geocode it)
+                                        // 3. "departed <Name>" / "arrived at <Name>" clause — a bare
+                                        //    business/location name, no house number. Stops at the next
+                                        //    clause boundary (comma, full stop, "and", or end of string).
+                                        const clauseMatch = obs.match(
+                                          /\b(?:departed|arrived at)\s+([A-Z][\w&'-]*(?:\s+[A-Z][\w&'-]*){0,5})(?=\s*(?:,|\.|;|:|and\b|$))/
+                                        );
+                                        if (clauseMatch)
+                                          return clauseMatch[1].trim();
+                                        // 4. Last resort: full text (server will try to geocode it)
                                         return obs.split("\n")[0].trim();
                                       };
 
@@ -4925,12 +4943,31 @@ export default function SheetDetail() {
                                             );
                                         }
                                       }
+                                      // Exact match first (the common case once extractAddressFromObs
+                                      // isolates the name cleanly); falls back to a substring search so an
+                                      // imperfectly-isolated candidate (e.g. step 4's whole-line fallback)
+                                      // still finds a known name buried inside it, rather than sending the
+                                      // raw noisy sentence to Google and hoping its fuzzy matching gets
+                                      // lucky. Guarded to keys of 4+ characters to avoid a short/common
+                                      // name spuriously matching unrelated text.
                                       const enrichAddress = (
                                         addr: string
-                                      ): string =>
-                                        knownAddressMap.get(
-                                          addr.toLowerCase()
-                                        ) ?? addr;
+                                      ): string => {
+                                        const lower = addr.toLowerCase();
+                                        const exact =
+                                          knownAddressMap.get(lower);
+                                        if (exact) return exact;
+                                        const substringMatch = Array.from(
+                                          knownAddressMap.entries()
+                                        ).find(
+                                          ([key]) =>
+                                            key.length > 3 &&
+                                            lower.includes(key)
+                                        );
+                                        if (substringMatch)
+                                          return substringMatch[1];
+                                        return addr;
+                                      };
 
                                       const departAddr = enrichAddress(
                                         extractAddressFromObs(prevObs)

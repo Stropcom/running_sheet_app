@@ -1623,6 +1623,43 @@ export default function IntelligencePage() {
     return filteredEntities.filter(matchesSearch);
   }, [filteredEntities, activeTab, search, filterOperationId]);
 
+  // Sort pills shown per tab — each tab only offers the orderings that
+  // actually make sense for it, rather than one shared list.
+  const sortOptions = useMemo((): { value: SortOrder; label: string }[] => {
+    if (activeTab === "targets" || activeTab === "associates") {
+      return [
+        { value: "frequency", label: "Most frequent" },
+        { value: "recent", label: "Most recent" },
+        { value: "operation", label: "Operation A → Z" },
+        { value: "surname", label: "Surname A → Z" },
+      ];
+    }
+    if (activeTab === "vehicle") {
+      return [
+        { value: "frequency", label: "Most frequent" },
+        { value: "az", label: "A → Z" },
+        { value: "za", label: "Z → A" },
+        { value: "recent", label: "Most recent" },
+        { value: "make", label: "Make A → Z" },
+      ];
+    }
+    if (activeTab === "locations") {
+      return [
+        { value: "frequency", label: "Most frequent" },
+        { value: "az", label: "A → Z" },
+        { value: "recent", label: "Most recent" },
+        { value: "suburb", label: "Suburb A → Z" },
+      ];
+    }
+    return [
+      { value: "frequency", label: "Most frequent" },
+      { value: "az", label: "A → Z" },
+      { value: "za", label: "Z → A" },
+      { value: "recent", label: "Most recent" },
+      { value: "oldest", label: "Oldest first" },
+    ];
+  }, [activeTab]);
+
   // Counts per tab for badges
   const tabCounts = useMemo(() => {
     const counts: Partial<Record<TabView, number>> = {};
@@ -1673,61 +1710,6 @@ export default function IntelligencePage() {
             )}
           </div>
           <MergeEntitiesButton />
-        </div>
-
-        {/* Date filter */}
-        <div className="mb-4">
-          {isMobile ? (
-            <Select
-              value={datePreset}
-              onValueChange={v => setDatePreset(v as DatePreset)}
-            >
-              <SelectTrigger className="w-full h-9 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {DATE_PRESETS.map(p => (
-                  <SelectItem key={p.value} value={p.value}>
-                    {p.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <div className="flex gap-1.5 flex-wrap mb-2">
-              {DATE_PRESETS.map(p => (
-                <button
-                  key={p.value}
-                  onClick={() => setDatePreset(p.value)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                    datePreset === p.value
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-muted/40 text-muted-foreground border-border/60 hover:bg-muted/70"
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-          )}
-          {datePreset === "custom" && (
-            <div className="flex gap-2 items-center mt-2">
-              <Calendar className="w-4 h-4 text-muted-foreground shrink-0" />
-              <input
-                type="date"
-                value={customFrom}
-                onChange={e => setCustomFrom(e.target.value)}
-                className="border border-border/60 rounded-md px-2 py-1 text-xs bg-background text-foreground"
-              />
-              <span className="text-xs text-muted-foreground">to</span>
-              <input
-                type="date"
-                value={customTo}
-                onChange={e => setCustomTo(e.target.value)}
-                className="border border-border/60 rounded-md px-2 py-1 text-xs bg-background text-foreground"
-              />
-            </div>
-          )}
         </div>
 
         {/* Tab nav */}
@@ -1826,58 +1808,35 @@ export default function IntelligencePage() {
               />
             </div>
 
-            {(activeTab === "targets" || activeTab === "associates") && (
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-muted-foreground mr-1">
-                  Filter:
-                </span>
-                <Select
-                  value={filterOperationId?.toString() ?? "all"}
-                  onValueChange={v =>
-                    setFilterOperationId(v === "all" ? null : Number(v))
-                  }
-                >
-                  <SelectTrigger className="h-8 w-auto min-w-[10rem] text-xs">
-                    <SelectValue placeholder="Operation" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All operations</SelectItem>
-                    {(allOps ?? []).map(op => (
-                      <SelectItem key={op.id} value={op.id.toString()}>
-                        {op.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
             <div className="flex items-center gap-1.5 flex-wrap">
+              {(activeTab === "targets" || activeTab === "associates") && (
+                <>
+                  <span className="text-xs text-muted-foreground mr-1">
+                    Filter:
+                  </span>
+                  <Select
+                    value={filterOperationId?.toString() ?? "all"}
+                    onValueChange={v =>
+                      setFilterOperationId(v === "all" ? null : Number(v))
+                    }
+                  >
+                    <SelectTrigger className="h-7 w-auto min-w-[10rem] text-xs">
+                      <SelectValue placeholder="Operation" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All operations</SelectItem>
+                      {(allOps ?? []).map(op => (
+                        <SelectItem key={op.id} value={op.id.toString()}>
+                          {op.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <span className="text-muted-foreground/40 mx-0.5">|</span>
+                </>
+              )}
               <span className="text-xs text-muted-foreground mr-1">Sort:</span>
-              {(
-                [
-                  { value: "frequency" as const, label: "Most frequent" },
-                  { value: "az" as const, label: "A → Z" },
-                  { value: "za" as const, label: "Z → A" },
-                  { value: "recent" as const, label: "Most recent" },
-                  { value: "oldest" as const, label: "Oldest first" },
-                  ...(activeTab === "targets" || activeTab === "associates"
-                    ? [
-                        {
-                          value: "operation" as const,
-                          label: "Operation A → Z",
-                        },
-                        { value: "surname" as const, label: "Surname A → Z" },
-                      ]
-                    : []),
-                  ...(activeTab === "vehicle"
-                    ? [{ value: "make" as const, label: "Make A → Z" }]
-                    : []),
-                  ...(activeTab === "locations"
-                    ? [{ value: "suburb" as const, label: "Suburb A → Z" }]
-                    : []),
-                ] satisfies { value: SortOrder; label: string }[]
-              ).map(opt => (
+              {sortOptions.map(opt => (
                 <button
                   key={opt.value}
                   onClick={() => setSortOrder(opt.value)}

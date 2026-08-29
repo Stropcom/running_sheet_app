@@ -76,6 +76,9 @@ export interface DocumentImportPrefill {
   extraAddresses: ExtraAddress[];
   extraVehicles: ExtraVehicle[];
   associates: StagedAssociate[];
+  /** The document's free-text narrative, verbatim — carried through to
+   * AddTargetDialog as the new target's "{Operation name} background". */
+  background: string;
 }
 
 interface PossibleMatch {
@@ -461,6 +464,7 @@ export function ImportTargetDocumentDialog({
           ...unparsedExtraVehicles,
         ],
         associates,
+        background: result.freeText.trim(),
       });
       reset();
     } finally {
@@ -656,24 +660,6 @@ export function ImportTargetDocumentDialog({
                 </div>
               )}
 
-              {result.unmappedFields.length > 0 && (
-                <div className="rounded-lg border border-border/60 bg-muted/10 p-3 flex flex-col gap-1">
-                  <p className="text-xs font-bold text-primary uppercase tracking-wide">
-                    Other fields in this document
-                  </p>
-                  <p className="text-[11px] text-muted-foreground mb-1">
-                    Not part of the Target Registry schema — shown for your
-                    awareness, not saved.
-                  </p>
-                  {result.unmappedFields.map((f, i) => (
-                    <p key={i} className="text-sm">
-                      <span className="text-muted-foreground">{f.label}:</span>{" "}
-                      {f.value}
-                    </p>
-                  ))}
-                </div>
-              )}
-
               {associateCandidates.length > 0 && (
                 <div className="rounded-lg border border-border/60 bg-muted/10 p-3 flex flex-col gap-3">
                   <p className="text-xs font-bold text-primary uppercase tracking-wide">
@@ -753,35 +739,82 @@ export function ImportTargetDocumentDialog({
                 </div>
               )}
 
-              {result.candidateEntities.filter(c => c.type !== "person")
-                .length > 0 && (
-                <div className="rounded-lg border border-border/60 bg-muted/10 p-3 flex flex-col gap-2">
+              {(result.freeText.trim() ||
+                result.unmappedFields.length > 0 ||
+                result.candidateEntities.some(c => c.type !== "person")) && (
+                <div className="rounded-lg border border-border/60 bg-muted/10 p-3 flex flex-col gap-3">
                   <p className="text-xs font-bold text-primary uppercase tracking-wide">
-                    Other mentions found in this document
+                    Other details in this document
                   </p>
-                  <p className="text-[11px] text-muted-foreground">
-                    Detected in the free-text narrative — for your awareness
-                    only, not saved.
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {result.candidateEntities
-                      .filter(c => c.type !== "person")
-                      .map((c, i) => {
-                        const Icon = CANDIDATE_ICONS[c.type];
-                        return (
-                          <Badge
-                            key={i}
-                            variant={
-                              c.confidence === "high" ? "default" : "outline"
-                            }
-                            className="gap-1 font-normal"
-                          >
-                            <Icon className="w-3 h-3" />
-                            {c.value}
-                          </Badge>
-                        );
-                      })}
-                  </div>
+
+                  {result.freeText.trim() && (
+                    <div className="flex flex-col gap-1">
+                      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                        Narrative / Background
+                      </p>
+                      <p className="text-sm whitespace-pre-wrap">
+                        {result.freeText.trim()}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground italic">
+                        Saved verbatim as this target's background against
+                        whichever operation you pick or create on the next
+                        screen.
+                      </p>
+                    </div>
+                  )}
+
+                  {result.unmappedFields.length > 0 && (
+                    <div className="flex flex-col gap-1">
+                      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                        Other fields
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Not part of the Target Registry schema — shown for your
+                        awareness, not saved.
+                      </p>
+                      {result.unmappedFields.map((f, i) => (
+                        <p key={i} className="text-sm">
+                          <span className="text-muted-foreground">
+                            {f.label}:
+                          </span>{" "}
+                          {f.value}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+
+                  {result.candidateEntities.some(c => c.type !== "person") && (
+                    <div className="flex flex-col gap-1.5">
+                      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                        Other mentions
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Detected in the free-text narrative — for your awareness
+                        only, not saved.
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {result.candidateEntities
+                          .filter(c => c.type !== "person")
+                          .map((c, i) => {
+                            const Icon = CANDIDATE_ICONS[c.type];
+                            return (
+                              <Badge
+                                key={i}
+                                variant={
+                                  c.confidence === "high"
+                                    ? "default"
+                                    : "outline"
+                                }
+                                className="gap-1 font-normal"
+                              >
+                                <Icon className="w-3 h-3" />
+                                {c.value}
+                              </Badge>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

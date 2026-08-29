@@ -569,6 +569,11 @@ export const operationTargetLinks = mysqlTable("operation_target_links", {
   operationId: int("operationId").notNull(),
   targetId: int("targetId").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  // The document's free-text narrative, verbatim, when this target was
+  // created via document import for this operation — shown read-only on the
+  // Target profile as "{Operation name} background". Null for a manually
+  // added target, or an import with no narrative text.
+  background: text("background"),
 });
 
 export type OperationTargetLink = typeof operationTargetLinks.$inferSelect;

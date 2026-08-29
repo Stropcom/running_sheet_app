@@ -2749,19 +2749,24 @@ export const appRouter = router({
             arr: z.string().optional().nullable(),
             extraVehicles: z.string().optional().nullable(),
             wildFields: z.string().optional().nullable(),
-            linkToOperationId: z.number().optional().nullable(),
+            // Every target must belong to at least one operation — see
+            // CLAUDE.md/the OperationPicker in AddTargetDialog, the only
+            // client-side path to this procedure.
+            linkToOperationId: z.number(),
+            // The document's free-text narrative, when this target came
+            // from a document import — stored on the (target, operation)
+            // link as its "{Operation name} background".
+            background: z.string().optional().nullable(),
             ...structuredTargetFieldsSchema,
           })
         )
         .mutation(async ({ input, ctx }) => {
-          const { linkToOperationId, ...data } = input;
+          const { linkToOperationId, background, ...data } = input;
           const result = await createRegistryTarget({
             ...data,
             createdBy: ctx.user.id,
           });
-          if (linkToOperationId) {
-            await linkTargetToOperation(result.id, linkToOperationId);
-          }
+          await linkTargetToOperation(result.id, linkToOperationId, background);
           return result;
         }),
 
@@ -2784,20 +2789,30 @@ export const appRouter = router({
             arr: z.string().optional().nullable(),
             extraVehicles: z.string().optional().nullable(),
             wildFields: z.string().optional().nullable(),
-            linkToOperationId: z.number().optional().nullable(),
+            // Every target must belong to at least one operation — see
+            // CLAUDE.md/the OperationPicker in AddTargetDialog, the only
+            // client-side path to this procedure.
+            linkToOperationId: z.number(),
+            // The document's free-text narrative, when this target came
+            // from a document import — stored on the (target, operation)
+            // link as its "{Operation name} background".
+            background: z.string().optional().nullable(),
             existingAssociateId: z.number(),
             ...structuredTargetFieldsSchema,
           })
         )
         .mutation(async ({ input, ctx }) => {
-          const { linkToOperationId, existingAssociateId, ...data } = input;
+          const {
+            linkToOperationId,
+            background,
+            existingAssociateId,
+            ...data
+          } = input;
           const result = await createTargetLinkedToAssociate(
             { ...data, createdBy: ctx.user.id },
             existingAssociateId
           );
-          if (linkToOperationId) {
-            await linkTargetToOperation(result.id, linkToOperationId);
-          }
+          await linkTargetToOperation(result.id, linkToOperationId, background);
           return result;
         }),
 

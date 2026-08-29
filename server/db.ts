@@ -3153,7 +3153,8 @@ export async function createRegistryTarget(
 /** Link a target to an operation (idempotent) */
 export async function linkTargetToOperation(
   targetId: number,
-  operationId: number
+  operationId: number,
+  background?: string | null
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -3168,7 +3169,9 @@ export async function linkTargetToOperation(
     )
     .limit(1);
   if (!existing) {
-    await db.insert(operationTargetLinks).values({ targetId, operationId });
+    await db
+      .insert(operationTargetLinks)
+      .values({ targetId, operationId, background: background || null });
   }
 }
 
@@ -10068,7 +10071,14 @@ export interface IntelTargetProfile {
   extraAddresses: string | null;
   dep: string | null;
   arr: string | null;
-  operations: Array<{ id: number; name: string }>;
+  operations: Array<{
+    id: number;
+    name: string;
+    /** The document's free-text narrative, verbatim, when this target was
+     * created via document import for this operation — shown read-only on
+     * the profile as "{Operation name} background". Null otherwise. */
+    background: string | null;
+  }>;
   /** Cross-operation links found via a shared registered vehicle/address —
    * see SharedEntityCrossLink. */
   sharedEntityLinks: SharedEntityCrossLink[];
@@ -10797,7 +10807,11 @@ export async function getIntelTargetProfile(
   if (!target) return null;
 
   const opLinks = await db
-    .select({ id: operations.id, name: operations.name })
+    .select({
+      id: operations.id,
+      name: operations.name,
+      background: operationTargetLinks.background,
+    })
     .from(operationTargetLinks)
     .innerJoin(operations, eq(operations.id, operationTargetLinks.operationId))
     .where(

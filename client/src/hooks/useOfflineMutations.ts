@@ -114,6 +114,9 @@ export function useOfflineCreateTarget() {
       setIsPending(true);
       try {
         if (!isDraftMode) {
+          if (!input.operationServerId) {
+            throw new Error("An operation is required to create a target.");
+          }
           const result = await onlineMutation.mutateAsync({
             name: input.name,
             linkToOperationId: input.operationServerId,
@@ -162,7 +165,12 @@ interface CreateSheetInput {
   sheetDate: string;
   targetLocalId?: string;
   targetServerId?: number;
-  sheetCins?: Array<{ cin: string; hasImages: boolean; isTeamLeader?: boolean; isAuthor?: boolean }>;
+  sheetCins?: Array<{
+    cin: string;
+    hasImages: boolean;
+    isTeamLeader?: boolean;
+    isAuthor?: boolean;
+  }>;
 }
 
 interface CreateSheetResult {
@@ -181,7 +189,8 @@ export function useOfflineCreateSheet() {
       try {
         if (!isDraftMode) {
           const operationId = input.operationServerId;
-          if (!operationId) throw new Error("operationServerId required when online");
+          if (!operationId)
+            throw new Error("operationServerId required when online");
           const result = await onlineMutation.mutateAsync({
             operationId,
             sheetDate: input.sheetDate,
@@ -271,8 +280,13 @@ export function useOfflineCreateRow(sheetLocalId?: string) {
           // Add members online
           for (const cin of input.members ?? []) {
             try {
-              await onlineMemberAdd.mutateAsync({ rowId: result.id, memberName: cin });
-            } catch { /* non-fatal */ }
+              await onlineMemberAdd.mutateAsync({
+                rowId: result.id,
+                memberName: cin,
+              });
+            } catch {
+              /* non-fatal */
+            }
           }
           return { id: result.id, rowNumber: result.rowNumber, isLocal: false };
         }
@@ -315,7 +329,13 @@ export function useOfflineCreateRow(sheetLocalId?: string) {
         setIsPending(false);
       }
     },
-    [isDraftMode, onlineMutation, onlineMemberAdd, refreshDraftCounts, sheetLocalId]
+    [
+      isDraftMode,
+      onlineMutation,
+      onlineMemberAdd,
+      refreshDraftCounts,
+      sheetLocalId,
+    ]
   );
 
   return { mutateAsync, isPending };
@@ -348,7 +368,10 @@ export function useOfflineUpdateRow() {
           return;
         }
         // Offline or local row
-        await updateDraftRow(String(input.id), { time: input.time, observation: input.observation });
+        await updateDraftRow(String(input.id), {
+          time: input.time,
+          observation: input.observation,
+        });
         await enqueueSyncAction({
           type: "updateRow",
           localId: String(input.id),

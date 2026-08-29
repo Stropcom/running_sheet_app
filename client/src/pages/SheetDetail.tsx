@@ -2370,6 +2370,12 @@ export default function SheetDetail() {
     { id: sheetId },
     { enabled: isAuthenticated && !!sheetId }
   );
+  // Pre-fills AddTargetDialog's required OperationPicker with this sheet's
+  // own operation, without changing the shape of sheet.get.
+  const { data: sheetOperation } = trpc.operation.get.useQuery(
+    { id: sheet?.operationId ?? 0 },
+    { enabled: isAuthenticated && !!sheet?.operationId }
+  );
 
   // Remembers this as the officer's most recent operation/sheet context —
   // used only to pre-fill the New SMEAC Briefing form, nothing else reads it.
@@ -5388,18 +5394,19 @@ export default function SheetDetail() {
       <AddTargetDialog
         open={editCreateTargetDialogOpen}
         onClose={() => setEditCreateTargetDialogOpen(false)}
+        initialOperation={
+          sheet
+            ? { id: sheet.operationId, name: sheetOperation?.name ?? "" }
+            : undefined
+        }
         onSave={async (payload: RegistryCreatePayload) => {
           const { existingAssociateId, ...rest } = payload;
           const result = existingAssociateId
             ? await createLinkedTargetForEditSheet.mutateAsync({
                 ...rest,
                 existingAssociateId,
-                linkToOperationId: sheet?.operationId,
               })
-            : await createTargetForEditSheet.mutateAsync({
-                ...rest,
-                linkToOperationId: sheet?.operationId,
-              });
+            : await createTargetForEditSheet.mutateAsync(rest);
           setEditSelectedTargetId(result.id);
           setEditTargetMode("link");
           return result;

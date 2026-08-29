@@ -686,10 +686,12 @@ function TargetCard({
 /** Add Target tab panel — lists all targets for the operation, allows adding more */
 function TargetPanel({
   operationId,
+  operationName,
   autoExpandId,
   fromSheetId,
 }: {
   operationId: number;
+  operationName: string;
   autoExpandId?: number;
   fromSheetId?: number;
 }) {
@@ -782,19 +784,16 @@ function TargetPanel({
       <AddTargetDialog
         open={addDialogOpen}
         onClose={() => setAddDialogOpen(false)}
+        initialOperation={{ id: operationId, name: operationName }}
         onSave={async (payload: RegistryCreatePayload) => {
           const { existingAssociateId, ...rest } = payload;
           if (existingAssociateId) {
             return await createLinked.mutateAsync({
               ...rest,
               existingAssociateId,
-              linkToOperationId: operationId,
             });
           }
-          return await create.mutateAsync({
-            ...rest,
-            linkToOperationId: operationId,
-          });
+          return await create.mutateAsync(rest);
         }}
       />
 
@@ -2502,6 +2501,7 @@ export default function OperationDetail() {
           <TabsContent value="target">
             <TargetPanel
               operationId={operationId}
+              operationName={operation?.name ?? ""}
               autoExpandId={autoExpandTargetId}
               fromSheetId={fromSheetId}
             />
@@ -3011,18 +3011,15 @@ export default function OperationDetail() {
       <AddTargetDialog
         open={createTargetDialogOpen}
         onClose={() => setCreateTargetDialogOpen(false)}
+        initialOperation={{ id: operationId, name: operation?.name ?? "" }}
         onSave={async (payload: RegistryCreatePayload) => {
           const { existingAssociateId, ...rest } = payload;
           const result = existingAssociateId
             ? await createLinkedTargetForSheet.mutateAsync({
                 ...rest,
                 existingAssociateId,
-                linkToOperationId: operationId,
               })
-            : await createTargetForSheet.mutateAsync({
-                ...rest,
-                linkToOperationId: operationId,
-              });
+            : await createTargetForSheet.mutateAsync(rest);
           setNewTargetId(result.id);
           setTargetMode("link");
           return result;

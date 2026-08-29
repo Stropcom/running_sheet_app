@@ -60,6 +60,7 @@ import {
   type DuplicateWarning,
 } from "@/components/PossibleDuplicateAlert";
 import { runDuplicateChecks } from "@/lib/duplicateCheck";
+import { OperationPicker } from "@/components/OperationPicker";
 
 // Referenced only for the merge dialog's incoming.wildFields shape — Wild
 // Fields is deprecated app-wide, this dialog never collects one, but the
@@ -67,6 +68,14 @@ import { runDuplicateChecks } from "@/lib/duplicateCheck";
 type WildField = { label: string; value: string };
 
 export interface RegistryCreatePayload {
+  /** Every target must belong to at least one operation now — chosen (or
+   * created inline) via the OperationPicker at the top of this dialog. */
+  linkToOperationId: number;
+  /** The document's free-text narrative, if this target was created via
+   * document import — stored against the (target, operation) link as its
+   * "{Operation name} background", read-only, shown on the Target profile.
+   * Null for a manually-added target, or an import with no narrative. */
+  background: string | null;
   name: string;
   tgt: string | null;
   hbf: string | null;
@@ -116,12 +125,14 @@ export function AddTargetDialog({
   open,
   onClose,
   onSave,
+  initialOperation,
   initialIdentity,
   initialAddress,
   initialVehicle,
   initialExtraAddresses,
   initialExtraVehicles,
   initialAssociates,
+  initialBackground,
 }: {
   open: boolean;
   onClose: () => void;
@@ -129,6 +140,15 @@ export function AddTargetDialog({
    * dialog can create any staged associates against it once the target
    * itself is safely saved. */
   onSave: (data: RegistryCreatePayload) => Promise<{ id: number }>;
+  /** The operation this dialog was opened from (Operation Detail / a running
+   * sheet already know it) — pre-fills the required OperationPicker, but the
+   * officer can still change it. Undefined when there's no page context
+   * (the global Target Registry) — the picker starts blank and must be
+   * chosen before saving. Unlike the initial* import fields below, this is
+   * standing page context, not a one-time seed — restored on cancel/reset
+   * rather than cleared, since the dialog isn't remounted between opens on
+   * these pages. */
+  initialOperation?: { id: number; name: string } | null;
   /** Pre-fills the form from a parsed document import (see
    * ImportTargetDocumentDialog.tsx) instead of starting blank. Read once
    * via lazy state init — the caller re-mounts this dialog with a fresh
@@ -140,7 +160,16 @@ export function AddTargetDialog({
   initialExtraAddresses?: ExtraAddress[];
   initialExtraVehicles?: ExtraVehicle[];
   initialAssociates?: StagedAssociate[];
+  /** The document's free-text narrative — carried straight through to the
+   * saved target's "{Operation name} background" (see RegistryCreatePayload
+   * .background), same one-time-seed treatment as the other initial* import
+   * fields. */
+  initialBackground?: string;
 }) {
+  const [operation, setOperation] = useState<{
+    id: number;
+    name: string;
+  } | null>(() => initialOperation ?? null);
   const [identity, setIdentity] = useState<StructuredNameParts>(
     () => initialIdentity ?? EMPTY_NAME_PARTS
   );
@@ -192,6 +221,7 @@ export function AddTargetDialog({
     trpc.intelligence.markEntitiesNotDuplicate.useMutation();
 
   const resetAndClose = () => {
+    setOperation(initialOperation ?? null);
     setIdentity(EMPTY_NAME_PARTS);
     setAddress(EMPTY_ADDRESS_PARTS);
     setVehicle(EMPTY_VEHICLE_PARTS);
@@ -214,6 +244,8 @@ export function AddTargetDialog({
     const { full: hbf, short: hb } = composeAddress(address);
     const { full: v1f, short: v1 } = composeVehicle(vehicle);
     return {
+      linkToOperationId: operation!.id,
+      background: initialBackground?.trim() || null,
       name,
       tgt: tgt || null,
       hbf: hbf || null,
@@ -344,6 +376,8 @@ export function AddTargetDialog({
     vehModel: string | null;
     vehType: string | null;
   }): RegistryCreatePayload => ({
+    linkToOperationId: operation!.id,
+    background: initialBackground?.trim() || null,
     name: associate.name,
     tgt: associate.tgt,
     hbf: associate.hbf,
@@ -400,6 +434,10 @@ export function AddTargetDialog({
   };
 
   const handleSave = async () => {
+    if (!operation) {
+      toast.error("Select an operation for this target.");
+      return;
+    }
     if (!composedName) {
       toast.error("Enter both First Name/s and Surname.");
       return;
@@ -533,6 +571,17 @@ export function AddTargetDialog({
             <DialogTitle>Add Target to Registry</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-3 py-2">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                Operation <span className="text-destructive">*</span>
+              </label>
+              <OperationPicker
+                value={operation}
+                onChange={setOperation}
+                disabled={saving || checkingDup}
+              />
+            </div>
+
             <TargetIdentityFields value={identity} onChange={setIdentity} />
 
             <div className="rounded-lg border border-border/60 bg-muted/10 p-3">

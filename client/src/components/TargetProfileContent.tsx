@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,7 @@ import {
   Users,
   AlertTriangle,
   Link2,
+  ChevronDown,
 } from "lucide-react";
 import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
@@ -389,6 +391,9 @@ function useTargetProfile(targetId: number) {
 export function TargetProfileContent({ targetId }: { targetId: number }) {
   const [, navigate] = useLocation();
   const { data: profile, isLoading, error } = useTargetProfile(targetId);
+  const [expandedBackgrounds, setExpandedBackgrounds] = useState<
+    Record<number, boolean>
+  >({});
   const { data: photosData } = trpc.attachment.byEntity.useQuery(
     { category: "target", targetId },
     { enabled: targetId > 0 }
@@ -577,6 +582,44 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
               ))}
             </div>
           </div>
+
+          {/* Operation background(s) — the document's free-text narrative,
+              verbatim, from when this target was created via document
+              import for that operation. Read-only, collapsed by default;
+              only rendered per operation that actually has one. */}
+          {profile.operations
+            .filter(op => op.background?.trim())
+            .map(op => {
+              const expanded = expandedBackgrounds[op.id] ?? false;
+              return (
+                <div
+                  key={`background-${op.id}`}
+                  className="rounded-xl border border-border/60 bg-card p-4 mb-4"
+                >
+                  <button
+                    onClick={() =>
+                      setExpandedBackgrounds(prev => ({
+                        ...prev,
+                        [op.id]: !expanded,
+                      }))
+                    }
+                    className="w-full flex items-center justify-between gap-2 text-left"
+                  >
+                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      {op.name} background
+                    </span>
+                    <ChevronDown
+                      className={`w-4 h-4 text-muted-foreground shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`}
+                    />
+                  </button>
+                  {expanded && (
+                    <p className="text-sm text-foreground whitespace-pre-wrap mt-3 pt-3 border-t border-border/50">
+                      {op.background}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
 
           {/* Registered Details */}
           {(profile.hbf ||

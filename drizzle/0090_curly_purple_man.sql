@@ -1,0 +1,1 @@
+ALTER TABLE `operation_target_links` ADD `background` text;

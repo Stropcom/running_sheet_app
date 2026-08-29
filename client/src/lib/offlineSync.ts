@@ -35,7 +35,10 @@ export interface SyncResult {
  */
 const idMap = new Map<string, number>();
 
-function resolveServerId(localId: string | undefined, serverId: number | undefined): number | null {
+function resolveServerId(
+  localId: string | undefined,
+  serverId: number | undefined
+): number | null {
   if (serverId) return serverId;
   if (localId) {
     const mapped = idMap.get(localId);
@@ -78,8 +81,10 @@ export async function runSync(): Promise<SyncResult> {
     // Skip if already mapped (previously synced in a prior attempt)
     const { action } = entry;
     if (
-      (action.type === "createOperation" || action.type === "createTarget" ||
-       action.type === "createSheet" || action.type === "createRow") &&
+      (action.type === "createOperation" ||
+        action.type === "createTarget" ||
+        action.type === "createSheet" ||
+        action.type === "createRow") &&
       idMap.has(action.localId)
     ) {
       await removeSyncQueueEntry(entry.id);
@@ -105,7 +110,10 @@ export async function runSync(): Promise<SyncResult> {
   return { synced, failed, errors };
 }
 
-async function processSyncEntry(entry: { id?: number; action: import("./offlineStore").SyncAction }): Promise<void> {
+async function processSyncEntry(entry: {
+  id?: number;
+  action: import("./offlineStore").SyncAction;
+}): Promise<void> {
   const { action } = entry;
 
   switch (action.type) {
@@ -118,17 +126,27 @@ async function processSyncEntry(entry: { id?: number; action: import("./offlineS
         investigationUnit: payload.investigationUnit,
       });
       idMap.set(localId, result.id);
-      await updateDraftOperation(localId, { serverId: result.id, synced: true });
+      await updateDraftOperation(localId, {
+        serverId: result.id,
+        synced: true,
+      });
       break;
     }
 
     case "createTarget": {
       const { localId, payload } = action;
-      // Targets are created via the registry endpoint — we just need a name
-      // The operation link is handled separately by the sheet create step
+      // Targets are created via the registry endpoint — every target must
+      // belong to an operation now (see AddTargetDialog's OperationPicker).
+      const operationId =
+        payload.operationServerId ??
+        (payload.operationLocalId
+          ? idMap.get(payload.operationLocalId)
+          : undefined);
+      if (!operationId)
+        throw new Error(`Cannot resolve operationId for target ${localId}`);
       const result = await trpcClient.target.registry.create.mutate({
         name: payload.name,
-        linkToOperationId: payload.operationServerId ?? (payload.operationLocalId ? idMap.get(payload.operationLocalId) : undefined),
+        linkToOperationId: operationId,
       });
       idMap.set(localId, result.id);
       await updateDraftTarget(localId, { serverId: result.id, synced: true });
@@ -137,10 +155,16 @@ async function processSyncEntry(entry: { id?: number; action: import("./offlineS
 
     case "createSheet": {
       const { localId, payload } = action;
-      const operationId = resolveServerId(payload.operationLocalId, payload.operationServerId);
-      if (!operationId) throw new Error(`Cannot resolve operationId for sheet ${localId}`);
+      const operationId = resolveServerId(
+        payload.operationLocalId,
+        payload.operationServerId
+      );
+      if (!operationId)
+        throw new Error(`Cannot resolve operationId for sheet ${localId}`);
 
-      const targetId = resolveServerId(payload.targetLocalId, payload.targetServerId) ?? undefined;
+      const targetId =
+        resolveServerId(payload.targetLocalId, payload.targetServerId) ??
+        undefined;
 
       const result = await trpcClient.sheet.create.mutate({
         operationId,
@@ -155,8 +179,12 @@ async function processSyncEntry(entry: { id?: number; action: import("./offlineS
 
     case "createRow": {
       const { localId, payload } = action;
-      const sheetId = resolveServerId(payload.sheetLocalId, payload.sheetServerId);
-      if (!sheetId) throw new Error(`Cannot resolve sheetId for row ${localId}`);
+      const sheetId = resolveServerId(
+        payload.sheetLocalId,
+        payload.sheetServerId
+      );
+      if (!sheetId)
+        throw new Error(`Cannot resolve sheetId for row ${localId}`);
 
       const result = await trpcClient.row.create.mutate({
         sheetId,
@@ -169,7 +197,10 @@ async function processSyncEntry(entry: { id?: number; action: import("./offlineS
       // Add CIN members to the row
       for (const cin of payload.members ?? []) {
         try {
-          await trpcClient.member.add.mutate({ rowId: result.id, memberName: cin });
+          await trpcClient.member.add.mutate({
+            rowId: result.id,
+            memberName: cin,
+          });
         } catch {
           // Non-fatal — member might not exist on server
         }
@@ -180,7 +211,8 @@ async function processSyncEntry(entry: { id?: number; action: import("./offlineS
     case "updateRow": {
       const { localId, payload } = action;
       const serverId = idMap.get(localId);
-      if (!serverId) throw new Error(`Cannot resolve serverId for row update ${localId}`);
+      if (!serverId)
+        throw new Error(`Cannot resolve serverId for row update ${localId}`);
       await trpcClient.row.update.mutate({ id: serverId, ...payload });
       break;
     }
@@ -209,7 +241,10 @@ async function processSyncEntry(entry: { id?: number; action: import("./offlineS
       // Add CIN members if any
       for (const cin of payload.members ?? []) {
         try {
-          await trpcClient.member.add.mutate({ rowId: result.id, memberName: cin });
+          await trpcClient.member.add.mutate({
+            rowId: result.id,
+            memberName: cin,
+          });
         } catch {
           // Non-fatal
         }
@@ -237,7 +272,10 @@ async function processSyncEntry(entry: { id?: number; action: import("./offlineS
       // Update a row that was created offline (addRowToServerSheet) — resolve its real server ID
       const { pendingLocalId, payload } = action;
       const realId = idMap.get(pendingLocalId);
-      if (!realId) throw new Error(`Cannot resolve server ID for pending row ${pendingLocalId}`);
+      if (!realId)
+        throw new Error(
+          `Cannot resolve server ID for pending row ${pendingLocalId}`
+        );
       await trpcClient.row.update.mutate({ id: realId, ...payload });
       break;
     }
@@ -245,8 +283,11 @@ async function processSyncEntry(entry: { id?: number; action: import("./offlineS
     case "addMemberToServerRow": {
       const { serverId, pendingLocalId, memberName } = action;
       // If this is for a pending (offline-created) row, resolve the real server ID
-      const realId = pendingLocalId ? (idMap.get(pendingLocalId) ?? serverId) : serverId;
-      if (!realId || realId < 0) throw new Error(`Cannot resolve server ID for member add`);
+      const realId = pendingLocalId
+        ? (idMap.get(pendingLocalId) ?? serverId)
+        : serverId;
+      if (!realId || realId < 0)
+        throw new Error(`Cannot resolve server ID for member add`);
       await trpcClient.member.add.mutate({ rowId: realId, memberName });
       break;
     }

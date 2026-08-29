@@ -74,6 +74,23 @@ export interface FreeTextAssociate {
   vehicle: ParsedVehicleLine | null;
 }
 
+/** Something the document clearly meant as an address or vehicle — it sat
+ * under a recognised label, or looked vehicle-shaped — but that none of the
+ * parsers could actually read, so it would otherwise vanish with no trace.
+ * Unlike a low-confidence ParsedAddressEntry/ParsedVehicleLine (which still
+ * has SOME structured fields filled in), this carries only the raw text:
+ * the caller's job is to hand it to the officer as a starting point (e.g.
+ * pre-filling one field of a new Extra Address/Vehicle card) rather than
+ * make them retype it from the original document. */
+export interface UnparsedItem {
+  kind: "address" | "vehicle";
+  /** The sub-label this was found under, e.g. "Current Address" — blank
+   * when there wasn't one (a whole VEHICLES cell with no rego bracket at
+   * all has no sub-label to carry). */
+  label: string;
+  raw: string;
+}
+
 export interface TargetProfileImportResult {
   name: ParsedPersonName | null;
   addresses: ParsedAddressEntry[];
@@ -93,6 +110,11 @@ export interface TargetProfileImportResult {
   /** Person/business/email/phone mentions found in `freeText` — each one is
    * a suggestion for the review screen, not a fact to persist directly. */
   candidateEntities: CandidateEntity[];
+  /** Address/vehicle text the document clearly intended but none of the
+   * parsers could read — see UnparsedItem. Always non-empty raw text; the
+   * review screen surfaces these explicitly instead of silently dropping
+   * them. */
+  needsReview: UnparsedItem[];
 }
 
 /** Finds every occurrence of `label` as a cell in `rows`, paired with the
@@ -150,13 +172,22 @@ function splitPersonName(full: string): {
  * not consistent") preceded by its own "<Something>:" label line, e.g.
  * "Current Address:\n3 Appletree Place, Woodvale WA 6026.". Falls back to
  * an unlabelled entry when a line matches the address shape with no
- * preceding label line. */
-function parseAddressBlock(text: string): ParsedAddressEntry[] {
+ * preceding label line. A line that follows a label but matches neither
+ * parseAddressLine nor its loose fallback (e.g. a corner address with no
+ * house number, "Cnr Smith St and Jones Ave, SUBURB WA") used to be
+ * silently dropped — now it's reported via `unparsed` instead, so the
+ * officer sees "we found a Current Address, couldn't read it" rather than
+ * nothing at all. */
+function parseAddressBlock(text: string): {
+  addresses: ParsedAddressEntry[];
+  unparsed: UnparsedItem[];
+} {
   const lines = text
     .split("\n")
     .map(l => l.trim())
     .filter(Boolean);
-  const out: ParsedAddressEntry[] = [];
+  const addresses: ParsedAddressEntry[] = [];
+  const unparsed: UnparsedItem[] = [];
   let pendingLabel = "";
   for (const line of lines) {
     const labelMatch = line.match(/^([A-Za-z][A-Za-z\s]{1,40}):\s*$/);
@@ -164,13 +195,15 @@ function parseAddressBlock(text: string): ParsedAddressEntry[] {
       pendingLabel = labelMatch[1].trim();
       continue;
     }
-    const parsed = parseAddressLine(line);
+    const parsed = parseAddressLine(line) ?? parseAddressLineLoose(line);
     if (parsed) {
-      out.push({ ...parsed, label: pendingLabel });
-      pendingLabel = "";
+      addresses.push({ ...parsed, label: pendingLabel });
+    } else {
+      unparsed.push({ kind: "address", label: pendingLabel, raw: line });
     }
+    pendingLabel = "";
   }
-  return out;
+  return { addresses, unparsed };
 }
 
 /** Scans free text for a name sitting on its own line, immediately
@@ -231,6 +264,43 @@ function findAssociateBlocks(text: string): FreeTextAssociate[] {
   return out;
 }
 
+const STATE_BRACKET_RE = /\(\s*(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\s*\)/g;
+
+/** Two distinct ways a VEHICLES cell can lose a vehicle entirely rather
+ * than just parsing it badly:
+ *   1. The whole cell has non-empty text but findVehicleLines found no
+ *      "<token> (<STATE>)" anchor anywhere in it at all — e.g. "Rego
+ *      1MXP920, red Mazda 3 hatch" (no state bracket) or a rego mentioned
+ *      with the state spelled out instead of bracketed. Nothing gets
+ *      produced for this case today, so the whole cell is reported as one
+ *      unparsed item.
+ *   2. A vehicle DID anchor, but its raw text contains a SECOND
+ *      "(<STATE>)"-shaped bracket beyond its own anchor — the signature of
+ *      a second vehicle whose own anchor was broken by stray punctuation
+ *      (e.g. "SLICK1, (WA) ..." — the comma breaks the anchor, so its
+ *      text gets silently swallowed into the first vehicle's description
+ *      instead of producing a second entry, see vehicleLineParser.ts).
+ *      That vehicle's whole raw text is reported so the officer can see
+ *      the buried second mention. */
+function findUnparsedVehicleItems(
+  vehiclesValue: string,
+  vehicles: ParsedVehicleLine[]
+): UnparsedItem[] {
+  const trimmed = vehiclesValue.trim();
+  if (!trimmed) return [];
+  if (vehicles.length === 0) {
+    return [{ kind: "vehicle", label: "", raw: trimmed }];
+  }
+  const out: UnparsedItem[] = [];
+  for (const v of vehicles) {
+    const matches = v.raw.match(STATE_BRACKET_RE);
+    if (matches && matches.length > 1) {
+      out.push({ kind: "vehicle", label: "", raw: v.raw });
+    }
+  }
+  return out;
+}
+
 /** Maps a .docx read result (docxTableReader.ts's output) onto the shape
  * the document-import review screen needs. Best-effort throughout: a field
  * this document doesn't happen to carry, or writes in a shape these parsers
@@ -256,9 +326,11 @@ export function mapDocxToTargetProfile(
 
   const vehiclesValue = findLabelledValue(rows, "VEHICLES") ?? "";
   const vehicles = findVehicleLines(vehiclesValue);
+  const unparsedVehicles = findUnparsedVehicleItems(vehiclesValue, vehicles);
 
   const locationValue = findLabelledValue(rows, "LOCATION OF INTEREST") ?? "";
-  const addresses = parseAddressBlock(locationValue);
+  const { addresses, unparsed: unparsedAddresses } =
+    parseAddressBlock(locationValue);
 
   const unmappedFields: UnmappedField[] = [];
   const promisId = findLabelledValue(rows, "PROMIS ID");
@@ -288,5 +360,6 @@ export function mapDocxToTargetProfile(
     freeText,
     associateBlocks,
     candidateEntities,
+    needsReview: [...unparsedAddresses, ...unparsedVehicles],
   };
 }

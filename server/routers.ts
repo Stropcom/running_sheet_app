@@ -331,6 +331,17 @@ import {
   markWeekPosted,
   listAllOpManagerWeeks,
   copyOpManagerWeek,
+  createConnector,
+  updateConnector,
+  getConnectorById,
+  listConnectors,
+  setConnectorEnabled,
+  recordConnectorTestConnection,
+  softDeleteConnector,
+  createConnectorAuditLog,
+  listConnectorAuditLog,
+  createExternalEvent,
+  listExternalEvents,
 } from "./db";
 
 // ─── Role Guards ──────────────────────────────────────────────────────────────
@@ -440,6 +451,18 @@ const smeacBriefingFieldsSchema = {
   locationOfTeamLeader: z.string().optional().nullable(),
   reportingProcedures: z.string().optional().nullable(),
   teamSlots: z.array(smeacTeamSlotSchema).optional(),
+};
+
+const connectorFieldsSchema = {
+  name: z.string().min(1),
+  connectorType: z.enum(["CAMERA", "GPS", "SIGNAL", "SENSOR", "VMS", "OTHER"]),
+  provider: z.string().min(1),
+  description: z.string().optional().nullable(),
+  operationId: z.number().optional().nullable(),
+  configuration: z.record(z.string(), z.unknown()).optional(),
+  // Omitted entirely = leave existing credentials untouched. Explicit null =
+  // clear them. An object = replace them.
+  credentials: z.record(z.string(), z.unknown()).optional().nullable(),
 };
 
 // ─── App Router ───────────────────────────────────────────────────────────────
@@ -6909,6 +6932,176 @@ export const appRouter = router({
     purgeOrphanedAttachments: adminProcedure.mutation(async () => {
       const count = await purgeOrphanedAttachments();
       return { purged: count };
+    }),
+  }),
+
+  // ─── External Systems Integration Framework ────────────────────────────────
+  // Connector registry for external camera/GPS/signal-detection systems.
+  // Admin-only end to end — this manages credentials, live feeds, and
+  // (in later phases) signal-detection data, so every procedure here uses
+  // adminProcedure, including reads.
+  integrations: router({
+    list: adminProcedure
+      .input(z.object({ operationId: z.number().optional() }).optional())
+      .query(async ({ input }) => {
+        return listConnectors(input?.operationId ?? null);
+      }),
+
+    getById: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const connector = await getConnectorById(input.id);
+        if (!connector)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Connector not found.",
+          });
+        return connector;
+      }),
+
+    create: adminProcedure
+      .input(z.object(connectorFieldsSchema))
+      .mutation(async ({ ctx, input }) => {
+        const id = await createConnector(
+          input,
+          ctx.user.id,
+          ctx.user.cin ?? null
+        );
+        await createConnectorAuditLog({
+          connectorId: id,
+          userId: ctx.user.id,
+          userCIN: ctx.user.cin ?? undefined,
+          action: "connector_created",
+          detail: `Created connector "${input.name}" (${input.connectorType}/${input.provider})`,
+        });
+        return { id };
+      }),
+
+    update: adminProcedure
+      .input(z.object({ id: z.number(), ...connectorFieldsSchema }))
+      .mutation(async ({ ctx, input }) => {
+        const { id, ...data } = input;
+        await updateConnector(id, data);
+        await createConnectorAuditLog({
+          connectorId: id,
+          userId: ctx.user.id,
+          userCIN: ctx.user.cin ?? undefined,
+          action: "connector_updated",
+          detail: `Updated connector "${data.name}"`,
+        });
+        return { ok: true };
+      }),
+
+    setEnabled: adminProcedure
+      .input(z.object({ id: z.number(), enabled: z.boolean() }))
+      .mutation(async ({ ctx, input }) => {
+        await setConnectorEnabled(input.id, input.enabled);
+        await createConnectorAuditLog({
+          connectorId: input.id,
+          userId: ctx.user.id,
+          userCIN: ctx.user.cin ?? undefined,
+          action: input.enabled ? "connector_enabled" : "connector_disabled",
+          detail: null,
+        });
+        return { ok: true };
+      }),
+
+    // Phase 1 stub — no real connector exists yet to actually test against.
+    // Later phases replace the "always succeeds" body with each connector
+    // type's real handshake (MediaMTX/RTSP reachability, a Traccar API
+    // ping, etc) without changing this procedure's shape.
+    testConnection: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await recordConnectorTestConnection(input.id, true);
+        await createConnectorAuditLog({
+          connectorId: input.id,
+          userId: ctx.user.id,
+          userCIN: ctx.user.cin ?? undefined,
+          action: "connector_test_connection",
+          detail: "Phase 1 stub — no real connection attempted",
+        });
+        return { ok: true };
+      }),
+
+    delete: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await softDeleteConnector(input.id, ctx.user.cin ?? "Unknown");
+        await createConnectorAuditLog({
+          connectorId: input.id,
+          userId: ctx.user.id,
+          userCIN: ctx.user.cin ?? undefined,
+          action: "connector_deleted",
+          detail: null,
+        });
+        return { ok: true };
+      }),
+
+    auditLog: adminProcedure
+      .input(
+        z.object({ connectorId: z.number(), limit: z.number().optional() })
+      )
+      .query(async ({ input }) => {
+        return listConnectorAuditLog(input.connectorId, input.limit);
+      }),
+
+    events: router({
+      list: adminProcedure
+        .input(
+          z.object({
+            operationId: z.number().optional(),
+            connectorId: z.number().optional(),
+            sourceType: z
+              .enum(["CAMERA", "GPS", "SIGNAL", "SENSOR", "VMS", "OTHER"])
+              .optional(),
+            limit: z.number().optional(),
+          })
+        )
+        .query(async ({ input }) => {
+          return listExternalEvents(input);
+        }),
+
+      // Not called by any UI yet in Phase 1 — later phases' real connectors
+      // (and the GPS/signal demo connectors) call this to write events.
+      create: adminProcedure
+        .input(
+          z.object({
+            operationId: z.number().optional().nullable(),
+            connectorId: z.number(),
+            sourceType: z.enum([
+              "CAMERA",
+              "GPS",
+              "SIGNAL",
+              "SENSOR",
+              "VMS",
+              "OTHER",
+            ]),
+            sourceProvider: z.string().optional().nullable(),
+            sourceDeviceId: z.string().optional().nullable(),
+            eventType: z.string(),
+            eventTime: z.number(),
+            latitude: z.number().optional().nullable(),
+            longitude: z.number().optional().nullable(),
+            altitude: z.number().optional().nullable(),
+            heading: z.number().optional().nullable(),
+            speed: z.number().optional().nullable(),
+            accuracy: z.number().optional().nullable(),
+            title: z.string().optional().nullable(),
+            description: z.string().optional().nullable(),
+            entityType: z.string().optional().nullable(),
+            entityId: z.number().optional().nullable(),
+            confidence: z.number().optional().nullable(),
+            severity: z.string().optional().nullable(),
+            metadataJson: z.string().optional().nullable(),
+            rawEventReference: z.string().optional().nullable(),
+            isSimulated: z.boolean().optional(),
+          })
+        )
+        .mutation(async ({ input }) => {
+          const id = await createExternalEvent(input);
+          return { id };
+        }),
     }),
   }),
 });

@@ -93,6 +93,7 @@ import {
   CalendarClock,
   ShieldAlert,
   Database,
+  Cable,
 } from "lucide-react";
 import React, {
   CSSProperties,
@@ -1345,6 +1346,30 @@ function UserMgmtNavTile({
   );
 }
 
+// Admin-only entry point into the Integrations side (external systems
+// connector management) — the "persistent switcher" between Operational and
+// Integrations. Only one destination exists in Phase 1, so this navigates
+// directly rather than opening a dropdown like Administration/User
+// Management do; later phases can promote it to a dropdown as more
+// Integrations pages are added.
+function IntegrationsNavTile({
+  location,
+  setLocation,
+}: {
+  location: string;
+  setLocation: (path: string) => void;
+}) {
+  return (
+    <NavTileShell
+      icon={<Cable className="h-5 w-5 text-cyan-400" />}
+      label="Integrations"
+      isActive={location.startsWith("/integrations")}
+      activeBorderClass="data-[active=true]:border-cyan-400/60"
+      onClick={() => setLocation("/integrations")}
+    />
+  );
+}
+
 // Thin coloured accent bar at the top of the main content area
 function SectionAccentBar() {
   const color = useSectionColor();
@@ -2008,6 +2033,12 @@ function DashboardLayoutContent({
                     setLocation={setLocation}
                     isAdmin={user?.role === "admin"}
                   />
+                  {user?.role === "admin" && (
+                    <IntegrationsNavTile
+                      location={location}
+                      setLocation={setLocation}
+                    />
+                  )}
                 </div>
               ) : (
                 <SidebarMenu className="px-2 gap-1.5">
@@ -2224,6 +2255,31 @@ function DashboardLayoutContent({
                       </div>
                     )}
                   </SidebarMenuItem>
+
+                  {/* ── Integrations (admin-only — the persistent switcher
+                      into the External Integrations connector management
+                      side of the app) ── */}
+                  {user?.role === "admin" && (
+                    <SidebarMenuItem>
+                      <SidebarMenuButton
+                        isActive={location.startsWith("/integrations")}
+                        onClick={() => setLocation("/integrations")}
+                        tooltip="Integrations"
+                        className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-cyan-400/50 shadow-sm"
+                      >
+                        <Cable className="h-4 w-4 text-cyan-400" />
+                        <span
+                          className={`flex-1 ${
+                            location.startsWith("/integrations")
+                              ? "text-sidebar-foreground font-medium"
+                              : "text-sidebar-foreground/80"
+                          }`}
+                        >
+                          Integrations
+                        </span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  )}
                 </SidebarMenu>
               )}
             </SidebarContent>

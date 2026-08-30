@@ -348,6 +348,7 @@ import {
   listTrackedAssets,
   softDeleteTrackedAsset,
   listTrackedAssetPositions,
+  triggerTraccarSync,
   createSignalSensor,
   updateSignalSensor,
   softDeleteSignalSensor,
@@ -7230,6 +7231,17 @@ export const appRouter = router({
         .input(z.object({ id: z.number() }))
         .mutation(async ({ ctx, input }) => {
           await softDeleteTrackedAsset(input.id, ctx.user.cin ?? "Unknown");
+          return { ok: true };
+        }),
+
+      // Manual trigger for a Traccar-backed connector — listTrackedAssets
+      // already syncs on every read, this just gives an admin an explicit
+      // "Sync Now" with its own loading state. No-op for a connector not
+      // configured for Traccar.
+      syncTraccar: adminProcedure
+        .input(z.object({ connectorId: z.number() }))
+        .mutation(async ({ input }) => {
+          await triggerTraccarSync(input.connectorId);
           return { ok: true };
         }),
 
